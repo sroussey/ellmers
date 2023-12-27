@@ -1,0 +1,8 @@
+#!/usr/bin/env bun
+
+import { program } from "commander";
+import { argv } from "process";
+
+program.version("1.0.0").description("A CLI to run Elmers.");
+
+await program.parseAsync(argv);

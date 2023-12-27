@@ -1,0 +1,30 @@
+{
+  "editor.tabSize": 2,
+  "editor.detectIndentation": false,
+  "editor.stickyTabStops": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "editor.formatOnSave": true,
+  "eslint.format.enable": true,
+  "search.exclude": {
+    "data-files/**": true,
+    "data-out/**": true,
+    "**/package-lock.json": true
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.codeActionsOnSave.rules": null,
+  "explorer.autoRevealExclude": {
+    "data-out/**": true,
+    "data-in/**": true
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "typescript.format.enable": true,
+  "html.format.enable": true,
+  "json.format.enable": true,
+  "javascript.format.enable": true
+}
