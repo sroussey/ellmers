@@ -18,3 +18,5 @@ export interface IDocumentNode {
 export interface IDocumentNodeEmbedding {
   embedding: number[];
 }
+
+export type IDocumentList = IDocument[];

@@ -9,3 +9,5 @@ export interface IModel {
   dimensions: number;
   parameters: Record<string, string | number>;
 }
+
+export type IModelList = IModel[];

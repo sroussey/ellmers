@@ -7,5 +7,9 @@
 export interface IInstruct {
   name: string;
   documentation: string;
+  queryInstruction: string;
+  storageInstruction: string;
   parameters: Record<string, string | number>;
 }
+
+export type IInstructList = IInstruct[];
