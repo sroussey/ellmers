@@ -4,14 +4,20 @@
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************
 
-import { IInstruct } from "./IInstruct";
+import { CModel } from "./CModel";
+import { IModelList } from "./IModel";
 
-export abstract class CInstruct implements IInstruct {
+export class CModelMemory extends CModel {
   constructor(
-    public name: string,
-    public documentation: string,
-    public queryInstruction: string,
-    public storageInstruction: string,
-    public parameters: Record<string, string | number>
-  ) {}
+    name: string,
+    dimensions: number,
+    parameters: Record<string, string | number>
+  ) {
+    super(name, dimensions, parameters);
+  }
 }
+
+export const modelList: IModelList = [
+  new CModelMemory("Supabase/gte-small", 384, {}),
+  new CModelMemory("BAAI/bge-small-en-v1.5", 384, {}),
+];

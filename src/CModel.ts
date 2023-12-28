@@ -6,7 +6,7 @@
 
 import { IModel } from "./IModel";
 
-export class CModel implements IModel {
+export abstract class CModel implements IModel {
   constructor(
     public name: string,
     public dimensions: number,

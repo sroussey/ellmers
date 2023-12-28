@@ -6,7 +6,7 @@
 
 import { IDocument, IDocumentNode, IDocumentNodeEmbedding } from "./IDocument";
 
-export class CDocument implements IDocument {
+export abstract class CDocument implements IDocument {
   constructor(public title: string, content: string | string[]) {
     if (Array.isArray(content)) {
       this._content = content.join("\n");
@@ -26,7 +26,7 @@ export class CDocument implements IDocument {
   }
 }
 
-export class CDocumentNode implements IDocumentNode {
+export abstract class CDocumentNode implements IDocumentNode {
   constructor(public content: string) {}
 
   protected _embeddings: CDocumentNodeEmbedding[] = [];
@@ -35,6 +35,6 @@ export class CDocumentNode implements IDocumentNode {
   }
 }
 
-export class CDocumentNodeEmbedding implements IDocumentNodeEmbedding {
+export abstract class CDocumentNodeEmbedding implements IDocumentNodeEmbedding {
   constructor(public embedding: number[]) {}
 }
