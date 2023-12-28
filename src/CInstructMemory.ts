@@ -22,13 +22,27 @@ export const instructList: IInstructList = [
     "This is similar to plain but with a higher temperature and four versions averaged together",
     "",
     "",
-    { temperature: 0.5, number: 4 }
+    { temperature: 0.5, versions: 4 }
+  ),
+  new CInstructMemory(
+    "EverythingIsAQuestion",
+    "This converts storage into questions",
+    "Rephrase the following as a question: ",
+    "Rephrase the following as a question: ",
+    {}
   ),
   new CInstructMemory(
     "Represent",
     "This tries to coax the model into representing the query or passage",
     "Represent this query for searching relevant passages: ",
     "Represent this passage for later retrieval: ",
+    {}
+  ),
+  new CInstructMemory(
+    "Keywords",
+    "Try and pull keywords and concepts from both query and storage",
+    "What are the most important keywords and concepts that represent the following: ",
+    "What are the most important keywords and concepts that represent the following: ",
     {}
   ),
 ];
