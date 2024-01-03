@@ -10,7 +10,7 @@ import { Listr, PRESET_TIMER } from "listr2";
 import { TaskHelper } from "./TaskHelper";
 import { TextDocument } from "#/Document";
 import { TransformerJsService } from "#/TransformerJsService";
-import { modelList, instructList } from "#/storage/InMemory";
+import { modelList, instructList, stategyAllPairs } from "#/storage/InMemory";
 import { readFileSync, writeFileSync } from "fs";
 
 interface Filing {
@@ -109,7 +109,7 @@ export function AddSecCommand(program: Command) {
                   (f) => f.form === options.form.toUpperCase()
                 );
               }
-              const service = new TransformerJsService(modelList, instructList);
+              const service = new TransformerJsService(stategyAllPairs);
 
               const helper = new TaskHelper(task, filings.length);
               for (const filing of filings) {
@@ -171,7 +171,7 @@ export function AddSecCommand(program: Command) {
                   (f) => f.form === options.form.toUpperCase()
                 );
               }
-              const service = new TransformerJsService(modelList, instructList);
+              const service = new TransformerJsService(stategyAllPairs);
               const documentQuery = new TextDocument("query", query);
               await service.generateDocumentEmbeddings(documentQuery);
               console.log(documentQuery.nodes[0].embeddings[0].embedding);

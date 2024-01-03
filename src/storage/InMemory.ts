@@ -6,6 +6,7 @@
 
 import { Instruct, InstructList } from "#/Instruct";
 import { Model, ModelList } from "#/Model";
+import { StrategyList } from "#/Strategy";
 
 export const modelList: ModelList = [
   new Model("Supabase/gte-small", 384, {}),
@@ -49,3 +50,11 @@ export const instructList: InstructList = [
     {}
   ),
 ];
+
+export const stategyAllPairs: StrategyList = [];
+
+for (const model of modelList) {
+  for (const instruct of instructList) {
+    stategyAllPairs.push({ model, instruct });
+  }
+}

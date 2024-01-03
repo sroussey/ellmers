@@ -4,11 +4,12 @@
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************
 
-import { Pipeline, pipeline } from "@sroussey/transformers";
-import { Model, ModelList } from "./Model";
-import { Instruct, InstructList } from "./Instruct";
+import { type Pipeline, pipeline } from "@sroussey/transformers";
+import type { Model } from "./Model";
+import type { Instruct } from "./Instruct";
 import { NodeEmbedding, TextDocument, TextNode } from "./Document";
 import assert from "assert";
+import { StrategyList } from "./Strategy";
 
 const modelPipelines: Record<string, Pipeline> = {};
 
@@ -24,15 +25,11 @@ const getPipeline = async (model: Model) => {
 };
 
 export class TransformerJsService {
-  constructor(
-    private modelList: ModelList,
-    private instructList: InstructList
-  ) {}
+  constructor(private strategies: StrategyList) {}
   async generateDocumentEmbeddings(document: TextDocument, query = false) {
     for (const node of document.nodes) {
-      for (const model of this.modelList) {
-        for (const instruct of this.instructList)
-          await this.generateEmbedding(node, model, instruct, query);
+      for (const { model, instruct } of this.strategies) {
+        await this.generateEmbedding(node, model, instruct, query);
       }
     }
   }
