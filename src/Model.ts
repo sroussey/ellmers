@@ -4,14 +4,11 @@
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************
 
-import { IInstruct } from "./IInstruct";
-
-export abstract class CInstruct implements IInstruct {
+export class Model {
   constructor(
     public name: string,
-    public documentation: string,
-    public queryInstruction: string,
-    public storageInstruction: string,
+    public dimensions: number,
     public parameters: Record<string, string | number>
   ) {}
 }
+export type ModelList = Model[];

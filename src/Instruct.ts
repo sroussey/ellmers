@@ -4,12 +4,14 @@
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************
 
-export interface IInstruct {
-  name: string;
-  documentation: string;
-  queryInstruction: string;
-  storageInstruction: string;
-  parameters: Record<string, string | number>;
+export class Instruct {
+  constructor(
+    public name: string,
+    public documentation: string,
+    public queryInstruction: string,
+    public storageInstruction: string,
+    public parameters: Record<string, string | number>
+  ) {}
 }
 
-export type IInstructList = IInstruct[];
+export type InstructList = Instruct[];
