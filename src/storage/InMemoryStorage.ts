@@ -6,27 +6,27 @@
 //    ****************************************************************************
 
 import { Instruct, InstructList } from "#/Instruct";
-import { Model, ModelList } from "#/Model";
+import { ModelList, ONNXTransformerJsModel } from "#/Model";
 import { StrategyList } from "#/Strategy";
 
-export const supabaseGteSmall = new Model(
+export const supabaseGteSmall = new ONNXTransformerJsModel(
   "Supabase/gte-small",
   384,
-  "feature-extraction",
-  {}
+  {},
+  "feature-extraction"
 );
-export const xenovaBgeSmallEnV15 = new Model(
+export const xenovaBgeSmallEnV15 = new ONNXTransformerJsModel(
   "Xenova/bge-small-en-v1.5",
   384,
-  "feature-extraction",
-  {}
+  {},
+  "feature-extraction"
 );
 
-export const xenovaDistilbert = new Model(
+export const xenovaDistilbert = new ONNXTransformerJsModel(
   "Xenova/distilbert-base-uncased-distilled-squad",
   384,
-  "question-answering",
-  {}
+  {},
+  "feature-extraction"
 );
 
 export const modelList: ModelList = [supabaseGteSmall, xenovaBgeSmallEnV15];

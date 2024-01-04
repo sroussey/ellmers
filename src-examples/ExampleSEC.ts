@@ -8,11 +8,8 @@ import { Command, InvalidArgumentError } from "commander";
 import { readFile } from "fs/promises";
 import { Listr, PRESET_TIMER } from "listr2";
 import { TaskHelper } from "./TaskHelper";
-import { Document, Node, TextDocument, TextNode } from "#/Document";
-import {
-  TransformerJsService,
-  getPipeline,
-} from "#/embeddings/TransformerJsService";
+import { Document, TextDocument, TextNode } from "#/Document";
+import { getPipeline } from "#/embeddings/TransformerJsService";
 import {
   strategyAllPairs,
   xenovaBgeSmallEnV15,
@@ -24,8 +21,8 @@ import {
 } from "#/storage/InMemoryStorage";
 import { readFileSync, writeFileSync } from "fs";
 import { getTopKEmbeddings } from "#/query/InMemoryQuery";
-import { pipeline } from "@sroussey/transformers";
 import { Observable } from "rxjs";
+import { generateDocumentEmbeddings } from "#/embeddings/GenerateEmbeddings";
 
 interface Filing {
   cik: number;
@@ -130,8 +127,6 @@ export function AddSecCommand(program: Command) {
                 );
               }
 
-              const service = new TransformerJsService(strategyAllPairs);
-
               const helper = new TaskHelper(task, filings.length);
               for (const filing of filings) {
                 const cikStr = cik.toString().padStart(10, "0");
@@ -148,7 +143,10 @@ export function AddSecCommand(program: Command) {
                   ];
                   await filing.documents.reduce(async (acc, document) => {
                     await acc;
-                    await service.generateDocumentEmbeddings(document);
+                    await generateDocumentEmbeddings(
+                      strategyAllPairs,
+                      document
+                    );
                     return acc;
                   }, Promise.resolve());
                 }, `Processing ${cikStr} ${filing.accession_number}`);
@@ -221,12 +219,11 @@ export function AddSecCommand(program: Command) {
                 return acc.concat(d.nodes as TextNode[]);
               }, []);
 
-              const queryService = new TransformerJsService(
-                // strategyAllPairs
-                [{ model: xenovaBgeSmallEnV15, instruct: instructRepresent }]
-              );
               const queryDocument = new TextDocument("query", query);
-              await queryService.generateDocumentEmbeddings(queryDocument);
+              await generateDocumentEmbeddings(
+                [{ model: xenovaBgeSmallEnV15, instruct: instructRepresent }],
+                queryDocument
+              );
 
               const similarities = getTopKEmbeddings(
                 queryDocument.nodes[0],
