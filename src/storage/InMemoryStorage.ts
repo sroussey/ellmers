@@ -39,7 +39,7 @@ export const instructPlain = new Instruct(
   {}
 );
 
-export const highTemp = new Instruct(
+export const instructHighTemp = new Instruct(
   "HighTemp",
   "This is similar to plain but with a higher temperature and four versions averaged together",
   "",
@@ -73,7 +73,7 @@ export const instructKeywords = new Instruct(
 
 export const instructList: InstructList = [
   instructPlain,
-  highTemp,
+  instructHighTemp,
   instructQuestion,
   instructRepresent,
   instructKeywords,
