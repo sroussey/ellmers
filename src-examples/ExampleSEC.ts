@@ -8,10 +8,24 @@ import { Command, InvalidArgumentError } from "commander";
 import { readFile } from "fs/promises";
 import { Listr, PRESET_TIMER } from "listr2";
 import { TaskHelper } from "./TaskHelper";
-import { TextDocument } from "#/Document";
-import { TransformerJsService } from "#/TransformerJsService";
-import { modelList, instructList, stategyAllPairs } from "#/storage/InMemory";
+import { Document, Node, TextDocument, TextNode } from "#/Document";
+import {
+  TransformerJsService,
+  getPipeline,
+} from "#/embeddings/TransformerJsService";
+import {
+  strategyAllPairs,
+  xenovaBgeSmallEnV15,
+  instructPlain,
+  supabaseGteSmall,
+  instructRepresent,
+  instructQuestion,
+  xenovaDistilbert,
+} from "#/storage/InMemoryStorage";
 import { readFileSync, writeFileSync } from "fs";
+import { getTopKEmbeddings } from "#/query/InMemoryQuery";
+import { pipeline } from "@sroussey/transformers";
+import { Observable } from "rxjs";
 
 interface Filing {
   cik: number;
@@ -109,7 +123,14 @@ export function AddSecCommand(program: Command) {
                   (f) => f.form === options.form.toUpperCase()
                 );
               }
-              const service = new TransformerJsService(stategyAllPairs);
+
+              if (accession) {
+                filings = filings.filter(
+                  (f) => f.accession_number === accession
+                );
+              }
+
+              const service = new TransformerJsService(strategyAllPairs);
 
               const helper = new TaskHelper(task, filings.length);
               for (const filing of filings) {
@@ -125,7 +146,7 @@ export function AddSecCommand(program: Command) {
                       Object.values(sections as object)
                     ),
                   ];
-                  filing.documents.reduce(async (acc, document) => {
+                  await filing.documents.reduce(async (acc, document) => {
                     await acc;
                     await service.generateDocumentEmbeddings(document);
                     return acc;
@@ -160,6 +181,24 @@ export function AddSecCommand(program: Command) {
       const listrTasks = new Listr(
         [
           {
+            title: "Prepare pipelines",
+            task: () => {
+              return new Observable((observer) => {
+                function updateProgress(stat: any) {
+                  const { status, name, file, progress } = stat;
+                  observer.next(`${name} ${file} ${status} ${progress}`);
+                }
+                async function run() {
+                  await getPipeline(xenovaDistilbert, updateProgress);
+                  await getPipeline(xenovaBgeSmallEnV15, updateProgress);
+                  await getPipeline(supabaseGteSmall, updateProgress);
+                  observer.complete();
+                }
+                run();
+              });
+            },
+          },
+          {
             title: "Search SEC filings",
             task: async (ctx, task) => {
               let filings = JSON.parse(
@@ -171,18 +210,38 @@ export function AddSecCommand(program: Command) {
                   (f) => f.form === options.form.toUpperCase()
                 );
               }
-              const service = new TransformerJsService(stategyAllPairs);
-              const documentQuery = new TextDocument("query", query);
-              await service.generateDocumentEmbeddings(documentQuery);
-              console.log(documentQuery.nodes[0].embeddings[0].embedding);
 
-              const helper = new TaskHelper(task, filings.length);
-              for (const filing of filings) {
-                const cikStr = cik.toString().padStart(10, "0");
-                await helper.onIteration(async () => {
-                  //
-                }, `Processing ${cikStr} ${filing.accession_number}`);
-              }
+              const docs = filings.reduce<Document[]>((acc, f) => {
+                if (!f.documents) return acc;
+                return acc.concat(f.documents);
+              }, []);
+
+              const nodes = docs.reduce<TextNode[]>((acc, d) => {
+                if (!d.nodes) return acc;
+                return acc.concat(d.nodes as TextNode[]);
+              }, []);
+
+              const queryService = new TransformerJsService(
+                // strategyAllPairs
+                [{ model: xenovaBgeSmallEnV15, instruct: instructRepresent }]
+              );
+              const queryDocument = new TextDocument("query", query);
+              await queryService.generateDocumentEmbeddings(queryDocument);
+
+              const similarities = getTopKEmbeddings(
+                queryDocument.nodes[0],
+                nodes,
+                3
+              );
+
+              const answerer = await getPipeline(xenovaDistilbert);
+
+              const context = similarities
+                .map((s) => s.node.content)
+                .join("\n\n");
+              const output = await answerer(query, context);
+
+              console.log(output, "\n\n\n\n\n");
             },
           },
         ],

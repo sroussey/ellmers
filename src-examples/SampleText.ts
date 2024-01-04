@@ -8,8 +8,8 @@ import { Command, InvalidArgumentError } from "commander";
 
 import { Listr, PRESET_TIMER } from "listr2";
 import { TextDocument } from "#/Document";
-import { TransformerJsService } from "#/TransformerJsService";
-import { stategyAllPairs } from "#/storage/InMemory";
+import { TransformerJsService } from "#/embeddings/TransformerJsService";
+import { strategyAllPairs } from "#/storage/InMemoryStorage";
 
 export function AddSampleCommand(program: Command) {
   program
@@ -24,7 +24,7 @@ export function AddSampleCommand(program: Command) {
               task.title = `DATA`;
               const document = new TextDocument("test", "This is a test");
               task.output = `Document: ${document.title}`;
-              const service = new TransformerJsService(stategyAllPairs);
+              const service = new TransformerJsService(strategyAllPairs);
               await service.generateDocumentEmbeddings(document);
               console.log("\n\n\n\n\n");
             },

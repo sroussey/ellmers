@@ -2,24 +2,29 @@
 //    *   ELMERS: Embedding Language Model Experiental Retreival Service         *
 //    *                                                                          *
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { type Pipeline, pipeline } from "@sroussey/transformers";
-import type { Model } from "./Model";
-import type { Instruct } from "./Instruct";
-import { NodeEmbedding, TextDocument, TextNode } from "./Document";
-import assert from "assert";
-import { StrategyList } from "./Strategy";
+import { pipeline, PipelineType } from "@sroussey/transformers";
+import type { Model } from "#/Model";
+import type { Instruct } from "#/Instruct";
+import { NodeEmbedding, TextDocument, TextNode } from "#/Document";
+import { StrategyList } from "#/Strategy";
 
-const modelPipelines: Record<string, Pipeline> = {};
+const modelPipelines: Record<string, any> = {};
 
-const getPipeline = async (model: Model) => {
+export const getPipeline = async (
+  model: Model,
+  progress_callback?: (progress: any) => void
+) => {
   if (!modelPipelines[model.name]) {
-    modelPipelines[model.name] = await pipeline("embeddings", model.name, {
-      progress_callback: (progress: number) => {
-        console.log(`Progress:`, { progress });
-      },
-    });
+    modelPipelines[model.name] = await pipeline(
+      model.pipeline as PipelineType,
+      model.name,
+      {
+        progress_callback,
+      }
+    );
   }
   return modelPipelines[model.name];
 };
@@ -51,14 +56,14 @@ export class TransformerJsService {
       }
     );
 
-    const embedding = Array.from<number>(output.data);
-    assert(
-      embedding.length === model.dimensions,
-      "Embedding length does not match model dimensions"
-    );
+    const vector = Array.from<number>(output.data);
 
-    node.embeddings.push(
-      new NodeEmbedding(model.name, instruct.name, embedding)
-    );
+    if (vector.length !== model.dimensions) {
+      throw new Error(
+        "Embedding vector length does not match model dimensions"
+      );
+    }
+
+    node.embeddings.push(new NodeEmbedding(model.name, instruct.name, vector));
   }
 }

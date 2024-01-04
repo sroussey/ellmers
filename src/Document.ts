@@ -2,6 +2,7 @@
 //    *   ELMERS: Embedding Language Model Experiental Retreival Service         *
 //    *                                                                          *
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
 export abstract class Document {
@@ -16,7 +17,8 @@ export class NodeEmbedding {
   constructor(
     public modelName: string,
     public instructName: string,
-    public embedding: number[]
+    public vector: number[],
+    public normalized = true
   ) {}
 }
 
@@ -25,6 +27,8 @@ export class TextNode extends Node {
     super(embeddings);
   }
 }
+
+export class QueryText extends TextNode {}
 
 export class TextDocument extends Document {
   constructor(public title: string, content?: string | string[]) {

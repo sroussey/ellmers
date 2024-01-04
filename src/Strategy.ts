@@ -2,6 +2,7 @@
 //    *   ELMERS: Embedding Language Model Experiental Retreival Service         *
 //    *                                                                          *
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
 import { Instruct } from "./Instruct";
