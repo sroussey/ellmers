@@ -26,7 +26,7 @@ export const xenovaDistilbert = new ONNXTransformerJsModel(
   "Xenova/distilbert-base-uncased-distilled-squad",
   384,
   {},
-  "feature-extraction"
+  "question-answering"
 );
 
 export const modelList: ModelList = [supabaseGteSmall, xenovaBgeSmallEnV15];
