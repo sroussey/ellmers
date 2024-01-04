@@ -49,7 +49,9 @@ export async function generateTransformerJsEmbedding(
   const vector = Array.from<number>(output.data);
 
   if (vector.length !== model.dimensions) {
-    throw new Error("Embedding vector length does not match model dimensions");
+    throw new Error(
+      `Embedding vector length does not match model dimensions v${vector.length} != m${model.dimensions}`
+    );
   }
 
   node.embeddings.push(new NodeEmbedding(model.name, instruct.name, vector));

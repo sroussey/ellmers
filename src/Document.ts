@@ -17,9 +17,17 @@ export class NodeEmbedding {
   constructor(
     public modelName: string,
     public instructName: string,
-    public vector: number[],
+    public vector: number[], //Float32Array,
     public normalized = true
   ) {}
+  // toJSON() {
+  //   return {
+  //     modelName: this.modelName,
+  //     instructName: this.instructName,
+  //     vector: Array.from(this.vector),
+  //     normalized: this.normalized,
+  //   };
+  // }
 }
 
 export class TextNode extends Node {

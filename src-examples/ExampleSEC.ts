@@ -18,8 +18,9 @@ import {
   instructRepresent,
   instructQuestion,
   xenovaDistilbert,
+  whereIsAIUAELargeV1,
 } from "#/storage/InMemoryStorage";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getTopKEmbeddings } from "#/query/InMemoryQuery";
 import { Observable } from "rxjs";
 import { generateDocumentEmbeddings } from "#/embeddings/GenerateEmbeddings";
@@ -111,6 +112,24 @@ export function AddSecCommand(program: Command) {
       const listrTasks = new Listr(
         [
           {
+            title: "Prepare pipelines",
+            task: () => {
+              return new Observable((observer) => {
+                function updateProgress(stat: any) {
+                  const { status, name, file, progress } = stat;
+                  observer.next(`${name} ${file} ${status} ${progress}`);
+                }
+                async function run() {
+                  await getPipeline(whereIsAIUAELargeV1, updateProgress);
+                  await getPipeline(xenovaBgeSmallEnV15, updateProgress);
+                  await getPipeline(supabaseGteSmall, updateProgress);
+                  observer.complete();
+                }
+                run();
+              });
+            },
+          },
+          {
             title: "Process SEC filings",
             task: async (ctx, task) => {
               let filings = await getFilingsForCik(cik);
@@ -152,8 +171,9 @@ export function AddSecCommand(program: Command) {
                 }, `Processing ${cikStr} ${filing.accession_number}`);
               }
 
+              mkdirSync(`./data-out/sec/cik-${cik}`, { recursive: true });
               writeFileSync(
-                `./data-in/sec/cik-${cik}/embeddings.json`,
+                `./data-out/sec/cik-${cik}/embeddings.json`,
                 JSON.stringify(filings, null, 2)
               );
             },
@@ -200,8 +220,21 @@ export function AddSecCommand(program: Command) {
             title: "Search SEC filings",
             task: async (ctx, task) => {
               let filings = JSON.parse(
-                readFileSync(`./data-in/sec/cik-${cik}/embeddings.json`, "utf8")
+                readFileSync(
+                  `./data-out/sec/cik-${cik}/embeddings.json`,
+                  "utf8"
+                )
               ) as Filing[];
+
+              // filings.forEach((f) => {
+              //   f.documents?.forEach((d) => {
+              //     d.nodes?.forEach((n) => {
+              //       n.embeddings.forEach(
+              //         (e) => (e.vector = new Float32Array(e.vector))
+              //       );
+              //     });
+              //   });
+              // });
 
               if (options.form) {
                 filings = filings.filter(
@@ -221,7 +254,8 @@ export function AddSecCommand(program: Command) {
 
               const queryDocument = new TextDocument("query", query);
               await generateDocumentEmbeddings(
-                [{ model: xenovaBgeSmallEnV15, instruct: instructRepresent }],
+                // strategyAllPairs,
+                [{ model: whereIsAIUAELargeV1, instruct: instructRepresent }],
                 queryDocument
               );
 
@@ -238,7 +272,17 @@ export function AddSecCommand(program: Command) {
                 .join("\n\n");
               const output = await answerer(query, context);
 
-              console.log(output, "\n\n\n\n\n");
+              console.log(
+                output,
+                // similarities.map((s) => {
+                //   return {
+                //     model: s.embedding.modelName,
+                //     instruct: s.embedding.instructName,
+                //     similarity: s.similarity,
+                //   };
+                // }),
+                "\n\n\n\n\n"
+              );
             },
           },
         ],

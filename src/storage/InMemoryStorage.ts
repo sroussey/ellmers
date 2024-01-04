@@ -21,6 +21,12 @@ export const xenovaBgeSmallEnV15 = new ONNXTransformerJsModel(
   {},
   "feature-extraction"
 );
+export const whereIsAIUAELargeV1 = new ONNXTransformerJsModel(
+  "WhereIsAI/UAE-Large-V1",
+  1024,
+  {},
+  "feature-extraction"
+);
 
 export const xenovaDistilbert = new ONNXTransformerJsModel(
   "Xenova/distilbert-base-uncased-distilled-squad",
@@ -29,7 +35,11 @@ export const xenovaDistilbert = new ONNXTransformerJsModel(
   "question-answering"
 );
 
-export const modelList: ModelList = [supabaseGteSmall, xenovaBgeSmallEnV15];
+export const featureExtractionModelList: ModelList = [
+  supabaseGteSmall,
+  xenovaBgeSmallEnV15,
+  whereIsAIUAELargeV1,
+];
 
 export const instructPlain = new Instruct(
   "Plain",
@@ -81,7 +91,7 @@ export const instructList: InstructList = [
 
 export const strategyAllPairs: StrategyList = [];
 
-for (const model of modelList) {
+for (const model of featureExtractionModelList) {
   for (const instruct of instructList) {
     strategyAllPairs.push({ model, instruct });
   }

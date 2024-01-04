@@ -6,10 +6,9 @@
 //    ****************************************************************************
 
 import { NodeEmbedding, QueryText, TextNode } from "#/Document";
+// import { inner, cosine } from "simsimd";
 
-// TODO: use simsind to speed up similarity calculations
-
-export function dot(arr1: number[], arr2: number[]) {
+export function inner(arr1: number[], arr2: number[]) {
   return arr1.reduce((acc, val, i) => acc + val * arr2[i], 0);
 }
 
@@ -17,8 +16,8 @@ export function magnitude(arr: number[]) {
   return Math.sqrt(arr.reduce((acc, val) => acc + val * val, 0));
 }
 
-function cos_sim(arr1: number[], arr2: number[]) {
-  const dotProduct = dot(arr1, arr2);
+function cosine(arr1: number[], arr2: number[]) {
+  const dotProduct = inner(arr1, arr2);
   const magnitude1 = magnitude(arr1);
   const magnitude2 = magnitude(arr2);
   return dotProduct / (magnitude1 * magnitude2);
@@ -35,9 +34,9 @@ export function similarity(
     throw new Error("Embeddings normalized status don't match");
   }
   if (node1embedding.normalized) {
-    return dot(node1embedding.vector, node2embedding.vector);
+    return inner(node1embedding.vector, node2embedding.vector);
   } else {
-    return cos_sim(node1embedding.vector, node2embedding.vector);
+    return cosine(node1embedding.vector, node2embedding.vector);
   }
 }
 
