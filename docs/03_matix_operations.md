@@ -67,9 +67,9 @@ We need to prompt the LLM with the data in a smart manner. Different approaches 
 ## Testing
 
 We need to test a matrix of choices:
-(models) x (instructions) x (retreival similarities) x (rankings) x (promptings).
+(models for embedding) x (instructions) x (LLM models for the instructions) x (retreival similarities) x (rankings) x (promptings) x (LLM models for the Q&A).
 
 This can conservatively look like:
-(10) x (10) x (5) x (10) x (10) = 50,000 tests.
+(10) x (10) x (10) x (5) x (10) x (10)x (10) = 5,000,000 tests.
 
-It will not be difficult to get to a million tests. And that is independent of the data size. So we need to be able to run these tests quickly and cheaply and cache intermediate results.
+It will not be difficult to get to a billion tests if we aren't careful. And that is independent of the data size. So we need to be able to run these tests quickly and cheaply and cache intermediate results.
