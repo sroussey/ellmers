@@ -1,10 +1,29 @@
-import { inner } from "simsimd";
+import { createReadStream, close } from "fs";
+import { open, writeFile } from "fs/promises";
 
-function dot(arr1, arr2) {
-  return arr1.reduce((acc, val, i) => acc + val * arr2[i], 0);
+await writeFile("mlem", Buffer.alloc(2 ** 18));
+
+const openAndReadFile = () =>
+  new Promise(async (resolve, reject) => {
+    const fd = await open("mlem", "r");
+    if (typeof fd === "number")
+      createReadStream("", { fd, autoClose: false, emitClose: false })
+        .on("data", (chunk) => {})
+        .on("end", () => {
+          close(fd, (error) => void (error ? reject(error) : resolve()));
+        })
+        .on("error", () => console.error("error") && reject());
+    else
+      fd.createReadStream({ autoClose: false, emitClose: false })
+        .on("data", (chunk) => {})
+        .on("end", () => {
+          fd.close().then(resolve).catch(reject);
+        })
+        .on("error", () => console.error("error") && reject());
+  });
+
+for (let i = 0; i < 60000; ++i) {
+  i % 1000 == 0 && console.log("opened", i);
+  await openAndReadFile();
+  i % 1000 == 0 && console.log("closed");
 }
-
-console.log(dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])); // should output: 32
-console.log(
-  inner(new Float32Array([1.0, 2.0, 3.0]), new Float32Array([4.0, 5.0, 6.0]))
-); // should output: 32
