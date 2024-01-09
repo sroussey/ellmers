@@ -15,10 +15,13 @@ import {
   xenovaBgeSmallEnV15,
   instructPlain,
   supabaseGteSmall,
-  instructRepresent,
+  // instructRepresent,
   instructQuestion,
   xenovaDistilbert,
   whereIsAIUAELargeV1,
+  textgenModelList,
+  gpt2,
+  xenovaDistilbertMnli,
 } from "#/storage/InMemoryStorage";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getTopKEmbeddings } from "#/query/InMemoryQuery";
@@ -255,7 +258,12 @@ export function AddSecCommand(program: Command) {
               const queryDocument = new TextDocument("query", query);
               await generateDocumentEmbeddings(
                 // strategyAllPairs,
-                [{ model: whereIsAIUAELargeV1, instruct: instructRepresent }],
+                [
+                  {
+                    embeddingModel: xenovaBgeSmallEnV15,
+                    instruct: instructPlain,
+                  },
+                ],
                 queryDocument
               );
 

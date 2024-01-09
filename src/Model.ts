@@ -15,22 +15,24 @@ export enum ModelProcessorType {
 }
 
 export abstract class Model {
+  public dimensions: number | null = null;
+  public parameters: Record<string, string | number> = {};
   constructor(
     public name: string,
-    public dimensions: number,
-    public parameters: Record<string, string | number>
-  ) {}
+    options?: Partial<Pick<ONNXTransformerJsModel, "dimensions" | "parameters">>
+  ) {
+    Object.assign(this, options);
+  }
   abstract readonly type: ModelProcessorType;
 }
 
 export class ONNXTransformerJsModel extends Model {
   constructor(
     name: string,
-    dimensions: number,
-    parameters: Record<string, string | number>,
-    public pipeline: string
+    public pipeline: string,
+    options?: Partial<Pick<ONNXTransformerJsModel, "dimensions" | "parameters">>
   ) {
-    super(name, dimensions, parameters);
+    super(name, options);
   }
   readonly type = ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS;
 }

@@ -20,7 +20,7 @@ import { Model } from "./Model";
  * It also allows for testing multiple strategies for a given dataset.
  */
 export interface Strategy {
-  model: Model;
+  embeddingModel: Model;
   instruct: Instruct;
 }
 

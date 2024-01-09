@@ -5,10 +5,13 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { ModelProcessorType, type ONNXTransformerJsModel } from "#/Model";
+import { ModelProcessorType } from "#/Model";
 import { TextDocument } from "#/Document";
 import type { StrategyList } from "#/Strategy";
-import { generateTransformerJsEmbedding } from "./TransformerJsService";
+import {
+  generateTransformerJsEmbedding,
+  generateTransformerJsRewrite,
+} from "./TransformerJsService";
 
 export async function generateEmbeddings(
   strategies: StrategyList,
@@ -16,18 +19,31 @@ export async function generateEmbeddings(
   isQuery: boolean
 ) {
   for (const node of document.nodes) {
-    for (const { model, instruct } of strategies) {
-      switch (model.type) {
+    for (const { embeddingModel, instruct } of strategies) {
+      let currentNode = node;
+      if (instruct.model) {
+        switch (instruct.model.type) {
+          case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
+            currentNode = await generateTransformerJsRewrite(
+              node,
+              instruct,
+              isQuery
+            );
+            break;
+          default:
+            throw new Error("Instruct Model type not supported yet");
+        }
+      }
+      switch (embeddingModel.type) {
         case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
           await generateTransformerJsEmbedding(
-            node,
-            model as ONNXTransformerJsModel,
-            instruct,
-            isQuery
+            currentNode.content ? currentNode : node,
+            embeddingModel,
+            instruct
           );
           break;
         default:
-          throw new Error("Model type not supported yet");
+          throw new Error("Embedding Model type not supported yet");
       }
     }
   }
