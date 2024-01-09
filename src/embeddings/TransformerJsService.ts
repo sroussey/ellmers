@@ -30,12 +30,15 @@ export const getPipeline = async (
 
 export async function generateTransformerJsEmbedding(
   node: TextNode,
+  rewrittenText: string,
   model: Model,
   instruct: Instruct
 ) {
   const generateEmbedding = await getPipeline(model as ONNXTransformerJsModel);
 
-  const output = await generateEmbedding(node.content, {
+  const text = rewrittenText || node.content;
+
+  const output = await generateEmbedding(text, {
     pooling: "mean",
     normalize: true,
     temperature: instruct.parameters?.temperature,
@@ -49,19 +52,21 @@ export async function generateTransformerJsEmbedding(
     );
   }
 
-  node.embeddings.push(new NodeEmbedding(model.name, instruct.name, vector));
+  node.embeddings.push(
+    new NodeEmbedding(model.name, instruct.name, text, vector)
+  );
 }
 
 export async function generateTransformerJsRewrite(
   node: TextNode,
   instruct: Instruct,
   query: boolean
-) {
+): Promise<string> {
   let instruction = query
     ? instruct.queryInstruction
     : instruct.storageInstruction;
   if (!instruct.model) {
-    return node;
+    return node.content;
   } else {
     instruction = instruction + ":\n";
   }
@@ -88,7 +93,5 @@ export async function generateTransformerJsRewrite(
       throw new Error("rewrite model pipeline not supported yet");
   }
 
-  // the runtime type may be a subclass
-  const constructor = node.constructor as typeof TextNode;
-  return new constructor(result, []);
+  return result;
 }

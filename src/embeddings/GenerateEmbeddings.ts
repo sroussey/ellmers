@@ -20,15 +20,11 @@ export async function generateEmbeddings(
 ) {
   for (const node of document.nodes) {
     for (const { embeddingModel, instruct } of strategies) {
-      let currentNode = node;
+      let text = node.content;
       if (instruct.model) {
         switch (instruct.model.type) {
           case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
-            currentNode = await generateTransformerJsRewrite(
-              node,
-              instruct,
-              isQuery
-            );
+            text = await generateTransformerJsRewrite(node, instruct, isQuery);
             break;
           default:
             throw new Error("Instruct Model type not supported yet");
@@ -37,7 +33,8 @@ export async function generateEmbeddings(
       switch (embeddingModel.type) {
         case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
           await generateTransformerJsEmbedding(
-            currentNode.content ? currentNode : node,
+            node,
+            text,
             embeddingModel,
             instruct
           );

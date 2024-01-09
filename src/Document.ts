@@ -17,6 +17,7 @@ export class NodeEmbedding {
   constructor(
     public modelName: string,
     public instructName: string,
+    public content: string,
     public vector: number[], //Float32Array,
     public normalized = true
   ) {}
@@ -24,6 +25,7 @@ export class NodeEmbedding {
   //   return {
   //     modelName: this.modelName,
   //     instructName: this.instructName,
+  //     content: this.content,
   //     vector: Array.from(this.vector),
   //     normalized: this.normalized,
   //   };
