@@ -40,7 +40,7 @@ export async function generateTransformerJsEmbedding(
 
   const output = await generateEmbedding(text, {
     pooling: "mean",
-    normalize: true,
+    normalize: model.normalize,
     temperature: instruct.parameters?.temperature,
   });
 
@@ -53,7 +53,7 @@ export async function generateTransformerJsEmbedding(
   }
 
   node.embeddings.push(
-    new NodeEmbedding(model.name, instruct.name, text, vector)
+    new NodeEmbedding(model.name, instruct.name, text, vector, model.normalize)
   );
 }
 
@@ -68,12 +68,13 @@ export async function generateTransformerJsRewrite(
   if (!instruct.model) {
     return node.content;
   } else {
-    instruction = instruction + ":\n";
+    instruction = instruction ? instruction + ":\n" : "";
   }
 
   const rewriter = await getPipeline(instruct.model as ONNXTransformerJsModel);
 
   const output = await rewriter(node.content);
+
   let result = "";
 
   switch ((instruct.model as ONNXTransformerJsModel).pipeline) {
@@ -87,7 +88,7 @@ export async function generateTransformerJsRewrite(
       result = output.answer;
       break;
     case "summarization":
-      result = output.summary_text;
+      result = output?.[0]?.summary_text;
       break;
     default:
       throw new Error("rewrite model pipeline not supported yet");

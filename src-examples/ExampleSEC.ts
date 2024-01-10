@@ -22,6 +22,7 @@ import {
   textgenModelList,
   gpt2,
   xenovaDistilbertMnli,
+  distilbartCnn,
 } from "#/storage/InMemoryStorage";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getTopKEmbeddings } from "#/query/InMemoryQuery";
@@ -126,6 +127,9 @@ export function AddSecCommand(program: Command) {
                   await getPipeline(whereIsAIUAELargeV1, updateProgress);
                   await getPipeline(xenovaBgeSmallEnV15, updateProgress);
                   await getPipeline(supabaseGteSmall, updateProgress);
+                  await getPipeline(gpt2, updateProgress);
+                  await getPipeline(xenovaDistilbertMnli, updateProgress);
+                  await getPipeline(distilbartCnn, updateProgress);
                   observer.complete();
                 }
                 run();

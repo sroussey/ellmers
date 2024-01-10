@@ -16,6 +16,7 @@ export enum ModelProcessorType {
 
 export abstract class Model {
   public dimensions: number | null = null;
+  public normalize = true;
   public parameters: Record<string, string | number> = {};
   constructor(
     public name: string,

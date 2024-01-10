@@ -24,7 +24,7 @@ export const xenovaBgeSmallEnV15 = new ONNXTransformerJsModel(
 export const whereIsAIUAELargeV1 = new ONNXTransformerJsModel(
   "WhereIsAI/UAE-Large-V1",
   "feature-extraction",
-  { dimensions: 384 }
+  { dimensions: 1024 }
 );
 
 export const xenovaDistilbert = new ONNXTransformerJsModel(
