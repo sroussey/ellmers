@@ -18,7 +18,9 @@ For data:
 
 We need to create embeddings for the data.
 
-### Models
+### Models:
+
+We need to choose a model to create the embeddings. Many are online, but we also want to be able to test local ones. I don't know if inlining (like I do at the moment) is a good idea. I could convert it to an API call, but it will be fun to test some local models in the browser for funsies. Some local models will require an API at the moment (like llama.cpp) until I build a node module to process directly (is that worth it?) which won't work in the browser anyway, but will work in Electron (needed for the side project that handles my personal data).
 
 - [ ] Use a pre-trained model
   - [ ] Local models
@@ -34,8 +36,14 @@ We need to create embeddings for the data.
 
 ### Instructions:
 
+Instructions introduce a pre-processing step on the text before generating the embeddings. They can be used to improve the quality of the embeddings, speficially for the retrieval task.
+
 - [ ] Rewrite the data to make it more useful for retrieval
 - [ ] Rewrite the questions to make them more useful for retrieval
+
+## Query Intent
+
+Oh, this is going to be hard. We need to figure out what the user is asking for. We need to be able to do this in a way that is compatible with the retrieval method. Also, what is the context? Is the query one of a series? Were previous retreivals incorrect?
 
 ## Retrieval
 
