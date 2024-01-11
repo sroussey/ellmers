@@ -47,14 +47,14 @@ Oh, this is going to be hard. We need to figure out what the user is asking for.
 
 ## Retrieval
 
+### Vector Similarity Search
+
 We need to retrieve the data quickly so we need to build and uses indexes:
 
 - [ ] In Memory / Code
 - [ ] SQLite VSS
 - [ ] PostgreSQL pgvector
 - [ ] usearch
-- [ ] ElasticSearch
-- [ ] Pinecone
 
 The similarity choices can be:
 
@@ -63,6 +63,18 @@ The similarity choices can be:
 - [ ] Jaccard Similarity
 - [ ] Hamming Distance
 - [ ] Levenshtein Distance
+
+### Keyword Search
+
+- [ ] In Memory / Code (do we bother?)
+- [ ] SQLite FTS
+- [ ] PostgreSQL FTS
+
+### Combination Search
+
+- [ ] MeiliSearch
+- [ ] ElasticSearch
+- [ ] Pinecone
 
 ## Ranking
 
