@@ -30,6 +30,8 @@ We need to choose a model to create the embeddings. Many are online, but we also
   - [ ] Online models
     - [ ] OpenAI
     - [ ] Mistral
+    - [ ] Anthropic
+    - [ ] Google
     - [ ] Replicate
     - [ ] Huggingface
 - [ ] Use a model trained on our data
