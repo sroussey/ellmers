@@ -15,8 +15,20 @@ export const supabaseGteSmall = new ONNXTransformerJsModel(
   { dimensions: 384 }
 );
 
-export const xenovaBgeSmallEnV15 = new ONNXTransformerJsModel(
+export const baaiBgeSmallEnV15 = new ONNXTransformerJsModel(
   "Xenova/bge-small-en-v1.5",
+  "feature-extraction",
+  { dimensions: 384 }
+);
+
+export const baaiBgeBaseEnV15 = new ONNXTransformerJsModel(
+  "Xenova/bge-base-en-v1.5",
+  "feature-extraction",
+  { dimensions: 768 }
+);
+
+export const xenovaMiniL6v2 = new ONNXTransformerJsModel(
+  "Xenova/all-MiniLM-L6-v2",
   "feature-extraction",
   { dimensions: 384 }
 );
@@ -47,14 +59,30 @@ export const distilbartCnn = new ONNXTransformerJsModel(
   "summarization"
 );
 
-export const featureExtractionModelList: ModelList = [
+export const allModels: ONNXTransformerJsModel[] = [
   supabaseGteSmall,
-  xenovaBgeSmallEnV15,
+  baaiBgeSmallEnV15,
+  xenovaMiniL6v2,
+  baaiBgeBaseEnV15,
   whereIsAIUAELargeV1,
+  xenovaDistilbert,
+  xenovaDistilbertMnli,
+  gpt2,
+  distilbartCnn,
 ];
-export const questionAnsweringModelList: ModelList = [xenovaDistilbert];
-export const classifierModelList: ModelList = [xenovaDistilbertMnli];
-export const textgenModelList: ModelList = [gpt2];
+
+export const featureExtractionModelList = allModels.filter(
+  (m) => m.pipeline === "feature-extraction"
+);
+export const questionAnsweringModelList = allModels.filter(
+  (m) => m.pipeline === "question-answering"
+);
+export const classifierModelList = allModels.filter(
+  (m) => m.pipeline === "zero-shot-classification"
+);
+export const textgenModelList: ModelList = allModels.filter(
+  (m) => m.pipeline === "text-generation"
+);
 
 export const instructPlain = new Instruct(
   "Plain",

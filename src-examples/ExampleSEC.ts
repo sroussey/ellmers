@@ -12,7 +12,7 @@ import { Document, TextDocument, TextNode } from "#/Document";
 import { getPipeline } from "#/embeddings/TransformerJsService";
 import {
   strategyAllPairs,
-  xenovaBgeSmallEnV15,
+  baaiBgeSmallEnV15,
   instructPlain,
   supabaseGteSmall,
   // instructRepresent,
@@ -125,7 +125,7 @@ export function AddSecCommand(program: Command) {
                 }
                 async function run() {
                   await getPipeline(whereIsAIUAELargeV1, updateProgress);
-                  await getPipeline(xenovaBgeSmallEnV15, updateProgress);
+                  await getPipeline(baaiBgeSmallEnV15, updateProgress);
                   await getPipeline(supabaseGteSmall, updateProgress);
                   await getPipeline(gpt2, updateProgress);
                   await getPipeline(xenovaDistilbertMnli, updateProgress);
@@ -215,7 +215,7 @@ export function AddSecCommand(program: Command) {
                 }
                 async function run() {
                   await getPipeline(xenovaDistilbert, updateProgress);
-                  await getPipeline(xenovaBgeSmallEnV15, updateProgress);
+                  await getPipeline(baaiBgeSmallEnV15, updateProgress);
                   await getPipeline(supabaseGteSmall, updateProgress);
                   observer.complete();
                 }
@@ -264,7 +264,7 @@ export function AddSecCommand(program: Command) {
                 // strategyAllPairs,
                 [
                   {
-                    embeddingModel: xenovaBgeSmallEnV15,
+                    embeddingModel: baaiBgeSmallEnV15,
                     instruct: instructPlain,
                   },
                 ],
