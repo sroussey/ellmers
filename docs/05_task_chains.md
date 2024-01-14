@@ -10,6 +10,7 @@
 - We will want to send a task arguments, if it is a task list, some of those args might be for the subtasks.
 - We need progress events.
 - Authentication and authorization will be supplied to the task by the task runner.
+- convert the task list to a listr2 task list
 
 ## Questions
 
@@ -30,7 +31,7 @@ Inputs
 
 - content
 - model
-- parameters
+- model_parameters
 
 Output
 
@@ -49,7 +50,7 @@ Inputs
 
 - content
 - model
-- parameters
+- model_parameters
 
 Output
 
@@ -98,6 +99,7 @@ Inputs
 - embedding_model []
 - rewriter []
   - prompt_model
+  - prompt_model_parameters
   - prompt
 
 Output
@@ -109,14 +111,44 @@ Uses:
 - TextRewriterStrategy
 - GetEmbeddingTask
 
+Example:
+
+```ts
+new TextEmbeddingStrategy({
+  content: "This is a test",
+  embedding_model: [
+    {
+      name: "Xenova/distilbert-base-uncased",
+      model_parameters: {
+        temperature: 0.7,
+      },
+    },
+  ],
+  rewriter: [
+    {
+      prompt_model: "Xenova/gpt2",
+      prompt: "Make this more concise",
+    },
+    {
+      prompt_model: "OpenAI/gpt4-turbo",
+      prompt: "Make this more concise",
+    },
+  ],
+});
+```
+
 ## Task
 
 A task is a single step in the chain where most tasks output will be input for the next task.
+
+Tasks get posted to a job queue and are run by a job queue runner.
 
 ## TaskList
 
 A strategy is a list of tasks that are chained together to look like a single task.
 
-## TaskList
+## Strategy
 
 A strategy is a list of tasks that are chained together to look like a single task. Parts can be run in series or in parallel. It orchestrates variations of the same task.
+
+Strategies get a name and are saved in the database, both as a parent all the variations. The variation names are based on the spefic parameters used rather than the parent name.
