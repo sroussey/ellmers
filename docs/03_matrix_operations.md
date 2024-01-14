@@ -54,6 +54,8 @@ Instructions introduce a pre-processing step on the text before generating the e
 - [ ] Rewrite the data to make it more useful for retrieval
 - [ ] Rewrite the questions to make them more useful for retrieval
 
+Instructions are just multiple prompts for a purpose at specific stages. Prompts have a purpose too, maybe they should share a base class.
+
 ## Query Intent
 
 Oh, this is going to be hard. We need to figure out what the user is asking for. We need to be able to do this in a way that is compatible with the retrieval method. Also, what is the context? Is the query one of a series? Were previous retreivals incorrect?
