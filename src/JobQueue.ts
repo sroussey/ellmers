@@ -20,6 +20,7 @@ export abstract class Job {
   constructor(
     public readonly id: unknown,
     public readonly queue: string,
+    public readonly taskName: string,
     public readonly input: any,
     public readonly maxRetries: number,
     public readonly createdAt: Date
@@ -47,11 +48,11 @@ export abstract class JobQueue {
 // ============================================================================
 
 export class LocalJob extends Job {
-  constructor(queue: string, input: any) {
+  constructor(queue: string, taskName: string, input: any) {
     const id = uuid.v4();
     const createdAt = new Date();
     const maxRetries = 10;
-    super(id, queue, input, maxRetries, createdAt);
+    super(id, queue, taskName, input, maxRetries, createdAt);
   }
 }
 
@@ -128,11 +129,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (fing
 */
 
 export class PostgresqlJob extends Job {
-  constructor(queue: string, input: any) {
+  constructor(queue: string, taskName: string, input: any) {
     const id = uuid.v4();
     const createdAt = new Date();
     const maxRetries = 10;
-    super(id, queue, input, maxRetries, createdAt);
+    super(id, queue, taskName, input, maxRetries, createdAt);
   }
 }
 
