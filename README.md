@@ -24,3 +24,5 @@ The Embedding Language Model Experiential Retrieval Service (ELMERS) is a simple
 1. [Motivations](docs/01_motivations.md)
 2. [Retrieval Augmented Generation](docs/02_retrieval_augmented_generation.md)
 3. [Matrix Operations](docs/03_matrix_operations.md)
+4. [System Composition](docs/04_system_composition.md)
+5. [Task Chains](docs/05_task_chains.md)
