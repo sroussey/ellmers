@@ -6,10 +6,21 @@ No, we are not talking about math. We have a matrix of ideas to test.
 
 We need to store the data somewhere. We need to be able to retrieve it quickly, and we need to be able to update it. We need to be able to store the data in a way that is compatible with the retrieval method.
 
-For data:
+### Data:
 
 - [ ] In Memory / Code
 - [ ] Local file system
+- [ ] SQL Databases
+  - [ ] SQLite
+  - [ ] PostgreSQL
+  - [ ] MySQL
+
+### Indexes:
+
+Normally indexes would be part of the storage, but we need to break apart for the use case of an Electron app using SQLite for storage and usearch for the index. Or the indexes could be stored in a separate database as an add-on to some current deployment.
+
+- [ ] In Memory / Code
+- [ ] usearch
 - [ ] SQL Databases
   - [ ] SQLite
   - [ ] PostgreSQL
