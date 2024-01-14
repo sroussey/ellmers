@@ -102,7 +102,7 @@ We need combine and rank the results.
 
 ## Strategies
 
-OK, now I know why LangChain is called what it is. We have a series of tasks to perform, and they groups of them will be chained together.
+OK, now I know why LangChain is called what it is. We have a series of tasks to perform, and groups of them will be chained together.
 
 ### Task
 
