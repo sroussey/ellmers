@@ -12,6 +12,13 @@ import { PRESET_TIMER } from "listr2";
 
 // ===============================================================================
 //   NOTE     this will not call run() on anything but a basic task         NOTE
+//
+//   This is temporary until I can create a proper Listr task set for our real
+//   tasks which only observes them. At that point, it will run the top level
+//   task only.
+//
+//   TODO!
+//
 // ===============================================================================
 
 const taskArrayToListr = (
