@@ -4,37 +4,39 @@
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************
 
-import { Command, InvalidArgumentError } from "commander";
+import { Command } from "commander";
 
-import { Listr, PRESET_TIMER } from "listr2";
-import { TextDocument } from "#/Document";
-import { strategyAllPairs } from "#/storage/InMemoryStorage";
-import { generateDocumentEmbeddings } from "#/embeddings/GenerateEmbeddings";
+import { featureExtractionModelList } from "#/storage/InMemoryStorage";
+import { taskToListr } from "#/util/TaskStreamToListr2";
+import { DownloadTask } from "#/tasks/LocalHuggingFaceTasks";
+import {
+  LambdaTask,
+  ParallelTaskList,
+  SerialTaskList,
+  Strategy,
+  Task,
+} from "#/Task";
 
 export function AddSampleCommand(program: Command) {
   program
-    .command("sample")
-    .description("process sample text")
+    .command("download")
+    .description("download models")
     .action(async (options) => {
-      const listrTasks = new Listr(
-        [
-          {
-            title: "Data Sample",
-            task: async (ctx, task) => {
-              task.title = `DATA`;
-              const document = new TextDocument("test", "This is a test");
-              task.output = `Document: ${document.title}`;
-              await generateDocumentEmbeddings(strategyAllPairs, document);
-              console.log("\n\n\n\n\n");
-            },
-          },
+      const task = new Strategy({
+        name: "Run some stuff",
+        tasks: [
+          new LambdaTask({ name: "Do something first", run: async () => {} }),
+          new ParallelTaskList({
+            name: "Download Models",
+            tasks: featureExtractionModelList.map(
+              (model) => new DownloadTask(model)
+            ),
+          }),
+          new LambdaTask({ name: "Do something else", run: async () => {} }),
         ],
-        {
-          exitOnError: true,
-          concurrent: false,
-          rendererOptions: { timer: PRESET_TIMER },
-        }
-      );
+      });
+      const listrTasks = taskToListr(task);
+
       await listrTasks.run({});
     });
 }

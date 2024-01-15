@@ -80,7 +80,7 @@ export const questionAnsweringModelList = allModels.filter(
 export const classifierModelList = allModels.filter(
   (m) => m.pipeline === "zero-shot-classification"
 );
-export const textgenModelList: ModelList = allModels.filter(
+export const textgenModelList = allModels.filter(
   (m) => m.pipeline === "text-generation"
 );
 

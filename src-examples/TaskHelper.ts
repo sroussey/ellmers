@@ -63,6 +63,11 @@ export class TaskHelper<T = any> {
     this.task = task;
     this.max = max;
   }
+  updateProgress(progress: number) {
+    // console.log("progress", progress, "\n\n\n\n\n");
+    this.progress = progress;
+    this.task.output = createBar(this.progress, 30);
+  }
   async onIteration(fn: () => Promise<void>, msg: string) {
     const start = Date.now();
     await fn();

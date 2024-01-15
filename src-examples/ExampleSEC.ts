@@ -104,7 +104,7 @@ function myParseInt(value: string, dummyPrevious: number) {
   return parsedValue;
 }
 
-export function AddSecCommand(program: Command) {
+export function AddSecCommands(program: Command) {
   program
     .command("sec-index")
     .description("process sec filings")
