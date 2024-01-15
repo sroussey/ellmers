@@ -17,6 +17,8 @@ import { PRESET_TIMER } from "listr2";
 //   tasks which only observes them. At that point, it will run the top level
 //   task only.
 //
+//   Right now, there is no way to pipe data between the tasks!
+//
 //   TODO!
 //
 // ===============================================================================
