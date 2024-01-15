@@ -19,6 +19,15 @@ import {
   type DocumentQuestionAnsweringSingle,
 } from "@sroussey/transformers";
 
+/**
+ *
+ * This is a helper function to get a pipeline for a model and assign a
+ * progress callback to the task.
+ *
+ * @param task
+ * @param model
+ * @param options
+ */
 const getPipeline = async (
   task: Task,
   model: ONNXTransformerJsModel,
@@ -51,6 +60,11 @@ export class DownloadTask extends Task {
   }
 }
 
+/**
+ * This is a task that generates an embedding for a single piece of text
+ *
+ * Model pipeline must be "feature-extraction"
+ */
 export class EmbeddingTask extends Task {
   readonly text: string;
   readonly model: ONNXTransformerJsModel;
@@ -111,6 +125,11 @@ abstract class TextGenerationTaskBase extends Task {
   }
 }
 
+/**
+ * This is a special case of text generation that takes a context and a question
+ *
+ * Model pipeline must be "text-generation" or "text2text-generation"
+ */
 export class TextGenerationTask extends TextGenerationTaskBase {
   public async run() {
     this.emit("start");
@@ -129,6 +148,12 @@ export class TextGenerationTask extends TextGenerationTaskBase {
     this.emit("complete");
   }
 }
+
+/**
+ * This is a special case of text generation that takes a context and a question
+ *
+ * Model pipeline must be "summarization"
+ */
 
 export class SummarizationTask extends TextGenerationTaskBase {
   public async run() {
@@ -149,6 +174,11 @@ export class SummarizationTask extends TextGenerationTaskBase {
   }
 }
 
+/**
+ * This is a special case of text generation that takes a context and a question
+ *
+ * Model pipeline must be "question-answering"
+ */
 export class QuestionAnswerTask extends TextGenerationTaskBase {
   protected readonly context: string;
   constructor(options: {

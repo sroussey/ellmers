@@ -118,6 +118,7 @@ export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
 
 export abstract class Task extends TaskBase implements ITask {
   readonly kind = "TASK";
+  public job_id: unknown;
 }
 
 export class LambdaTask extends Task {
