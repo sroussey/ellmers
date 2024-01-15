@@ -10,6 +10,7 @@ export enum TaskStatus {
 export interface ITask {
   id: unknown;
   name: string;
+  input: any;
   output: any;
   status: TaskStatus;
   progress: number;
@@ -41,21 +42,25 @@ export interface IStrategy extends ITask {
  */
 export type TaskEvents = "start" | "complete" | "error" | "progress";
 
+export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
+
 // ===============================================================================
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
   id: unknown;
   name: string;
+  input: any;
   output: any;
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
   completedAt: Date | null = null;
   error: string | undefined = undefined;
-  constructor(options: Partial<ITask> & Pick<ITask, "name">) {
+  constructor(input: Partial<ITask> & Pick<ITask, "name">) {
     super();
-    this.name = options.name;
-    this.id = options.id;
+    this.input = input;
+    this.name = input.name;
+    this.id = input.id;
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
@@ -76,11 +81,11 @@ export abstract class MultiTaskBase extends TaskBase {
   tasks: TaskStream = [];
 
   constructor(
-    options: Partial<ITaskList | IStrategy> &
+    input: Partial<ITaskList | IStrategy> &
       Pick<ITaskList | IStrategy, "name" | "tasks">
   ) {
-    super(options);
-    this.tasks = options.tasks;
+    super(input);
+    this.tasks = input.tasks;
     const total = this.tasks.length;
     let completed = 0;
     let errors = 0;
@@ -114,8 +119,6 @@ export abstract class MultiTaskBase extends TaskBase {
 
 // ===============================================================================
 
-export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
-
 export abstract class Task extends TaskBase implements ITask {
   readonly kind = "TASK";
   public job_id: unknown;
@@ -124,13 +127,15 @@ export abstract class Task extends TaskBase implements ITask {
 export class LambdaTask extends Task {
   #runner: () => Promise<void>;
   constructor(
-    options: Partial<ITask> & Pick<ITask, "name"> & { run: () => Promise<void> }
+    input: Partial<ITask> & Pick<ITask, "name"> & { run: () => Promise<void> }
   ) {
-    super(options);
-    this.#runner = options.run;
+    super(input);
+    this.#runner = input.run;
   }
   async run() {
+    this.emit("start");
     await this.#runner();
+    this.emit("complete");
   }
 }
 
@@ -138,41 +143,30 @@ export abstract class TaskList extends MultiTaskBase implements ITask {
   readonly kind = "TASK_LIST";
   ordering: "serial" | "parallel" = "serial";
   constructor(
-    options: Partial<ITaskList> & Pick<ITaskList, "name" | "ordering" | "tasks">
+    input: Partial<ITaskList> & Pick<ITaskList, "name" | "ordering" | "tasks">
   ) {
-    const { ordering = "serial", ...rest } = options;
+    const { ordering = "serial", ...rest } = input;
     super(rest);
-    this.ordering = options.ordering;
-  }
-}
-
-export class Strategy extends MultiTaskBase implements ITask {
-  readonly kind = "STRATEGY";
-  constructor(options: Partial<IStrategy> & Pick<IStrategy, "name" | "tasks">) {
-    super(options);
-  }
-  async run() {
-    const total = this.tasks.length;
-    let completed = 0;
-    for (const task of this.tasks) {
-      await task.run();
-      completed++;
-      this.emit("progress", completed / total);
-    }
+    this.ordering = input.ordering;
   }
 }
 
 // ===============================================================================
 
 export class SerialTaskList extends TaskList {
-  constructor(options: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
-    super({ ...options, ordering: "serial" });
+  constructor(input: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
+    super({ ...input, ordering: "serial" });
   }
   async run() {
     const total = this.tasks.length;
     let completed = 0;
     for (const task of this.tasks) {
-      await task.run();
+      const taskwait = new Promise((resolve) => {
+        task.on("complete", resolve);
+        task.on("error", resolve);
+      });
+      task.run();
+      await taskwait;
       completed++;
       this.emit("progress", completed / total);
     }
@@ -180,11 +174,47 @@ export class SerialTaskList extends TaskList {
 }
 
 export class ParallelTaskList extends TaskList {
-  constructor(options: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
-    super({ ...options, ordering: "parallel" });
+  constructor(input: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
+    super({ ...input, ordering: "parallel" });
   }
   async run() {
-    await Promise.all(this.tasks.map((task) => task.run()));
+    const total = this.tasks.length;
+    let completed = 0;
+    await Promise.all(
+      this.tasks.map(async (task) => {
+        const taskwait = new Promise((resolve) => {
+          task.on("complete", resolve);
+          task.on("error", resolve);
+        });
+        task.run();
+        await taskwait;
+        completed++;
+        this.emit("progress", completed / total);
+      })
+    );
+  }
+}
+
+// ===============================================================================
+
+export class Strategy extends MultiTaskBase implements ITask {
+  readonly kind = "STRATEGY";
+  constructor(input: Partial<IStrategy> & Pick<IStrategy, "name" | "tasks">) {
+    super(input);
+  }
+  async run() {
+    const total = this.tasks.length;
+    let completed = 0;
+    for (const task of this.tasks) {
+      const taskwait = new Promise((resolve) => {
+        task.on("complete", resolve);
+        task.on("error", resolve);
+      });
+      task.run();
+      await taskwait;
+      completed++;
+      this.emit("progress", completed / total);
+    }
   }
 }
 

@@ -5,23 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { TaskStreamable, type TaskStream } from "#/Task";
+import { TaskStreamable, type TaskStream, Task, TaskStatus } from "#/Task";
 import { Listr, ListrTask } from "listr2";
-import { TaskHelper } from "../../src-examples/TaskHelper";
+import { createBar } from "../../src-examples/TaskHelper";
 import { PRESET_TIMER } from "listr2";
-
-// ===============================================================================
-//   NOTE     this will not call run() on anything but a basic task         NOTE
-//
-//   This is temporary until I can create a proper Listr task set for our real
-//   tasks which only observes them. At that point, it will run the top level
-//   task only.
-//
-//   Right now, there is no way to pipe data between the tasks!
-//
-//   TODO!
-//
-// ===============================================================================
+import { Observable } from "rxjs";
 
 const taskArrayToListr = (
   tasks: TaskStream,
@@ -35,11 +23,23 @@ const taskArrayToListr = (
         list.push({
           title: task.name,
           task: async (_, t) => {
-            const helper = new TaskHelper(t, 100);
-            task.on("progress", (progress) => {
-              helper.updateProgress(progress / 100 || 0);
+            if (task.status == TaskStatus.COMPLETED) {
+              return;
+            }
+            return new Observable((observer) => {
+              const start = Date.now();
+              let lastUpdate = start;
+              task.on("progress", (progress) => {
+                const timeSinceLast = Date.now() - lastUpdate;
+                const timeSinceStart = Date.now() - start;
+                if (timeSinceLast > 250 || timeSinceStart > 100) {
+                  observer.next(createBar(progress / 100 || 0, 30));
+                }
+              });
+              task.on("complete", () => {
+                observer.complete();
+              });
             });
-            await task.run();
           },
         });
         break;
@@ -68,10 +68,13 @@ const taskArrayToListr = (
   return listr;
 };
 
-export const taskToListr = (tasks: TaskStreamable): Listr => {
-  return taskArrayToListr([tasks], {
+export const runTaskToListr = async (task: TaskStreamable) => {
+  const listrTasks = taskArrayToListr([task], {
     exitOnError: true,
     concurrent: false,
     rendererOptions: { timer: PRESET_TIMER },
   });
+  listrTasks.run();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await task.run();
 };

@@ -7,7 +7,7 @@
 import chalk from "chalk";
 import { ListrTaskWrapper } from "listr2";
 
-function createBar(progress: number, length: number): string {
+export function createBar(progress: number, length: number): string {
   let distance = progress * length;
   let bar = "";
   // Add main portion

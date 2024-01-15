@@ -48,9 +48,9 @@ const getPipeline = async (
 
 export class DownloadTask extends Task {
   readonly model: ONNXTransformerJsModel;
-  constructor(options: { model: ONNXTransformerJsModel; name?: string }) {
-    super({ name: options.name || `Downloading ${options.model.name}` });
-    this.model = options.model;
+  constructor(input: { model: ONNXTransformerJsModel; name?: string }) {
+    super({ name: input.name || `Downloading ${input.model.name}` });
+    this.model = input.model;
   }
 
   public async run() {
@@ -65,21 +65,21 @@ export class DownloadTask extends Task {
  *
  * Model pipeline must be "feature-extraction"
  */
-export class EmbeddingTask extends Task {
+export class HuggingFaceLocal_EmbeddingTask extends Task {
   readonly text: string;
   readonly model: ONNXTransformerJsModel;
-  constructor(options: {
+  constructor(input: {
     text: string;
     model: ONNXTransformerJsModel;
     name?: string;
   }) {
     super({
       name:
-        options.name ||
-        `Embedding content via ${options.model.name} : ${options.model.pipeline}`,
+        input.name ||
+        `Embedding content via ${input.model.name} : ${input.model.pipeline}`,
     });
-    this.model = options.model;
-    this.text = options.text;
+    this.model = input.model;
+    this.text = input.text;
   }
 
   public async run() {
@@ -104,24 +104,25 @@ export class EmbeddingTask extends Task {
       this.output = vector;
       this.emit("complete");
     }
+    this.output = Array.from(vector.data);
   }
 }
 
 abstract class TextGenerationTaskBase extends Task {
   protected readonly text: string;
   protected readonly model: ONNXTransformerJsModel;
-  constructor(options: {
+  constructor(input: {
     text: string;
     model: ONNXTransformerJsModel;
     name?: string;
   }) {
     super({
       name:
-        options.name ||
-        `Text to text generation content via ${options.model.name} : ${options.model.pipeline}`,
+        input.name ||
+        `Text to text generation content via ${input.model.name} : ${input.model.pipeline}`,
     });
-    this.model = options.model;
-    this.text = options.text;
+    this.model = input.model;
+    this.text = input.text;
   }
 }
 
@@ -130,7 +131,7 @@ abstract class TextGenerationTaskBase extends Task {
  *
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
-export class TextGenerationTask extends TextGenerationTaskBase {
+export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
   public async run() {
     this.emit("start");
 
@@ -155,7 +156,7 @@ export class TextGenerationTask extends TextGenerationTaskBase {
  * Model pipeline must be "summarization"
  */
 
-export class SummarizationTask extends TextGenerationTaskBase {
+export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
   public async run() {
     this.emit("start");
 
@@ -179,9 +180,9 @@ export class SummarizationTask extends TextGenerationTaskBase {
  *
  * Model pipeline must be "question-answering"
  */
-export class QuestionAnswerTask extends TextGenerationTaskBase {
+export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
   protected readonly context: string;
-  constructor(options: {
+  constructor(input: {
     text: string;
     context: string;
     model: ONNXTransformerJsModel;
@@ -189,12 +190,12 @@ export class QuestionAnswerTask extends TextGenerationTaskBase {
   }) {
     super({
       name:
-        options.name ||
-        `Question and Answer content via ${options.model.name} : ${options.model.pipeline}`,
-      text: options.text,
-      model: options.model,
+        input.name ||
+        `Question and Answer content via ${input.model.name} : ${input.model.pipeline}`,
+      text: input.text,
+      model: input.model,
     });
-    this.context = options.context;
+    this.context = input.context;
   }
 
   public async run() {
