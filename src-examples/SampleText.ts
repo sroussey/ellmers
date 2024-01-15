@@ -29,7 +29,7 @@ export function AddSampleCommand(program: Command) {
           new ParallelTaskList({
             name: "Download Models",
             tasks: featureExtractionModelList.map(
-              (model) => new DownloadTask(model)
+              (model) => new DownloadTask({ model })
             ),
           }),
           new LambdaTask({ name: "Do something else", run: async () => {} }),

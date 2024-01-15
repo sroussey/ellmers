@@ -10,7 +10,7 @@ export enum TaskStatus {
 export interface ITask {
   id: unknown;
   name: string;
-  payload: any;
+  output: any;
   status: TaskStatus;
   progress: number;
   createdAt: Date;
@@ -39,14 +39,14 @@ export interface IStrategy extends ITask {
  *
  * There is no job queue at the moement, but this is the idea.
  */
-export type TaskEvents = "start" | "end" | "error" | "progress";
+export type TaskEvents = "start" | "complete" | "error" | "progress";
 
 // ===============================================================================
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
   id: unknown;
   name: string;
-  payload: any;
+  output: any;
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
@@ -56,11 +56,10 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     super();
     this.name = options.name;
     this.id = options.id;
-    this.payload = options.payload;
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
-    this.on("end", () => {
+    this.on("complete", () => {
       this.completedAt = new Date();
       this.status = TaskStatus.COMPLETED;
     });
@@ -91,11 +90,11 @@ export abstract class MultiTaskBase extends TaskBase {
           this.emit("start");
         }
       });
-      task.on("end", () => {
+      task.on("complete", () => {
         completed++;
         if (completed === total) {
           if (errors === 0) {
-            this.emit("end");
+            this.emit("complete");
           } else {
             this.emit("error", this.error);
           }
