@@ -86,8 +86,7 @@ export class TaskHelper<T = any> {
         " -- " +
         timeSinceLast +
         "ms";
-      await Bun.sleep(1);
-      Bun.gc(Date.now() % 100 === 50);
+      await new Promise((resolve) => setTimeout(resolve, 1));
       this.lastUpdate = Date.now();
     }
   }

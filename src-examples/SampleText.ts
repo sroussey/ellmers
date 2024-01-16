@@ -10,8 +10,16 @@ import { allModels } from "#/storage/InMemoryStorage";
 import { runTaskToListr } from "#/util/TaskStreamToListr2";
 import { DownloadTask } from "#/tasks/HuggingFaceLocalTasks";
 import { LambdaTask, ParallelTaskList, Strategy } from "#/Task";
-import { Model, ONNXTransformerJsModel } from "#/Model";
-import { EmbeddingTask, SummarizationTask } from "#/tasks/FactoryTasks";
+import {
+  EmbeddingTask,
+  RewriterTask,
+  SummarizeTask,
+} from "#/tasks/FactoryTasks";
+import {
+  EmbeddingMultiModelStrategy,
+  RewriterMultiModelStrategy,
+  SummarizeMultiModelStrategy,
+} from "#/tasks/Strategies";
 
 export function AddSampleCommand(program: Command) {
   program
@@ -23,11 +31,11 @@ export function AddSampleCommand(program: Command) {
       "model group to download based on pipeline type"
     )
     .action(async (options) => {
-      let models: ONNXTransformerJsModel[] = [];
+      let models = allModels.slice();
       if (options.model) {
         const model = allModels.find((m) => m.name == options.model);
         if (model) {
-          models.push(model);
+          models = [model];
         } else {
           program.error(`Unknown model ${options.model}`);
         }
@@ -63,25 +71,33 @@ export function AddSampleCommand(program: Command) {
 
       await runTaskToListr(task);
 
-      await Bun.sleep(100);
+      await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
   program
     .command("embedding")
     .description("get a embedding vector for a piece of text")
     .argument("<text>", "text to embed")
-    .option("--model <name>", "model to use", "Xenova/bge-small-en-v1.5")
+    .option("--model <name>", "model to use")
     .action(async (text, options) => {
-      let model = allModels.find((m) => m.name == options.model);
-      if (!model) {
-        program.error(`Unknown model ${options.model}`);
+      let task;
+      if (options.model) {
+        const model = allModels.find((m) => m.name == options.model);
+        if (model) {
+          task = new EmbeddingTask({ model, text });
+        } else {
+          program.error(`Unknown model ${options.model}`);
+        }
+      } else {
+        let models = allModels.filter(
+          (m) => m.pipeline == "feature-extraction"
+        );
+        task = new EmbeddingMultiModelStrategy({ text, models });
       }
-
-      const task = new EmbeddingTask({ model, text });
 
       await runTaskToListr(task);
 
-      await Bun.sleep(100);
+      await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(task.output);
     });
 
@@ -89,18 +105,58 @@ export function AddSampleCommand(program: Command) {
     .command("summarize")
     .description("summarize text")
     .argument("<text>", "text to embed")
-    .option("--model <name>", "model to use", "Xenova/distilbart-cnn-6-6")
+    .option("--model <name>", "model to use")
     .action(async (text, options) => {
-      let model = allModels.find((m) => m.name == options.model);
-      if (!model) {
-        program.error(`Unknown model ${options.model}`);
+      let task;
+      if (options.model) {
+        const model = allModels.find((m) => m.name == options.model);
+        if (model) {
+          task = new SummarizeTask({ model, text });
+        } else {
+          program.error(`Unknown model ${options.model}`);
+        }
+      } else {
+        let models = allModels.filter((m) => m.pipeline == "summarization");
+        task = new SummarizeMultiModelStrategy({ text, models });
       }
-
-      const task = new SummarizationTask({ model, text });
 
       await runTaskToListr(task);
 
-      await Bun.sleep(100);
-      console.log(task.output);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log(task.output[0]);
+    });
+
+  program
+    .command("rewrite")
+    .description("rewrite text")
+    .argument("<text>", "text to rewrite")
+    .option("--instruction <instruction>", "instruction for how to rewrite", "")
+    .option("--model <name>", "model to use")
+    .action(async (text, options) => {
+      let task;
+      if (options.model) {
+        const model = allModels.find((m) => m.name == options.model);
+        if (model) {
+          task = new RewriterTask({ model, text, prompt: options.instruction });
+        } else {
+          program.error(`Unknown model ${options.model}`);
+        }
+      } else {
+        let models = allModels.filter(
+          (m) =>
+            m.pipeline === "text-generation" ||
+            m.pipeline === "text2text-generation"
+        );
+        task = new RewriterMultiModelStrategy({
+          text,
+          prompt: options.instruction,
+          models,
+        });
+      }
+
+      await runTaskToListr(task);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log(task.output[0]);
     });
 }

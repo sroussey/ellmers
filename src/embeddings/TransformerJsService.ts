@@ -6,9 +6,10 @@
 //    ****************************************************************************
 
 import { pipeline, type PipelineType } from "@sroussey/transformers";
-import { Model, type ONNXTransformerJsModel } from "#/Model";
+import { Model } from "#/Model";
 import type { Instruct } from "#/Instruct";
 import { NodeEmbedding, TextNode } from "#/Document";
+import { ONNXTransformerJsModel } from "#/tasks/HuggingFaceLocalTasks";
 
 const modelPipelinesCache: Record<string, any> = {};
 

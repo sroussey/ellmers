@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { ONNXTransformerJsModel } from "#/Model";
+import { Model, ModelProcessorType } from "#/Model";
 import { Task } from "#/Task";
 import {
   pipeline,
@@ -18,6 +18,17 @@ import {
   type QuestionAnsweringPipeline,
   type DocumentQuestionAnsweringSingle,
 } from "@sroussey/transformers";
+
+export class ONNXTransformerJsModel extends Model {
+  constructor(
+    name: string,
+    public pipeline: string,
+    options?: Partial<Pick<ONNXTransformerJsModel, "dimensions" | "parameters">>
+  ) {
+    super(name, options);
+  }
+  readonly type = ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS;
+}
 
 /**
  *
@@ -39,9 +50,17 @@ const getPipeline = async (
   return await pipeline(model.pipeline as PipelineType, model.name, {
     quantized,
     config,
-    progress_callback: ({ progress }: { progress: number }) => {
+    progress_callback: (details: {
+      file: string;
+      status: string;
+      name: string;
+      progress: number;
+      loaded: number;
+      total: number;
+    }) => {
+      const { progress, file } = details;
       task.progress = progress;
-      task.emit("progress", progress);
+      task.emit("progress", progress, file);
     },
   });
 };
@@ -127,7 +146,7 @@ abstract class TextGenerationTaskBase extends Task {
 }
 
 /**
- * This is a special case of text generation that takes a context and a question
+ * This generates text from a prompt
  *
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
@@ -135,18 +154,66 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
   public async run() {
     this.emit("start");
 
-    const generateTextToText = (await getPipeline(
+    const generateText = (await getPipeline(
       this,
       this.model
     )) as TextGenerationPipeline;
 
-    let results = await generateTextToText(this.text);
+    let results = await generateText(this.text);
     if (!Array.isArray(results)) {
       results = [results];
     }
 
     this.output = (results[0] as TextGenerationSingle)?.generated_text;
     this.emit("complete");
+  }
+}
+
+/**
+ * This is a special case of text generation that takes a prompt and text to rewrite
+ *
+ * Model pipeline must be "text-generation" or "text2text-generation"
+ */
+export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
+  protected readonly prompt: string;
+  constructor(input: {
+    text: string;
+    prompt: string;
+    model: ONNXTransformerJsModel;
+    name?: string;
+  }) {
+    const { name, text, prompt, model } = input;
+    super({
+      name:
+        name ||
+        `Text to text rewriting content via ${model.name} : ${model.pipeline}`,
+      text,
+      model,
+    });
+    this.prompt = prompt;
+  }
+  public async run() {
+    this.emit("start");
+
+    const generateText = (await getPipeline(
+      this,
+      this.model
+    )) as TextGenerationPipeline;
+
+    // This lib doesn't support this kind of rewriting
+    const promptedtext = (this.prompt ? this.prompt + "\n" : "") + this.text;
+    let results = await generateText(promptedtext);
+    if (!Array.isArray(results)) {
+      results = [results];
+    }
+
+    this.output = (results[0] as TextGenerationSingle)?.generated_text;
+    if (this.output == promptedtext) {
+      this.output = null;
+      this.emit("error", "Rewriter failed to generate new text");
+    } else {
+      this.emit("complete");
+    }
   }
 }
 

@@ -6,8 +6,8 @@
 //    ****************************************************************************
 
 import { Instruct, InstructList } from "#/Instruct";
-import { ModelList, ONNXTransformerJsModel } from "#/Model";
 import { StrategyList } from "#/Strategy";
+import { ONNXTransformerJsModel } from "#/tasks/HuggingFaceLocalTasks";
 
 export const supabaseGteSmall = new ONNXTransformerJsModel(
   "Supabase/gte-small",
@@ -54,6 +54,22 @@ export const gpt2 = new ONNXTransformerJsModel(
   "text-generation"
 );
 
+export const distillgpt2 = new ONNXTransformerJsModel(
+  "Xenova/distilgpt2",
+  "text-generation"
+);
+
+export const flanT5small = new ONNXTransformerJsModel(
+  "Xenova/flan-t5-small",
+  "text2text-generation"
+);
+
+export const flanT5p786m = new ONNXTransformerJsModel(
+  "Xenova/LaMini-Flan-T5-783M",
+  "text2text-generation"
+);
+
+("Xenova/LaMini-Flan-T5-783M");
 export const distilbartCnn = new ONNXTransformerJsModel(
   "Xenova/distilbart-cnn-6-6",
   "summarization"
@@ -68,6 +84,9 @@ export const allModels: ONNXTransformerJsModel[] = [
   xenovaDistilbert,
   xenovaDistilbertMnli,
   gpt2,
+  distillgpt2,
+  flanT5small,
+  flanT5p786m,
   distilbartCnn,
 ];
 
@@ -81,7 +100,8 @@ export const classifierModelList = allModels.filter(
   (m) => m.pipeline === "zero-shot-classification"
 );
 export const textgenModelList = allModels.filter(
-  (m) => m.pipeline === "text-generation"
+  (m) =>
+    m.pipeline === "text-generation" || m.pipeline === "text2text-generation"
 );
 
 export const instructPlain = new Instruct(

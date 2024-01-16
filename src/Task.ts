@@ -11,7 +11,6 @@ export interface ITask {
   id: unknown;
   name: string;
   input: any;
-  output: any;
   status: TaskStatus;
   progress: number;
   createdAt: Date;
@@ -50,7 +49,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
   id: unknown;
   name: string;
   input: any;
-  output: any;
+  #output: any;
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
@@ -74,11 +73,23 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
       this.error = error;
     });
   }
+  get output(): any {
+    return this.#output;
+  }
+  set output(val: any) {
+    this.#output = val;
+  }
+
   abstract run(): Promise<void>;
 }
 
 export abstract class MultiTaskBase extends TaskBase {
   tasks: TaskStream = [];
+  get output(): any[] {
+    return this.tasks.map((task) => {
+      return { output: task.output, name: task.name };
+    });
+  }
 
   constructor(
     input: Partial<ITaskList | IStrategy> &

@@ -13,7 +13,7 @@ import { Observable } from "rxjs";
 
 const taskArrayToListr = (
   tasks: TaskStream,
-  options: Record<string, any> = { concurrent: false }
+  options: Record<string, any> = { concurrent: false, exitOnError: true }
 ): Listr => {
   const list: ListrTask[] = [];
 
@@ -23,20 +23,28 @@ const taskArrayToListr = (
         list.push({
           title: task.name,
           task: async (_, t) => {
-            if (task.status == TaskStatus.COMPLETED) {
+            if (
+              task.status == TaskStatus.COMPLETED ||
+              task.status == TaskStatus.FAILED
+            ) {
               return;
             }
             return new Observable((observer) => {
               const start = Date.now();
               let lastUpdate = start;
-              task.on("progress", (progress) => {
+              task.on("progress", (progress, file) => {
                 const timeSinceLast = Date.now() - lastUpdate;
                 const timeSinceStart = Date.now() - start;
                 if (timeSinceLast > 250 || timeSinceStart > 100) {
-                  observer.next(createBar(progress / 100 || 0, 30));
+                  observer.next(
+                    createBar(progress / 100 || 0, 30) + " " + (file || "")
+                  );
                 }
               });
               task.on("complete", () => {
+                observer.complete();
+              });
+              task.on("error", () => {
                 observer.complete();
               });
             });

@@ -5,13 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { Model, ONNXTransformerJsModel } from "#/Model";
+import { Model } from "#/Model";
 import { Task } from "#/Task";
 import {
+  ONNXTransformerJsModel,
   HuggingFaceLocal_EmbeddingTask,
   HuggingFaceLocal_QuestionAnswerTask,
   HuggingFaceLocal_SummarizationTask,
   HuggingFaceLocal_TextGenerationTask,
+  HuggingFaceLocal_TextRewriterTask,
 } from "./HuggingFaceLocalTasks";
 
 class FactoryTask extends Task {
@@ -45,12 +47,32 @@ export class TextGenerationTask extends FactoryTask {
   }
 }
 
-export class SummarizationTask extends FactoryTask {
+export class SummarizeTask extends FactoryTask {
   constructor(input: { text: string; model: Model; name?: string }) {
     const { text, model, name } = input;
     super({ name: "Summarization" });
     if (model instanceof ONNXTransformerJsModel) {
       return new HuggingFaceLocal_SummarizationTask({ text, model, name });
+    }
+  }
+}
+
+export class RewriterTask extends FactoryTask {
+  constructor(input: {
+    text: string;
+    prompt: string;
+    model: Model;
+    name?: string;
+  }) {
+    const { text, prompt, model, name } = input;
+    super({ name: "Rewriter" });
+    if (model instanceof ONNXTransformerJsModel) {
+      return new HuggingFaceLocal_TextRewriterTask({
+        text,
+        prompt,
+        model,
+        name,
+      });
     }
   }
 }
