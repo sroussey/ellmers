@@ -4,13 +4,15 @@
 
 - We need to have tasks, and some tasks will be chained together as a "strategy" or list of subtasks.
 - We need to sometime run tasks in parallel and sometimes in series.
-- Tasks can take a long time, so we need to be able to save the state of a task and resume it later.
-- We do NOT need to be able to run tasks in a distributed manner. v2 thing
+- Tasks can take a long time, so we need to be able to save the state of a task run and resume it later.
+- We do NOT need to be able to run tasks in a distributed manner. v1.2 thing
 - A task and a task list should have a similar interface.
 - We will want to send a task arguments, if it is a task list, some of those args might be for the subtasks.
 - We need progress events.
 - Authentication and authorization will be supplied to the task by the task runner.
 - convert the task list to a listr2 task list
+- be able to represent in a UI (graph, tree, whatever).
+- Be able to generate the full graph of tasks and subtasks before running them (though runtime may alter them)
 
 ## Questions
 

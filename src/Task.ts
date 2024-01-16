@@ -1,4 +1,23 @@
+//    ****************************************************************************
+//    *   ELMERS: Embedding Language Model Experiential Retrieval Service        *
+//    *                                                                          *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
+//    ****************************************************************************
+
 import { EventEmitter } from "eventemitter3";
+
+/**
+ * WARNING!
+ * TODO!
+ *
+ * Task input and output is not type safe. It is super brittle and hacky. There is no way to tranform between
+ * between them. Input and output are dictionaries, so right now an output of `text` will overwrite an input of `text`.
+ * But there overwrites are at runtime AFTER the tasks are created. This is because everything happens in the
+ * constructor because I was lazy and not sure what I wanted. I still don't. I am thinking about a visual
+ * UI editor for tasks where you can map inputs and outputs, see what will run before you run it, etc.
+ *
+ * Also, task promenence is not tracked which is terrible for keeping state and caching intermediate results.
+ */
 
 export enum TaskStatus {
   PENDING = "NEW",
