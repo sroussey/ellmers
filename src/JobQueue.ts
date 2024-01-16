@@ -137,6 +137,8 @@ export class PostgresqlJob extends Job {
   }
 }
 
+//  Do not use "AUTOCOMMIT" mode for any of the below, put inside a transaction
+
 export class PostgresqlJobQueue extends JobQueue {
   public add(job: Job): void {
     const AddQuery = `

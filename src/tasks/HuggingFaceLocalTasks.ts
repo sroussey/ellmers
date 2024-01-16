@@ -120,10 +120,9 @@ export class HuggingFaceLocal_EmbeddingTask extends Task {
         `Embedding vector length does not match model dimensions v${vector.size} != m${this.model.dimensions}`
       );
     } else {
-      this.output = vector;
+      this.output = vector.data;
       this.emit("complete");
     }
-    this.output = Array.from(vector.data);
   }
 }
 

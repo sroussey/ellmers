@@ -98,7 +98,7 @@ export function AddSampleCommand(program: Command) {
       await runTaskToListr(task);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
-      console.log(task.output);
+      console.log(task.output[0]);
     });
 
   program
