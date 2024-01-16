@@ -16,9 +16,9 @@ import {
   SummarizeTask,
 } from "#/tasks/FactoryTasks";
 import {
-  EmbeddingMultiModelStrategy,
-  RewriterMultiModelStrategy,
-  SummarizeMultiModelStrategy,
+  EmbeddingStrategy,
+  RewriterStrategy,
+  SummarizeStrategy,
 } from "#/tasks/Strategies";
 
 export function AddSampleCommand(program: Command) {
@@ -92,7 +92,7 @@ export function AddSampleCommand(program: Command) {
         let models = allModels.filter(
           (m) => m.pipeline == "feature-extraction"
         );
-        task = new EmbeddingMultiModelStrategy({ text, models });
+        task = new EmbeddingStrategy({ text, models });
       }
 
       await runTaskToListr(task);
@@ -117,7 +117,7 @@ export function AddSampleCommand(program: Command) {
         }
       } else {
         let models = allModels.filter((m) => m.pipeline == "summarization");
-        task = new SummarizeMultiModelStrategy({ text, models });
+        task = new SummarizeStrategy({ text, models });
       }
 
       await runTaskToListr(task);
@@ -147,7 +147,7 @@ export function AddSampleCommand(program: Command) {
             m.pipeline === "text-generation" ||
             m.pipeline === "text2text-generation"
         );
-        task = new RewriterMultiModelStrategy({
+        task = new RewriterStrategy({
           text,
           prompt: options.instruction,
           models,

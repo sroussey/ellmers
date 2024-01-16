@@ -7,14 +7,9 @@
 
 import { Model } from "#/Model";
 import { ParallelTaskList, Strategy } from "#/Task";
-import {
-  EmbeddingTask,
-  RewriterTask,
-  SummarizeTask,
-  TextGenerationTask,
-} from "./FactoryTasks";
+import { EmbeddingTask, RewriterTask, SummarizeTask } from "./FactoryTasks";
 
-export class EmbeddingMultiModelStrategy extends Strategy {
+export class EmbeddingStrategy extends Strategy {
   constructor(input: { text: string; models: Model[]; name?: string }) {
     const name = input.name || `Vary Embedding content`;
     super({
@@ -31,7 +26,7 @@ export class EmbeddingMultiModelStrategy extends Strategy {
   }
 }
 
-export class SummarizeMultiModelStrategy extends Strategy {
+export class SummarizeStrategy extends Strategy {
   constructor(input: { text: string; models: Model[]; name?: string }) {
     const name = input.name || `Vary Summarize content`;
     super({
@@ -48,7 +43,7 @@ export class SummarizeMultiModelStrategy extends Strategy {
   }
 }
 
-export class RewriterMultiModelStrategy extends Strategy {
+export class RewriterStrategy extends Strategy {
   constructor(input: {
     text: string;
     prompt: string;
