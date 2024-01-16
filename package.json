@@ -3,7 +3,7 @@
   "module": "elmers",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "^1.0.1",
+    "@types/bun": "^1.0.2",
     "@types/uuid": "^9.0.7"
   },
   "peerDependencies": {
