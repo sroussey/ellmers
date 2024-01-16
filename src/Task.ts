@@ -80,7 +80,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     this.#output = val;
   }
 
-  abstract run(): Promise<void>;
+  abstract run(): Promise<any>;
 }
 
 export abstract class MultiTaskBase extends TaskBase {
@@ -147,6 +147,7 @@ export class LambdaTask extends Task {
     this.emit("start");
     await this.#runner();
     this.emit("complete");
+    return this.output;
   }
 }
 

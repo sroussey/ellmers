@@ -150,7 +150,7 @@ export function AddSampleCommand(program: Command) {
         task = new RewriterStrategy({
           text,
           prompt: options.instruction,
-          models,
+          model: models,
         });
       }
 

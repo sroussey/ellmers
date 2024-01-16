@@ -43,25 +43,45 @@ export class SummarizeStrategy extends Strategy {
   }
 }
 
+interface RewriterStrategyInput {
+  text: string;
+  name?: string;
+  prompt?: string | string[];
+  model?: Model | Model[];
+  prompt_model?: { prompt: string; model: Model }[];
+}
+
 export class RewriterStrategy extends Strategy {
-  constructor(input: {
-    text: string;
-    prompt: string;
-    models: Model[];
-    name?: string;
-  }) {
-    const {
-      name = input.name || `Vary Rewriter content`,
-      prompt,
-      text,
-    } = input;
+  constructor(input: RewriterStrategyInput) {
+    const { name = input.name || `Vary Rewriter content`, text } = input;
+    const pairs = [];
+
+    if (input.prompt_model) {
+      if (Array.isArray(input.prompt_model)) {
+        pairs.push(...input.prompt_model);
+      } else {
+        pairs.push(input.prompt_model);
+      }
+    } else {
+      if (!input.prompt || !input.model) throw new Error("Invalid input");
+      const models = Array.isArray(input.model) ? input.model : [input.model];
+      const prompts = Array.isArray(input.prompt)
+        ? input.prompt
+        : [input.prompt];
+      for (const model of models) {
+        for (const prompt of prompts) {
+          pairs.push({ prompt, model });
+        }
+      }
+    }
+
     super({
       name: name + " In Parallel",
       tasks: [
         new ParallelTaskList({
           name: name,
-          tasks: input.models.map(
-            (model) => new RewriterTask({ text, prompt, model })
+          tasks: pairs.map(
+            ({ prompt, model }) => new RewriterTask({ text, prompt, model })
           ),
         }),
       ],
