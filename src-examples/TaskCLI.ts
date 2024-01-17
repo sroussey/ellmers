@@ -5,11 +5,10 @@
 //    ****************************************************************************
 
 import { Command } from "commander";
-
 import { allModels } from "#/storage/InMemoryStorage";
 import { runTaskToListr } from "#/util/TaskStreamToListr2";
 import { DownloadTask } from "#/tasks/HuggingFaceLocalTasks";
-import { LambdaTask, ParallelTaskList, Strategy } from "#/Task";
+import { ParallelTaskList } from "#/Task";
 import {
   EmbeddingTask,
   RewriterTask,
@@ -17,9 +16,11 @@ import {
 } from "#/tasks/FactoryTasks";
 import {
   EmbeddingStrategy,
+  RewriterEmbeddingStrategy,
   RewriterStrategy,
   SummarizeStrategy,
 } from "#/tasks/Strategies";
+import { sleep } from "#/util/Misc";
 
 export function AddSampleCommand(program: Command) {
   program
@@ -51,27 +52,13 @@ export function AddSampleCommand(program: Command) {
       if (!models.length) {
         models = allModels;
       }
-      const task = new Strategy({
-        name: "Download Command",
-        tasks: [
-          new LambdaTask({
-            name: "Do something first",
-            run: async () => {},
-          }),
-          new ParallelTaskList({
-            name: "Download Models",
-            tasks: models.map((model) => new DownloadTask({ model })),
-          }),
-          new LambdaTask({
-            name: "Do something else",
-            run: async () => {},
-          }),
-        ],
-      });
-
+      const task = new ParallelTaskList(
+        { name: "Download Models" },
+        models.map((model) => new DownloadTask({}, { model }))
+      );
       await runTaskToListr(task);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await sleep(100);
     });
 
   program
@@ -84,7 +71,7 @@ export function AddSampleCommand(program: Command) {
       if (options.model) {
         const model = allModels.find((m) => m.name == options.model);
         if (model) {
-          task = new EmbeddingTask({ model, text });
+          task = new EmbeddingTask({ name: "Embed one" }, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
@@ -92,13 +79,16 @@ export function AddSampleCommand(program: Command) {
         let models = allModels.filter(
           (m) => m.pipeline == "feature-extraction"
         );
-        task = new EmbeddingStrategy({ text, models });
+        task = new EmbeddingStrategy(
+          { name: "Embed several" },
+          { text, models }
+        );
       }
 
       await runTaskToListr(task);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      console.log(task.output[0]);
+      await sleep(100);
+      console.log(task.output);
     });
 
   program
@@ -111,19 +101,19 @@ export function AddSampleCommand(program: Command) {
       if (options.model) {
         const model = allModels.find((m) => m.name == options.model);
         if (model) {
-          task = new SummarizeTask({ model, text });
+          task = new SummarizeTask({ name: "Summarize" }, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
         let models = allModels.filter((m) => m.pipeline == "summarization");
-        task = new SummarizeStrategy({ text, models });
+        task = new SummarizeStrategy({ name: "Summarize" }, { text, models });
       }
 
       await runTaskToListr(task);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      console.log(task.output[0]);
+      await sleep(100);
+      console.log(task.output);
     });
 
   program
@@ -137,7 +127,10 @@ export function AddSampleCommand(program: Command) {
       if (options.model) {
         const model = allModels.find((m) => m.name == options.model);
         if (model) {
-          task = new RewriterTask({ model, text, prompt: options.instruction });
+          task = new RewriterTask(
+            { name: "Rewrite" },
+            { model, text, prompt: options.instruction }
+          );
         } else {
           program.error(`Unknown model ${options.model}`);
         }
@@ -147,16 +140,54 @@ export function AddSampleCommand(program: Command) {
             m.pipeline === "text-generation" ||
             m.pipeline === "text2text-generation"
         );
-        task = new RewriterStrategy({
-          text,
-          prompt: options.instruction,
-          model: models,
-        });
+        task = new RewriterStrategy(
+          { name: "Rewrite" },
+          {
+            text,
+            prompt: options.instruction,
+            model: models,
+          }
+        );
       }
 
       await runTaskToListr(task);
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      console.log(task.output[0]);
+      await sleep(100);
+      console.log("rewrite output", task.output);
+    });
+
+  program
+    .command("test")
+    .description("test")
+    .argument("<text>", "text to rewrite")
+    .action(async (text) => {
+      const prompt = [
+        "Rewrite the following text:",
+        "Rewrite the following and make it more descriptive:",
+      ];
+      const prompt_model = allModels.filter(
+        (m) =>
+          m.pipeline === "text-generation" ||
+          m.pipeline === "text2text-generation"
+      );
+
+      const embed_model = allModels.filter(
+        (m) => m.pipeline === "feature-extraction"
+      );
+
+      const task = new RewriterEmbeddingStrategy(
+        { name: "Test" },
+        {
+          text,
+          prompt,
+          prompt_model,
+          embed_model,
+        }
+      );
+
+      await runTaskToListr(task);
+
+      await sleep(100);
+      console.log(task.output);
     });
 }

@@ -5,69 +5,76 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
+/*
+
+TODO: Maybe have strategies generate a list of tasks for a task run for save/restore
+not sure, just thinking out loud. I am wondering how to propegate user_id etc
+later on. And thinking about how to save the task tree to disc to restore later.
+
+*/
 import { Model } from "#/Model";
-import { ParallelTaskList, Strategy } from "#/Task";
+import {
+  IStrategy,
+  ParallelTaskList,
+  SerialTaskList,
+  Strategy,
+  TaskStream,
+} from "#/Task";
+import { forceArray } from "#/util/Misc";
 import { EmbeddingTask, RewriterTask, SummarizeTask } from "./FactoryTasks";
 
 export class EmbeddingStrategy extends Strategy {
-  constructor(input: { text: string; models: Model[]; name?: string }) {
-    const name = input.name || `Vary Embedding content`;
-    super({
-      name: name + " In Parallel",
-      tasks: [
-        new ParallelTaskList({
-          name: name,
-          tasks: input.models.map(
-            (model) => new EmbeddingTask({ text: input.text, model })
-          ),
-        }),
-      ],
-    });
+  constructor(
+    config: Partial<IStrategy>,
+    input: { text: string; models: Model[] }
+  ) {
+    const name = config.name || `Vary Embedding content`;
+    super(config, [
+      new ParallelTaskList(
+        { name: name + " In Parallel" },
+        input.models.map(
+          (model) => new EmbeddingTask({}, { text: input.text, model })
+        )
+      ),
+    ]);
   }
 }
 
 export class SummarizeStrategy extends Strategy {
-  constructor(input: { text: string; models: Model[]; name?: string }) {
-    const name = input.name || `Vary Summarize content`;
-    super({
-      name: name + " In Parallel",
-      tasks: [
-        new ParallelTaskList({
-          name: name,
-          tasks: input.models.map(
-            (model) => new SummarizeTask({ text: input.text, model })
-          ),
-        }),
-      ],
-    });
+  constructor(
+    config: Partial<IStrategy>,
+    input: { text: string; models: Model[] }
+  ) {
+    const name = config.name || `Vary Summarize content`;
+    super({ name: name + " In Parallel" }, [
+      new ParallelTaskList(
+        { name },
+        input.models.map(
+          (model) => new SummarizeTask({}, { text: input.text, model })
+        )
+      ),
+    ]);
   }
 }
 
 interface RewriterStrategyInput {
   text: string;
-  name?: string;
   prompt?: string | string[];
   model?: Model | Model[];
-  prompt_model?: { prompt: string; model: Model }[];
+  prompt_model_pair?: { prompt: string; model: Model }[];
 }
 
 export class RewriterStrategy extends Strategy {
-  constructor(input: RewriterStrategyInput) {
-    const { name = input.name || `Vary Rewriter content`, text } = input;
-    const pairs = [];
-
-    if (input.prompt_model) {
-      if (Array.isArray(input.prompt_model)) {
-        pairs.push(...input.prompt_model);
-      } else {
-        pairs.push(input.prompt_model);
-      }
+  constructor(config: Partial<IStrategy>, input: RewriterStrategyInput) {
+    const name = config.name || `Vary Rewriter content`;
+    const text = input.text;
+    let pairs: { prompt: string; model: Model }[] = [];
+    if (input.prompt_model_pair) {
+      pairs = forceArray(input.prompt_model_pair);
     } else {
       if (!input.prompt || !input.model) throw new Error("Invalid input");
-      const models = Array.isArray(input.model) ? input.model : [input.model];
-      const prompts = Array.isArray(input.prompt)
-        ? input.prompt
-        : [input.prompt];
+      const models = forceArray(input.model);
+      const prompts = forceArray(input.prompt);
       for (const model of models) {
         for (const prompt of prompts) {
           pairs.push({ prompt, model });
@@ -75,16 +82,79 @@ export class RewriterStrategy extends Strategy {
       }
     }
 
-    super({
-      name: name + " In Parallel",
-      tasks: [
-        new ParallelTaskList({
-          name: name,
-          tasks: pairs.map(
-            ({ prompt, model }) => new RewriterTask({ text, prompt, model })
-          ),
-        }),
-      ],
-    });
+    super({ name: name + " In Parallel" }, [
+      new ParallelTaskList(
+        { name: name },
+        pairs.map(
+          ({ prompt, model }) => new RewriterTask({}, { text, prompt, model })
+        )
+      ),
+    ]);
+  }
+}
+
+interface RewriterEmbeddingStrategyInput {
+  text: string;
+  prompt?: string | string[];
+  prompt_model?: Model | Model[];
+  embed_model?: Model | Model[];
+  prompt_model_tuple?: {
+    prompt: string;
+    prompt_model: Model;
+    embed_model: Model;
+  }[];
+}
+
+export class RewriterEmbeddingStrategy extends Strategy {
+  constructor(
+    config: Partial<IStrategy>,
+    input: RewriterEmbeddingStrategyInput
+  ) {
+    const name = config.name || `RewriterEmbeddingStrategy`;
+    const text = input.text;
+    let tasks: TaskStream = [];
+    if (input.prompt_model_tuple) {
+      const tuples = forceArray(input.prompt_model_tuple);
+      tasks = [
+        new Strategy(
+          { name: name + " In Parallel" },
+          tuples.map(({ prompt, prompt_model, embed_model }) => {
+            return new SerialTaskList({ name }, [
+              new RewriterTask(
+                { name: name + " Rewriter" },
+                { text, prompt, model: prompt_model }
+              ),
+              new EmbeddingTask(
+                { name: name + " Embedding" },
+                { text, model: embed_model }
+              ),
+            ]);
+          })
+        ),
+      ];
+    } else {
+      if (!input.prompt || !input.prompt_model || !input.embed_model)
+        throw new Error("Invalid input");
+      const prompt_model = forceArray(input.prompt_model);
+      const embed_model = forceArray(input.embed_model);
+      const prompts = forceArray(input.prompt);
+      console.log("input", input, "\n\n\n\n\n");
+      for (const prompt of prompts) {
+        tasks.push(
+          new Strategy({ name }, [
+            new RewriterStrategy(
+              { name: name + " Rewriter" },
+              { text, prompt, model: prompt_model }
+            ),
+            new EmbeddingStrategy(
+              { name: name + " Embedding" },
+              { text, models: embed_model }
+            ),
+          ])
+        );
+      }
+    }
+
+    super(config, tasks, input);
   }
 }

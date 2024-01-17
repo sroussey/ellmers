@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model } from "#/Model";
-import { Task } from "#/Task";
+import { ITask, Task } from "#/Task";
 import {
   ONNXTransformerJsModel,
   HuggingFaceLocal_EmbeddingTask,
@@ -28,70 +28,72 @@ class FactoryTask extends Task {
  * This is a task that generates an embedding for a single piece of text
  */
 export class EmbeddingTask extends FactoryTask {
-  constructor(input: { text: string; model: Model; name?: string }) {
-    const { text, model, name } = input;
-    super({ name: `Embedding ${model.name}` });
+  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+    const { text, model } = input;
+    super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
-      return new HuggingFaceLocal_EmbeddingTask({ text, model, name });
+      return new HuggingFaceLocal_EmbeddingTask(config, { text, model });
     }
   }
 }
 
 export class TextGenerationTask extends FactoryTask {
-  constructor(input: { text: string; model: Model; name?: string }) {
-    const { text, model, name } = input;
-    super({ name: "Text Generation" });
+  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+    const { text, model } = input;
+    super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
-      return new HuggingFaceLocal_TextGenerationTask({ text, model, name });
+      return new HuggingFaceLocal_TextGenerationTask(config, { text, model });
     }
   }
 }
 
 export class SummarizeTask extends FactoryTask {
-  constructor(input: { text: string; model: Model; name?: string }) {
-    const { text, model, name } = input;
-    super({ name: "Summarization" });
+  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+    const { text, model } = input;
+    super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
-      return new HuggingFaceLocal_SummarizationTask({ text, model, name });
+      return new HuggingFaceLocal_SummarizationTask(config, { text, model });
     }
   }
 }
 
 export class RewriterTask extends FactoryTask {
-  constructor(input: {
-    text: string;
-    prompt: string;
-    model: Model;
-    name?: string;
-  }) {
-    const { text, prompt, model, name } = input;
-    super({ name: "Rewriter" });
+  constructor(
+    config: Partial<ITask>,
+    input: {
+      text: string;
+      prompt: string;
+      model: Model;
+    }
+  ) {
+    const { text, prompt, model } = input;
+    super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
-      return new HuggingFaceLocal_TextRewriterTask({
+      return new HuggingFaceLocal_TextRewriterTask(config, {
         text,
         prompt,
         model,
-        name,
       });
     }
   }
 }
 
 export class QuestionAnswerTask extends FactoryTask {
-  constructor(input: {
-    text: string;
-    context: string;
-    model: Model;
-    name?: string;
-  }) {
-    const { text, context, model, name } = input;
-    super({ name: "Summarization" });
+  constructor(
+    config: Partial<ITask>,
+    input: {
+      text: string;
+      context: string;
+      model: Model;
+    }
+  ) {
+    const { text, context, model } = input;
+    super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
-      return new HuggingFaceLocal_QuestionAnswerTask({
+      return new HuggingFaceLocal_QuestionAnswerTask(config, {
         text,
         context,
         model,
-        name,
       });
     }
   }

@@ -82,7 +82,7 @@ export const runTaskToListr = async (task: TaskStreamable) => {
     concurrent: false,
     rendererOptions: { timer: PRESET_TIMER },
   });
-  listrTasks.run();
+  listrTasks.run({});
   await new Promise((resolve) => setTimeout(resolve, 100));
-  await task.run();
+  await task.run({});
 };

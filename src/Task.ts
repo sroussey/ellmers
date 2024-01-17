@@ -12,11 +12,11 @@ import { EventEmitter } from "eventemitter3";
  *
  * Task input and output is not type safe. It is super brittle and hacky. There is no way to tranform between
  * between them. Input and output are dictionaries, so right now an output of `text` will overwrite an input of `text`.
- * But there overwrites are at runtime AFTER the tasks are created. This is because everything happens in the
+ * But those overwrites are at runtime AFTER the tasks are created. This is because everything happens in the
  * constructor because I was lazy and not sure what I wanted. I still don't. I am thinking about a visual
  * UI editor for tasks where you can map inputs and outputs, see what will run before you run it, etc.
  *
- * Also, task promenence is not tracked which is terrible for keeping state and caching intermediate results.
+ * Also, task provenance is not tracked which is terrible for keeping state and caching intermediate results.
  */
 
 export enum TaskStatus {
@@ -28,7 +28,7 @@ export enum TaskStatus {
 
 export interface ITask {
   id: unknown;
-  name: string;
+  name?: string;
   input: any;
   status: TaskStatus;
   progress: number;
@@ -38,7 +38,6 @@ export interface ITask {
 }
 
 export interface ITaskList extends ITask {
-  tasks: Task[];
   ordering: "serial" | "parallel";
 }
 
@@ -64,21 +63,30 @@ export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
 
 // ===============================================================================
 
+interface TaskBaseConfig {
+  name?: string;
+  id?: unknown;
+}
+
+interface TaskBaseInput {
+  [key: string]: any;
+}
+
 abstract class TaskBase extends EventEmitter<TaskEvents> {
   id: unknown;
-  name: string;
-  input: any;
+  name: string | undefined;
+  input: TaskBaseInput;
   #output: any;
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
   completedAt: Date | null = null;
   error: string | undefined = undefined;
-  constructor(input: Partial<ITask> & Pick<ITask, "name">) {
+  constructor(config: TaskBaseConfig, input: object = {}) {
     super();
     this.input = input;
-    this.name = input.name;
-    this.id = input.id;
+    this.name = config.name;
+    this.id = config.id;
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
@@ -99,68 +107,23 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     this.#output = val;
   }
 
-  abstract run(): Promise<any>;
-}
-
-export abstract class MultiTaskBase extends TaskBase {
-  tasks: TaskStream = [];
-  get output(): any[] {
-    return this.tasks.map((task) => {
-      return { output: task.output, name: task.name };
-    });
-  }
-
-  constructor(
-    input: Partial<ITaskList | IStrategy> &
-      Pick<ITaskList | IStrategy, "name" | "tasks">
-  ) {
-    super(input);
-    this.tasks = input.tasks;
-    const total = this.tasks.length;
-    let completed = 0;
-    let errors = 0;
-    this.tasks.forEach((task) => {
-      task.on("start", () => {
-        if (this.status === TaskStatus.PENDING) {
-          this.emit("start");
-        }
-      });
-      task.on("complete", () => {
-        completed++;
-        if (completed === total) {
-          if (errors === 0) {
-            this.emit("complete");
-          } else {
-            this.emit("error", this.error);
-          }
-        }
-      });
-      task.on("error", (error) => {
-        completed++;
-        errors++;
-        this.error = this.error ? this.error + " & " + error : error;
-        if (completed === total) {
-          this.emit("error", this.error);
-        }
-      });
-    });
-  }
+  abstract run(input: any): Promise<any>;
 }
 
 // ===============================================================================
 
 export abstract class Task extends TaskBase implements ITask {
   readonly kind = "TASK";
-  public job_id: unknown;
 }
 
 export class LambdaTask extends Task {
   #runner: () => Promise<void>;
   constructor(
-    input: Partial<ITask> & Pick<ITask, "name"> & { run: () => Promise<void> }
+    config: Partial<ITask> & { run: () => Promise<void> },
+    input: TaskBaseInput = {}
   ) {
-    super(input);
-    this.#runner = input.run;
+    super(config, input);
+    this.#runner = config.run;
   }
   async run() {
     this.emit("start");
@@ -170,59 +133,150 @@ export class LambdaTask extends Task {
   }
 }
 
+// ===============================================================================
+
+export abstract class MultiTaskBase extends TaskBase {
+  tasks: TaskStream = [];
+  protected started = 0;
+  protected completed = 0;
+  protected total = 0;
+  protected errors = 0;
+
+  constructor(
+    config: Partial<ITask>,
+    tasks: TaskStream,
+    input: TaskBaseInput = {}
+  ) {
+    super(config, input);
+    this.tasks = tasks;
+    this.tasks.forEach((task) => {
+      task.on("start", () => {
+        if (this.status === TaskStatus.PENDING) {
+          this.emit("start");
+        }
+      });
+      task.on("complete", () => {
+        this.completed++;
+      });
+      task.on("error", (error) => {
+        this.completed++;
+        this.errors++;
+        this.error = this.error ? this.error + " & " + error : error;
+      });
+    });
+  }
+}
+
+// if (completed === total) {
+//   if (onlyFailOnAllErrors) {
+//     if (errors === total) {
+//       this.emit("error", this.error);
+//     } else {
+//       this.emit("complete");
+//     }
+//   } else {
+//     if (errors === 0) {
+//       this.emit("complete");
+//     } else {
+//       this.emit("error", this.error);
+//     }
+//   }
+// }
+
+// this.error = this.error ? this.error + " & " + error : error;
+// if (completed === total) {
+//   if (onlyFailOnAllErrors) {
+//     if (errors === total) {
+//       this.emit("error", this.error);
+//     } else {
+//       this.emit("complete");
+//     }
+//   } else {
+//     if (errors === 0) {
+//       this.emit("complete");
+//     } else {
+//       this.emit("error", this.error);
+//     }
+//   }
+// }
+
+// ===============================================================================
+
 export abstract class TaskList extends MultiTaskBase implements ITask {
   readonly kind = "TASK_LIST";
   ordering: "serial" | "parallel" = "serial";
   constructor(
-    input: Partial<ITaskList> & Pick<ITaskList, "name" | "ordering" | "tasks">
+    config: Partial<ITaskList> & Pick<ITaskList, "ordering">,
+    tasks: Task[],
+    input: TaskBaseInput = {}
   ) {
-    const { ordering = "serial", ...rest } = input;
-    super(rest);
-    this.ordering = input.ordering;
+    const { ordering = "serial", ...rest } = config;
+    super(config, tasks, input);
+    this.ordering = config.ordering;
   }
 }
 
-// ===============================================================================
-
 export class SerialTaskList extends TaskList {
-  constructor(input: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
-    super({ ...input, ordering: "serial" });
+  constructor(
+    config: Partial<ITaskList>,
+    tasks: Task[],
+    input: TaskBaseInput = {}
+  ) {
+    super({ ...config, ordering: "serial" }, tasks, input);
   }
-  async run() {
+  async run(input: any) {
+    this.emit("start");
     const total = this.tasks.length;
-    let completed = 0;
+    input = Object.assign({}, this.input, input);
     for (const task of this.tasks) {
-      const taskwait = new Promise((resolve) => {
-        task.on("complete", resolve);
-        task.on("error", resolve);
-      });
-      task.run();
-      await taskwait;
-      completed++;
-      this.emit("progress", completed / total);
+      await task.run(input);
+      if (this.tasks[this.tasks.length - 1] == task) {
+        // if last task, their result is our result
+        this.output = task.output;
+        break;
+      }
+      if (this.errors) {
+        this.emit("error", this.error);
+        break;
+      }
+      input = Object.assign({}, input, task.output);
+      this.emit("progress", this.completed / total);
     }
+    this.emit("complete");
   }
 }
 
 export class ParallelTaskList extends TaskList {
-  constructor(input: Partial<ITaskList> & Pick<ITaskList, "name" | "tasks">) {
-    super({ ...input, ordering: "parallel" });
+  constructor(
+    config: Partial<ITaskList>,
+    tasks: Task[],
+    input: TaskBaseInput = {}
+  ) {
+    super({ ...config, ordering: "parallel" }, tasks, input);
   }
-  async run() {
+  async run(input: any) {
+    this.emit("start");
     const total = this.tasks.length;
-    let completed = 0;
     await Promise.all(
       this.tasks.map(async (task) => {
-        const taskwait = new Promise((resolve) => {
-          task.on("complete", resolve);
-          task.on("error", resolve);
-        });
-        task.run();
-        await taskwait;
-        completed++;
-        this.emit("progress", completed / total);
+        await task.run(input);
+        this.emit("progress", this.completed / total);
       })
     );
+
+    const outputs = this.tasks.map((task) => task.output || {}) || [];
+    const result: { [key: string]: any[] } = {};
+    outputs.forEach((item) => {
+      Object.keys(item).forEach((key) => {
+        if (!result[key]) {
+          result[key] = [];
+        }
+        result[key].push(item[key]);
+      });
+    });
+    this.output = result;
+    if (this.errors == total) this.emit("error", this.error);
+    this.emit("complete");
   }
 }
 
@@ -230,24 +284,35 @@ export class ParallelTaskList extends TaskList {
 
 export class Strategy extends MultiTaskBase implements ITask {
   readonly kind = "STRATEGY";
-  constructor(input: Partial<IStrategy> & Pick<IStrategy, "name" | "tasks">) {
-    super(input);
+  constructor(
+    config: Partial<IStrategy>,
+    tasks: TaskStream,
+    input: TaskBaseInput = {}
+  ) {
+    super(config, tasks, input);
   }
-  async run() {
+  async run(input: any) {
+    this.emit("start");
     const total = this.tasks.length;
-    let completed = 0;
+    input = Object.assign({}, this.input, input);
     for (const task of this.tasks) {
-      const taskwait = new Promise((resolve) => {
-        task.on("complete", resolve);
-        task.on("error", resolve);
-      });
-      task.run();
-      await taskwait;
-      completed++;
-      this.emit("progress", completed / total);
+      await task.run(input);
+      if (this.tasks[this.tasks.length - 1] == task) {
+        // if last task, their result is our result
+        this.output = task.output;
+      }
+      if (this.errors) {
+        this.emit("error", this.error);
+        break;
+      }
+      input = Object.assign({}, input, task.output);
+      this.emit("progress", this.completed / total);
     }
+    this.emit("complete");
   }
 }
+
+// ===============================================================================
 
 export type TaskStreamable = Task | TaskList | Strategy;
 export type TaskStream = TaskStreamable[];

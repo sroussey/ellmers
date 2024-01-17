@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model, ModelProcessorType } from "#/Model";
-import { Task } from "#/Task";
+import { ITask, Task } from "#/Task";
 import {
   pipeline,
   type PipelineType,
@@ -65,17 +65,27 @@ const getPipeline = async (
   });
 };
 
+// ===============================================================================
+
 export class DownloadTask extends Task {
   readonly model: ONNXTransformerJsModel;
-  constructor(input: { model: ONNXTransformerJsModel; name?: string }) {
-    super({ name: input.name || `Downloading ${input.model.name}` });
+  constructor(
+    config: Partial<ITask>,
+    input: { model: ONNXTransformerJsModel }
+  ) {
+    config.name = config.name || `Downloading ${input.model.name}`;
+    super(config, input);
     this.model = input.model;
   }
 
   public async run() {
-    this.emit("start");
-    await getPipeline(this, this.model);
-    this.emit("complete");
+    try {
+      this.emit("start");
+      await getPipeline(this, this.model);
+      this.emit("complete");
+    } catch (e) {
+      this.emit("error", String(e));
+    }
   }
 }
 
@@ -87,16 +97,12 @@ export class DownloadTask extends Task {
 export class HuggingFaceLocal_EmbeddingTask extends Task {
   readonly text: string;
   readonly model: ONNXTransformerJsModel;
-  constructor(input: {
-    text: string;
-    model: ONNXTransformerJsModel;
-    name?: string;
-  }) {
-    super({
-      name:
-        input.name ||
-        `Embedding content via ${input.model.name} : ${input.model.pipeline}`,
-    });
+  constructor(
+    config: Partial<ITask>,
+    input: { text: string; model: ONNXTransformerJsModel }
+  ) {
+    config.name = config.name || `Embedding content via ${input.model.name}`;
+    super(config, input);
     this.model = input.model;
     this.text = input.text;
   }
@@ -120,25 +126,28 @@ export class HuggingFaceLocal_EmbeddingTask extends Task {
         `Embedding vector length does not match model dimensions v${vector.size} != m${this.model.dimensions}`
       );
     } else {
-      this.output = vector.data;
+      this.output = { vector: vector.data };
       this.emit("complete");
     }
   }
 }
 
 abstract class TextGenerationTaskBase extends Task {
-  protected readonly text: string;
-  protected readonly model: ONNXTransformerJsModel;
-  constructor(input: {
-    text: string;
-    model: ONNXTransformerJsModel;
-    name?: string;
-  }) {
-    super({
-      name:
-        input.name ||
-        `Text to text generation content via ${input.model.name} : ${input.model.pipeline}`,
-    });
+  protected text: string;
+  protected model: ONNXTransformerJsModel;
+  constructor(
+    config: Partial<ITask>,
+    input: { text: string; model: ONNXTransformerJsModel }
+  ) {
+    super(
+      {
+        ...config,
+        name:
+          config.name ||
+          `Text to text generation content via ${input.model.name} : ${input.model.pipeline}`,
+      },
+      input
+    );
     this.model = input.model;
     this.text = input.text;
   }
@@ -163,7 +172,9 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
       results = [results];
     }
 
-    this.output = (results[0] as TextGenerationSingle)?.generated_text;
+    this.output = {
+      text: (results[0] as TextGenerationSingle)?.generated_text,
+    };
     this.emit("complete");
   }
 }
@@ -174,22 +185,22 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
-  protected readonly prompt: string;
-  constructor(input: {
-    text: string;
-    prompt: string;
-    model: ONNXTransformerJsModel;
-    name?: string;
-  }) {
-    const { name, text, prompt, model } = input;
-    super({
-      name:
-        name ||
-        `Text to text rewriting content via ${model.name} : ${model.pipeline}`,
-      text,
-      model,
-    });
+  protected prompt: string;
+  constructor(
+    config: Partial<ITask>,
+    input: {
+      text: string;
+      prompt: string;
+      model: ONNXTransformerJsModel;
+    }
+  ) {
+    const { text, prompt, model } = input;
+    config.name =
+      config.name ||
+      `Text to text rewriting content via ${model.name} : ${model.pipeline}`;
+    super(config, input);
     this.prompt = prompt;
+    this.text = text;
   }
   public async run() {
     this.emit("start");
@@ -206,11 +217,12 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
       results = [results];
     }
 
-    this.output = (results[0] as TextGenerationSingle)?.generated_text;
-    if (this.output == promptedtext) {
+    const text = (results[0] as TextGenerationSingle)?.generated_text;
+    if (text == promptedtext) {
       this.output = null;
       this.emit("error", "Rewriter failed to generate new text");
     } else {
+      this.output = { text };
       this.emit("complete");
     }
   }
@@ -236,7 +248,7 @@ export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
       results = [results];
     }
 
-    this.output = (results[0] as SummarizationSingle)?.summary_text;
+    this.output = { text: (results[0] as SummarizationSingle)?.summary_text };
     this.emit("complete");
   }
 }
@@ -247,20 +259,18 @@ export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
  * Model pipeline must be "question-answering"
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
-  protected readonly context: string;
-  constructor(input: {
-    text: string;
-    context: string;
-    model: ONNXTransformerJsModel;
-    name?: string;
-  }) {
-    super({
-      name:
-        input.name ||
-        `Question and Answer content via ${input.model.name} : ${input.model.pipeline}`,
-      text: input.text,
-      model: input.model,
-    });
+  protected context: string;
+  constructor(
+    config: Partial<ITask>,
+    input: {
+      text: string;
+      context: string;
+      model: ONNXTransformerJsModel;
+    }
+  ) {
+    config.name =
+      config.name || `Question and Answer content via ${input.model.name}`;
+    super(config, input);
     this.context = input.context;
   }
 
@@ -277,7 +287,9 @@ export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase 
       results = [results];
     }
 
-    this.output = (results[0] as DocumentQuestionAnsweringSingle)?.answer;
+    this.output = {
+      text: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
+    };
     this.emit("complete");
   }
 }
