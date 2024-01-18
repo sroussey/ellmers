@@ -24,11 +24,16 @@ class FactoryTask extends Task {
   }
 }
 
+interface EmbeddingTaskInput {
+  text: string;
+  model: Model;
+}
 /**
  * This is a task that generates an embedding for a single piece of text
  */
 export class EmbeddingTask extends FactoryTask {
-  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+  declare input: EmbeddingTaskInput;
+  constructor(config: Partial<ITask>, input: EmbeddingTaskInput) {
     const { text, model } = input;
     super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
@@ -37,8 +42,13 @@ export class EmbeddingTask extends FactoryTask {
   }
 }
 
+interface TextGenerationTaskInput {
+  text: string;
+  model: Model;
+}
 export class TextGenerationTask extends FactoryTask {
-  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+  declare input: TextGenerationTaskInput;
+  constructor(config: Partial<ITask>, input: TextGenerationTaskInput) {
     const { text, model } = input;
     super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
@@ -48,7 +58,8 @@ export class TextGenerationTask extends FactoryTask {
 }
 
 export class SummarizeTask extends FactoryTask {
-  constructor(config: Partial<ITask>, input: { text: string; model: Model }) {
+  declare input: TextGenerationTaskInput;
+  constructor(config: Partial<ITask>, input: TextGenerationTaskInput) {
     const { text, model } = input;
     super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
@@ -57,15 +68,15 @@ export class SummarizeTask extends FactoryTask {
   }
 }
 
+interface RewriterTaskInput {
+  text: string;
+  prompt: string;
+  model: Model;
+}
+
 export class RewriterTask extends FactoryTask {
-  constructor(
-    config: Partial<ITask>,
-    input: {
-      text: string;
-      prompt: string;
-      model: Model;
-    }
-  ) {
+  declare input: RewriterTaskInput;
+  constructor(config: Partial<ITask>, input: RewriterTaskInput) {
     const { text, prompt, model } = input;
     super(config, input);
     if (model instanceof ONNXTransformerJsModel) {
@@ -78,15 +89,14 @@ export class RewriterTask extends FactoryTask {
   }
 }
 
+interface QuestionAnswerTaskInput {
+  text: string;
+  context: string;
+  model: Model;
+}
 export class QuestionAnswerTask extends FactoryTask {
-  constructor(
-    config: Partial<ITask>,
-    input: {
-      text: string;
-      context: string;
-      model: Model;
-    }
-  ) {
+  declare input: QuestionAnswerTaskInput;
+  constructor(config: Partial<ITask>, input: QuestionAnswerTaskInput) {
     const { text, context, model } = input;
     super(config, input);
     if (model instanceof ONNXTransformerJsModel) {

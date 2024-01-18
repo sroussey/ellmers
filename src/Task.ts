@@ -75,14 +75,14 @@ interface TaskBaseInput {
 abstract class TaskBase extends EventEmitter<TaskEvents> {
   id: unknown;
   name: string | undefined;
-  input: TaskBaseInput;
+  input: TaskBaseInput = {};
   #output: any;
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
   completedAt: Date | null = null;
   error: string | undefined = undefined;
-  constructor(config: TaskBaseConfig, input: object = {}) {
+  constructor(config: TaskBaseConfig, input: TaskBaseInput = {}) {
     super();
     this.input = input;
     this.name = config.name;
@@ -107,7 +107,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     this.#output = val;
   }
 
-  abstract run(input: any): Promise<any>;
+  abstract run(input?: TaskBaseInput): Promise<any>;
 }
 
 // ===============================================================================
@@ -117,7 +117,7 @@ export abstract class Task extends TaskBase implements ITask {
 }
 
 export class LambdaTask extends Task {
-  #runner: () => Promise<void>;
+  #runner: (input: TaskBaseInput) => Promise<void>;
   constructor(
     config: Partial<ITask> & { run: () => Promise<void> },
     input: TaskBaseInput = {}
@@ -125,9 +125,9 @@ export class LambdaTask extends Task {
     super(config, input);
     this.#runner = config.run;
   }
-  async run() {
+  async run(input: TaskBaseInput = {}) {
     this.emit("start");
-    await this.#runner();
+    await this.#runner(input);
     this.emit("complete");
     return this.output;
   }
@@ -167,41 +167,6 @@ export abstract class MultiTaskBase extends TaskBase {
   }
 }
 
-// if (completed === total) {
-//   if (onlyFailOnAllErrors) {
-//     if (errors === total) {
-//       this.emit("error", this.error);
-//     } else {
-//       this.emit("complete");
-//     }
-//   } else {
-//     if (errors === 0) {
-//       this.emit("complete");
-//     } else {
-//       this.emit("error", this.error);
-//     }
-//   }
-// }
-
-// this.error = this.error ? this.error + " & " + error : error;
-// if (completed === total) {
-//   if (onlyFailOnAllErrors) {
-//     if (errors === total) {
-//       this.emit("error", this.error);
-//     } else {
-//       this.emit("complete");
-//     }
-//   } else {
-//     if (errors === 0) {
-//       this.emit("complete");
-//     } else {
-//       this.emit("error", this.error);
-//     }
-//   }
-// }
-
-// ===============================================================================
-
 export abstract class TaskList extends MultiTaskBase implements ITask {
   readonly kind = "TASK_LIST";
   ordering: "serial" | "parallel" = "serial";
@@ -210,9 +175,9 @@ export abstract class TaskList extends MultiTaskBase implements ITask {
     tasks: Task[],
     input: TaskBaseInput = {}
   ) {
-    const { ordering = "serial", ...rest } = config;
+    const { ordering = "serial" } = config;
     super(config, tasks, input);
-    this.ordering = config.ordering;
+    this.ordering = ordering;
   }
 }
 
@@ -224,7 +189,7 @@ export class SerialTaskList extends TaskList {
   ) {
     super({ ...config, ordering: "serial" }, tasks, input);
   }
-  async run(input: any) {
+  async run(input?: TaskBaseInput) {
     this.emit("start");
     const total = this.tasks.length;
     input = Object.assign({}, this.input, input);
@@ -254,7 +219,7 @@ export class ParallelTaskList extends TaskList {
   ) {
     super({ ...config, ordering: "parallel" }, tasks, input);
   }
-  async run(input: any) {
+  async run(input?: TaskBaseInput) {
     this.emit("start");
     const total = this.tasks.length;
     await Promise.all(
@@ -291,7 +256,7 @@ export class Strategy extends MultiTaskBase implements ITask {
   ) {
     super(config, tasks, input);
   }
-  async run(input: any) {
+  async run(input?: TaskBaseInput) {
     this.emit("start");
     const total = this.tasks.length;
     input = Object.assign({}, this.input, input);

@@ -8,7 +8,7 @@
 /*
 
 TODO: Maybe have strategies generate a list of tasks for a task run for save/restore
-not sure, just thinking out loud. I am wondering how to propegate user_id etc
+not sure, just thinking out loud. I am wondering how to propagate user_id etc
 later on. And thinking about how to save the task tree to disc to restore later.
 
 */
@@ -23,11 +23,13 @@ import {
 import { forceArray } from "#/util/Misc";
 import { EmbeddingTask, RewriterTask, SummarizeTask } from "./FactoryTasks";
 
+interface EmbeddingStrategyInput {
+  text: string;
+  models: Model[];
+}
 export class EmbeddingStrategy extends Strategy {
-  constructor(
-    config: Partial<IStrategy>,
-    input: { text: string; models: Model[] }
-  ) {
+  declare input: EmbeddingStrategyInput;
+  constructor(config: Partial<IStrategy>, input: EmbeddingStrategyInput) {
     const name = config.name || `Vary Embedding content`;
     super(config, [
       new ParallelTaskList(
@@ -40,11 +42,13 @@ export class EmbeddingStrategy extends Strategy {
   }
 }
 
+interface SummarizeStrategyInput {
+  text: string;
+  models: Model[];
+}
 export class SummarizeStrategy extends Strategy {
-  constructor(
-    config: Partial<IStrategy>,
-    input: { text: string; models: Model[] }
-  ) {
+  declare input: SummarizeStrategyInput;
+  constructor(config: Partial<IStrategy>, input: SummarizeStrategyInput) {
     const name = config.name || `Vary Summarize content`;
     super({ name: name + " In Parallel" }, [
       new ParallelTaskList(
@@ -63,8 +67,8 @@ interface RewriterStrategyInput {
   model?: Model | Model[];
   prompt_model_pair?: { prompt: string; model: Model }[];
 }
-
 export class RewriterStrategy extends Strategy {
+  declare input: RewriterStrategyInput;
   constructor(config: Partial<IStrategy>, input: RewriterStrategyInput) {
     const name = config.name || `Vary Rewriter content`;
     const text = input.text;
@@ -106,6 +110,7 @@ interface RewriterEmbeddingStrategyInput {
 }
 
 export class RewriterEmbeddingStrategy extends Strategy {
+  declare input: RewriterEmbeddingStrategyInput;
   constructor(
     config: Partial<IStrategy>,
     input: RewriterEmbeddingStrategyInput
@@ -138,7 +143,6 @@ export class RewriterEmbeddingStrategy extends Strategy {
       const prompt_model = forceArray(input.prompt_model);
       const embed_model = forceArray(input.embed_model);
       const prompts = forceArray(input.prompt);
-      console.log("input", input, "\n\n\n\n\n");
       for (const prompt of prompts) {
         tasks.push(
           new Strategy({ name }, [
