@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model, ModelProcessorType } from "#/Model";
-import { ITask, Task } from "#/Task";
+import { Task, TaskConfig } from "#/Task";
 import {
   pipeline,
   type PipelineType,
@@ -72,20 +72,21 @@ interface DownloadTaskInput {
 }
 export class DownloadTask extends Task {
   declare input: DownloadTaskInput;
-  constructor(config: Partial<ITask>, input: DownloadTaskInput) {
+  constructor(config: TaskConfig, input: DownloadTaskInput) {
     config.name ||= `Downloading ${input.model.name}`;
     super(config, input);
   }
 
-  public async run(input?: DownloadTaskInput) {
+  public async run(partial?: Partial<DownloadTaskInput>) {
     try {
       this.emit("start");
-      input = Object.assign({}, this.input, input);
+      const input = Object.assign({}, this.input, partial);
       await getPipeline(this, input.model);
       this.emit("complete");
     } catch (e) {
       this.emit("error", String(e));
     }
+    return this.output;
   }
 }
 
@@ -100,15 +101,15 @@ interface EmbeddingTaskInput {
  */
 export class HuggingFaceLocal_EmbeddingTask extends Task {
   declare input: EmbeddingTaskInput;
-  constructor(config: Partial<ITask>, input: EmbeddingTaskInput) {
+  constructor(config: TaskConfig, input: EmbeddingTaskInput) {
     config.name ||= `Embedding content via ${input.model.name}`;
     super(config, input);
   }
 
-  public async run(input?: EmbeddingTaskInput) {
+  public async run(partial?: Partial<EmbeddingTaskInput>) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    const input = Object.assign({}, this.input, partial);
 
     const generateEmbedding = (await getPipeline(
       this,
@@ -129,6 +130,7 @@ export class HuggingFaceLocal_EmbeddingTask extends Task {
       this.output = { vector: vector.data };
       this.emit("complete");
     }
+    return this.output;
   }
 }
 
@@ -138,7 +140,7 @@ interface TextGenerationTaskInput {
 }
 abstract class TextGenerationTaskBase extends Task {
   declare input: TextGenerationTaskInput;
-  constructor(config: Partial<ITask>, input: TextGenerationTaskInput) {
+  constructor(config: TaskConfig, input: TextGenerationTaskInput) {
     config.name ||= `Text generation content via ${input.model.name} : ${input.model.pipeline}`;
     super(config, input);
   }
@@ -150,10 +152,10 @@ abstract class TextGenerationTaskBase extends Task {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
-  public async run(input?: TextGenerationTaskInput) {
+  public async run(partial?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    const input = Object.assign({}, this.input, partial);
 
     const generateText = (await getPipeline(
       this,
@@ -169,6 +171,7 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
       text: (results[0] as TextGenerationSingle)?.generated_text,
     };
     this.emit("complete");
+    return this.output;
   }
 }
 
@@ -185,16 +188,16 @@ interface RewriterTaskInput {
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
   declare input: RewriterTaskInput;
-  constructor(config: Partial<ITask>, input: RewriterTaskInput) {
+  constructor(config: TaskConfig, input: RewriterTaskInput) {
     const { model } = input;
     config.name ||= `Text to text rewriting content via ${model.name} : ${model.pipeline}`;
     super(config, input);
   }
 
-  public async run(input?: RewriterTaskInput) {
+  public async run(partial?: Partial<RewriterTaskInput>) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    const input = Object.assign({}, this.input, partial);
 
     const generateText = (await getPipeline(
       this,
@@ -210,12 +213,14 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
 
     const text = (results[0] as TextGenerationSingle)?.generated_text;
     if (text == promptedtext) {
-      this.output = null;
+      this.output = {};
       this.emit("error", "Rewriter failed to generate new text");
     } else {
       this.output = { text };
       this.emit("complete");
     }
+
+    return this.output;
   }
 }
 
@@ -226,10 +231,10 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
  */
 
 export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
-  public async run(input?: TextGenerationTaskInput) {
+  public async run(partial?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    const input = Object.assign({}, this.input, partial);
 
     const generateSummary = (await getPipeline(
       this,
@@ -243,6 +248,7 @@ export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
 
     this.output = { text: (results[0] as SummarizationSingle)?.summary_text };
     this.emit("complete");
+    return this.output;
   }
 }
 
@@ -259,16 +265,16 @@ interface QuestionAnswerTaskInput {
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
   declare input: QuestionAnswerTaskInput;
-  constructor(config: Partial<ITask>, input: QuestionAnswerTaskInput) {
+  constructor(config: TaskConfig, input: QuestionAnswerTaskInput) {
     config.name =
       config.name || `Question and Answer content via ${input.model.name}`;
     super(config, input);
   }
 
-  public async run(input?: QuestionAnswerTaskInput) {
+  public async run(partial?: Partial<QuestionAnswerTaskInput>) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    const input = Object.assign({}, this.input, partial);
 
     const generateAnswer = (await getPipeline(
       this,
@@ -286,5 +292,6 @@ export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase 
       text: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
     };
     this.emit("complete");
+    return this.output;
   }
 }

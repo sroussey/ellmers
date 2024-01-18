@@ -26,25 +26,6 @@ export enum TaskStatus {
   FAILED = "FAILED",
 }
 
-export interface ITask {
-  id: unknown;
-  name?: string;
-  input: any;
-  status: TaskStatus;
-  progress: number;
-  createdAt: Date;
-  completedAt: Date | null;
-  error: string | undefined;
-}
-
-export interface ITaskList extends ITask {
-  ordering: "serial" | "parallel";
-}
-
-export interface IStrategy extends ITask {
-  tasks: TaskStream;
-}
-
 /**
  * TaskEvents
  *
@@ -59,30 +40,41 @@ export interface IStrategy extends ITask {
  */
 export type TaskEvents = "start" | "complete" | "error" | "progress";
 
+// ===============================================================================
+
 export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
 
 // ===============================================================================
 
-interface TaskBaseConfig {
+export type TaskStreamable = Task | TaskList | Strategy;
+export type TaskStream = TaskStreamable[];
+
+// ===============================================================================
+
+export interface TaskConfig {
   name?: string;
   id?: unknown;
 }
 
-interface TaskBaseInput {
+export interface TaskListConfig extends TaskConfig {
+  ordering: "serial" | "parallel";
+}
+
+export interface TaskInput {
   [key: string]: any;
 }
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
-  id: unknown;
-  name: string | undefined;
-  input: TaskBaseInput = {};
-  #output: any;
+  id?: unknown;
+  name?: string;
+  input: TaskInput = {};
+  output: TaskInput = {};
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
   completedAt: Date | null = null;
   error: string | undefined = undefined;
-  constructor(config: TaskBaseConfig, input: TaskBaseInput = {}) {
+  constructor(config: TaskConfig, input: TaskInput = {}) {
     super();
     this.input = input;
     this.name = config.name;
@@ -100,34 +92,31 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
       this.error = error;
     });
   }
-  get output(): any {
-    return this.#output;
-  }
-  set output(val: any) {
-    this.#output = val;
-  }
 
-  abstract run(input?: TaskBaseInput): Promise<any>;
+  abstract run(input?: TaskInput): Promise<TaskInput>;
 }
 
 // ===============================================================================
 
-export abstract class Task extends TaskBase implements ITask {
+export abstract class Task extends TaskBase {
   readonly kind = "TASK";
 }
 
 export class LambdaTask extends Task {
-  #runner: (input: TaskBaseInput) => Promise<void>;
+  #runner: (input: TaskInput) => Promise<TaskInput>;
   constructor(
-    config: Partial<ITask> & { run: () => Promise<void> },
-    input: TaskBaseInput = {}
+    config: TaskConfig & {
+      run: () => Promise<TaskInput>;
+    },
+    input: TaskInput = {}
   ) {
     super(config, input);
     this.#runner = config.run;
   }
-  async run(input: TaskBaseInput = {}) {
+  async run(input?: TaskInput) {
     this.emit("start");
-    await this.#runner(input);
+    input = Object.assign({}, this.input, input);
+    this.output = await this.#runner(input);
     this.emit("complete");
     return this.output;
   }
@@ -143,9 +132,9 @@ export abstract class MultiTaskBase extends TaskBase {
   protected errors = 0;
 
   constructor(
-    config: Partial<ITask>,
+    config: Partial<TaskListConfig>,
     tasks: TaskStream,
-    input: TaskBaseInput = {}
+    input: TaskInput = {}
   ) {
     super(config, input);
     this.tasks = tasks;
@@ -167,13 +156,14 @@ export abstract class MultiTaskBase extends TaskBase {
   }
 }
 
-export abstract class TaskList extends MultiTaskBase implements ITask {
+export abstract class TaskList extends MultiTaskBase {
   readonly kind = "TASK_LIST";
+  declare tasks: Task[];
   ordering: "serial" | "parallel" = "serial";
   constructor(
-    config: Partial<ITaskList> & Pick<ITaskList, "ordering">,
+    config: Partial<TaskListConfig>,
     tasks: Task[],
-    input: TaskBaseInput = {}
+    input: TaskInput = {}
   ) {
     const { ordering = "serial" } = config;
     super(config, tasks, input);
@@ -183,13 +173,13 @@ export abstract class TaskList extends MultiTaskBase implements ITask {
 
 export class SerialTaskList extends TaskList {
   constructor(
-    config: Partial<ITaskList>,
+    config: Partial<TaskListConfig>,
     tasks: Task[],
-    input: TaskBaseInput = {}
+    input: TaskInput = {}
   ) {
     super({ ...config, ordering: "serial" }, tasks, input);
   }
-  async run(input?: TaskBaseInput) {
+  async run(input?: TaskInput) {
     this.emit("start");
     const total = this.tasks.length;
     input = Object.assign({}, this.input, input);
@@ -208,19 +198,19 @@ export class SerialTaskList extends TaskList {
       this.emit("progress", this.completed / total);
     }
     this.emit("complete");
+    return this.output;
   }
 }
 
 export class ParallelTaskList extends TaskList {
-  constructor(
-    config: Partial<ITaskList>,
-    tasks: Task[],
-    input: TaskBaseInput = {}
-  ) {
+  constructor(config: TaskConfig, tasks: Task[], input: TaskInput = {}) {
     super({ ...config, ordering: "parallel" }, tasks, input);
   }
-  async run(input?: TaskBaseInput) {
+  async run(input?: TaskInput) {
     this.emit("start");
+
+    input = Object.assign({}, this.input, input);
+
     const total = this.tasks.length;
     await Promise.all(
       this.tasks.map(async (task) => {
@@ -230,7 +220,7 @@ export class ParallelTaskList extends TaskList {
     );
 
     const outputs = this.tasks.map((task) => task.output || {}) || [];
-    const result: { [key: string]: any[] } = {};
+    const result: TaskInput = {};
     outputs.forEach((item) => {
       Object.keys(item).forEach((key) => {
         if (!result[key]) {
@@ -239,24 +229,22 @@ export class ParallelTaskList extends TaskList {
         result[key].push(item[key]);
       });
     });
+
     this.output = result;
     if (this.errors == total) this.emit("error", this.error);
     this.emit("complete");
+    return this.output;
   }
 }
 
 // ===============================================================================
 
-export class Strategy extends MultiTaskBase implements ITask {
+export class Strategy extends MultiTaskBase {
   readonly kind = "STRATEGY";
-  constructor(
-    config: Partial<IStrategy>,
-    tasks: TaskStream,
-    input: TaskBaseInput = {}
-  ) {
+  constructor(config: TaskConfig, tasks: TaskStream, input: TaskInput = {}) {
     super(config, tasks, input);
   }
-  async run(input?: TaskBaseInput) {
+  async run(input?: TaskInput) {
     this.emit("start");
     const total = this.tasks.length;
     input = Object.assign({}, this.input, input);
@@ -274,10 +262,6 @@ export class Strategy extends MultiTaskBase implements ITask {
       this.emit("progress", this.completed / total);
     }
     this.emit("complete");
+    return this.output;
   }
 }
-
-// ===============================================================================
-
-export type TaskStreamable = Task | TaskList | Strategy;
-export type TaskStream = TaskStreamable[];

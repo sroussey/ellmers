@@ -14,10 +14,10 @@ later on. And thinking about how to save the task tree to disc to restore later.
 */
 import { Model } from "#/Model";
 import {
-  IStrategy,
   ParallelTaskList,
   SerialTaskList,
   Strategy,
+  TaskConfig,
   TaskStream,
 } from "#/Task";
 import { forceArray } from "#/util/Misc";
@@ -29,7 +29,7 @@ interface EmbeddingStrategyInput {
 }
 export class EmbeddingStrategy extends Strategy {
   declare input: EmbeddingStrategyInput;
-  constructor(config: Partial<IStrategy>, input: EmbeddingStrategyInput) {
+  constructor(config: TaskConfig, input: EmbeddingStrategyInput) {
     const name = config.name || `Vary Embedding content`;
     super(config, [
       new ParallelTaskList(
@@ -48,7 +48,7 @@ interface SummarizeStrategyInput {
 }
 export class SummarizeStrategy extends Strategy {
   declare input: SummarizeStrategyInput;
-  constructor(config: Partial<IStrategy>, input: SummarizeStrategyInput) {
+  constructor(config: TaskConfig, input: SummarizeStrategyInput) {
     const name = config.name || `Vary Summarize content`;
     super({ name: name + " In Parallel" }, [
       new ParallelTaskList(
@@ -69,7 +69,7 @@ interface RewriterStrategyInput {
 }
 export class RewriterStrategy extends Strategy {
   declare input: RewriterStrategyInput;
-  constructor(config: Partial<IStrategy>, input: RewriterStrategyInput) {
+  constructor(config: TaskConfig, input: RewriterStrategyInput) {
     const name = config.name || `Vary Rewriter content`;
     const text = input.text;
     let pairs: { prompt: string; model: Model }[] = [];
@@ -111,10 +111,7 @@ interface RewriterEmbeddingStrategyInput {
 
 export class RewriterEmbeddingStrategy extends Strategy {
   declare input: RewriterEmbeddingStrategyInput;
-  constructor(
-    config: Partial<IStrategy>,
-    input: RewriterEmbeddingStrategyInput
-  ) {
+  constructor(config: TaskConfig, input: RewriterEmbeddingStrategyInput) {
     const name = config.name || `RewriterEmbeddingStrategy`;
     const text = input.text;
     let tasks: TaskStream = [];
