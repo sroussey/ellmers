@@ -5,6 +5,7 @@
 //    ****************************************************************************
 
 import { EventEmitter } from "eventemitter3";
+import { deepEqual } from "./util/Misc";
 
 /**
  * WARNING!
@@ -147,12 +148,18 @@ export class LambdaTask extends Task {
 
 // ===============================================================================
 
+enum TaskListOrdering {
+  SERIAL = "SERIAL",
+  PARALLEL = "PARALLEL",
+}
+
 export abstract class MultiTaskBase extends TaskBase {
+  abstract ordering: TaskListOrdering;
   tasks: TaskStream = [];
-  protected started = 0;
-  protected completed = 0;
-  protected total = 0;
-  protected errors = 0;
+  started = 0;
+  completed = 0;
+  total = 0;
+  errors = 0;
 
   setTasks(tasks: TaskStream) {
     if (this.tasks.length) {
@@ -183,7 +190,8 @@ export abstract class MultiTaskBase extends TaskBase {
     this.emit("start");
     this.input = this.withDefaults(overrides);
     // TODO: dont regenerate if defaults are the same as input
-    this.generateTasks(); // only strategy should do this
+    if (this.generateTasks && !deepEqual(this.input, this.defaults))
+      this.generateTasks(); // only strategy should do this
     const total = this.tasks.length;
     let taskInput = {};
     for (const task of this.tasks) {
@@ -221,11 +229,11 @@ export abstract class TaskList extends MultiTaskBase {
 }
 
 export class SerialTaskList extends TaskList {
-  ordering = "serial";
+  ordering = TaskListOrdering.SERIAL;
 }
 
 export class ParallelTaskList extends TaskList {
-  ordering = "parallel";
+  ordering = TaskListOrdering.PARALLEL;
 
   async run(overrides?: TaskInput) {
     this.emit("start");
@@ -261,11 +269,12 @@ export class ParallelTaskList extends TaskList {
 
 // ===============================================================================
 
-export class Strategy extends MultiTaskBase {
+export abstract class Strategy extends MultiTaskBase {
   readonly kind = "STRATEGY";
-  odering = "serial";
+  ordering = TaskListOrdering.SERIAL;
   constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {
     super(config, [], defaults);
     this.generateTasks();
   }
+  abstract generateTasks(): void;
 }

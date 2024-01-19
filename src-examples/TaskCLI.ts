@@ -54,7 +54,9 @@ export function AddSampleCommand(program: Command) {
       }
       const task = new ParallelTaskList(
         { name: "Download Models" },
-        models.map((model) => new DownloadTask({}, { model }))
+        models.map(
+          (model) => new DownloadTask({ name: "Downloading models" }, { model })
+        )
       );
       await runTaskToListr(task);
 
