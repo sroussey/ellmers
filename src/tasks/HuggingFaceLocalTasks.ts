@@ -72,16 +72,17 @@ interface DownloadTaskInput {
 }
 export class DownloadTask extends Task {
   declare input: DownloadTaskInput;
-  constructor(config: TaskConfig, input: DownloadTaskInput) {
-    config.name ||= `Downloading ${input.model.name}`;
-    super(config, input);
+  declare defaults: Partial<DownloadTaskInput>;
+  constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {
+    config.name ||= `Downloading ${defaults.model.name}`;
+    super(config, defaults);
   }
 
-  public async run(partial?: Partial<DownloadTaskInput>) {
+  public async run(overrides?: Partial<DownloadTaskInput>) {
+    this.input = this.withDefaults(overrides);
     try {
       this.emit("start");
-      const input = Object.assign({}, this.input, partial);
-      await getPipeline(this, input.model);
+      await getPipeline(this, this.input.model);
       this.emit("complete");
     } catch (e) {
       this.emit("error", String(e));
@@ -89,6 +90,8 @@ export class DownloadTask extends Task {
     return this.output;
   }
 }
+
+// ===============================================================================
 
 interface EmbeddingTaskInput {
   text: string;
@@ -101,30 +104,31 @@ interface EmbeddingTaskInput {
  */
 export class HuggingFaceLocal_EmbeddingTask extends Task {
   declare input: EmbeddingTaskInput;
-  constructor(config: TaskConfig, input: EmbeddingTaskInput) {
-    config.name ||= `Embedding content via ${input.model.name}`;
-    super(config, input);
+  declare defaults: Partial<EmbeddingTaskInput>;
+  constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
+    config.name ||= `Embedding content via ${defaults.model.name}`;
+    super(config, defaults);
   }
 
-  public async run(partial?: Partial<EmbeddingTaskInput>) {
-    this.emit("start");
+  public async run(overrides?: Partial<EmbeddingTaskInput>) {
+    this.input = this.withDefaults(overrides);
 
-    const input = Object.assign({}, this.input, partial);
+    this.emit("start");
 
     const generateEmbedding = (await getPipeline(
       this,
-      input.model
+      this.input.model
     )) as FeatureExtractionPipeline;
 
-    var vector = await generateEmbedding(input.text, {
+    var vector = await generateEmbedding(this.input.text, {
       pooling: "mean",
-      normalize: input.model.normalize,
+      normalize: this.input.model.normalize,
     });
 
-    if (vector.size !== input.model.dimensions) {
+    if (vector.size !== this.input.model.dimensions) {
       this.emit(
         "error",
-        `Embedding vector length does not match model dimensions v${vector.size} != m${input.model.dimensions}`
+        `Embedding vector length does not match model dimensions v${vector.size} != m${this.input.model.dimensions}`
       );
     } else {
       this.output = { vector: vector.data };
@@ -134,17 +138,21 @@ export class HuggingFaceLocal_EmbeddingTask extends Task {
   }
 }
 
+// ===============================================================================
+
 interface TextGenerationTaskInput {
   text: string;
   model: ONNXTransformerJsModel;
 }
 abstract class TextGenerationTaskBase extends Task {
   declare input: TextGenerationTaskInput;
-  constructor(config: TaskConfig, input: TextGenerationTaskInput) {
+  constructor(config: TaskConfig = {}, input: TextGenerationTaskInput) {
     config.name ||= `Text generation content via ${input.model.name} : ${input.model.pipeline}`;
     super(config, input);
   }
 }
+
+// ===============================================================================
 
 /**
  * This generates text from a prompt
@@ -152,17 +160,17 @@ abstract class TextGenerationTaskBase extends Task {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
-  public async run(partial?: Partial<TextGenerationTaskInput>) {
-    this.emit("start");
+  public async run(overrides?: Partial<TextGenerationTaskInput>) {
+    this.input = this.withDefaults(overrides);
 
-    const input = Object.assign({}, this.input, partial);
+    this.emit("start");
 
     const generateText = (await getPipeline(
       this,
-      input.model
+      this.input.model
     )) as TextGenerationPipeline;
 
-    let results = await generateText(input.text);
+    let results = await generateText(this.input.text);
     if (!Array.isArray(results)) {
       results = [results];
     }
@@ -174,6 +182,8 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
     return this.output;
   }
 }
+
+// ===============================================================================
 
 interface RewriterTaskInput {
   text: string;
@@ -188,24 +198,24 @@ interface RewriterTaskInput {
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
   declare input: RewriterTaskInput;
-  constructor(config: TaskConfig, input: RewriterTaskInput) {
+  constructor(config: TaskConfig = {}, input: RewriterTaskInput) {
     const { model } = input;
     config.name ||= `Text to text rewriting content via ${model.name} : ${model.pipeline}`;
     super(config, input);
   }
 
-  public async run(partial?: Partial<RewriterTaskInput>) {
+  public async run(overrides?: Partial<RewriterTaskInput>) {
+    this.input = this.withDefaults(overrides);
     this.emit("start");
-
-    const input = Object.assign({}, this.input, partial);
 
     const generateText = (await getPipeline(
       this,
-      input.model
+      this.input.model
     )) as TextGenerationPipeline;
 
-    // This lib doesn't support this kind of rewriting
-    const promptedtext = (input.prompt ? input.prompt + "\n" : "") + input.text;
+    // This lib doesn't support this kind of rewriting with a separate prompt vs text
+    const promptedtext =
+      (this.input.prompt ? this.input.prompt + "\n" : "") + this.input.text;
     let results = await generateText(promptedtext);
     if (!Array.isArray(results)) {
       results = [results];
@@ -224,6 +234,8 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
   }
 }
 
+// ===============================================================================
+
 /**
  * This is a special case of text generation that takes a context and a question
  *
@@ -231,17 +243,17 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
  */
 
 export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
-  public async run(partial?: Partial<TextGenerationTaskInput>) {
+  public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
-    const input = Object.assign({}, this.input, partial);
+    this.input = this.withDefaults(overrides);
 
     const generateSummary = (await getPipeline(
       this,
-      input.model
+      this.input.model
     )) as SummarizationPipeline;
 
-    let results = await generateSummary(input.text);
+    let results = await generateSummary(this.input.text);
     if (!Array.isArray(results)) {
       results = [results];
     }
@@ -251,6 +263,8 @@ export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
     return this.output;
   }
 }
+
+// ===============================================================================
 
 interface QuestionAnswerTaskInput {
   text: string;
@@ -265,24 +279,24 @@ interface QuestionAnswerTaskInput {
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
   declare input: QuestionAnswerTaskInput;
-  constructor(config: TaskConfig, input: QuestionAnswerTaskInput) {
+  constructor(config: TaskConfig = {}, input: QuestionAnswerTaskInput) {
     config.name =
       config.name || `Question and Answer content via ${input.model.name}`;
     super(config, input);
   }
 
-  public async run(partial?: Partial<QuestionAnswerTaskInput>) {
+  public async run(overrides?: Partial<QuestionAnswerTaskInput>) {
     this.emit("start");
 
-    const input = Object.assign({}, this.input, partial);
+    this.input = this.withDefaults(overrides);
 
     const generateAnswer = (await getPipeline(
       this,
-      input.model
+      this.input.model
     )) as QuestionAnsweringPipeline;
 
-    let results = await generateAnswer(input.text, input.context, {
-      topk: input.topk ?? 1,
+    let results = await generateAnswer(this.input.text, this.input.context, {
+      topk: this.input.topk ?? 1,
     });
     if (!Array.isArray(results)) {
       results = [results];

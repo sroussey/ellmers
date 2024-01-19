@@ -26,5 +26,6 @@
   "typescript.format.enable": true,
   "html.format.enable": true,
   "json.format.enable": true,
-  "javascript.format.enable": true
+  "javascript.format.enable": true,
+  "editor.wordWrapColumn": 100
 }

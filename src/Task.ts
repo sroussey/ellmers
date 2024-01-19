@@ -56,29 +56,52 @@ export interface TaskConfig {
   id?: unknown;
 }
 
-export interface TaskListConfig extends TaskConfig {
-  ordering: "serial" | "parallel";
-}
-
 export interface TaskInput {
   [key: string]: any;
 }
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
-  id?: unknown;
-  name?: string;
+  /**
+   * The defaults for the task. If no overrides at run time, then this would be equal to the
+   * input
+   */
+  defaults: TaskInput = {};
+  /**
+   * The input to the task at the time of the task run. This takes defaults from construction
+   * time and overrides from run time. It is the input that created the output.
+   */
   input: TaskInput = {};
+  /**
+   * The output of the task at the time of the task run. This is the result of the task.
+   * The the defaults and overrides are combined to match the required input of the task.
+   */
   output: TaskInput = {};
+  /**
+   * Configuration for the task, might include things like name and id for the database
+   */
+  config: TaskConfig = {};
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
   completedAt: Date | null = null;
   error: string | undefined = undefined;
-  constructor(config: TaskConfig, input: TaskInput = {}) {
+
+  /**
+   *
+   * This calculates the input to the task at the time of the task run. This takes defaults from
+   * construction and applies run time overrides (which may be output from a previous run if this
+   * is a serial task or strategy). Caller needs to decide if should set to this classes input
+   * or not.
+   */
+  withDefaults<T = TaskInput>(...overrides: (Partial<T> | undefined)[]): T {
+    return Object.assign({}, this.defaults, ...overrides) as T;
+  }
+
+  constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {
     super();
-    this.input = input;
-    this.name = config.name;
-    this.id = config.id;
+    this.defaults = defaults;
+    this.input = this.withDefaults();
+    this.config = config;
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
@@ -93,7 +116,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     });
   }
 
-  abstract run(input?: TaskInput): Promise<TaskInput>;
+  abstract run(overrides?: TaskInput): Promise<TaskInput>;
 }
 
 // ===============================================================================
@@ -113,10 +136,10 @@ export class LambdaTask extends Task {
     super(config, input);
     this.#runner = config.run;
   }
-  async run(input?: TaskInput) {
+  async run(overrides?: TaskInput) {
     this.emit("start");
-    input = Object.assign({}, this.input, input);
-    this.output = await this.#runner(input);
+    this.input = this.withDefaults<TaskInput>(overrides);
+    this.output = await this.#runner(this.input);
     this.emit("complete");
     return this.output;
   }
@@ -131,90 +154,89 @@ export abstract class MultiTaskBase extends TaskBase {
   protected total = 0;
   protected errors = 0;
 
-  constructor(
-    config: Partial<TaskListConfig>,
-    tasks: TaskStream,
-    input: TaskInput = {}
-  ) {
-    super(config, input);
+  setTasks(tasks: TaskStream) {
+    if (this.tasks.length) {
+      this.tasks.forEach((task) => {
+        task.off("complete", this.#completeTask);
+        task.off("error", this.#errorTask);
+      });
+    }
     this.tasks = tasks;
-    this.tasks.forEach((task) => {
-      task.on("start", () => {
-        if (this.status === TaskStatus.PENDING) {
-          this.emit("start");
-        }
-      });
-      task.on("complete", () => {
-        this.completed++;
-      });
-      task.on("error", (error) => {
-        this.completed++;
-        this.errors++;
-        this.error = this.error ? this.error + " & " + error : error;
-      });
+    tasks.forEach((task) => {
+      task.on("complete", this.#completeTask);
+      task.on("error", this.#errorTask);
     });
   }
-}
 
-export abstract class TaskList extends MultiTaskBase {
-  readonly kind = "TASK_LIST";
-  declare tasks: Task[];
-  ordering: "serial" | "parallel" = "serial";
-  constructor(
-    config: Partial<TaskListConfig>,
-    tasks: Task[],
-    input: TaskInput = {}
-  ) {
-    const { ordering = "serial" } = config;
-    super(config, tasks, input);
-    this.ordering = ordering;
-  }
-}
+  generateTasks() {}
 
-export class SerialTaskList extends TaskList {
   constructor(
-    config: Partial<TaskListConfig>,
-    tasks: Task[],
-    input: TaskInput = {}
+    config: Partial<TaskConfig> = {},
+    tasks: TaskStream = [],
+    defaults: TaskInput = {}
   ) {
-    super({ ...config, ordering: "serial" }, tasks, input);
+    super(config, defaults);
+    this.setTasks(tasks);
   }
-  async run(input?: TaskInput) {
+
+  async run(overrides?: TaskInput) {
     this.emit("start");
+    this.input = this.withDefaults(overrides);
+    // TODO: dont regenerate if defaults are the same as input
+    this.generateTasks(); // only strategy should do this
     const total = this.tasks.length;
-    input = Object.assign({}, this.input, input);
+    let taskInput = {};
     for (const task of this.tasks) {
-      await task.run(input);
+      await task.run(taskInput);
       if (this.tasks[this.tasks.length - 1] == task) {
         // if last task, their result is our result
         this.output = task.output;
         break;
       }
+      taskInput = this.withDefaults(this.input, task.output);
+      this.emit("progress", this.completed / total);
       if (this.errors) {
         this.emit("error", this.error);
         break;
       }
-      input = Object.assign({}, input, task.output);
-      this.emit("progress", this.completed / total);
     }
     this.emit("complete");
     return this.output;
   }
+
+  #completeTask() {
+    this.completed++;
+    this.emit("progress", this.completed / this.total);
+  }
+
+  #errorTask(error: string) {
+    this.errors++;
+    this.error = this.error ? this.error + " & " + error : error;
+  }
+}
+
+export abstract class TaskList extends MultiTaskBase {
+  readonly kind = "TASK_LIST";
+  declare _tasks: Task[];
+}
+
+export class SerialTaskList extends TaskList {
+  ordering = "serial";
 }
 
 export class ParallelTaskList extends TaskList {
-  constructor(config: TaskConfig, tasks: Task[], input: TaskInput = {}) {
-    super({ ...config, ordering: "parallel" }, tasks, input);
-  }
-  async run(input?: TaskInput) {
+  ordering = "parallel";
+
+  async run(overrides?: TaskInput) {
     this.emit("start");
 
-    input = Object.assign({}, this.input, input);
+    this.input = this.withDefaults(overrides);
+    let taskInput = {};
 
     const total = this.tasks.length;
     await Promise.all(
       this.tasks.map(async (task) => {
-        await task.run(input);
+        await task.run(taskInput);
         this.emit("progress", this.completed / total);
       })
     );
@@ -231,7 +253,7 @@ export class ParallelTaskList extends TaskList {
     });
 
     this.output = result;
-    if (this.errors == total) this.emit("error", this.error);
+    if (this.errors === total) this.emit("error", this.error);
     this.emit("complete");
     return this.output;
   }
@@ -241,27 +263,9 @@ export class ParallelTaskList extends TaskList {
 
 export class Strategy extends MultiTaskBase {
   readonly kind = "STRATEGY";
-  constructor(config: TaskConfig, tasks: TaskStream, input: TaskInput = {}) {
-    super(config, tasks, input);
-  }
-  async run(input?: TaskInput) {
-    this.emit("start");
-    const total = this.tasks.length;
-    input = Object.assign({}, this.input, input);
-    for (const task of this.tasks) {
-      await task.run(input);
-      if (this.tasks[this.tasks.length - 1] == task) {
-        // if last task, their result is our result
-        this.output = task.output;
-      }
-      if (this.errors) {
-        this.emit("error", this.error);
-        break;
-      }
-      input = Object.assign({}, input, task.output);
-      this.emit("progress", this.completed / total);
-    }
-    this.emit("complete");
-    return this.output;
+  odering = "serial";
+  constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {
+    super(config, [], defaults);
+    this.generateTasks();
   }
 }
