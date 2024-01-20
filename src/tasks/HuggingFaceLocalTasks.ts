@@ -103,11 +103,11 @@ interface EmbeddingTaskInput {
  * Model pipeline must be "feature-extraction"
  */
 export class HuggingFaceLocal_EmbeddingTask extends Task {
-  id = "EmbeddingTask";
   declare input: EmbeddingTaskInput;
   declare defaults: Partial<EmbeddingTaskInput>;
   constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
     config.name ||= `Embedding content via ${defaults.model.name}`;
+    config.output_name ||= "vector";
     super(config, defaults);
   }
 
@@ -132,7 +132,7 @@ export class HuggingFaceLocal_EmbeddingTask extends Task {
         `Embedding vector length does not match model dimensions v${vector.size} != m${this.input.model.dimensions}`
       );
     } else {
-      this.output = { vector: vector.data };
+      this.output = { [this.config.output_name]: vector.data };
       this.emit("complete");
     }
     return this.output;
@@ -149,6 +149,7 @@ abstract class TextGenerationTaskBase extends Task {
   declare input: TextGenerationTaskInput;
   constructor(config: TaskConfig = {}, input: TextGenerationTaskInput) {
     config.name ||= `Text generation content via ${input.model.name} : ${input.model.pipeline}`;
+    config.output_name ||= "text";
     super(config, input);
   }
 }
@@ -161,7 +162,6 @@ abstract class TextGenerationTaskBase extends Task {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
-  id = "TextGenerationTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.input = this.withDefaults(overrides);
 
@@ -178,7 +178,8 @@ export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase 
     }
 
     this.output = {
-      text: (results[0] as TextGenerationSingle)?.generated_text,
+      [this.config.output_name]: (results[0] as TextGenerationSingle)
+        ?.generated_text,
     };
     this.emit("complete");
     return this.output;
@@ -199,11 +200,11 @@ interface RewriterTaskInput {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
-  id = "TextRewriterTask";
   declare input: RewriterTaskInput;
   constructor(config: TaskConfig = {}, input: RewriterTaskInput) {
     const { model } = input;
     config.name ||= `Text to text rewriting content via ${model.name} : ${model.pipeline}`;
+    config.output_name ||= "text";
     super(config, input);
   }
 
@@ -229,7 +230,7 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
       this.output = {};
       this.emit("error", "Rewriter failed to generate new text");
     } else {
-      this.output = { text };
+      this.output = { [this.config.output_name]: text };
       this.emit("complete");
     }
 
@@ -246,7 +247,6 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
  */
 
 export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
-  id = "SummarizationTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
@@ -262,7 +262,10 @@ export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
       results = [results];
     }
 
-    this.output = { text: (results[0] as SummarizationSingle)?.summary_text };
+    this.output = {
+      [this.config.output_name]: (results[0] as SummarizationSingle)
+        ?.summary_text,
+    };
     this.emit("complete");
     return this.output;
   }
@@ -282,11 +285,11 @@ interface QuestionAnswerTaskInput {
  * Model pipeline must be "question-answering"
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
-  id = "QuestionAnswerTask";
   declare input: QuestionAnswerTaskInput;
   constructor(config: TaskConfig = {}, input: QuestionAnswerTaskInput) {
     config.name =
       config.name || `Question and Answer content via ${input.model.name}`;
+    config.output_name ||= "text";
     super(config, input);
   }
 
@@ -308,7 +311,8 @@ export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase 
     }
 
     this.output = {
-      text: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
+      [this.config.output_name]: (results[0] as DocumentQuestionAnsweringSingle)
+        ?.answer,
     };
     this.emit("complete");
     return this.output;

@@ -7,11 +7,11 @@
 
 /*
 
-TODO: Maybe have strategies generate a list of tasks for a task run for save/restore
-not sure, just thinking out loud. I am wondering how to propagate user_id etc
-later on. And thinking about how to save the task tree to disc to restore later.
+TODO: Still need to save the task tree to disc to restore later, though the JSON
+strategy might be the thing to use.
 
 */
+
 import { Model } from "#/Model";
 import {
   ParallelTaskList,
@@ -46,7 +46,6 @@ export class EmbeddingStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
-Strategy.all.set("EmbeddingStrategy", EmbeddingStrategy);
 
 export interface SummarizeStrategyInput {
   text: string;
@@ -72,7 +71,6 @@ export class SummarizeStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
-Strategy.all.set("SummarizeStrategy", SummarizeStrategy);
 
 export interface RewriterStrategyInput {
   text: string;
@@ -114,7 +112,6 @@ export class RewriterStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
-Strategy.all.set("RewriterStrategy", RewriterStrategy);
 
 export interface RewriterEmbeddingStrategyInput {
   text: string;
@@ -183,4 +180,3 @@ export class RewriterEmbeddingStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
-Strategy.all.set("RewriterEmbeddingStrategy", RewriterEmbeddingStrategy);

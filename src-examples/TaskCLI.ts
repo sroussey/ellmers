@@ -200,14 +200,25 @@ export function AddSampleCommand(program: Command) {
     .argument("[json]", "json text to rewrite and vectorize")
     .action(async (jsonText) => {
       if (!jsonText) {
-        const exampleJson: TaskJsonInput = {
-          run: "RewriterTask",
-          input: {
-            text: "The quick brown fox jumps over the lazy dog.",
-            prompt: "Rewrite the following text in reverse:",
-            model: "Xenova/LaMini-Flan-T5-783M",
+        const exampleJson: TaskJsonInput[] = [
+          {
+            run: "RewriterTask",
+            config: {
+              output_name: "results",
+            },
+            input: {
+              text: "The quick brown fox jumps over the lazy dog.",
+              prompt: "Rewrite the following text in reverse:",
+              model: "Xenova/LaMini-Flan-T5-783M",
+            },
           },
-        };
+          {
+            run: "RenameTask",
+            input: {
+              output_remap_array: [{ from: "results", to: "reverse" }],
+            },
+          },
+        ];
         jsonText = JSON.stringify(exampleJson);
       }
       const json = JSON.parse(jsonText);

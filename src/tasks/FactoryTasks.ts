@@ -48,7 +48,6 @@ export class EmbeddingTask extends ModelFactoryTask {
     }
   }
 }
-Task.all.set("EmbeddingTask", EmbeddingTask);
 
 export interface TextGenerationTaskInput {
   text: string;
@@ -67,7 +66,6 @@ export class TextGenerationTask extends ModelFactoryTask {
     }
   }
 }
-Task.all.set("TextGenerationTask", TextGenerationTask);
 
 export class SummarizeTask extends ModelFactoryTask {
   declare input: TextGenerationTaskInput;
@@ -82,7 +80,6 @@ export class SummarizeTask extends ModelFactoryTask {
     }
   }
 }
-Task.all.set("SummarizeTask", SummarizeTask);
 
 export interface RewriterTaskInput {
   text: string;
@@ -104,7 +101,6 @@ export class RewriterTask extends ModelFactoryTask {
     }
   }
 }
-Task.all.set("RewriterTask", RewriterTask);
 
 export interface QuestionAnswerTaskInput {
   text: string;
@@ -125,4 +121,3 @@ export class QuestionAnswerTask extends ModelFactoryTask {
     }
   }
 }
-Task.all.set("QuestionAnswerTask", QuestionAnswerTask);

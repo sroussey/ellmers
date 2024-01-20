@@ -6,24 +6,64 @@
 //    ****************************************************************************
 
 import { Model } from "#/Model";
-import { Strategy, Task, TaskConfig, TaskStreamable } from "#/Task";
 import {
+  ParallelTaskList,
+  SerialTaskList,
+  Strategy,
+  TaskConfig,
+  TaskStreamable,
+} from "#/Task";
+import { RenameTask, RenameTaskInput } from "./BasicTasks";
+import {
+  EmbeddingTask,
   EmbeddingTaskInput,
+  QuestionAnswerTask,
   QuestionAnswerTaskInput,
+  RewriterTask,
   RewriterTaskInput,
+  SummarizeTask,
+  TextGenerationTask,
   TextGenerationTaskInput,
 } from "./FactoryTasks";
 import {
+  EmbeddingStrategy,
   EmbeddingStrategyInput,
+  RewriterEmbeddingStrategy,
   RewriterEmbeddingStrategyInput,
+  RewriterStrategy,
   RewriterStrategyInput,
+  SummarizeStrategy,
   SummarizeStrategyInput,
 } from "./Strategies";
+
+const AllRegisteredTasks = new Map<string, { new (...args: any[]): any }>();
+
+AllRegisteredTasks.set("SerialTaskList", SerialTaskList);
+AllRegisteredTasks.set("ParallelTaskList", ParallelTaskList);
+
+AllRegisteredTasks.set("RenameTask", RenameTask);
+
+AllRegisteredTasks.set("EmbeddingTask", EmbeddingTask);
+AllRegisteredTasks.set("RewriterTask", RewriterTask);
+AllRegisteredTasks.set("TextGenerationTask", TextGenerationTask);
+AllRegisteredTasks.set("SummarizeTask", SummarizeTask);
+AllRegisteredTasks.set("QuestionAnswerTask", QuestionAnswerTask);
+
+AllRegisteredTasks.set("EmbeddingStrategy", EmbeddingStrategy);
+AllRegisteredTasks.set("RewriterStrategy", RewriterStrategy);
+AllRegisteredTasks.set("SummarizeStrategy", SummarizeStrategy);
+AllRegisteredTasks.set("RewriterEmbeddingStrategy", RewriterEmbeddingStrategy);
 
 type TaskListJsonInput = {
   run: "SerialTaskList" | "ParallelTaskList";
   config?: TaskConfig;
   tasks: TaskJsonInput[];
+};
+
+type SimpleTasks = {
+  run: "RenameTask";
+  config?: TaskConfig;
+  input: RenameTaskInput;
 };
 
 type ChangeToString<T, K extends PropertyKey[]> = {
@@ -61,6 +101,7 @@ type StrategyJSONInput =
 export type TaskJsonInput =
   | StrategyJSONInput
   | TaskListJsonInput
+  | SimpleTasks
   | FactoryTasksJsonInput;
 
 function lookupModel(model: string): Model {
@@ -69,44 +110,49 @@ function lookupModel(model: string): Model {
   return realModel;
 }
 
-function convertJson(json: TaskJsonInput): TaskStreamable | undefined {
+function convertJson(json: TaskJsonInput): TaskStreamable {
   const { run, config } = json;
+  const runTask = AllRegisteredTasks.get(run);
+  if (!runTask) throw new Error("Task not found");
+  let result: TaskStreamable;
   if (run == "SerialTaskList" || run == "ParallelTaskList") {
     const tasks = json.tasks.map(convertJson);
-    const runTask = Task.all.get(run);
-    if (!runTask) throw new Error("Task not found");
-    return new runTask(config, tasks);
+    result = new runTask(config, tasks);
+  } else if (
+    run == "EmbeddingTask" ||
+    run == "RewriterTask" ||
+    run == "SummarizeTask" ||
+    run == "TextGenerationTask" ||
+    run == "QuestionAnswerTask"
+  ) {
+    const input = json.input;
+    const model = lookupModel(input.model);
+    result = new runTask(config, { ...input, model });
+  } else if (run == "RenameTask") {
+    result = new runTask(config, json.input);
   } else {
-    if (
-      run == "EmbeddingTask" ||
-      run == "RewriterTask" ||
-      run == "SummarizeTask" ||
-      run == "TextGenerationTask" ||
-      run == "QuestionAnswerTask"
-    ) {
-      const runTask = Task.all.get(run);
-      if (!runTask) throw new Error("Task not found");
-      const input = json.input;
-      console.log({ json });
-      const model = lookupModel(input.model);
-      return new runTask(config, { ...input, model });
-    }
+    throw new Error(`Unknown task type: ${run}`);
   }
+  return result;
 }
 
 export class JsonStrategy extends Strategy {
-  declare input: TaskJsonInput;
-  constructor(config: TaskConfig = {}, defaults?: TaskJsonInput) {
-    super(config, defaults);
+  declare input: { tasks: TaskJsonInput[] };
+  constructor(
+    config: TaskConfig = {},
+    defaults?: TaskJsonInput | TaskJsonInput[]
+  ) {
+    const tasks = Array.isArray(defaults) ? defaults : [defaults];
+    super(config, { tasks });
   }
   generateTasks() {
-    let task: TaskStreamable | undefined;
+    let task: TaskStreamable[];
     try {
-      task = convertJson(this.input);
+      task = this.input.tasks.map(convertJson);
     } catch (e) {
       throw new Error(`Error converting json: ${String(e)}`);
     }
     if (!task) throw new Error("Task not found");
-    this.setTasks([task]);
+    this.setTasks(task);
   }
 }

@@ -55,14 +55,16 @@ export type TaskStream = TaskStreamable[];
 export interface TaskConfig {
   name?: string;
   id?: unknown;
+  output_name?: string;
 }
+
+type TaskConfigFull = TaskConfig & { output_name: string };
 
 export interface TaskInput {
   [key: string]: any;
 }
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
-  static all = new Map<string, { new (...args: any[]): any }>();
   /**
    * The defaults for the task. If no overrides at run time, then this would be equal to the
    * input
@@ -81,7 +83,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
   /**
    * Configuration for the task, might include things like name and id for the database
    */
-  config: TaskConfig = {};
+  config: TaskConfigFull = { output_name: "out" };
   status: TaskStatus = TaskStatus.PENDING;
   progress: number = 0;
   createdAt: Date = new Date();
@@ -103,7 +105,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
     super();
     this.defaults = defaults;
     this.input = this.withDefaults();
-    this.config = config;
+    this.config = Object.assign({}, this.config, config);
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
@@ -121,30 +123,8 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
   abstract run(overrides?: TaskInput): Promise<TaskInput>;
 }
 
-// ===============================================================================
-
 export abstract class Task extends TaskBase {
   readonly kind = "TASK";
-}
-
-export class LambdaTask extends Task {
-  #runner: (input: TaskInput) => Promise<TaskInput>;
-  constructor(
-    config: TaskConfig & {
-      run: () => Promise<TaskInput>;
-    },
-    input: TaskInput = {}
-  ) {
-    super(config, input);
-    this.#runner = config.run;
-  }
-  async run(overrides?: TaskInput) {
-    this.emit("start");
-    this.input = this.withDefaults<TaskInput>(overrides);
-    this.output = await this.#runner(this.input);
-    this.emit("complete");
-    return this.output;
-  }
 }
 
 // ===============================================================================
@@ -162,6 +142,15 @@ export abstract class MultiTaskBase extends TaskBase {
   total = 0;
   errors = 0;
 
+  constructor(
+    config: TaskConfig = {},
+    tasks: TaskStream = [],
+    defaults: TaskInput = {}
+  ) {
+    super(config, defaults);
+    this.setTasks(tasks);
+  }
+
   setTasks(tasks: TaskStream) {
     if (this.tasks.length) {
       this.tasks.forEach((task) => {
@@ -178,15 +167,6 @@ export abstract class MultiTaskBase extends TaskBase {
 
   generateTasks() {}
 
-  constructor(
-    config: Partial<TaskConfig> = {},
-    tasks: TaskStream = [],
-    defaults: TaskInput = {}
-  ) {
-    super(config, defaults);
-    this.setTasks(tasks);
-  }
-
   async run(overrides?: TaskInput) {
     this.emit("start");
     this.input = this.withDefaults(overrides);
@@ -202,7 +182,7 @@ export abstract class MultiTaskBase extends TaskBase {
         this.output = task.output;
         break;
       }
-      taskInput = this.withDefaults(this.input, task.output);
+      taskInput = Object.assign({}, task.output);
       this.emit("progress", this.completed / total);
       if (this.errors) {
         this.emit("error", this.error);
@@ -232,7 +212,6 @@ export abstract class TaskList extends MultiTaskBase {
 export class SerialTaskList extends TaskList {
   ordering = TaskListOrdering.SERIAL;
 }
-TaskList.all.set("SerialTaskList", SerialTaskList);
 
 export class ParallelTaskList extends TaskList {
   ordering = TaskListOrdering.PARALLEL;
@@ -268,7 +247,6 @@ export class ParallelTaskList extends TaskList {
     return this.output;
   }
 }
-TaskList.all.set("ParallelTaskList", ParallelTaskList);
 
 // ===============================================================================
 
