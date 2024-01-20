@@ -103,6 +103,7 @@ interface EmbeddingTaskInput {
  * Model pipeline must be "feature-extraction"
  */
 export class HuggingFaceLocal_EmbeddingTask extends Task {
+  id = "EmbeddingTask";
   declare input: EmbeddingTaskInput;
   declare defaults: Partial<EmbeddingTaskInput>;
   constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
@@ -160,6 +161,7 @@ abstract class TextGenerationTaskBase extends Task {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
+  id = "TextGenerationTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.input = this.withDefaults(overrides);
 
@@ -197,6 +199,7 @@ interface RewriterTaskInput {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
+  id = "TextRewriterTask";
   declare input: RewriterTaskInput;
   constructor(config: TaskConfig = {}, input: RewriterTaskInput) {
     const { model } = input;
@@ -243,6 +246,7 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
  */
 
 export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
+  id = "SummarizationTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
@@ -278,6 +282,7 @@ interface QuestionAnswerTaskInput {
  * Model pipeline must be "question-answering"
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
+  id = "QuestionAnswerTask";
   declare input: QuestionAnswerTaskInput;
   constructor(config: TaskConfig = {}, input: QuestionAnswerTaskInput) {
     config.name =

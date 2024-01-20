@@ -16,7 +16,7 @@ import {
   HuggingFaceLocal_TextRewriterTask,
 } from "./HuggingFaceLocalTasks";
 
-interface ModelFactoryTaskInput {
+export interface ModelFactoryTaskInput {
   model: Model;
 }
 
@@ -24,19 +24,14 @@ abstract class ModelFactoryTask extends Task {
   declare input: ModelFactoryTaskInput;
   constructor(config: TaskConfig = {}, defaults: ModelFactoryTaskInput) {
     super(config, defaults);
-    if (!defaults?.model) {
-      throw new Error(
-        "No model to run in ModelFactoryTask, must be present on construction"
-      );
-    }
   }
 
   run(overrides?: TaskInput): Promise<TaskInput> {
-    throw new Error("Method not implemented.");
+    throw new Error("ModelFactoryTask:run() ethod not implemented.");
   }
 }
 
-interface EmbeddingTaskInput {
+export interface EmbeddingTaskInput {
   text: string;
   model: Model;
 }
@@ -53,8 +48,9 @@ export class EmbeddingTask extends ModelFactoryTask {
     }
   }
 }
+Task.all.set("EmbeddingTask", EmbeddingTask);
 
-interface TextGenerationTaskInput {
+export interface TextGenerationTaskInput {
   text: string;
   model: Model;
 }
@@ -71,6 +67,7 @@ export class TextGenerationTask extends ModelFactoryTask {
     }
   }
 }
+Task.all.set("TextGenerationTask", TextGenerationTask);
 
 export class SummarizeTask extends ModelFactoryTask {
   declare input: TextGenerationTaskInput;
@@ -85,8 +82,9 @@ export class SummarizeTask extends ModelFactoryTask {
     }
   }
 }
+Task.all.set("SummarizeTask", SummarizeTask);
 
-interface RewriterTaskInput {
+export interface RewriterTaskInput {
   text: string;
   prompt: string;
   model: Model;
@@ -106,8 +104,9 @@ export class RewriterTask extends ModelFactoryTask {
     }
   }
 }
+Task.all.set("RewriterTask", RewriterTask);
 
-interface QuestionAnswerTaskInput {
+export interface QuestionAnswerTaskInput {
   text: string;
   context: string;
   model: Model;
@@ -126,3 +125,4 @@ export class QuestionAnswerTask extends ModelFactoryTask {
     }
   }
 }
+Task.all.set("QuestionAnswerTask", QuestionAnswerTask);

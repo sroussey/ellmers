@@ -23,7 +23,7 @@ import {
 import { forceArray } from "#/util/Misc";
 import { EmbeddingTask, RewriterTask, SummarizeTask } from "./FactoryTasks";
 
-interface EmbeddingStrategyInput {
+export interface EmbeddingStrategyInput {
   text: string;
   models: Model[];
 }
@@ -46,8 +46,9 @@ export class EmbeddingStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
+Strategy.all.set("EmbeddingStrategy", EmbeddingStrategy);
 
-interface SummarizeStrategyInput {
+export interface SummarizeStrategyInput {
   text: string;
   models: Model[];
 }
@@ -71,8 +72,9 @@ export class SummarizeStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
+Strategy.all.set("SummarizeStrategy", SummarizeStrategy);
 
-interface RewriterStrategyInput {
+export interface RewriterStrategyInput {
   text: string;
   prompt?: string | string[];
   model?: Model | Model[];
@@ -112,8 +114,9 @@ export class RewriterStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
+Strategy.all.set("RewriterStrategy", RewriterStrategy);
 
-interface RewriterEmbeddingStrategyInput {
+export interface RewriterEmbeddingStrategyInput {
   text: string;
   prompt?: string | string[];
   prompt_model?: Model | Model[];
@@ -127,6 +130,7 @@ interface RewriterEmbeddingStrategyInput {
 
 export class RewriterEmbeddingStrategy extends Strategy {
   declare input: RewriterEmbeddingStrategyInput;
+  id = "RewriterEmbeddingStrategy";
   constructor(config: TaskConfig, defaults: RewriterEmbeddingStrategyInput) {
     super(config, defaults);
   }
@@ -179,3 +183,4 @@ export class RewriterEmbeddingStrategy extends Strategy {
     this.setTasks(tasks);
   }
 }
+Strategy.all.set("RewriterEmbeddingStrategy", RewriterEmbeddingStrategy);

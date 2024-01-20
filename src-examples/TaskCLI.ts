@@ -21,6 +21,7 @@ import {
   SummarizeStrategy,
 } from "#/tasks/Strategies";
 import { sleep } from "#/util/Misc";
+import { JsonStrategy, TaskJsonInput } from "#/tasks/JsonTask";
 
 export function AddSampleCommand(program: Command) {
   program
@@ -159,9 +160,9 @@ export function AddSampleCommand(program: Command) {
     });
 
   program
-    .command("test")
-    .description("test")
-    .argument("<text>", "text to rewrite")
+    .command("rewrite-embedding")
+    .description("rewrite based on internal prompt list, then embed")
+    .argument("<text>", "text to rewrite and vectorize")
     .action(async (text) => {
       const prompt = [
         "Rewrite the following text:",
@@ -186,6 +187,31 @@ export function AddSampleCommand(program: Command) {
           embed_model,
         }
       );
+
+      await runTaskToListr(task);
+
+      await sleep(100);
+      console.log(task.output);
+    });
+
+  program
+    .command("json")
+    .description("run based on json input")
+    .argument("[json]", "json text to rewrite and vectorize")
+    .action(async (jsonText) => {
+      if (!jsonText) {
+        const exampleJson: TaskJsonInput = {
+          run: "RewriterTask",
+          input: {
+            text: "The quick brown fox jumps over the lazy dog.",
+            prompt: "Rewrite the following text in reverse:",
+            model: "Xenova/LaMini-Flan-T5-783M",
+          },
+        };
+        jsonText = JSON.stringify(exampleJson);
+      }
+      const json = JSON.parse(jsonText);
+      const task = new JsonStrategy({ name: "Test JSON" }, json);
 
       await runTaskToListr(task);
 

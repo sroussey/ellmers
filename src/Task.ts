@@ -62,6 +62,7 @@ export interface TaskInput {
 }
 
 abstract class TaskBase extends EventEmitter<TaskEvents> {
+  static all = new Map<string, { new (...args: any[]): any }>();
   /**
    * The defaults for the task. If no overrides at run time, then this would be equal to the
    * input
@@ -231,6 +232,7 @@ export abstract class TaskList extends MultiTaskBase {
 export class SerialTaskList extends TaskList {
   ordering = TaskListOrdering.SERIAL;
 }
+TaskList.all.set("SerialTaskList", SerialTaskList);
 
 export class ParallelTaskList extends TaskList {
   ordering = TaskListOrdering.PARALLEL;
@@ -266,10 +268,12 @@ export class ParallelTaskList extends TaskList {
     return this.output;
   }
 }
+TaskList.all.set("ParallelTaskList", ParallelTaskList);
 
 // ===============================================================================
 
 export abstract class Strategy extends MultiTaskBase {
+  declare id: string;
   readonly kind = "STRATEGY";
   ordering = TaskListOrdering.SERIAL;
   constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {

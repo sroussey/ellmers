@@ -15,6 +15,7 @@ export enum ModelProcessorType {
 }
 
 export abstract class Model {
+  public static all = new Map<string, Model>();
   public dimensions: number | null = null;
   public normalize = true;
   public parameters: Record<string, string | number> = {};
@@ -23,6 +24,7 @@ export abstract class Model {
     options?: Partial<Pick<Model, "dimensions" | "parameters">>
   ) {
     Object.assign(this, options);
+    Model.all.set(name, this);
   }
   abstract readonly type: ModelProcessorType;
 }
