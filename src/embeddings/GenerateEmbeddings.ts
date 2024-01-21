@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { ModelProcessorType } from "#/Model";
+import { ModelProcessorEnum } from "#/Model";
 import { TextDocument } from "#/Document";
 import type { StrategyList } from "#/Strategy";
 import {
@@ -23,7 +23,7 @@ export async function generateEmbeddings(
       let text = node.content;
       if (instruct.model) {
         switch (instruct.model.type) {
-          case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
+          case ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS:
             text = await generateTransformerJsRewrite(node, instruct, isQuery);
             break;
           default:
@@ -31,7 +31,7 @@ export async function generateEmbeddings(
         }
       }
       switch (embeddingModel.type) {
-        case ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS:
+        case ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS:
           await generateTransformerJsEmbedding(
             node,
             text,

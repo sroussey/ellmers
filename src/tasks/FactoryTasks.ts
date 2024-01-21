@@ -14,7 +14,13 @@ import {
   HuggingFaceLocal_SummarizationTask,
   HuggingFaceLocal_TextGenerationTask,
   HuggingFaceLocal_TextRewriterTask,
+  HuggingFaceLocal_DownloadTask,
 } from "./HuggingFaceLocalTasks";
+import {
+  MediaPipeTfJsLocal_DownloadTask,
+  MediaPipeTfJsLocal_EmbeddingTask,
+  MediaPipeTfJsModel,
+} from "./MediaPipeLocalTasks";
 
 export interface ModelFactoryTaskInput {
   model: Model;
@@ -27,7 +33,25 @@ abstract class ModelFactoryTask extends Task {
   }
 
   run(overrides?: TaskInput): Promise<TaskInput> {
-    throw new Error("ModelFactoryTask:run() ethod not implemented.");
+    throw new Error("ModelFactoryTask:run() method not implemented.");
+  }
+}
+
+interface DownloadTaskInput {
+  model: Model;
+}
+
+export class DownloadTask extends ModelFactoryTask {
+  declare input: DownloadTaskInput;
+  constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {
+    super(config, defaults);
+    const { model } = this.input;
+    if (model instanceof ONNXTransformerJsModel) {
+      return new HuggingFaceLocal_DownloadTask(this.config, { model });
+    }
+    if (model instanceof MediaPipeTfJsModel) {
+      return new MediaPipeTfJsLocal_DownloadTask(this.config, { model });
+    }
   }
 }
 
@@ -45,6 +69,9 @@ export class EmbeddingTask extends ModelFactoryTask {
     const { text, model } = this.input;
     if (model instanceof ONNXTransformerJsModel) {
       return new HuggingFaceLocal_EmbeddingTask(this.config, { text, model });
+    }
+    if (model instanceof MediaPipeTfJsModel) {
+      return new MediaPipeTfJsLocal_EmbeddingTask(this.config, { text, model });
     }
   }
 }

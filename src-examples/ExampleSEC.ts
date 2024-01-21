@@ -19,7 +19,6 @@ import {
   instructQuestion,
   xenovaDistilbert,
   whereIsAIUAELargeV1,
-  textgenModelList,
   gpt2,
   xenovaDistilbertMnli,
   distilbartCnn,

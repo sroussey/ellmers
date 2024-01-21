@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { Model } from "#/Model";
 import {
   ParallelTaskList,
   SerialTaskList,
@@ -13,6 +12,7 @@ import {
   TaskConfig,
   TaskStreamable,
 } from "#/Task";
+import { findModelByName } from "#/storage/InMemoryStorage";
 import { RenameTask, RenameTaskInput } from "./BasicTasks";
 import {
   EmbeddingTask,
@@ -104,12 +104,6 @@ export type TaskJsonInput =
   | SimpleTasks
   | FactoryTasksJsonInput;
 
-function lookupModel(model: string): Model {
-  const realModel = Model.all.get(model);
-  if (!(realModel instanceof Model)) throw new Error("Model not found");
-  return realModel;
-}
-
 function convertJson(json: TaskJsonInput): TaskStreamable {
   const { run, config } = json;
   const runTask = AllRegisteredTasks.get(run);
@@ -126,7 +120,8 @@ function convertJson(json: TaskJsonInput): TaskStreamable {
     run == "QuestionAnswerTask"
   ) {
     const input = json.input;
-    const model = lookupModel(input.model);
+    const model = findModelByName(input.model);
+    if (!model) throw new Error(`Model not found: ${input.model}`);
     result = new runTask(config, { ...input, model });
   } else if (run == "RenameTask") {
     result = new runTask(config, json.input);

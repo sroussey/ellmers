@@ -5,14 +5,13 @@
 //    ****************************************************************************
 
 import { Command } from "commander";
-import { allModels } from "#/storage/InMemoryStorage";
 import { runTaskToListr } from "#/util/TaskStreamToListr2";
-import { DownloadTask } from "#/tasks/HuggingFaceLocalTasks";
 import { ParallelTaskList } from "#/Task";
 import {
   EmbeddingTask,
   RewriterTask,
   SummarizeTask,
+  DownloadTask,
 } from "#/tasks/FactoryTasks";
 import {
   EmbeddingStrategy,
@@ -22,37 +21,29 @@ import {
 } from "#/tasks/Strategies";
 import { sleep } from "#/util/Misc";
 import { JsonStrategy, TaskJsonInput } from "#/tasks/JsonTask";
+import { Model, ModelUseCaseEnum } from "#/Model";
+import {
+  findAllModels,
+  findModelByName,
+  findModelByUseCase,
+} from "#/storage/InMemoryStorage";
 
 export function AddSampleCommand(program: Command) {
   program
     .command("download")
     .description("download models")
     .option("--model <name>", "model to download")
-    .option(
-      "--pipeline <name>",
-      "model group to download based on pipeline type"
-    )
     .action(async (options) => {
-      let models = allModels.slice();
+      let models = findAllModels();
       if (options.model) {
-        const model = allModels.find((m) => m.name == options.model);
+        const model = findModelByName(options.model);
         if (model) {
           models = [model];
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       }
-      if (options.pipeline) {
-        const found = allModels.filter((m) => m.pipeline == options.pipeline);
-        if (found.length) {
-          models.push(...found);
-        } else {
-          program.error(`Unknown pipeline ${options.pipeline}`);
-        }
-      }
-      if (!models.length) {
-        models = allModels;
-      }
+
       const task = new ParallelTaskList(
         { name: "Download Models" },
         models.map(
@@ -72,16 +63,14 @@ export function AddSampleCommand(program: Command) {
     .action(async (text, options) => {
       let task;
       if (options.model) {
-        const model = allModels.find((m) => m.name == options.model);
+        const model = findModelByName(options.model);
         if (model) {
           task = new EmbeddingTask({ name: "Embed one" }, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
-        let models = allModels.filter(
-          (m) => m.pipeline == "feature-extraction"
-        );
+        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING);
         task = new EmbeddingStrategy(
           { name: "Embed several" },
           { text, models }
@@ -102,14 +91,14 @@ export function AddSampleCommand(program: Command) {
     .action(async (text, options) => {
       let task;
       if (options.model) {
-        const model = allModels.find((m) => m.name == options.model);
+        const model = findModelByName(options.model);
         if (model) {
           task = new SummarizeTask({ name: "Summarize" }, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
-        let models = allModels.filter((m) => m.pipeline == "summarization");
+        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION);
         task = new SummarizeStrategy({ name: "Summarize" }, { text, models });
       }
 
@@ -128,7 +117,7 @@ export function AddSampleCommand(program: Command) {
     .action(async (text, options) => {
       let task;
       if (options.model) {
-        const model = allModels.find((m) => m.name == options.model);
+        const model = findModelByName(options.model);
         if (model) {
           task = new RewriterTask(
             { name: "Rewrite" },
@@ -138,11 +127,7 @@ export function AddSampleCommand(program: Command) {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
-        let models = allModels.filter(
-          (m) =>
-            m.pipeline === "text-generation" ||
-            m.pipeline === "text2text-generation"
-        );
+        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_GENERATION);
         task = new RewriterStrategy(
           { name: "Rewrite" },
           {
@@ -168,15 +153,9 @@ export function AddSampleCommand(program: Command) {
         "Rewrite the following text:",
         "Rewrite the following and make it more descriptive:",
       ];
-      const prompt_model = allModels.filter(
-        (m) =>
-          m.pipeline === "text-generation" ||
-          m.pipeline === "text2text-generation"
-      );
+      const prompt_model = findModelByUseCase(ModelUseCaseEnum.TEXT_GENERATION);
 
-      const embed_model = allModels.filter(
-        (m) => m.pipeline === "feature-extraction"
-      );
+      const embed_model = findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING);
 
       const task = new RewriterEmbeddingStrategy(
         { name: "Test" },

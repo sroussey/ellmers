@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { Model, ModelProcessorType } from "#/Model";
+import { Model, ModelProcessorEnum, ModelUseCaseEnum } from "#/Model";
 import { Task, TaskConfig } from "#/Task";
 import {
   pipeline,
@@ -22,12 +22,13 @@ import {
 export class ONNXTransformerJsModel extends Model {
   constructor(
     name: string,
+    useCase: ModelUseCaseEnum[],
     public pipeline: string,
     options?: Partial<Pick<ONNXTransformerJsModel, "dimensions" | "parameters">>
   ) {
-    super(name, options);
+    super(name, useCase, options);
   }
-  readonly type = ModelProcessorType.LOCAL_ONNX_TRANSFORMERJS;
+  readonly type = ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS;
 }
 
 /**
@@ -70,7 +71,7 @@ const getPipeline = async (
 interface DownloadTaskInput {
   model: ONNXTransformerJsModel;
 }
-export class DownloadTask extends Task {
+export class HuggingFaceLocal_DownloadTask extends Task {
   declare input: DownloadTaskInput;
   declare defaults: Partial<DownloadTaskInput>;
   constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {

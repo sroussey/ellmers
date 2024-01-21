@@ -11,10 +11,7 @@ import { deepEqual } from "./util/Misc";
  * WARNING!
  * TODO!
  *
- * Task input and output is not type safe. It is super brittle and hacky. There is no way to tranform between
- * between them. Input and output are dictionaries, so right now an output of `text` will overwrite an input of `text`.
- * But those overwrites are at runtime AFTER the tasks are created. This is because everything happens in the
- * constructor because I was lazy and not sure what I wanted. I still don't. I am thinking about a visual
+ * Task input and output is not type safe. It is super brittle and hacky. I am thinking about a visual
  * UI editor for tasks where you can map inputs and outputs, see what will run before you run it, etc.
  *
  * Also, task provenance is not tracked which is terrible for keeping state and caching intermediate results.
@@ -30,14 +27,7 @@ export enum TaskStatus {
 /**
  * TaskEvents
  *
- * Note that events(start|end|error) bubble up from subtasks to parent tasks.
- *
- * This may seem odd, but think of the leaf tasks getting sent to queue of
- * workers for processing. The parent task doesn't really start uptil a child
- * has been posted to the queue and gets picked up by a worker. Only then does
- * that task start, and thus its parent task starts.
- *
- * There is no job queue at the moement, but this is the idea.
+ * There is no job queue at the moement.
  */
 export type TaskEvents = "start" | "complete" | "error" | "progress";
 
@@ -168,29 +158,34 @@ export abstract class MultiTaskBase extends TaskBase {
   generateTasks() {}
 
   async run(overrides?: TaskInput) {
-    this.emit("start");
-    this.input = this.withDefaults(overrides);
-    // TODO: dont regenerate if defaults are the same as input
-    if (this.generateTasks && !deepEqual(this.input, this.defaults))
-      this.generateTasks(); // only strategy should do this
-    const total = this.tasks.length;
-    let taskInput = {};
-    for (const task of this.tasks) {
-      await task.run(taskInput);
-      if (this.tasks[this.tasks.length - 1] == task) {
-        // if last task, their result is our result
-        this.output = task.output;
-        break;
+    try {
+      this.emit("start");
+      this.input = this.withDefaults(overrides);
+      // TODO: dont regenerate if defaults are the same as input (only check what matters)
+      if (this.generateTasks && !deepEqual(this.input, this.defaults))
+        this.generateTasks(); // only strategy should do this
+      const total = this.tasks.length;
+      let taskInput = {};
+      for (const task of this.tasks) {
+        await task.run(taskInput);
+        if (this.tasks[this.tasks.length - 1] == task) {
+          // if last task, their result is our result
+          this.output = task.output;
+          break;
+        }
+        taskInput = Object.assign({}, task.output);
+        this.emit("progress", this.completed / total);
+        if (this.errors) {
+          this.emit("error", this.error);
+          break;
+        }
       }
-      taskInput = Object.assign({}, task.output);
-      this.emit("progress", this.completed / total);
-      if (this.errors) {
-        this.emit("error", this.error);
-        break;
-      }
+      this.emit("complete");
+      return this.output;
+    } catch (e) {
+      this.emit("error", String(e));
+      return this.output;
     }
-    this.emit("complete");
-    return this.output;
   }
 
   #completeTask() {
