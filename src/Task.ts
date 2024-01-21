@@ -54,7 +54,17 @@ export interface TaskInput {
   [key: string]: any;
 }
 
-abstract class TaskBase extends EventEmitter<TaskEvents> {
+abstract class TaskBase {
+  events = new EventEmitter<TaskEvents>();
+  on(name: TaskEvents, fn: (...args: any[]) => void) {
+    this.events.on.call(this.events, name, fn);
+  }
+  off(name: TaskEvents, fn: (...args: any[]) => void) {
+    this.events.off.call(this.events, name, fn);
+  }
+  emit(name: TaskEvents, ...args: any[]) {
+    this.events.emit.call(this.events, name, ...args);
+  }
   /**
    * The defaults for the task. If no overrides at run time, then this would be equal to the
    * input
@@ -92,7 +102,7 @@ abstract class TaskBase extends EventEmitter<TaskEvents> {
   }
 
   constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {
-    super();
+    Object.defineProperty(this, "events", { enumerable: false });
     this.defaults = defaults;
     this.input = this.withDefaults();
     this.config = Object.assign({}, this.config, config);
