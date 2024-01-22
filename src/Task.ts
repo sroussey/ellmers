@@ -129,7 +129,7 @@ export abstract class Task extends TaskBase {
 
 // ===============================================================================
 
-enum TaskListOrdering {
+export enum TaskListOrdering {
   SERIAL = "SERIAL",
   PARALLEL = "PARALLEL",
 }

@@ -29,6 +29,7 @@ export interface EmbeddingStrategyInput {
 }
 export class EmbeddingStrategy extends Strategy {
   declare input: EmbeddingStrategyInput;
+  readonly type = "EmbeddingStrategy";
   constructor(config: TaskConfig = {}, defaults?: EmbeddingStrategyInput) {
     super(config, defaults);
   }
@@ -53,6 +54,7 @@ export interface SummarizeStrategyInput {
 }
 export class SummarizeStrategy extends Strategy {
   declare input: SummarizeStrategyInput;
+  readonly type = "SummarizeStrategy";
 
   constructor(config: TaskConfig = {}, defaults?: SummarizeStrategyInput) {
     super(config, defaults);
@@ -80,6 +82,7 @@ export interface RewriterStrategyInput {
 }
 export class RewriterStrategy extends Strategy {
   declare input: RewriterStrategyInput;
+  readonly type = "RewriterStrategy";
 
   constructor(config: TaskConfig = {}, defaults?: RewriterStrategyInput) {
     super(config, defaults);
@@ -127,7 +130,7 @@ export interface RewriterEmbeddingStrategyInput {
 
 export class RewriterEmbeddingStrategy extends Strategy {
   declare input: RewriterEmbeddingStrategyInput;
-  id = "RewriterEmbeddingStrategy";
+  readonly type = "RewriterEmbeddingStrategy";
   constructor(config: TaskConfig, defaults: RewriterEmbeddingStrategyInput) {
     super(config, defaults);
   }
