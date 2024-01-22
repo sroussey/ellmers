@@ -31,9 +31,16 @@ export interface RenameTaskInput {
  */
 export class RenameTask extends Task {
   constructor(
-    config: TaskConfig,
+    config: TaskConfig = {},
     defaults: RenameTaskInput = { output_remap_array: [] }
   ) {
+    config.name ||=
+      "RenameTask" +
+      (defaults?.output_remap_array?.length
+        ? defaults?.output_remap_array
+            .map(({ from, to }) => `: from ${from} to ${to}`)
+            .join(", ")
+        : "");
     super(config, defaults);
   }
   async run(overrides?: RenameTaskInput) {
