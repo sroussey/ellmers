@@ -5,9 +5,14 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");        *
 //    ****************************************************************************
 
-import { TaskStreamable, type TaskStream, Task, TaskStatus } from "#/Task";
+import {
+  TaskStreamable,
+  type TaskStream,
+  TaskStatus,
+  TaskListOrdering,
+} from "#/Task";
 import { Listr, ListrTask } from "listr2";
-import { createBar } from "../../src-examples/TaskHelper";
+import { createBar } from "./TaskHelper";
 import { PRESET_TIMER } from "listr2";
 import { Observable } from "rxjs";
 
@@ -21,7 +26,7 @@ const taskArrayToListr = (
     switch (task.kind) {
       case "TASK":
         list.push({
-          title: task.name,
+          title: task.config.name,
           task: async (_, t) => {
             if (
               task.status == TaskStatus.COMPLETED ||
@@ -53,18 +58,18 @@ const taskArrayToListr = (
         break;
       case "TASK_LIST":
         list.push({
-          title: task.name,
+          title: task.config.name,
           task: async (_, t) => {
             return taskArrayToListr(task.tasks, {
-              concurrent: task.ordering == "parallel",
-              exitOnError: task.ordering == "serial",
+              concurrent: task.ordering == TaskListOrdering.PARALLEL,
+              exitOnError: task.ordering == TaskListOrdering.SERIAL,
             });
           },
         });
         break;
       case "STRATEGY":
         list.push({
-          title: task.name,
+          title: task.config.name,
           task: async (_, t) => {
             return taskArrayToListr(task.tasks);
           },

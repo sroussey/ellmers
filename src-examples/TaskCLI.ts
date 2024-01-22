@@ -5,7 +5,7 @@
 //    ****************************************************************************
 
 import { Command } from "commander";
-import { runTaskToListr } from "#/util/TaskStreamToListr2";
+import { runTaskToListr } from "./TaskStreamToListr2";
 import { ParallelTaskList } from "#/Task";
 import {
   EmbeddingTask,
@@ -46,9 +46,7 @@ export function AddSampleCommand(program: Command) {
 
       const task = new ParallelTaskList(
         { name: "Download Models" },
-        models.map(
-          (model) => new DownloadTask({ name: "Downloading models" }, { model })
-        )
+        models.map((model) => new DownloadTask({}, { model }))
       );
       await runTaskToListr(task);
 
@@ -65,7 +63,7 @@ export function AddSampleCommand(program: Command) {
       if (options.model) {
         const model = findModelByName(options.model);
         if (model) {
-          task = new EmbeddingTask({ name: "Embed one" }, { model, text });
+          task = new EmbeddingTask({}, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
@@ -93,13 +91,13 @@ export function AddSampleCommand(program: Command) {
       if (options.model) {
         const model = findModelByName(options.model);
         if (model) {
-          task = new SummarizeTask({ name: "Summarize" }, { model, text });
+          task = new SummarizeTask({}, { model, text });
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
         let models = findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION);
-        task = new SummarizeStrategy({ name: "Summarize" }, { text, models });
+        task = new SummarizeStrategy({}, { text, models });
       }
 
       await runTaskToListr(task);
@@ -158,7 +156,7 @@ export function AddSampleCommand(program: Command) {
       const embed_model = findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING);
 
       const task = new RewriterEmbeddingStrategy(
-        { name: "Test" },
+        {},
         {
           text,
           prompt,
