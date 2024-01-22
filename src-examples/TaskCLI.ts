@@ -28,6 +28,17 @@ import {
   findModelByUseCase,
 } from "#/storage/InMemoryStorage";
 
+async function runTask(task: any) {
+  if (process.stdout.isTTY) {
+    await runTaskToListr(task);
+    await sleep(100);
+    console.log(task.output);
+  } else {
+    await task.run({});
+    process.stdout.write(JSON.stringify(task.output));
+  }
+}
+
 export function AddSampleCommand(program: Command) {
   program
     .command("download")
@@ -75,10 +86,7 @@ export function AddSampleCommand(program: Command) {
         );
       }
 
-      await runTaskToListr(task);
-
-      await sleep(100);
-      console.log(task.output);
+      await runTask(task);
     });
 
   program
@@ -100,10 +108,7 @@ export function AddSampleCommand(program: Command) {
         task = new SummarizeStrategy({}, { text, models });
       }
 
-      await runTaskToListr(task);
-
-      await sleep(100);
-      console.log(task.output);
+      await runTask(task);
     });
 
   program
@@ -136,10 +141,7 @@ export function AddSampleCommand(program: Command) {
         );
       }
 
-      await runTaskToListr(task);
-
-      await sleep(100);
-      console.log("rewrite output", task.output);
+      await runTask(task);
     });
 
   program
@@ -165,10 +167,7 @@ export function AddSampleCommand(program: Command) {
         }
       );
 
-      await runTaskToListr(task);
-
-      await sleep(100);
-      console.log(task.output);
+      await runTask(task);
     });
 
   program
@@ -201,9 +200,10 @@ export function AddSampleCommand(program: Command) {
       const json = JSON.parse(jsonText);
       const task = new JsonStrategy({ name: "Test JSON" }, json);
 
-      await runTaskToListr(task);
-
-      await sleep(100);
-      console.log(task.output);
+      await runTask(task);
     });
+
+  program.command("test").action(async () => {
+    //
+  });
 }
