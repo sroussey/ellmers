@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model, ModelProcessorEnum, ModelUseCaseEnum } from "#/Model";
-import { Task, TaskConfig } from "#/Task";
+import { StreamableTaskType, Task, TaskConfig } from "#/Task";
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
 
 export class MediaPipeTfJsModel extends Model {
@@ -31,7 +31,7 @@ interface DownloadTaskInput {
 export class MediaPipeTfJsLocal_DownloadTask extends Task {
   declare input: DownloadTaskInput;
   declare defaults: Partial<DownloadTaskInput>;
-  readonly type = "DownloadTask";
+  readonly type: StreamableTaskType = "DownloadTask";
   constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {
     config.name ||= `Downloading ${defaults.model.name}`;
     super(config, defaults);
@@ -72,7 +72,7 @@ interface EmbeddingTaskInput {
 export class MediaPipeTfJsLocal_EmbeddingTask extends Task {
   declare input: EmbeddingTaskInput;
   declare defaults: Partial<EmbeddingTaskInput>;
-  readonly type = "EmbeddingTask";
+  readonly type: StreamableTaskType = "EmbeddingTask";
   constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
     config.name ||= `Embedding content via ${defaults.model.name}`;
     config.output_name ||= "vector";

@@ -7,18 +7,6 @@
 
 import { TaskConfig, Task, TaskInput } from "#/Task";
 
-function renameProperty(obj: any, newName: string): any {
-  // Assuming there's only one key
-  const originalKey = Object.keys(obj)[0];
-
-  // Rename the key
-  obj[newName] = obj[originalKey];
-
-  // Delete the original key
-  delete obj[originalKey];
-
-  return obj;
-}
 export interface RenameTaskInput {
   output_remap_array: {
     from: string;
@@ -30,6 +18,7 @@ export interface RenameTaskInput {
  * Uses config to map multiple values from inputs to outputs
  */
 export class RenameTask extends Task {
+  readonly type: string = "RenameTask";
   constructor(
     config: TaskConfig = {},
     defaults: RenameTaskInput = { output_remap_array: [] }
@@ -61,6 +50,7 @@ export class RenameTask extends Task {
 
 export class LambdaTask extends Task {
   #runner: (input: TaskInput) => Promise<TaskInput>;
+  readonly type: string = "LambdaTask";
   constructor(
     config: TaskConfig & {
       run: () => Promise<TaskInput>;

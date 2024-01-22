@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model, ModelProcessorEnum, ModelUseCaseEnum } from "#/Model";
-import { Task, TaskConfig } from "#/Task";
+import { StreamableTaskType, Task, TaskConfig } from "#/Task";
 import {
   pipeline,
   type PipelineType,
@@ -78,7 +78,7 @@ interface DownloadTaskInput {
 export class HuggingFaceLocal_DownloadTask extends Task {
   declare input: DownloadTaskInput;
   declare defaults: Partial<DownloadTaskInput>;
-  readonly type = "DownloadTask";
+  readonly type: StreamableTaskType = "DownloadTask";
   constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {
     config.name ||= `Downloading ${defaults.model.name}`;
     super(config, defaults);
@@ -111,7 +111,7 @@ interface EmbeddingTaskInput {
 export class HuggingFaceLocal_EmbeddingTask extends Task {
   declare input: EmbeddingTaskInput;
   declare defaults: Partial<EmbeddingTaskInput>;
-  readonly type = "EmbeddingTask";
+  readonly type: StreamableTaskType = "EmbeddingTask";
   constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
     config.name ||= `Embedding content via ${defaults.model.name}`;
     config.output_name ||= "vector";
@@ -169,7 +169,7 @@ abstract class TextGenerationTaskBase extends Task {
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export class HuggingFaceLocal_TextGenerationTask extends TextGenerationTaskBase {
-  readonly type = "TextGenerationTask";
+  readonly type: StreamableTaskType = "TextGenerationTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.input = this.withDefaults(overrides);
 
@@ -209,7 +209,7 @@ interface RewriterTaskInput {
  */
 export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
   declare input: RewriterTaskInput;
-  readonly type = "RewriterTask";
+  readonly type: StreamableTaskType = "RewriterTask";
   constructor(config: TaskConfig = {}, input: RewriterTaskInput) {
     const { model } = input;
     config.name ||= `Text to text rewriting content via ${model.name} : ${model.pipeline}`;
@@ -256,7 +256,7 @@ export class HuggingFaceLocal_TextRewriterTask extends TextGenerationTaskBase {
  */
 
 export class HuggingFaceLocal_SummarizationTask extends TextGenerationTaskBase {
-  readonly type = "SummarizeTask";
+  readonly type: StreamableTaskType = "SummarizeTask";
   public async run(overrides?: Partial<TextGenerationTaskInput>) {
     this.emit("start");
 
@@ -296,7 +296,7 @@ interface QuestionAnswerTaskInput {
  */
 export class HuggingFaceLocal_QuestionAnswerTask extends TextGenerationTaskBase {
   declare input: QuestionAnswerTaskInput;
-  readonly type = "QuestionAnswerTask";
+  readonly type: StreamableTaskType = "QuestionAnswerTask";
   constructor(config: TaskConfig = {}, input: QuestionAnswerTaskInput) {
     config.name =
       config.name || `Question and Answer content via ${input.model.name}`;

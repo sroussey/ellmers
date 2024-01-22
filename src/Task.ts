@@ -7,6 +7,13 @@
 import { EventEmitter } from "eventemitter3";
 import { deepEqual } from "./util/Misc";
 
+class InputOutput<I, O, T extends TaskStreamable> {
+  provanance: string[] = [];
+  constructor(public input: I, public output: O, task: T) {
+    this.provanance.push(task.type);
+  }
+}
+
 /**
  * WARNING!
  * TODO!
@@ -34,6 +41,7 @@ export type TaskEvents = "start" | "complete" | "error" | "progress";
 // ===============================================================================
 
 export type StreamableTaskKind = "TASK" | "TASK_LIST" | "STRATEGY";
+export type StreamableTaskType = string;
 
 // ===============================================================================
 
@@ -125,6 +133,7 @@ abstract class TaskBase {
 
 export abstract class Task extends TaskBase {
   readonly kind = "TASK";
+  readonly type: StreamableTaskType = "Task";
 }
 
 // ===============================================================================
@@ -211,14 +220,17 @@ export abstract class MultiTaskBase extends TaskBase {
 
 export abstract class TaskList extends MultiTaskBase {
   readonly kind = "TASK_LIST";
+  readonly type: StreamableTaskType = "TaskList";
   declare _tasks: Task[];
 }
 
 export class SerialTaskList extends TaskList {
+  readonly type: StreamableTaskType = "SerialTaskList";
   ordering = TaskListOrdering.SERIAL;
 }
 
 export class ParallelTaskList extends TaskList {
+  readonly type: StreamableTaskType = "ParallelTaskList";
   ordering = TaskListOrdering.PARALLEL;
 
   async run(overrides?: TaskInput) {
@@ -258,6 +270,7 @@ export class ParallelTaskList extends TaskList {
 export abstract class Strategy extends MultiTaskBase {
   declare id: string;
   readonly kind = "STRATEGY";
+  readonly type: StreamableTaskType = "Strategy";
   ordering = TaskListOrdering.SERIAL;
   constructor(config: TaskConfig = {}, defaults: TaskInput = {}) {
     super(config, [], defaults);

@@ -6,7 +6,7 @@
 //    ****************************************************************************
 
 import { Model } from "#/Model";
-import { TaskConfig, Task, TaskInput } from "#/Task";
+import { TaskConfig, Task, TaskInput, StreamableTaskType } from "#/Task";
 import {
   ONNXTransformerJsModel,
   HuggingFaceLocal_EmbeddingTask,
@@ -43,7 +43,7 @@ interface DownloadTaskInput {
 
 export class DownloadTask extends ModelFactoryTask {
   declare input: DownloadTaskInput;
-  readonly type = "DownloadTask";
+  readonly type: StreamableTaskType = "DownloadTask";
   constructor(config: TaskConfig = {}, defaults: DownloadTaskInput) {
     super(config, defaults);
     const { model } = this.input;
@@ -65,7 +65,7 @@ export interface EmbeddingTaskInput {
  */
 export class EmbeddingTask extends ModelFactoryTask {
   declare input: EmbeddingTaskInput;
-  readonly type = "EmbeddingTask";
+  readonly type: StreamableTaskType = "EmbeddingTask";
   constructor(config: TaskConfig = {}, defaults: EmbeddingTaskInput) {
     super(config, defaults);
     const { text, model } = this.input;
@@ -83,7 +83,7 @@ export interface TextGenerationTaskInput {
   model: Model;
 }
 export class TextGenerationTask extends ModelFactoryTask {
-  readonly type = "TextGenerationTask";
+  readonly type: StreamableTaskType = "TextGenerationTask";
   declare input: TextGenerationTaskInput;
   constructor(config: TaskConfig = {}, input: TextGenerationTaskInput) {
     super(config, input);
@@ -99,7 +99,7 @@ export class TextGenerationTask extends ModelFactoryTask {
 
 export class SummarizeTask extends ModelFactoryTask {
   declare input: TextGenerationTaskInput;
-  readonly type = "SummarizeTask";
+  readonly type: StreamableTaskType = "SummarizeTask";
   constructor(config: TaskConfig = {}, input: TextGenerationTaskInput) {
     super(config, input);
     const { text, model } = this.input;
@@ -119,7 +119,7 @@ export interface RewriterTaskInput {
 }
 
 export class RewriterTask extends ModelFactoryTask {
-  readonly type = "RewriterTask";
+  readonly type: StreamableTaskType = "RewriterTask";
   declare input: RewriterTaskInput;
   constructor(config: TaskConfig = {}, input: RewriterTaskInput) {
     super(config, input);
@@ -141,7 +141,7 @@ export interface QuestionAnswerTaskInput {
 }
 export class QuestionAnswerTask extends ModelFactoryTask {
   declare input: QuestionAnswerTaskInput;
-  readonly type = "QuestionAnswerTask";
+  readonly type: StreamableTaskType = "QuestionAnswerTask";
   constructor(config: TaskConfig = {}, input: QuestionAnswerTaskInput) {
     super(config, input);
     const { text, model, context } = this.input;

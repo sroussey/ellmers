@@ -21,7 +21,7 @@ import {
 } from "#/tasks/Strategies";
 import { sleep } from "#/util/Misc";
 import { JsonStrategy, TaskJsonInput } from "#/tasks/JsonTask";
-import { Model, ModelUseCaseEnum } from "#/Model";
+import { ModelUseCaseEnum } from "#/Model";
 import {
   findAllModels,
   findModelByName,

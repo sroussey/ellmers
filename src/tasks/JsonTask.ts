@@ -9,6 +9,7 @@ import {
   ParallelTaskList,
   SerialTaskList,
   Strategy,
+  StreamableTaskType,
   TaskConfig,
   TaskStreamable,
 } from "#/Task";
@@ -133,6 +134,7 @@ function convertJson(json: TaskJsonInput): TaskStreamable {
 
 export class JsonStrategy extends Strategy {
   declare input: { tasks: TaskJsonInput[] };
+  readonly type: StreamableTaskType = "JsonStrategy";
   constructor(
     config: TaskConfig = {},
     defaults?: TaskJsonInput | TaskJsonInput[]
