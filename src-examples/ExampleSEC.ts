@@ -1,5 +1,5 @@
 //    ****************************************************************************
-//    *   ELMERS: Embedding Language Model Experiential Retrieval Service        *
+//    *   ELMERS: Embedding Large Language Model Experiential Retrieval Service  *
 //    *                                                                          *
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
 //    ****************************************************************************

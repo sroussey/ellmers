@@ -1,9 +1,9 @@
-//    ****************************************************************************
-//    *   ELMERS: Embedding Language Model Experiential Retrieval Service        *
-//    *                                                                          *
-//    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
-//    *   Licensed under the Apache License, Version 2.0 (the "License");        *
-//    ****************************************************************************
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
 
 import { Instruct, InstructList } from "#/Instruct";
 import { Model, ModelUseCaseEnum } from "#/Model";
@@ -51,6 +51,13 @@ export const whereIsAIUAELargeV1 = new ONNXTransformerJsModel(
   [ModelUseCaseEnum.TEXT_EMBEDDING],
   "feature-extraction",
   { dimensions: 1024 }
+);
+
+export const baaiBgeSmallEnV15 = new ONNXTransformerJsModel(
+  "Xenova/bge-small-en-v1.5",
+  [ModelUseCaseEnum.TEXT_EMBEDDING],
+  "feature-extraction",
+  { dimensions: 384 }
 );
 
 export const xenovaDistilbert = new ONNXTransformerJsModel(
