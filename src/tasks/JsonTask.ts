@@ -7,8 +7,8 @@
 
 import {
   ParallelTaskList,
+  SerialStrategy,
   SerialTaskList,
-  Strategy,
   StreamableTaskType,
   TaskConfig,
   TaskStreamable,
@@ -74,6 +74,13 @@ type ChangeToString<T, K extends PropertyKey[]> = {
     ? ChangeToString<T[P], K>
     : T[P];
 };
+type ChangeToStringArray<T, K extends PropertyKey[]> = {
+  [P in keyof T]: P extends K[number]
+    ? string | string[]
+    : T[P] extends object
+    ? ChangeToString<T[P], K>
+    : T[P];
+};
 type FactoryHelper<T, R = string> = {
   run: R;
   config?: TaskConfig;
@@ -83,7 +90,10 @@ type FactoryHelper<T, R = string> = {
 type StrategyHelper<T, R = string, N = string> = {
   run: R;
   config?: TaskConfig;
-  input: ChangeToString<T, ["model", "models", "prompt_model", "embed_model"]>;
+  input: ChangeToStringArray<
+    T,
+    ["model", "models", "prompt_model", "embed_model"]
+  >;
 };
 
 type FactoryTasksJsonInput =
@@ -105,6 +115,16 @@ export type TaskJsonInput =
   | SimpleTasks
   | FactoryTasksJsonInput;
 
+function makeArrayOfModel(model: string | string[] | undefined) {
+  if (!model) return undefined;
+  const modelstrs = Array.isArray(model) ? model : [model];
+  const models = modelstrs.map((s) => {
+    const found = findModelByName(s);
+    if (!found) throw new Error(`Model not found: ${s}`);
+    return found;
+  });
+  return models;
+}
 function convertJson(json: TaskJsonInput): TaskStreamable {
   const { run, config } = json;
   const runTask = AllRegisteredTasks.get(run);
@@ -124,6 +144,15 @@ function convertJson(json: TaskJsonInput): TaskStreamable {
     const model = findModelByName(input.model);
     if (!model) throw new Error(`Model not found: ${input.model}`);
     result = new runTask(config, { ...input, model });
+  } else if (run == "RewriterStrategy") {
+    const input = json.input;
+    const model = makeArrayOfModel(input.model);
+    result = new runTask(config, { ...input, model });
+  } else if (run == "RewriterEmbeddingStrategy") {
+    const input = json.input;
+    const embed_model = makeArrayOfModel(input.embed_model);
+    const prompt_model = makeArrayOfModel(input.prompt_model);
+    result = new runTask(config, { ...input, embed_model, prompt_model });
   } else if (run == "RenameTask") {
     result = new runTask(config, json.input);
   } else {
@@ -132,7 +161,7 @@ function convertJson(json: TaskJsonInput): TaskStreamable {
   return result;
 }
 
-export class JsonStrategy extends Strategy {
+export class JsonStrategy extends SerialStrategy {
   declare input: { tasks: TaskJsonInput[] };
   readonly type: StreamableTaskType = "JsonStrategy";
   constructor(
@@ -143,13 +172,13 @@ export class JsonStrategy extends Strategy {
     super(config, { tasks });
   }
   generateTasks() {
-    let task: TaskStreamable[];
+    let tasks: TaskStreamable[];
     try {
-      task = this.input.tasks.map(convertJson);
+      tasks = this.input.tasks.map(convertJson);
     } catch (e) {
       throw new Error(`Error converting json: ${String(e)}`);
     }
-    if (!task) throw new Error("Task not found");
-    this.setTasks(task);
+    if (!tasks) throw new Error("Task not found");
+    this.setTasks(tasks);
   }
 }

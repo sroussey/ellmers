@@ -32,13 +32,6 @@ export const supabaseGteSmall = new ONNXTransformerJsModel(
   { dimensions: 384 }
 );
 
-export const baaiBgeSmallEnV15 = new ONNXTransformerJsModel(
-  "Xenova/bge-small-en-v1.5",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 384 }
-);
-
 export const baaiBgeBaseEnV15 = new ONNXTransformerJsModel(
   "Xenova/bge-base-en-v1.5",
   [ModelUseCaseEnum.TEXT_EMBEDDING],
@@ -71,6 +64,14 @@ export const xenovaDistilbertMnli = new ONNXTransformerJsModel(
   [ModelUseCaseEnum.TEXT_CLASSIFICATION],
   "zero-shot-classification"
 );
+
+export const stentancetransformerMultiQaMpnetBaseDotV1 =
+  new ONNXTransformerJsModel(
+    "Xenova/multi-qa-mpnet-base-dot-v1",
+    [ModelUseCaseEnum.TEXT_EMBEDDING],
+    "feature-extraction",
+    { dimensions: 768 }
+  );
 
 export const gpt2 = new ONNXTransformerJsModel(
   "Xenova/gpt2",

@@ -50,6 +50,15 @@ export type TaskStream = TaskStreamable[];
 
 // ===============================================================================
 
+export interface ITaskSimple {
+  isCompound: false;
+}
+export interface ITaskCompound {
+  isCompound: true;
+  tasks: TaskStream;
+}
+export type ITask = ITaskSimple & ITaskCompound;
+
 export interface TaskConfig {
   name?: string;
   id?: unknown;
@@ -59,6 +68,9 @@ export interface TaskConfig {
 type TaskConfigFull = TaskConfig & { output_name: string };
 
 export interface TaskInput {
+  [key: string]: any;
+}
+export interface TaskOutput {
   [key: string]: any;
 }
 
@@ -73,6 +85,10 @@ abstract class TaskBase {
   emit(name: TaskEvents, ...args: any[]) {
     this.events.emit.call(this.events, name, ...args);
   }
+  /**
+   * Does this task have subtasks?
+   */
+  abstract isCompound: boolean;
   /**
    * The defaults for the task. If no overrides at run time, then this would be equal to the
    * input
@@ -113,7 +129,17 @@ abstract class TaskBase {
     Object.defineProperty(this, "events", { enumerable: false });
     this.defaults = defaults;
     this.input = this.withDefaults();
-    this.config = Object.assign({}, this.config, config);
+    this.config = Object.assign(
+      {
+        id:
+          this.constructor.name +
+          ":" +
+          Math.random().toString(36).substring(2, 9),
+        name: this.constructor.name,
+      },
+      this.config,
+      config
+    );
     this.on("start", () => {
       this.status = TaskStatus.PROCESSING;
     });
@@ -131,9 +157,10 @@ abstract class TaskBase {
   abstract run(overrides?: TaskInput): Promise<TaskInput>;
 }
 
-export abstract class Task extends TaskBase {
+export abstract class Task extends TaskBase implements ITaskSimple {
   readonly kind = "TASK";
   readonly type: StreamableTaskType = "Task";
+  readonly isCompound = false;
 }
 
 // ===============================================================================
@@ -143,7 +170,8 @@ export enum TaskListOrdering {
   PARALLEL = "PARALLEL",
 }
 
-export abstract class MultiTaskBase extends TaskBase {
+export abstract class MultiTaskBase extends TaskBase implements ITaskCompound {
+  readonly isCompound = true;
   abstract ordering: TaskListOrdering;
   tasks: TaskStream = [];
   started = 0;
@@ -174,9 +202,9 @@ export abstract class MultiTaskBase extends TaskBase {
     });
   }
 
-  generateTasks() {}
+  generateTasks(_tasks?: TaskStream) {}
 
-  async run(overrides?: TaskInput) {
+  async #run_serial(overrides?: TaskInput) {
     try {
       this.emit("start");
       this.input = this.withDefaults(overrides);
@@ -207,36 +235,14 @@ export abstract class MultiTaskBase extends TaskBase {
     }
   }
 
-  #completeTask() {
-    this.completed++;
-    this.emit("progress", this.completed / this.total);
-  }
-
-  #errorTask(error: string) {
-    this.errors++;
-    this.error = this.error ? this.error + " & " + error : error;
-  }
-}
-
-export abstract class TaskList extends MultiTaskBase {
-  readonly kind = "TASK_LIST";
-  readonly type: StreamableTaskType = "TaskList";
-  declare _tasks: Task[];
-}
-
-export class SerialTaskList extends TaskList {
-  readonly type: StreamableTaskType = "SerialTaskList";
-  ordering = TaskListOrdering.SERIAL;
-}
-
-export class ParallelTaskList extends TaskList {
-  readonly type: StreamableTaskType = "ParallelTaskList";
-  ordering = TaskListOrdering.PARALLEL;
-
-  async run(overrides?: TaskInput) {
+  async #run_parallel(overrides?: TaskInput) {
     this.emit("start");
 
     this.input = this.withDefaults(overrides);
+    // TODO: dont regenerate if defaults are the same as input (only check what matters)
+    if (this.generateTasks && !deepEqual(this.input, this.defaults))
+      this.generateTasks(); // only strategy should do this
+
     let taskInput = {};
 
     const total = this.tasks.length;
@@ -263,12 +269,45 @@ export class ParallelTaskList extends TaskList {
     this.emit("complete");
     return this.output;
   }
+
+  async run(overrides?: TaskInput) {
+    if (this.ordering === TaskListOrdering.SERIAL) {
+      return this.#run_serial(overrides);
+    } else {
+      return this.#run_parallel(overrides);
+    }
+  }
+
+  #completeTask() {
+    this.completed++;
+    this.emit("progress", this.completed / this.total);
+  }
+
+  #errorTask(error: string) {
+    this.errors++;
+    this.error = this.error ? this.error + " & " + error : error;
+  }
+}
+
+abstract class TaskList extends MultiTaskBase {
+  readonly kind = "TASK_LIST";
+  readonly type: StreamableTaskType = "TaskList";
+  declare _tasks: Task[];
+}
+
+export class SerialTaskList extends TaskList {
+  readonly type: StreamableTaskType = "SerialTaskList";
+  ordering = TaskListOrdering.SERIAL;
+}
+
+export class ParallelTaskList extends TaskList {
+  readonly type: StreamableTaskType = "ParallelTaskList";
+  ordering = TaskListOrdering.PARALLEL;
 }
 
 // ===============================================================================
 
-export abstract class Strategy extends MultiTaskBase {
-  declare id: string;
+abstract class Strategy extends MultiTaskBase {
   readonly kind = "STRATEGY";
   readonly type: StreamableTaskType = "Strategy";
   ordering = TaskListOrdering.SERIAL;
@@ -277,4 +316,14 @@ export abstract class Strategy extends MultiTaskBase {
     this.generateTasks();
   }
   abstract generateTasks(): void;
+}
+
+export abstract class SerialStrategy extends Strategy {
+  readonly type: StreamableTaskType = "SerialStrategy";
+  ordering = TaskListOrdering.SERIAL;
+}
+
+export abstract class ParallelStrategy extends Strategy {
+  readonly type: StreamableTaskType = "ParallelStrategy";
+  ordering = TaskListOrdering.PARALLEL;
 }

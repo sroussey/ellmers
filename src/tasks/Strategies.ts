@@ -14,9 +14,9 @@ strategy might be the thing to use.
 
 import { Model } from "#/Model";
 import {
+  ParallelStrategy,
   ParallelTaskList,
   SerialTaskList,
-  Strategy,
   StreamableTaskType,
   TaskConfig,
   TaskStream,
@@ -28,7 +28,7 @@ export interface EmbeddingStrategyInput {
   text: string;
   models: Model[];
 }
-export class EmbeddingStrategy extends Strategy {
+export class EmbeddingStrategy extends ParallelStrategy {
   declare input: EmbeddingStrategyInput;
   readonly type: StreamableTaskType = "EmbeddingStrategy";
   constructor(config: TaskConfig = {}, defaults?: EmbeddingStrategyInput) {
@@ -36,15 +36,10 @@ export class EmbeddingStrategy extends Strategy {
   }
 
   generateTasks() {
-    const name = this.config.name || `Vary Embedding content`;
-    const tasks = [
-      new ParallelTaskList(
-        { name: name + " In Parallel" },
-        this.input.models.map(
-          (model) => new EmbeddingTask({}, { text: this.input.text, model })
-        )
-      ),
-    ];
+    const tasks = this.input.models.map(
+      (model) => new EmbeddingTask({}, { text: this.input.text, model })
+    );
+
     this.setTasks(tasks);
   }
 }
@@ -53,7 +48,7 @@ export interface SummarizeStrategyInput {
   text: string;
   models: Model[];
 }
-export class SummarizeStrategy extends Strategy {
+export class SummarizeStrategy extends ParallelStrategy {
   declare input: SummarizeStrategyInput;
   readonly type: StreamableTaskType = "SummarizeStrategy";
 
@@ -62,15 +57,9 @@ export class SummarizeStrategy extends Strategy {
   }
 
   generateTasks() {
-    const name = this.config.name || `Vary Summarize content`;
-    const tasks = [
-      new ParallelTaskList(
-        { name: name + " In Parallel" },
-        this.input.models.map(
-          (model) => new SummarizeTask({}, { text: this.input.text, model })
-        )
-      ),
-    ];
+    const tasks = this.input.models.map(
+      (model) => new SummarizeTask({}, { text: this.input.text, model })
+    );
     this.setTasks(tasks);
   }
 }
@@ -81,7 +70,7 @@ export interface RewriterStrategyInput {
   model?: Model | Model[];
   prompt_model_pair?: { prompt: string; model: Model }[];
 }
-export class RewriterStrategy extends Strategy {
+export class RewriterStrategy extends ParallelStrategy {
   declare input: RewriterStrategyInput;
   readonly type: StreamableTaskType = "RewriterStrategy";
 
@@ -105,14 +94,10 @@ export class RewriterStrategy extends Strategy {
         }
       }
     }
-    const tasks = [
-      new ParallelTaskList(
-        { name: name },
-        pairs.map(
-          ({ prompt, model }) => new RewriterTask({}, { text, prompt, model })
-        )
-      ),
-    ];
+    const tasks = pairs.map(
+      ({ prompt, model }) => new RewriterTask({}, { text, prompt, model })
+    );
+
     this.setTasks(tasks);
   }
 }
@@ -129,7 +114,7 @@ export interface RewriterEmbeddingStrategyInput {
   }[];
 }
 
-export class RewriterEmbeddingStrategy extends Strategy {
+export class RewriterEmbeddingStrategy extends ParallelStrategy {
   declare input: RewriterEmbeddingStrategyInput;
   readonly type: StreamableTaskType = "RewriterEmbeddingStrategy";
   constructor(config: TaskConfig, defaults: RewriterEmbeddingStrategyInput) {
@@ -143,23 +128,18 @@ export class RewriterEmbeddingStrategy extends Strategy {
     let tasks: TaskStream = [];
     if (prompt_model_tuple) {
       const tuples = forceArray(prompt_model_tuple);
-      tasks = [
-        new ParallelTaskList(
-          { name: name + " In Parallel" },
-          tuples.map(({ prompt, prompt_model, embed_model }) => {
-            return new SerialTaskList({ name }, [
-              new RewriterTask(
-                { name: name + " Rewriter" },
-                { text, prompt, model: prompt_model }
-              ),
-              new EmbeddingTask(
-                { name: name + " Embedding" },
-                { text, model: embed_model }
-              ),
-            ]);
-          })
-        ),
-      ];
+      tasks = tuples.map(({ prompt, prompt_model, embed_model }) => {
+        return new SerialTaskList({ name }, [
+          new RewriterTask(
+            { name: name + " Rewriter" },
+            { text, prompt, model: prompt_model }
+          ),
+          new EmbeddingTask(
+            { name: name + " Embedding" },
+            { text, model: embed_model }
+          ),
+        ]);
+      });
     } else {
       if (!prompt || !prompt_model || !embed_model)
         throw new Error("Invalid input");
