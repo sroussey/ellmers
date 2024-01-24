@@ -26,3 +26,4 @@ The Embedding Large Language Model Experiential Retrieval Service (ELLMERS) is a
 3. [Matrix Operations](docs/03_matrix_operations.md)
 4. [System Composition](docs/04_system_composition.md)
 5. [Task Chains](docs/05_task_chains.md)
+6. [Run Graph Orchestration](docs/06_run_graph_orchestration.md)

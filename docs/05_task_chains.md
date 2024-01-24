@@ -1,4 +1,4 @@
-# Task and Strategies
+# Tasks, Task Lists, and Strategies
 
 ## Requirements
 
