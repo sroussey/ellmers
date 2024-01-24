@@ -1,6 +1,6 @@
-# ELMERS
+# ELLMERS
 
-[![License](https://img.shields.io/badge/license-Apache2-blue.svg)](https://github.com/sroussey/elmers/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-Apache2-blue.svg)](https://github.com/sroussey/ellmers/blob/main/LICENSE)
 
 ## Overview
 

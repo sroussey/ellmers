@@ -1,9 +1,9 @@
 {
-  "name": "elmers",
-  "module": "elmers",
+  "name": "ellmers",
+  "module": "ellmers",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "^1.0.2",
+    "@types/bun": "^1.0.4",
     "@types/uuid": "^9.0.7"
   },
   "peerDependencies": {
@@ -12,6 +12,7 @@
   "dependencies": {
     "@mediapipe/tasks-text": "^0.10.9",
     "@sroussey/transformers": "^2.14.3",
+    "@sroussey/typescript-graph": "^0.3.6",
     "chalk": "^5.3.0",
     "commander": "^11.1.0",
     "eventemitter3": "^5.0.1",

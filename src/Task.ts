@@ -1,8 +1,9 @@
-//    ****************************************************************************
-//    *   ELMERS: Embedding Large Language Model Experiential Retrieval Service  *
-//    *                                                                          *
-//    *   Copyright Steven Roussey <sroussey@gmail.com>                          *
-//    ****************************************************************************
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
 
 import { EventEmitter } from "eventemitter3";
 import { deepEqual } from "./util/Misc";
