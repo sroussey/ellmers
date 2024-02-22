@@ -16,4 +16,4 @@ I have two very different side projects that I am working on, where intelligent 
 This project is an attempt to build a framework that can be used to build intelligent retrieval systems. The main requirements are:
 
 - I need the ability to test and iterate quickly on ideas, models, and data using both local and cloud resources. And compare the results of different approaches.
-- Be able to put into production and decide to change approaches later without having to rewrite everything.
+- Be able to put into production and decide to change approaches later without having to rewrite everything. So switching embedding models part way through a project should be easy.

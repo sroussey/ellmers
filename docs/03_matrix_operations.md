@@ -27,6 +27,10 @@ We need to lookup data based on the query.
 - We will use the same embedding model as the data embeddings
 - Different pre-processing methods of the query to embed. We will call this a query rewriter. This does not need to use the same generative model as the data rewriter, though it likely would.
 
+## Reranking
+
+We need to re-rank the results based on the query.
+
 ## Storage and Retrieval
 
 We can start with these options:

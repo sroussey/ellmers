@@ -1,0 +1,18 @@
+{
+  "name": "ellmers-cli",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
+  "scripts": {
+    "watch": "",
+    "build": "",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": "src/elmers.js",
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "ellmers-core": "workspace:*"
+  }
+}
