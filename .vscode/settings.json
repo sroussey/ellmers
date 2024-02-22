@@ -10,6 +10,7 @@
   "search.exclude": {
     "data-files/**": true,
     "data-out/**": true,
+    "dist/**": true,
     "**/package-lock.json": true
   },
   "editor.codeActionsOnSave": {
@@ -27,5 +28,6 @@
   "html.format.enable": true,
   "json.format.enable": true,
   "javascript.format.enable": true,
-  "editor.wordWrapColumn": 100
+  "editor.wordWrapColumn": 100,
+  "prettier.printWidth": 100
 }

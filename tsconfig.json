@@ -6,19 +6,15 @@
     "moduleResolution": "bundler",
     "moduleDetection": "force",
     "allowImportingTsExtensions": true,
-    "noEmit": true,
     "composite": true,
     "strict": true,
     "downlevelIteration": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx",
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
-    "types": ["bun-types"],
-    "baseUrl": "./src",
-    "paths": {
-      "#/*": ["./*"]
-    }
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "types": ["bun-types"]
   }
 }

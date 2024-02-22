@@ -1,4 +1,4 @@
-# Tasks, Task Lists, and Strategies
+# Tasks and Task Graphs
 
 ## Requirements
 
@@ -76,12 +76,12 @@ Uses:
 - ApplyPromptTask
 - TextGenerationTask
 
-### TextRewriterTaskList
+### TextRewriter with Multiple Models
 
 Inputs
 
 - content
-- model
+- model[]
 - parameters
 - prompt
 
@@ -93,7 +93,7 @@ Uses:
 
 - TextRewriterTask
 
-### TextEmbeddingStrategy
+### TextEmbedding Strategy
 
 Inputs
 
@@ -118,14 +118,7 @@ Example:
 ```ts
 new TextEmbeddingStrategy({
   content: "This is a test",
-  embedding_model: [
-    {
-      name: "Xenova/distilbert-base-uncased",
-      model_parameters: {
-        temperature: 0.7,
-      },
-    },
-  ],
+  embedding_model: name: "Xenova/distilbert-base-uncased"
   rewriter: [
     {
       prompt_model: "Xenova/gpt2",
@@ -145,12 +138,6 @@ A task is a single step in the chain where most tasks output will be input for t
 
 Tasks get posted to a job queue and are run by a job queue runner.
 
-## TaskList
+## CompoundTask
 
-A strategy is a list of tasks that are chained together to look like a single task.
-
-## Strategy
-
-A strategy is a list of tasks that are chained together to look like a single task. Parts can be run in series or in parallel. It orchestrates variations of the same task.
-
-Strategies get a name and are saved in the database, both as a parent all the variations. The variation names are based on the spefic parameters used rather than the parent name.
+A compound task is a groups of tasks (in DAG format) that are chained together to look like a single task.

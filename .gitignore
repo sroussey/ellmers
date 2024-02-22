@@ -2,3 +2,11 @@ data-in/
 data-out/
 node_modules/
 .DS_Store/
+tsconfig.tsbuildinfo
+dist
+.nx/cache
+*.d.ts
+storybook-static/
+packages/cli-web/
+packages/cli-sec/
+packages/ngraph/
