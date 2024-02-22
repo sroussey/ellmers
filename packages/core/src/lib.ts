@@ -16,6 +16,7 @@ export * from "./task/ModelFactoryTasks";
 export * from "./task/TaskGraph";
 export * from "./task/TaskGraphRunner";
 export * from "./task/JsonTask";
+export * from "./task/JavaScriptTask";
 export * from "./task/exec/ml/HuggingFaceLocalTaskRun";
 export * from "./task/exec/ml/MediaPipeLocalTaskRun";
 export * from "./model/Model";

@@ -9,7 +9,7 @@ import { ConvertToArrays, arrayTaskFactory } from "./ArrayTask";
 import { CreateMappedType } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 import { ModelFactory } from "./ModelFactory";
-import { TaskConfig } from "./Task";
+import { TaskConfig, TaskOutput } from "./Task";
 
 // ===============================================================================
 
@@ -37,6 +37,10 @@ export class DownloadTask extends ModelFactory {
   declare defaults: Partial<DownloadTaskInput>;
   constructor(config: TaskConfig & { input?: DownloadTaskInput }) {
     super(config);
+  }
+  runSyncOnly(): TaskOutput {
+    this.runOutputData.model = this.runInputData.model;
+    return this.runOutputData;
   }
   static readonly type = "DownloadTask";
   static readonly category = "Text Model";

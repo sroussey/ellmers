@@ -19,22 +19,13 @@ export interface RenameTaskInput {
 
 // ===============================================================================
 
-export type LambdaTaskInput =
-  | CreateMappedType<typeof LambdaTask.inputs>
-  | { run: (input: TaskInput) => Promise<TaskInput> };
+export type LambdaTaskInput = CreateMappedType<typeof LambdaTask.inputs>;
 export type LambdaTaskOutput = CreateMappedType<typeof LambdaTask.outputs>;
 
 export class LambdaTask extends SingleTask {
   static readonly type = "LambdaTask";
-  static readonly category = "Utility";
   declare runOutputData: TaskOutput;
-  public static inputs = [
-    {
-      id: "run",
-      name: "Run Function",
-      valueType: "text",
-    },
-  ] as const;
+  public static inputs = [] as const;
   public static outputs = [
     {
       id: "output",
@@ -49,17 +40,8 @@ export class LambdaTask extends SingleTask {
     if (!this.runInputData.run) {
       throw new Error("No runner provided");
     }
-    if (typeof this.runInputData.run === "string") {
-      const fnText = this.runInputData.run;
-      const fn = new Function(fnText);
-      try {
-        fn();
-        this.runInputData.run = fn;
-      } catch (e) {}
-    }
     if (typeof this.runInputData.run === "function") {
       this.runOutputData.output = this.runInputData.run(this.runInputData);
-      console.log("lambda output", this.runOutputData);
     } else {
       console.error("error", "Runner is not a function");
     }
