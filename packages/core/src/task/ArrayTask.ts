@@ -45,7 +45,7 @@ export function arrayTaskFactory<
   class ArrayTask extends CompoundTask {
     static readonly displayName = name!; // this is for debuggers as they can't infer the name from code
     static readonly type: TaskTypeName = name!;
-    static readonly category = (taskClass.constructor as any).category;
+    static readonly category = taskClass.category;
     declare runInputData: PluralInputType;
     declare runOutputData: PluralOutputType;
     declare defaults: Partial<PluralInputType>;
