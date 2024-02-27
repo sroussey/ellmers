@@ -30,7 +30,7 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.0.6",
+    "@types/bun": "^1.0.8",
     "@types/uuid": "^9.0.8",
     "autoprefixer": "^10.4.17",
     "lerna": "^8.1.2",
