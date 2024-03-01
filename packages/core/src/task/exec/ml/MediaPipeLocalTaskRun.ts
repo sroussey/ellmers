@@ -20,7 +20,7 @@ import { ModelProcessorEnum } from "../../../model/Model";
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_DownloadTask(
+export async function MediaPipeTfJsLocal_DownloadRun(
   task: DownloadTask,
   runInputData: DownloadTaskInput
 ) {
@@ -42,7 +42,7 @@ export async function MediaPipeTfJsLocal_DownloadTask(
  * This is a task that generates an embedding for a single piece of text
  * using a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_EmbeddingTask(
+export async function MediaPipeTfJsLocal_EmbeddingRun(
   task: EmbeddingTask,
   runInputData: EmbeddingTaskInput
 ) {
@@ -70,12 +70,12 @@ export const registerMediaPipeTfJsLocalTasks = () => {
   ModelFactory.registerRunFn(
     DownloadTask,
     ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_DownloadTask
+    MediaPipeTfJsLocal_DownloadRun
   );
 
   ModelFactory.registerRunFn(
     DownloadTask,
     ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_EmbeddingTask
+    MediaPipeTfJsLocal_EmbeddingRun
   );
 };

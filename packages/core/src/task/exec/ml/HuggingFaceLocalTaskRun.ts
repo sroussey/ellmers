@@ -88,7 +88,7 @@ const getPipeline = async (
  * This is a task that downloads and caches an onnx model.
  */
 
-export async function HuggingFaceLocal_DownloadTask(
+export async function HuggingFaceLocal_DownloadRun(
   task: DownloadTask,
   runInputData: DownloadTaskInput
 ): Promise<DownloadTaskOutput> {
@@ -102,7 +102,7 @@ export async function HuggingFaceLocal_DownloadTask(
  *
  * Model pipeline must be "feature-extraction"
  */
-export async function HuggingFaceLocal_EmbeddingTask(
+export async function HuggingFaceLocal_EmbeddingRun(
   task: EmbeddingTask,
   runInputData: EmbeddingTaskInput
 ): Promise<EmbeddingTaskOutput> {
@@ -125,7 +125,7 @@ export async function HuggingFaceLocal_EmbeddingTask(
  *
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
-export async function HuggingFaceLocal_TextGenerationTask(
+export async function HuggingFaceLocal_TextGenerationRun(
   task: TextGenerationTask,
   runInputData: TextGenerationTaskInput
 ): Promise<TextGenerationTaskOutput> {
@@ -147,7 +147,7 @@ export async function HuggingFaceLocal_TextGenerationTask(
  *
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
-export async function HuggingFaceLocal_TextRewriterTask(
+export async function HuggingFaceLocal_TextRewriterRun(
   task: TextRewriterTask,
   runInputData: TextRewriterTaskInput
 ): Promise<TextRewriterTaskOutput> {
@@ -176,7 +176,7 @@ export async function HuggingFaceLocal_TextRewriterTask(
  * Model pipeline must be "summarization"
  */
 
-export async function HuggingFaceLocal_SummarizeTask(
+export async function HuggingFaceLocal_SummarizeRun(
   task: SummarizeTask,
   runInputData: SummarizeTaskInput
 ): Promise<SummarizeTaskOutput> {
@@ -199,7 +199,7 @@ export async function HuggingFaceLocal_SummarizeTask(
  *
  * Model pipeline must be "question-answering"
  */
-export async function HuggingFaceLocal_QuestionAnswerTask(
+export async function HuggingFaceLocal_QuestionAnswerRun(
   task: QuestionAnswerTask,
   runInputData: QuestionAnswerTaskInput
 ): Promise<QuestionAnswerTaskOutput> {
@@ -221,36 +221,36 @@ export async function registerHuggingfaceLocalTasks() {
   ModelFactory.registerRunFn(
     DownloadTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_DownloadTask
+    HuggingFaceLocal_DownloadRun
   );
 
   ModelFactory.registerRunFn(
     EmbeddingTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_EmbeddingTask
+    HuggingFaceLocal_EmbeddingRun
   );
 
   ModelFactory.registerRunFn(
     TextGenerationTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextGenerationTask
+    HuggingFaceLocal_TextGenerationRun
   );
 
   ModelFactory.registerRunFn(
     TextRewriterTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextRewriterTask
+    HuggingFaceLocal_TextRewriterRun
   );
 
   ModelFactory.registerRunFn(
     SummarizeTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_SummarizeTask
+    HuggingFaceLocal_SummarizeRun
   );
 
   ModelFactory.registerRunFn(
     QuestionAnswerTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_QuestionAnswerTask
+    HuggingFaceLocal_QuestionAnswerRun
   );
 }
