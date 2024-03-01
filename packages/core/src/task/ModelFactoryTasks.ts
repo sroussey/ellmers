@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertToArrays, arrayTaskFactory } from "./ArrayTask";
+import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./ArrayTask";
 import { CreateMappedType } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 import { ModelFactory } from "./ModelFactory";
@@ -49,8 +49,8 @@ TaskRegistry.registerTask(DownloadTask);
 
 export const DownloadMultiModelTask = arrayTaskFactory<
   ConvertToArrays<DownloadTaskInput, "model">,
-  ConvertToArrays<DownloadTaskOutput, "model">
->(DownloadTask, "model", "text");
+  ConvertAllToArrays<DownloadTaskOutput>
+>(DownloadTask, "model");
 
 // ===============================================================================
 
@@ -85,8 +85,8 @@ TaskRegistry.registerTask(EmbeddingTask);
 
 export const EmbeddingMultiModelTask = arrayTaskFactory<
   ConvertToArrays<EmbeddingTaskInput, "model">,
-  ConvertToArrays<EmbeddingTaskOutput, "vector">
->(EmbeddingTask, "model", "text");
+  ConvertAllToArrays<EmbeddingTaskOutput>
+>(EmbeddingTask, "model");
 
 // ===============================================================================
 
@@ -121,8 +121,8 @@ TaskRegistry.registerTask(TextGenerationTask);
 
 export const TextGenerationMultiModelTask = arrayTaskFactory<
   ConvertToArrays<TextGenerationTaskInput, "model">,
-  ConvertToArrays<TextGenerationTaskOutput, "text">
->(TextGenerationTask, "model", "text");
+  ConvertAllToArrays<TextGenerationTaskOutput>
+>(TextGenerationTask, "model");
 
 // ===============================================================================
 
@@ -158,8 +158,8 @@ TaskRegistry.registerTask(SummarizeTask);
 
 export const SummarizeMultiModelTask = arrayTaskFactory<
   ConvertToArrays<SummarizeTaskInput, "model">,
-  ConvertToArrays<SummarizeTaskOutput, "text">
->(SummarizeTask, "model", "text");
+  ConvertAllToArrays<SummarizeTaskOutput>
+>(SummarizeTask, "model");
 
 // ===============================================================================
 
@@ -200,8 +200,8 @@ TaskRegistry.registerTask(TextRewriterTask);
 
 export const TextRewriterMultiModelTask = arrayTaskFactory<
   ConvertToArrays<TextRewriterTaskInput, "model">,
-  ConvertToArrays<TextRewriterTaskOutput, "text">
->(TextRewriterTask, "model", "text");
+  ConvertAllToArrays<TextRewriterTaskOutput>
+>(TextRewriterTask, "model");
 
 // ===============================================================================
 export type QuestionAnswerTaskInput = CreateMappedType<typeof QuestionAnswerTask.inputs>;
@@ -240,5 +240,5 @@ TaskRegistry.registerTask(QuestionAnswerTask);
 
 export const QuestionAnswerMultiModelTask = arrayTaskFactory<
   ConvertToArrays<QuestionAnswerTaskInput, "model">,
-  ConvertToArrays<QuestionAnswerTaskOutput, "answer">
->(TextRewriterTask, "model", "answer");
+  ConvertAllToArrays<QuestionAnswerTaskOutput>
+>(TextRewriterTask, "model");

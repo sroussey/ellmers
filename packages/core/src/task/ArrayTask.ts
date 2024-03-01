@@ -14,13 +14,20 @@ export type ConvertToArrays<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> : T[P];
 };
 
+export type ConvertAllToArrays<T> = {
+  [P in keyof T]: Array<T[P]>;
+};
+
 type Writeable<T> = { -readonly [P in keyof T]: T[P] };
 
-function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(io: D[], id: string) {
+function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
+  io: D[],
+  id?: string
+) {
   const results: D[] = [];
   for (const item of io) {
     const newItem: Writeable<D> = { ...item };
-    if (newItem.id === id) {
+    if (newItem.id === id || id === undefined) {
       newItem.isArray = true;
     }
     results.push(newItem);
@@ -31,12 +38,9 @@ function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(io
 export function arrayTaskFactory<
   PluralInputType extends TaskInput,
   PluralOutputType extends TaskOutput,
->(taskClass: typeof ModelFactory, inputMakeArray: string, outputMakeArray: string, name?: string) {
+>(taskClass: typeof ModelFactory, inputMakeArray: string, name?: string) {
   const inputs = convertToArray<TaskInputDefinition>(Array.from(taskClass.inputs), inputMakeArray);
-  const outputs = convertToArray<TaskOutputDefinition>(
-    Array.from(taskClass.outputs),
-    outputMakeArray
-  );
+  const outputs = convertToArray<TaskOutputDefinition>(Array.from(taskClass.outputs));
 
   const nameWithoutTask = taskClass.type.slice(0, -4);
   const capitalized = inputMakeArray.charAt(0).toUpperCase() + inputMakeArray.slice(1);
