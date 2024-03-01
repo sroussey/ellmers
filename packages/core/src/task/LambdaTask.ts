@@ -5,17 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskConfig } from "./Task";
-import { SingleTask, TaskInput, TaskOutput } from "./Task";
+import { SingleTask, TaskConfig, TaskOutput } from "./Task";
 import { CreateMappedType } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
-
-export interface RenameTaskInput {
-  output_remap_array: {
-    from: string;
-    to: string;
-  }[];
-}
 
 // ===============================================================================
 
@@ -49,32 +41,3 @@ export class LambdaTask extends SingleTask {
   }
 }
 TaskRegistry.registerTask(LambdaTask);
-
-export type DebugLogTaskInput = CreateMappedType<typeof DebugLogTask.inputs>;
-export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;
-
-export class DebugLogTask extends SingleTask {
-  static readonly type: string = "DebugLogTask";
-  static readonly category = "Utility";
-  declare runInputData: DebugLogTaskInput;
-  declare runOutputData: DebugLogTaskOutput;
-  public static inputs = [
-    {
-      id: "message",
-      name: "Input",
-      valueType: "any",
-    },
-    {
-      id: "level",
-      name: "Level",
-      valueType: "log_level",
-      defaultValue: "info",
-    },
-  ] as const;
-  public static outputs = [] as const;
-  runSyncOnly() {
-    console[this.runInputData.level || "log"](this.runInputData.message);
-    return this.runOutputData;
-  }
-}
-TaskRegistry.registerTask(DebugLogTask);

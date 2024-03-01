@@ -67,6 +67,10 @@ export function arrayTaskFactory<
         });
       }
     }
+    setInputData<PluralInputType>(...overrides: Partial<PluralInputType>[]): void {
+      super.setInputData(...overrides);
+      this.generateGraph();
+    }
   }
   TaskRegistry.registerTask(ArrayTask);
 
