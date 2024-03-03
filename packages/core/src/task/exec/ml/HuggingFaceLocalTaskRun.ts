@@ -115,7 +115,12 @@ export async function HuggingFaceLocal_EmbeddingRun(
   });
 
   if (vector.size !== model.dimensions) {
-    throw `Embedding vector length does not match model dimensions v${vector.size} != m${model.dimensions}`;
+    console.warn(
+      `HuggingFaceLocal Embedding vector length does not match model dimensions v${vector.size} != m${model.dimensions}`,
+      runInputData,
+      vector
+    );
+    throw `HuggingFaceLocal Embedding vector length does not match model dimensions v${vector.size} != m${model.dimensions}`;
   }
   return { vector: vector.data as Vector };
 }

@@ -61,7 +61,7 @@ export async function MediaPipeTfJsLocal_EmbeddingRun(
   const vector = output.embeddings[0].floatEmbedding;
 
   if (vector?.length !== model.dimensions) {
-    throw `Embedding vector length does not match model dimensions v${vector?.length} != m${model.dimensions}`;
+    throw `MediaPipeTfJsLocal Embedding vector length does not match model dimensions v${vector?.length} != m${model.dimensions}`;
   }
   return { vector };
 }
