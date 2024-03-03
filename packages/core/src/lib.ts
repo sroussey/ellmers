@@ -6,8 +6,11 @@
 //    *******************************************************************************
 
 export * from "./source/Document";
+export * from "./source/DocumentConverterText";
+export * from "./source/DocumentConverterMarkdown";
 export * from "./task/Task";
 export * from "./task/TaskRegistry";
+export * from "./task/DocumentSplitterTask";
 export * from "./task/LambdaTask";
 export * from "./task/DebugTask";
 export * from "./task/ArrayTask";

@@ -5,51 +5,155 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export abstract class Document {
-  public nodes: Node[] = [];
+enum DocumentType {
+  DOCUMENT = "document",
+  SECTION = "section",
+  TEXT = "text",
+  IMAGE = "image",
+  TABLE = "table",
 }
 
-export abstract class Node {
-  constructor(public embeddings: NodeEmbedding[] = []) {}
+export interface DocumentMetadata {
+  title: string;
 }
 
-export class NodeEmbedding {
-  constructor(
-    public modelName: string,
-    public instructName: string,
-    public content: string,
-    public vector: number[], //Float32Array,
-    public normalized = true
-  ) {}
-  // toJSON() {
-  //   return {
-  //     modelName: this.modelName,
-  //     instructName: this.instructName,
-  //     content: this.content,
-  //     vector: Array.from(this.vector),
-  //     normalized: this.normalized,
-  //   };
-  // }
+export interface DocumentSectionMetadata {
+  title: string;
 }
 
-export class TextNode extends Node {
-  constructor(public content: string, embeddings: NodeEmbedding[] = []) {
-    super(embeddings);
-  }
-}
+export class Document {
+  public metadata: DocumentMetadata;
 
-export class QueryText extends TextNode {}
-
-export class TextDocument extends Document {
-  constructor(public title: string, content?: string | string[]) {
-    super();
-    if (Array.isArray(content)) {
-      for (const line of content) {
-        this.nodes.push(new TextNode(line));
+  constructor(content?: ContentType, metadata: DocumentMetadata = { title: "" }) {
+    this.metadata = metadata;
+    if (content) {
+      if (Array.isArray(content)) {
+        for (const line of content) {
+          this.addContent(line);
+        }
+      } else {
+        this.addContent(content);
       }
-    } else {
-      if (content) this.nodes.push(new TextNode(content));
     }
   }
-  public nodes: TextNode[] = [];
+
+  public addContent(content: ContentTypeItem) {
+    if (typeof content === "string") {
+      this.addText(content);
+    } else if (content instanceof DocumentBaseFragment || content instanceof DocumentSection) {
+      this.fragments.push(content);
+    } else {
+      throw new Error("Unknown content type");
+    }
+  }
+
+  public addSection(content?: ContentType, metadata?: DocumentSectionMetadata): DocumentSection {
+    const section = new DocumentSection(this, content, metadata);
+    this.fragments.push(section);
+    return section;
+  }
+
+  public addText(content: string): TextFragment {
+    const f = new TextFragment(content);
+    this.fragments.push(f);
+    return f;
+  }
+  public addImage(content: unknown): ImageFragment {
+    const f = new ImageFragment(content);
+    this.fragments.push(f);
+    return f;
+  }
+  public addTable(content: unknown): TableFragment {
+    const f = new TableFragment(content);
+    this.fragments.push(f);
+    return f;
+  }
+
+  public fragments: Array<DocumentFragment | DocumentSection> = [];
+
+  toJSON(): unknown {
+    return {
+      type: DocumentType.DOCUMENT,
+      metadata: this.metadata,
+      fragments: this.fragments.map((f) => f.toJSON()),
+    };
+  }
 }
+
+export class DocumentSection extends Document {
+  constructor(
+    public parent: Document,
+    content?: ContentType,
+    metadata?: DocumentSectionMetadata
+  ) {
+    super(content, metadata);
+    this.parent = parent;
+  }
+
+  toJSON(): unknown {
+    return {
+      type: DocumentType.SECTION,
+      metadata: this.metadata,
+      fragments: this.fragments.map((f) => f.toJSON()),
+    };
+  }
+}
+
+interface DocumentFragmentMetadata {}
+
+export class DocumentBaseFragment {
+  metadata?: DocumentFragmentMetadata;
+  constructor(metadata?: DocumentFragmentMetadata) {
+    this.metadata = metadata;
+  }
+}
+
+export class TextFragment extends DocumentBaseFragment {
+  content: string;
+  constructor(content: string, metadata?: DocumentFragmentMetadata) {
+    super(metadata);
+    this.content = content;
+  }
+  toJSON(): unknown {
+    return {
+      type: DocumentType.TEXT,
+      metadata: this.metadata,
+      content: this.content,
+    };
+  }
+}
+
+export class TableFragment extends DocumentBaseFragment {
+  content: any;
+  constructor(content: any, metadata?: DocumentFragmentMetadata) {
+    super(metadata);
+    this.content = content;
+  }
+  toJSON(): unknown {
+    return {
+      type: DocumentType.TABLE,
+      metadata: this.metadata,
+      content: this.content,
+    };
+  }
+}
+
+export class ImageFragment extends DocumentBaseFragment {
+  content: any;
+  constructor(content: any, metadata?: DocumentFragmentMetadata) {
+    super(metadata);
+    this.content = content;
+  }
+  toJSON(): unknown {
+    return {
+      type: DocumentType.IMAGE,
+      metadata: this.metadata,
+      content: this.content,
+    };
+  }
+}
+
+export type DocumentFragment = TextFragment | TableFragment | ImageFragment;
+
+export type ContentTypeItem = string | DocumentFragment | DocumentSection;
+export type ContentType = ContentTypeItem | ContentTypeItem[];
