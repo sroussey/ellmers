@@ -51,16 +51,14 @@ export class ModelFactory extends SingleTask {
     this.emit("start");
     this.runOutputData = {};
     let results;
-    debugger;
+    const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
     try {
-      const taskClass = TaskRegistry.all.get(this.constructor.name);
-      if (!taskClass) throw new Error("ModelFactoryTask: No task class found");
       const modelname = this.runInputData["model"];
       if (!modelname) throw new Error("ModelFactoryTask: No model name found");
       const model = findModelByName(modelname);
       if (!model) throw new Error("ModelFactoryTask: No model found");
-      const runFn = ModelFactory.getRunFn(this.constructor.name, model.type);
-      if (!runFn) throw new Error("ModelFactoryTask: No run function found");
+      const runFn = ModelFactory.getRunFn(runtype, model.type);
+      if (!runFn) throw new Error("ModelFactoryTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {
       this.emit("error", err);

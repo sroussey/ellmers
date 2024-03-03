@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ModelFactory } from "./ModelFactory";
-import { CompoundTask, TaskInput, TaskConfig, TaskOutput, TaskTypeName } from "./Task";
-import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
+import { CompoundTask, TaskInput, TaskConfig, TaskOutput, TaskTypeName, SingleTask } from "./Task";
+import { TaskGraph } from "./TaskGraph";
+import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 
 export type ConvertToArrays<T, K extends keyof T> = {
@@ -20,9 +20,26 @@ export type ConvertAllToArrays<T> = {
 
 type Writeable<T> = { -readonly [P in keyof T]: T[P] };
 
+function collectPropertyValues<T extends object>(input: T[]): { [K in keyof T]?: T[K][] } {
+  const output: { [K in keyof T]?: T[K][] } = {};
+
+  input.forEach((item) => {
+    (Object.keys(item) as Array<keyof T>).forEach((key) => {
+      const value = item[key];
+      if (output[key]) {
+        output[key]!.push(value);
+      } else {
+        output[key] = [value];
+      }
+    });
+  });
+
+  return output;
+}
+
 function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
   io: D[],
-  id?: string
+  id?: string | number | symbol
 ) {
   const results: D[] = [];
   for (const item of io) {
@@ -36,19 +53,26 @@ function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
 }
 
 export function arrayTaskFactory<
-  PluralInputType extends TaskInput,
-  PluralOutputType extends TaskOutput,
->(taskClass: typeof ModelFactory, inputMakeArray: string, name?: string) {
+  PluralInputType extends TaskInput = TaskInput,
+  PluralOutputType extends TaskOutput = TaskOutput,
+>(
+  taskClass: typeof SingleTask | typeof CompoundTask,
+  inputMakeArray: keyof PluralInputType,
+  name?: string
+) {
+  type NonPluralOutputType = CreateMappedType<typeof taskClass.inputs>;
   const inputs = convertToArray<TaskInputDefinition>(Array.from(taskClass.inputs), inputMakeArray);
   const outputs = convertToArray<TaskOutputDefinition>(Array.from(taskClass.outputs));
 
   const nameWithoutTask = taskClass.type.slice(0, -4);
-  const capitalized = inputMakeArray.charAt(0).toUpperCase() + inputMakeArray.slice(1);
+  const ima = String(inputMakeArray);
+  const capitalized = ima.charAt(0).toUpperCase() + ima.slice(1);
   name ??= nameWithoutTask + "Multi" + capitalized + "Task";
 
   class ArrayTask extends CompoundTask {
     static readonly displayName = name!; // this is for debuggers as they can't infer the name from code
     static readonly type: TaskTypeName = name!;
+    static readonly runtype = taskClass.type;
     static readonly category = taskClass.category;
     declare runInputData: PluralInputType;
     declare runOutputData: PluralOutputType;
@@ -57,13 +81,14 @@ export function arrayTaskFactory<
     itemClass = taskClass;
 
     static inputs = inputs;
-    static outputs = outputs;
-    constructor(config: TaskConfig & { input?: PluralInputType } = {}) {
+    static override outputs = outputs;
+    constructor(config: TaskConfig & { input?: Partial<PluralInputType> } = {}) {
       super(config);
-      this.generateGraph();
+      this.regenerateGraph();
     }
-    generateGraph() {
+    regenerateGraph() {
       if (Array.isArray(this.runInputData[inputMakeArray])) {
+        this.subGraph = new TaskGraph();
         this.runInputData[inputMakeArray].forEach((prop: any) => {
           const input = { ...this.runInputData, [inputMakeArray]: prop };
           const current = new taskClass({ input });
@@ -71,9 +96,24 @@ export function arrayTaskFactory<
         });
       }
     }
-    setInputData<PluralInputType>(...overrides: Partial<PluralInputType>[]): void {
-      super.setInputData(...overrides);
-      this.generateGraph();
+    addInputData<PluralInputType>(overrides: Partial<PluralInputType>): void {
+      super.addInputData(overrides);
+      this.regenerateGraph();
+    }
+
+    runSyncOnly(): PluralOutputType {
+      const runDataOut = super.runSyncOnly();
+      this.runOutputData = collectPropertyValues<NonPluralOutputType>(
+        runDataOut.outputs
+      ) as PluralOutputType;
+      return this.runOutputData;
+    }
+    async run(): Promise<PluralOutputType> {
+      const runDataOut = await super.run();
+      this.runOutputData = collectPropertyValues<NonPluralOutputType>(
+        runDataOut.outputs
+      ) as PluralOutputType;
+      return this.runOutputData;
     }
   }
   TaskRegistry.registerTask(ArrayTask);

@@ -1,25 +1,81 @@
 import { describe, expect, it } from "bun:test";
 import { SingleTask, CompoundTask } from "../src/task/Task";
 import { TaskGraph } from "../src/task/TaskGraph";
-import { TaskOutput } from "../dist/lib";
+import { CreateMappedType } from "../src/task/TaskIOTypes";
 
+type TestTaskInput = CreateMappedType<typeof TestTask.inputs>;
+type TestTaskOutput = CreateMappedType<typeof TestTask.outputs>;
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  declare runInputData: TestTaskInput;
+  declare runOutputData: TestTaskOutput;
+  static readonly inputs = [
+    {
+      id: "key",
+      name: "Input",
+      valueType: "text",
+    },
+  ] as const;
+  static readonly outputs = [
+    {
+      id: "syncOnly",
+      name: "Output",
+      valueType: "boolean",
+    },
+    {
+      id: "all",
+      name: "Output",
+      valueType: "boolean",
+    },
+    {
+      id: "key",
+      name: "Output",
+      valueType: "text",
+    },
+  ] as const;
+  runSyncOnly(): TestTaskOutput {
     return { syncOnly: true };
   }
-  async run(): Promise<TaskOutput> {
+  async run(): Promise<TestTaskOutput> {
     return { all: true };
   }
 }
 
 class TestCompoundTask extends CompoundTask {
-  static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
-    return Object.assign(this.runOutputData, this.runInputData, { syncOnly: true });
+  declare runInputData: TestTaskInput;
+  declare runOutputData: TestTaskOutput;
+  static readonly inputs = [
+    {
+      id: "key",
+      name: "Input",
+      valueType: "text",
+    },
+  ] as const;
+  static readonly outputs = [
+    {
+      id: "syncOnly",
+      name: "Output",
+      valueType: "boolean",
+    },
+    {
+      id: "all",
+      name: "Output",
+      valueType: "boolean",
+    },
+    {
+      id: "key",
+      name: "Output",
+      valueType: "text",
+    },
+  ] as const;
+  static readonly type = "TestCompoundTask";
+  runSyncOnly(): TestTaskOutput {
+    this.runOutputData = { ...this.runInputData, syncOnly: true };
+    return this.runOutputData;
   }
-  async run(): Promise<TaskOutput> {
-    return Object.assign(this.runOutputData, this.runInputData, { all: true });
+  async run(): Promise<TestTaskOutput> {
+    this.runOutputData = { ...this.runInputData, all: true };
+    return this.runOutputData;
   }
 }
 
@@ -28,7 +84,8 @@ describe("Task", () => {
     it("should set input data and run the task", async () => {
       const node = new TestTask();
       const input = { key: "value" };
-      const output = await node.runWithInput(input);
+      node.addInputData(input);
+      const output = await node.run();
       expect(output).toEqual({ all: true });
       expect(node.runInputData).toEqual(input);
     });
@@ -55,7 +112,8 @@ describe("Task", () => {
     it("should set input data and run the task", async () => {
       const node = new TestCompoundTask();
       const input = { key: "value" };
-      const output = await node.runWithInput(input);
+      node.addInputData(input);
+      const output = await node.run();
       expect(output).toEqual({ key: "value", all: true });
       expect(node.runInputData).toEqual(input);
     });

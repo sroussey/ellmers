@@ -88,6 +88,11 @@ export const EmbeddingMultiModelTask = arrayTaskFactory<
   ConvertAllToArrays<EmbeddingTaskOutput>
 >(EmbeddingTask, "model");
 
+export const EmbeddingMultiTextModelTask = arrayTaskFactory<
+  ConvertToArrays<ConvertToArrays<EmbeddingTaskInput, "model">, "text">,
+  ConvertAllToArrays<EmbeddingTaskOutput>
+>(EmbeddingMultiModelTask, "text", "EmbeddingMultiTextModelTask");
+
 // ===============================================================================
 
 export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
@@ -202,6 +207,11 @@ export const TextRewriterMultiModelTask = arrayTaskFactory<
   ConvertToArrays<TextRewriterTaskInput, "model">,
   ConvertAllToArrays<TextRewriterTaskOutput>
 >(TextRewriterTask, "model");
+
+export const MultiTextRewriterMultiModelTask = arrayTaskFactory<
+  ConvertToArrays<ConvertToArrays<TextRewriterTaskInput, "model">, "text">,
+  ConvertAllToArrays<TextRewriterTaskOutput>
+>(TextRewriterMultiModelTask, "text");
 
 // ===============================================================================
 export type QuestionAnswerTaskInput = CreateMappedType<typeof QuestionAnswerTask.inputs>;

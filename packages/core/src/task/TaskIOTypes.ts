@@ -5,12 +5,18 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { Document } from "../source/Document";
+
 export type Vector = number[] | Float32Array;
 
 export const valueTypes = {
   any: {
     name: "Any",
     tsType: "any",
+  },
+  boolean: {
+    name: "Boolean",
+    tsType: "boolean",
   },
   text: {
     name: "Text",
@@ -51,15 +57,41 @@ export const valueTypes = {
     name: "Log Level",
     tsType: "log_level",
   },
+  doc_parser: {
+    name: "Document Parser",
+    tsType: "doc_parser",
+  },
+  doc_variant: {
+    name: "Document Variant",
+    tsType: "doc_variant",
+  },
+  document: {
+    name: "Document",
+    tsType: "Document",
+  },
+  file: {
+    name: "File",
+    tsType: "string",
+  },
 } as const;
 
 // Provided lookup type
 type TsTypes = {
   any: any;
+  boolean: boolean;
   string: string;
   number: number;
   Vector: Vector;
   log_level: "debug" | "info" | "warn" | "error";
+  doc_parser: "txt" | "md"; // | "html" | "pdf" | "csv";
+  doc_variant:
+    | "tree"
+    | "flat"
+    | "tree-paragraphs"
+    | "flat-paragraphs"
+    | "tree-sentences"
+    | "flat-sentences";
+  Document: Document;
 };
 
 // Extract TypeScript type for a given value type

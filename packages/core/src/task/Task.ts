@@ -85,8 +85,15 @@ abstract class TaskBase {
   constructor(config: TaskConfig = {}) {
     // pull out input data from the config
     const { input = {}, ...rest } = config;
-    this.defaults = input;
-    this.setInputData();
+    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
+    const inputDefaults = inputdefs.reduce<Record<string, any>>((acc, cur) => {
+      if (cur.defaultValue !== undefined) {
+        acc[cur.id] = cur.defaultValue;
+      }
+      return acc;
+    }, {});
+    this.defaults = Object.assign(inputDefaults, input);
+    this.resetInputData();
 
     // setup the configuration
     const name = (this.constructor as any).type ?? this.constructor.name;
@@ -138,19 +145,27 @@ abstract class TaskBase {
   public static inputs: readonly TaskInputDefinition[];
   public static outputs: readonly TaskOutputDefinition[];
 
-  /**
-   *
-   * This calculates the input to the task at the time of the task run. This takes defaults from
-   * construction and applies run time overrides (which may be output from a previous run if this
-   * is a serial task or strategy). Caller needs to decide if should set to this classes input
-   * or not.
-   */
-  setInputData<T extends TaskInput>(...overrides: (Partial<T> | undefined)[]) {
-    this.runInputData = Object.assign({}, this.defaults, ...overrides) as T;
+  resetInputData() {
+    this.runInputData = { ...this.defaults };
   }
-  runWithInput<T extends TaskInput>(input: T) {
-    this.setInputData(input);
-    return this.run();
+  addInputData<T extends TaskInput>(overrides: Partial<T> | undefined) {
+    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
+    for (const input of inputdefs) {
+      if (overrides?.[input.id] !== undefined) {
+        if (input.isArray) {
+          const newitems = [...(this.runInputData[input.id] || [])];
+          const overrideItem = overrides[input.id];
+          if (Array.isArray(overrideItem)) {
+            newitems.push(...(overrideItem as any[]));
+          } else {
+            newitems.push(overrideItem);
+          }
+          this.runInputData[input.id] = newitems;
+        } else {
+          this.runInputData[input.id] = overrides[input.id];
+        }
+      }
+    }
   }
   async run(): Promise<TaskOutput> {
     return this.runSyncOnly();
@@ -169,6 +184,8 @@ export class SingleTask extends TaskBase implements ITaskSimple {
 
 export class CompoundTask extends TaskBase implements ITaskCompound {
   static readonly type: TaskTypeName = "CompoundTask";
+
+  declare runOutputData: TaskOutput;
   readonly isCompound = true;
   _subGraph: TaskGraph | null = null;
   set subGraph(subGraph: TaskGraph) {
@@ -180,12 +197,28 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     }
     return this._subGraph;
   }
+  resetInputData() {
+    super.resetInputData();
+    this.subGraph.getNodes().forEach((node) => {
+      node.resetInputData();
+    });
+  }
   async run(): Promise<TaskOutput> {
     this.emit("start");
     const runner = new TaskGraphRunner(this.subGraph);
-    this.runOutputData = await runner.runGraph();
-    this.runOutputData = this.runSyncOnly();
-    this.emit("complete");
+    this.runOutputData.outputs = await runner.runGraph();
+    this.emit("complete", this.runOutputData);
+    // console.log(
+    //   "complete",
+    //   this.subGraph.getNodes().map((t) => (t.constructor as any).type),
+    //   this.runInputData,
+    //   this.runOutputData
+    // );
+    return this.runOutputData;
+  }
+  runSyncOnly(): TaskOutput {
+    const runner = new TaskGraphRunner(this.subGraph);
+    this.runOutputData.outputs = runner.runGraphSyncOnly();
     return this.runOutputData;
   }
 }

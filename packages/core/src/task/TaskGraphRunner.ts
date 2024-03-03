@@ -46,9 +46,9 @@ export class TaskGraphRunner {
     });
   }
 
-  public async runTasksAsync() {
+  private async runTasksAsync() {
     let results: TaskOutput[] = [];
-    for (const [_layerNumber, nodes] of this.layers.entries()) {
+    for (const [layerNumber, nodes] of this.layers.entries()) {
       const layerPromises = nodes.map(async (node) => {
         const results = await node.run();
         this.dag.outEdges(node.config.id).forEach(([, , dataFlow]) => {
@@ -56,16 +56,17 @@ export class TaskGraphRunner {
           const targetNode = this.dag.getNode(dataFlow.targetTaskId);
           if (results[dataFlow.sourceTaskOutputId] !== undefined)
             toInput[dataFlow.targetTaskInputId] = results[dataFlow.sourceTaskOutputId];
-          targetNode!.setInputData(targetNode!.runInputData, toInput);
+          targetNode!.addInputData(toInput);
         });
         return results;
       });
-      results = await Promise.all(layerPromises);
+      results = await Promise.allSettled(layerPromises);
+      results = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
     }
     return results;
   }
 
-  public runTasksSync() {
+  private runTasksSync() {
     let results: TaskOutput[] = [];
     for (const [_layerNumber, nodes] of this.layers.entries()) {
       results = nodes.map((node) => {
@@ -75,7 +76,7 @@ export class TaskGraphRunner {
           const targetNode = this.dag.getNode(dataFlow.targetTaskId);
           if (results[dataFlow.sourceTaskOutputId] !== undefined)
             toInput[dataFlow.targetTaskInputId] = results[dataFlow.sourceTaskOutputId];
-          targetNode!.setInputData(targetNode!.runInputData, toInput);
+          targetNode!.addInputData(toInput);
         });
         return results;
       });
@@ -84,12 +85,14 @@ export class TaskGraphRunner {
   }
 
   public async runGraph() {
+    this.dag.getNodes().forEach((node) => node.resetInputData());
     const sortedNodes = this.dag.topologicallySortedNodes();
     this.assignLayers(sortedNodes);
     return await this.runTasksAsync();
   }
 
   public runGraphSyncOnly() {
+    this.dag.getNodes().forEach((node) => node.resetInputData());
     const sortedNodes = this.dag.topologicallySortedNodes();
     this.assignLayers(sortedNodes);
     return this.runTasksSync();

@@ -36,7 +36,6 @@ export class JsonTask extends CompoundTask {
       valueType: "text",
     },
   ] as const;
-  public static outputs = [] as const;
 
   declare runInputData: JsonTaskInput;
   declare runOutputData: JsonTaskOutput;
@@ -47,16 +46,13 @@ export class JsonTask extends CompoundTask {
       this.generateGraph();
     }
   }
-  public setInputData(...overrides: (Partial<JsonTaskInput> | undefined)[]): void {
+  public addInputData(overrides: Partial<JsonTaskInput> | undefined): void {
     let changed = false;
-    for (const override of overrides) {
-      if (override) {
-        if (override.json !== undefined && override.json != this.runInputData.json) changed = true;
-      }
-    }
-    super.setInputData(...overrides);
+    if (overrides?.json != this.runInputData.json) changed = true;
+    super.addInputData(overrides);
     if (changed) this.generateGraph();
   }
+
   public generateGraph() {
     if (!this.runInputData.json) return;
     let data = JSON.parse(this.runInputData.json);

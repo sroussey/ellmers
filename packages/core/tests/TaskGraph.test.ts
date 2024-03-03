@@ -14,9 +14,6 @@ class TestTask extends SingleTask {
   runSyncOnly(): TaskOutput {
     return {};
   }
-  async run(): Promise<TaskOutput> {
-    return {};
-  }
 }
 
 describe("TaskGraph", () => {
