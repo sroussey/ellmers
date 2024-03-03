@@ -4,13 +4,25 @@
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
-    "watch": "",
-    "build": "",
+    "watch": "bunx concurrently 'bun run watch-types' 'bun run watch-js'",
+    "watch-js": "bun build --watch --target=node --sourcemap=external --external listr2 --external @sroussey/transformers --outdir ./dist ./src/lib.ts",
+    "watch-types": "tsc --watch",
+    "build": "bun run build-clean && bun run build-types && bun run build-js && bun run build-types-map",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-js": "bun build --target=node --sourcemap=external --external listr2 --external @sroussey/transformers --outdir ./dist ./src/lib.ts",
+    "build-types": "tsc",
+    "build-types-map": "tsc --declarationMap",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "bin": "src/elmers.js",
+  "module": "dist/lib.js",
+  "exports": {
+    ".": {
+      "import": "./dist/lib.js"
+    }
+  },
   "files": [
-    "src"
+    "dist"
   ],
   "dependencies": {
     "ellmers-core": "workspace:*"

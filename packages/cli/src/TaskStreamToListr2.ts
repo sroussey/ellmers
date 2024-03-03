@@ -148,7 +148,7 @@ const flattenCompoundGraph = (dag: TaskGraph) => {
   return { nodes, edges };
 };
 
-const runTaskToListr = async (runner: TaskGraphRunner) => {
+export const runnerToListrTasks = (runner: TaskGraphRunner) => {
   const { nodes, edges } = flattenCompoundGraph(runner.dag);
   const displayGraph = new TaskGraph();
   displayGraph.addTasks(nodes);
@@ -161,6 +161,16 @@ const runTaskToListr = async (runner: TaskGraphRunner) => {
     rendererOptions: { timer: PRESET_TIMER },
   };
   const listrTasks = taskTreeToListr(tree, options);
+  return listrTasks;
+};
+
+const runTaskToListr = async (runner: TaskGraphRunner) => {
+  const listrTasks = runnerToListrTasks(runner);
+  const options = {
+    exitOnError: true,
+    concurrent: true,
+    rendererOptions: { timer: PRESET_TIMER },
+  };
   const listr = new Listr(listrTasks, options);
 
   listr.run({});
