@@ -26,16 +26,28 @@ export enum ModelUseCaseEnum {
 
 const runningOnServer = typeof (globalThis as any).window === "undefined";
 
-export abstract class Model {
+export interface ModelOptions {
+  dimensionOptions?: number[];
+  dimensions?: number;
+  contextWindow?: number;
+  extras?: Record<string, string | number>;
+  browserOnly?: boolean;
+  parameters?: number;
+}
+
+export abstract class Model implements ModelOptions {
   public static readonly all: ModelList = [];
-  public dimensions: number | null = null;
+  public dimensions?: number;
+  public dimensionOptions?: number[];
+  public contextWindow?: number;
   public normalize: boolean = true;
   public browserOnly: boolean = false;
-  public parameters: Record<string, string | number> = {};
+  public extras: Record<string, string | number> = {};
+  public parameters?: number;
   constructor(
     public name: string,
     public useCase: ModelUseCaseEnum[] = [],
-    options?: Partial<Pick<Model, "dimensions" | "parameters" | "browserOnly">>
+    options?: ModelOptions
   ) {
     Object.assign(this, options);
     if (!(runningOnServer && this.browserOnly)) {

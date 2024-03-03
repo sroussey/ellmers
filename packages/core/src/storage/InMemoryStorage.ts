@@ -5,6 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+// import { GgmlLocalModel } from "../model/GgmlLocalModel";
 import { ONNXTransformerJsModel } from "../model/HuggingFaceModel";
 import { MediaPipeTfJsModel } from "../model/MediaPipeModel";
 import { Model, ModelUseCaseEnum } from "../model/Model";
@@ -106,6 +107,24 @@ export const distilbartCnn = new ONNXTransformerJsModel(
   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
   "summarization"
 );
+
+// export const llamav2p7b = new GgmlLocalModel(
+//   "GGUF/LlamaV2-7B-16f",
+//   [ModelUseCaseEnum.TEXT_GENERATION],
+//   { contextWindow: 4096, paramters: 7000000000 }
+// );
+
+// export const llamav2p13b = new GgmlLocalModel(
+//   "GGUF/LlamaV2-13B-16f",
+//   [ModelUseCaseEnum.TEXT_GENERATION],
+//   { contextWindow: 4096, paramters: 13000000000 }
+// );
+
+// export const llamav2p70b = new GgmlLocalModel(
+//   "GGUF/LlamaV2-70B-16f",
+//   [ModelUseCaseEnum.TEXT_GENERATION],
+//   { contextWindow: 4096, paramters: 70000000000 }
+// );
 
 export function findModelByName(name: string) {
   if (typeof name != "string") return undefined;

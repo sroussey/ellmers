@@ -7,14 +7,9 @@
 
 import { Model, ModelOptions, ModelProcessorEnum, ModelUseCaseEnum } from "./Model";
 
-export class ONNXTransformerJsModel extends Model {
-  constructor(
-    name: string,
-    useCase: ModelUseCaseEnum[],
-    public pipeline: string,
-    options?: Pick<ModelOptions, "dimensions" | "parameters">
-  ) {
+export class GgmlLocalModel extends Model {
+  constructor(name: string, useCase: ModelUseCaseEnum[], options?: ModelOptions) {
     super(name, useCase, options);
   }
-  readonly type = ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS;
+  readonly type = ModelProcessorEnum.LOCAL_LLAMACPP;
 }
