@@ -46,22 +46,36 @@ export class TaskGraphRunner {
     });
   }
 
+  private copyInputFromEdgesToNode(node: Task) {
+    this.dag.inEdges(node.config.id).forEach(([, , dataFlow]) => {
+      if (dataFlow.value !== undefined) {
+        const toInput: TaskInput = {};
+        toInput[dataFlow.targetTaskInputId] = dataFlow.value;
+        node.addInputData(toInput);
+      }
+    });
+  }
+
+  private pushOutputFromNodeToEdges(node: Task, results: TaskOutput) {
+    this.dag.outEdges(node.config.id).forEach(([, , dataFlow]) => {
+      if (results[dataFlow.sourceTaskOutputId] !== undefined) {
+        dataFlow.value = results[dataFlow.sourceTaskOutputId];
+      }
+    });
+  }
+
   private async runTasksAsync() {
     let results: TaskOutput[] = [];
     for (const [layerNumber, nodes] of this.layers.entries()) {
       const layerPromises = nodes.map(async (node) => {
+        this.copyInputFromEdgesToNode(node);
         const results = await node.run();
-        this.dag.outEdges(node.config.id).forEach(([, , dataFlow]) => {
-          const toInput: TaskInput = {};
-          const targetNode = this.dag.getNode(dataFlow.targetTaskId);
-          if (results[dataFlow.sourceTaskOutputId] !== undefined)
-            toInput[dataFlow.targetTaskInputId] = results[dataFlow.sourceTaskOutputId];
-          targetNode!.addInputData(toInput);
-        });
+        this.pushOutputFromNodeToEdges(node, results);
         return results;
       });
       results = await Promise.allSettled(layerPromises);
-      results = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      // note that the results array may contain undefined values due to errors and rejected promises
+      results = results.map((r) => r.value);
     }
     return results;
   }
@@ -70,14 +84,9 @@ export class TaskGraphRunner {
     let results: TaskOutput[] = [];
     for (const [_layerNumber, nodes] of this.layers.entries()) {
       results = nodes.map((node) => {
+        this.copyInputFromEdgesToNode(node);
         const results = node.runSyncOnly();
-        this.dag.outEdges(node.config.id).forEach(([, , dataFlow]) => {
-          const toInput: TaskInput = {};
-          const targetNode = this.dag.getNode(dataFlow.targetTaskId);
-          if (results[dataFlow.sourceTaskOutputId] !== undefined)
-            toInput[dataFlow.targetTaskInputId] = results[dataFlow.sourceTaskOutputId];
-          targetNode!.addInputData(toInput);
-        });
+        this.pushOutputFromNodeToEdges(node, results);
         return results;
       });
     }
