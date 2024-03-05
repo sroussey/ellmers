@@ -5,10 +5,10 @@
 // //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 // //    *******************************************************************************
 
-import { CompoundTask, Task, TaskConfig, TaskInput } from "./Task";
-import { DataFlow, TaskGraph } from "./TaskGraph";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
+import { CompoundTask, Task, TaskConfig, TaskInput } from "./base/Task";
+import { DataFlow, TaskGraph } from "./base/TaskGraph";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
 
 export type JsonTaskArray = Array<JsonTaskItem>;
 export type JsonTaskItem = {

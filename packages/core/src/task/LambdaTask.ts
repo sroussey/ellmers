@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SingleTask, TaskConfig, TaskOutput } from "./Task";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
+import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
 
 // ===============================================================================
 

@@ -6,11 +6,11 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach, spyOn } from "bun:test";
-import { TaskGraphRunner } from "../src/task/TaskGraphRunner";
-import { Task, SingleTask, TaskOutput } from "../src/task/Task";
-import { DataFlow, TaskGraph } from "../src/task/TaskGraph";
-import { CreateMappedType } from "../src/task/TaskIOTypes";
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "../src/task/ArrayTask";
+import { TaskGraphRunner } from "../src/task/base/TaskGraphRunner";
+import { Task, SingleTask, TaskOutput } from "../src/task/base/Task";
+import { DataFlow, TaskGraph } from "../src/task/base/TaskGraph";
+import { CreateMappedType } from "../src/task/base/TaskIOTypes";
+import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "../src/task/base/ArrayTask";
 
 type TestSquareTaskInput = CreateMappedType<typeof TestSquareTask.inputs>;
 type TestSquareTaskOutput = CreateMappedType<typeof TestSquareTask.outputs>;

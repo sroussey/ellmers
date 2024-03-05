@@ -6,13 +6,9 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { ModelFactory } from "../../ModelFactory";
-import {
-  DownloadTask,
-  DownloadTaskInput,
-  EmbeddingTask,
-  EmbeddingTaskInput,
-} from "../../ModelFactoryTasks";
+import { ModelFactory } from "../../base/ModelFactory";
+import { DownloadTask, DownloadTaskInput } from "../../DownloadModelTask";
+import { EmbeddingTask, EmbeddingTaskInput } from "../../TextEmbeddingTask";
 import { findModelByName } from "../../../storage/InMemoryStorage";
 import { MediaPipeTfJsModel } from "../../../model/MediaPipeModel";
 import { ModelProcessorEnum } from "../../../model/Model";

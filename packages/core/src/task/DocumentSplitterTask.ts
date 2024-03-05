@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Document, DocumentFragment, DocumentSection } from "../source/Document";
+import { Document, DocumentFragment } from "../source/Document";
 import { SingleTask } from "./base/Task";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";

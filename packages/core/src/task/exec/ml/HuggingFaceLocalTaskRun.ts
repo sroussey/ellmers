@@ -17,32 +17,31 @@ import {
   type DocumentQuestionAnsweringSingle,
   env,
 } from "@sroussey/transformers";
-import { ModelFactory } from "../../ModelFactory";
+import { findModelByName } from "../../../storage/InMemoryStorage";
+import { ONNXTransformerJsModel, ModelProcessorEnum } from "model";
 import {
+  Vector,
+  SingleTask,
+  ModelFactory,
   DownloadTask,
   DownloadTaskInput,
+  DownloadTaskOutput,
   EmbeddingTask,
   EmbeddingTaskInput,
-  QuestionAnswerTask,
-  QuestionAnswerTaskInput,
-  TextRewriterTaskInput,
-  SummarizeTask,
-  SummarizeTaskInput,
+  EmbeddingTaskOutput,
   TextGenerationTask,
   TextGenerationTaskInput,
-  TextRewriterTask,
-  DownloadTaskOutput,
-  EmbeddingTaskOutput,
   TextGenerationTaskOutput,
+  TextRewriterTask,
+  TextRewriterTaskInput,
   TextRewriterTaskOutput,
-  SummarizeTaskOutput,
-  QuestionAnswerTaskOutput,
-} from "../../ModelFactoryTasks";
-import { findModelByName } from "../../../storage/InMemoryStorage";
-import { ONNXTransformerJsModel } from "../../../model/HuggingFaceModel";
-import { ModelProcessorEnum } from "../../../model/Model";
-import { Vector } from "../../TaskIOTypes";
-import { SingleTask } from "../../Task";
+  TextQuestionAnswerTask,
+  TextQuestionAnswerTaskInput,
+  TextQuestionAnswerTaskOutput,
+  TextSummaryTask,
+  TextSummaryTaskInput,
+  TextSummaryTaskOutput,
+} from "task";
 
 env.backends.onnx.logLevel = "error";
 env.backends.onnx.debug = false;
@@ -181,10 +180,10 @@ export async function HuggingFaceLocal_TextRewriterRun(
  * Model pipeline must be "summarization"
  */
 
-export async function HuggingFaceLocal_SummarizeRun(
-  task: SummarizeTask,
-  runInputData: SummarizeTaskInput
-): Promise<SummarizeTaskOutput> {
+export async function HuggingFaceLocal_TextSummaryRun(
+  task: TextSummaryTask,
+  runInputData: TextSummaryTaskInput
+): Promise<TextSummaryTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
   const generateSummary = (await getPipeline(task, model)) as SummarizationPipeline;
@@ -204,10 +203,10 @@ export async function HuggingFaceLocal_SummarizeRun(
  *
  * Model pipeline must be "question-answering"
  */
-export async function HuggingFaceLocal_QuestionAnswerRun(
-  task: QuestionAnswerTask,
-  runInputData: QuestionAnswerTaskInput
-): Promise<QuestionAnswerTaskOutput> {
+export async function HuggingFaceLocal_TextQuestionAnswerRun(
+  task: TextQuestionAnswerTask,
+  runInputData: TextQuestionAnswerTaskInput
+): Promise<TextQuestionAnswerTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
   const generateAnswer = (await getPipeline(task, model)) as QuestionAnsweringPipeline;
@@ -248,14 +247,14 @@ export async function registerHuggingfaceLocalTasks() {
   );
 
   ModelFactory.registerRunFn(
-    SummarizeTask,
+    TextSummaryTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_SummarizeRun
+    HuggingFaceLocal_TextSummaryRun
   );
 
   ModelFactory.registerRunFn(
-    QuestionAnswerTask,
+    TextQuestionAnswerTask,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_QuestionAnswerRun
+    HuggingFaceLocal_TextQuestionAnswerRun
   );
 }

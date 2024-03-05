@@ -14,7 +14,8 @@ import {
   findModelByUseCase,
   EmbeddingTask,
   TextRewriterTask,
-  SummarizeTask,
+  TextSummaryTask,
+  TextSummaryMultiModelTask,
   DownloadTask,
   ModelUseCaseEnum,
   EmbeddingMultiModelTask,
@@ -22,7 +23,6 @@ import {
   registerMediaPipeTfJsLocalTasks,
   DownloadMultiModelTask,
   TextRewriterMultiModelTask,
-  SummarizeMultiModelTask,
   TaskGraph,
   JsonTaskArray,
   JsonTask,
@@ -92,14 +92,14 @@ export function AddBaseCommands(program: Command) {
       if (options.model) {
         const model = findModelByName(options.model);
         if (model) {
-          graph.addTask(new SummarizeTask({ input: { model: model.name, text } }));
+          graph.addTask(new TextSummaryTask({ input: { model: model.name, text } }));
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
         let models = findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION);
         graph.addTask(
-          new SummarizeMultiModelTask({
+          new TextSummaryMultiModelTask({
             input: { text, model: models.map((m) => m.name) },
           })
         );

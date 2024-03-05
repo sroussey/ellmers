@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SingleTask } from "./Task";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
+import { SingleTask } from "./base/Task";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
 
 export type DebugLogTaskInput = CreateMappedType<typeof DebugLogTask.inputs>;
 export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { SingleTask, CompoundTask } from "../src/task/Task";
-import { TaskGraph } from "../src/task/TaskGraph";
-import { CreateMappedType } from "../src/task/TaskIOTypes";
+import { SingleTask, CompoundTask } from "../src/task/base/Task";
+import { TaskGraph } from "../src/task/base/TaskGraph";
+import { CreateMappedType } from "../src/task/base/TaskIOTypes";
 
 type TestTaskInput = CreateMappedType<typeof TestTask.inputs>;
 type TestTaskOutput = CreateMappedType<typeof TestTask.outputs>;

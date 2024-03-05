@@ -6,8 +6,8 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { SingleTask, Task, TaskOutput } from "../src/task/Task";
-import { TaskGraph, DataFlow, serialGraph } from "../src/task/TaskGraph";
+import { SingleTask, Task, TaskOutput } from "../src/task/base/Task";
+import { TaskGraph, DataFlow, serialGraph } from "../src/task/base/TaskGraph";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";

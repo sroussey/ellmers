@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { Interpreter } from "util/interpreter";
-import { SingleTask, TaskConfig, TaskOutput } from "./Task";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
+import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
 
 export type JavaScriptTaskInput = CreateMappedType<typeof JavaScriptTask.inputs>;
 export type JavaScriptTaskOutput = CreateMappedType<typeof JavaScriptTask.outputs>;
