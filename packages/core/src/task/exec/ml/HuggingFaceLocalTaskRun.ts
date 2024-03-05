@@ -75,9 +75,9 @@ const getPipeline = async (
       loaded: number;
       total: number;
     }) => {
-      const { progress, file } = details;
+      const { progress, file, name, status } = details;
       task.progress = progress;
-      task.emit("progress", progress, file);
+      task.emit("progress", progress, file || name || status);
     },
   });
 };

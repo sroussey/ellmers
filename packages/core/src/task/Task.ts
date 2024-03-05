@@ -168,7 +168,11 @@ abstract class TaskBase {
     }
   }
   async run(): Promise<TaskOutput> {
-    return this.runSyncOnly();
+    this.emit("start");
+    const result = this.runSyncOnly();
+    this.emit("complete");
+    this.runOutputData = result;
+    return result;
   }
   runSyncOnly(): TaskOutput {
     return this.runOutputData;

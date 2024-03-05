@@ -89,13 +89,14 @@ export function arrayTaskFactory<
     regenerateGraph() {
       if (Array.isArray(this.runInputData[inputMakeArray])) {
         this.subGraph = new TaskGraph();
-        this.runInputData[inputMakeArray].forEach((prop: any) => {
-          const input = { ...this.runInputData, [inputMakeArray]: prop };
-          const current = new taskClass({ input });
+        this.runInputData[inputMakeArray].forEach((arrayItem: any, index: number) => {
+          const input = { ...this.runInputData, [inputMakeArray]: arrayItem };
+          const current = new taskClass({ id: this.config.id + "-child-" + (index + 1), input });
           this.subGraph.addTask(current);
         });
       }
     }
+
     addInputData<PluralInputType>(overrides: Partial<PluralInputType>): void {
       super.addInputData(overrides);
       this.regenerateGraph();
