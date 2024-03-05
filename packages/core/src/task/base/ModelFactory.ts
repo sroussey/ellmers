@@ -13,8 +13,8 @@
  * Each derived class defines its own input and output types and implements the run() method to perform the task-specific logic.
  */
 
-import { findModelByName } from "../storage/InMemoryStorage";
-import { ModelProcessorEnum } from "../model/Model";
+import { findModelByName } from "../../storage/InMemoryStorage";
+import { ModelProcessorEnum } from "../../model/Model";
 import { SingleTask, TaskInput, TaskConfig, TaskOutput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 

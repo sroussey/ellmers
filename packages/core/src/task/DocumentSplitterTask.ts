@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { Document, DocumentFragment, DocumentSection } from "../source/Document";
-import { SingleTask } from "./Task";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
+import { SingleTask } from "./base/Task";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
 
 export type DocumentSplitterTaskInput = CreateMappedType<typeof DocumentSplitterTask.inputs>;
 export type DocumentSplitterTaskOutput = CreateMappedType<typeof DocumentSplitterTask.outputs>;

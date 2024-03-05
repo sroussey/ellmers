@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Document } from "../source/Document";
+import { Document } from "../../source/Document";
 
 export type Vector = number[] | Float32Array;
 

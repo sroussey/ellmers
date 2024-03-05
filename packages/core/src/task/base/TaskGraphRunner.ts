@@ -5,8 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, Task, TaskOutput } from "task/Task";
-import { TaskGraph } from "task/TaskGraph";
+import { TaskInput, Task, TaskOutput } from "task/base/Task";
+import { TaskGraph } from "task/base/TaskGraph";
 
 export class TaskGraphRunner {
   public layers: Map<number, Task[]>;

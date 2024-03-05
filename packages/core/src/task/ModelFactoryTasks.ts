@@ -5,11 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./ArrayTask";
-import { CreateMappedType } from "./TaskIOTypes";
-import { TaskRegistry } from "./TaskRegistry";
-import { ModelFactory } from "./ModelFactory";
-import { TaskConfig, TaskOutput } from "./Task";
+import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
+import { CreateMappedType } from "./base/TaskIOTypes";
+import { TaskRegistry } from "./base/TaskRegistry";
+import { ModelFactory } from "./base/ModelFactory";
+import { TaskConfig, TaskOutput } from "./base/Task";
 
 // ===============================================================================
 
