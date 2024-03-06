@@ -114,10 +114,7 @@ function mapTaskNodeToListrTask(node: Task, graph: TaskGraph): ListrTask {
 }
 
 export function getDependentTasks(task: Task, graph: TaskGraph): ListrTask[] {
-  const dependents = graph.outEdges(task.config.id);
-  const dependentTasks = dependents.map(([, , edge]) => {
-    const targetTask = graph.getNode(edge.targetTaskId);
-    return mapTaskNodeToListrTask(targetTask!, graph);
-  });
-  return dependentTasks.flat();
+  return graph
+    .getTargetTasks(task.config.id)
+    .map((targetTask) => mapTaskNodeToListrTask(targetTask, graph));
 }

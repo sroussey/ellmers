@@ -77,6 +77,22 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
   public getDataFlows(): IDataFlow[] {
     return this.getEdges().map((edge) => edge[2]);
   }
+
+  public getSourceDataFlows(taskId: string): DataFlow[] {
+    return this.inEdges(taskId).map(([, , dataFlow]) => dataFlow);
+  }
+
+  public getTargetDataFlows(taskId: string): DataFlow[] {
+    return this.outEdges(taskId).map(([, , dataFlow]) => dataFlow);
+  }
+
+  public getSourceTasks(taskId: string): Task[] {
+    return this.getSourceDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.sourceTaskId)!);
+  }
+
+  public getTargetTasks(taskId: string): Task[] {
+    return this.getTargetDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.targetTaskId)!);
+  }
 }
 
 /**

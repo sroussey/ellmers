@@ -47,7 +47,7 @@ export class TaskGraphRunner {
   }
 
   private copyInputFromEdgesToNode(node: Task) {
-    this.dag.inEdges(node.config.id).forEach(([, , dataFlow]) => {
+    this.dag.getSourceDataFlows(node.config.id).forEach((dataFlow) => {
       if (dataFlow.value !== undefined) {
         const toInput: TaskInput = {};
         toInput[dataFlow.targetTaskInputId] = dataFlow.value;
@@ -57,7 +57,7 @@ export class TaskGraphRunner {
   }
 
   private pushOutputFromNodeToEdges(node: Task, results: TaskOutput) {
-    this.dag.outEdges(node.config.id).forEach(([, , dataFlow]) => {
+    this.dag.getTargetDataFlows(node.config.id).forEach((dataFlow) => {
       if (results[dataFlow.sourceTaskOutputId] !== undefined) {
         dataFlow.value = results[dataFlow.sourceTaskOutputId];
       }
