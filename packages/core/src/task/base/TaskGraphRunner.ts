@@ -5,15 +5,20 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { ITaskOutputRepository } from "storage/ITaskOutputRepository";
 import { TaskInput, Task, TaskOutput } from "task/base/Task";
 import { TaskGraph } from "task/base/TaskGraph";
 
 export class TaskGraphRunner {
   public layers: Map<number, Task[]>;
+  public provenanceInput: Map<string, TaskInput>;
 
-  constructor(public dag: TaskGraph) {
-    this.dag = dag;
+  constructor(
+    public dag: TaskGraph,
+    public repository?: ITaskOutputRepository
+  ) {
     this.layers = new Map();
+    this.provenanceInput = new Map();
   }
 
   public assignLayers(sortedNodes: Task[]) {
@@ -48,33 +53,66 @@ export class TaskGraphRunner {
 
   private copyInputFromEdgesToNode(node: Task) {
     this.dag.getSourceDataFlows(node.config.id).forEach((dataFlow) => {
-      if (dataFlow.value !== undefined) {
-        const toInput: TaskInput = {};
-        toInput[dataFlow.targetTaskInputId] = dataFlow.value;
-        node.addInputData(toInput);
-      }
+      const toInput: TaskInput = {};
+      toInput[dataFlow.targetTaskInputId] = dataFlow.value;
+      node.addInputData(toInput);
     });
   }
 
-  private pushOutputFromNodeToEdges(node: Task, results: TaskOutput) {
+  private getInputProvenance(node: Task): TaskInput {
+    const nodeProvenance: TaskInput = {};
+    this.dag.getSourceDataFlows(node.config.id).forEach((dataFlow) => {
+      Object.assign(nodeProvenance, dataFlow.provenance);
+    });
+    return nodeProvenance;
+  }
+
+  private pushOutputFromNodeToEdges(node: Task, results: TaskOutput, nodeProvenance?: TaskInput) {
     this.dag.getTargetDataFlows(node.config.id).forEach((dataFlow) => {
       if (results[dataFlow.sourceTaskOutputId] !== undefined) {
         dataFlow.value = results[dataFlow.sourceTaskOutputId];
       }
+      if (nodeProvenance) dataFlow.provenance = nodeProvenance;
     });
   }
 
-  private async runTasksAsync() {
+  private async runTaskWithProvenance(
+    task: Task,
+    parentProvenance: TaskInput
+  ): Promise<TaskOutput> {
+    // Update provenance for the current task
+    const nodeProvenance = {
+      ...parentProvenance,
+      ...this.getInputProvenance(task),
+      ...task.getProvenance(),
+    };
+    this.provenanceInput.set(task.config.id, nodeProvenance);
+    this.copyInputFromEdgesToNode(task);
+
+    let results = await this.repository?.getOutput(
+      (task.constructor as any).type,
+      task.runInputData
+    );
+    if (!results) {
+      results = await task.run(nodeProvenance);
+    }
+
+    this.pushOutputFromNodeToEdges(task, results, nodeProvenance);
+    return results;
+  }
+
+  public async runGraph(parentProvenance: TaskInput = {}) {
+    this.provenanceInput = new Map();
+    this.dag.getNodes().forEach((node) => node.resetInputData());
+    const sortedNodes = this.dag.topologicallySortedNodes();
+    this.assignLayers(sortedNodes);
     let results: TaskOutput[] = [];
     for (const [layerNumber, nodes] of this.layers.entries()) {
-      const layerPromises = nodes.map(async (node) => {
-        this.copyInputFromEdgesToNode(node);
-        const results = await node.run();
-        this.pushOutputFromNodeToEdges(node, results);
-        return results;
-      });
-      results = await Promise.allSettled(layerPromises);
-      // note that the results array may contain undefined values due to errors and rejected promises
+      results = await Promise.allSettled(
+        nodes.map((node) =>
+          this.runTaskWithProvenance(node, layerNumber == 0 ? parentProvenance : {})
+        )
+      );
       results = results.map((r) => r.value);
     }
     return results;
@@ -91,13 +129,6 @@ export class TaskGraphRunner {
       });
     }
     return results;
-  }
-
-  public async runGraph() {
-    this.dag.getNodes().forEach((node) => node.resetInputData());
-    const sortedNodes = this.dag.topologicallySortedNodes();
-    this.assignLayers(sortedNodes);
-    return await this.runTasksAsync();
   }
 
   public runGraphSyncOnly() {

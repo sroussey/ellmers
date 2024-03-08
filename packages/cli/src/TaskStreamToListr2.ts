@@ -14,7 +14,8 @@ import {
   TaskGraphRunner,
   type Task,
   CompoundTask,
-} from "ellmers-core";
+  SqliteTaskOutputRepository,
+} from "ellmers-core/server";
 import { createBar } from "./TaskHelper";
 
 const options = {
@@ -28,9 +29,9 @@ const runTaskToListr = async (runner: TaskGraphRunner) => {
   const listr = new Listr(listrTasks, options);
 
   listr.run({});
-  await sleep(250);
+  await sleep(50);
   const result = await runner.runGraph();
-  await sleep(250);
+  await sleep(50);
   console.log("Result", result);
 };
 
@@ -45,28 +46,30 @@ export async function runTask(dag: TaskGraph) {
 }
 
 export function mapTaskGraphToListrTasks(runner: TaskGraphRunner): ListrTask[] {
-  const graph = runner.dag;
-  const sortedNodes = graph.topologicallySortedNodes();
+  const sortedNodes = runner.dag.topologicallySortedNodes();
   runner.assignLayers(sortedNodes);
   const children = runner.layers.get(0);
   const listrTasks = children?.map((task) => {
-    return mapTaskNodeToListrTask(task, graph) ?? [];
+    return mapTaskNodeToListrTask(task, runner) ?? [];
   });
   return listrTasks?.flat() ?? [];
 }
 
-function mapCompoundTaskNodeToListrTask(task: CompoundTask, graph: TaskGraph): ListrTask {
+function mapCompoundTaskNodeToListrTask(
+  task: CompoundTask,
+  parentRunner: TaskGraphRunner
+): ListrTask {
   return {
     title: task.config.name,
     task: (ctx, t) => {
-      const runner = new TaskGraphRunner(task.subGraph);
+      const runner = new TaskGraphRunner(task.subGraph, parentRunner.repository);
       const listTasks = t.newListr(mapTaskGraphToListrTasks(runner), options);
       return listTasks;
     },
   };
 }
 
-function mapSimpleTaskNodeToListrTask(task: Task, graph: TaskGraph): ListrTask {
+function mapSimpleTaskNodeToListrTask(task: Task): ListrTask {
   return {
     title: task.config.name,
     task: async (ctx, t) => {
@@ -84,7 +87,7 @@ function mapSimpleTaskNodeToListrTask(task: Task, graph: TaskGraph): ListrTask {
         task.on("complete", () => {
           observer.complete();
         });
-        task.on("error", (error) => {
+        task.on("error", () => {
           observer.complete();
         });
       });
@@ -92,13 +95,13 @@ function mapSimpleTaskNodeToListrTask(task: Task, graph: TaskGraph): ListrTask {
   };
 }
 
-function mapTaskNodeToListrTask(node: Task, graph: TaskGraph): ListrTask {
-  const deps = getDependentTasks(node, graph);
+function mapTaskNodeToListrTask(node: Task, runner: TaskGraphRunner): ListrTask {
+  const deps = getDependentTasks(node, runner);
   let parent: ListrTask;
   if (node.isCompound) {
-    parent = mapCompoundTaskNodeToListrTask(node, graph);
+    parent = mapCompoundTaskNodeToListrTask(node, runner);
   } else {
-    parent = mapSimpleTaskNodeToListrTask(node, graph);
+    parent = mapSimpleTaskNodeToListrTask(node);
   }
   if (deps.length == 0) {
     return parent;
@@ -113,8 +116,9 @@ function mapTaskNodeToListrTask(node: Task, graph: TaskGraph): ListrTask {
   }
 }
 
-export function getDependentTasks(task: Task, graph: TaskGraph): ListrTask[] {
+export function getDependentTasks(task: Task, runner: TaskGraphRunner): ListrTask[] {
+  const graph: TaskGraph = runner.dag;
   return graph
     .getTargetTasks(task.config.id)
-    .map((targetTask) => mapTaskNodeToListrTask(targetTask, graph));
+    .map((targetTask) => mapTaskNodeToListrTask(targetTask, runner));
 }

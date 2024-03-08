@@ -14,4 +14,6 @@ export * from "./task/exec/ml/MediaPipeLocalTaskRun";
 export * from "./model/Model";
 export * from "./model/HuggingFaceModel";
 export * from "./storage/InMemoryStorage";
+export * from "./storage/ITaskOutputRepository";
+export * from "./storage/SqliteTaskOutputRepository";
 export * from "./util/Misc";

@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { DirectedAcyclicGraph } from "@sroussey/typescript-graph";
-import { TaskIdType, TaskOutput } from "./Task";
+import { TaskIdType, TaskInput, TaskOutput } from "./Task";
 import { Task, TaskStream } from "./Task";
 
 export type IDataFlow = {
@@ -16,6 +16,7 @@ export type IDataFlow = {
   targetTaskInputId: string;
   id: string;
   value: TaskOutput;
+  provenance: TaskInput;
 };
 
 export type DataFlowIdType = IDataFlow["id"];
@@ -29,11 +30,8 @@ export class DataFlow implements IDataFlow {
     public id: string = `${sourceTaskId}.${sourceTaskOutputId} -> ${targetTaskId}.${targetTaskInputId}`
   ) {}
   public value: TaskOutput = {};
+  public provenance: TaskInput = {};
 }
-
-type NodeNodeEdgeTuples = Array<
-  [sourceTask: TaskIdType, targetTask: TaskIdType, edge?: IDataFlow | undefined]
->;
 
 export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType, DataFlowIdType> {
   constructor() {

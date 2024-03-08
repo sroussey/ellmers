@@ -14,7 +14,7 @@ export * from "./base/TaskIOTypes";
 export * from "./base/ModelFactory";
 export * from "./DocumentSplitterTask";
 export * from "./LambdaTask";
-export * from "./DebugTask";
+export * from "./DebugLogTask";
 export * from "./JsonTask";
 export * from "./JavaScriptTask";
 export * from "./DownloadModelTask";

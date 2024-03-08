@@ -26,7 +26,7 @@ import {
   TaskGraph,
   JsonTaskArray,
   JsonTask,
-} from "ellmers-core";
+} from "ellmers-core/server";
 
 registerHuggingfaceLocalTasks();
 registerMediaPipeTfJsLocalTasks();

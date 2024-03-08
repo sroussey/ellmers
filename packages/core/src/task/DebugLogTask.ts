@@ -5,16 +5,16 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SingleTask } from "./base/Task";
+import { OutputTask } from "./base/OutputTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
 export type DebugLogTaskInput = CreateMappedType<typeof DebugLogTask.inputs>;
 export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;
 
-export class DebugLogTask extends SingleTask {
+export class DebugLogTask extends OutputTask {
   static readonly type: string = "DebugLogTask";
-  static readonly category = "Utility";
+  static readonly category = "Output";
   declare runInputData: DebugLogTaskInput;
   declare runOutputData: DebugLogTaskOutput;
   public static inputs = [
@@ -30,9 +30,15 @@ export class DebugLogTask extends SingleTask {
       defaultValue: "info",
     },
   ] as const;
-  public static outputs = [] as const;
+  public static outputs = [{ id: "out", name: "Outputs", valueType: "any" }] as const;
   runSyncOnly() {
-    console[this.runInputData.level || "log"](this.runInputData.message);
+    const level = this.runInputData.level || "log";
+    if (level == "dir") {
+      console.dir(this.runInputData.message, { depth: null });
+    } else {
+      console[level](this.runInputData.message);
+    }
+    this.runOutputData.out = this.runInputData.message;
     return this.runOutputData;
   }
 }

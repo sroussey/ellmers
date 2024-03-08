@@ -82,7 +82,7 @@ type TsTypes = {
   string: string;
   number: number;
   Vector: Vector;
-  log_level: "debug" | "info" | "warn" | "error";
+  log_level: "dir" | "log" | "debug" | "info" | "warn" | "error";
   doc_parser: "txt" | "md"; // | "html" | "pdf" | "csv";
   doc_variant:
     | "tree"

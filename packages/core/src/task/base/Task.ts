@@ -50,6 +50,7 @@ export type TaskConfig = Partial<IConfig> & { input?: TaskInput };
 export interface IConfig {
   id: string;
   name?: string;
+  provenance?: TaskInput;
 }
 
 abstract class TaskBase {
@@ -145,6 +146,14 @@ abstract class TaskBase {
   public static inputs: readonly TaskInputDefinition[];
   public static outputs: readonly TaskOutputDefinition[];
 
+  /**
+   *
+   * @returns TaskInput Values that are used by the task runner, usually for storing results
+   */
+  getProvenance(): TaskInput {
+    return this.config.provenance ?? {};
+  }
+
   resetInputData() {
     this.runInputData = { ...this.defaults };
   }
@@ -207,17 +216,11 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
       node.resetInputData();
     });
   }
-  async run(): Promise<TaskOutput> {
+  async run(nodeProvenance: TaskInput = {}): Promise<TaskOutput> {
     this.emit("start");
     const runner = new TaskGraphRunner(this.subGraph);
-    this.runOutputData.outputs = await runner.runGraph();
-    this.emit("complete", this.runOutputData);
-    // console.log(
-    //   "complete",
-    //   this.subGraph.getNodes().map((t) => (t.constructor as any).type),
-    //   this.runInputData,
-    //   this.runOutputData
-    // );
+    this.runOutputData.outputs = await runner.runGraph(nodeProvenance);
+    this.emit("complete");
     return this.runOutputData;
   }
   runSyncOnly(): TaskOutput {
