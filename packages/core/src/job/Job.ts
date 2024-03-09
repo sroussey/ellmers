@@ -5,8 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { makeFingerprint } from "../util/Misc";
-import { TaskInput, TaskOutput } from "../task/Task";
+import { TaskInput, TaskOutput } from "../task/base/Task";
 
 export enum JobStatus {
   PENDING = "NEW",
@@ -24,7 +23,6 @@ export type JobConstructorDetails = {
   output?: TaskOutput | null;
   error?: string;
   id?: string;
-  fingerprint?: string;
   maxRetries?: number;
   status?: JobStatus;
   createdAt?: Date | string;
@@ -41,7 +39,6 @@ export class Job {
   public readonly input: TaskInput;
   public readonly maxRetries: number;
   public readonly createdAt: Date;
-  public readonly fingerprint: string;
   public status: JobStatus = JobStatus.PENDING;
   public runAfter: Date;
   public output: TaskOutput | null = null;
@@ -55,7 +52,6 @@ export class Job {
     queue,
     taskType,
     input,
-    fingerprint,
     error,
     id,
     output = null,
@@ -71,7 +67,6 @@ export class Job {
     if (typeof lastRanAt === "string") lastRanAt = new Date(lastRanAt);
     if (typeof createdAt === "string") createdAt = new Date(createdAt);
     if (typeof deadlineAt === "string") deadlineAt = new Date(deadlineAt);
-    if (!fingerprint) fingerprint = makeFingerprint(input);
 
     this.id = id;
     this.queue = queue;
@@ -79,7 +74,6 @@ export class Job {
     this.input = input;
     this.maxRetries = maxRetries;
     this.createdAt = createdAt;
-    this.fingerprint = fingerprint;
     this.runAfter = runAfter ?? createdAt;
     this.status = status;
     this.deadlineAt = deadlineAt;

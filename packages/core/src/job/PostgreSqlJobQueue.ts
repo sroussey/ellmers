@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { makeFingerprint } from "../util/Misc";
-import { TaskInput, TaskOutput } from "../task/Task";
+import { TaskInput, TaskOutput } from "../task/base/Task";
 import sql from "../util/db_postgresql";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
@@ -52,10 +52,11 @@ export abstract class PostgreSqlJobQueue extends JobQueue {
   }
 
   public async add(job: PostgreSqlJob) {
+    const fingerprint = await makeFingerprint(job.input);
     return await sql.begin(async (sql) => {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
-          VALUES (${job.queue}, ${job.fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+          VALUES (${job.queue}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
           RETURNING id`;
     });
   }
@@ -150,11 +151,12 @@ export abstract class PostgreSqlJobQueue extends JobQueue {
   }
 
   public async outputForInput(taskType: string, input: TaskInput) {
+    const fingerprint = await makeFingerprint(input);
     return await sql.begin(async (sql) => {
       const result = await sql`
       SELECT output
         FROM job_queue
-        WHERE taskType = ${taskType} AND fingerprint = ${makeFingerprint(input)} AND queue=${this.queue} AND status = 'COMPLETED'`;
+        WHERE taskType = ${taskType} AND fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
       return result[0].rows[0].output;
     });
   }

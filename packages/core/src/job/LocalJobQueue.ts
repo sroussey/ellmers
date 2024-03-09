@@ -6,16 +6,23 @@
 //    *******************************************************************************
 
 import { v4 } from "uuid";
-import { TaskInput } from "task/Task";
-import { makeFingerprint, sleep } from "util/Misc";
+import { TaskInput } from "../task/base/Task";
+import { makeFingerprint } from "../util/Misc";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
 import { ILimiter } from "./ILimiter";
 
 export class LocalJob extends Job {
+  public fingerprint?: string;
   constructor(details: JobConstructorDetails) {
     if (!details.id) details.id = v4();
     super(details);
+    // only used in outputForInput, so race condition is acceptable
+    // if that changes, we need to make sure to set this before the job is added to the queue
+    // instead of here.
+    makeFingerprint(details.input).then((fingerprint) => {
+      this.fingerprint = fingerprint;
+    });
   }
 }
 
@@ -84,7 +91,7 @@ export abstract class LocalJobQueue extends JobQueue {
   }
 
   public async outputForInput(taskType: string, input: TaskInput) {
-    const fingerprint = makeFingerprint(input);
+    const fingerprint = await makeFingerprint(input);
     return (
       this.jobQueue.find(
         (j) =>

@@ -6,12 +6,12 @@
 //    *******************************************************************************
 
 import { v4 } from "uuid";
-import { TaskInput, TaskOutput } from "task/Task";
-import { getDatabase } from "util/db_sqlite";
+import { TaskInput, TaskOutput } from "../task/base/Task";
+import { getDatabase } from "../util/db_sqlite";
 import { ILimiter } from "./ILimiter";
 import { JobQueue } from "./JobQueue";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
-import { makeFingerprint } from "util/Misc";
+import { makeFingerprint } from "../util/Misc";
 import { type Database } from "better-sqlite3";
 
 const db = getDatabase();
@@ -56,6 +56,7 @@ export abstract class SqliteJobQueue extends JobQueue {
   }
 
   public async add(job: SqliteJob) {
+    const fingerprint = await makeFingerprint(job.input);
     const AddQuery = `
       INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries)
 		    VALUES ($1, $2, $3, $4, $5, $6)
@@ -63,7 +64,7 @@ export abstract class SqliteJobQueue extends JobQueue {
     const stmt = db.prepare(AddQuery);
     const result = stmt.run(
       job.queue,
-      job.fingerprint,
+      fingerprint,
       job.input,
       job.createdAt.toISOString(),
       job.maxRetries

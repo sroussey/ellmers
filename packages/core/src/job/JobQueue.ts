@@ -5,8 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { sleep } from "util/Misc";
-import { TaskInput, TaskOutput } from "../task/Task";
+import { sleep } from "../util/Misc";
+import { TaskInput, TaskOutput } from "../task/base/Task";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
