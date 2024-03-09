@@ -5,52 +5,30 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import uuid from "uuid";
-import { TaskInput } from "../task/Task";
-import { makeFingerprint, sleep } from "../util/Misc";
+import { v4 } from "uuid";
+import { TaskInput } from "task/Task";
+import { makeFingerprint, sleep } from "util/Misc";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
-
-// ===============================================================================
-//                               Local Version
-// ===============================================================================
+import { ILimiter } from "./ILimiter";
 
 export class LocalJob extends Job {
   constructor(details: JobConstructorDetails) {
-    if (!details.id) details.id = uuid.v4();
+    if (!details.id) details.id = v4();
     super(details);
   }
 }
 
 export abstract class LocalJobQueue extends JobQueue {
-  private jobQueue: LocalJob[] = [];
-
-  async processJobs() {
-    while (true) {
-      if (await this.limiter.canProceed()) {
-        const job = await this.next(); // Implement logic to get the next job
-        if (job) {
-          this.processJobAsync(job);
-        } else {
-          await this.waitForNextJob();
-        }
-      } else {
-        await this.waitForNextJob();
-      }
-    }
+  constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
+    super(queue, limiter, waitDurationInMilliseconds);
+    this.jobQueue = [];
   }
 
-  protected async waitForNextJob(): Promise<void> {
-    await sleep(
-      Math.max(
-        0,
-        (await this.limiter.getNextAvailableTime()).getMilliseconds() - new Date().getTime()
-      )
-    ); // Wait for the next available time
-  }
+  private jobQueue: LocalJob[];
 
-  #reorderQueue(): void {
-    this.jobQueue
+  private reorderedQueue() {
+    return this.jobQueue
       .filter((job) => job.status === JobStatus.PENDING)
       .filter((job) => job.runAfter.getTime() <= Date.now())
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -70,9 +48,9 @@ export abstract class LocalJobQueue extends JobQueue {
   }
 
   public async next() {
-    this.#reorderQueue();
+    const top = this.reorderedQueue();
 
-    const job = this.jobQueue[0];
+    const job = top[0];
     job.status = JobStatus.PROCESSING;
     return job;
   }
@@ -89,6 +67,7 @@ export abstract class LocalJobQueue extends JobQueue {
     job.completedAt = new Date();
     if (error) {
       job.error = error;
+      job.retries += 1;
       if (job.retries >= job.maxRetries) {
         job.status = JobStatus.FAILED;
       } else {

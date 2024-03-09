@@ -21,8 +21,8 @@ export class PostgreSqlJob extends Job {
 }
 
 export abstract class PostgreSqlJobQueue extends JobQueue {
-  constructor(queue: string, limiter: ILimiter) {
-    super(queue, limiter);
+  constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
+    super(queue, limiter, waitDurationInMilliseconds);
     this.ensureTableExists();
   }
 
@@ -131,6 +131,7 @@ export abstract class PostgreSqlJobQueue extends JobQueue {
       : error && job.retries >= job.maxRetries
         ? JobStatus.FAILED
         : JobStatus.PENDING;
+    if (!output || error) job.retries += 1;
     return await sql.begin(async (sql) => {
       const result = await sql`    
         UPDATE job_queue 

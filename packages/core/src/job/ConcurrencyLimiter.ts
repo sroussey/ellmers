@@ -10,30 +10,41 @@ import { ILimiter } from "./ILimiter";
 export class ConcurrencyLimiter implements ILimiter {
   private currentRunningJobs: number = 0;
   private readonly maxConcurrentJobs: number;
-  private readonly smallestDelayInMilliseconds: number;
+  private readonly timeSliceInMilliseconds: number;
+  private nextAllowedStartTime: Date = new Date();
 
-  constructor(maxConcurrentJobs: number, smallestDelayInMilliseconds: number = 1000) {
+  constructor(maxConcurrentJobs: number, timeSliceInMilliseconds: number = 1000) {
     this.maxConcurrentJobs = maxConcurrentJobs;
-    this.smallestDelayInMilliseconds = smallestDelayInMilliseconds;
+    this.timeSliceInMilliseconds = timeSliceInMilliseconds;
   }
 
   async canProceed(): Promise<boolean> {
-    return this.currentRunningJobs < this.maxConcurrentJobs;
+    return (
+      this.currentRunningJobs < this.maxConcurrentJobs &&
+      Date.now() >= this.nextAllowedStartTime.getTime()
+    );
   }
 
-  recordJobStart(): void {
+  async recordJobStart(): Promise<void> {
     if (this.currentRunningJobs < this.maxConcurrentJobs) {
       this.currentRunningJobs++;
+      this.nextAllowedStartTime = new Date(Date.now() + this.timeSliceInMilliseconds);
     }
   }
 
-  recordJobCompletion(): void {
+  async recordJobCompletion(): Promise<void> {
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 
   async getNextAvailableTime(): Promise<Date> {
     return this.currentRunningJobs < this.maxConcurrentJobs
       ? new Date()
-      : new Date(Date.now() + this.smallestDelayInMilliseconds); // Example: Assume a short delay
+      : new Date(Date.now() + this.timeSliceInMilliseconds);
+  }
+
+  async setNextAvailableTime(date: Date): Promise<void> {
+    if (date > this.nextAllowedStartTime) {
+      this.nextAllowedStartTime = date;
+    }
   }
 }

@@ -5,32 +5,29 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import uuid from "uuid";
-import { TaskInput, TaskOutput } from "../task/Task";
-import { getDatabase } from "../util/db_sqlite";
+import { v4 } from "uuid";
+import { TaskInput, TaskOutput } from "task/Task";
+import { getDatabase } from "util/db_sqlite";
 import { ILimiter } from "./ILimiter";
 import { JobQueue } from "./JobQueue";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
-import { makeFingerprint } from "../util/Misc";
+import { makeFingerprint } from "util/Misc";
+import { type Database } from "better-sqlite3";
 
 const db = getDatabase();
-
-// ===============================================================================
-//                             Local Sqlite Version
-// ===============================================================================
 
 // TODO: reuse prepared statements
 
 export class SqliteJob extends Job {
   constructor(details: JobConstructorDetails) {
-    if (!details.id) details.id = uuid.v4();
+    if (!details.id) details.id = v4();
     super(details);
   }
 }
 
 export abstract class SqliteJobQueue extends JobQueue {
-  constructor(queue: string, limiter: ILimiter) {
-    super(queue, limiter);
+  constructor(db: Database, queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
+    super(queue, limiter, waitDurationInMilliseconds);
     this.ensureTableExists();
   }
 
@@ -159,6 +156,7 @@ export abstract class SqliteJobQueue extends JobQueue {
       : error && job.retries >= job.maxRetries
         ? JobStatus.FAILED
         : JobStatus.PENDING;
+    if (!output || error) job.retries += 1;
     const stmt =
       db.prepare<
         [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]

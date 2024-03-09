@@ -7,7 +7,8 @@
 
 export interface ILimiter {
   canProceed(): Promise<boolean>;
-  recordJobStart(): void;
-  recordJobCompletion(): void;
+  recordJobStart(): Promise<void>;
+  recordJobCompletion(): Promise<void>;
   getNextAvailableTime(): Promise<Date>;
+  setNextAvailableTime(date: Date): Promise<void>;
 }

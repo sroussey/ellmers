@@ -8,16 +8,28 @@
 import { ILimiter } from "./ILimiter";
 
 export class DelayLimiter implements ILimiter {
+  private nextAvailableTime: Date = new Date();
   constructor(private delayInMilliseconds: number = 50) {}
+
   async canProceed(): Promise<boolean> {
-    return true;
+    return Date.now() >= this.nextAvailableTime.getTime();
   }
 
-  recordJobStart(): void {}
+  async recordJobStart(): Promise<void> {
+    this.nextAvailableTime = new Date(Date.now() + this.delayInMilliseconds);
+  }
 
-  recordJobCompletion(): void {}
+  async recordJobCompletion(): Promise<void> {
+    // No action needed.
+  }
 
   async getNextAvailableTime(): Promise<Date> {
-    return new Date(Date.now() + this.delayInMilliseconds);
+    return this.nextAvailableTime;
+  }
+
+  async setNextAvailableTime(date: Date): Promise<void> {
+    if (date > this.nextAvailableTime) {
+      this.nextAvailableTime = date;
+    }
   }
 }

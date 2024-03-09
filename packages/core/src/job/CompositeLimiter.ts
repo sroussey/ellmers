@@ -27,11 +27,11 @@ export class CompositeLimiter implements ILimiter {
     return true; // All limiters agree
   }
 
-  recordJobStart(): void {
+  async recordJobStart(): Promise<void> {
     this.limiters.forEach((limiter) => limiter.recordJobStart());
   }
 
-  recordJobCompletion(): void {
+  async recordJobCompletion(): Promise<void> {
     this.limiters.forEach((limiter) => limiter.recordJobCompletion());
   }
 
@@ -44,5 +44,11 @@ export class CompositeLimiter implements ILimiter {
       }
     }
     return maxDate;
+  }
+
+  async setNextAvailableTime(date: Date): Promise<void> {
+    for (const limiter of this.limiters) {
+      await limiter.setNextAvailableTime(date);
+    }
   }
 }
