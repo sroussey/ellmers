@@ -5,38 +5,14 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Job, JobConstructorDetails, JobQueue, JobStatus, makeFingerprint } from "./JobQueue";
+import { makeFingerprint } from "../util/Misc";
 import { TaskInput, TaskOutput } from "../task/Task";
 import sql from "../util/db_postgresql";
+import { Job, JobConstructorDetails, JobStatus } from "./Job";
+import { JobQueue } from "./JobQueue";
+import { ILimiter } from "./ILimiter";
 
-// ===============================================================================
-//                             Local PostgreSql Version
-// ===============================================================================
-
-sql`
-
-CREATE TABLE IF NOT EXISTS job_queue (
-		id bigint SERIAL NOT NULL,
-		fingerprint text NOT NULL,
-		queue text NOT NULL,
-		status job_status NOT NULL default 'NEW',
-		input jsonb,
-    output jsonb,
-		retries integer default 0,
-		maxRetries integer default 23,
-		runAfter timestamp with time zone DEFAULT now(),
-		lastRanAt timestamp with time zone,
-		createdAt timestamp with time zone DEFAULT now(),
-		error text
-);
-
-CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
-CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
-
-`;
-
-// TODO: reuse prepared statements
+// TODO: prepared statements
 
 export class PostgreSqlJob extends Job {
   constructor(details: JobConstructorDetails) {
@@ -44,7 +20,37 @@ export class PostgreSqlJob extends Job {
   }
 }
 
-export class PostgreSqlJobQueue extends JobQueue {
+export abstract class PostgreSqlJobQueue extends JobQueue {
+  constructor(queue: string, limiter: ILimiter) {
+    super(queue, limiter);
+    this.ensureTableExists();
+  }
+
+  private ensureTableExists() {
+    sql`
+
+    CREATE TABLE IF NOT EXISTS job_queue (
+        id bigint SERIAL NOT NULL,
+        fingerprint text NOT NULL,
+        queue text NOT NULL,
+        status job_status NOT NULL default 'NEW',
+        input jsonb,
+        output jsonb,
+        retries integer default 0,
+        maxRetries integer default 23,
+        runAfter timestamp with time zone DEFAULT now(),
+        lastRanAt timestamp with time zone,
+        createdAt timestamp with time zone DEFAULT now(),
+        error text
+    );
+    
+    CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
+    CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
+    CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
+    
+    `;
+  }
+
   public async add(job: PostgreSqlJob) {
     return await sql.begin(async (sql) => {
       return await sql`

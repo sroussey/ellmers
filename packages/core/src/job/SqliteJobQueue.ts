@@ -6,37 +6,18 @@
 //    *******************************************************************************
 
 import uuid from "uuid";
-import { Job, JobConstructorDetails, JobQueue, JobStatus, makeFingerprint } from "./JobQueue";
 import { TaskInput, TaskOutput } from "../task/Task";
 import { getDatabase } from "../util/db_sqlite";
+import { ILimiter } from "./ILimiter";
+import { JobQueue } from "./JobQueue";
+import { Job, JobConstructorDetails, JobStatus } from "./Job";
+import { makeFingerprint } from "../util/Misc";
 
 const db = getDatabase();
 
 // ===============================================================================
 //                             Local Sqlite Version
 // ===============================================================================
-
-db.exec(`
-
-CREATE TABLE IF NOT EXISTS job_queue (
-		id bigint SERIAL NOT NULL,
-		fingerprint text NOT NULL,
-		queue text NOT NULL,
-		status job_status NOT NULL default 'NEW',
-		input jsonb,
-    output jsonb,
-		retries integer default 0,
-		maxRetries integer default 23,
-		runAfter timestamp with time zone DEFAULT now(),
-		lastRanAt timestamp with time zone,
-		createdAt timestamp with time zone DEFAULT now(),
-		error text
-);
-
-CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, queue);
-CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
-CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
-`);
 
 // TODO: reuse prepared statements
 
@@ -47,7 +28,36 @@ export class SqliteJob extends Job {
   }
 }
 
-export class SqliteJobQueue extends JobQueue {
+export abstract class SqliteJobQueue extends JobQueue {
+  constructor(queue: string, limiter: ILimiter) {
+    super(queue, limiter);
+    this.ensureTableExists();
+  }
+
+  private ensureTableExists() {
+    db.exec(`
+
+    CREATE TABLE IF NOT EXISTS job_queue (
+        id bigint SERIAL NOT NULL,
+        fingerprint text NOT NULL,
+        queue text NOT NULL,
+        status job_status NOT NULL default 'NEW',
+        input jsonb,
+        output jsonb,
+        retries integer default 0,
+        maxRetries integer default 23,
+        runAfter timestamp with time zone DEFAULT now(),
+        lastRanAt timestamp with time zone,
+        createdAt timestamp with time zone DEFAULT now(),
+        error text
+    );
+    
+    CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, queue);
+    CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
+    CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
+    `);
+  }
+
   public async add(job: SqliteJob) {
     const AddQuery = `
       INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries)

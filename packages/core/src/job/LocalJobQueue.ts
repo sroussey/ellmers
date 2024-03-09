@@ -6,8 +6,10 @@
 //    *******************************************************************************
 
 import uuid from "uuid";
-import { Job, JobConstructorDetails, JobQueue, JobStatus, makeFingerprint } from "./JobQueue";
-import { TaskInput } from "lib";
+import { TaskInput } from "../task/Task";
+import { makeFingerprint, sleep } from "../util/Misc";
+import { Job, JobConstructorDetails, JobStatus } from "./Job";
+import { JobQueue } from "./JobQueue";
 
 // ===============================================================================
 //                               Local Version
@@ -20,8 +22,32 @@ export class LocalJob extends Job {
   }
 }
 
-export class LocalJobQueue extends JobQueue {
+export abstract class LocalJobQueue extends JobQueue {
   private jobQueue: LocalJob[] = [];
+
+  async processJobs() {
+    while (true) {
+      if (await this.limiter.canProceed()) {
+        const job = await this.next(); // Implement logic to get the next job
+        if (job) {
+          this.processJobAsync(job);
+        } else {
+          await this.waitForNextJob();
+        }
+      } else {
+        await this.waitForNextJob();
+      }
+    }
+  }
+
+  protected async waitForNextJob(): Promise<void> {
+    await sleep(
+      Math.max(
+        0,
+        (await this.limiter.getNextAvailableTime()).getMilliseconds() - new Date().getTime()
+      )
+    ); // Wait for the next available time
+  }
 
   #reorderQueue(): void {
     this.jobQueue

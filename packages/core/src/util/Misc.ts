@@ -5,6 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { createHash } from "crypto";
+import { TaskInput } from "../task/Task";
+
 export function forceArray<T = any>(input: T | T[]): T[] {
   if (Array.isArray(input)) return input;
   return [input];
@@ -19,12 +22,7 @@ export function deepEqual(a: any, b: any): boolean {
     return true;
   }
 
-  if (
-    typeof a !== "object" ||
-    typeof b !== "object" ||
-    a == null ||
-    b == null
-  ) {
+  if (typeof a !== "object" || typeof b !== "object" || a == null || b == null) {
     return false;
   }
 
@@ -46,4 +44,26 @@ export function deepEqual(a: any, b: any): boolean {
   }
 
   return true;
+}
+
+export function sortObject(obj: Record<string, any>): Record<string, any> {
+  return Object.keys(obj)
+    .sort()
+    .reduce(
+      (result, key) => {
+        result[key] = obj[key];
+        return result;
+      },
+      {} as Record<string, any>
+    );
+}
+
+export function serialize(obj: Record<string, any>): string {
+  const sortedObj = sortObject(obj);
+  return JSON.stringify(sortedObj);
+}
+
+export function makeFingerprint(input: TaskInput): string {
+  const serializedObj = serialize(input);
+  return createHash("sha256").update(serializedObj).digest("hex");
 }
