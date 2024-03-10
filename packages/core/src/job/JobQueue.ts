@@ -31,24 +31,26 @@ export abstract class JobQueue {
   public abstract next(): Promise<Job | undefined>;
   public abstract peek(num: number): Promise<Array<Job>>;
   public abstract size(status?: JobStatus): Promise<number>;
-  public abstract complete(id: unknown, output: TaskOutput, error?: string): Promise<void>;
+  public abstract complete(id: unknown, output?: TaskOutput, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: TaskInput): Promise<TaskOutput | null>;
 
   // we do this in case the queue needs to do something queue specific to execute the job
-  public async executeJob(job: Job): Promise<void> {
-    await job.execute();
+  public async executeJob(job: Job): Promise<TaskOutput> {
+    return await job.execute();
   }
 
   protected async processJob(job: Job) {
     try {
       this.limiter.recordJobStart();
-      await this.executeJob(job);
+      const output = await this.executeJob(job);
+      await this.complete(job.id, output);
     } catch (error) {
       console.error(`Error processing job: ${error}`);
       if (error instanceof RetryError) {
         await this.limiter.setNextAvailableTime(error.retryDate);
       }
+      await this.complete(job.id, undefined, String(error));
     } finally {
       this.limiter.recordJobCompletion();
     }
