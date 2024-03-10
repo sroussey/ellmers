@@ -34,12 +34,16 @@ export abstract class JobQueue {
   public abstract complete(id: unknown, output: TaskOutput, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: TaskInput): Promise<TaskOutput | null>;
-  public abstract executeJob(job: Job): Promise<void>;
+
+  // we do this in case the queue needs to do something queue specific to execute the job
+  public async executeJob(job: Job): Promise<void> {
+    await job.execute();
+  }
 
   protected async processJob(job: Job) {
     try {
       this.limiter.recordJobStart();
-      await this.executeJob(job); // Assume executeJob is your method for job processing
+      await this.executeJob(job);
     } catch (error) {
       console.error(`Error processing job: ${error}`);
       if (error instanceof RetryError) {
@@ -50,32 +54,31 @@ export abstract class JobQueue {
     }
   }
 
-  async processJobs() {
-    while (true) {
-      try {
-        // Check the rate limiter for the next available time to process jobs
-        const nextTime = await this.limiter.getNextAvailableTime();
-        const waitTime = nextTime.getTime() - Date.now();
+  private running = false;
+  private async processJobs() {
+    if (!this.running) return; // Stop processing if the queue has been stopped
 
-        if (waitTime > 0) {
-          await sleep(waitTime + 10);
-          // Wait until the next available time as determined by the limiter
-          // plus a little so canProceed is ok and no race condition
+    try {
+      const canProceed = await this.limiter.canProceed();
+      if (canProceed) {
+        const job = await this.next(); // Fetch the next job if available
+        if (job) {
+          this.processJob(job).catch((error) => console.error(`Error processing job: ${error}`));
         }
-
-        // Check if we can proceed based on the limiter
-        if (await this.limiter.canProceed()) {
-          const job = await this.next(); // Fetch the next job
-          if (job) {
-            await this.processJob(job); // Process the job
-          }
-        } else {
-          await sleep(this.waitDurationInMilliseconds); // Wait and retry if we can't proceed
-        }
-      } catch (error) {
-        console.error(`Error in processJobs: ${error}`);
-        await sleep(this.waitDurationInMilliseconds); // Prevent tight loop on error
       }
+      setTimeout(() => this.processJobs(), this.waitDurationInMilliseconds);
+    } catch (error) {
+      console.error(`Error in processJobs: ${error}`);
+      setTimeout(() => this.processJobs(), this.waitDurationInMilliseconds);
     }
+  }
+
+  start() {
+    this.running = true;
+    this.processJobs();
+  }
+
+  stop() {
+    this.running = false;
   }
 }

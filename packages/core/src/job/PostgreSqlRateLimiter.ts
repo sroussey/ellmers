@@ -5,23 +5,24 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import sql from "util/db_postgresql";
 import { ILimiter } from "./ILimiter";
+import { Sql } from "postgres";
 
 export class PostgreSqlRateLimiter implements ILimiter {
-  private readonly queueName: string;
-  private readonly maxAttempts: number;
   private readonly windowSizeInMilliseconds: number;
 
-  constructor(queueName: string, maxAttempts: number, windowSizeInMinutes: number) {
-    this.queueName = queueName;
-    this.maxAttempts = maxAttempts;
+  constructor(
+    protected readonly sql: Sql,
+    private readonly queueName: string,
+    private readonly maxAttempts: number,
+    windowSizeInMinutes: number
+  ) {
     this.windowSizeInMilliseconds = windowSizeInMinutes * 60 * 1000;
     this.ensureTableExists();
   }
 
   private ensureTableExists() {
-    sql`
+    this.sql`
       CREATE TABLE IF NOT EXISTS job_rate_limit (
         id bigint SERIAL NOT NULL,
         queue_name text NOT NULL,
@@ -36,7 +37,7 @@ export class PostgreSqlRateLimiter implements ILimiter {
     const attemptedAtThreshold = new Date(now.getTime() - this.windowSizeInMilliseconds);
 
     // Retrieve the largest next_available_at and count of attempts in the window
-    const result = await sql`
+    const result = await this.sql`
       SELECT 
         COUNT(*) AS attempt_count,
         MAX(next_available_at) AS latest_next_available_at
@@ -63,7 +64,7 @@ export class PostgreSqlRateLimiter implements ILimiter {
 
   async recordJobStart(): Promise<void> {
     // Record a new job attempt
-    await sql`
+    await this.sql`
       INSERT INTO job_rate_limit (queue_name)
       VALUES (${this.queueName})
     `;
@@ -75,7 +76,7 @@ export class PostgreSqlRateLimiter implements ILimiter {
 
   async getNextAvailableTime(): Promise<Date> {
     // Query for the earliest job attempt within the window that reaches the limit
-    const result = await sql`
+    const result = await this.sql`
       SELECT attempted_at
       FROM job_rate_limit
       WHERE queue_name = ${this.queueName}
@@ -93,7 +94,7 @@ export class PostgreSqlRateLimiter implements ILimiter {
 
   async setNextAvailableTime(date: Date): Promise<void> {
     // Update the next available time for the specific queue. If no entry exists, insert a new one.
-    await sql`
+    await this.sql`
       INSERT INTO job_rate_limit (queue_name, next_available_at)
       VALUES (${this.queueName}, ${date})
       ON CONFLICT (queue_name)

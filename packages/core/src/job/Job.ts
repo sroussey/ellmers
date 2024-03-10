@@ -32,7 +32,7 @@ export type JobConstructorDetails = {
   retries?: number;
 };
 
-export class Job {
+export abstract class Job {
   public readonly id: unknown;
   public readonly queue: string;
   public readonly taskType: string;
@@ -81,5 +81,8 @@ export class Job {
     this.lastRanAt = lastRanAt;
     this.output = output;
     this.error = error;
+  }
+  execute(): Promise<TaskOutput> {
+    throw new Error("Method not implemented.");
   }
 }

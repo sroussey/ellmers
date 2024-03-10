@@ -58,8 +58,10 @@ export abstract class LocalJobQueue extends JobQueue {
     const top = this.reorderedQueue();
 
     const job = top[0];
-    job.status = JobStatus.PROCESSING;
-    return job;
+    if (job) {
+      job.status = JobStatus.PROCESSING;
+      return job;
+    }
   }
 
   public async size(): Promise<number> {

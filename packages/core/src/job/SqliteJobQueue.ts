@@ -7,14 +7,11 @@
 
 import { v4 } from "uuid";
 import { TaskInput, TaskOutput } from "../task/base/Task";
-import { getDatabase } from "../util/db_sqlite";
 import { ILimiter } from "./ILimiter";
 import { JobQueue } from "./JobQueue";
 import { Job, JobConstructorDetails, JobStatus } from "./Job";
 import { makeFingerprint } from "../util/Misc";
 import { type Database } from "better-sqlite3";
-
-const db = getDatabase();
 
 // TODO: reuse prepared statements
 
@@ -25,28 +22,34 @@ export class SqliteJob extends Job {
   }
 }
 
-export abstract class SqliteJobQueue extends JobQueue {
-  constructor(db: Database, queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
+export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
+  constructor(
+    protected db: Database,
+    queue: string,
+    limiter: ILimiter,
+    protected jobClass: typeof SqliteJob = SqliteJob,
+    waitDurationInMilliseconds = 100
+  ) {
     super(queue, limiter, waitDurationInMilliseconds);
     this.ensureTableExists();
   }
 
   private ensureTableExists() {
-    db.exec(`
+    this.db.exec(`
 
     CREATE TABLE IF NOT EXISTS job_queue (
-        id bigint SERIAL NOT NULL,
-        fingerprint text NOT NULL,
-        queue text NOT NULL,
-        status job_status NOT NULL default 'NEW',
-        input jsonb,
-        output jsonb,
-        retries integer default 0,
-        maxRetries integer default 23,
-        runAfter timestamp with time zone DEFAULT now(),
-        lastRanAt timestamp with time zone,
-        createdAt timestamp with time zone DEFAULT now(),
-        error text
+      id bigint SERIAL NOT NULL,
+      fingerprint text NOT NULL,
+      queue text NOT NULL,
+      status job_status NOT NULL default 'NEW',
+      input jsonb,
+      output jsonb,
+      retries integer default 0,
+      maxRetries integer default 23,
+      runAfter timestamp with time zone DEFAULT now(),
+      lastRanAt timestamp with time zone,
+      createdAt timestamp with time zone DEFAULT now(),
+      error text
     );
     
     CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, queue);
@@ -61,7 +64,7 @@ export abstract class SqliteJobQueue extends JobQueue {
       INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries)
 		    VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id`;
-    const stmt = db.prepare(AddQuery);
+    const stmt = this.db.prepare(AddQuery);
     const result = stmt.run(
       job.queue,
       fingerprint,
@@ -78,10 +81,10 @@ export abstract class SqliteJobQueue extends JobQueue {
         FROM job_queue
         WHERE id = $1 AND queue = $2
         LIMIT 1`;
-    const stmt = db.prepare<[id: unknown, queue: string]>(JobQuery);
+    const stmt = this.db.prepare<[id: unknown, queue: string]>(JobQuery);
     const result = stmt.get(id, this.queue) as any;
     if (!result) return undefined;
-    return new SqliteJob(result);
+    return new this.jobClass(result);
   }
 
   public async peek(num: number = 100) {
@@ -94,11 +97,11 @@ export abstract class SqliteJobQueue extends JobQueue {
         AND runAfter > NOW()
         ORDER BY runAfter ASC
         LIMIT ${num}`;
-    const stmt = db.prepare(FutureJobQuery);
+    const stmt = this.db.prepare(FutureJobQuery);
     const ret: Array<SqliteJob> = [];
     const result = stmt.all(this.queue) as any[];
     if (!result) return ret;
-    for (const job of result) ret.push(new SqliteJob(job));
+    for (const job of result) ret.push(new this.jobClass(job));
     return ret;
   }
 
@@ -112,7 +115,7 @@ export abstract class SqliteJobQueue extends JobQueue {
         AND status = 'NEW'
         AND runAfter <= NOW()
         LIMIT 1`;
-      const stmt = db.prepare(PendingJobIDQuery);
+      const stmt = this.db.prepare(PendingJobIDQuery);
       const result = stmt.get(this.queue) as any;
       if (!result) return undefined;
       id = result.id;
@@ -123,9 +126,11 @@ export abstract class SqliteJobQueue extends JobQueue {
         SET status = 'PROCESSING'
         WHERE id = ? AND queue = ?
         RETURNING *`;
-      const stmt = db.prepare(UpdateQuery);
+      const stmt = this.db.prepare(UpdateQuery);
       const result = stmt.get(id, this.queue) as any;
-      return new SqliteJob(result);
+      const job = new this.jobClass(result);
+      job.status = JobStatus.PROCESSING;
+      return job;
     }
   }
 
@@ -136,7 +141,7 @@ export abstract class SqliteJobQueue extends JobQueue {
         WHERE queue = $1
         AND status = $2
         AND runAfter <= NOW()`;
-    const stmt = db.prepare<[queue: string, status: string]>(sizeQuery);
+    const stmt = this.db.prepare<[queue: string, status: string]>(sizeQuery);
     const result = stmt.get(this.queue, status) as any;
     return result.count;
   }
@@ -159,7 +164,7 @@ export abstract class SqliteJobQueue extends JobQueue {
         : JobStatus.PENDING;
     if (!output || error) job.retries += 1;
     const stmt =
-      db.prepare<
+      this.db.prepare<
         [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]
       >(UpdateQuery);
     stmt.run(output, error, status, id, this.queue);
@@ -169,7 +174,7 @@ export abstract class SqliteJobQueue extends JobQueue {
     const ClearQuery = `
       DELETE FROM job_queue
         WHERE queue = ?`;
-    const stmt = db.prepare(ClearQuery);
+    const stmt = this.db.prepare(ClearQuery);
     stmt.run(this.queue);
   }
 
@@ -178,7 +183,7 @@ export abstract class SqliteJobQueue extends JobQueue {
       SELECT output
         FROM job_queue
         WHERE queue = ? AND taskType = ? AND fingerprint = ? AND status = 'COMPLETED'`;
-    const stmt = db.prepare(OutputQuery);
+    const stmt = this.db.prepare(OutputQuery);
     const result = stmt.get(taskType, makeFingerprint(input)) as any;
     return result;
   }
