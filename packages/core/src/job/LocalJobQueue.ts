@@ -30,9 +30,10 @@ export class LocalJobQueue extends JobQueue {
     job.queue = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);
+    return job.id;
   }
 
-  public async get(id: string) {
+  public async get(id: unknown) {
     return this.jobQueue.find((j) => j.id === id);
   }
 

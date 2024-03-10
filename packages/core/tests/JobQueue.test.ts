@@ -7,8 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { LocalJobQueue } from "../src/job/LocalJobQueue";
-import { Job, JobConstructorDetails, JobStatus } from "../src/job/Job";
-import { DelayLimiter } from "../src/job/DelayLimiter";
+import { Job, JobStatus } from "../src/job/Job";
+import { RateLimiter } from "../src/job/RateLimiter";
 import { SqliteRateLimiter } from "../src/job/SqliteRateLimiter";
 import { SqliteJobQueue } from "../src/job/SqliteJobQueue";
 import { getDatabase } from "../src/util/db_sqlite";
@@ -24,7 +24,7 @@ describe("LocalJobQueue", () => {
   let jobQueue: LocalJobQueue;
 
   beforeEach(() => {
-    jobQueue = new LocalJobQueue("in_memory_test_queue", new DelayLimiter(0), 0);
+    jobQueue = new LocalJobQueue("in_memory_test_queue", new RateLimiter(4, 1), 0);
   });
 
   afterEach(() => {
@@ -111,6 +111,25 @@ describe("LocalJobQueue", () => {
     expect(job4.status).toBe(JobStatus.COMPLETED);
     expect(job4.output).toEqual({ result: "output2" });
   });
+
+  it("should run the queue and get rate limited", async () => {
+    await jobQueue.add(new TestJob({ id: "job1", taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ id: "job2", taskType: "task2", input: { data: "input2" } }));
+    await jobQueue.add(new TestJob({ id: "job3", taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ id: "job4", taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ id: "job5", taskType: "task1", input: { data: "input1" } }));
+    const last = await jobQueue.add(
+      new TestJob({ id: "job6", taskType: "task2", input: { data: "input2" } })
+    );
+
+    jobQueue.start();
+    await sleep(100);
+    jobQueue.stop();
+
+    const job4 = await jobQueue.get(last);
+
+    expect(job4?.status).toBe(JobStatus.PENDING);
+  });
 });
 
 describe("SqliteJobQueue", () => {
@@ -184,21 +203,36 @@ describe("SqliteJobQueue", () => {
     expect(output).toEqual({ result: "success" });
   });
 
-  it("should run a job execute method once per job", async () => {
+  it("should run the queue and execute all", async () => {
     await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
     await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
     await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-    const job4id = await jobQueue.add(
-      new TestJob({ taskType: "task2", input: { data: "input2" } })
-    );
+    const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
 
     jobQueue.start();
     await sleep(100);
     jobQueue.stop();
 
-    const job4 = await jobQueue.get(job4id!);
+    const job4 = await jobQueue.get(last!);
 
     expect(job4?.status).toBe(JobStatus.COMPLETED);
     expect(job4?.output).toEqual({ result: "output2" });
+  });
+
+  it("should run the queue and get rate limited", async () => {
+    await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
+    await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+    await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+    const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
+
+    jobQueue.start();
+    await sleep(100);
+    jobQueue.stop();
+
+    const job4 = await jobQueue.get(last!);
+
+    expect(job4?.status).toBe(JobStatus.PENDING);
   });
 });
