@@ -47,4 +47,9 @@ export class ConcurrencyLimiter implements ILimiter {
       this.nextAllowedStartTime = date;
     }
   }
+
+  async clear(): Promise<void> {
+    this.currentRunningJobs = 0;
+    this.nextAllowedStartTime = new Date();
+  }
 }

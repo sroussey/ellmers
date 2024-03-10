@@ -5,29 +5,21 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { v4 } from "uuid";
 import { TaskInput, TaskOutput } from "../task/base/Task";
 import { ILimiter } from "./ILimiter";
 import { JobQueue } from "./JobQueue";
-import { Job, JobConstructorDetails, JobStatus } from "./Job";
-import { makeFingerprint } from "../util/Misc";
-import { type Database } from "better-sqlite3";
+import { Job, JobStatus } from "./Job";
+import { makeFingerprint, toSQLiteTimestamp } from "../util/Misc";
+import { type Database } from "bun:sqlite";
 
 // TODO: reuse prepared statements
 
-export class SqliteJob extends Job {
-  constructor(details: JobConstructorDetails) {
-    if (!details.id) details.id = v4();
-    super(details);
-  }
-}
-
-export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
+export class SqliteJobQueue extends JobQueue {
   constructor(
     protected db: Database,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof SqliteJob = SqliteJob,
+    protected jobClass: typeof Job = Job,
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
@@ -37,71 +29,100 @@ export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
   private ensureTableExists() {
     this.db.exec(`
 
-    CREATE TABLE IF NOT EXISTS job_queue (
-      id bigint SERIAL NOT NULL,
-      fingerprint text NOT NULL,
-      queue text NOT NULL,
-      status job_status NOT NULL default 'NEW',
-      input jsonb,
-      output jsonb,
-      retries integer default 0,
-      maxRetries integer default 23,
-      runAfter timestamp with time zone DEFAULT now(),
-      lastRanAt timestamp with time zone,
-      createdAt timestamp with time zone DEFAULT now(),
-      error text
-    );
-    
-    CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, queue);
-    CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
-    CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
+      CREATE TABLE IF NOT EXISTS job_queue (
+        id INTEGER PRIMARY KEY,
+        fingerprint text NOT NULL,
+        queue text NOT NULL,
+        status TEXT NOT NULL default 'NEW',
+        taskType TEXT NOT NULL,
+        input TEXT NOT NULL,
+        output TEXT,
+        retries INTEGER default 0,
+        maxRetries INTEGER default 23,
+        runAfter TEXT DEFAULT CURRENT_TIMESTAMP,
+        lastRanAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        deadlineAt TEXT,
+        error TEXT
+      );
+      
+      CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
+      CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
+
     `);
   }
 
-  public async add(job: SqliteJob) {
-    const fingerprint = await makeFingerprint(job.input);
-    const AddQuery = `
-      INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries)
-		    VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id`;
-    const stmt = this.db.prepare(AddQuery);
-    const result = stmt.run(
-      job.queue,
-      fingerprint,
-      job.input,
-      job.createdAt.toISOString(),
-      job.maxRetries
-    );
-    return result.lastInsertRowid;
+  public createNewJob(results: any) {
+    return new this.jobClass({
+      ...results,
+      input: JSON.parse(results.input) as TaskInput,
+      output: results.output ? (JSON.parse(results.output) as TaskOutput) : undefined,
+      runAfter: results.runAfter ? new Date(results.runAfter + "Z") : undefined,
+      createdAt: results.createdAt ? new Date(results.createdAt + "Z") : undefined,
+      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt + "Z") : undefined,
+      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt + "Z") : undefined,
+    });
   }
 
-  public async get(id: unknown) {
+  public async add(job: Job) {
+    job.queue = this.queue;
+    const fingerprint = await makeFingerprint(job.input);
+    job.fingerprint = fingerprint;
+    const AddQuery = `
+      INSERT INTO job_queue(queue, taskType, fingerprint, input, runAfter, deadlineAt, maxRetries)
+		    VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id`;
+    const stmt = this.db.prepare<
+      { id: string },
+      [
+        queue: string,
+        taskType: string,
+        fingerpring: string,
+        input: string,
+        runAfter: string | null,
+        deadlineAt: string | null,
+        maxRetries: number,
+      ]
+    >(AddQuery);
+
+    const result = stmt.get(
+      this.queue,
+      job.taskType,
+      fingerprint,
+      JSON.stringify(job.input),
+      toSQLiteTimestamp(job.runAfter),
+      toSQLiteTimestamp(job.deadlineAt),
+      job.maxRetries
+    );
+    job.id = result?.id;
+    return result?.id;
+  }
+
+  public async get(id: string) {
     const JobQuery = `
-      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+      SELECT *
         FROM job_queue
         WHERE id = $1 AND queue = $2
         LIMIT 1`;
-    const stmt = this.db.prepare<[id: unknown, queue: string]>(JobQuery);
+    const stmt = this.db.prepare<Job, [id: string, queue: string]>(JobQuery);
     const result = stmt.get(id, this.queue) as any;
-    if (!result) return undefined;
-    return new this.jobClass(result);
+    return result ? this.createNewJob(result) : undefined;
   }
 
   public async peek(num: number = 100) {
-    num = Number(num) || 100; // TS does not validate, so ensure it is a number
+    num = Number(num) || 100; // TS does not validate, so ensure it is a number since we put directly in SQL string
     const FutureJobQuery = `
-      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+      SELECT *
         FROM job_queue
         WHERE queue = $1
         AND status = 'NEW'
-        AND runAfter > NOW()
+        AND runAfter > CURRENT_TIMESTAMP
         ORDER BY runAfter ASC
         LIMIT ${num}`;
     const stmt = this.db.prepare(FutureJobQuery);
-    const ret: Array<SqliteJob> = [];
+    const ret: Array<Job> = [];
     const result = stmt.all(this.queue) as any[];
-    if (!result) return ret;
-    for (const job of result) ret.push(new this.jobClass(job));
+    for (const job of result || []) ret.push(this.createNewJob(job));
     return ret;
   }
 
@@ -113,23 +134,22 @@ export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
         FROM job_queue
         WHERE queue = $1
         AND status = 'NEW'
-        AND runAfter <= NOW()
+        AND runAfter <= CURRENT_TIMESTAMP
         LIMIT 1`;
       const stmt = this.db.prepare(PendingJobIDQuery);
       const result = stmt.get(this.queue) as any;
       if (!result) return undefined;
       id = result.id;
     }
-    {
+    if (id) {
       const UpdateQuery = `
       UPDATE job_queue 
         SET status = 'PROCESSING'
         WHERE id = ? AND queue = ?
         RETURNING *`;
       const stmt = this.db.prepare(UpdateQuery);
-      const result = stmt.get(id, this.queue) as any;
-      const job = new this.jobClass(result);
-      job.status = JobStatus.PROCESSING;
+      const result = stmt.get(id, this.queue) as Job;
+      const job = this.createNewJob(result);
       return job;
     }
   }
@@ -139,35 +159,29 @@ export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
       SELECT COUNT(*) as count
         FROM job_queue
         WHERE queue = $1
-        AND status = $2
-        AND runAfter <= NOW()`;
-    const stmt = this.db.prepare<[queue: string, status: string]>(sizeQuery);
+        AND status = $2`;
+    const stmt = this.db.prepare<{ count: number }, [queue: string, status: string]>(sizeQuery);
     const result = stmt.get(this.queue, status) as any;
     return result.count;
   }
 
-  public async complete(
-    id: unknown,
-    output: TaskOutput | null = null,
-    error: string | null = null
-  ) {
+  public async complete(id: string, output: TaskOutput | null = null, error: string | null = null) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
-    const UpdateQuery = `
-      UPDATE job_queue 
-        SET output = ?, error = ?, status = ?, retries = retires + 1, lastRanAt = NOW()
-        WHERE id = ? AND queue = ?`;
     const status = output
       ? JobStatus.COMPLETED
       : error && job.retries >= job.maxRetries
         ? JobStatus.FAILED
         : JobStatus.PENDING;
-    if (!output || error) job.retries += 1;
-    const stmt =
-      this.db.prepare<
-        [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]
-      >(UpdateQuery);
-    stmt.run(output, error, status, id, this.queue);
+
+    const UpdateQuery = `
+        UPDATE job_queue 
+          SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
+          WHERE id = ? AND queue = ?`;
+
+    this.db.exec<
+      [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]
+    >(UpdateQuery, [JSON.stringify(output), error, status, id, this.queue]);
   }
 
   public async clear() {
@@ -176,15 +190,17 @@ export abstract class SqliteJobQueue<T extends SqliteJob> extends JobQueue {
         WHERE queue = ?`;
     const stmt = this.db.prepare(ClearQuery);
     stmt.run(this.queue);
+    await this.limiter.clear();
   }
 
   public async outputForInput(taskType: string, input: TaskInput) {
+    const fingerprint = await makeFingerprint(input);
     const OutputQuery = `
       SELECT output
         FROM job_queue
         WHERE queue = ? AND taskType = ? AND fingerprint = ? AND status = 'COMPLETED'`;
     const stmt = this.db.prepare(OutputQuery);
-    const result = stmt.get(taskType, makeFingerprint(input)) as any;
-    return result;
+    const result = stmt.get(this.queue, taskType, fingerprint) as { output: string } | undefined;
+    return result?.output ? JSON.parse(result.output) : null;
   }
 }

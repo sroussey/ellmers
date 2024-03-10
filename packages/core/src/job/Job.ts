@@ -17,12 +17,13 @@ export enum JobStatus {
 // ===============================================================================
 
 export type JobConstructorDetails = {
-  queue: string;
+  queue?: string;
   taskType: string;
   input: TaskInput;
   output?: TaskOutput | null;
-  error?: string;
-  id?: string;
+  error?: string | null;
+  id?: unknown;
+  fingerprint?: string;
   maxRetries?: number;
   status?: JobStatus;
   createdAt?: Date | string;
@@ -32,13 +33,14 @@ export type JobConstructorDetails = {
   retries?: number;
 };
 
-export abstract class Job {
-  public readonly id: unknown;
-  public readonly queue: string;
+export class Job {
+  public id: unknown;
+  public queue: string | undefined;
   public readonly taskType: string;
   public readonly input: TaskInput;
   public readonly maxRetries: number;
   public readonly createdAt: Date;
+  public fingerprint: string | undefined;
   public status: JobStatus = JobStatus.PENDING;
   public runAfter: Date;
   public output: TaskOutput | null = null;
@@ -46,14 +48,15 @@ export abstract class Job {
   public lastRanAt: Date | null = null;
   public completedAt: Date | null = null;
   public deadlineAt: Date | null = null;
-  public error: string | undefined = undefined;
+  public error: string | null = null;
 
   constructor({
     queue,
     taskType,
     input,
-    error,
+    error = null,
     id,
+    fingerprint = undefined,
     output = null,
     maxRetries = 10,
     createdAt = new Date(),
@@ -69,6 +72,7 @@ export abstract class Job {
     if (typeof deadlineAt === "string") deadlineAt = new Date(deadlineAt);
 
     this.id = id;
+    this.fingerprint = fingerprint;
     this.queue = queue;
     this.taskType = taskType;
     this.input = input;

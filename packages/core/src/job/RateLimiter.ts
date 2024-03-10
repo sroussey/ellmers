@@ -69,4 +69,9 @@ export class RateLimiter implements ILimiter {
       this.nextAvailableTime = date;
     }
   }
+
+  async clear(): Promise<void> {
+    this.requests = [];
+    this.nextAvailableTime = new Date();
+  }
 }

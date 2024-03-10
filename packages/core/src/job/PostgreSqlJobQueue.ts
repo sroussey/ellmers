@@ -8,24 +8,18 @@
 import { makeFingerprint } from "../util/Misc";
 import { TaskInput, TaskOutput } from "../task/base/Task";
 import { Sql } from "postgres";
-import { Job, JobConstructorDetails, JobStatus } from "./Job";
+import { Job, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
 import { ILimiter } from "./ILimiter";
 
 // TODO: prepared statements
 
-export class PostgreSqlJob extends Job {
-  constructor(details: JobConstructorDetails) {
-    super(details);
-  }
-}
-
-export abstract class PostgreSqlJobQueue extends JobQueue {
+export class PostgreSqlJobQueue extends JobQueue {
   constructor(
     protected readonly sql: Sql,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof PostgreSqlJob = PostgreSqlJob,
+    protected jobClass: typeof Job = Job,
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
@@ -40,13 +34,14 @@ export abstract class PostgreSqlJobQueue extends JobQueue {
       fingerprint text NOT NULL,
       queue text NOT NULL,
       status job_status NOT NULL default 'NEW',
-      input jsonb,
+      input jsonb NOT NULL,
       output jsonb,
       retries integer default 0,
       maxRetries integer default 23,
       runAfter timestamp with time zone DEFAULT now(),
       lastRanAt timestamp with time zone,
       createdAt timestamp with time zone DEFAULT now(),
+      deadlineAt timestamp with time zone,
       error text
     );
     
@@ -57,12 +52,13 @@ export abstract class PostgreSqlJobQueue extends JobQueue {
     `;
   }
 
-  public async add(job: PostgreSqlJob) {
+  public async add(job: Job) {
+    job.queue = this.queue;
     const fingerprint = await makeFingerprint(job.input);
     return await this.sql.begin(async (sql) => {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
-          VALUES (${job.queue}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
           RETURNING id`;
     });
   }

@@ -7,24 +7,30 @@
 
 import { type Database } from "better-sqlite3";
 import { ILimiter } from "./ILimiter";
+import { toSQLiteTimestamp } from "../util/Misc";
 
-export class SQLiteRateLimiter implements ILimiter {
+export class SqliteRateLimiter implements ILimiter {
   private readonly db: Database;
   private readonly queueName: string;
   private readonly maxExecutions: number;
-  private readonly windowSizeInMinutes: number;
+  private readonly windowSizeInMilliseconds: number;
 
   constructor(db: Database, queueName: string, maxExecutions: number, windowSizeInMinutes: number) {
     this.db = db;
     this.queueName = queueName;
     this.maxExecutions = maxExecutions;
-    this.windowSizeInMinutes = windowSizeInMinutes;
+    this.windowSizeInMilliseconds = windowSizeInMinutes * 60 * 1000;
     this.ensureTableExists();
+  }
+
+  async clear() {
+    this.db.exec("DELETE FROM job_queue_execution_tracking");
+    this.db.exec("DELETE FROM job_queue_next_available");
   }
 
   private ensureTableExists() {
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS job_execution_tracking (
+      CREATE TABLE IF NOT EXISTS job_queue_execution_tracking (
         id INTEGER PRIMARY KEY,
         queue_name TEXT NOT NULL,
         executed_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -35,6 +41,7 @@ export class SQLiteRateLimiter implements ILimiter {
         queue_name TEXT PRIMARY KEY,
         next_available_at TEXT
       );
+      
     `);
   }
   async canProceed(): Promise<boolean> {
@@ -48,24 +55,24 @@ export class SQLiteRateLimiter implements ILimiter {
 
     if (
       nextAvailableResult &&
-      new Date(nextAvailableResult.next_available_at).getTime() > Date.now()
+      new Date(nextAvailableResult.next_available_at + "Z").getTime() > Date.now()
     ) {
       return false; // Next available time is in the future, cannot proceed
     }
 
-    const thresholdTime = new Date(Date.now() - this.windowSizeInMinutes * 60 * 1000).toISOString();
+    const thresholdTime = toSQLiteTimestamp(new Date(Date.now() - this.windowSizeInMilliseconds));
     const stmt = this.db.prepare<[queue: string, executedAt: string]>(`
       SELECT COUNT(*) AS count
-      FROM job_execution_tracking
+      FROM job_queue_execution_tracking
       WHERE queue_name = ? AND executed_at > ?`);
-    const result = stmt.get(this.queueName, thresholdTime) as { count: number };
+    const result = stmt.get(this.queueName, thresholdTime!) as { count: number };
 
     return result.count < this.maxExecutions;
   }
 
   async recordJobStart(): Promise<void> {
     const stmt = this.db.prepare(`
-      INSERT INTO job_execution_tracking (queue_name)
+      INSERT INTO job_queue_execution_tracking (queue_name)
       VALUES (?)`);
     stmt.get(this.queueName);
   }
@@ -79,7 +86,7 @@ export class SQLiteRateLimiter implements ILimiter {
     // by finding the oldest execution within the rate limit window and adding the window size to it.
     const rateLimitedTimeStmt = this.db.prepare(`
       SELECT executed_at
-      FROM job_execution_tracking
+      FROM job_queue_execution_tracking
       WHERE queue_name = ?
       ORDER BY executed_at ASC
       LIMIT 1 OFFSET ?`);
@@ -89,8 +96,10 @@ export class SQLiteRateLimiter implements ILimiter {
 
     let rateLimitedTime = new Date();
     if (oldestExecution) {
-      rateLimitedTime = new Date(oldestExecution.executed_at);
-      rateLimitedTime.setMinutes(rateLimitedTime.getMinutes() + this.windowSizeInMinutes);
+      rateLimitedTime = new Date(oldestExecution.executed_at + "Z");
+      rateLimitedTime.setMinutes(
+        rateLimitedTime.getMinutes() + this.windowSizeInMilliseconds / 60000
+      );
     }
 
     // Get the next available time set externally, if any
@@ -103,8 +112,8 @@ export class SQLiteRateLimiter implements ILimiter {
       | undefined;
 
     let nextAvailableTime = new Date();
-    if (nextAvailableResult && nextAvailableResult.next_available_at) {
-      nextAvailableTime = new Date(nextAvailableResult.next_available_at);
+    if (nextAvailableResult?.next_available_at) {
+      nextAvailableTime = new Date(nextAvailableResult.next_available_at + "Z");
     }
 
     // Return the later of the two times

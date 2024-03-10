@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { sleep } from "../util/Misc";
 import { TaskInput, TaskOutput } from "../task/base/Task";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
@@ -31,7 +30,7 @@ export abstract class JobQueue {
   public abstract next(): Promise<Job | undefined>;
   public abstract peek(num: number): Promise<Array<Job>>;
   public abstract size(status?: JobStatus): Promise<number>;
-  public abstract complete(id: unknown, output?: TaskOutput, error?: string): Promise<void>;
+  public abstract complete(id: unknown, output?: TaskOutput | null, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: TaskInput): Promise<TaskOutput | null>;
 
@@ -42,7 +41,7 @@ export abstract class JobQueue {
 
   protected async processJob(job: Job) {
     try {
-      this.limiter.recordJobStart();
+      await this.limiter.recordJobStart();
       const output = await this.executeJob(job);
       await this.complete(job.id, output);
     } catch (error) {
@@ -50,9 +49,9 @@ export abstract class JobQueue {
       if (error instanceof RetryError) {
         await this.limiter.setNextAvailableTime(error.retryDate);
       }
-      await this.complete(job.id, undefined, String(error));
+      await this.complete(job.id, null, String(error));
     } finally {
-      this.limiter.recordJobCompletion();
+      await this.limiter.recordJobCompletion();
     }
   }
 

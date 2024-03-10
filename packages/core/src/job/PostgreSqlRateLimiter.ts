@@ -32,6 +32,10 @@ export class PostgreSqlRateLimiter implements ILimiter {
     `;
   }
 
+  async clear(): Promise<void> {
+    await this.sql`DELETE FROM job_rate_limit`;
+  }
+
   async canProceed(): Promise<boolean> {
     const now = new Date();
     const attemptedAtThreshold = new Date(now.getTime() - this.windowSizeInMilliseconds);

@@ -51,4 +51,8 @@ export class CompositeLimiter implements ILimiter {
       await limiter.setNextAvailableTime(date);
     }
   }
+
+  async clear(): Promise<void> {
+    this.limiters.forEach((limiter) => limiter.clear());
+  }
 }

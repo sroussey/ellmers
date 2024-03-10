@@ -73,7 +73,7 @@ export class JsonTask extends CompoundTask {
 
       const taskClass = TaskRegistry.all.get(item.type);
       if (!taskClass) throw new Error(`Task type ${item.type} not found`);
-      debugger;
+
       const taskConfig = {
         id: item.id,
         name: item.name,

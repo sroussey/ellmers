@@ -5,34 +5,19 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { v4 } from "uuid";
 import { TaskInput } from "../task/base/Task";
 import { makeFingerprint } from "../util/Misc";
-import { Job, JobConstructorDetails, JobStatus } from "./Job";
+import { Job, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
 import { ILimiter } from "./ILimiter";
 
-export class LocalJob extends Job {
-  public fingerprint?: string;
-  constructor(details: JobConstructorDetails) {
-    if (!details.id) details.id = v4();
-    super(details);
-    // only used in outputForInput, so race condition is acceptable
-    // if that changes, we need to make sure to set this before the job is added to the queue
-    // instead of here.
-    makeFingerprint(details.input).then((fingerprint) => {
-      this.fingerprint = fingerprint;
-    });
-  }
-}
-
-export abstract class LocalJobQueue extends JobQueue {
+export class LocalJobQueue extends JobQueue {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
     super(queue, limiter, waitDurationInMilliseconds);
     this.jobQueue = [];
   }
 
-  private jobQueue: LocalJob[];
+  private jobQueue: Job[];
 
   private reorderedQueue() {
     return this.jobQueue
@@ -42,6 +27,8 @@ export abstract class LocalJobQueue extends JobQueue {
   }
 
   public async add(job: Job) {
+    job.queue = this.queue;
+    job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);
   }
 

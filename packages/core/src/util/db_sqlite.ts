@@ -1,10 +1,20 @@
-import database, { type Database } from "better-sqlite3";
+const wrapper = function () {
+  if (process["isBun"]) {
+    return require("bun:sqlite").Database;
+  }
 
-let db: Database;
-export function getDatabase(): Database {
+  return require("better-sqlite3");
+};
+
+const module = wrapper();
+
+let db: any;
+
+export function getDatabase(name = ":memory:"): any {
   if (!db) {
-    db = new database("foobar.db", { verbose: console.log });
-    db.pragma("journal_mode = WAL");
+    db = new module(name);
   }
   return db;
 }
+
+export default module;

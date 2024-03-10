@@ -32,4 +32,7 @@ export class DelayLimiter implements ILimiter {
       this.nextAvailableTime = date;
     }
   }
+  async clear(): Promise<void> {
+    this.nextAvailableTime = new Date();
+  }
 }

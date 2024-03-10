@@ -11,4 +11,5 @@ export interface ILimiter {
   recordJobCompletion(): Promise<void>;
   getNextAvailableTime(): Promise<Date>;
   setNextAvailableTime(date: Date): Promise<void>;
+  clear(): Promise<void>;
 }
