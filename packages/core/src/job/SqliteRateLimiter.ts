@@ -20,7 +20,6 @@ export class SqliteRateLimiter implements ILimiter {
     this.queueName = queueName;
     this.maxExecutions = maxExecutions;
     this.windowSizeInMilliseconds = windowSizeInMinutes * 60 * 1000;
-    this.ensureTableExists();
   }
 
   async clear() {
@@ -28,7 +27,7 @@ export class SqliteRateLimiter implements ILimiter {
     this.db.exec("DELETE FROM job_queue_next_available");
   }
 
-  private ensureTableExists() {
+  public ensureTableExists() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS job_queue_execution_tracking (
         id INTEGER PRIMARY KEY,
@@ -43,6 +42,7 @@ export class SqliteRateLimiter implements ILimiter {
       );
       
     `);
+    return this;
   }
   async canProceed(): Promise<boolean> {
     const nextAvailableTimeStmt = this.db.prepare(`

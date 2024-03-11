@@ -23,10 +23,9 @@ export class PostgreSqlJobQueue extends JobQueue {
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
-    this.ensureTableExists();
   }
 
-  private ensureTableExists() {
+  public ensureTableExists() {
     this.sql`
 
     CREATE TABLE IF NOT EXISTS job_queue (
@@ -50,6 +49,7 @@ export class PostgreSqlJobQueue extends JobQueue {
     CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
     
     `;
+    return this;
   }
 
   public async add(job: Job) {

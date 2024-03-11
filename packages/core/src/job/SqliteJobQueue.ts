@@ -23,10 +23,9 @@ export class SqliteJobQueue extends JobQueue {
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
-    this.ensureTableExists();
   }
 
-  private ensureTableExists() {
+  public ensureTableExists() {
     this.db.exec(`
 
       CREATE TABLE IF NOT EXISTS job_queue (
@@ -50,6 +49,7 @@ export class SqliteJobQueue extends JobQueue {
       CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
 
     `);
+    return this;
   }
 
   public createNewJob(results: any) {

@@ -18,10 +18,9 @@ export class PostgreSqlRateLimiter implements ILimiter {
     windowSizeInMinutes: number
   ) {
     this.windowSizeInMilliseconds = windowSizeInMinutes * 60 * 1000;
-    this.ensureTableExists();
   }
 
-  private ensureTableExists() {
+  public ensureTableExists() {
     this.sql`
       CREATE TABLE IF NOT EXISTS job_rate_limit (
         id bigint SERIAL NOT NULL,
@@ -30,6 +29,7 @@ export class PostgreSqlRateLimiter implements ILimiter {
         next_available_at timestamp with time zone DEFAULT now()
       );
     `;
+    return this;
   }
 
   async clear(): Promise<void> {
