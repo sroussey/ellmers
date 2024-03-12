@@ -17,12 +17,10 @@ import {
   type DocumentQuestionAnsweringSingle,
   env,
 } from "@sroussey/transformers";
-import { findModelByName } from "../../../storage/InMemoryStorage";
+import { findModelByName } from "../../storage/InMemoryStorage";
 import { ONNXTransformerJsModel, ModelProcessorEnum } from "model";
 import {
   Vector,
-  SingleTask,
-  ModelFactory,
   DownloadTask,
   DownloadTaskInput,
   DownloadTaskOutput,
@@ -42,9 +40,53 @@ import {
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
 } from "task";
+import { ProviderRegistry } from "provider/ProviderRegistry";
 
 env.backends.onnx.logLevel = "error";
 env.backends.onnx.debug = false;
+
+export enum LocalHuggingfaceStatus {
+  initiate = "initiate",
+  download = "download",
+  progress = "progress",
+  done = "done",
+  ready = "ready",
+  update = "update",
+  complete = "complete",
+}
+
+interface StatusFileBookends {
+  status: "initiate" | "download" | "done";
+  name: string;
+  file: string;
+}
+
+interface StatusFileProgress {
+  status: "progress";
+  name: string;
+  file: string;
+  loaded: number;
+  progress: number;
+  total: number;
+}
+
+interface StatusRunReady {
+  status: "ready";
+  model: string;
+  task: string;
+}
+interface StatusRunUpdate {
+  status: "update";
+  output: string;
+}
+interface StatusRunComplete {
+  status: "complete";
+  output: string[];
+}
+
+type StatusFile = StatusFileBookends | StatusFileProgress;
+type StatusRun = StatusRunReady | StatusRunUpdate | StatusRunComplete;
+export type CallbackStatus = StatusFile | StatusRun;
 
 /**
  *
@@ -56,8 +98,8 @@ env.backends.onnx.debug = false;
  * @param options
  */
 const getPipeline = async (
-  task: SingleTask,
   model: ONNXTransformerJsModel,
+  callback: (status: CallbackStatus) => void,
   { quantized, config }: { quantized: boolean; config: any } = {
     quantized: true,
     config: null,
@@ -66,18 +108,7 @@ const getPipeline = async (
   return await pipeline(model.pipeline as PipelineType, model.name, {
     quantized,
     config,
-    progress_callback: (details: {
-      file: string;
-      status: string;
-      name: string;
-      progress: number;
-      loaded: number;
-      total: number;
-    }) => {
-      const { progress, file, name, status } = details;
-      task.progress = progress;
-      task.emit("progress", progress, file || name || status);
-    },
+    progress_callback: callback,
   });
 };
 
@@ -92,7 +123,12 @@ export async function HuggingFaceLocal_DownloadRun(
   runInputData: DownloadTaskInput
 ): Promise<DownloadTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  await getPipeline(task, model!);
+  await getPipeline(model!, (status: CallbackStatus) => {
+    if (status.status === "progress") {
+      task.progress = status.progress;
+      task.emit("progress", status.progress, status.file);
+    }
+  });
   return { model: model.name };
 }
 
@@ -106,7 +142,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   runInputData: EmbeddingTaskInput
 ): Promise<EmbeddingTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  const generateEmbedding = (await getPipeline(task, model)) as FeatureExtractionPipeline;
+  const generateEmbedding = (await getPipeline(model, () => {})) as FeatureExtractionPipeline;
 
   var vector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
@@ -135,7 +171,12 @@ export async function HuggingFaceLocal_TextGenerationRun(
 ): Promise<TextGenerationTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(task, model)) as TextGenerationPipeline;
+  const generateText = (await getPipeline(model, (status) => {
+    if (status.status === "update") {
+      task.progress = 50;
+      task.emit("progress", 50, status.output);
+    }
+  })) as TextGenerationPipeline;
 
   let results = await generateText(runInputData.prompt);
   if (!Array.isArray(results)) {
@@ -157,7 +198,12 @@ export async function HuggingFaceLocal_TextRewriterRun(
 ): Promise<TextRewriterTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(task, model)) as TextGenerationPipeline;
+  const generateText = (await getPipeline(model, (status) => {
+    if (status.status === "update") {
+      task.progress = 50;
+      task.emit("progress", 50, status.output);
+    }
+  })) as TextGenerationPipeline;
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
@@ -186,7 +232,12 @@ export async function HuggingFaceLocal_TextSummaryRun(
 ): Promise<TextSummaryTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateSummary = (await getPipeline(task, model)) as SummarizationPipeline;
+  const generateSummary = (await getPipeline(model, (status) => {
+    if (status.status === "update") {
+      task.progress = 50;
+      task.emit("progress", 50, status.output);
+    }
+  })) as SummarizationPipeline;
 
   let results = await generateSummary(runInputData.text);
   if (!Array.isArray(results)) {
@@ -209,7 +260,12 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateAnswer = (await getPipeline(task, model)) as QuestionAnsweringPipeline;
+  const generateAnswer = (await getPipeline(model, (status) => {
+    if (status.status === "update") {
+      task.progress = 50;
+      task.emit("progress", 50, status.output);
+    }
+  })) as QuestionAnsweringPipeline;
 
   let results = await generateAnswer(runInputData.question, runInputData.context);
   if (!Array.isArray(results)) {
@@ -222,38 +278,38 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 }
 
 export async function registerHuggingfaceLocalTasks() {
-  ModelFactory.registerRunFn(
-    DownloadTask,
+  ProviderRegistry.registerRunFn(
+    DownloadTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_DownloadRun
   );
 
-  ModelFactory.registerRunFn(
-    EmbeddingTask,
+  ProviderRegistry.registerRunFn(
+    EmbeddingTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_EmbeddingRun
   );
 
-  ModelFactory.registerRunFn(
-    TextGenerationTask,
+  ProviderRegistry.registerRunFn(
+    TextGenerationTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextGenerationRun
   );
 
-  ModelFactory.registerRunFn(
-    TextRewriterTask,
+  ProviderRegistry.registerRunFn(
+    TextRewriterTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextRewriterRun
   );
 
-  ModelFactory.registerRunFn(
-    TextSummaryTask,
+  ProviderRegistry.registerRunFn(
+    TextSummaryTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextSummaryRun
   );
 
-  ModelFactory.registerRunFn(
-    TextQuestionAnswerTask,
+  ProviderRegistry.registerRunFn(
+    TextQuestionAnswerTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextQuestionAnswerRun
   );

@@ -6,17 +6,18 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { ModelFactory } from "../../base/ModelFactory";
-import { DownloadTask, DownloadTaskInput } from "../../DownloadModelTask";
-import { EmbeddingTask, EmbeddingTaskInput } from "../../TextEmbeddingTask";
-import { findModelByName } from "../../../storage/InMemoryStorage";
-import { MediaPipeTfJsModel } from "../../../model/MediaPipeModel";
-import { ModelProcessorEnum } from "../../../model/Model";
+import { ModelFactory } from "../../task/base/ModelFactory";
+import { DownloadTask, DownloadTaskInput } from "../../task/DownloadModelTask";
+import { EmbeddingTask, EmbeddingTaskInput } from "../../task/TextEmbeddingTask";
+import { findModelByName } from "../../storage/InMemoryStorage";
+import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
+import { ModelProcessorEnum } from "../../model/Model";
+import { ProviderRegistry } from "provider/ProviderRegistry";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_DownloadRun(
+export async function MediaPipeTfJsLocal_Download(
   task: DownloadTask,
   runInputData: DownloadTaskInput
 ) {
@@ -38,7 +39,7 @@ export async function MediaPipeTfJsLocal_DownloadRun(
  * This is a task that generates an embedding for a single piece of text
  * using a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_EmbeddingRun(
+export async function MediaPipeTfJsLocal_Embedding(
   task: EmbeddingTask,
   runInputData: EmbeddingTaskInput
 ) {
@@ -63,15 +64,15 @@ export async function MediaPipeTfJsLocal_EmbeddingRun(
 }
 
 export const registerMediaPipeTfJsLocalTasks = () => {
-  ModelFactory.registerRunFn(
-    DownloadTask,
+  ProviderRegistry.registerRunFn(
+    DownloadTask.type,
     ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_DownloadRun
+    MediaPipeTfJsLocal_Download
   );
 
-  ModelFactory.registerRunFn(
-    DownloadTask,
+  ProviderRegistry.registerRunFn(
+    EmbeddingTask.type,
     ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_EmbeddingRun
+    MediaPipeTfJsLocal_Embedding
   );
 };

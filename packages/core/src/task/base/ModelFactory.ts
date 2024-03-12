@@ -14,32 +14,15 @@
  */
 
 import { findModelByName } from "../../storage/InMemoryStorage";
-import { ModelProcessorEnum } from "../../model/Model";
 import { SingleTask, TaskInput, TaskConfig, TaskOutput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
+import { ProviderRegistry } from "provider/ProviderRegistry";
 
 export class ModelFactory extends SingleTask {
   public static inputs: readonly TaskInputDefinition[];
   public static outputs: readonly TaskOutputDefinition[];
   static readonly type: string = "ModelFactory";
   declare runOutputData: TaskOutput;
-
-  static runFnRegistry: Record<
-    string,
-    Record<string, (task: ModelFactory, runInputData: TaskInput) => Promise<TaskOutput>>
-  > = {};
-  static registerRunFn(
-    baseClass: typeof ModelFactory,
-    modelType: ModelProcessorEnum,
-    runFn: (task: any, runInputData: any) => Promise<TaskOutput>
-  ) {
-    if (!ModelFactory.runFnRegistry[baseClass.type])
-      ModelFactory.runFnRegistry[baseClass.type] = {};
-    ModelFactory.runFnRegistry[baseClass.type][modelType] = runFn;
-  }
-  static getRunFn(taskClassName: string, modelType: ModelProcessorEnum) {
-    return ModelFactory.runFnRegistry[taskClassName]?.[modelType];
-  }
 
   constructor(config: TaskConfig = {}) {
     config.name ||= `${new.target.name}${config.input?.model ? " with model " + config.input?.model : ""}`;
@@ -56,7 +39,7 @@ export class ModelFactory extends SingleTask {
       if (!modelname) throw new Error("ModelFactoryTask: No model name found");
       const model = findModelByName(modelname);
       if (!model) throw new Error("ModelFactoryTask: No model found");
-      const runFn = ModelFactory.getRunFn(runtype, model.type);
+      const runFn = ProviderRegistry.getRunFn(runtype, model.type);
       if (!runFn) throw new Error("ModelFactoryTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {
