@@ -176,6 +176,7 @@ abstract class TaskBase {
         }
       }
     }
+    return this;
   }
   async run(): Promise<TaskOutput> {
     this.emit("start");

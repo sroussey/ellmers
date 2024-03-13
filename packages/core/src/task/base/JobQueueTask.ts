@@ -11,7 +11,7 @@
 
 import { SingleTask, TaskConfig } from "./Task";
 
-interface JobQueueTaskConfig extends TaskConfig {
+export interface JobQueueTaskConfig extends TaskConfig {
   queue?: string;
   currentJobId?: unknown;
 }

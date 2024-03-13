@@ -5,11 +5,17 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
+import {
+  ConvertAllToArrays,
+  ConvertOneToArray,
+  ConvertOneToOptionalArrays,
+  arrayTaskFactory,
+} from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { TaskConfig, TaskOutput } from "./base/Task";
+import { JobQueueTaskConfig } from "./base/JobQueueTask";
 
 export type DownloadTaskInput = CreateMappedType<typeof DownloadTask.inputs>;
 export type DownloadTaskOutput = CreateMappedType<typeof DownloadTask.outputs>;
@@ -33,7 +39,7 @@ export class DownloadTask extends JobQueueLlmTask {
   declare runInputData: DownloadTaskInput;
   declare runOutputData: DownloadTaskOutput;
   declare defaults: Partial<DownloadTaskInput>;
-  constructor(config: TaskConfig & { input?: DownloadTaskInput }) {
+  constructor(config: JobQueueTaskConfig & { input?: DownloadTaskInput } = {}) {
     super(config);
   }
   runSyncOnly(): TaskOutput {
@@ -46,6 +52,14 @@ export class DownloadTask extends JobQueueLlmTask {
 TaskRegistry.registerTask(DownloadTask);
 
 export const DownloadMultiModelTask = arrayTaskFactory<
-  ConvertToArrays<DownloadTaskInput, "model">,
+  ConvertOneToArray<DownloadTaskInput, "model">,
   ConvertAllToArrays<DownloadTaskOutput>
 >(DownloadTask, "model");
+
+export const Download = (input: ConvertOneToOptionalArrays<DownloadTaskInput, "model">) => {
+  if (Array.isArray(input.model)) {
+    return new DownloadMultiModelTask().addInputData(input).run();
+  } else {
+    return new DownloadTask({}).addInputData(input).run();
+  }
+};

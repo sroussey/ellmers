@@ -40,17 +40,20 @@ export class JsonTask extends CompoundTask {
   declare runInputData: JsonTaskInput;
   declare runOutputData: JsonTaskOutput;
   declare defaults: Partial<JsonTaskInput>;
+
   constructor(config: TaskConfig & { input?: JsonTaskInput }) {
     super(config);
     if (config?.input?.json) {
       this.generateGraph();
     }
   }
-  public addInputData(overrides: Partial<JsonTaskInput> | undefined): void {
+
+  public addInputData(overrides: Partial<JsonTaskInput> | undefined) {
     let changed = false;
     if (overrides?.json != this.runInputData.json) changed = true;
     super.addInputData(overrides);
     if (changed) this.generateGraph();
+    return this;
   }
 
   public generateGraph() {

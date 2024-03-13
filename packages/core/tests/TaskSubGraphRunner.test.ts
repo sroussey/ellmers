@@ -10,7 +10,11 @@ import { TaskGraphRunner } from "../src/task/base/TaskGraphRunner";
 import { Task, SingleTask, TaskOutput } from "../src/task/base/Task";
 import { DataFlow, TaskGraph } from "../src/task/base/TaskGraph";
 import { CreateMappedType } from "../src/task/base/TaskIOTypes";
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "../src/task/base/ArrayTask";
+import {
+  ConvertAllToArrays,
+  ConvertOneToArray,
+  arrayTaskFactory,
+} from "../src/task/base/ArrayTask";
 
 type TestSquareTaskInput = CreateMappedType<typeof TestSquareTask.inputs>;
 type TestSquareTaskOutput = CreateMappedType<typeof TestSquareTask.outputs>;
@@ -95,7 +99,7 @@ class TestAddTask extends SingleTask {
 }
 
 export const TestSquareMultiInputTask = arrayTaskFactory<
-  ConvertToArrays<TestSquareTaskInput, "input">,
+  ConvertOneToArray<TestSquareTaskInput, "input">,
   ConvertAllToArrays<TestSquareTaskOutput>
 >(TestSquareTask, "input");
 

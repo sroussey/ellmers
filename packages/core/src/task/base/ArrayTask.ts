@@ -10,7 +10,15 @@ import { TaskGraph } from "./TaskGraph";
 import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 
-export type ConvertToArrays<T, K extends keyof T> = {
+export type ConvertOneToOptionalArrays<T, K extends keyof T> = {
+  [P in keyof T]: P extends K ? Array<T[P]> | T[P] : T[P];
+};
+
+export type ConvertAllToOptionalArrays<T> = {
+  [P in keyof T]: Array<T[P]> | T[P];
+};
+
+export type ConvertOneToArray<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> : T[P];
 };
 
@@ -54,7 +62,7 @@ function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
 
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
-  PluralOutputType extends TaskOutput = TaskOutput,
+  PluralOutputType extends TaskOutput = TaskOutput
 >(
   taskClass: typeof SingleTask | typeof CompoundTask,
   inputMakeArray: keyof PluralInputType,
@@ -97,9 +105,10 @@ export function arrayTaskFactory<
       }
     }
 
-    addInputData<PluralInputType>(overrides: Partial<PluralInputType>): void {
+    addInputData<PluralInputType>(overrides: Partial<PluralInputType>) {
       super.addInputData(overrides);
       this.regenerateGraph();
+      return this;
     }
 
     runSyncOnly(): PluralOutputType {

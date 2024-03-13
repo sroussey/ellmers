@@ -1,14 +1,20 @@
 //    *******************************************************************************
-//    *   ELLMERS: TextGeneration Large Language Model Experiential Retrieval Service    *
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
 //    *                                                                             *
 //    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
+import {
+  ConvertAllToArrays,
+  ConvertOneToArray,
+  ConvertOneToOptionalArrays,
+  arrayTaskFactory,
+} from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueTaskConfig } from "./base/JobQueueTask";
 
 export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
 export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTask.outputs>;
@@ -30,7 +36,9 @@ export class TextGenerationTask extends JobQueueLlmTask {
     },
   ] as const;
   public static outputs = [{ id: "text", name: "Text", valueType: "text" }] as const;
-
+  constructor(config: JobQueueTaskConfig & { input?: TextGenerationTaskInput } = {}) {
+    super(config);
+  }
   declare runInputData: TextGenerationTaskInput;
   declare runOutputData: TextGenerationTaskOutput;
   declare defaults: Partial<TextGenerationTaskInput>;
@@ -39,17 +47,42 @@ export class TextGenerationTask extends JobQueueLlmTask {
 }
 TaskRegistry.registerTask(TextGenerationTask);
 
+type TextGenerationMultiTaskOutput = ConvertAllToArrays<TextGenerationTaskOutput>;
+
+type TextGenerationMultiModelTaskInput = ConvertOneToArray<TextGenerationTaskInput, "model">;
 export const TextGenerationMultiModelTask = arrayTaskFactory<
-  ConvertToArrays<TextGenerationTaskInput, "model">,
-  ConvertAllToArrays<TextGenerationTaskOutput>
+  TextGenerationMultiModelTaskInput,
+  TextGenerationMultiTaskOutput
 >(TextGenerationTask, "model");
 
+type TextGenerationMultiPromptTaskInput = ConvertOneToArray<TextGenerationTaskInput, "prompt">;
 export const TextGenerationMultiPromptTask = arrayTaskFactory<
-  ConvertToArrays<TextGenerationTaskInput, "prompt">,
-  ConvertAllToArrays<TextGenerationTaskOutput>
+  TextGenerationMultiPromptTaskInput,
+  TextGenerationMultiTaskOutput
 >(TextGenerationTask, "prompt");
 
-export const TextGenerationMultiPromptModelTask = arrayTaskFactory<
-  ConvertToArrays<ConvertToArrays<TextGenerationTaskInput, "model">, "prompt">,
-  ConvertAllToArrays<TextGenerationTaskOutput>
->(TextGenerationMultiModelTask, "prompt", "TextGenerationMultiPromptModelTask");
+type TextGenerationMultiPromptMultiModelTaskInput = ConvertOneToArray<
+  TextGenerationMultiModelTaskInput,
+  "prompt"
+>;
+export const TextGenerationMultiPromptMultiModelTask = arrayTaskFactory<
+  TextGenerationMultiPromptMultiModelTaskInput,
+  TextGenerationMultiTaskOutput
+>(TextGenerationMultiModelTask, "prompt", "TextGenerationMultiPromptMultiModelTask");
+
+export const TextGeneration = (
+  input: ConvertOneToOptionalArrays<
+    ConvertOneToOptionalArrays<TextGenerationTaskInput, "model">,
+    "prompt"
+  >
+) => {
+  if (Array.isArray(input.model) && Array.isArray(input.prompt)) {
+    return new TextGenerationMultiPromptMultiModelTask().addInputData(input).run();
+  } else if (Array.isArray(input.model)) {
+    return new TextGenerationMultiModelTask().addInputData(input).run();
+  } else if (Array.isArray(input.prompt)) {
+    return new TextGenerationMultiPromptTask().addInputData(input).run();
+  } else {
+    return new TextGenerationTask().addInputData(input).run();
+  }
+};

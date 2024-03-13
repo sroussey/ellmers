@@ -91,6 +91,12 @@ export class ProviderRegistry {
       queue.stop();
     }
   }
+
+  clearQueues() {
+    for (const queue of this.queues.values()) {
+      queue.clear();
+    }
+  }
 }
 
 let providerRegistry: ProviderRegistry;

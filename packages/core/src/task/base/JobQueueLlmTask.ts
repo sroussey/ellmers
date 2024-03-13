@@ -10,15 +10,17 @@
  */
 
 import { findModelByName } from "../../storage/InMemoryStorage";
-import { JobQueueTask } from "./JobQueueTask";
-import type { TaskConfig, TaskOutput } from "./Task";
+import { JobQueueTask, JobQueueTaskConfig } from "./JobQueueTask";
+import type { TaskOutput } from "./Task";
 import { getProviderRegistry } from "provider/ProviderRegistry";
 
 export abstract class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";
 
-  constructor(config: TaskConfig = {}) {
-    config.name ||= `${new.target.name}${config.input?.model ? " with model " + config.input?.model : ""}`;
+  constructor(config: JobQueueTaskConfig = {}) {
+    config.name ||= `${new.target.name}${
+      config.input?.model ? " with model " + config.input?.model : ""
+    }`;
     super(config);
   }
 
