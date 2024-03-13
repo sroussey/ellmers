@@ -5,19 +5,18 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput } from "../task/base/Task";
 import { makeFingerprint } from "../util/Misc";
 import { Job, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
 import { ILimiter } from "./ILimiter";
 
-export class InMemoryJobQueue extends JobQueue {
+export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
     super(queue, limiter, waitDurationInMilliseconds);
     this.jobQueue = [];
   }
 
-  private jobQueue: Job[];
+  private jobQueue: Job<Input, Output>[];
 
   private reorderedQueue() {
     return this.jobQueue
@@ -26,9 +25,9 @@ export class InMemoryJobQueue extends JobQueue {
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   }
 
-  public async add(job: Job) {
+  public async add(job: Job<Input, Output>) {
     job.id = job.id ?? Math.random().toString(36).substring(7);
-    job.queue = this.queue;
+    job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);
     return job.id;
@@ -84,7 +83,7 @@ export class InMemoryJobQueue extends JobQueue {
     this.jobQueue = [];
   }
 
-  public async outputForInput(taskType: string, input: TaskInput) {
+  public async outputForInput(taskType: string, input: Input) {
     const fingerprint = await makeFingerprint(input);
     return (
       this.jobQueue.find(

@@ -5,42 +5,40 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import type { TaskInput, TaskOutput } from "../task/base/Task";
 import type { JobQueueLlmTask } from "../task/base/JobQueueLlmTask";
 import type { ModelProcessorEnum } from "../model/Model";
 import { Job, JobConstructorDetails } from "../job/Job";
 import type { JobQueue } from "../job/JobQueue";
+import { TaskInput, TaskOutput } from "../task/base/Task";
 
 export enum JobQueueRunType {
   local = "local",
   api = "api",
 }
 
-class ProviderJob extends Job {
+class ProviderJob<Input, Output> extends Job<Input, Output> {
   constructor(
-    details: JobConstructorDetails & {
-      fn: () => Promise<TaskOutput>;
+    details: JobConstructorDetails<Input, Output> & {
+      fn: () => Promise<Output>;
     }
   ) {
     const { fn, ...rest } = details;
     super(rest);
     this.fn = fn;
   }
-  fn: () => Promise<TaskOutput>;
-  execute(): Promise<TaskOutput> {
+  fn: () => Promise<Output>;
+  execute(): Promise<Output> {
     return this.fn();
   }
 }
 
-export class ProviderRegistry {
-  runFnRegistry: Record<
-    string,
-    Record<string, (task: any, runInputData: any) => Promise<TaskOutput>>
-  > = {};
+export class ProviderRegistry<Input, Output> {
+  runFnRegistry: Record<string, Record<string, (task: any, runInputData: any) => Promise<Output>>> =
+    {};
   registerRunFn(
     taskType: string,
     modelType: ModelProcessorEnum,
-    runFn: (task: any, runInputData: any) => Promise<TaskOutput>
+    runFn: (task: any, runInputData: any) => Promise<Output>
   ) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
     this.runFnRegistry[taskType][modelType] = runFn;
@@ -48,10 +46,10 @@ export class ProviderRegistry {
 
   jobAsRunFn(runtype: string, modelType: ModelProcessorEnum) {
     const fn = this.runFnRegistry[runtype]?.[modelType];
-    return async (task: JobQueueLlmTask, input: TaskInput) => {
+    return async (task: JobQueueLlmTask, input: Input) => {
       const queue = this.queues.get(modelType)!;
       const job = new ProviderJob({
-        queue: queue.queue,
+        queueName: queue.queue,
         taskType: runtype,
         input: input,
         fn: async () => {
@@ -71,8 +69,8 @@ export class ProviderRegistry {
     return this.runFnRegistry[taskType]?.[modelType];
   }
 
-  queues: Map<ModelProcessorEnum, JobQueue> = new Map();
-  registerQueue(modelType: ModelProcessorEnum, jobQueue: JobQueue) {
+  queues: Map<ModelProcessorEnum, JobQueue<Input, Output>> = new Map();
+  registerQueue(modelType: ModelProcessorEnum, jobQueue: JobQueue<Input, Output>) {
     this.queues.set(modelType, jobQueue);
   }
 
@@ -99,11 +97,11 @@ export class ProviderRegistry {
   }
 }
 
-let providerRegistry: ProviderRegistry;
+let providerRegistry: ProviderRegistry<TaskInput, TaskOutput>;
 export function getProviderRegistry() {
   if (!providerRegistry) providerRegistry = new ProviderRegistry();
   return providerRegistry;
 }
-export function setProviderRegistry(providerRegistry: ProviderRegistry) {
+export function setProviderRegistry(providerRegistry: ProviderRegistry<TaskInput, TaskOutput>) {
   providerRegistry = providerRegistry;
 }

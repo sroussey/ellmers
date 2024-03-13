@@ -5,41 +5,37 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "../task/base/Task";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
 export class RetryError extends Error {
-  constructor(
-    public retryDate: Date,
-    message: string
-  ) {
+  constructor(public retryDate: Date, message: string) {
     super(message);
     this.name = "RetryError";
   }
 }
 
-export abstract class JobQueue {
+export abstract class JobQueue<Input, Output> {
   constructor(
     public readonly queue: string,
     protected limiter: ILimiter,
     protected waitDurationInMilliseconds: number
   ) {}
-  public abstract add(job: Job): Promise<unknown>;
-  public abstract get(id: unknown): Promise<Job | undefined>;
-  public abstract next(): Promise<Job | undefined>;
-  public abstract peek(num: number): Promise<Array<Job>>;
+  public abstract add(job: Job<Input, Output>): Promise<unknown>;
+  public abstract get(id: unknown): Promise<Job<Input, Output> | undefined>;
+  public abstract next(): Promise<Job<Input, Output> | undefined>;
+  public abstract peek(num: number): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
-  public abstract complete(id: unknown, output?: TaskOutput | null, error?: string): Promise<void>;
+  public abstract complete(id: unknown, output?: Output | null, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;
-  public abstract outputForInput(taskType: string, input: TaskInput): Promise<TaskOutput | null>;
+  public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
 
   // we do this in case the queue needs to do something queue specific to execute the job
-  public async executeJob(job: Job): Promise<TaskOutput> {
+  public async executeJob(job: Job<Input, Output>): Promise<Output> {
     return await job.execute();
   }
 
-  protected async processJob(job: Job) {
+  protected async processJob(job: Job<Input, Output>) {
     try {
       await this.limiter.recordJobStart();
       const output = await this.executeJob(job);
@@ -59,12 +55,7 @@ export abstract class JobQueue {
   /**
    *  This method is called when a job is really completed, after retries etc.
    */
-  protected onCompleted(
-    jobId: unknown,
-    status: JobStatus,
-    output: TaskOutput | null,
-    error?: string
-  ) {
+  protected onCompleted(jobId: unknown, status: JobStatus, output: Output | null, error?: string) {
     // Find the job by jobId and resolve its promise if it exists
     const job = this.waits.get(jobId);
     if (job) {
@@ -78,7 +69,7 @@ export abstract class JobQueue {
     }
   }
 
-  waitFor(jobId: unknown): Promise<TaskOutput> {
+  waitFor(jobId: unknown): Promise<Output> {
     // Return a new promise for the job
     return new Promise((resolve, reject) => {
       // Store the resolve and reject functions in the map using jobId as the key

@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "../task/base/Task";
 import { ILimiter } from "./ILimiter";
 import { JobQueue } from "./JobQueue";
 import { Job, JobStatus } from "./Job";
@@ -14,12 +13,12 @@ import { type Database } from "bun:sqlite";
 
 // TODO: reuse prepared statements
 
-export class SqliteJobQueue extends JobQueue {
+export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(
     protected db: Database,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof Job = Job,
+    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
@@ -52,11 +51,11 @@ export class SqliteJobQueue extends JobQueue {
     return this;
   }
 
-  public createNewJob(results: any) {
+  public createNewJob(results: any): Job<Input, Output> {
     return new this.jobClass({
       ...results,
-      input: JSON.parse(results.input) as TaskInput,
-      output: results.output ? (JSON.parse(results.output) as TaskOutput) : undefined,
+      input: JSON.parse(results.input) as Input,
+      output: results.output ? (JSON.parse(results.output) as Output) : undefined,
       runAfter: results.runAfter ? new Date(results.runAfter + "Z") : undefined,
       createdAt: results.createdAt ? new Date(results.createdAt + "Z") : undefined,
       deadlineAt: results.deadlineAt ? new Date(results.deadlineAt + "Z") : undefined,
@@ -64,8 +63,8 @@ export class SqliteJobQueue extends JobQueue {
     });
   }
 
-  public async add(job: Job) {
-    job.queue = this.queue;
+  public async add(job: Job<Input, Output>) {
+    job.queueName = this.queue;
     const fingerprint = await makeFingerprint(job.input);
     job.fingerprint = fingerprint;
     const AddQuery = `
@@ -81,7 +80,7 @@ export class SqliteJobQueue extends JobQueue {
         input: string,
         runAfter: string | null,
         deadlineAt: string | null,
-        maxRetries: number,
+        maxRetries: number
       ]
     >(AddQuery);
 
@@ -104,7 +103,7 @@ export class SqliteJobQueue extends JobQueue {
         FROM job_queue
         WHERE id = $1 AND queue = $2
         LIMIT 1`;
-    const stmt = this.db.prepare<Job, [id: string, queue: string]>(JobQuery);
+    const stmt = this.db.prepare<Job<Input, Output>, [id: string, queue: string]>(JobQuery);
     const result = stmt.get(id, this.queue) as any;
     return result ? this.createNewJob(result) : undefined;
   }
@@ -120,7 +119,7 @@ export class SqliteJobQueue extends JobQueue {
         ORDER BY runAfter ASC
         LIMIT ${num}`;
     const stmt = this.db.prepare(FutureJobQuery);
-    const ret: Array<Job> = [];
+    const ret: Array<Job<Input, Output>> = [];
     const result = stmt.all(this.queue) as any[];
     for (const job of result || []) ret.push(this.createNewJob(job));
     return ret;
@@ -148,7 +147,7 @@ export class SqliteJobQueue extends JobQueue {
         WHERE id = ? AND queue = ?
         RETURNING *`;
       const stmt = this.db.prepare(UpdateQuery);
-      const result = stmt.get(id, this.queue) as Job;
+      const result = stmt.get(id, this.queue) as Job<Input, Output>;
       const job = this.createNewJob(result);
       return job;
     }
@@ -165,14 +164,14 @@ export class SqliteJobQueue extends JobQueue {
     return result.count;
   }
 
-  public async complete(id: string, output: TaskOutput | null = null, error: string | null = null) {
+  public async complete(id: string, output: Output | null = null, error: string | null = null) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
     const status = output
       ? JobStatus.COMPLETED
       : error && job.retries >= job.maxRetries
-        ? JobStatus.FAILED
-        : JobStatus.PENDING;
+      ? JobStatus.FAILED
+      : JobStatus.PENDING;
 
     const UpdateQuery = `
         UPDATE job_queue 
@@ -196,7 +195,7 @@ export class SqliteJobQueue extends JobQueue {
     await this.limiter.clear();
   }
 
-  public async outputForInput(taskType: string, input: TaskInput) {
+  public async outputForInput(taskType: string, input: Input) {
     const fingerprint = await makeFingerprint(input);
     const OutputQuery = `
       SELECT output

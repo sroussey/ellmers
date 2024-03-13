@@ -5,8 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "../task/base/Task";
-
 export enum JobStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
@@ -16,11 +14,11 @@ export enum JobStatus {
 
 // ===============================================================================
 
-export type JobConstructorDetails = {
-  queue?: string;
+export type JobConstructorDetails<Input, Output> = {
+  queueName?: string;
   taskType: string;
-  input: TaskInput;
-  output?: TaskOutput | null;
+  input: Input;
+  output?: Output | null;
   error?: string | null;
   id?: unknown;
   fingerprint?: string;
@@ -33,17 +31,17 @@ export type JobConstructorDetails = {
   retries?: number;
 };
 
-export class Job {
+export class Job<Input, Output> {
   public id: unknown;
-  public queue: string | undefined;
+  public queueName: string | undefined;
   public readonly taskType: string;
-  public readonly input: TaskInput;
+  public readonly input: Input;
   public readonly maxRetries: number;
   public readonly createdAt: Date;
   public fingerprint: string | undefined;
   public status: JobStatus = JobStatus.PENDING;
   public runAfter: Date;
-  public output: TaskOutput | null = null;
+  public output: Output | null = null;
   public retries: number = 0;
   public lastRanAt: Date | null = null;
   public completedAt: Date | null = null;
@@ -51,7 +49,7 @@ export class Job {
   public error: string | null = null;
 
   constructor({
-    queue,
+    queueName,
     taskType,
     input,
     error = null,
@@ -65,7 +63,7 @@ export class Job {
     retries = 0,
     lastRanAt = null,
     runAfter = null,
-  }: JobConstructorDetails) {
+  }: JobConstructorDetails<Input, Output>) {
     if (typeof runAfter === "string") runAfter = new Date(runAfter);
     if (typeof lastRanAt === "string") lastRanAt = new Date(lastRanAt);
     if (typeof createdAt === "string") createdAt = new Date(createdAt);
@@ -73,7 +71,7 @@ export class Job {
 
     this.id = id;
     this.fingerprint = fingerprint;
-    this.queue = queue;
+    this.queueName = queueName;
     this.taskType = taskType;
     this.input = input;
     this.maxRetries = maxRetries;
@@ -86,7 +84,7 @@ export class Job {
     this.output = output;
     this.error = error;
   }
-  execute(): Promise<TaskOutput> {
+  execute(): Promise<Output> {
     throw new Error("Method not implemented.");
   }
 }

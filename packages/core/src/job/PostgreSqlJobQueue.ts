@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { makeFingerprint } from "../util/Misc";
-import { TaskInput, TaskOutput } from "../task/base/Task";
+
 import { Sql } from "postgres";
 import { Job, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
@@ -14,12 +14,12 @@ import { ILimiter } from "./ILimiter";
 
 // TODO: prepared statements
 
-export class PostgreSqlJobQueue extends JobQueue {
+export class PostgreSqlJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(
     protected readonly sql: Sql,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof Job = Job,
+    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     waitDurationInMilliseconds = 100
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
@@ -52,13 +52,27 @@ export class PostgreSqlJobQueue extends JobQueue {
     return this;
   }
 
-  public async add(job: Job) {
-    job.queue = this.queue;
+  public createNewJob(results: any): Job<Input, Output> {
+    return new this.jobClass({
+      ...results,
+      input: JSON.parse(results.input) as Input,
+      output: results.output ? (JSON.parse(results.output) as Output) : undefined,
+      runAfter: results.runAfter ? new Date(results.runAfter) : undefined,
+      createdAt: results.createdAt ? new Date(results.createdAt) : undefined,
+      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt) : undefined,
+      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt) : undefined,
+    });
+  }
+
+  public async add(job: Job<Input, Output>) {
+    job.queueName = this.queue;
     const fingerprint = await makeFingerprint(job.input);
     return await this.sql.begin(async (sql) => {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
-          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+          VALUES (${this.queue!}, ${fingerprint}, ${
+        job.input as any
+      }::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
           RETURNING id`;
     });
   }
@@ -71,7 +85,7 @@ export class PostgreSqlJobQueue extends JobQueue {
           WHERE id = ${id}
           FOR UPDATE SKIP LOCKED
           LIMIT 1`;
-      return new this.jobClass(result[0].rows[0]);
+      return this.createNewJob(result[0].rows[0]);
     });
   }
 
@@ -88,7 +102,7 @@ export class PostgreSqlJobQueue extends JobQueue {
         LIMIT ${num}
         FOR UPDATE SKIP LOCKED`;
       if (!result) return [];
-      const ret = result[0].rows.map((r: any) => new this.jobClass(r));
+      const ret = result[0].rows.map((r: any) => this.createNewJob(r));
       return ret;
     });
   }
@@ -110,7 +124,7 @@ export class PostgreSqlJobQueue extends JobQueue {
           SET status = 'PROCESSING'
           WHERE id = ${id} AND queue = ${this.queue}
           RETURNING *`;
-      const job = new this.jobClass(jobresult[0].rows[0]);
+      const job = this.createNewJob(jobresult[0].rows[0]);
       job.status = JobStatus.PROCESSING;
       return job;
     });
@@ -128,19 +142,21 @@ export class PostgreSqlJobQueue extends JobQueue {
     });
   }
 
-  public async complete(id: number, output: TaskOutput | null = null, error: string | null = null) {
+  public async complete(id: number, output: Output | null = null, error: string | null = null) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
     const status = output
       ? JobStatus.COMPLETED
       : error && job.retries >= job.maxRetries
-        ? JobStatus.FAILED
-        : JobStatus.PENDING;
+      ? JobStatus.FAILED
+      : JobStatus.PENDING;
     if (!output || error) job.retries += 1;
     await this.sql.begin(async (sql) => {
       const result = await sql`    
         UPDATE job_queue 
-          SET output = ${output as any}::jsonb, error = ${error}, status = ${status}, retries = retires + 1, lastRanAt = NOW()  
+          SET output = ${
+            output as any
+          }::jsonb, error = ${error}, status = ${status}, retries = retires + 1, lastRanAt = NOW()  
           WHERE id = ${id}`;
       return result[0].rows[0];
     });
@@ -157,7 +173,7 @@ export class PostgreSqlJobQueue extends JobQueue {
     });
   }
 
-  public async outputForInput(taskType: string, input: TaskInput) {
+  public async outputForInput(taskType: string, input: Input) {
     const fingerprint = await makeFingerprint(input);
     return await this.sql.begin(async (sql) => {
       const result = await sql`
