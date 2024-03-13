@@ -11,19 +11,16 @@ import { TaskGraph } from "task/base/TaskGraph";
 
 export class TaskGraphRunner {
   public layers: Map<number, Task[]>;
-  public provenanceInput: Map<string, TaskInput>;
+  public provenanceInput: Map<unknown, TaskInput>;
 
-  constructor(
-    public dag: TaskGraph,
-    public repository?: ITaskOutputRepository
-  ) {
+  constructor(public dag: TaskGraph, public repository?: ITaskOutputRepository) {
     this.layers = new Map();
     this.provenanceInput = new Map();
   }
 
   public assignLayers(sortedNodes: Task[]) {
     this.layers = new Map();
-    const nodeToLayer = new Map<string, number>();
+    const nodeToLayer = new Map<unknown, number>();
 
     sortedNodes.forEach((node, _index) => {
       let maxLayer = -1;

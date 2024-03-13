@@ -182,6 +182,9 @@ export class SqliteJobQueue extends JobQueue {
     this.db.exec<
       [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]
     >(UpdateQuery, [JSON.stringify(output), error, status, id, this.queue]);
+    if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
+      this.onCompleted(id, status, output, error || undefined);
+    }
   }
 
   public async clear() {

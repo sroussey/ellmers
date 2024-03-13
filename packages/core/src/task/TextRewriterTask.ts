@@ -8,7 +8,7 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type TextRewriterTaskInput = CreateMappedType<typeof TextRewriterTask.inputs>;
 export type TextRewriterTaskOutput = CreateMappedType<typeof TextRewriterTask.outputs>;
@@ -17,7 +17,7 @@ export type TextRewriterTaskOutput = CreateMappedType<typeof TextRewriterTask.ou
  * This is a special case of text generation that takes a prompt and text to rewrite
  */
 
-export class TextRewriterTask extends ModelFactory {
+export class TextRewriterTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "text",

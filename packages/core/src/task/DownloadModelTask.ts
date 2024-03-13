@@ -8,13 +8,13 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { TaskConfig, TaskOutput } from "./base/Task";
 
 export type DownloadTaskInput = CreateMappedType<typeof DownloadTask.inputs>;
 export type DownloadTaskOutput = CreateMappedType<typeof DownloadTask.outputs>;
 
-export class DownloadTask extends ModelFactory {
+export class DownloadTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "model",

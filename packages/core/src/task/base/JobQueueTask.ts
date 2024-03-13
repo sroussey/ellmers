@@ -5,12 +5,21 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./browser";
-export * from "./storage/SqliteTaskOutputRepository";
-export * from "./storage/PostgresTaskOutputRepository";
-export * from "./job/SqliteJobQueue";
-export * from "./job/SqliteRateLimiter";
-export * from "./job/PostgreSqlJobQueue";
-export * from "./job/PostgreSqlRateLimiter";
-export * from "./bindings/all_inmemory";
-export * from "./bindings/all_sqlite";
+/**
+ * @description This file contains the implementation of the JobQueueTask class and its derived classes.
+ */
+
+import { SingleTask, TaskConfig } from "./Task";
+
+interface JobQueueTaskConfig extends TaskConfig {
+  queue?: string;
+  currentJobId?: unknown;
+}
+
+export abstract class JobQueueTask extends SingleTask {
+  static readonly type: string = "JobQueueTask";
+  declare config: JobQueueTaskConfig & { id: unknown };
+  constructor(config: JobQueueTaskConfig) {
+    super(config);
+  }
+}

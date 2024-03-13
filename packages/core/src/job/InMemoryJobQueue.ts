@@ -11,7 +11,7 @@ import { Job, JobStatus } from "./Job";
 import { JobQueue } from "./JobQueue";
 import { ILimiter } from "./ILimiter";
 
-export class LocalJobQueue extends JobQueue {
+export class InMemoryJobQueue extends JobQueue {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
     super(queue, limiter, waitDurationInMilliseconds);
     this.jobQueue = [];
@@ -27,6 +27,7 @@ export class LocalJobQueue extends JobQueue {
   }
 
   public async add(job: Job) {
+    job.id = job.id ?? Math.random().toString(36).substring(7);
     job.queue = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);
@@ -73,6 +74,9 @@ export class LocalJobQueue extends JobQueue {
     } else {
       job.status = JobStatus.COMPLETED;
       job.output = output;
+    }
+    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
+      this.onCompleted(job.id, job.status, output, error);
     }
   }
 

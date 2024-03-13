@@ -19,17 +19,12 @@ import {
   DownloadTask,
   ModelUseCaseEnum,
   EmbeddingMultiModelTask,
-  registerHuggingfaceLocalTasks,
-  registerMediaPipeTfJsLocalTasks,
   DownloadMultiModelTask,
   TextRewriterMultiModelTask,
   TaskGraph,
   JsonTaskArray,
   JsonTask,
 } from "ellmers-core/server";
-
-registerHuggingfaceLocalTasks();
-registerMediaPipeTfJsLocalTasks();
 
 export function AddBaseCommands(program: Command) {
   program

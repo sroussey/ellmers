@@ -137,13 +137,16 @@ export class PostgreSqlJobQueue extends JobQueue {
         ? JobStatus.FAILED
         : JobStatus.PENDING;
     if (!output || error) job.retries += 1;
-    return await this.sql.begin(async (sql) => {
+    await this.sql.begin(async (sql) => {
       const result = await sql`    
         UPDATE job_queue 
           SET output = ${output as any}::jsonb, error = ${error}, status = ${status}, retries = retires + 1, lastRanAt = NOW()  
           WHERE id = ${id}`;
       return result[0].rows[0];
     });
+    if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
+      this.onCompleted(id, status, output, error || undefined);
+    }
   }
 
   public async clear() {

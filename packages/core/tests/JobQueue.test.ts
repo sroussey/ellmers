@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { LocalJobQueue } from "../src/job/LocalJobQueue";
+import { InMemoryJobQueue } from "../src/job/InMemoryJobQueue";
 import { Job, JobStatus } from "../src/job/Job";
-import { RateLimiter } from "../src/job/RateLimiter";
+import { InMemoryRateLimiter } from "../src/job/InMemoryRateLimiter";
 import { SqliteRateLimiter } from "../src/job/SqliteRateLimiter";
 import { SqliteJobQueue } from "../src/job/SqliteJobQueue";
 import { getDatabase } from "../src/util/db_sqlite";
@@ -21,10 +21,10 @@ class TestJob extends Job {
 }
 
 describe("LocalJobQueue", () => {
-  let jobQueue: LocalJobQueue;
+  let jobQueue: InMemoryJobQueue;
 
   beforeEach(() => {
-    jobQueue = new LocalJobQueue("in_memory_test_queue", new RateLimiter(4, 1), 0);
+    jobQueue = new InMemoryJobQueue("in_memory_test_queue", new InMemoryRateLimiter(4, 1), 0);
   });
 
   afterEach(() => {

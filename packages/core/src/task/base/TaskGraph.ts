@@ -53,7 +53,7 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
     return super.addEdge(dataflow.sourceTaskId, dataflow.targetTaskId, dataflow);
   }
   public addDataFlows(dataflows: DataFlow[]) {
-    const addedEdges = dataflows.map<[s: string, t: string, e: IDataFlow]>((edge) => {
+    const addedEdges = dataflows.map<[s: unknown, t: unknown, e: IDataFlow]>((edge) => {
       return [edge.sourceTaskId, edge.targetTaskId, edge];
     });
     return super.addEdges(addedEdges);
@@ -76,19 +76,19 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
     return this.getEdges().map((edge) => edge[2]);
   }
 
-  public getSourceDataFlows(taskId: string): DataFlow[] {
+  public getSourceDataFlows(taskId: unknown): DataFlow[] {
     return this.inEdges(taskId).map(([, , dataFlow]) => dataFlow);
   }
 
-  public getTargetDataFlows(taskId: string): DataFlow[] {
+  public getTargetDataFlows(taskId: unknown): DataFlow[] {
     return this.outEdges(taskId).map(([, , dataFlow]) => dataFlow);
   }
 
-  public getSourceTasks(taskId: string): Task[] {
+  public getSourceTasks(taskId: unknown): Task[] {
     return this.getSourceDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.sourceTaskId)!);
   }
 
-  public getTargetTasks(taskId: string): Task[] {
+  public getTargetTasks(taskId: unknown): Task[] {
     return this.getTargetDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.targetTaskId)!);
   }
 }

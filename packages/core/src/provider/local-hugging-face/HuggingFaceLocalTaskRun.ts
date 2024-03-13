@@ -39,8 +39,8 @@ import {
   TextSummaryTask,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
+  JobQueueLlmTask,
 } from "task";
-import { ProviderRegistry } from "provider/ProviderRegistry";
 
 env.backends.onnx.logLevel = "error";
 env.backends.onnx.debug = false;
@@ -112,6 +112,35 @@ const getPipeline = async (
   });
 };
 
+function downloadProgressCallback(task: JobQueueLlmTask) {
+  return (status: CallbackStatus) => {
+    if (status.status === "progress") {
+      task.progress = status.progress;
+      task.emit("progress", status.progress, status.file);
+    } else if (status.status === "ready") {
+      task.progress = 100;
+      task.emit("complete");
+    }
+  };
+}
+
+function runProgressCallback(task: JobQueueLlmTask) {
+  return (status: CallbackStatus) => {
+    if (status.status === "progress") {
+      task.progress = status.progress / 2;
+      task.emit("progress", status.progress, status.file);
+    }
+    if (status.status === "update") {
+      task.progress = 55;
+      task.emit("progress", task.progress, status.output);
+    }
+    if (status.status === "complete") {
+      task.progress = 100;
+      task.emit("complete", status.output);
+    }
+  };
+}
+
 // ===============================================================================
 
 /**
@@ -123,12 +152,7 @@ export async function HuggingFaceLocal_DownloadRun(
   runInputData: DownloadTaskInput
 ): Promise<DownloadTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  await getPipeline(model!, (status: CallbackStatus) => {
-    if (status.status === "progress") {
-      task.progress = status.progress;
-      task.emit("progress", status.progress, status.file);
-    }
-  });
+  await getPipeline(model!, downloadProgressCallback(task));
   return { model: model.name };
 }
 
@@ -142,7 +166,10 @@ export async function HuggingFaceLocal_EmbeddingRun(
   runInputData: EmbeddingTaskInput
 ): Promise<EmbeddingTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  const generateEmbedding = (await getPipeline(model, () => {})) as FeatureExtractionPipeline;
+  const generateEmbedding = (await getPipeline(
+    model,
+    runProgressCallback(task)
+  )) as FeatureExtractionPipeline;
 
   var vector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
@@ -171,12 +198,10 @@ export async function HuggingFaceLocal_TextGenerationRun(
 ): Promise<TextGenerationTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(model, (status) => {
-    if (status.status === "update") {
-      task.progress = 50;
-      task.emit("progress", 50, status.output);
-    }
-  })) as TextGenerationPipeline;
+  const generateText = (await getPipeline(
+    model,
+    runProgressCallback(task)
+  )) as TextGenerationPipeline;
 
   let results = await generateText(runInputData.prompt);
   if (!Array.isArray(results)) {
@@ -198,12 +223,10 @@ export async function HuggingFaceLocal_TextRewriterRun(
 ): Promise<TextRewriterTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(model, (status) => {
-    if (status.status === "update") {
-      task.progress = 50;
-      task.emit("progress", 50, status.output);
-    }
-  })) as TextGenerationPipeline;
+  const generateText = (await getPipeline(
+    model,
+    runProgressCallback(task)
+  )) as TextGenerationPipeline;
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
@@ -232,12 +255,10 @@ export async function HuggingFaceLocal_TextSummaryRun(
 ): Promise<TextSummaryTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateSummary = (await getPipeline(model, (status) => {
-    if (status.status === "update") {
-      task.progress = 50;
-      task.emit("progress", 50, status.output);
-    }
-  })) as SummarizationPipeline;
+  const generateSummary = (await getPipeline(
+    model,
+    runProgressCallback(task)
+  )) as SummarizationPipeline;
 
   let results = await generateSummary(runInputData.text);
   if (!Array.isArray(results)) {
@@ -260,12 +281,10 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateAnswer = (await getPipeline(model, (status) => {
-    if (status.status === "update") {
-      task.progress = 50;
-      task.emit("progress", 50, status.output);
-    }
-  })) as QuestionAnsweringPipeline;
+  const generateAnswer = (await getPipeline(
+    model,
+    runProgressCallback(task)
+  )) as QuestionAnsweringPipeline;
 
   let results = await generateAnswer(runInputData.question, runInputData.context);
   if (!Array.isArray(results)) {
@@ -275,42 +294,4 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   return {
     answer: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
   };
-}
-
-export async function registerHuggingfaceLocalTasks() {
-  ProviderRegistry.registerRunFn(
-    DownloadTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_DownloadRun
-  );
-
-  ProviderRegistry.registerRunFn(
-    EmbeddingTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_EmbeddingRun
-  );
-
-  ProviderRegistry.registerRunFn(
-    TextGenerationTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextGenerationRun
-  );
-
-  ProviderRegistry.registerRunFn(
-    TextRewriterTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextRewriterRun
-  );
-
-  ProviderRegistry.registerRunFn(
-    TextSummaryTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextSummaryRun
-  );
-
-  ProviderRegistry.registerRunFn(
-    TextQuestionAnswerTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextQuestionAnswerRun
-  );
 }

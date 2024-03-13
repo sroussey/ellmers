@@ -47,7 +47,7 @@
   },
   "peerDependencies": {
     "@mediapipe/tasks-text": "^0.10.12",
-    "@sroussey/transformers": "^2.15.1"
+    "@sroussey/transformers": "^2.16.0"
   },
   "engines": {
     "bun": "^1.0.5"

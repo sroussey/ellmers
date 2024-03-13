@@ -8,7 +8,7 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type EmbeddingTaskInput = CreateMappedType<typeof EmbeddingTask.inputs>;
 export type EmbeddingTaskOutput = CreateMappedType<typeof EmbeddingTask.outputs>;
@@ -16,7 +16,7 @@ export type EmbeddingTaskOutput = CreateMappedType<typeof EmbeddingTask.outputs>
 /**
  * This is a task that generates an embedding for a single piece of text
  */
-export class EmbeddingTask extends ModelFactory {
+export class EmbeddingTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "text",

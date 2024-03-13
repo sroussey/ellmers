@@ -6,23 +6,16 @@
 //    *******************************************************************************
 
 /**
- * @file ModelFactory.ts
- * @description This file contains the implementation of the ModelFactory class and its derived classes.
- * The ModelFactory class is responsible for creating and running tasks based on different models.
- * It provides a common interface for running tasks and handles the execution logic.
- * Each derived class defines its own input and output types and implements the run() method to perform the task-specific logic.
+ * @description This file contains the implementation of the JobQueueTask class and its derived classes.
  */
 
 import { findModelByName } from "../../storage/InMemoryStorage";
-import { SingleTask, TaskInput, TaskConfig, TaskOutput } from "./Task";
-import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
-import { ProviderRegistry } from "provider/ProviderRegistry";
+import { JobQueueTask } from "./JobQueueTask";
+import type { TaskConfig, TaskOutput } from "./Task";
+import { getProviderRegistry } from "provider/ProviderRegistry";
 
-export class ModelFactory extends SingleTask {
-  public static inputs: readonly TaskInputDefinition[];
-  public static outputs: readonly TaskOutputDefinition[];
-  static readonly type: string = "ModelFactory";
-  declare runOutputData: TaskOutput;
+export abstract class JobQueueLlmTask extends JobQueueTask {
+  static readonly type: string = "JobQueueLlmTask";
 
   constructor(config: TaskConfig = {}) {
     config.name ||= `${new.target.name}${config.input?.model ? " with model " + config.input?.model : ""}`;
@@ -35,12 +28,13 @@ export class ModelFactory extends SingleTask {
     let results;
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
     try {
+      const ProviderRegistry = getProviderRegistry();
       const modelname = this.runInputData["model"];
-      if (!modelname) throw new Error("ModelFactoryTask: No model name found");
+      if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
       const model = findModelByName(modelname);
-      if (!model) throw new Error("ModelFactoryTask: No model found");
-      const runFn = ProviderRegistry.getRunFn(runtype, model.type);
-      if (!runFn) throw new Error("ModelFactoryTask: No run function found for " + runtype);
+      if (!model) throw new Error("JobQueueTaskTask: No model found");
+      const runFn = ProviderRegistry.jobAsRunFn(runtype, model.type);
+      if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {
       this.emit("error", err);
@@ -53,6 +47,6 @@ export class ModelFactory extends SingleTask {
     return this.runOutputData;
   }
   runSyncOnly(): TaskOutput {
-    return this.runOutputData;
+    return this.runOutputData ?? {};
   }
 }

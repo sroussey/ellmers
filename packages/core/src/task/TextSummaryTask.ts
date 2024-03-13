@@ -8,7 +8,7 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type TextSummaryTaskInput = CreateMappedType<typeof TextSummaryTask.inputs>;
 export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outputs>;
@@ -17,7 +17,7 @@ export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outp
  * This summarizes a piece of text
  */
 
-export class TextSummaryTask extends ModelFactory {
+export class TextSummaryTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "text",

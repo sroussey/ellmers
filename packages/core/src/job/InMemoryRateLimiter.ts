@@ -7,8 +7,7 @@
 
 import { ILimiter } from "./ILimiter";
 
-const jsminuteinmilliseconds = 60 * 1000;
-export class RateLimiter implements ILimiter {
+export class InMemoryRateLimiter implements ILimiter {
   private requests: Date[] = [];
   private nextAvailableTime: Date = new Date(); // New property to track externally set delay
   private readonly maxRequests: number;

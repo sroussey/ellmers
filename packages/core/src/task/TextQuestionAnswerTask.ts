@@ -8,7 +8,7 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type TextQuestionAnswerTaskInput = CreateMappedType<typeof TextQuestionAnswerTask.inputs>;
 export type TextQuestionAnswerTaskOutput = CreateMappedType<typeof TextQuestionAnswerTask.outputs>;
@@ -16,7 +16,7 @@ export type TextQuestionAnswerTaskOutput = CreateMappedType<typeof TextQuestionA
 /**
  * This is a special case of text generation that takes a context and a question
  */
-export class TextQuestionAnswerTask extends ModelFactory {
+export class TextQuestionAnswerTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "context",

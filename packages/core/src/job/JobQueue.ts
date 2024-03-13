@@ -55,6 +55,38 @@ export abstract class JobQueue {
     }
   }
 
+  private waits = new Map();
+  /**
+   *  This method is called when a job is really completed, after retries etc.
+   */
+  protected onCompleted(
+    jobId: unknown,
+    status: JobStatus,
+    output: TaskOutput | null,
+    error?: string
+  ) {
+    // Find the job by jobId and resolve its promise if it exists
+    const job = this.waits.get(jobId);
+    if (job) {
+      if (status === JobStatus.FAILED) {
+        job.reject(error);
+      } else {
+        job.resolve(output);
+      }
+      // Remove the job from the map after completion
+      this.waits.delete(jobId);
+    }
+  }
+
+  waitFor(jobId: unknown): Promise<TaskOutput> {
+    // Return a new promise for the job
+    return new Promise((resolve, reject) => {
+      // Store the resolve and reject functions in the map using jobId as the key
+      // This allows us to resolve or reject the promise later when onCompleted is called
+      this.waits.set(jobId, { resolve, reject });
+    });
+  }
+
   private running = false;
   private async processJobs() {
     if (!this.running) return; // Stop processing if the queue has been stopped

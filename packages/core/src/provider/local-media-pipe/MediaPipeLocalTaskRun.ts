@@ -6,13 +6,10 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { ModelFactory } from "../../task/base/ModelFactory";
 import { DownloadTask, DownloadTaskInput } from "../../task/DownloadModelTask";
 import { EmbeddingTask, EmbeddingTaskInput } from "../../task/TextEmbeddingTask";
 import { findModelByName } from "../../storage/InMemoryStorage";
 import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
-import { ModelProcessorEnum } from "../../model/Model";
-import { ProviderRegistry } from "provider/ProviderRegistry";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
@@ -62,17 +59,3 @@ export async function MediaPipeTfJsLocal_Embedding(
   }
   return { vector };
 }
-
-export const registerMediaPipeTfJsLocalTasks = () => {
-  ProviderRegistry.registerRunFn(
-    DownloadTask.type,
-    ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_Download
-  );
-
-  ProviderRegistry.registerRunFn(
-    EmbeddingTask.type,
-    ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_Embedding
-  );
-};

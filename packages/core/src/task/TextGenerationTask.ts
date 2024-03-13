@@ -8,7 +8,7 @@
 import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
 export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTask.outputs>;
@@ -16,7 +16,7 @@ export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTas
 /**
  * This generates text from a prompt
  */
-export class TextGenerationTask extends ModelFactory {
+export class TextGenerationTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "prompt",
