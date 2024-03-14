@@ -125,6 +125,19 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return ret;
   }
 
+  public async processing() {
+    const ProcessingQuery = `
+      SELECT *
+        FROM job_queue
+        WHERE queue = $1
+        AND status = 'PROCESSING'`;
+    const stmt = this.db.prepare(ProcessingQuery);
+    const result = stmt.all(this.queue) as any[];
+    const ret: Array<Job<Input, Output>> = [];
+    for (const job of result || []) ret.push(this.createNewJob(job));
+    return ret;
+  }
+
   public async next() {
     let id: string | undefined;
     {

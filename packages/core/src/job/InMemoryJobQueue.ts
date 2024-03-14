@@ -42,6 +42,10 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return this.jobQueue.slice(0, num);
   }
 
+  public async processing() {
+    return this.jobQueue.filter((job) => job.status === JobStatus.PROCESSING);
+  }
+
   public async next() {
     const top = this.reorderedQueue();
 

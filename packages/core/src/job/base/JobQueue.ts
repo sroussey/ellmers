@@ -5,6 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
@@ -14,6 +15,15 @@ export class RetryError extends Error {
     this.name = "RetryError";
   }
 }
+
+type JobEvents =
+  | "queue_start"
+  | "queue_stop"
+  | "job_start"
+  | "job_complete"
+  | "job_error"
+  | "job_retry"
+  | "job_progress";
 
 export abstract class JobQueue<Input, Output> {
   constructor(
@@ -25,10 +35,13 @@ export abstract class JobQueue<Input, Output> {
   public abstract get(id: unknown): Promise<Job<Input, Output> | undefined>;
   public abstract next(): Promise<Job<Input, Output> | undefined>;
   public abstract peek(num: number): Promise<Array<Job<Input, Output>>>;
+  public abstract processing(): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
   public abstract complete(id: unknown, output?: Output | null, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
+
+  events = new EventEmitter<JobEvents>();
 
   // we do this in case the queue needs to do something queue specific to execute the job
   public async executeJob(job: Job<Input, Output>): Promise<Output> {
@@ -61,7 +74,7 @@ export abstract class JobQueue<Input, Output> {
     if (job) {
       if (status === JobStatus.FAILED) {
         job.reject(error);
-      } else {
+      } else if (status === JobStatus.COMPLETED) {
         job.resolve(output);
       }
       // Remove the job from the map after completion
@@ -97,12 +110,21 @@ export abstract class JobQueue<Input, Output> {
     }
   }
 
-  start() {
+  async start() {
     this.running = true;
     this.processJobs();
   }
 
-  stop() {
+  async stop() {
     this.running = false;
+  }
+
+  async restart() {
+    await this.stop(); // if not already
+    const jobs = await this.processing();
+    jobs.forEach((job) => this.complete(job.id, null, "Queue Restarted"));
+    this.waits.forEach(({ reject }) => reject("Queue Restarted"));
+    this.waits.clear();
+    await this.start();
   }
 }

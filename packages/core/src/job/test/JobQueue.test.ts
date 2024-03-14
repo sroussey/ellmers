@@ -101,9 +101,9 @@ describe("LocalJobQueue", () => {
     const executeSpy3 = spyOn(job3, "execute");
     const executeSpy4 = spyOn(job4, "execute");
 
-    jobQueue.start();
+    await jobQueue.start();
     await sleep(50);
-    jobQueue.stop();
+    await jobQueue.stop();
 
     expect(executeSpy1).toHaveBeenCalledTimes(1);
     expect(executeSpy2).toHaveBeenCalledTimes(1);
@@ -123,9 +123,9 @@ describe("LocalJobQueue", () => {
       new TestJob({ id: "job6", taskType: "task2", input: { data: "input2" } })
     );
 
-    jobQueue.start();
+    await jobQueue.start();
     await sleep(50);
-    jobQueue.stop();
+    await jobQueue.stop();
 
     const job4 = await jobQueue.get(last);
 
@@ -210,9 +210,9 @@ describe("SqliteJobQueue", () => {
     await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
     const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
 
-    jobQueue.start();
+    await jobQueue.start();
     await sleep(50);
-    jobQueue.stop();
+    await jobQueue.stop();
 
     const job4 = await jobQueue.get(last!);
 
@@ -228,9 +228,9 @@ describe("SqliteJobQueue", () => {
     await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
     const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
 
-    jobQueue.start();
+    await jobQueue.start();
     await sleep(50);
-    jobQueue.stop();
+    await jobQueue.stop();
 
     const job4 = await jobQueue.get(last!);
 

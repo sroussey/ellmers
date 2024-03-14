@@ -107,6 +107,19 @@ export class PostgreSqlJobQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  public async processing() {
+    return await this.sql.begin(async (sql) => {
+      const result = await sql`
+      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+        FROM job_queue
+        WHERE queue = ${this.queue}
+        AND status = 'PROCESSING'`;
+      if (!result) return [];
+      const ret = result[0].rows.map((r: any) => this.createNewJob(r));
+      return ret;
+    });
+  }
+
   public async next() {
     return await this.sql.begin(async (sql) => {
       const result = await sql`
