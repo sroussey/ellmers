@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { type Database } from "better-sqlite3";
-import { ILimiter } from "./ILimiter";
+import { ILimiter } from "./base/ILimiter";
 import { toSQLiteTimestamp } from "../util/Misc";
 
 export class SqliteRateLimiter implements ILimiter {

@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter } from "./ILimiter";
+import { ILimiter } from "./base/ILimiter";
 import { Sql } from "postgres";
 
 export class PostgreSqlRateLimiter implements ILimiter {

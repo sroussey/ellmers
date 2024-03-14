@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { makeFingerprint } from "../util/Misc";
-import { Job, JobStatus } from "./Job";
-import { JobQueue } from "./JobQueue";
-import { ILimiter } from "./ILimiter";
+import { Job, JobStatus } from "./base/Job";
+import { JobQueue } from "./base/JobQueue";
+import { ILimiter } from "./base/ILimiter";
 
 export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {

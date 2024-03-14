@@ -6,22 +6,23 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { InMemoryJobQueue } from "../src/job/InMemoryJobQueue";
-import { Job, JobStatus } from "../src/job/Job";
-import { InMemoryRateLimiter } from "../src/job/InMemoryRateLimiter";
-import { SqliteRateLimiter } from "../src/job/SqliteRateLimiter";
-import { SqliteJobQueue } from "../src/job/SqliteJobQueue";
-import { getDatabase } from "../src/util/db_sqlite";
-import { sleep } from "../src/util/Misc";
+import { InMemoryJobQueue } from "../InMemoryJobQueue";
+import { Job, JobStatus } from "../base/Job";
+import { InMemoryRateLimiter } from "../InMemoryRateLimiter";
+import { SqliteRateLimiter } from "../SqliteRateLimiter";
+import { SqliteJobQueue } from "../SqliteJobQueue";
+import { getDatabase } from "../../util/db_sqlite";
+import { sleep } from "../../util/Misc";
+import { TaskInput, TaskOutput } from "../../task/base/Task";
 
-class TestJob extends Job {
+class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute() {
     return { result: this.input.data.replace("input", "output") };
   }
 }
 
 describe("LocalJobQueue", () => {
-  let jobQueue: InMemoryJobQueue;
+  let jobQueue: InMemoryJobQueue<TaskInput, TaskOutput>;
 
   beforeEach(() => {
     jobQueue = new InMemoryJobQueue("in_memory_test_queue", new InMemoryRateLimiter(4, 1), 0);

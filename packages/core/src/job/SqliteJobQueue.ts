@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter } from "./ILimiter";
-import { JobQueue } from "./JobQueue";
-import { Job, JobStatus } from "./Job";
+import { ILimiter } from "./base/ILimiter";
+import { JobQueue } from "./base/JobQueue";
+import { Job, JobStatus } from "./base/Job";
 import { makeFingerprint, toSQLiteTimestamp } from "../util/Misc";
 import { type Database } from "bun:sqlite";
 

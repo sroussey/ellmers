@@ -7,8 +7,8 @@
 
 import type { JobQueueLlmTask } from "../task/base/JobQueueLlmTask";
 import type { ModelProcessorEnum } from "../model/Model";
-import { Job, JobConstructorDetails } from "../job/Job";
-import type { JobQueue } from "../job/JobQueue";
+import { Job, JobConstructorDetails } from "../job/base/Job";
+import type { JobQueue } from "../job/base/JobQueue";
 import { TaskInput, TaskOutput } from "../task/base/Task";
 
 export enum JobQueueRunType {

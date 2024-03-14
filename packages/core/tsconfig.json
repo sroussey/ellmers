@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["src/**/*", "tests/*/*.ts"],
+  "include": ["src/**/*"],
   "files": ["src/browser.ts", "src/server.ts"],
   "exclude": ["**/*.test.ts", "dist"],
   "compilerOptions": {

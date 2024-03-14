@@ -8,9 +8,9 @@
 import { makeFingerprint } from "../util/Misc";
 
 import { Sql } from "postgres";
-import { Job, JobStatus } from "./Job";
-import { JobQueue } from "./JobQueue";
-import { ILimiter } from "./ILimiter";
+import { Job, JobStatus } from "./base/Job";
+import { JobQueue } from "./base/JobQueue";
+import { ILimiter } from "./base/ILimiter";
 
 // TODO: prepared statements
 

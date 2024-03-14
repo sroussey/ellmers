@@ -14,7 +14,7 @@
     "build-server-bun": "bun build --target=bun --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server.ts",
     "build-types": "tsc",
     "build-types-map": "tsc --declarationMap",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "bun test"
   },
   "module": "dist/server.js",
   "exports": {
