@@ -9,7 +9,7 @@ export * from "./source/Document";
 export * from "./source/DocumentConverterText";
 export * from "./source/DocumentConverterMarkdown";
 export * from "./task/index";
-export * from "./provider/local-hugging-face/HuggingFaceLocalTaskRun";
+export * from "./provider/local-hugging-face/HuggingFaceLocal_TaskRun";
 export * from "./provider/local-media-pipe/MediaPipeLocalTaskRun";
 export * from "./provider/ProviderRegistry";
 export * from "./model/Model";

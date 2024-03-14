@@ -5,7 +5,7 @@ import {
   HuggingFaceLocal_TextQuestionAnswerRun,
   HuggingFaceLocal_TextRewriterRun,
   HuggingFaceLocal_TextSummaryRun,
-} from "provider/local-hugging-face/HuggingFaceLocalTaskRun";
+} from "provider/local-hugging-face/HuggingFaceLocal_TaskRun";
 import { ModelProcessorEnum } from "../model/Model";
 import { getProviderRegistry } from "../provider/ProviderRegistry";
 import {

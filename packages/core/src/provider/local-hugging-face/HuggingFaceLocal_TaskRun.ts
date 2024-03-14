@@ -88,6 +88,8 @@ type StatusFile = StatusFileBookends | StatusFileProgress;
 type StatusRun = StatusRunReady | StatusRunUpdate | StatusRunComplete;
 export type CallbackStatus = StatusFile | StatusRun;
 
+const pipelines = new Map<ONNXTransformerJsModel, any>();
+
 /**
  *
  * This is a helper function to get a pipeline for a model and assign a
@@ -105,11 +107,17 @@ const getPipeline = async (
     config: null,
   }
 ) => {
-  return await pipeline(model.pipeline as PipelineType, model.name, {
-    quantized,
-    config,
-    progress_callback: callback,
-  });
+  if (!pipelines.has(model)) {
+    pipelines.set(
+      model,
+      await pipeline(model.pipeline as PipelineType, model.name, {
+        quantized,
+        config,
+        progress_callback: callback,
+      })
+    );
+  }
+  return pipelines.get(model);
 };
 
 function downloadProgressCallback(task: JobQueueLlmTask) {
@@ -117,27 +125,17 @@ function downloadProgressCallback(task: JobQueueLlmTask) {
     if (status.status === "progress") {
       task.progress = status.progress;
       task.emit("progress", status.progress, status.file);
-    } else if (status.status === "ready") {
-      task.progress = 100;
-      task.emit("complete");
     }
   };
 }
 
-function runProgressCallback(task: JobQueueLlmTask) {
-  return (status: CallbackStatus) => {
-    if (status.status === "progress") {
-      task.progress = status.progress / 2;
-      task.emit("progress", status.progress, status.file);
-    }
-    if (status.status === "update") {
-      task.progress = 55;
-      task.emit("progress", task.progress, status.output);
-    }
-    if (status.status === "complete") {
-      task.progress = 100;
-      task.emit("complete", status.output);
-    }
+function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
+  return (beams: any[]) => {
+    const decodedText = instance.tokenizer.decode(beams[0].output_token_ids, {
+      skip_special_tokens: true,
+    });
+    task.progress = 60;
+    task.emit("progress", decodedText);
   };
 }
 
@@ -168,7 +166,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
   const generateEmbedding = (await getPipeline(
     model,
-    runProgressCallback(task)
+    downloadProgressCallback(task)
   )) as FeatureExtractionPipeline;
 
   var vector = await generateEmbedding(runInputData.text, {
@@ -200,10 +198,16 @@ export async function HuggingFaceLocal_TextGenerationRun(
 
   const generateText = (await getPipeline(
     model,
-    runProgressCallback(task)
+    downloadProgressCallback(task)
   )) as TextGenerationPipeline;
 
-  let results = await generateText(runInputData.prompt);
+  let results = await generateText(runInputData.prompt, {
+    progress_callback: function (status: any) {
+      console.log("STEVE: ", status);
+      process.exit(0);
+    },
+    callback_function: generateProgressCallback(task, generateText),
+  } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -225,12 +229,14 @@ export async function HuggingFaceLocal_TextRewriterRun(
 
   const generateText = (await getPipeline(
     model,
-    runProgressCallback(task)
+    downloadProgressCallback(task)
   )) as TextGenerationPipeline;
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
-  let results = await generateText(promptedtext);
+  let results = await generateText(promptedtext, {
+    callback_function: generateProgressCallback(task, generateText),
+  } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -257,10 +263,12 @@ export async function HuggingFaceLocal_TextSummaryRun(
 
   const generateSummary = (await getPipeline(
     model,
-    runProgressCallback(task)
+    downloadProgressCallback(task)
   )) as SummarizationPipeline;
 
-  let results = await generateSummary(runInputData.text);
+  let results = await generateSummary(runInputData.text, {
+    callback_function: generateProgressCallback(task, generateSummary),
+  } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -283,10 +291,12 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 
   const generateAnswer = (await getPipeline(
     model,
-    runProgressCallback(task)
+    downloadProgressCallback(task)
   )) as QuestionAnsweringPipeline;
 
-  let results = await generateAnswer(runInputData.question, runInputData.context);
+  let results = await generateAnswer(runInputData.question, runInputData.context, {
+    callback_function: generateProgressCallback(task, generateAnswer),
+  } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
