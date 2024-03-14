@@ -6,7 +6,6 @@
 //    *******************************************************************************
 
 import {
-  pipeline,
   type PipelineType,
   type FeatureExtractionPipeline,
   type TextGenerationPipeline,
@@ -15,14 +14,11 @@ import {
   type SummarizationSingle,
   type QuestionAnsweringPipeline,
   type DocumentQuestionAnsweringSingle,
-  env,
 } from "@sroussey/transformers";
-import { findModelByName } from "../../../storage/InMemoryStorage";
-import { ONNXTransformerJsModel, ModelProcessorEnum } from "model";
+import { findModelByName } from "../../storage/InMemoryStorage";
+import { ONNXTransformerJsModel } from "model";
 import {
   Vector,
-  SingleTask,
-  ModelFactory,
   DownloadTask,
   DownloadTaskInput,
   DownloadTaskOutput,
@@ -41,45 +37,111 @@ import {
   TextSummaryTask,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
+  JobQueueLlmTask,
 } from "task";
 
-env.backends.onnx.logLevel = "error";
-env.backends.onnx.debug = false;
+interface StatusFileBookends {
+  status: "initiate" | "download" | "done";
+  name: string;
+  file: string;
+}
 
-/**
- *
- * This is a helper function to get a pipeline for a model and assign a
- * progress callback to the task.
- *
- * @param task
- * @param model
- * @param options
- */
+interface StatusFileProgress {
+  status: "progress";
+  name: string;
+  file: string;
+  loaded: number;
+  progress: number;
+  total: number;
+}
+
+interface StatusRunReady {
+  status: "ready";
+  model: string;
+  task: string;
+}
+interface StatusRunUpdate {
+  status: "update";
+  output: string;
+}
+interface StatusRunComplete {
+  status: "complete";
+  output: string[];
+}
+
+type StatusFile = StatusFileBookends | StatusFileProgress;
+type StatusRun = StatusRunReady | StatusRunUpdate | StatusRunComplete;
+export type CallbackStatus = StatusFile | StatusRun;
+
+// Initialize the worker
+const worker = new Worker(new URL("./server_worker_hf.js", import.meta.url), { type: "module" });
+worker.onerror = (e) => {
+  console.error("Worker error:", e.message, new URL("./server_worker_hf.js", import.meta.url));
+};
+
 const getPipeline = async (
-  task: SingleTask,
+  task: JobQueueLlmTask,
   model: ONNXTransformerJsModel,
   { quantized, config }: { quantized: boolean; config: any } = {
     quantized: true,
     config: null,
   }
 ) => {
-  return await pipeline(model.pipeline as PipelineType, model.name, {
-    quantized,
-    config,
-    progress_callback: (details: {
-      file: string;
-      status: string;
-      name: string;
-      progress: number;
-      loaded: number;
-      total: number;
-    }) => {
-      const { progress, file, name, status } = details;
-      task.progress = progress;
-      task.emit("progress", progress, file || name || status);
-    },
-  });
+  const pipeline = model.pipeline;
+  const modelName = model.name;
+  const id = task.config.id;
+
+  return (...params: any[]) => {
+    return new Promise((resolve, reject) => {
+      // Listen for a message from the worker
+      const listener = (e: MessageEvent<any>) => {
+        console.log("main received worker message", e.data);
+        if (e.data.id === id) {
+          if (e.data.status === "complete") {
+            // Unsubscribe listener after getting the final response
+            worker.removeEventListener("message", listener);
+            resolve(e.data.output);
+          } else if (e.data.status === "progress") {
+            downloadProgressCallback(task, e.data);
+          } else {
+            runProgressCallback(task, e.data);
+          }
+        }
+      };
+      worker.addEventListener("message", listener);
+
+      console.log("main sending worker ", {
+        id,
+        pipeline: pipeline,
+        model: modelName,
+        params: params,
+        options: { quantized, config },
+      });
+      // Send the task request to the worker
+      worker.postMessage({
+        id,
+        pipeline: pipeline,
+        model: modelName,
+        params: params,
+        options: { quantized, config },
+      });
+    });
+  };
 };
+
+function downloadProgressCallback(task: JobQueueLlmTask, status: CallbackStatus) {
+  if (status.status === "progress") {
+    task.progress = status.progress;
+    task.emit("progress", status.progress, status.file);
+  }
+}
+
+function runProgressCallback(task: JobQueueLlmTask, status: CallbackStatus) {
+  if (status.status === "update") {
+    task.progress = 60;
+    task.emit("progress", task.progress, status.output);
+  }
+}
 
 // ===============================================================================
 
@@ -92,7 +154,8 @@ export async function HuggingFaceLocal_DownloadRun(
   runInputData: DownloadTaskInput
 ): Promise<DownloadTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  await getPipeline(task, model!);
+  const download = await getPipeline(task, model!);
+  await download();
   return { model: model.name };
 }
 
@@ -137,7 +200,7 @@ export async function HuggingFaceLocal_TextGenerationRun(
 
   const generateText = (await getPipeline(task, model)) as TextGenerationPipeline;
 
-  let results = await generateText(runInputData.prompt);
+  let results = await generateText(runInputData.prompt, {});
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -161,7 +224,7 @@ export async function HuggingFaceLocal_TextRewriterRun(
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
-  let results = await generateText(promptedtext);
+  let results = await generateText(promptedtext, {});
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -188,7 +251,7 @@ export async function HuggingFaceLocal_TextSummaryRun(
 
   const generateSummary = (await getPipeline(task, model)) as SummarizationPipeline;
 
-  let results = await generateSummary(runInputData.text);
+  let results = await generateSummary(runInputData.text, {});
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -211,7 +274,7 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 
   const generateAnswer = (await getPipeline(task, model)) as QuestionAnsweringPipeline;
 
-  let results = await generateAnswer(runInputData.question, runInputData.context);
+  let results = await generateAnswer(runInputData.question, runInputData.context, {});
   if (!Array.isArray(results)) {
     results = [results];
   }
@@ -219,42 +282,4 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   return {
     answer: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
   };
-}
-
-export async function registerHuggingfaceLocalTasks() {
-  ModelFactory.registerRunFn(
-    DownloadTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_DownloadRun
-  );
-
-  ModelFactory.registerRunFn(
-    EmbeddingTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_EmbeddingRun
-  );
-
-  ModelFactory.registerRunFn(
-    TextGenerationTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextGenerationRun
-  );
-
-  ModelFactory.registerRunFn(
-    TextRewriterTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextRewriterRun
-  );
-
-  ModelFactory.registerRunFn(
-    TextSummaryTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextSummaryRun
-  );
-
-  ModelFactory.registerRunFn(
-    TextQuestionAnswerTask,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
-    HuggingFaceLocal_TextQuestionAnswerRun
-  );
 }

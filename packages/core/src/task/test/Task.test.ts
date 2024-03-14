@@ -1,7 +1,14 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import { describe, expect, it } from "bun:test";
-import { SingleTask, CompoundTask } from "../src/task/base/Task";
-import { TaskGraph } from "../src/task/base/TaskGraph";
-import { CreateMappedType } from "../src/task/base/TaskIOTypes";
+import { SingleTask, CompoundTask } from "../base/Task";
+import { TaskGraph } from "../base/TaskGraph";
+import { CreateMappedType } from "../base/TaskIOTypes";
 
 type TestTaskInput = CreateMappedType<typeof TestTask.inputs>;
 type TestTaskOutput = CreateMappedType<typeof TestTask.outputs>;
@@ -14,6 +21,7 @@ class TestTask extends SingleTask {
       id: "key",
       name: "Input",
       valueType: "text",
+      defaultValue: "",
     },
   ] as const;
   static readonly outputs = [
@@ -34,10 +42,10 @@ class TestTask extends SingleTask {
     },
   ] as const;
   runSyncOnly(): TestTaskOutput {
-    return { syncOnly: true };
+    return { all: false, key: this.runInputData.key, syncOnly: true };
   }
   async run(): Promise<TestTaskOutput> {
-    return { all: true };
+    return { all: true, key: this.runInputData.key, syncOnly: false };
   }
 }
 
@@ -49,6 +57,7 @@ class TestCompoundTask extends CompoundTask {
       id: "key",
       name: "Input",
       valueType: "text",
+      defaultValue: "",
     },
   ] as const;
   static readonly outputs = [
@@ -70,11 +79,11 @@ class TestCompoundTask extends CompoundTask {
   ] as const;
   static readonly type = "TestCompoundTask";
   runSyncOnly(): TestTaskOutput {
-    this.runOutputData = { ...this.runInputData, syncOnly: true };
+    this.runOutputData = { key: this.runInputData.key, all: false, syncOnly: true };
     return this.runOutputData;
   }
   async run(): Promise<TestTaskOutput> {
-    this.runOutputData = { ...this.runInputData, all: true };
+    this.runOutputData = { key: this.runInputData.key, all: true, syncOnly: false };
     return this.runOutputData;
   }
 }
@@ -86,14 +95,14 @@ describe("Task", () => {
       const input = { key: "value" };
       node.addInputData(input);
       const output = await node.run();
-      expect(output).toEqual({ all: true });
+      expect(output).toEqual({ ...input, syncOnly: false, all: true });
       expect(node.runInputData).toEqual(input);
     });
 
     it("should run the task synchronously", () => {
       const node = new TestTask();
       const output = node.runSyncOnly();
-      expect(output).toEqual({ syncOnly: true });
+      expect(output).toEqual({ key: "", syncOnly: true, all: false });
     });
   });
 
@@ -114,14 +123,14 @@ describe("Task", () => {
       const input = { key: "value" };
       node.addInputData(input);
       const output = await node.run();
-      expect(output).toEqual({ key: "value", all: true });
+      expect(output).toEqual({ key: "value", all: true, syncOnly: false });
       expect(node.runInputData).toEqual(input);
     });
 
     it("should run the task synchronously", () => {
       const node = new TestCompoundTask({ input: { key: "value2" } });
       const output = node.runSyncOnly();
-      expect(output).toEqual({ key: "value2", syncOnly: true });
+      expect(output).toEqual({ key: "value2", syncOnly: true, all: false });
     });
   });
 });

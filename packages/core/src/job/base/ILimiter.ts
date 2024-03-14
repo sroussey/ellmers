@@ -5,12 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./browser";
-export * from "./storage/SqliteTaskOutputRepository";
-export * from "./storage/PostgresTaskOutputRepository";
-export * from "./job/SqliteJobQueue";
-export * from "./job/SqliteRateLimiter";
-export * from "./job/PostgreSqlJobQueue";
-export * from "./job/PostgreSqlRateLimiter";
-export * from "./bindings/all_inmemory";
-export * from "./bindings/all_sqlite";
+export interface ILimiter {
+  canProceed(): Promise<boolean>;
+  recordJobStart(): Promise<void>;
+  recordJobCompletion(): Promise<void>;
+  getNextAvailableTime(): Promise<Date>;
+  setNextAvailableTime(date: Date): Promise<void>;
+  clear(): Promise<void>;
+}

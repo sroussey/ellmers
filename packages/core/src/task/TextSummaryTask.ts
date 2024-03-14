@@ -5,10 +5,16 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertToArrays, arrayTaskFactory } from "./base/ArrayTask";
+import {
+  ConvertAllToArrays,
+  ConvertOneToArray,
+  ConvertOneToOptionalArrays,
+  arrayTaskFactory,
+} from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
-import { ModelFactory } from "./base/ModelFactory";
+import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueTaskConfig } from "./base/JobQueueTask";
 
 export type TextSummaryTaskInput = CreateMappedType<typeof TextSummaryTask.inputs>;
 export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outputs>;
@@ -17,7 +23,7 @@ export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outp
  * This summarizes a piece of text
  */
 
-export class TextSummaryTask extends ModelFactory {
+export class TextSummaryTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "text",
@@ -31,7 +37,9 @@ export class TextSummaryTask extends ModelFactory {
     },
   ] as const;
   public static outputs = [{ id: "text", name: "Text", valueType: "text" }] as const;
-
+  constructor(config: JobQueueTaskConfig & { input?: TextSummaryTaskInput } = {}) {
+    super(config);
+  }
   declare runInputData: TextSummaryTaskInput;
   declare runOutputData: TextSummaryTaskOutput;
   declare defaults: Partial<TextSummaryTaskInput>;
@@ -40,17 +48,42 @@ export class TextSummaryTask extends ModelFactory {
 }
 TaskRegistry.registerTask(TextSummaryTask);
 
+type TextSummaryMultiTaskOutput = ConvertAllToArrays<TextSummaryTaskOutput>;
+
+type TextSummaryMultiModelTaskInput = ConvertOneToArray<TextSummaryTaskInput, "model">;
 export const TextSummaryMultiModelTask = arrayTaskFactory<
-  ConvertToArrays<TextSummaryTaskInput, "model">,
-  ConvertAllToArrays<TextSummaryTaskOutput>
+  TextSummaryMultiModelTaskInput,
+  TextSummaryMultiTaskOutput
 >(TextSummaryTask, "model");
 
+type TextSummaryMultiTextTaskInput = ConvertOneToArray<TextSummaryTaskInput, "text">;
 export const TextSummaryMultiTextTask = arrayTaskFactory<
-  ConvertToArrays<TextSummaryTaskInput, "text">,
-  ConvertAllToArrays<TextSummaryTaskOutput>
+  TextSummaryMultiTextTaskInput,
+  TextSummaryMultiTaskOutput
 >(TextSummaryTask, "text");
 
-export const TextSummaryMultiTextModelTask = arrayTaskFactory<
-  ConvertToArrays<ConvertToArrays<TextSummaryTaskInput, "model">, "text">,
-  ConvertAllToArrays<TextSummaryTaskOutput>
->(TextSummaryMultiModelTask, "text", "TextSummaryMultiTextModelTask");
+type TextSummaryMultiTextMultiModelTaskInput = ConvertOneToArray<
+  TextSummaryMultiModelTaskInput,
+  "text"
+>;
+export const TextSummaryMultiTextMultiModelTask = arrayTaskFactory<
+  TextSummaryMultiTextMultiModelTaskInput,
+  TextSummaryMultiTaskOutput
+>(TextSummaryMultiModelTask, "text", "TextSummaryMultiTextMultiModelTask");
+
+export const TextSummary = (
+  input: ConvertOneToOptionalArrays<
+    ConvertOneToOptionalArrays<TextSummaryTaskInput, "model">,
+    "text"
+  >
+) => {
+  if (Array.isArray(input.model) && Array.isArray(input.text)) {
+    return new TextSummaryMultiTextMultiModelTask().addInputData(input).run();
+  } else if (Array.isArray(input.model)) {
+    return new TextSummaryMultiModelTask().addInputData(input).run();
+  } else if (Array.isArray(input.text)) {
+    return new TextSummaryMultiTextTask().addInputData(input).run();
+  } else {
+    return new TextSummaryTask().addInputData(input).run();
+  }
+};

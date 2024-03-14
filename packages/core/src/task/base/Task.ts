@@ -48,7 +48,7 @@ export type TaskConfig = Partial<IConfig> & { input?: TaskInput };
 // ===============================================================================
 
 export interface IConfig {
-  id: string;
+  id: unknown;
   name?: string;
   provenance?: TaskInput;
 }
@@ -143,6 +143,7 @@ abstract class TaskBase {
    * The the defaults and overrides are combined to match the required input of the task.
    */
   runOutputData: TaskOutput = {};
+
   public static inputs: readonly TaskInputDefinition[];
   public static outputs: readonly TaskOutputDefinition[];
 
@@ -175,6 +176,7 @@ abstract class TaskBase {
         }
       }
     }
+    return this;
   }
   async run(): Promise<TaskOutput> {
     this.emit("start");

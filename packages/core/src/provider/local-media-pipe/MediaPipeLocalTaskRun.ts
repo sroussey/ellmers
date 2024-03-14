@@ -6,17 +6,15 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { ModelFactory } from "../../base/ModelFactory";
-import { DownloadTask, DownloadTaskInput } from "../../DownloadModelTask";
-import { EmbeddingTask, EmbeddingTaskInput } from "../../TextEmbeddingTask";
-import { findModelByName } from "../../../storage/InMemoryStorage";
-import { MediaPipeTfJsModel } from "../../../model/MediaPipeModel";
-import { ModelProcessorEnum } from "../../../model/Model";
+import { DownloadTask, DownloadTaskInput } from "../../task/DownloadModelTask";
+import { EmbeddingTask, EmbeddingTaskInput } from "../../task/TextEmbeddingTask";
+import { findModelByName } from "../../storage/InMemoryStorage";
+import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_DownloadRun(
+export async function MediaPipeTfJsLocal_Download(
   task: DownloadTask,
   runInputData: DownloadTaskInput
 ) {
@@ -38,7 +36,7 @@ export async function MediaPipeTfJsLocal_DownloadRun(
  * This is a task that generates an embedding for a single piece of text
  * using a MediaPipe TFJS model.
  */
-export async function MediaPipeTfJsLocal_EmbeddingRun(
+export async function MediaPipeTfJsLocal_Embedding(
   task: EmbeddingTask,
   runInputData: EmbeddingTaskInput
 ) {
@@ -61,17 +59,3 @@ export async function MediaPipeTfJsLocal_EmbeddingRun(
   }
   return { vector };
 }
-
-export const registerMediaPipeTfJsLocalTasks = () => {
-  ModelFactory.registerRunFn(
-    DownloadTask,
-    ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_DownloadRun
-  );
-
-  ModelFactory.registerRunFn(
-    DownloadTask,
-    ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
-    MediaPipeTfJsLocal_EmbeddingRun
-  );
-};

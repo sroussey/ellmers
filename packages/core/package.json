@@ -4,17 +4,17 @@
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
-    "watch": "bunx concurrently 'bun run watch-types' 'bun run watch-browser' 'bun run watch-server-bun'",
-    "watch-browser": "bun build --watch --target=browser --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser.ts",
-    "watch-server-bun": "bun build --watch --target=bun --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server.ts",
-    "watch-types": "tsc --watch",
+    "watch": "bunx concurrently -c 'auto' -n 'core:' 'npm:watch-*'",
+    "watch-browser": "bun build --watch --target=browser --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser*.ts",
+    "watch-server-bun": "bun build --watch --target=bun --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server*.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-server-bun && bun run build-types-map",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-browser": "bun build --target=browser --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser.ts",
-    "build-server-bun": "bun build --target=bun --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server.ts",
+    "build-browser": "bun build --target=browser --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser*.ts",
+    "build-server-bun": "bun build --target=bun --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server*.ts",
     "build-types": "tsc",
     "build-types-map": "tsc --declarationMap",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "bun test"
   },
   "module": "dist/server.js",
   "exports": {
