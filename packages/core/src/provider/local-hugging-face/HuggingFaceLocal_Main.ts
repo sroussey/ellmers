@@ -6,7 +6,6 @@
 //    *******************************************************************************
 
 import {
-  type PipelineType,
   type FeatureExtractionPipeline,
   type TextGenerationPipeline,
   type TextGenerationSingle,
@@ -73,13 +72,11 @@ type StatusFile = StatusFileBookends | StatusFileProgress;
 type StatusRun = StatusRunReady | StatusRunUpdate | StatusRunComplete;
 export type CallbackStatus = StatusFile | StatusRun;
 
-function initializeWorker() {
-  // Initialize the worker
-  const worker = new Worker(new URL("./server_worker_hf.js", import.meta.url), { type: "module" });
-  worker.onerror = (e) => {
-    console.error("Worker error:", e.message, new URL("./server_worker_hf.js", import.meta.url));
-  };
-}
+// Initialize the worker
+const worker = new Worker(new URL("./server_worker_hf.js", import.meta.url), { type: "module" });
+worker.onerror = (e) => {
+  console.error("Worker error:", e.message, new URL("./server_worker_hf.js", import.meta.url));
+};
 
 const getPipeline = async (
   task: JobQueueLlmTask,

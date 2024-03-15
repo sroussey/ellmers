@@ -18,7 +18,7 @@ import {
   env,
 } from "@sroussey/transformers";
 import { findModelByName } from "../../storage/InMemoryStorage";
-import { ONNXTransformerJsModel, ModelProcessorEnum } from "model";
+import { ONNXTransformerJsModel } from "model";
 import {
   Vector,
   DownloadTask,
@@ -44,16 +44,6 @@ import {
 
 env.backends.onnx.logLevel = "error";
 env.backends.onnx.debug = false;
-
-export enum LocalHuggingfaceStatus {
-  initiate = "initiate",
-  download = "download",
-  progress = "progress",
-  done = "done",
-  ready = "ready",
-  update = "update",
-  complete = "complete",
-}
 
 interface StatusFileBookends {
   status: "initiate" | "download" | "done";
@@ -100,8 +90,8 @@ const pipelines = new Map<ONNXTransformerJsModel, any>();
  * @param options
  */
 const getPipeline = async (
+  task: JobQueueLlmTask,
   model: ONNXTransformerJsModel,
-  callback: (status: CallbackStatus) => void,
   { quantized, config }: { quantized: boolean; config: any } = {
     quantized: true,
     config: null,
@@ -113,7 +103,7 @@ const getPipeline = async (
       await pipeline(model.pipeline as PipelineType, model.name, {
         quantized,
         config,
-        progress_callback: callback,
+        progress_callback: downloadProgressCallback(task),
       })
     );
   }
@@ -149,8 +139,8 @@ export async function HuggingFaceLocal_DownloadRun(
   task: DownloadTask,
   runInputData: DownloadTaskInput
 ): Promise<DownloadTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  await getPipeline(model!, downloadProgressCallback(task));
+  const model = findModelByName(runInputData.model)! as ONNXTransformerJsModel;
+  await getPipeline(task, model);
   return { model: model.name };
 }
 
@@ -164,10 +154,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   runInputData: EmbeddingTaskInput
 ): Promise<EmbeddingTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
-  const generateEmbedding = (await getPipeline(
-    model,
-    downloadProgressCallback(task)
-  )) as FeatureExtractionPipeline;
+  const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
   var vector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
@@ -196,16 +183,9 @@ export async function HuggingFaceLocal_TextGenerationRun(
 ): Promise<TextGenerationTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(
-    model,
-    downloadProgressCallback(task)
-  )) as TextGenerationPipeline;
+  const generateText: TextGenerationPipeline = await getPipeline(task, model);
 
   let results = await generateText(runInputData.prompt, {
-    progress_callback: function (status: any) {
-      console.log("STEVE: ", status);
-      process.exit(0);
-    },
     callback_function: generateProgressCallback(task, generateText),
   } as any);
   if (!Array.isArray(results)) {
@@ -227,10 +207,7 @@ export async function HuggingFaceLocal_TextRewriterRun(
 ): Promise<TextRewriterTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateText = (await getPipeline(
-    model,
-    downloadProgressCallback(task)
-  )) as TextGenerationPipeline;
+  const generateText: TextGenerationPipeline = await getPipeline(task, model);
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
@@ -261,10 +238,7 @@ export async function HuggingFaceLocal_TextSummaryRun(
 ): Promise<TextSummaryTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateSummary = (await getPipeline(
-    model,
-    downloadProgressCallback(task)
-  )) as SummarizationPipeline;
+  const generateSummary: SummarizationPipeline = await getPipeline(task, model);
 
   let results = await generateSummary(runInputData.text, {
     callback_function: generateProgressCallback(task, generateSummary),
@@ -289,10 +263,7 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
-  const generateAnswer = (await getPipeline(
-    model,
-    downloadProgressCallback(task)
-  )) as QuestionAnsweringPipeline;
+  const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
 
   let results = await generateAnswer(runInputData.question, runInputData.context, {
     callback_function: generateProgressCallback(task, generateAnswer),
