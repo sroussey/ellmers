@@ -44,6 +44,7 @@ import {
 
 env.backends.onnx.logLevel = "error";
 env.backends.onnx.debug = false;
+env.cacheDir = "./.cache";
 
 interface StatusFileBookends {
   status: "initiate" | "download" | "done";

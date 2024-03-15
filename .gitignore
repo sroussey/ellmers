@@ -10,3 +10,5 @@ storybook-static/
 packages/cli-web/
 packages/cli-sec/
 packages/ngraph/
+.cache/
+local.db
