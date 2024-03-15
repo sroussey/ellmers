@@ -158,6 +158,14 @@ abstract class TaskBase {
   resetInputData() {
     this.runInputData = { ...this.defaults };
   }
+
+  /**
+   *
+   * ONLY CALLED BY THE TASK RUNNER
+   *
+   * @param overrides
+   * @returns
+   */
   addInputData<T extends TaskInput>(overrides: Partial<T> | undefined) {
     const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
     for (const input of inputdefs) {

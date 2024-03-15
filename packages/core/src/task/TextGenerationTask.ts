@@ -77,12 +77,12 @@ export const TextGeneration = (
   >
 ) => {
   if (Array.isArray(input.model) && Array.isArray(input.prompt)) {
-    return new TextGenerationMultiPromptMultiModelTask().addInputData(input).run();
+    return new TextGenerationMultiPromptMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.model)) {
-    return new TextGenerationMultiModelTask().addInputData(input).run();
+    return new TextGenerationMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.prompt)) {
-    return new TextGenerationMultiPromptTask().addInputData(input).run();
+    return new TextGenerationMultiPromptTask({ input } as any).run();
   } else {
-    return new TextGenerationTask().addInputData(input).run();
+    return new TextGenerationTask({ input } as any).run();
   }
 };

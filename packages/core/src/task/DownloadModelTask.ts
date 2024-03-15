@@ -58,8 +58,8 @@ export const DownloadMultiModelTask = arrayTaskFactory<
 
 export const Download = (input: ConvertOneToOptionalArrays<DownloadTaskInput, "model">) => {
   if (Array.isArray(input.model)) {
-    return new DownloadMultiModelTask().addInputData(input).run();
+    return new DownloadMultiModelTask({ input } as any).run();
   } else {
-    return new DownloadTask({}).addInputData(input).run();
+    return new DownloadTask({ input } as any).run();
   }
 };

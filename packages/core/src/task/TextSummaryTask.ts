@@ -78,12 +78,12 @@ export const TextSummary = (
   >
 ) => {
   if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new TextSummaryMultiTextMultiModelTask().addInputData(input).run();
+    return new TextSummaryMultiTextMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.model)) {
-    return new TextSummaryMultiModelTask().addInputData(input).run();
+    return new TextSummaryMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.text)) {
-    return new TextSummaryMultiTextTask().addInputData(input).run();
+    return new TextSummaryMultiTextTask({ input } as any).run();
   } else {
-    return new TextSummaryTask().addInputData(input).run();
+    return new TextSummaryTask({ input } as any).run();
   }
 };
