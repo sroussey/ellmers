@@ -15,6 +15,7 @@ import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type EmbeddingTaskInput = CreateMappedType<typeof EmbeddingTask.inputs>;
 export type EmbeddingTaskOutput = CreateMappedType<typeof EmbeddingTask.outputs>;
@@ -70,16 +71,29 @@ export const EmbeddingMultiTextMultiModelTask = arrayTaskFactory<
   EmbeddingMultiTaskOutput
 >(EmbeddingMultiModelTask, "text", "EmbeddingMultiTextMultiModelTask");
 
-export const TextEmbedding = (
-  input: ConvertOneToOptionalArrays<ConvertOneToOptionalArrays<EmbeddingTaskInput, "model">, "text">
-) => {
+type TextEmbeddingFlexibleInput = Partial<
+  ConvertOneToOptionalArrays<ConvertOneToOptionalArrays<EmbeddingTaskInput, "model">, "text">
+>;
+export const TextEmbeddingBuilder = (input: TextEmbeddingFlexibleInput) => {
   if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new EmbeddingMultiTextMultiModelTask().addInputData(input).run();
+    return new EmbeddingMultiTextMultiModelTask({ input } as any);
   } else if (Array.isArray(input.model)) {
-    return new EmbeddingMultiModelTask().addInputData(input).run();
+    return new EmbeddingMultiModelTask({ input } as any);
   } else if (Array.isArray(input.text)) {
-    return new EmbeddingMultiTextTask().addInputData(input).run();
+    return new EmbeddingMultiTextTask({ input } as any);
   } else {
-    return new EmbeddingTask().addInputData(input).run();
+    return new EmbeddingTask({ input } as any);
   }
 };
+
+export const TextEmbedding = (input: TextEmbeddingFlexibleInput) => {
+  return TextEmbeddingBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextEmbedding: typeof TextEmbeddingBuilder;
+  }
+}
+
+TaskGraphBuilder.prototype.TextEmbedding = TaskGraphBuilderHelper(TextEmbeddingBuilder);

@@ -24,6 +24,7 @@ import {
   TaskGraph,
   JsonTaskArray,
   JsonTask,
+  TaskGraphBuilder,
 } from "ellmers-core/server";
 
 export function AddBaseCommands(program: Command) {
@@ -172,5 +173,14 @@ export function AddBaseCommands(program: Command) {
       const graph = new TaskGraph();
       graph.addTask(task);
       await runTask(graph);
+    });
+
+  program
+    .command("builder")
+    .description("run based on builder")
+    .action(async () => {
+      const builder = new TaskGraphBuilder();
+      builder.TextEmbedding({ model: "Xenova/LaMini-Flan-T5-783M" });
+      await builder.run();
     });
 }

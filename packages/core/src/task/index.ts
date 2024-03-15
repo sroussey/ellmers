@@ -9,6 +9,7 @@ export * from "./base/Task";
 export * from "./base/TaskRegistry";
 export * from "./base/TaskGraph";
 export * from "./base/TaskGraphRunner";
+export * from "./base/TaskGraphBuilder";
 export * from "./base/ArrayTask";
 export * from "./base/TaskIOTypes";
 export * from "./base/JobQueueTask";
