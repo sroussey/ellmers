@@ -48,6 +48,6 @@
     "@sroussey/transformers": "^2.16.1"
   },
   "engines": {
-    "bun": "^1.0.5"
+    "bun": "^1.0.31"
   }
 }

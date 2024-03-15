@@ -21,9 +21,9 @@ import { findModelByName } from "../../storage/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
   Vector,
-  DownloadTask,
-  DownloadTaskInput,
-  DownloadTaskOutput,
+  DownloadModelTask,
+  DownloadModelTaskInput,
+  DownloadModelTaskOutput,
   EmbeddingTask,
   EmbeddingTaskInput,
   EmbeddingTaskOutput,
@@ -137,9 +137,9 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
  */
 
 export async function HuggingFaceLocal_DownloadRun(
-  task: DownloadTask,
-  runInputData: DownloadTaskInput
-): Promise<DownloadTaskOutput> {
+  task: DownloadModelTask,
+  runInputData: DownloadModelTaskInput
+): Promise<DownloadModelTaskOutput> {
   const model = findModelByName(runInputData.model)! as ONNXTransformerJsModel;
   await getPipeline(task, model);
   return { model: model.name };

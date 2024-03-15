@@ -9,7 +9,7 @@ import {
 import { ModelProcessorEnum } from "../model/Model";
 import { getProviderRegistry } from "../provider/ProviderRegistry";
 import {
-  DownloadTask,
+  DownloadModelTask,
   EmbeddingTask,
   TextGenerationTask,
   TextQuestionAnswerTask,
@@ -21,7 +21,7 @@ export async function registerHuggingfaceLocalTasks() {
   const ProviderRegistry = getProviderRegistry();
 
   ProviderRegistry.registerRunFn(
-    DownloadTask.type,
+    DownloadModelTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_DownloadRun
   );
