@@ -116,20 +116,20 @@ export const TextRewriter = (
   >
 ) => {
   if (Array.isArray(input.model) && Array.isArray(input.prompt) && Array.isArray(input.text)) {
-    return new TextRewriterMultiPromptMultiTextMultiModelTask().addInputData(input).run();
+    return new TextRewriterMultiPromptMultiTextMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.prompt) && Array.isArray(input.text)) {
-    return new TextRewriterMultiPromptMultiTextTask().addInputData(input).run();
+    return new TextRewriterMultiPromptMultiTextTask({ input } as any).run();
   } else if (Array.isArray(input.model) && Array.isArray(input.prompt)) {
-    return new TextRewriterMultiPromptMultiModelTask().addInputData(input).run();
+    return new TextRewriterMultiPromptMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new TextRewriterMultiTextMultiModelTask().addInputData(input).run();
+    return new TextRewriterMultiTextMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.prompt)) {
-    return new TextRewriterMultiPromptTask().addInputData(input).run();
+    return new TextRewriterMultiPromptTask({ input } as any).run();
   } else if (Array.isArray(input.model)) {
-    return new TextRewriterMultiModelTask().addInputData(input).run();
+    return new TextRewriterMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.text)) {
-    return new TextRewriterMultiTextTask().addInputData(input).run();
+    return new TextRewriterMultiTextTask({ input } as any).run();
   } else {
-    return new TextRewriterTask().addInputData(input).run();
+    return new TextRewriterTask({ input } as any).run();
   }
 };

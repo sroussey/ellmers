@@ -135,22 +135,20 @@ export const TextQuestionAnser = (
   >
 ) => {
   if (Array.isArray(input.model) && Array.isArray(input.question) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiQuestionMultiContextMultiModelTask()
-      .addInputData(input)
-      .run();
+    return new TextQuestionAnswerMultiQuestionMultiContextMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.question) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiQuestionMultiContextTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiQuestionMultiContextTask({ input } as any).run();
   } else if (Array.isArray(input.model) && Array.isArray(input.question)) {
-    return new TextQuestionAnswerMultiQuestionMultiModelTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiQuestionMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.model) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiContextMultiModelTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiContextMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.question)) {
-    return new TextQuestionAnswerMultiQuestionTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiQuestionTask({ input } as any).run();
   } else if (Array.isArray(input.model)) {
-    return new TextQuestionAnswerMultiModelTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiModelTask({ input } as any).run();
   } else if (Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiContextTask().addInputData(input).run();
+    return new TextQuestionAnswerMultiContextTask({ input } as any).run();
   } else {
-    return new TextQuestionAnswerTask().addInputData(input).run();
+    return new TextQuestionAnswerTask({ input } as any).run();
   }
 };
