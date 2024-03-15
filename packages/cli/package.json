@@ -14,7 +14,7 @@
     "build-types-map": "tsc --declarationMap",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "bin": "./dist/elmers.js",
+  "bin": "./src/ellmers.js",
   "module": "./dist/lib.js",
   "exports": {
     ".": {
