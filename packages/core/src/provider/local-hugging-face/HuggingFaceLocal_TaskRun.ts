@@ -20,7 +20,7 @@ import {
 import { findModelByName } from "../../storage/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
-  Vector,
+  ElVector,
   DownloadModelTask,
   DownloadModelTaskInput,
   DownloadModelTaskOutput,
@@ -155,20 +155,21 @@ export async function HuggingFaceLocal_EmbeddingRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
-  var vector = await generateEmbedding(runInputData.text, {
+  var hfVector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
     normalize: model.normalize,
   });
 
-  if (vector.size !== model.dimensions) {
+  if (hfVector.size !== model.dimensions) {
     console.warn(
-      `HuggingFaceLocal Embedding vector length does not match model dimensions v${vector.size} != m${model.dimensions}`,
+      `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.dimensions}`,
       runInputData,
-      vector
+      hfVector
     );
-    throw `HuggingFaceLocal Embedding vector length does not match model dimensions v${vector.size} != m${model.dimensions}`;
+    throw `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.dimensions}`;
   }
-  return { vector: vector.data as Vector };
+  const vector = new ElVector(hfVector.data, model.normalize);
+  return { vector };
 }
 
 /**
