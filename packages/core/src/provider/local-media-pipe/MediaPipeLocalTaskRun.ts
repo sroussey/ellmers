@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { DownloadTask, DownloadTaskInput } from "../../task/DownloadModelTask";
+import { DownloadModelTask, DownloadModelTaskInput } from "../../task/DownloadModelTask";
 import { EmbeddingTask, EmbeddingTaskInput } from "../../task/TextEmbeddingTask";
 import { findModelByName } from "../../storage/InMemoryStorage";
 import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
@@ -15,8 +15,8 @@ import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
  * This is a task that downloads and caches a MediaPipe TFJS model.
  */
 export async function MediaPipeTfJsLocal_Download(
-  task: DownloadTask,
-  runInputData: DownloadTaskInput
+  task: DownloadModelTask,
+  runInputData: DownloadModelTaskInput
 ) {
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"

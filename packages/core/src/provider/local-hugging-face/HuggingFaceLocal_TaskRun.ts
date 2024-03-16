@@ -21,9 +21,9 @@ import { findModelByName } from "../../storage/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
   Vector,
-  DownloadTask,
-  DownloadTaskInput,
-  DownloadTaskOutput,
+  DownloadModelTask,
+  DownloadModelTaskInput,
+  DownloadModelTaskOutput,
   EmbeddingTask,
   EmbeddingTaskInput,
   EmbeddingTaskOutput,
@@ -42,8 +42,7 @@ import {
   JobQueueLlmTask,
 } from "task";
 
-env.backends.onnx.logLevel = "error";
-env.backends.onnx.debug = false;
+env.cacheDir = "./.cache";
 
 interface StatusFileBookends {
   status: "initiate" | "download" | "done";
@@ -92,9 +91,9 @@ const pipelines = new Map<ONNXTransformerJsModel, any>();
 const getPipeline = async (
   task: JobQueueLlmTask,
   model: ONNXTransformerJsModel,
-  { quantized, config }: { quantized: boolean; config: any } = {
+  { quantized, config, session_options }: any = {
     quantized: true,
-    config: null,
+    session_options: { logSeverityLevel: 4 },
   }
 ) => {
   if (!pipelines.has(model)) {
@@ -102,7 +101,7 @@ const getPipeline = async (
       model,
       await pipeline(model.pipeline as PipelineType, model.name, {
         quantized,
-        config,
+        session_options,
         progress_callback: downloadProgressCallback(task),
       })
     );
@@ -136,9 +135,9 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
  */
 
 export async function HuggingFaceLocal_DownloadRun(
-  task: DownloadTask,
-  runInputData: DownloadTaskInput
-): Promise<DownloadTaskOutput> {
+  task: DownloadModelTask,
+  runInputData: DownloadModelTaskInput
+): Promise<DownloadModelTaskOutput> {
   const model = findModelByName(runInputData.model)! as ONNXTransformerJsModel;
   await getPipeline(task, model);
   return { model: model.name };

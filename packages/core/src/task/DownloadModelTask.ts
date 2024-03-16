@@ -14,13 +14,13 @@ import {
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { TaskConfig, TaskOutput } from "./base/Task";
+import { TaskOutput } from "./base/Task";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
 
-export type DownloadTaskInput = CreateMappedType<typeof DownloadTask.inputs>;
-export type DownloadTaskOutput = CreateMappedType<typeof DownloadTask.outputs>;
+export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
+export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;
 
-export class DownloadTask extends JobQueueLlmTask {
+export class DownloadModelTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "model",
@@ -36,30 +36,32 @@ export class DownloadTask extends JobQueueLlmTask {
     },
   ] as const;
 
-  declare runInputData: DownloadTaskInput;
-  declare runOutputData: DownloadTaskOutput;
-  declare defaults: Partial<DownloadTaskInput>;
-  constructor(config: JobQueueTaskConfig & { input?: DownloadTaskInput } = {}) {
+  declare runInputData: DownloadModelTaskInput;
+  declare runOutputData: DownloadModelTaskOutput;
+  declare defaults: Partial<DownloadModelTaskInput>;
+  constructor(config: JobQueueTaskConfig & { input?: DownloadModelTaskInput } = {}) {
     super(config);
   }
   runSyncOnly(): TaskOutput {
     this.runOutputData.model = this.runInputData.model;
     return this.runOutputData;
   }
-  static readonly type = "DownloadTask";
+  static readonly type = "DownloadModelTask";
   static readonly category = "Text Model";
 }
-TaskRegistry.registerTask(DownloadTask);
+TaskRegistry.registerTask(DownloadModelTask);
 
-export const DownloadMultiModelTask = arrayTaskFactory<
-  ConvertOneToArray<DownloadTaskInput, "model">,
-  ConvertAllToArrays<DownloadTaskOutput>
->(DownloadTask, "model");
+export const DownloadModelMultiModelTask = arrayTaskFactory<
+  ConvertOneToArray<DownloadModelTaskInput, "model">,
+  ConvertAllToArrays<DownloadModelTaskOutput>
+>(DownloadModelTask, "model");
 
-export const Download = (input: ConvertOneToOptionalArrays<DownloadTaskInput, "model">) => {
+export const DownloadModel = (
+  input: ConvertOneToOptionalArrays<DownloadModelTaskInput, "model">
+) => {
   if (Array.isArray(input.model)) {
-    return new DownloadMultiModelTask({ input } as any).run();
+    return new DownloadModelMultiModelTask({ input } as any).run();
   } else {
-    return new DownloadTask({ input } as any).run();
+    return new DownloadModelTask({ input } as any).run();
   }
 };

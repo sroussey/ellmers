@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Interpreter } from "util/interpreter";
+import { Interpreter } from "../util/interpreter";
 import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";

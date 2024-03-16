@@ -16,10 +16,10 @@ import {
   TextRewriterTask,
   TextSummaryTask,
   TextSummaryMultiModelTask,
-  DownloadTask,
+  DownloadModelTask,
   ModelUseCaseEnum,
   EmbeddingMultiModelTask,
-  DownloadMultiModelTask,
+  DownloadModelMultiModelTask,
   TextRewriterMultiModelTask,
   TaskGraph,
   JsonTaskArray,
@@ -38,13 +38,13 @@ export function AddBaseCommands(program: Command) {
       if (options.model) {
         const model = findModelByName(options.model);
         if (model) {
-          graph.addTask(new DownloadTask({ input: { model: model.name } }));
+          graph.addTask(new DownloadModelTask({ input: { model: model.name } }));
         } else {
           program.error(`Unknown model ${options.model}`);
         }
       } else {
         graph.addTask(
-          new DownloadMultiModelTask({
+          new DownloadModelMultiModelTask({
             input: { model: models.map((m) => m.name) },
           })
         );
@@ -147,7 +147,7 @@ export function AddBaseCommands(program: Command) {
         const exampleJson: JsonTaskArray = [
           {
             id: "1",
-            type: "DownloadTask",
+            type: "DownloadModelTask",
             input: {
               model: "Xenova/LaMini-Flan-T5-783M",
             },
