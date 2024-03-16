@@ -45,7 +45,7 @@
     "typescript": "^5.4.2",
     "vite": "^5.1.6",
     "@mediapipe/tasks-text": "^0.10.12",
-    "@sroussey/transformers": "^2.16.1"
+    "@sroussey/transformers": "^3.0.0-alpha.0"
   },
   "engines": {
     "bun": "^1.0.31"

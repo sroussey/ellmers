@@ -42,8 +42,6 @@ import {
   JobQueueLlmTask,
 } from "task";
 
-env.backends.onnx.logLevel = "error";
-env.backends.onnx.debug = false;
 env.cacheDir = "./.cache";
 
 interface StatusFileBookends {
@@ -93,9 +91,9 @@ const pipelines = new Map<ONNXTransformerJsModel, any>();
 const getPipeline = async (
   task: JobQueueLlmTask,
   model: ONNXTransformerJsModel,
-  { quantized, config }: { quantized: boolean; config: any } = {
+  { quantized, config, session_options }: any = {
     quantized: true,
-    config: null,
+    session_options: { logSeverityLevel: 4 },
   }
 ) => {
   if (!pipelines.has(model)) {
@@ -103,7 +101,7 @@ const getPipeline = async (
       model,
       await pipeline(model.pipeline as PipelineType, model.name, {
         quantized,
-        config,
+        session_options,
         progress_callback: downloadProgressCallback(task),
       })
     );
