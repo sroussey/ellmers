@@ -6,8 +6,10 @@ import { ConcurrencyLimiter } from "../job/ConcurrencyLimiter";
 import { SqliteJobQueue } from "../job/SqliteJobQueue";
 import { getDatabase } from "../util/db_sqlite";
 import { TaskInput, TaskOutput } from "../task/base/Task";
+import { mkdirSync } from "node:fs";
 
-const db = getDatabase("local.db");
+mkdirSync("./.cache", { recursive: true });
+const db = getDatabase("./.cache/local.db");
 
 export async function registerHuggingfaceLocalTasksSqlite() {
   registerHuggingfaceLocalTasks();

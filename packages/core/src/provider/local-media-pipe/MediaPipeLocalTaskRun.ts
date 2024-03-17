@@ -7,9 +7,10 @@
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
 import { DownloadModelTask, DownloadModelTaskInput } from "../../task/DownloadModelTask";
-import { EmbeddingTask, EmbeddingTaskInput } from "../../task/TextEmbeddingTask";
+import { TextEmbeddingTask, TextEmbeddingTaskInput } from "../../task/TextEmbeddingTask";
 import { findModelByName } from "../../storage/InMemoryStorage";
 import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
+import { ElVector } from "task";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
@@ -37,8 +38,8 @@ export async function MediaPipeTfJsLocal_Download(
  * using a MediaPipe TFJS model.
  */
 export async function MediaPipeTfJsLocal_Embedding(
-  task: EmbeddingTask,
-  runInputData: EmbeddingTaskInput
+  task: TextEmbeddingTask,
+  runInputData: TextEmbeddingTaskInput
 ) {
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"
@@ -57,5 +58,5 @@ export async function MediaPipeTfJsLocal_Embedding(
   if (vector?.length !== model.dimensions) {
     throw `MediaPipeTfJsLocal Embedding vector length does not match model dimensions v${vector?.length} != m${model.dimensions}`;
   }
-  return { vector };
+  return { vector: vector ? new ElVector(vector, true) : null };
 }

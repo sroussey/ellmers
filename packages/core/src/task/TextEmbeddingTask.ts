@@ -7,22 +7,23 @@
 
 import {
   ConvertAllToArrays,
-  ConvertOneToArray,
-  ConvertOneToOptionalArrays,
+  ConvertSomeToArray,
+  ConvertSomeToOptionalArray,
   arrayTaskFactory,
 } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
-export type EmbeddingTaskInput = CreateMappedType<typeof EmbeddingTask.inputs>;
-export type EmbeddingTaskOutput = CreateMappedType<typeof EmbeddingTask.outputs>;
+export type TextEmbeddingTaskInput = CreateMappedType<typeof TextEmbeddingTask.inputs>;
+export type TextEmbeddingTaskOutput = CreateMappedType<typeof TextEmbeddingTask.outputs>;
 
 /**
  * This is a task that generates an embedding for a single piece of text
  */
-export class EmbeddingTask extends JobQueueLlmTask {
+export class TextEmbeddingTask extends JobQueueLlmTask {
   public static inputs = [
     {
       id: "text",
@@ -36,50 +37,33 @@ export class EmbeddingTask extends JobQueueLlmTask {
     },
   ] as const;
   public static outputs = [{ id: "vector", name: "Embedding", valueType: "vector" }] as const;
-  constructor(config: JobQueueTaskConfig & { input?: EmbeddingTaskInput } = {}) {
+  constructor(config: JobQueueTaskConfig & { input?: TextEmbeddingTaskInput } = {}) {
     super(config);
   }
-  declare runInputData: EmbeddingTaskInput;
-  declare runOutputData: EmbeddingTaskOutput;
-  declare defaults: Partial<EmbeddingTaskInput>;
-  static readonly type = "EmbeddingTask";
+  declare runInputData: TextEmbeddingTaskInput;
+  declare runOutputData: TextEmbeddingTaskOutput;
+  declare defaults: Partial<TextEmbeddingTaskInput>;
+  static readonly type = "TextEmbeddingTask";
   static readonly category = "Text Model";
 }
-TaskRegistry.registerTask(EmbeddingTask);
+TaskRegistry.registerTask(TextEmbeddingTask);
 
-type EmbeddingMultiTaskOutput = ConvertAllToArrays<EmbeddingTaskOutput>;
+type TextEmbeddingCompoundTaskOutput = ConvertAllToArrays<TextEmbeddingTaskOutput>;
+type TextEmbeddingCompoundTaskInput = ConvertSomeToOptionalArray<TextEmbeddingTaskInput, "model">;
 
-type EmbeddingMultiModelTaskInput = ConvertOneToArray<EmbeddingTaskInput, "model">;
-export const EmbeddingMultiModelTask = arrayTaskFactory<
-  EmbeddingMultiModelTaskInput,
-  EmbeddingMultiTaskOutput
->(EmbeddingTask, "model");
+export const TextEmbeddingCompoundTask = arrayTaskFactory<
+  TextEmbeddingCompoundTaskInput,
+  TextEmbeddingCompoundTaskOutput
+>(TextEmbeddingTask, ["model", "text"]);
 
-type EmbeddingMultiTextTaskInput = ConvertOneToArray<EmbeddingTaskInput, "text">;
-export const EmbeddingMultiTextTask = arrayTaskFactory<
-  EmbeddingMultiTextTaskInput,
-  EmbeddingMultiTaskOutput
->(EmbeddingTask, "text");
-
-type EmbeddingMultiTextMultiModelTaskInput = ConvertOneToArray<
-  EmbeddingMultiModelTaskInput,
-  "text"
->;
-export const EmbeddingMultiTextMultiModelTask = arrayTaskFactory<
-  EmbeddingMultiTextMultiModelTaskInput,
-  EmbeddingMultiTaskOutput
->(EmbeddingMultiModelTask, "text", "EmbeddingMultiTextMultiModelTask");
-
-export const TextEmbedding = (
-  input: ConvertOneToOptionalArrays<ConvertOneToOptionalArrays<EmbeddingTaskInput, "model">, "text">
-) => {
-  if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new EmbeddingMultiTextMultiModelTask().addInputData(input).run();
-  } else if (Array.isArray(input.model)) {
-    return new EmbeddingMultiModelTask().addInputData(input).run();
-  } else if (Array.isArray(input.text)) {
-    return new EmbeddingMultiTextTask().addInputData(input).run();
-  } else {
-    return new EmbeddingTask().addInputData(input).run();
-  }
+export const TextEmbedding = (input: TextEmbeddingCompoundTaskInput) => {
+  return new TextEmbeddingCompoundTask({ input }).run();
 };
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextEmbedding: TaskGraphBuilderHelper<TextEmbeddingCompoundTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.TextEmbedding = TaskGraphBuilderHelper(TextEmbeddingCompoundTask);

@@ -5,16 +5,12 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import {
-  ConvertAllToArrays,
-  ConvertOneToArray,
-  ConvertOneToOptionalArrays,
-  arrayTaskFactory,
-} from "./base/ArrayTask";
+import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextRewriterTaskInput = CreateMappedType<typeof TextRewriterTask.inputs>;
 export type TextRewriterTaskOutput = CreateMappedType<typeof TextRewriterTask.outputs>;
@@ -53,83 +49,29 @@ export class TextRewriterTask extends JobQueueLlmTask {
 }
 TaskRegistry.registerTask(TextRewriterTask);
 
-type TextRewriterMultiTaskOutput = ConvertAllToArrays<TextRewriterTaskOutput>;
+type TextRewriterCompoundTaskOutput = ConvertAllToArrays<TextRewriterTaskOutput>;
 
-type TextRewriterMultiModelTaskInput = ConvertOneToArray<TextRewriterTaskInput, "model">;
-export const TextRewriterMultiModelTask = arrayTaskFactory<
-  TextRewriterMultiModelTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterTask, "model");
-
-type TextRewriterMultiTextTaskInput = ConvertOneToArray<TextRewriterTaskInput, "text">;
-export const TextRewriterMultiTextTask = arrayTaskFactory<
-  TextRewriterMultiTextTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterTask, "text");
-
-type TextRewriterMultiPromptTaskInput = ConvertOneToArray<TextRewriterTaskInput, "prompt">;
-export const TextRewriterMultiPromptTask = arrayTaskFactory<
-  TextRewriterMultiPromptTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterTask, "prompt");
-
-type TextRewriterMultiTextMultiModelTaskInput = ConvertOneToArray<
-  TextRewriterMultiModelTaskInput,
-  "text"
+type TextRewriterCompoundTaskInput = ConvertSomeToOptionalArray<
+  TextRewriterTaskInput,
+  "model" | "text" | "prompt"
 >;
-export const TextRewriterMultiTextMultiModelTask = arrayTaskFactory<
-  TextRewriterMultiTextMultiModelTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterMultiModelTask, "text", "TextRewriterMultiTextMultiModelTask");
+export const TextRewriterCompoundTask = arrayTaskFactory<
+  TextRewriterCompoundTaskInput,
+  TextRewriterCompoundTaskOutput
+>(TextRewriterTask, ["model", "text", "prompt"]);
 
-type TextRewriterMultiPromptMultiModelTaskInput = ConvertOneToArray<
-  TextRewriterMultiModelTaskInput,
-  "prompt"
->;
-export const TextRewriterMultiPromptMultiModelTask = arrayTaskFactory<
-  TextRewriterMultiPromptMultiModelTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterMultiModelTask, "text", "TextRewriterMultiPromptMultiModelTask");
-
-type TextRewriterMultiPromptMultiTextTaskInput = ConvertOneToArray<
-  TextRewriterMultiTextTaskInput,
-  "prompt"
->;
-export const TextRewriterMultiPromptMultiTextTask = arrayTaskFactory<
-  TextRewriterMultiPromptMultiTextTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterMultiPromptTask, "text", "TextRewriterMultiPromptMultiTextTask");
-
-type TextRewriterMultiPromptMultiTextMultiModelTaskInput = ConvertOneToArray<
-  TextRewriterMultiPromptMultiTextTaskInput,
-  "model"
->;
-export const TextRewriterMultiPromptMultiTextMultiModelTask = arrayTaskFactory<
-  TextRewriterMultiPromptMultiTextMultiModelTaskInput,
-  TextRewriterMultiTaskOutput
->(TextRewriterMultiPromptMultiTextTask, "model", "TextRewriterMultiPromptMultiTextMultiModelTask");
-
-export const TextRewriter = (
-  input: ConvertOneToOptionalArrays<
-    ConvertOneToOptionalArrays<ConvertOneToOptionalArrays<TextRewriterTaskInput, "model">, "text">,
-    "prompt"
-  >
-) => {
-  if (Array.isArray(input.model) && Array.isArray(input.prompt) && Array.isArray(input.text)) {
-    return new TextRewriterMultiPromptMultiTextMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.prompt) && Array.isArray(input.text)) {
-    return new TextRewriterMultiPromptMultiTextTask({ input } as any).run();
-  } else if (Array.isArray(input.model) && Array.isArray(input.prompt)) {
-    return new TextRewriterMultiPromptMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new TextRewriterMultiTextMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.prompt)) {
-    return new TextRewriterMultiPromptTask({ input } as any).run();
-  } else if (Array.isArray(input.model)) {
-    return new TextRewriterMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.text)) {
-    return new TextRewriterMultiTextTask({ input } as any).run();
+export const TextRewriter = (input: TextRewriterCompoundTaskInput) => {
+  if (Array.isArray(input.model) || Array.isArray(input.text) || Array.isArray(input.prompt)) {
+    return new TextRewriterCompoundTask({ input }).run();
   } else {
-    return new TextRewriterTask({ input } as any).run();
+    return new TextRewriterTask({ input } as { input: TextRewriterTaskInput }).run();
   }
 };
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextRewriter: TaskGraphBuilderHelper<TextRewriterCompoundTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.TextRewriter = TaskGraphBuilderHelper(TextRewriterCompoundTask);

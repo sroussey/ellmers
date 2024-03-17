@@ -12,18 +12,13 @@ import {
   findAllModels,
   findModelByName,
   findModelByUseCase,
-  EmbeddingTask,
-  TextRewriterTask,
-  TextSummaryTask,
-  TextSummaryMultiModelTask,
   DownloadModelTask,
   ModelUseCaseEnum,
-  EmbeddingMultiModelTask,
-  DownloadModelMultiModelTask,
-  TextRewriterMultiModelTask,
   TaskGraph,
   JsonTaskArray,
   JsonTask,
+  TaskGraphBuilder,
+  DownloadModelCompoundTask,
 } from "ellmers-core/server";
 
 export function AddBaseCommands(program: Command) {
@@ -43,7 +38,7 @@ export function AddBaseCommands(program: Command) {
         }
       } else {
         graph.addTask(
-          new DownloadModelMultiModelTask({
+          new DownloadModelCompoundTask({
             input: { model: models.map((m) => m.name) },
           })
         );
@@ -57,24 +52,16 @@ export function AddBaseCommands(program: Command) {
     .argument("<text>", "text to embed")
     .option("--model <name>", "model to use")
     .action(async (text: string, options) => {
-      const graph = new TaskGraph();
-      if (options.model) {
-        const model = findModelByName(options.model);
-        if (model) {
-          graph.addTask(new EmbeddingTask({ input: { model: model.name, text } }));
-        } else {
-          program.error(`Unknown model ${options.model}`);
-        }
+      const model = options.model
+        ? findModelByName(options.model)?.name
+        : findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING).map((m) => m.name);
+      if (!model) {
+        program.error(`Unknown model ${options.model}`);
       } else {
-        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING);
-        graph.addTask(
-          new EmbeddingMultiModelTask({
-            name: "Embed several",
-            input: { text, model: models.map((m) => m.name) },
-          })
-        );
+        const build = new TaskGraphBuilder();
+        build.TextEmbedding({ model, text });
+        await runTask(build._graph);
       }
-      await runTask(graph);
     });
 
   program
@@ -83,58 +70,35 @@ export function AddBaseCommands(program: Command) {
     .argument("<text>", "text to embed")
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
-      const graph = new TaskGraph();
-      if (options.model) {
-        const model = findModelByName(options.model);
-        if (model) {
-          graph.addTask(new TextSummaryTask({ input: { model: model.name, text } }));
-        } else {
-          program.error(`Unknown model ${options.model}`);
-        }
+      const model = options.model
+        ? findModelByName(options.model)?.name
+        : findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION).map((m) => m.name);
+      if (!model) {
+        program.error(`Unknown model ${options.model}`);
       } else {
-        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION);
-        graph.addTask(
-          new TextSummaryMultiModelTask({
-            input: { text, model: models.map((m) => m.name) },
-          })
-        );
+        const build = new TaskGraphBuilder();
+        build.TextSummary({ model, text });
+        await runTask(build._graph);
       }
-      await runTask(graph);
     });
 
   program
     .command("rewrite")
     .description("rewrite text")
     .argument("<text>", "text to rewrite")
-    .option("--instruction <instruction>", "instruction for how to rewrite", "")
+    .option("--prompt <prompt>", "instruction for how to rewrite", "")
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
-      const graph = new TaskGraph();
-      if (options.model) {
-        const model = findModelByName(options.model);
-        if (model) {
-          graph.addTask(
-            new TextRewriterTask({
-              input: { model: model.name, text, prompt: options.instruction },
-            })
-          );
-        } else {
-          program.error(`Unknown model ${options.model}`);
-        }
+      const model = options.model
+        ? findModelByName(options.model)?.name
+        : findModelByUseCase(ModelUseCaseEnum.TEXT_REWRITING).map((m) => m.name);
+      if (!model) {
+        program.error(`Unknown model ${options.model}`);
       } else {
-        let models = findModelByUseCase(ModelUseCaseEnum.TEXT_GENERATION);
-        graph.addTask(
-          new TextRewriterMultiModelTask({
-            input: {
-              text,
-              prompt: options.instruction,
-              model: models.map((m) => m.name),
-            },
-          })
-        );
+        const build = new TaskGraphBuilder();
+        build.TextRewriter({ model, text, prompt: options.prompt });
+        await runTask(build._graph);
       }
-
-      await runTask(graph);
     });
 
   program
@@ -172,5 +136,14 @@ export function AddBaseCommands(program: Command) {
       const graph = new TaskGraph();
       graph.addTask(task);
       await runTask(graph);
+    });
+
+  program
+    .command("builder")
+    .description("run based on builder")
+    .action(async () => {
+      const builder = new TaskGraphBuilder();
+      builder.TextEmbedding({ model: "Xenova/LaMini-Flan-T5-783M" });
+      await builder.run();
     });
 }

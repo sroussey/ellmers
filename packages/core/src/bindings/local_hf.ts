@@ -10,7 +10,7 @@ import { ModelProcessorEnum } from "../model/Model";
 import { getProviderRegistry } from "../provider/ProviderRegistry";
 import {
   DownloadModelTask,
-  EmbeddingTask,
+  TextEmbeddingTask,
   TextGenerationTask,
   TextQuestionAnswerTask,
   TextRewriterTask,
@@ -27,7 +27,7 @@ export async function registerHuggingfaceLocalTasks() {
   );
 
   ProviderRegistry.registerRunFn(
-    EmbeddingTask.type,
+    TextEmbeddingTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_EmbeddingRun
   );

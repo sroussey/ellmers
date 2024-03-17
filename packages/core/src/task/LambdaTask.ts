@@ -6,6 +6,7 @@
 //    *******************************************************************************
 
 import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -25,7 +26,7 @@ export class LambdaTask extends SingleTask {
       valueType: "any",
     },
   ] as const;
-  constructor(config: TaskConfig & LambdaTaskInput) {
+  constructor(config: TaskConfig & { input?: LambdaTaskInput } = {}) {
     super(config);
   }
   runSyncOnly() {
@@ -41,3 +42,19 @@ export class LambdaTask extends SingleTask {
   }
 }
 TaskRegistry.registerTask(LambdaTask);
+
+const LambdaBuilder = (input: LambdaTaskInput) => {
+  return new LambdaTask({ input });
+};
+
+export const Lambda = (input: LambdaTaskInput) => {
+  return LambdaBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    Lambda: TaskGraphBuilderHelper<LambdaTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.Lambda = TaskGraphBuilderHelper(LambdaTask);

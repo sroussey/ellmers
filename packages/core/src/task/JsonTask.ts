@@ -5,8 +5,9 @@
 // //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 // //    *******************************************************************************
 
-import { CompoundTask, Task, TaskConfig, TaskInput } from "./base/Task";
+import { CompoundTask, TaskConfig, TaskInput } from "./base/Task";
 import { DataFlow, TaskGraph } from "./base/TaskGraph";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -103,3 +104,21 @@ export class JsonTask extends CompoundTask {
   static readonly type = "JsonTask";
   static readonly category = "Utility";
 }
+
+TaskRegistry.registerTask(JsonTask);
+
+const JsonBuilder = (input: JsonTaskInput) => {
+  return new JsonTask({ input });
+};
+
+export const Json = (input: JsonTaskInput) => {
+  return JsonBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    Json: TaskGraphBuilderHelper<JsonTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.Json = TaskGraphBuilderHelper(JsonTask);

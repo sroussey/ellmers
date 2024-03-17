@@ -8,7 +8,12 @@
 import { EventEmitter } from "eventemitter3";
 import { TaskGraph } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
-import type { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
+import {
+  validateItem,
+  type TaskInputDefinition,
+  type TaskOutputDefinition,
+  ValueTypesIndex,
+} from "./TaskIOTypes";
 
 export enum TaskStatus {
   PENDING = "NEW",
@@ -53,7 +58,7 @@ export interface IConfig {
   provenance?: TaskInput;
 }
 
-abstract class TaskBase {
+export abstract class TaskBase {
   // information about the task that should be overriden by the subclasses
   static readonly type: TaskTypeName = "TaskBase";
   static readonly category: string = "Hidden";
@@ -186,6 +191,57 @@ abstract class TaskBase {
     }
     return this;
   }
+
+  validateItem(valueType: string, item: any) {
+    return validateItem(valueType as ValueTypesIndex, item);
+  }
+  validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
+    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
+    const inputdef = inputdefs.find((def) => def.id === inputId);
+    if (!inputdef) {
+      return false;
+    }
+    if (typeof input !== "object") return false;
+    if (!inputdef.defaultValue && input[inputId] === undefined) {
+      // if there is no default value, that implies the value is required
+      return false;
+    } else if (input[inputId] === undefined) {
+      input[inputId] = inputdef.defaultValue;
+    }
+    if (inputdef.isArray) {
+      if (
+        (inputdef.valueType === "vector" && !Array.isArray(input[inputId][0])) ||
+        !Array.isArray(input[inputId])
+      ) {
+        input[inputId] = [input[inputId]];
+      }
+    }
+    // check the length of the vectors are the same
+    if (inputdef.valueType === "vector" && inputdef.isArray) {
+      const len = input[inputId][0].length;
+      for (const item of input[inputId]) {
+        if (item.length !== len) {
+          return false;
+        }
+      }
+    }
+    const inputlist = inputdef.isArray ? input[inputId] : [input[inputId]];
+    for (const item of inputlist) {
+      if (this.validateItem(inputdef.valueType as string, item) === false) return false;
+    }
+    return true;
+  }
+
+  validateInputData(input: Partial<TaskInput>) {
+    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
+    for (const inputdef of inputdefs) {
+      if (this.validateInputItem(input, inputdef.id) === false) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   async run(): Promise<TaskOutput> {
     this.emit("start");
     const result = this.runSyncOnly();

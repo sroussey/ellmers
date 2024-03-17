@@ -7,6 +7,7 @@
 
 import { Interpreter } from "../util/interpreter";
 import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -37,7 +38,7 @@ export class JavaScriptTask extends SingleTask {
       valueType: "any",
     },
   ] as const;
-  constructor(config: TaskConfig & JavaScriptTaskInput) {
+  constructor(config: TaskConfig & { input?: JavaScriptTaskInput } = {}) {
     super(config);
   }
   runSyncOnly() {
@@ -54,3 +55,19 @@ export class JavaScriptTask extends SingleTask {
   }
 }
 TaskRegistry.registerTask(JavaScriptTask);
+
+const JavaScriptBuilder = (input: JavaScriptTaskInput) => {
+  return new JavaScriptTask({ input });
+};
+
+export const JavaScript = (input: JavaScriptTaskInput) => {
+  return JavaScriptBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    JavaScript: TaskGraphBuilderHelper<JavaScriptTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.JavaScript = TaskGraphBuilderHelper(JavaScriptTask);
