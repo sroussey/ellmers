@@ -7,14 +7,15 @@
 
 import {
   ConvertAllToArrays,
-  ConvertOneToArray,
-  ConvertOneToOptionalArrays,
+  ConvertSomeToArray,
+  ConvertSomeToOptionalArray,
   arrayTaskFactory,
 } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
 export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTask.outputs>;
@@ -47,42 +48,25 @@ export class TextGenerationTask extends JobQueueLlmTask {
 }
 TaskRegistry.registerTask(TextGenerationTask);
 
-type TextGenerationMultiTaskOutput = ConvertAllToArrays<TextGenerationTaskOutput>;
+type TextGenerationCompoundOutput = ConvertAllToArrays<TextGenerationTaskOutput>;
 
-type TextGenerationMultiModelTaskInput = ConvertOneToArray<TextGenerationTaskInput, "model">;
-export const TextGenerationMultiModelTask = arrayTaskFactory<
-  TextGenerationMultiModelTaskInput,
-  TextGenerationMultiTaskOutput
->(TextGenerationTask, "model");
-
-type TextGenerationMultiPromptTaskInput = ConvertOneToArray<TextGenerationTaskInput, "prompt">;
-export const TextGenerationMultiPromptTask = arrayTaskFactory<
-  TextGenerationMultiPromptTaskInput,
-  TextGenerationMultiTaskOutput
->(TextGenerationTask, "prompt");
-
-type TextGenerationMultiPromptMultiModelTaskInput = ConvertOneToArray<
-  TextGenerationMultiModelTaskInput,
-  "prompt"
+type TextGenerationCompoundTaskInput = ConvertSomeToOptionalArray<
+  TextGenerationTaskInput,
+  "model" | "prompt"
 >;
-export const TextGenerationMultiPromptMultiModelTask = arrayTaskFactory<
-  TextGenerationMultiPromptMultiModelTaskInput,
-  TextGenerationMultiTaskOutput
->(TextGenerationMultiModelTask, "prompt", "TextGenerationMultiPromptMultiModelTask");
+export const TextGenerationCompoundTask = arrayTaskFactory<
+  TextGenerationCompoundTaskInput,
+  TextGenerationCompoundOutput
+>(TextGenerationTask, ["model", "prompt"]);
 
-export const TextGeneration = (
-  input: ConvertOneToOptionalArrays<
-    ConvertOneToOptionalArrays<TextGenerationTaskInput, "model">,
-    "prompt"
-  >
-) => {
-  if (Array.isArray(input.model) && Array.isArray(input.prompt)) {
-    return new TextGenerationMultiPromptMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.model)) {
-    return new TextGenerationMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.prompt)) {
-    return new TextGenerationMultiPromptTask({ input } as any).run();
-  } else {
-    return new TextGenerationTask({ input } as any).run();
-  }
+export const TextGeneration = (input: TextGenerationCompoundTaskInput) => {
+  return new TextGenerationCompoundTask({ input }).run();
 };
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextGeneration: TaskGraphBuilderHelper<TextGenerationCompoundTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.TextGeneration = TaskGraphBuilderHelper(TextGenerationCompoundTask);

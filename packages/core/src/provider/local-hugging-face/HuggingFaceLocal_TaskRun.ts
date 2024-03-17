@@ -24,9 +24,9 @@ import {
   DownloadModelTask,
   DownloadModelTaskInput,
   DownloadModelTaskOutput,
-  EmbeddingTask,
-  EmbeddingTaskInput,
-  EmbeddingTaskOutput,
+  TextEmbeddingTask,
+  TextEmbeddingTaskInput,
+  TextEmbeddingTaskOutput,
   TextGenerationTask,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
@@ -123,8 +123,8 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
     const decodedText = instance.tokenizer.decode(beams[0].output_token_ids, {
       skip_special_tokens: true,
     });
-    task.progress = 60;
-    task.emit("progress", decodedText);
+    task.progress = Math.min(98, Math.max(10, decodedText.split(" ").length));
+    task.emit("progress", task.progress, decodedText);
   };
 }
 
@@ -137,10 +137,10 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
 export async function HuggingFaceLocal_DownloadRun(
   task: DownloadModelTask,
   runInputData: DownloadModelTaskInput
-): Promise<DownloadModelTaskOutput> {
+): Promise<Partial<DownloadModelTaskOutput>> {
   const model = findModelByName(runInputData.model)! as ONNXTransformerJsModel;
   await getPipeline(task, model);
-  return { model: model.name };
+  return { model: model.name, dimensions: model.dimensions || 0, normalize: model.normalize };
 }
 
 /**
@@ -149,9 +149,9 @@ export async function HuggingFaceLocal_DownloadRun(
  * Model pipeline must be "feature-extraction"
  */
 export async function HuggingFaceLocal_EmbeddingRun(
-  task: EmbeddingTask,
-  runInputData: EmbeddingTaskInput
-): Promise<EmbeddingTaskOutput> {
+  task: TextEmbeddingTask,
+  runInputData: TextEmbeddingTaskInput
+): Promise<TextEmbeddingTaskOutput> {
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
@@ -273,6 +273,6 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   }
 
   return {
-    answer: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
+    text: (results[0] as DocumentQuestionAnsweringSingle)?.answer,
   };
 }

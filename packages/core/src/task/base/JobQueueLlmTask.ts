@@ -14,7 +14,7 @@ import { JobQueueTask, JobQueueTaskConfig } from "./JobQueueTask";
 import type { TaskOutput } from "./Task";
 import { getProviderRegistry } from "provider/ProviderRegistry";
 
-export abstract class JobQueueLlmTask extends JobQueueTask {
+export class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";
 
   constructor(config: JobQueueTaskConfig = {}) {

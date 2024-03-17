@@ -7,14 +7,15 @@
 
 import {
   ConvertAllToArrays,
-  ConvertOneToArray,
-  ConvertOneToOptionalArrays,
+  ConvertSomeToArray,
+  ConvertSomeToOptionalArray,
   arrayTaskFactory,
 } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextQuestionAnswerTaskInput = CreateMappedType<typeof TextQuestionAnswerTask.inputs>;
 export type TextQuestionAnswerTaskOutput = CreateMappedType<typeof TextQuestionAnswerTask.outputs>;
@@ -40,7 +41,7 @@ export class TextQuestionAnswerTask extends JobQueueLlmTask {
       valueType: "text_question_answering_model",
     },
   ] as const;
-  public static outputs = [{ id: "answer", name: "Answer", valueType: "text" }] as const;
+  public static outputs = [{ id: "text", name: "Answer", valueType: "text" }] as const;
   constructor(config: JobQueueTaskConfig & { input?: TextQuestionAnswerTaskInput } = {}) {
     super(config);
   }
@@ -52,103 +53,28 @@ export class TextQuestionAnswerTask extends JobQueueLlmTask {
 }
 TaskRegistry.registerTask(TextQuestionAnswerTask);
 
-type TextQuestionAnswerMultiTaskOutput = ConvertAllToArrays<TextQuestionAnswerTaskOutput>;
+type TextQuestionAnswerCompoundTaskOutput = ConvertAllToArrays<TextQuestionAnswerTaskOutput>;
 
-type TextQuestionAnswerMultiModelTaskInput = ConvertOneToArray<
+type TextQuestionAnswerCompoundTaskInput = ConvertSomeToOptionalArray<
   TextQuestionAnswerTaskInput,
-  "model"
+  "model" | "context" | "question"
 >;
-export const TextQuestionAnswerMultiModelTask = arrayTaskFactory<
-  TextQuestionAnswerMultiModelTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(TextQuestionAnswerTask, "model");
 
-type TextQuestionAnswerMultiContextTaskInput = ConvertOneToArray<
-  TextQuestionAnswerTaskInput,
-  "context"
->;
-export const TextQuestionAnswerMultiContextTask = arrayTaskFactory<
-  TextQuestionAnswerMultiContextTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(TextQuestionAnswerTask, "context");
+export const TextQuestionAnswerCompoundTask = arrayTaskFactory<
+  TextQuestionAnswerCompoundTaskInput,
+  TextQuestionAnswerCompoundTaskOutput
+>(TextQuestionAnswerTask, ["model", "context", "question"]);
 
-type TextQuestionAnswerMultiQuestionTaskInput = ConvertOneToArray<
-  TextQuestionAnswerTaskInput,
-  "question"
->;
-export const TextQuestionAnswerMultiQuestionTask = arrayTaskFactory<
-  TextQuestionAnswerMultiQuestionTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(TextQuestionAnswerTask, "question");
-
-type TextQuestionAnswerMultiContextMultiModelTaskInput = ConvertOneToArray<
-  TextQuestionAnswerMultiModelTaskInput,
-  "context"
->;
-export const TextQuestionAnswerMultiContextMultiModelTask = arrayTaskFactory<
-  TextQuestionAnswerMultiContextMultiModelTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(TextQuestionAnswerMultiModelTask, "context", "TextQuestionAnswerMultiContextMultiModelTask");
-
-type TextQuestionAnswerMultiQuestionMultiModelTaskInput = ConvertOneToArray<
-  TextQuestionAnswerMultiModelTaskInput,
-  "question"
->;
-export const TextQuestionAnswerMultiQuestionMultiModelTask = arrayTaskFactory<
-  TextQuestionAnswerMultiQuestionMultiModelTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(TextQuestionAnswerMultiModelTask, "context", "TextQuestionAnswerMultiQuestionMultiModelTask");
-
-type TextQuestionAnswerMultiQuestionMultiContextTaskInput = ConvertOneToArray<
-  TextQuestionAnswerMultiContextTaskInput,
-  "question"
->;
-export const TextQuestionAnswerMultiQuestionMultiContextTask = arrayTaskFactory<
-  TextQuestionAnswerMultiQuestionMultiContextTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(
-  TextQuestionAnswerMultiQuestionTask,
-  "context",
-  "TextQuestionAnswerMultiQuestionMultiContextTask"
-);
-
-type TextQuestionAnswerMultiQuestionMultiContextMultiModelTaskInput = ConvertOneToArray<
-  TextQuestionAnswerMultiQuestionMultiContextTaskInput,
-  "model"
->;
-export const TextQuestionAnswerMultiQuestionMultiContextMultiModelTask = arrayTaskFactory<
-  TextQuestionAnswerMultiQuestionMultiContextMultiModelTaskInput,
-  TextQuestionAnswerMultiTaskOutput
->(
-  TextQuestionAnswerMultiQuestionMultiContextTask,
-  "model",
-  "TextQuestionAnswerMultiQuestionMultiContextMultiModelTask"
-);
-
-export const TextQuestionAnser = (
-  input: ConvertOneToOptionalArrays<
-    ConvertOneToOptionalArrays<
-      ConvertOneToOptionalArrays<TextQuestionAnswerTaskInput, "model">,
-      "context"
-    >,
-    "question"
-  >
-) => {
-  if (Array.isArray(input.model) && Array.isArray(input.question) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiQuestionMultiContextMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.question) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiQuestionMultiContextTask({ input } as any).run();
-  } else if (Array.isArray(input.model) && Array.isArray(input.question)) {
-    return new TextQuestionAnswerMultiQuestionMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.model) && Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiContextMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.question)) {
-    return new TextQuestionAnswerMultiQuestionTask({ input } as any).run();
-  } else if (Array.isArray(input.model)) {
-    return new TextQuestionAnswerMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.context)) {
-    return new TextQuestionAnswerMultiContextTask({ input } as any).run();
-  } else {
-    return new TextQuestionAnswerTask({ input } as any).run();
-  }
+export const TextQuestionAnswer = (input: TextQuestionAnswerCompoundTaskInput) => {
+  return new TextQuestionAnswerCompoundTask({ input }).run();
 };
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextQuestionAnswer: TaskGraphBuilderHelper<TextQuestionAnswerCompoundTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.TextQuestionAnswer = TaskGraphBuilderHelper(
+  TextQuestionAnswerCompoundTask
+);

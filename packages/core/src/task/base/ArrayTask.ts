@@ -10,15 +10,15 @@ import { TaskGraph } from "./TaskGraph";
 import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 
-export type ConvertOneToOptionalArrays<T, K extends keyof T> = {
+export type ConvertSomeToOptionalArray<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> | T[P] : T[P];
 };
 
-export type ConvertAllToOptionalArrays<T> = {
+export type ConvertAllToOptionalArray<T> = {
   [P in keyof T]: Array<T[P]> | T[P];
 };
 
-export type ConvertOneToArray<T, K extends keyof T> = {
+export type ConvertSomeToArray<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> : T[P];
 };
 
@@ -60,16 +60,80 @@ function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
   return results as D[];
 }
 
+function convertMultipleToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
+  io: D[],
+  ids: Array<string | number | symbol>
+) {
+  const results: D[] = [];
+  for (const item of io) {
+    const newItem: Writeable<D> = { ...item };
+    if (ids.includes(newItem.id)) {
+      newItem.isArray = true;
+    }
+    results.push(newItem);
+  }
+  return results as D[];
+}
+
+function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (keyof T)[]): T[] {
+  // Helper function to check if a property is an array
+  const isArray = (value: any): value is Array<any> => Array.isArray(value);
+
+  // Prepare arrays for combination generation
+  const arraysToCombine: any[][] = inputMakeArray.map((key) =>
+    isArray(input[key]) ? input[key] : []
+  );
+
+  // Initialize indices and combinations
+  let indices = arraysToCombine.map(() => 0);
+  let combinations: number[][] = [];
+  let done = false;
+
+  while (!done) {
+    combinations.push([...indices]); // Add current combination of indices
+
+    // Move to the next combination of indices
+    for (let i = indices.length - 1; i >= 0; i--) {
+      if (++indices[i] < arraysToCombine[i].length) break; // Increment current index if possible
+      if (i === 0) done = true; // All combinations have been generated
+      else indices[i] = 0; // Reset current index and move to the next position
+    }
+  }
+
+  // Build objects based on the combinations
+  return combinations.map((combination) => {
+    let result = { ...input }; // Start with a shallow copy of the input
+
+    // Set values from the arrays based on the current combination
+    combination.forEach((valueIndex, arrayIndex) => {
+      const key = inputMakeArray[arrayIndex];
+      if (isArray(input[key])) result[key as keyof T] = input[key][valueIndex];
+    });
+
+    // Remove properties not in inputMakeArray from the result
+    Object.keys(result).forEach((key) => {
+      if (!inputMakeArray.includes(key as keyof T)) {
+        delete result[key as keyof T];
+      }
+    });
+
+    return result;
+  });
+}
+
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
   PluralOutputType extends TaskOutput = TaskOutput
 >(
   taskClass: typeof SingleTask | typeof CompoundTask,
-  inputMakeArray: keyof PluralInputType,
+  inputMakeArray: Array<keyof PluralInputType>,
   name?: string
 ) {
   type NonPluralOutputType = CreateMappedType<typeof taskClass.inputs>;
-  const inputs = convertToArray<TaskInputDefinition>(Array.from(taskClass.inputs), inputMakeArray);
+  const inputs = convertMultipleToArray<TaskInputDefinition>(
+    Array.from(taskClass.inputs),
+    inputMakeArray
+  );
   const outputs = convertToArray<TaskOutputDefinition>(Array.from(taskClass.outputs));
 
   const nameWithoutTask = taskClass.type.slice(0, -4);
@@ -95,14 +159,12 @@ export function arrayTaskFactory<
       this.regenerateGraph();
     }
     regenerateGraph() {
-      if (Array.isArray(this.runInputData[inputMakeArray])) {
-        this.subGraph = new TaskGraph();
-        this.runInputData[inputMakeArray].forEach((arrayItem: any, index: number) => {
-          const input = { ...this.runInputData, [inputMakeArray]: arrayItem };
-          const current = new taskClass({ id: this.config.id + "-child-" + (index + 1), input });
-          this.subGraph.addTask(current);
-        });
-      }
+      this.subGraph = new TaskGraph();
+      const combinations = generateCombinations(this.runInputData, inputMakeArray);
+      combinations.forEach((input, index) => {
+        const current = new taskClass({ id: this.config.id + "-child-" + (index + 1), input });
+        this.subGraph.addTask(current);
+      });
     }
 
     addInputData<PluralInputType>(overrides: Partial<PluralInputType>) {

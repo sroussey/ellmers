@@ -6,6 +6,7 @@
 //    *******************************************************************************
 
 import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType, ElVector, ValueTypesIndex } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -28,15 +29,15 @@ export class SimilarityTask extends SingleTask {
   declare runOutputData: TaskOutput;
   public static inputs = [
     {
-      id: "query",
-      name: "Query",
-      valueType: "vector",
-    },
-    {
       id: "input",
       name: "Inputs",
       valueType: "vector",
       isArray: true,
+    },
+    {
+      id: "query",
+      name: "Query",
+      valueType: "vector",
     },
     {
       id: "k",
@@ -65,9 +66,11 @@ export class SimilarityTask extends SingleTask {
       isArray: true,
     },
   ] as const;
-  constructor(config: TaskConfig & SimilarityTaskInput) {
+
+  constructor(config: TaskConfig & { input?: SimilarityTaskInput } = {}) {
     super(config);
   }
+
   validateItem(valueType: string, item: any): boolean {
     if (!super.validateItem(valueType as ValueTypesIndex, item)) return false;
     if (valueType === "similarity_fn") {
@@ -75,6 +78,7 @@ export class SimilarityTask extends SingleTask {
     }
     return true;
   }
+
   validateInputItem(input: Partial<SimilarityTaskInput>, inputId: keyof SimilarityTaskInput) {
     const parent = super.validateInputItem(input, inputId);
     if (!parent) return false;
@@ -128,6 +132,22 @@ export class SimilarityTask extends SingleTask {
   }
 }
 TaskRegistry.registerTask(SimilarityTask);
+
+const SimilarityBuilder = (input: SimilarityTaskInput) => {
+  return new SimilarityTask({ input });
+};
+
+export const Similarity = (input: SimilarityTaskInput) => {
+  return SimilarityBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    Similarity: TaskGraphBuilderHelper<SimilarityTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.Similarity = TaskGraphBuilderHelper(SimilarityTask);
 
 // ===============================================================================
 

@@ -98,7 +98,7 @@ export const flanT5small = new ONNXTransformerJsModel(
 
 export const flanT5p786m = new ONNXTransformerJsModel(
   "Xenova/LaMini-Flan-T5-783M",
-  [ModelUseCaseEnum.TEXT_GENERATION],
+  [ModelUseCaseEnum.TEXT_GENERATION, ModelUseCaseEnum.TEXT_REWRITING],
   "text2text-generation"
 );
 

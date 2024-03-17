@@ -6,6 +6,7 @@
 //    *******************************************************************************
 
 import { OutputTask } from "./base/OutputTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -43,3 +44,15 @@ export class DebugLogTask extends OutputTask {
   }
 }
 TaskRegistry.registerTask(DebugLogTask);
+
+export const DebugLog = (input: DebugLogTaskInput) => {
+  return new DebugLogTask({ input }).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    DebugLog: TaskGraphBuilderHelper<DebugLogTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.DebugLog = TaskGraphBuilderHelper(DebugLogTask);

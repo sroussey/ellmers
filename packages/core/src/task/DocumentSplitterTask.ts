@@ -7,6 +7,7 @@
 
 import { Document, DocumentFragment } from "../source/Document";
 import { SingleTask } from "./base/Task";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
@@ -63,3 +64,19 @@ export class DocumentSplitterTask extends SingleTask {
   }
 }
 TaskRegistry.registerTask(DocumentSplitterTask);
+
+const DocumentSplitterBuilder = (input: Partial<DocumentSplitterTaskInput>) => {
+  return new DocumentSplitterTask({ input });
+};
+
+export const DocumentSplitter = (input: DocumentSplitterTaskInput) => {
+  return DocumentSplitterBuilder(input).run();
+};
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    DocumentSplitter: TaskGraphBuilderHelper<DocumentSplitterTask>;
+  }
+}
+
+TaskGraphBuilder.prototype.DocumentSplitter = TaskGraphBuilderHelper(DocumentSplitterTask);

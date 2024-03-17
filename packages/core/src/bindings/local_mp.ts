@@ -4,7 +4,7 @@ import {
 } from "../provider/local-media-pipe/MediaPipeLocalTaskRun";
 import { ModelProcessorEnum } from "../model/Model";
 import { getProviderRegistry } from "../provider/ProviderRegistry";
-import { DownloadModelTask, EmbeddingTask } from "task";
+import { DownloadModelTask, TextEmbeddingTask } from "task";
 
 export const registerMediaPipeTfJsLocalTasks = () => {
   const ProviderRegistry = getProviderRegistry();
@@ -16,7 +16,7 @@ export const registerMediaPipeTfJsLocalTasks = () => {
   );
 
   ProviderRegistry.registerRunFn(
-    EmbeddingTask.type,
+    TextEmbeddingTask.type,
     ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
     MediaPipeTfJsLocal_Embedding
   );

@@ -58,7 +58,7 @@ export interface IConfig {
   provenance?: TaskInput;
 }
 
-abstract class TaskBase {
+export abstract class TaskBase {
   // information about the task that should be overriden by the subclasses
   static readonly type: TaskTypeName = "TaskBase";
   static readonly category: string = "Hidden";

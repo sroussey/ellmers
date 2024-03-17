@@ -7,14 +7,15 @@
 
 import {
   ConvertAllToArrays,
-  ConvertOneToArray,
-  ConvertOneToOptionalArrays,
+  ConvertSomeToArray,
+  ConvertSomeToOptionalArray,
   arrayTaskFactory,
 } from "./base/ArrayTask";
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextSummaryTaskInput = CreateMappedType<typeof TextSummaryTask.inputs>;
 export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outputs>;
@@ -48,42 +49,25 @@ export class TextSummaryTask extends JobQueueLlmTask {
 }
 TaskRegistry.registerTask(TextSummaryTask);
 
-type TextSummaryMultiTaskOutput = ConvertAllToArrays<TextSummaryTaskOutput>;
+type TextSummaryCompoundTaskOutput = ConvertAllToArrays<TextSummaryTaskOutput>;
 
-type TextSummaryMultiModelTaskInput = ConvertOneToArray<TextSummaryTaskInput, "model">;
-export const TextSummaryMultiModelTask = arrayTaskFactory<
-  TextSummaryMultiModelTaskInput,
-  TextSummaryMultiTaskOutput
->(TextSummaryTask, "model");
-
-type TextSummaryMultiTextTaskInput = ConvertOneToArray<TextSummaryTaskInput, "text">;
-export const TextSummaryMultiTextTask = arrayTaskFactory<
-  TextSummaryMultiTextTaskInput,
-  TextSummaryMultiTaskOutput
->(TextSummaryTask, "text");
-
-type TextSummaryMultiTextMultiModelTaskInput = ConvertOneToArray<
-  TextSummaryMultiModelTaskInput,
-  "text"
+type TextSummaryCompoundTaskInput = ConvertSomeToOptionalArray<
+  TextSummaryTaskInput,
+  "model" | "text"
 >;
-export const TextSummaryMultiTextMultiModelTask = arrayTaskFactory<
-  TextSummaryMultiTextMultiModelTaskInput,
-  TextSummaryMultiTaskOutput
->(TextSummaryMultiModelTask, "text", "TextSummaryMultiTextMultiModelTask");
+export const TextSummaryCompoundTask = arrayTaskFactory<
+  TextSummaryCompoundTaskInput,
+  TextSummaryCompoundTaskOutput
+>(TextSummaryTask, ["model", "text"]);
 
-export const TextSummary = (
-  input: ConvertOneToOptionalArrays<
-    ConvertOneToOptionalArrays<TextSummaryTaskInput, "model">,
-    "text"
-  >
-) => {
-  if (Array.isArray(input.model) && Array.isArray(input.text)) {
-    return new TextSummaryMultiTextMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.model)) {
-    return new TextSummaryMultiModelTask({ input } as any).run();
-  } else if (Array.isArray(input.text)) {
-    return new TextSummaryMultiTextTask({ input } as any).run();
-  } else {
-    return new TextSummaryTask({ input } as any).run();
-  }
+export const TextSummary = (input: TextSummaryCompoundTaskInput) => {
+  return new TextSummaryCompoundTask({ input }).run();
 };
+
+declare module "./base/TaskGraphBuilder" {
+  interface TaskGraphBuilder {
+    TextSummary: TaskGraphBuilderHelper<TextSummaryCompoundTaskInput>;
+  }
+}
+
+TaskGraphBuilder.prototype.TextSummary = TaskGraphBuilderHelper(TextSummaryCompoundTask);
