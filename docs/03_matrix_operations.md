@@ -8,7 +8,7 @@ The rewriter uses a genarative language model to rewrite the text. This is the s
 
 The main two areas to test:
 
-- Different models for the generator rewriter.
+- Different models for the generator/rewriter.
 - Different instruction prompts for the above. These will likely be paired.
 
 ## Data Embeddings
@@ -55,8 +55,3 @@ We need to prompt the LLM with the retrieved data in a smart manner. Different a
 
 We need to test a matrix of choices:
 (models for embedding) x (instructions for data and query embedding) x (LLM models for the instructions) x (filtering) x (rankings) x (promptings) x (LLM models for the Q&A).
-
-This can conservatively look like:
-(10) x (10) x (10) x (5) x (5) x (10) x (10) = 2,500,000 tests.
-
-It will not be difficult to get to a billion tests if we aren't careful. And that is independent of the data size. So we need to be able to run these tests quickly and cheaply and cache intermediate results.

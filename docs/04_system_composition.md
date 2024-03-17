@@ -13,7 +13,6 @@ We need to store the data somewhere. We need to be able to retrieve it quickly, 
 - [ ] SQL Databases
   - [ ] SQLite
   - [ ] PostgreSQL
-  - [ ] MySQL
 
 ### Indexes:
 
@@ -25,10 +24,6 @@ Normally indexes would be part of the storage, but we need to break apart for th
   - [ ] SQLite
   - [ ] PostgreSQL
 
-## Embeddings
-
-We need to create embeddings for the data. Embeddings are not compatible across models. Models are often speficially trained for a task, and rarely use the same model for embedding and generation like chat.
-
 ## Models:
 
 Many models are online, but we also want to be able to test local ones. I don't know if inlining (like I do at the moment) is a good idea. I could convert it to an API call, but it will be fun to test some local models in the browser for funsies. Some local models will require an API at the moment (like llama.cpp) until I build a node module to process directly (is that worth it?) which won't work in the browser anyway, but will work in Electron (needed for the side project that handles my personal data).
@@ -38,6 +33,7 @@ Many models are online, but we also want to be able to test local ones. I don't 
     - [ ] ONNX / Huggingface Transformers
     - [ ] MLC
     - [ ] GGUF / Llama.cpp
+    - [ ] Media Pipe / TensorFlow
   - [ ] Online models
     - [ ] OpenAI
     - [ ] Mistral
@@ -68,7 +64,7 @@ Oh, this is going to be hard. We need to figure out what the user is asking for.
 
 ## Retrieval
 
-Based on the query, we want to gather documents to analyze, filter, and rank.
+Based on the query, we want to gather documents to analyze, filter, and re-rank.
 
 ### Vector Similarity Search
 
@@ -123,3 +119,7 @@ A task is a single step in the chain. It is a single function that takes in data
 ### TaskList
 
 A task list is a series of tasks that are chained together.
+
+### TaskGraph
+
+A task graph is a series of tasks that are chained together, with the next task determined by the results of the previous tasks. This is a directed acyclic graph.
