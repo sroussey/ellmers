@@ -143,7 +143,10 @@ export function AddBaseCommands(program: Command) {
     .description("run based on builder")
     .action(async () => {
       const builder = new TaskGraphBuilder();
-      builder.TextEmbedding({ model: "Xenova/LaMini-Flan-T5-783M" });
+      builder.TextEmbedding({
+        model: "Xenova/LaMini-Flan-T5-783M",
+        text: "The quick brown fox jumps over the lazy dog.",
+      });
       await builder.run();
     });
 }

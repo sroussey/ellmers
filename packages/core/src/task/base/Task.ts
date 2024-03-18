@@ -50,6 +50,14 @@ export type TaskTypeName = string;
 
 export type TaskConfig = Partial<IConfig> & { input?: TaskInput };
 
+export interface TaskExportFormat {
+  id: unknown;
+  type: TaskTypeName;
+  input: TaskInput;
+  dependencies?: Record<string, { id: unknown; output: keyof TaskOutput }>;
+  subtasks?: TaskExportFormat[];
+}
+
 // ===============================================================================
 
 export interface IConfig {
@@ -252,6 +260,14 @@ export abstract class TaskBase {
   runSyncOnly(): TaskOutput {
     return this.runOutputData;
   }
+
+  toJSON(): TaskExportFormat {
+    return {
+      id: this.config.id,
+      type: (this.constructor as typeof TaskBase).type,
+      input: this.defaults,
+    };
+  }
 }
 
 export type TaskIdType = TaskBase["config"]["id"];
@@ -293,6 +309,15 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     const runner = new TaskGraphRunner(this.subGraph);
     this.runOutputData.outputs = runner.runGraphSyncOnly();
     return this.runOutputData;
+  }
+
+  /**
+   * This serializes the task and its subtasks into a format that can be stored in a database
+   * @returns TaskExportFormat
+   */
+  toJSON(): TaskExportFormat {
+    this.resetInputData();
+    return { ...super.toJSON(), subtasks: this.subGraph.toJSON() };
   }
 }
 
