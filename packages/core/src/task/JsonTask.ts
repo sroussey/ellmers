@@ -13,17 +13,18 @@ import { TaskRegistry } from "./base/TaskRegistry";
 
 export type JsonTaskArray = Array<JsonTaskItem>;
 export type JsonTaskItem = {
-  id: string;
+  id: unknown;
   type: string;
   name?: string;
   input?: TaskInput;
   dependencies?: {
     [x: string]: {
-      id: string;
+      id: unknown;
       output: string;
     };
   };
   provenance?: TaskInput;
+  subtasks?: JsonTaskArray;
 };
 
 type JsonTaskInput = CreateMappedType<typeof JsonTask.inputs>;
@@ -57,36 +58,45 @@ export class JsonTask extends CompoundTask {
     return this;
   }
 
+  public _createTask(item: JsonTaskItem) {
+    if (!item.id) throw new Error("Task id required");
+    if (!item.type) throw new Error("Task type required");
+    if (item.input && (Array.isArray(item.input) || Array.isArray(item.provenance)))
+      throw new Error("Task input must be an object");
+    if (item.provenance && (Array.isArray(item.provenance) || typeof item.provenance !== "object"))
+      throw new Error("Task provenance must be an object");
+
+    const taskClass = TaskRegistry.all.get(item.type);
+    if (!taskClass) throw new Error(`Task type ${item.type} not found`);
+
+    const taskConfig = {
+      id: item.id,
+      name: item.name,
+      input: item.input ?? {},
+      provenance: item.provenance ?? {},
+    };
+    const task = new taskClass(taskConfig);
+    if (item.subtasks) {
+      (task as CompoundTask).subGraph = this.createSubGraph(item.subtasks);
+    }
+    return task;
+  }
+
+  public createSubGraph(jsonItems: JsonTaskArray) {
+    const subGraph = new TaskGraph();
+    for (const subitem of jsonItems) {
+      subGraph.addTask(this._createTask(subitem));
+    }
+    return subGraph;
+  }
+
   public generateGraph() {
     if (!this.runInputData.json) return;
-    let data = JSON.parse(this.runInputData.json);
+    let data = JSON.parse(this.runInputData.json) as JsonTaskArray | JsonTaskItem;
     if (!Array.isArray(data)) data = [data];
     const jsonItems: JsonTaskArray = data as JsonTaskArray;
     // create the task nodes
-    this.subGraph = new TaskGraph();
-    for (const item of jsonItems) {
-      if (!item.id) throw new Error("Task id required");
-      if (!item.type) throw new Error("Task type required");
-      if (item.input && (Array.isArray(item.input) || Array.isArray(item.provenance)))
-        throw new Error("Task input must be an object");
-      if (
-        item.provenance &&
-        (Array.isArray(item.provenance) || typeof item.provenance !== "object")
-      )
-        throw new Error("Task provenance must be an object");
-
-      const taskClass = TaskRegistry.all.get(item.type);
-      if (!taskClass) throw new Error(`Task type ${item.type} not found`);
-
-      const taskConfig = {
-        id: item.id,
-        name: item.name,
-        input: item.input ?? {},
-        provenance: item.provenance ?? {},
-      };
-      const task = new taskClass(taskConfig);
-      this.subGraph.addTask(task);
-    }
+    this.subGraph = this.createSubGraph(jsonItems);
     // create the data flow edges
     for (const item of jsonItems) {
       if (!item.dependencies) continue;

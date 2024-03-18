@@ -6,8 +6,9 @@
 //    *******************************************************************************
 
 import { DirectedAcyclicGraph } from "@sroussey/typescript-graph";
-import { TaskExportFormat, TaskIdType, TaskInput, TaskOutput } from "./Task";
+import { TaskIdType, TaskInput, TaskOutput } from "./Task";
 import { Task, TaskStream } from "./Task";
+import type { JsonTaskItem } from "../JsonTask";
 
 export type IDataFlow = {
   sourceTaskId: TaskIdType;
@@ -92,7 +93,7 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
     return this.getTargetDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.targetTaskId)!);
   }
 
-  public toJSON(): TaskExportFormat[] {
+  public toJSON(): JsonTaskItem[] {
     const nodes = this.getNodes().flatMap((node) => node.toJSON());
     this.getDataFlows().forEach((edge) => {
       const target = nodes.find((node) => node.id === edge.targetTaskId)!;
