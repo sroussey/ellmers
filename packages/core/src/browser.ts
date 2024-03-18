@@ -11,6 +11,7 @@ export * from "./source/DocumentConverterMarkdown";
 export * from "./task/index";
 export * from "./provider/local-hugging-face/HuggingFaceLocal_TaskRun";
 export * from "./provider/local-media-pipe/MediaPipeLocalTaskRun";
+export * from "./bindings/all_inmemory";
 export * from "./provider/ProviderRegistry";
 export * from "./model/Model";
 export * from "./model/HuggingFaceModel";

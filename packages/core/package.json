@@ -18,8 +18,8 @@
   },
   "module": "dist/server.js",
   "exports": {
-    "./client": {
-      "import": "./dist/client.js"
+    "./browser": {
+      "import": "./dist/browser.js"
     },
     "./server": {
       "import": "./dist/server.js"
