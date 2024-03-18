@@ -40,32 +40,12 @@ const defaultEdgeOptions = {
 };
 
 export const RunGraphFlow: React.FC<{ json: string; running: boolean }> = ({ json, running }) => {
-  const jsonTask = new JsonTask({ name: "Test JSON", input: { json } });
-  const tasks = jsonTask.subGraph.getNodes();
-  const initialNodes = tasks.map((node, index) => {
-    return {
-      id: node.config.id,
-      position: { x: 0, y: 0 },
-      data: {
-        icon: <FunctionIcon />,
-        title: (node.constructor as any).type,
-        subline: node.config.name,
-      },
-      type: "turbo",
-    };
-  }) as Node<TurboNodeData>[];
-  const initialEdges = jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
-    return {
-      id: edge.id,
-      source: source as string,
-      target: target as string,
-    };
-  });
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   const initialized = useNodesInitialized();
   const { fitView } = useReactFlow();
+
   useEffect(() => {
     if (initialized && nodes[0]?.computed) {
       setNodes(computeLayout(GraphPipelineLayout, nodes, edges) as Node<TurboNodeData>[]);
@@ -75,9 +55,34 @@ export const RunGraphFlow: React.FC<{ json: string; running: boolean }> = ({ jso
   }, [initialized, nodes[0]?.computed]);
 
   useEffect(() => {
+    const jsonTask = new JsonTask({ name: "Test JSON", input: { json } });
+    const tasks = jsonTask.subGraph.getNodes();
+    setNodes(
+      tasks.map((node, index) => {
+        return {
+          id: node.config.id,
+          position: { x: 0, y: 0 },
+          data: {
+            icon: <FunctionIcon />,
+            title: (node.constructor as any).type,
+            subline: node.config.name,
+          },
+          type: "turbo",
+        };
+      }) as Node<TurboNodeData>[]
+    );
+    setEdges(
+      jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
+        return {
+          id: edge.id,
+          source: source as string,
+          target: target as string,
+        };
+      })
+    );
+
     if (running) {
       console.log("Running graph");
-      const jsonTask = new JsonTask({ name: "Run JSON", input: { json } });
       const runner = new TaskGraphRunner(jsonTask.subGraph);
       jsonTask.subGraph.getNodes().forEach((node) => {
         node.on("progress", (progress, progressText) => {

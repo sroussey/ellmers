@@ -25,6 +25,7 @@ export const PopupWithJsonEditor: React.FC<PopupProps> = ({
       const val = JSON.parse(jsonString);
       new JsonTask({ name: "Test JSON", input: { json: jsonString } });
       setIsValidJSON(true);
+      onJsonChange(jsonString);
     } catch (error) {
       setIsValidJSON(false);
     }
