@@ -14,6 +14,7 @@ import {
   type TaskOutputDefinition,
   ValueTypesIndex,
 } from "./TaskIOTypes";
+import type { JsonTaskItem } from "../JsonTask";
 
 export enum TaskStatus {
   PENDING = "NEW",
@@ -49,14 +50,6 @@ export type ITask = ITaskSimple | ITaskCompound;
 export type TaskTypeName = string;
 
 export type TaskConfig = Partial<IConfig> & { input?: TaskInput };
-
-export interface TaskExportFormat {
-  id: unknown;
-  type: TaskTypeName;
-  input: TaskInput;
-  dependencies?: Record<string, { id: unknown; output: keyof TaskOutput }>;
-  subtasks?: TaskExportFormat[];
-}
 
 // ===============================================================================
 
@@ -261,11 +254,13 @@ export abstract class TaskBase {
     return this.runOutputData;
   }
 
-  toJSON(): TaskExportFormat {
+  toJSON(): JsonTaskItem {
+    const p = this.getProvenance();
     return {
       id: this.config.id,
       type: (this.constructor as typeof TaskBase).type,
       input: this.defaults,
+      ...(Object.keys(p).length ? { provenance: p } : {}),
     };
   }
 }
@@ -315,7 +310,7 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
    * This serializes the task and its subtasks into a format that can be stored in a database
    * @returns TaskExportFormat
    */
-  toJSON(): TaskExportFormat {
+  toJSON(): JsonTaskItem {
     this.resetInputData();
     return { ...super.toJSON(), subtasks: this.subGraph.toJSON() };
   }
