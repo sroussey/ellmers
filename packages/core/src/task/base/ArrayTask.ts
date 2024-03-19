@@ -146,9 +146,7 @@ export function arrayTaskFactory<
   const outputs = convertToArray<TaskOutputDefinition>(Array.from(taskClass.outputs));
 
   const nameWithoutTask = taskClass.type.slice(0, -4);
-  const ima = String(inputMakeArray);
-  const capitalized = ima.charAt(0).toUpperCase() + ima.slice(1);
-  name ??= nameWithoutTask + "Multi" + capitalized + "Task";
+  name ??= nameWithoutTask + "CompoundTask";
 
   class ArrayTask extends RegenerativeCompoundTask {
     static readonly displayName = name!; // this is for debuggers as they can't infer the name from code
