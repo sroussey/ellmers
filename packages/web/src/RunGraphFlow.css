@@ -1,14 +1,3 @@
-html,
-body,
-#root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  font-family: sans-serif;
-}
-
 .react-flow {
   --bg-color: rgb(17, 17, 17);
   --text-color: rgb(243, 244, 246);

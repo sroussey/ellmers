@@ -12,14 +12,16 @@
     "@xyflow/react": "12.0.0-next.12",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-simple-code-editor": "0.13.1",
+    "@uiw/react-codemirror": "4.21.24",
+    "@uiw/codemirror-theme-vscode": "4.21.24",
+    "@codemirror/lang-json": "6.0.1",
     "prismjs": "1.29.0",
     "react-hotkeys-hook": "^4.5.0",
     "react-icons": "^5.0.1",
     "ellmers-core": "workspace:packages/core"
   },
   "devDependencies": {
-    "@types/react": "^18.2.66",
+    "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.2.0",

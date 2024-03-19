@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
@@ -14,9 +14,9 @@ import "./RunGraphFlow.css";
 import TurboNode, { TurboNodeData } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
 import FunctionIcon from "./FunctionIcon";
-
 import {
   JsonTask,
+  TaskGraph,
   TaskGraphRunner,
   registerHuggingfaceLocalTasksInMemory,
   registerMediaPipeTfJsLocalInMemory,
@@ -39,9 +39,15 @@ const defaultEdgeOptions = {
   markerEnd: "edge-circle",
 };
 
-export const RunGraphFlow: React.FC<{ json: string; running: boolean }> = ({ json, running }) => {
+export const RunGraphFlow: React.FC<{
+  json: string;
+  running: boolean;
+  setIsRunning: (isRunning: boolean) => void;
+}> = ({ json, running, setIsRunning }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const oldJson = useRef<string>("");
+  const graphRef = useRef<TaskGraph | null>(null);
 
   const initialized = useNodesInitialized();
   const { fitView } = useReactFlow();
@@ -55,36 +61,41 @@ export const RunGraphFlow: React.FC<{ json: string; running: boolean }> = ({ jso
   }, [initialized, nodes[0]?.computed]);
 
   useEffect(() => {
-    const jsonTask = new JsonTask({ name: "Test JSON", input: { json } });
-    const tasks = jsonTask.subGraph.getNodes();
-    setNodes(
-      tasks.map((node, index) => {
-        return {
-          id: node.config.id,
-          position: { x: 0, y: 0 },
-          data: {
-            icon: <FunctionIcon />,
-            title: (node.constructor as any).type,
-            subline: node.config.name,
-          },
-          type: "turbo",
-        };
-      }) as Node<TurboNodeData>[]
-    );
-    setEdges(
-      jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
-        return {
-          id: edge.id,
-          source: source as string,
-          target: target as string,
-        };
-      })
-    );
+    if (json !== oldJson.current) {
+      const jsonTask = new JsonTask({ name: "Test JSON", input: { json } });
+      oldJson.current = json;
+      graphRef.current = jsonTask.subGraph;
+      const tasks = jsonTask.subGraph.getNodes();
+      setNodes(
+        tasks.map((node, index) => {
+          return {
+            id: node.config.id,
+            position: { x: 0, y: 0 },
+            data: {
+              icon: <FunctionIcon />,
+              title: (node.constructor as any).type,
+              subline: node.config.name,
+            },
+            type: "turbo",
+          };
+        }) as Node<TurboNodeData>[]
+      );
+      setEdges(
+        jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
+          return {
+            id: edge.id,
+            source: source as string,
+            target: target as string,
+          };
+        })
+      );
+    }
 
     if (running) {
       console.log("Running graph");
-      const runner = new TaskGraphRunner(jsonTask.subGraph);
-      jsonTask.subGraph.getNodes().forEach((node) => {
+      const graph = graphRef.current;
+      const runner = new TaskGraphRunner(graph);
+      graph.getNodes().forEach((node) => {
         node.on("progress", (progress, progressText) => {
           setNodes((nds) =>
             nds.map((nd) => {
@@ -139,7 +150,10 @@ export const RunGraphFlow: React.FC<{ json: string; running: boolean }> = ({ jso
           );
         });
       });
-      runner.runGraph();
+      (async () => {
+        await runner.runGraph();
+        setIsRunning(false);
+      })();
     }
   }, [running, json]);
 

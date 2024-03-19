@@ -1,0 +1,15 @@
+.cm-editor {
+  /* our container wrapper for Codemirror instance */
+  flex: 1; /* expand to the maximum */
+  height: 100%;
+  position: relative; /* needed for child component .cm-scroller */
+}
+
+.cm-scroller {
+  position: absolute !important;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow-y: auto;
+}
