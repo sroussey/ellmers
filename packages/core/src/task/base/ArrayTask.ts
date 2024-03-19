@@ -5,7 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { CompoundTask, TaskInput, TaskConfig, TaskOutput, TaskTypeName, SingleTask } from "./Task";
+import {
+  CompoundTask,
+  TaskInput,
+  TaskConfig,
+  TaskOutput,
+  TaskTypeName,
+  SingleTask,
+  RegenerativeCompoundTask,
+} from "./Task";
 import { TaskGraph } from "./TaskGraph";
 import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
@@ -95,7 +103,8 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
     // Move to the next combination of indices
     for (let i = indices.length - 1; i >= 0; i--) {
       if (++indices[i] < arraysToCombine[i].length) break; // Increment current index if possible
-      if (i === 0) done = true; // All combinations have been generated
+      if (i === 0)
+        done = true; // All combinations have been generated
       else indices[i] = 0; // Reset current index and move to the next position
     }
   }
@@ -123,7 +132,7 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
 
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
-  PluralOutputType extends TaskOutput = TaskOutput
+  PluralOutputType extends TaskOutput = TaskOutput,
 >(
   taskClass: typeof SingleTask | typeof CompoundTask,
   inputMakeArray: Array<keyof PluralInputType>,
@@ -141,7 +150,7 @@ export function arrayTaskFactory<
   const capitalized = ima.charAt(0).toUpperCase() + ima.slice(1);
   name ??= nameWithoutTask + "Multi" + capitalized + "Task";
 
-  class ArrayTask extends CompoundTask {
+  class ArrayTask extends RegenerativeCompoundTask {
     static readonly displayName = name!; // this is for debuggers as they can't infer the name from code
     static readonly type: TaskTypeName = name!;
     static readonly runtype = taskClass.type;

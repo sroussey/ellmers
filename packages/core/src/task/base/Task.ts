@@ -28,7 +28,7 @@ export enum TaskStatus {
  *
  * There is no job queue at the moement.
  */
-export type TaskEvents = "start" | "complete" | "error" | "progress";
+export type TaskEvents = "start" | "complete" | "error" | "progress" | "regenerate";
 
 export interface TaskInput {
   [key: string]: any;
@@ -313,6 +313,13 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
   toJSON(): JsonTaskItem {
     this.resetInputData();
     return { ...super.toJSON(), subtasks: this.subGraph.toJSON() };
+  }
+}
+
+export class RegenerativeCompoundTask extends CompoundTask {
+  static readonly type: TaskTypeName = "CompoundTask";
+  public regenerateGraph() {
+    this.emit("regenerate");
   }
 }
 

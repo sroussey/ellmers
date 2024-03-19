@@ -5,7 +5,7 @@
 // //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 // //    *******************************************************************************
 
-import { CompoundTask, TaskConfig, TaskInput } from "./base/Task";
+import { CompoundTask, RegenerativeCompoundTask, TaskConfig, TaskInput } from "./base/Task";
 import { DataFlow, TaskGraph } from "./base/TaskGraph";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { CreateMappedType } from "./base/TaskIOTypes";
@@ -30,7 +30,7 @@ export type JsonTaskItem = {
 type JsonTaskInput = CreateMappedType<typeof JsonTask.inputs>;
 type JsonTaskOutput = CreateMappedType<typeof JsonTask.outputs>;
 
-export class JsonTask extends CompoundTask {
+export class JsonTask extends RegenerativeCompoundTask {
   public static inputs = [
     {
       id: "json",
@@ -46,7 +46,7 @@ export class JsonTask extends CompoundTask {
   constructor(config: TaskConfig & { input?: JsonTaskInput }) {
     super(config);
     if (config?.input?.json) {
-      this.generateGraph();
+      this.regenerateGraph();
     }
   }
 
@@ -54,7 +54,7 @@ export class JsonTask extends CompoundTask {
     let changed = false;
     if (overrides?.json != this.runInputData.json) changed = true;
     super.addInputData(overrides);
-    if (changed) this.generateGraph();
+    if (changed) this.regenerateGraph();
     return this;
   }
 
@@ -90,7 +90,7 @@ export class JsonTask extends CompoundTask {
     return subGraph;
   }
 
-  public generateGraph() {
+  public regenerateGraph() {
     if (!this.runInputData.json) return;
     let data = JSON.parse(this.runInputData.json) as JsonTaskArray | JsonTaskItem;
     if (!Array.isArray(data)) data = [data];
@@ -109,6 +109,7 @@ export class JsonTask extends CompoundTask {
         this.subGraph.addDataFlow(df);
       }
     }
+    this.emit("regenerate");
   }
 
   static readonly type = "JsonTask";
