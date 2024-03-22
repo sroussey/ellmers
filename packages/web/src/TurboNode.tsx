@@ -1,4 +1,4 @@
-import React, { memo, ReactNode } from "react";
+import React, { ReactNode } from "react";
 import { Handle, NodeProps, Position, Node } from "@xyflow/react";
 import { FiCloud, FiCloudLightning } from "react-icons/fi";
 
@@ -11,12 +11,38 @@ export type TurboNodeData = {
   progressText?: string;
 };
 
-const TurboNode = memo(({ data }: NodeProps<Node<TurboNodeData>>) => {
+export const SingleNode = ({ data }: NodeProps<Node<TurboNodeData>>) => {
   return (
     <>
+      <div className={`wrapper gradient ${data.active ? "active" : ""}`}>
+        <div className="inner">
+          <div className="body">
+            {data.icon && <div className="icon">{data.icon}</div>}
+            <div>
+              <div className="title">{data.title}</div>
+              {data.subline && <div className="subline">{data.subline}</div>}
+            </div>
+          </div>
+          <Handle type="target" position={Position.Left} />
+          <Handle type="source" position={Position.Right} />
+          <div className="progress">
+            {data.progress !== undefined && (
+              <div className="bar" style={{ width: `${data.progress}%` }} />
+            )}
+            <div className="subline">{data.progressText}</div>
+          </div>
+        </div>
+      </div>
       <div className="cloud gradient">
         <div>{data.active ? <FiCloudLightning /> : <FiCloud />}</div>
       </div>
+    </>
+  );
+};
+
+export const CompoundNode = ({ data }: NodeProps<Node<TurboNodeData>>) => {
+  return (
+    <>
       <div className={`wrapper gradient ${data.active ? "active" : ""}`}>
         <div className="inner">
           <div className="body">
@@ -36,8 +62,7 @@ const TurboNode = memo(({ data }: NodeProps<Node<TurboNodeData>>) => {
           </div>
         </div>
       </div>
+      <div className="children"></div>
     </>
   );
-});
-
-export default TurboNode;
+};

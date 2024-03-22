@@ -2,27 +2,40 @@ import React, { useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
-import { JsonTaskArray } from "ellmers-core/browser";
+import { JsonTaskArray, ModelUseCaseEnum, findModelByUseCase } from "ellmers-core/browser";
 
 const initialJsonObj: JsonTaskArray = [
   {
     id: "1",
-    type: "DownloadModelTask",
+    type: "DownloadModelCompoundTask",
     input: {
-      model: "Xenova/LaMini-Flan-T5-783M",
+      model: ["Xenova/LaMini-Flan-T5-783M"],
     },
   },
   {
     id: "2",
-    type: "TextRewriterTask",
+    type: "TextRewriterCompoundTask",
     input: {
       text: "The quick brown fox jumps over the lazy dog.",
-      prompt: "Rewrite the following text in reverse:",
+      prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     },
     dependencies: {
       model: {
         id: "1",
         output: "model",
+      },
+    },
+  },
+  {
+    id: "3",
+    type: "DebugLogTask",
+    input: {
+      level: "info",
+    },
+    dependencies: {
+      message: {
+        id: "2",
+        output: "text",
       },
     },
   },
