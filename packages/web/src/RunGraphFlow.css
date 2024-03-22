@@ -40,8 +40,7 @@
   letter-spacing: -0.2px;
 }
 
-.react-flow__node-single .wrapper,
-.react-flow__node-compound .wrapper {
+.react-flow__node .wrapper {
   overflow: hidden;
   display: flex;
   padding: 2px;
@@ -85,8 +84,7 @@
   animation: spanner 4s linear infinite;
 }
 
-.react-flow__node-single .wrapper.gradient.active:before,
-.react-flow__node-compound .wrapper.gradient.active:before {
+.react-flow__node .wrapper.gradient.active:before {
   content: "";
   background: conic-gradient(
     from -160deg at 50% 50%,
@@ -111,8 +109,7 @@
   }
 }
 
-.react-flow__node-single .inner,
-.react-flow__node-compound .inner {
+.react-flow__node .inner {
   background: var(--bg-color);
   padding: 16px 20px;
   border-radius: var(--node-border-radius);
@@ -123,18 +120,15 @@
   position: relative;
 }
 
-.react-flow__node-single .icon,
-.react-flow__node-compound .icon {
+.react-flow__node .icon {
   margin-right: 8px;
 }
 
-.react-flow__node-single .body,
-.react-flow__node-compound .body {
+.react-flow__node .body {
   display: flex;
 }
 
-.react-flow__node-single .title,
-.react-flow__node-compound .title {
+.react-flow__node .title {
   font-size: 16px;
   margin-bottom: 2px;
   line-height: 1;
@@ -152,7 +146,7 @@
   overflow-x: scroll;
 }
 
-.react-flow__node-single .cloud {
+.react-flow__node .cloud {
   border-radius: 100%;
   width: 30px;
   height: 30px;
@@ -166,8 +160,7 @@
   overflow: hidden;
 }
 
-.react-flow__node-single .cloud div,
-.react-flow__node-compound .cloud div {
+.react-flow__node .cloud div {
   background-color: var(--bg-color);
   flex-grow: 1;
   border-radius: 100%;
