@@ -149,7 +149,6 @@ export function arrayTaskFactory<
   name ??= nameWithoutTask + "CompoundTask";
 
   class ArrayTask extends RegenerativeCompoundTask {
-    static readonly displayName = name!; // this is for debuggers as they can't infer the name from code
     static readonly type: TaskTypeName = name!;
     static readonly runtype = taskClass.type;
     static readonly category = taskClass.category;
@@ -172,6 +171,7 @@ export function arrayTaskFactory<
         const current = new taskClass({ id: this.config.id + "-child-" + (index + 1), input });
         this.subGraph.addTask(current);
       });
+      super.regenerateGraph();
     }
 
     addInputData<PluralInputType>(overrides: Partial<PluralInputType>) {
@@ -195,6 +195,7 @@ export function arrayTaskFactory<
       return this.runOutputData;
     }
   }
+
   TaskRegistry.registerTask(ArrayTask);
 
   return ArrayTask;

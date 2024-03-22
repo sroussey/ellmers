@@ -109,7 +109,7 @@ export class JsonTask extends RegenerativeCompoundTask {
         this.subGraph.addDataFlow(df);
       }
     }
-    this.emit("regenerate");
+    super.regenerateGraph();
   }
 
   static readonly type = "JsonTask";
