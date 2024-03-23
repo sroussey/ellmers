@@ -192,7 +192,6 @@ export function computeLayout(
     const children = nodes.filter((n) => n.parentNode === node.id);
 
     if (children.length > 0) {
-      console.log("Computing layout for children of", node.id, children);
       const childNodes = computeLayout(
         children,
         edges,
@@ -203,6 +202,5 @@ export function computeLayout(
       returnNodes.push(...childNodes);
     }
   }
-  console.log("Returning nodes", returnNodes);
   return returnNodes;
 }
