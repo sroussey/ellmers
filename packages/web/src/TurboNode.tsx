@@ -42,8 +42,8 @@ export const SingleNode = ({ data }: NodeProps<Node<TurboNodeData>>) => {
 
 export const CompoundNode = ({ data }: NodeProps<Node<TurboNodeData>>) => {
   return (
-    <>
-      <div className={`wrapper gradient ${data.active ? "active" : ""}`}>
+    <div className={`outside ${data.active ? "active" : ""}`}>
+      <div className={`wrapper gradient`}>
         <div className="inner">
           <div className="body">
             {data.icon && <div className="icon">{data.icon}</div>}
@@ -63,6 +63,6 @@ export const CompoundNode = ({ data }: NodeProps<Node<TurboNodeData>>) => {
         </div>
       </div>
       <div className="children"></div>
-    </>
+    </div>
   );
 };

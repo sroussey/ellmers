@@ -12,7 +12,7 @@
   box-shadow: var(--node-box-shadow);
 }
 
-.react-flow__node-single {
+.react-flow__node {
   border-radius: var(--node-border-radius);
   display: flex;
   /* height: 70px; */
@@ -22,22 +22,38 @@
   letter-spacing: -0.2px;
 }
 
-.react-flow__node-compound {
-  border-radius: var(--node-border-radius);
-  height: 250px;
+.react-flow__node-compound .outside {
+  border-radius: var(--node-border-radius) var(--node-border-radius) 0 0;
   min-width: 150px;
-  border: dashed 2px #2a8af6;
+  background:
+    linear-gradient(90deg, #2a8af6 50%, transparent 0) repeat-x,
+    linear-gradient(90deg, #2a8af6 50%, transparent 0) repeat-x,
+    linear-gradient(0deg, #2a8af6 50%, transparent 0) repeat-y,
+    linear-gradient(0deg, #2a8af6 50%, transparent 0) repeat-y;
+  background-size:
+    4px 2px,
+    4px 2px,
+    2px 4px,
+    2px 4px;
+  background-position:
+    0 0,
+    0 100%,
+    0 0,
+    100% 0;
 }
 
-.react-flow__node-compound .wrapper {
-  margin: -2px;
-  border-radius: var(--node-border-radius);
-  display: flex;
-  /* height: 70px; */
-  min-width: 150px;
-  font-family: "Fira Mono", Monospace;
-  font-weight: 500;
-  letter-spacing: -0.2px;
+.react-flow__node-compound .outside.active {
+  animation: linearGradientMove 0.3s infinite linear;
+}
+
+@keyframes linearGradientMove {
+  100% {
+    background-position:
+      -4px 0,
+      4px 100%,
+      0 4px,
+      100% -4px;
+  }
 }
 
 .react-flow__node .wrapper {
@@ -84,7 +100,7 @@
   animation: spanner 4s linear infinite;
 }
 
-.react-flow__node .wrapper.gradient.active:before {
+.react-flow__node-single .wrapper.gradient.active:before {
   content: "";
   background: conic-gradient(
     from -160deg at 50% 50%,
