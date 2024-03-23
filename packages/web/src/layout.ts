@@ -7,19 +7,32 @@ type PositionXY = {
   y: number;
 };
 
-export class GraphPipelineLayout<T extends Node> {
+interface LayoutOptions {
+  nodeWidthMin: number;
+  nodeHeightMin: number;
+  horizontalSpacing: number;
+  verticalSpacing: number;
+  startTop: number;
+  startLeft: number;
+}
+
+export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   protected dag: DirectedAcyclicGraph<T, boolean, string, string>;
-  protected positions: Map<string, PositionXY>;
+  protected positions: Map<string, PositionXY> = new Map();
+  protected layerHeight: number[] = [];
+  protected layers: Map<number, T[]> = new Map();
   public nodeWidthMin: number = 190;
   public nodeHeightMin: number = 50;
   public horizontalSpacing = 80; // Horizontal spacing between layers
   public verticalSpacing = 20; // Vertical spacing between nodes within a layer
   public startTop = 50; // Starting position of the top layer
   public startLeft = 50; // Starting position of the left layer
-  protected layerHeight: number[];
-  protected layers: Map<number, T[]>;
 
-  constructor(dag: DirectedAcyclicGraph<T, boolean, string, string>) {
+  constructor(options?: Partial<LayoutOptions>) {
+    Object.assign(this, options);
+  }
+
+  public setGraph(dag: DirectedAcyclicGraph<T, boolean, string, string>) {
     this.dag = dag;
     this.positions = new Map();
     this.layers = new Map();
@@ -135,27 +148,37 @@ export class GraphPipelineCenteredLayout<T extends Node> extends GraphPipelineLa
 }
 
 export function computeLayout(
-  Graph: typeof GraphPipelineLayout,
-  nodes: any[],
-  edges: Edge[]
+  nodes: Node[],
+  edges: Edge[],
+  layout: GraphPipelineLayout<Node>,
+  subFlowLayout?: GraphPipelineLayout<Node>,
+  parentId?: string
 ): Node[] {
   const g = new DirectedAcyclicGraph<Node, boolean, string, string>((node) => node.id);
 
   nodes = nodes.filter((node) => !node.hidden);
 
-  nodes.forEach((node) => {
+  const topLevelNodes = nodes.filter(
+    (node) => node.parentNode === undefined || node.parentNode === parentId
+  );
+
+  topLevelNodes.forEach((node) => {
     g.insert(node);
   });
 
   edges.forEach((edge) => {
-    g.addEdge(edge.source, edge.target);
+    try {
+      g.addEdge(edge.source, edge.target);
+    } catch (e) {
+      // might be an edge to a hidden node
+    }
   });
 
-  const gl = new Graph(g);
-  gl.layoutGraph();
+  layout.setGraph(g);
+  layout.layoutGraph();
 
-  return nodes.map((node) => {
-    const nodePosition = gl.getNodePosition(node.id)!;
+  const returnNodes: Node[] = topLevelNodes.map((node) => {
+    const nodePosition = layout.getNodePosition(node.id)!;
 
     return {
       ...node,
@@ -163,6 +186,23 @@ export function computeLayout(
       sourcePosition: Position.Right,
       position: { x: nodePosition.x, y: nodePosition.y },
     };
-    return node;
   });
+
+  for (const node of topLevelNodes) {
+    const children = nodes.filter((n) => n.parentNode === node.id);
+
+    if (children.length > 0) {
+      console.log("Computing layout for children of", node.id, children);
+      const childNodes = computeLayout(
+        children,
+        edges,
+        subFlowLayout ?? layout,
+        subFlowLayout ?? layout,
+        node.id
+      );
+      returnNodes.push(...childNodes);
+    }
+  }
+  console.log("Returning nodes", returnNodes);
+  return returnNodes;
 }

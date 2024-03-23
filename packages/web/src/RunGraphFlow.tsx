@@ -7,6 +7,7 @@ import {
   Node,
   useNodesInitialized,
   useReactFlow,
+  Edge,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/base.css";
@@ -166,7 +167,7 @@ export const RunGraphFlow: React.FC<{
   setIsRunning: (isRunning: boolean) => void;
 }> = ({ json, running, setIsRunning }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurboNodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const oldJson = useRef<string>("");
   const graphRef = useRef<TaskGraph | null>(null);
 
@@ -175,10 +176,16 @@ export const RunGraphFlow: React.FC<{
 
   useEffect(() => {
     if (initialized) {
-      setNodes(computeLayout(GraphPipelineLayout, nodes, edges) as Node<TurboNodeData>[]);
-      // window.requestAnimationFrame(() => fitView());
+      const computedNodes = computeLayout(
+        nodes,
+        edges,
+        new GraphPipelineLayout(),
+        new GraphPipelineLayout({ startTop: 100, startLeft: 20 })
+      ) as Node<TurboNodeData>[];
+
+      setNodes(computedNodes);
+      // window.requestAnimationFrame(() => fitView()); // TODO: does not work as expected
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized]);
 
   useEffect(() => {
