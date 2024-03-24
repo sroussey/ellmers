@@ -13,7 +13,10 @@ export class TaskGraphRunner {
   public layers: Map<number, Task[]>;
   public provenanceInput: Map<unknown, TaskInput>;
 
-  constructor(public dag: TaskGraph, public repository?: ITaskOutputRepository) {
+  constructor(
+    public dag: TaskGraph,
+    public repository?: ITaskOutputRepository
+  ) {
     this.layers = new Map();
     this.provenanceInput = new Map();
   }

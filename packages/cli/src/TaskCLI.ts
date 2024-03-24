@@ -19,6 +19,7 @@ import {
   JsonTask,
   TaskGraphBuilder,
   DownloadModelCompoundTask,
+  Task,
 } from "ellmers-core/server";
 
 export function AddBaseCommands(program: Command) {
@@ -143,10 +144,16 @@ export function AddBaseCommands(program: Command) {
     .description("run based on builder")
     .action(async () => {
       const builder = new TaskGraphBuilder();
-      builder.TextEmbedding({
-        model: "Xenova/LaMini-Flan-T5-783M",
-        text: "The quick brown fox jumps over the lazy dog.",
-      });
-      await builder.run();
+      builder
+        .DownloadModel({ model: "Supabase/gte-small" })
+        .TextEmbedding({
+          text: "The quick brown fox jumps over the lazy dog.",
+        })
+        .connect("vector", "message")
+        .DebugLog();
+
+      try {
+        await builder.run();
+      } catch {}
     });
 }
