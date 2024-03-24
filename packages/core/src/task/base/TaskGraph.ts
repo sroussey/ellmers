@@ -27,9 +27,11 @@ export class DataFlow implements IDataFlow {
     public sourceTaskId: TaskIdType,
     public sourceTaskOutputId: string,
     public targetTaskId: TaskIdType,
-    public targetTaskInputId: string,
-    public id: string = `${sourceTaskId}.${sourceTaskOutputId} -> ${targetTaskId}.${targetTaskInputId}`
+    public targetTaskInputId: string
   ) {}
+  get id(): string {
+    return `${this.sourceTaskId}.${this.sourceTaskOutputId} -> ${this.targetTaskId}.${this.targetTaskInputId}`;
+  }
   public value: TaskOutput = {};
   public provenance: TaskInput = {};
 }

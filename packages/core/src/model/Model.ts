@@ -27,7 +27,7 @@ export enum ModelUseCaseEnum {
 const runningOnServer = typeof (globalThis as any).window === "undefined";
 
 export interface ModelOptions {
-  dimensionOptions?: number[];
+  nativeDimensions?: number; // Matryoshka Representation Learning (MRL) -- can truncate embedding dimensions from native number
   dimensions?: number;
   contextWindow?: number;
   extras?: Record<string, string | number>;
@@ -38,7 +38,7 @@ export interface ModelOptions {
 export abstract class Model implements ModelOptions {
   public static readonly all: ModelList = [];
   public dimensions?: number;
-  public dimensionOptions?: number[];
+  public nativeDimensions?: number;
   public contextWindow?: number;
   public normalize: boolean = true;
   public browserOnly: boolean = false;

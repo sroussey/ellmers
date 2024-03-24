@@ -12,7 +12,7 @@ import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { TaskOutput } from "./base/Task";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { findModelByName } from "browser";
+import { ModelUseCaseEnum, findModelByName } from "browser";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
 export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;
@@ -77,6 +77,21 @@ export class DownloadModelTask extends JobQueueLlmTask {
       this.runOutputData.model = model.name;
       this.runOutputData.dimensions = model.dimensions!;
       this.runOutputData.normalize = model.normalize;
+      if (model.useCase.includes(ModelUseCaseEnum.TEXT_EMBEDDING)) {
+        this.runOutputData.text_embedding_model = model.name;
+      }
+      if (model.useCase.includes(ModelUseCaseEnum.TEXT_GENERATION)) {
+        this.runOutputData.text_generation_model = model.name;
+      }
+      if (model.useCase.includes(ModelUseCaseEnum.TEXT_SUMMARIZATION)) {
+        this.runOutputData.text_summarization_model = model.name;
+      }
+      if (model.useCase.includes(ModelUseCaseEnum.TEXT_QUESTION_ANSWERING)) {
+        this.runOutputData.text_question_answering_model = model.name;
+      }
+      // if (model.useCase.includes(ModelUseCaseEnum.TEXT_CLASSIFICATION)) {
+      //   this.runOutputData.text_classification_model = model.name;
+      // }
     }
     return this.runOutputData;
   }

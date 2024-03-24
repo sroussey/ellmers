@@ -166,17 +166,29 @@ function cosine(arr1: number[], arr2: number[]) {
   return 1 - dotProduct / (magnitude1 * magnitude2);
 }
 
+export function normalize(vector: number[]): number[] {
+  const mag = magnitude(vector);
+
+  if (mag === 0) {
+    throw new Error("Cannot normalize a zero vector.");
+  }
+
+  return vector.map((val) => val / mag);
+}
+
 function cosine_similarity(
   embedding1: ElVector<Float32Array>,
   embedding2: ElVector<Float32Array>
 ): number {
   if (embedding1.normalized && embedding2.normalized) {
-    return (
-      1 - inner(embedding1.vector as unknown as number[], embedding2.vector as unknown as number[])
+    return inner(
+      embedding1.vector as unknown as number[],
+      embedding2.vector as unknown as number[]
     );
   } else {
-    return (
-      1 - cosine(embedding1.vector as unknown as number[], embedding2.vector as unknown as number[])
+    return cosine(
+      embedding1.vector as unknown as number[],
+      embedding2.vector as unknown as number[]
     );
   }
 }
