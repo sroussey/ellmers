@@ -14,7 +14,7 @@ import "@xyflow/react/dist/base.css";
 import "./RunGraphFlow.css";
 import { TurboNodeData, SingleNode, CompoundNode } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
-import FunctionIcon from "./FunctionIcon";
+import { FiFileText, FiClipboard, FiDownload, FiUpload } from "react-icons/fi";
 import {
   Task,
   TaskGraph,
@@ -26,6 +26,13 @@ import { GraphPipelineLayout, computeLayout } from "./layout";
 registerHuggingfaceLocalTasksInMemory();
 registerMediaPipeTfJsLocalInMemory();
 
+const categoryIcons = {
+  "Text Model": <FiFileText />,
+  Input: <FiUpload />,
+  Output: <FiDownload />,
+  Utility: <FiClipboard />,
+};
+
 function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
   const tasks = graph.getNodes();
   const nodes = tasks.flatMap((node, index) => {
@@ -34,11 +41,12 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
         id: node.config.id as string,
         position: { x: 0, y: 0 },
         data: {
-          icon: <FunctionIcon />,
+          icon: categoryIcons[(node.constructor as any).category],
           title: (node.constructor as any).type,
           subline: node.config.name,
         },
         type: node.isCompound ? "compound" : "single",
+        draggable: false,
       },
     ];
     if (node.isCompound) {
