@@ -36,6 +36,10 @@ export const valueTypes = {
     name: "Any",
     tsType: "any",
   },
+  function: {
+    name: "Function",
+    tsType: "function",
+  },
   boolean: {
     name: "Boolean",
     tsType: "boolean",
@@ -121,6 +125,7 @@ type DocParser = (typeof doc_parsers)[number];
 // Provided lookup type
 interface TsTypes {
   any: any;
+  function: Function;
   boolean: boolean;
   string: string;
   number: number;
@@ -147,6 +152,8 @@ export function validateItem(valueType: ValueTypesIndex, item: any): boolean {
       return typeof item === "number";
     case "boolean":
       return typeof item === "boolean";
+    case "function":
+      return typeof item === "function";
     case "vector":
       return item instanceof ElVector;
     case "log_level":

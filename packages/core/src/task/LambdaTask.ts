@@ -17,8 +17,22 @@ export type LambdaTaskOutput = CreateMappedType<typeof LambdaTask.outputs>;
 
 export class LambdaTask extends SingleTask {
   static readonly type = "LambdaTask";
+  declare runInputData: LambdaTaskInput;
+  declare defaults: Partial<LambdaTaskInput>;
   declare runOutputData: TaskOutput;
-  public static inputs = [] as const;
+  public static inputs = [
+    {
+      id: "fn",
+      name: "Function",
+      valueType: "function",
+    },
+    {
+      id: "input",
+      name: "Input",
+      valueType: "any",
+      defaultValue: null,
+    },
+  ] as const;
   public static outputs = [
     {
       id: "output",
@@ -30,11 +44,11 @@ export class LambdaTask extends SingleTask {
     super(config);
   }
   runSyncOnly() {
-    if (!this.runInputData.run) {
+    if (!this.runInputData.fn) {
       throw new Error("No runner provided");
     }
-    if (typeof this.runInputData.run === "function") {
-      this.runOutputData.output = this.runInputData.run(this.runInputData);
+    if (typeof this.runInputData.fn === "function") {
+      this.runOutputData.output = this.runInputData.fn(this.runInputData.input);
     } else {
       console.error("error", "Runner is not a function");
     }
