@@ -49,13 +49,13 @@ export const App = () => {
 
   return (
     <ResizablePanelGroup direction="horizontal">
-      <ResizablePanel defaultSize={400}>
+      <ResizablePanel>
         <ReactFlowProvider>
           <RunGraphFlow json={jsonData} running={isRunning} setIsRunning={setIsRunning} />
         </ReactFlowProvider>
       </ResizablePanel>
       <ResizableHandle withHandle />
-      <ResizablePanel defaultSize={200}>
+      <ResizablePanel defaultSize={30}>
         <JsonEditor
           initialJson={jsonData}
           onJsonChange={(json) => setJsonData(json)}
