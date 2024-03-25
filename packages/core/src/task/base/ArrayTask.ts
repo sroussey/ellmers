@@ -5,6 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { JsonTaskItem } from "../JsonTask";
 import {
   CompoundTask,
   TaskInput,
@@ -193,6 +194,10 @@ export function arrayTaskFactory<
         runDataOut.outputs
       ) as PluralOutputType;
       return this.runOutputData;
+    }
+    toJSON(): JsonTaskItem {
+      const { subtasks, ...result } = super.toJSON();
+      return result;
     }
   }
 
