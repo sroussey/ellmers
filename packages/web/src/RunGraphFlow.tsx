@@ -46,7 +46,6 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
           subline: node.config.name,
         },
         type: node.isCompound ? "compound" : "single",
-        draggable: false,
       },
     ];
     if (node.isCompound) {
