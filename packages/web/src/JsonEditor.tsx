@@ -40,6 +40,11 @@ export const JsonEditor: React.FC<PopupProps> = ({ json, onJsonChange, run, runn
     validateJSON(code);
   }, [code]);
 
+  // Effect hook to validate JSON whenever builder changes
+  useEffect(() => {
+    validateJSON(json);
+  }, [json]);
+
   return (
     <div className="flex h-full w-full p-6 bg-[#333] text-[#ddd] flex-col">
       <div>Enter JSON definition to run:</div>
