@@ -24,9 +24,7 @@ console.log(
   "%cOpen DevTools settings, and under Console, turn on 'enable custom formatters' for best experience.",
   "color: red;"
 );
-console.log(
-  "To get started, type 'builder.reset()' in the console. Then you can build a task graph using the builder API: "
-);
+console.log("You can build a task graph using the builder API: ");
 console.log(
   `  %cbuilder = new %cTaskGraphBuilder%c();
 
@@ -38,42 +36,42 @@ console.log(
   
   console.log(JSON.stringify(builder.toJSON(),null,2));
   `,
-  "color: #ddd; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
-  "color: #ddd; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: bold;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: bold;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
 
   // rename
   "color: #f3ce49; font-weight: normal;",
   "color: #ddd; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
 
   // DebugLog
   "color: #f3ce49; font-weight: bold;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
-  "color: #ccc; font-weight: normal;",
+  "color: #aaa; font-weight: normal;",
   "color: #da885e; font-weight: normal;",
-  "color: #ccc; font-weight: normal;"
+  "color: #aaa; font-weight: normal;"
 );
 console.log(new TaskGraphBuilder());
