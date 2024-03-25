@@ -71,7 +71,7 @@
 }
 
 .react-flow__node-compound {
-  min-height: 300px;
+  min-height: 450px;
 }
 
 .gradient:before {
@@ -92,12 +92,20 @@
   border-radius: 100%;
 }
 
-.wrapper .progress .bar {
+.progress .bar {
   margin: 10px 0;
   min-width: 10px;
-  height: 3px;
-  background: linear-gradient(90deg, #e92a67, #a853ba, #2a8af6);
-  animation: spanner 4s linear infinite;
+  height: 6px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(90deg, #e92a67, #a853ba, #2a8af6, #e92a67);
+  background-size: 200% auto;
+  background-position: 0 100%;
+}
+
+.active .progress .bar {
+  animation: progress 2s infinite;
+  animation-fill-mode: forwards;
+  animation-timing-function: linear;
 }
 
 .react-flow__node-single .wrapper.gradient.active:before {
@@ -119,9 +127,12 @@
   }
 }
 
-@keyframes spanner {
+@keyframes progress {
+  0% {
+    background-position: 0 0;
+  }
   100% {
-    transform: linear-gradient(0deg, #e92a67, #a853ba, #2a8af6);
+    background-position: -200% 0;
   }
 }
 

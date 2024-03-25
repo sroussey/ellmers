@@ -22,7 +22,7 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   protected layerHeight: number[] = [];
   protected layers: Map<number, T[]> = new Map();
   public nodeWidthMin: number = 190;
-  public nodeHeightMin: number = 50;
+  public nodeHeightMin: number = 150;
   public horizontalSpacing = 80; // Horizontal spacing between layers
   public verticalSpacing = 20; // Vertical spacing between nodes within a layer
   public startTop = 50; // Starting position of the top layer
@@ -106,15 +106,11 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   }
 
   protected getNodeHeight(node: T): number {
-    // Implement logic to determine the height of the node
-    // If node heights are fixed or uniform, you can return that constant value
-    return node.computed?.height || this.nodeHeightMin; // Example fixed height
+    return Math.max(node.computed?.height, this.nodeHeightMin);
   }
 
   protected getNodeWidth(node: T): number {
-    // Implement logic to determine the height of the node
-    // If node heights are fixed or uniform, you can return that constant value
-    return node.computed?.width || this.nodeWidthMin; // Example fixed height
+    return Math.max(node.computed?.width, this.nodeWidthMin);
   }
 
   public getNodePosition(nodeIdentity: string): PositionXY | undefined {

@@ -123,7 +123,9 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
     const decodedText = instance.tokenizer.decode(beams[0].output_token_ids, {
       skip_special_tokens: true,
     });
-    task.progress = Math.min(98, Math.max(10, decodedText.split(" ").length));
+    const len = decodedText.split(" ").length;
+    let result = 100 * (1 - Math.exp(-0.05 * len));
+    task.progress = Math.min(result, 100);
     task.emit("progress", task.progress, decodedText);
   };
 }

@@ -199,7 +199,7 @@ export const RunGraphFlow: React.FC<{
       );
       setTimeout(() => {
         fitView();
-      }, 5); // TODO: does not work as expected
+      }, 5);
     }
   }, [initialized]);
 
