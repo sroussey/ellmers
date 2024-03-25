@@ -3,8 +3,9 @@ import { App } from "./App";
 import { TaskGraphBuilder } from "ellmers-core/browser";
 import "./main.css";
 import {
+  TaskConsoleFormatter,
   TaskGraphBuilderConsoleFormatter,
-  TaskGraphBuilderTaskFormatter,
+  TaskGraphBuilderHelperConsoleFormatter,
   isDarkMode,
 } from "./ConsoleFormatters";
 
@@ -17,7 +18,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 window["TaskGraphBuilder"] = TaskGraphBuilder;
 window["devtoolsFormatters"] = [
   new TaskGraphBuilderConsoleFormatter(),
-  new TaskGraphBuilderTaskFormatter(),
+  new TaskGraphBuilderHelperConsoleFormatter(),
+  new TaskConsoleFormatter(),
 ];
 
 const dark = isDarkMode();

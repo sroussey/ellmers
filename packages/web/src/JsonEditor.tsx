@@ -40,10 +40,6 @@ export const JsonEditor: React.FC<PopupProps> = ({ json, onJsonChange, run, runn
     validateJSON(code);
   }, [code]);
 
-  useEffect(() => {
-    validateJSON(json);
-  }, [json]);
-
   return (
     <div className="flex h-full w-full p-6 bg-[#333] text-[#ddd] flex-col">
       <div>Enter JSON definition to run:</div>
@@ -60,7 +56,7 @@ export const JsonEditor: React.FC<PopupProps> = ({ json, onJsonChange, run, runn
       </div>
       <button
         disabled={!isValidJSON || running}
-        onClick={() => run()}
+        onClick={run}
         className="bg-black text-white p-2 rounded-md hover:bg-gray-900 disabled:opacity-50 disabled:bg-gray-950 disabled:cursor-not-allowed"
       >
         RUN

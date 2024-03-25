@@ -16,10 +16,8 @@ import { TurboNodeData, SingleNode, CompoundNode } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
 import FunctionIcon from "./FunctionIcon";
 import {
-  JsonTask,
   Task,
   TaskGraph,
-  TaskGraphRunner,
   registerHuggingfaceLocalTasksInMemory,
   registerMediaPipeTfJsLocalInMemory,
 } from "ellmers-core/browser";
@@ -162,13 +160,10 @@ const defaultEdgeOptions = {
 };
 
 export const RunGraphFlow: React.FC<{
-  json: string;
-  running: boolean;
-  setIsRunning: (isRunning: boolean) => void;
-}> = ({ json, running, setIsRunning }) => {
+  graph: TaskGraph;
+}> = ({ graph }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurboNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const oldJson = useRef<string>("");
   const graphRef = useRef<TaskGraph | null>(null);
 
   const initialized = useNodesInitialized() && !nodes.some((n) => !n.computed);
@@ -201,11 +196,9 @@ export const RunGraphFlow: React.FC<{
   }, [initialized]);
 
   useEffect(() => {
-    if (json !== oldJson.current) {
-      const jsonTask = new JsonTask({ name: "Test JSON", input: { json } });
-      oldJson.current = json;
-      graphRef.current = jsonTask.subGraph;
-      const nodes = convertGraphToNodes(jsonTask.subGraph);
+    if (graph !== graphRef.current) {
+      graphRef.current = graph;
+      const nodes = convertGraphToNodes(graph);
       setNodes(
         nodes.map((n) => {
           n.style = { opacity: 0 };
@@ -214,7 +207,7 @@ export const RunGraphFlow: React.FC<{
       );
 
       setEdges(
-        jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
+        graph.getEdges().map(([source, target, edge]) => {
           return {
             id: edge.id,
             source: source as string,
@@ -223,18 +216,9 @@ export const RunGraphFlow: React.FC<{
           };
         })
       );
-    }
-
-    if (running) {
-      const graph = graphRef.current;
-      const runner = new TaskGraphRunner(graph);
       listenToGraphNodes(graph, setNodes);
-      (async () => {
-        await runner.runGraph();
-        setIsRunning(false);
-      })();
     }
-  }, [running, json]);
+  }, [graph]);
 
   // const onConnect = useCallback(
   //   (params: any) => setEdges((els) => addEdge(params, els)),

@@ -1,4 +1,10 @@
-import { TaskGraphBuilder, TaskInputDefinition, TaskOutputDefinition } from "ellmers-core/browser";
+import {
+  TaskBase,
+  TaskGraphBuilder,
+  TaskInputDefinition,
+  TaskOutputDefinition,
+  TaskStatus,
+} from "ellmers-core/browser";
 
 type Config = Record<string, any>;
 
@@ -50,46 +56,131 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
 
   body(obj: any, config?: Config) {
     const body = new JsonMLElement("div");
+    const dark = isDarkMode();
+    const grey = dark ? "#aaa" : "#333";
+    const yellow = dark ? "#f3ce49" : "#a68307";
+
     const api = body.createChild("ol").setStyle("list-style-type: none; padding-left: 10px;");
     api.createTextChild("API:");
+    api
+      .createChild("li")
+      .setStyle(`color:${yellow}; padding-left: 10px;`)
+      .createTextChild(".reset()");
+    api
+      .createChild("li")
+      .setStyle(`color:${yellow}; padding-left: 10px;`)
+      .createTextChild(".connect(outputName, inputName)");
+    api
+      .createChild("li")
+      .setStyle(`color:${yellow}; padding-left: 10px;`)
+      .createTextChild(".run()");
+
     for (const [key, value] of Object.entries(obj.constructor.prototype)) {
-      const item = api.createChild("li").setStyle("list-style-type: none; padding-left: 10px;");
-      const a = item.createChild("span");
-      a.createChild("span").createTextChild(".");
-      a.createObjectTag(value, key);
+      const item = api.createChild("li").setStyle("padding-left: 10px;");
+      item.createChild("span").createObjectTag(value).addAttribute("key", key);
+    }
+
+    const nodes = body.createChild("ol").setStyle("list-style-type: none; padding-left: 10px;");
+    const tasks = obj._graph.getNodes();
+    if (tasks.length) {
+      nodes.createTextChild("Tasks:");
+      for (const node of tasks) {
+        const nodeTag = nodes
+          .createChild("li")
+          .setStyle("list-style-type: none; padding-left: 10px;");
+        nodeTag.createObjectTag(node);
+        for (const [, , edge] of obj._graph.outEdges(node.config.id)) {
+          const edgeTag = nodeTag.createChild("li").setStyle("padding-left: 20px;");
+          edgeTag.createTextChild(
+            `connection: ${edge.sourceTaskOutputId} -> ${edge.targetTaskInputId}`
+          );
+        }
+      }
     }
 
     return body.toJsonML();
   }
 }
 
-export class TaskGraphBuilderTaskFormatter extends ConsoleFormatter {
+export class TaskGraphBuilderHelperConsoleFormatter extends ConsoleFormatter {
   header(obj: any, config?: Config) {
     const dark = isDarkMode();
+    const inputColor = dark ? "#ada" : "#363";
+    const outputColor = dark ? "#caa" : "#633";
     const grey = dark ? "#aaa" : "#333";
     const yellow = dark ? "#f3ce49" : "#a68307";
 
-    if ((obj.inputs && obj.outputs) || (obj.constructor.inputs && obj.constructor.outputs)) {
+    if (obj.inputs && obj.outputs) {
       const header = new JsonMLElement("div");
       const name = obj.constructor.runtype ?? obj.constructor.type ?? obj.type.replace(/Task$/, "");
-      const inputs = (obj.inputs ?? obj.constructor.inputs).map(
-        (i: TaskInputDefinition) => i.id + ": …"
-      );
-      const outputs = (obj.outputs ?? obj.constructor.outputs).map(
-        (i: TaskOutputDefinition) => i.id + ": …"
-      );
+      const inputs = obj.inputs.map((i: TaskInputDefinition) => i.id + ": …");
+      const outputs = obj.outputs.map((i: TaskOutputDefinition) => i.id + ": …");
+      header
+        .createChild("span")
+        .setStyle(`font-weight: bold;color:${yellow}`)
+        .createTextChild("." + name);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({`);
+      header
+        .createChild("span")
+        .setStyle(`color:${inputColor}`)
+        .createTextChild(`${inputs.join(", ")}`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}): {`);
+      header
+        .createChild("span")
+        .setStyle(`color:${outputColor}`)
+        .createTextChild(`${outputs.join(", ")}`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}`);
+      return header.toJsonML();
+    }
+    return null;
+  }
+
+  hasBody(value: any, config?: Config) {
+    return false;
+  }
+
+  body(obj: any, config?: Config) {
+    return null;
+  }
+}
+
+export class TaskConsoleFormatter extends ConsoleFormatter {
+  header(obj: any, config?: Config) {
+    const dark = isDarkMode();
+    const inputColor = dark ? "#ada" : "#363";
+    const outputColor = dark ? "#caa" : "#633";
+    const grey = dark ? "#aaa" : "#333";
+    const yellow = dark ? "#f3ce49" : "#a68307";
+    const classRef = obj.constructor;
+    if (!classRef) return null;
+
+    if (classRef.inputs && classRef.outputs) {
+      const header = new JsonMLElement("div");
+      const name = classRef.runtype ?? classRef.type ?? obj.type.replace(/Task$/, "");
+      const inputs = obj.constructor.inputs
+        .filter((i) => obj.runInputData[i.id] !== undefined)
+        .map((i: TaskInputDefinition) => i.id + ": " + obj.runInputData[i.id]);
+      const outputs = classRef.outputs
+        .filter((i) => obj.runOutputData[i.id] !== undefined && obj.runOutputData[i.id] !== "")
+        .map((i: TaskOutputDefinition) => i.id + ": " + obj.runOutputData[i.id]);
       header
         .createChild("span")
         .setStyle(`font-weight: bold;color:${yellow}`)
         .createTextChild(name);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({`);
       header
         .createChild("span")
-        .setStyle(`color:${grey}`)
-        .createTextChild(`({${inputs.join(", ")}})`);
-      header
-        .createChild("span")
-        .setStyle(`color:${grey}`)
-        .createTextChild(`: {${outputs.join(", ")}}`);
+        .setStyle(`color:${inputColor}`)
+        .createTextChild(`${inputs.join(", ")}`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`})`);
+      if (obj.status === TaskStatus.COMPLETED) {
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: {`);
+        header
+          .createChild("span")
+          .setStyle(`color:${outputColor}`)
+          .createTextChild(`${outputs.join(", ")}`);
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}`);
+      }
       return header.toJsonML();
     }
     return null;
@@ -187,10 +278,9 @@ class JsonMLElement {
     return c;
   }
 
-  createObjectTag(object: any, key?: string) {
+  createObjectTag(object: any) {
     const tag = this.createChild("object");
     tag.addAttribute("object", object);
-    if (key) tag.addAttribute("key", key);
     return tag;
   }
 
