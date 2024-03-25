@@ -9,6 +9,8 @@ import { DataFlow, TaskGraph } from "task/base/TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
+import EventEmitter from "eventemitter3";
+import { GraphEvents } from "@sroussey/typescript-graph";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 
@@ -82,14 +84,49 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
   return result;
 }
 
+type BuilderEvents = GraphEvents | "changed" | "reset";
+
 export class TaskGraphBuilder {
-  _graph: TaskGraph;
-  _runner: TaskGraphRunner;
+  _graph: TaskGraph = new TaskGraph();
+  _runner: TaskGraphRunner = new TaskGraphRunner(this._graph);
   _error: string = "";
 
+  events = new EventEmitter<BuilderEvents>();
+  on(name: BuilderEvents, fn: (...args: any[]) => void) {
+    this.events.on.call(this.events, name, fn);
+  }
+  off(name: BuilderEvents, fn: (...args: any[]) => void) {
+    this.events.off.call(this.events, name, fn);
+  }
+  emit(name: BuilderEvents, ...args: any[]) {
+    this.events.emit.call(this.events, name, ...args);
+  }
+
   constructor() {
-    this._graph = new TaskGraph();
-    this._runner = new TaskGraphRunner(this._graph);
+    this._onChanged = this._onChanged.bind(this);
+    this.setupEvents();
+  }
+
+  _onChanged(id: unknown) {
+    this.emit("changed", id);
+  }
+
+  setupEvents() {
+    this._graph.events.on("node-added", this._onChanged);
+    this._graph.events.on("node-replaced", this._onChanged);
+    this._graph.events.on("node-removed", this._onChanged);
+    this._graph.events.on("edge-added", this._onChanged);
+    this._graph.events.on("edge-replaced", this._onChanged);
+    this._graph.events.on("edge-removed", this._onChanged);
+  }
+
+  clearEvents() {
+    this._graph.events.off("node-added", this._onChanged);
+    this._graph.events.off("node-replaced", this._onChanged);
+    this._graph.events.off("node-removed", this._onChanged);
+    this._graph.events.off("edge-added", this._onChanged);
+    this._graph.events.off("edge-replaced", this._onChanged);
+    this._graph.events.off("edge-removed", this._onChanged);
   }
 
   async run() {
@@ -122,6 +159,18 @@ export class TaskGraphBuilder {
       throw new Error(this._error);
     }
     this._dataFlows.push(new DataFlow(lastNode.config.id, source, undefined, target));
+    return this;
+  }
+
+  reset() {
+    this.clearEvents();
+    this._graph = new TaskGraph();
+    this._runner = new TaskGraphRunner(this._graph);
+    this._dataFlows = [];
+    this._error = "";
+    this.setupEvents();
+    this.events.emit("changed");
+    this.events.emit("reset");
     return this;
   }
 }
