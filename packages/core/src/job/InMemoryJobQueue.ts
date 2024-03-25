@@ -9,6 +9,7 @@ import { makeFingerprint } from "../util/Misc";
 import { Job, JobStatus } from "./base/Job";
 import { JobQueue } from "./base/JobQueue";
 import { ILimiter } from "./base/ILimiter";
+import { nanoid } from "nanoid";
 
 export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
@@ -26,7 +27,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   public async add(job: Job<Input, Output>) {
-    job.id = job.id ?? Math.random().toString(36).substring(7);
+    job.id = job.id ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);

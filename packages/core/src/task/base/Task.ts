@@ -15,6 +15,7 @@ import {
   ValueTypesIndex,
 } from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
+import { nanoid } from "nanoid";
 
 export enum TaskStatus {
   PENDING = "NEW",
@@ -106,7 +107,7 @@ export abstract class TaskBase {
     const name = (this.constructor as any).type ?? this.constructor.name;
     this.config = Object.assign(
       {
-        id: name + ":" + Math.random().toString(36).substring(2, 9),
+        id: nanoid(),
         name: name,
       },
       rest
