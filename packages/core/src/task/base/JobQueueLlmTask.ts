@@ -25,6 +25,9 @@ export class JobQueueLlmTask extends JobQueueTask {
   }
 
   async run(): Promise<TaskOutput> {
+    if (!this.validateInputData(this.runInputData)) {
+      throw new Error("Invalid input data");
+    }
     this.emit("start");
     this.runOutputData = {};
     let results;

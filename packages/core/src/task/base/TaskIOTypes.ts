@@ -135,6 +135,13 @@ interface TsTypes {
 export function validateItem(valueType: ValueTypesIndex, item: any): boolean {
   switch (valueType) {
     case "text":
+    case "model":
+    case "text_embedding_model":
+    case "text_generation_model":
+    case "text_summarization_model":
+    case "text_question_answering_model":
+    case "similarity_fn":
+    case "file":
       return typeof item === "string";
     case "number":
       return typeof item === "number";
@@ -150,9 +157,12 @@ export function validateItem(valueType: ValueTypesIndex, item: any): boolean {
       return doc_variants.includes(item);
     case "document":
       return item instanceof Document;
+    case "vector":
+      return item instanceof ElVector;
     case "any":
       return true;
     default:
+      console.warn("Unknown value type: ", valueType, item);
       return false;
   }
 }
