@@ -84,7 +84,7 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
   return result;
 }
 
-type BuilderEvents = GraphEvents | "changed" | "reset";
+type BuilderEvents = GraphEvents | "changed" | "reset" | "error" | "start" | "complete";
 
 export class TaskGraphBuilder {
   _graph: TaskGraph = new TaskGraph();
@@ -130,7 +130,10 @@ export class TaskGraphBuilder {
   }
 
   async run() {
-    return this._runner.runGraph();
+    this.emit("start");
+    const out = await this._runner.runGraph();
+    this.emit("complete");
+    return out;
   }
   toJSON() {
     return this._graph.toJSON();
