@@ -1,5 +1,4 @@
 import {
-  TaskBase,
   TaskGraphBuilder,
   TaskInputDefinition,
   TaskOutputDefinition,
@@ -71,7 +70,7 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
     api
       .createChild("li")
       .setStyle(`color:${yellow}; padding-left: 10px;`)
-      .createTextChild(".connect(outputName, inputName)");
+      .createTextChild(".rename(outputName, inputName)");
     api
       .createChild("li")
       .setStyle(`color:${yellow}; padding-left: 10px;`)
@@ -93,17 +92,18 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
         nodeTag.createObjectTag(node);
         for (const [, , edge] of obj._graph.outEdges(node.config.id)) {
           const edgeTag = nodeTag.createChild("li").setStyle("padding-left: 20px;");
-          edgeTag.createChild("span").setStyle(`color:${yellow};`).createTextChild(`connection`);
-          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(`: `);
+          edgeTag.createChild("span").setStyle(`color:${yellow};`).createTextChild(`rename`);
+          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(`( "`);
           edgeTag
             .createChild("span")
             .setStyle(`color:${outputColor};`)
             .createTextChild(`${edge.sourceTaskOutputId}`);
-          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(` -> `);
+          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(`", "`);
           edgeTag
             .createChild("span")
             .setStyle(`color:${inputColor};`)
             .createTextChild(`${edge.targetTaskInputId}`);
+          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild('" )');
         }
       }
     }
@@ -129,17 +129,17 @@ export class TaskGraphBuilderHelperConsoleFormatter extends ConsoleFormatter {
         .createChild("span")
         .setStyle(`font-weight: bold;color:${yellow}`)
         .createTextChild("." + name);
-      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({ `);
       header
         .createChild("span")
         .setStyle(`color:${inputColor}`)
         .createTextChild(`${inputs.join(", ")}`);
-      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}): {`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(` }): { `);
       header
         .createChild("span")
         .setStyle(`color:${outputColor}`)
         .createTextChild(`${outputs.join(", ")}`);
-      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(` }`);
       return header.toJsonML();
     }
     return null;
@@ -184,23 +184,23 @@ export class TaskConsoleFormatter extends ConsoleFormatter {
         .createChild("span")
         .setStyle(`font-weight: bold;color:${yellow}`)
         .createTextChild(name);
-      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({ `);
       inputs.forEach((input, i) => {
         if (i > 0) header.createChild("span").setStyle(`color:${grey}`).createTextChild(`, `);
         header.createChild("span").setStyle(`color:${inputColor}`).createTextChild(input.name);
         header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: `);
         header.createValueObject(input.value);
       });
-      header.createChild("span").setStyle(`color:${grey}`).createTextChild(`})`);
+      header.createChild("span").setStyle(`color:${grey}`).createTextChild(` })`);
       if (obj.status === TaskStatus.COMPLETED) {
-        header.createChild("span").setStyle(`color:${grey}`).createTextChild(": {");
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(": { ");
         outputs.forEach((output, i) => {
           if (i > 0) header.createChild("span").setStyle(`color:${grey}`).createTextChild(`, `);
           header.createChild("span").setStyle(`color:${outputColor}`).createTextChild(output.name);
           header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: `);
           header.createValueObject(output.value);
         });
-        header.createChild("span").setStyle(`color:${grey}`).createTextChild("}");
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(" }");
       }
       return header.toJsonML();
     }
