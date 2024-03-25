@@ -87,7 +87,12 @@ export const App = () => {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={30}>
-        <JsonEditor json={jsonData} onJsonChange={setNewJson} run={run} running={isRunning} />
+        <JsonEditor
+          json={jsonData}
+          onJsonChange={setNewJson}
+          run={() => builder.run()}
+          running={isRunning}
+        />
       </ResizablePanel>
     </ResizablePanelGroup>
   );

@@ -58,6 +58,8 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
     const body = new JsonMLElement("div");
     const dark = isDarkMode();
     const grey = dark ? "#aaa" : "#333";
+    const inputColor = dark ? "#ada" : "#363";
+    const outputColor = dark ? "#caa" : "#633";
     const yellow = dark ? "#f3ce49" : "#a68307";
 
     const api = body.createChild("ol").setStyle("list-style-type: none; padding-left: 10px;");
@@ -91,9 +93,17 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
         nodeTag.createObjectTag(node);
         for (const [, , edge] of obj._graph.outEdges(node.config.id)) {
           const edgeTag = nodeTag.createChild("li").setStyle("padding-left: 20px;");
-          edgeTag.createTextChild(
-            `connection: ${edge.sourceTaskOutputId} -> ${edge.targetTaskInputId}`
-          );
+          edgeTag.createChild("span").setStyle(`color:${yellow};`).createTextChild(`connection`);
+          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(`: `);
+          edgeTag
+            .createChild("span")
+            .setStyle(`color:${outputColor};`)
+            .createTextChild(`${edge.sourceTaskOutputId}`);
+          edgeTag.createChild("span").setStyle(`color:${grey};`).createTextChild(` -> `);
+          edgeTag
+            .createChild("span")
+            .setStyle(`color:${inputColor};`)
+            .createTextChild(`${edge.targetTaskInputId}`);
         }
       }
     }
@@ -159,27 +169,38 @@ export class TaskConsoleFormatter extends ConsoleFormatter {
       const name = classRef.runtype ?? classRef.type ?? obj.type.replace(/Task$/, "");
       const inputs = obj.constructor.inputs
         .filter((i) => obj.runInputData[i.id] !== undefined)
-        .map((i: TaskInputDefinition) => i.id + ": " + obj.runInputData[i.id]);
+        .map((i: TaskInputDefinition) => {
+          return { name: i.id, value: obj.runInputData[i.id] };
+        });
       const outputs = classRef.outputs
         .filter((i) => obj.runOutputData[i.id] !== undefined && obj.runOutputData[i.id] !== "")
-        .map((i: TaskOutputDefinition) => i.id + ": " + obj.runOutputData[i.id]);
+        .filter(
+          (i) => !(Array.isArray(obj.runOutputData[i.id]) && obj.runOutputData[i.id].length === 0)
+        )
+        .map((i: TaskInputDefinition) => {
+          return { name: i.id, value: obj.runOutputData[i.id] };
+        });
       header
         .createChild("span")
         .setStyle(`font-weight: bold;color:${yellow}`)
         .createTextChild(name);
       header.createChild("span").setStyle(`color:${grey}`).createTextChild(`({`);
-      header
-        .createChild("span")
-        .setStyle(`color:${inputColor}`)
-        .createTextChild(`${inputs.join(", ")}`);
+      inputs.forEach((input, i) => {
+        if (i > 0) header.createChild("span").setStyle(`color:${grey}`).createTextChild(`, `);
+        header.createChild("span").setStyle(`color:${inputColor}`).createTextChild(input.name);
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: `);
+        header.createValueObject(input.value);
+      });
       header.createChild("span").setStyle(`color:${grey}`).createTextChild(`})`);
       if (obj.status === TaskStatus.COMPLETED) {
-        header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: {`);
-        header
-          .createChild("span")
-          .setStyle(`color:${outputColor}`)
-          .createTextChild(`${outputs.join(", ")}`);
-        header.createChild("span").setStyle(`color:${grey}`).createTextChild(`}`);
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild(": {");
+        outputs.forEach((output, i) => {
+          if (i > 0) header.createChild("span").setStyle(`color:${grey}`).createTextChild(`, `);
+          header.createChild("span").setStyle(`color:${outputColor}`).createTextChild(output.name);
+          header.createChild("span").setStyle(`color:${grey}`).createTextChild(`: `);
+          header.createValueObject(output.value);
+        });
+        header.createChild("span").setStyle(`color:${grey}`).createTextChild("}");
       }
       return header.toJsonML();
     }
@@ -187,80 +208,37 @@ export class TaskConsoleFormatter extends ConsoleFormatter {
   }
 
   hasBody(value: any, config?: Config) {
-    return false;
+    return true;
   }
 
   body(obj: any, config?: Config) {
-    return null;
-  }
-}
+    const classRef = obj.constructor;
+    if (!classRef) return null;
+    const dark = isDarkMode();
+    const inputColor = dark ? "#ada" : "#363";
+    const outputColor = dark ? "#caa" : "#633";
 
-class Formatter extends ConsoleFormatter {
-  description(object: any) {
-    if (typeof object === "object" && object)
-      return object.constructor.type ?? object.constructor.name;
-    return object;
-  }
+    const body = new JsonMLElement("div").setStyle("padding-left: 10px;");
 
-  hasChildren(object: any) {
-    return typeof object === "object";
-  }
-
-  children(object: any) {
-    const result = [];
-    for (const key in object) result.push({ key: key, value: object[key] });
-    return result;
-  }
-
-  header(object: any, config?: Config) {
-    if (object instanceof Node) return null;
-
-    const header = new JsonMLElement("span");
-    header.createTextChild(this.description(object));
-    return header.toJsonML();
-  }
-
-  hasBody(object: any, config?: Config) {
-    if (object instanceof Array) return false;
-    return this.hasChildren(object);
-  }
-
-  body(object: any, config?: Config) {
-    const body = new JsonMLElement("ol");
-    body.setStyle(
-      "list-style-type:none; padding-left: 0px; margin-top: 0px; margin-bottom: 0px; margin-left: 12px"
-    );
-    const children = this.children(object);
-    for (let i = 0; i < children.length; ++i) {
-      const child = children[i];
-      const li = body.createChild("li");
-      let objectTag;
-      if (typeof child.value === "object") objectTag = li.createObjectTag(child.value);
-      else objectTag = li.createChild("span");
-
-      const nameSpan = objectTag.createChild("span");
-      nameSpan.createTextChild(child.key + ": ");
-      nameSpan.setStyle("color: rgb(136, 19, 145); background-color: #bada55");
-      if (child.value instanceof Node) {
-        const node = child.value;
-        objectTag.createTextChild(node.nodeName.toLowerCase());
-        if (node.id) objectTag.createTextChild("#" + node.id);
-        else objectTag.createTextChild("." + node.className);
-      }
-      if (typeof child.value !== "object") objectTag.createTextChild("" + child.value);
+    const inputs = body.createChild("ol").setStyle("list-style-type: none; padding-left: 15px;");
+    inputs.createTextChild("Inputs:");
+    for (const input of classRef.inputs) {
+      const value = obj.runInputData[input.id];
+      const li = inputs.createChild("li").setStyle(`padding-left: 20px;`);
+      li.createChild("span").setStyle(`color:${inputColor};`).createTextChild(`${input.id}: `);
+      li.createValueObject(value);
     }
+
+    const outputs = body.createChild("ol").setStyle("list-style-type: none; padding-left: 15px;");
+    outputs.createTextChild("Outputs:");
+    for (const out of classRef.outputs) {
+      const value = obj.runOutputData[out.id];
+      const li = outputs.createChild("li").setStyle(`padding-left: 20px;`);
+      li.createChild("span").setStyle(`color:${outputColor};`).createTextChild(`${out.id}: `);
+      li.createValueObject(value);
+    }
+
     return body.toJsonML();
-  }
-
-  _arrayFormatter(array) {
-    const j = new JsonMLElement("span");
-    j.createTextChild("[");
-    for (let i = 0; i < array.length; ++i) {
-      if (i != 0) j.createTextChild(", ");
-      j.createObjectTag(array[i]);
-    }
-    j.createTextChild("]");
-    return j;
   }
 }
 
@@ -284,6 +262,14 @@ class JsonMLElement {
     return tag;
   }
 
+  createValueObject(value: any) {
+    if (Array.isArray(value)) return this.createArrayChild(value);
+    if (typeof value === "undefined")
+      return this.createChild("span").setStyle("color:#888;").createTextChild("undefined");
+
+    return this.createObjectTag(value);
+  }
+
   setStyle(style: string) {
     this._attributes["style"] = style;
     return this;
@@ -296,6 +282,18 @@ class JsonMLElement {
 
   createTextChild(text: string) {
     this._jsonML.push(text + "");
+  }
+
+  createArrayChild(array: any[]) {
+    const j = new JsonMLElement("span");
+    j.createTextChild("[");
+    for (let i = 0; i < array.length; ++i) {
+      if (i != 0) j.createTextChild(", ");
+      j.createValueObject(array[i]);
+    }
+    j.createTextChild("]");
+    this._jsonML.push(j.toJsonML());
+    return j;
   }
 
   toJsonML() {
