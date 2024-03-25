@@ -44,13 +44,11 @@ export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, ru
     <div
       style={{
         flexGrow: 1,
-        width: "400px",
         padding: 20,
         color: "#ddd",
         backgroundColor: "#333",
         display: "flex",
         flexDirection: "column",
-        zIndex: 1000,
       }}
     >
       <div>Enter JSON definition to run:</div>
@@ -79,7 +77,7 @@ export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, ru
       <button
         disabled={!isValidJSON || running}
         onClick={() => run()}
-        style={{ alignSelf: "center", marginTop: "10px" }}
+        className="bg-black text-white p-2 rounded-md hover:bg-gray-900 disabled:opacity-50 disabled:bg-gray-950 disabled:cursor-not-allowed"
       >
         RUN
       </button>

@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
-import { JsonTaskArray, ModelUseCaseEnum, findModelByUseCase } from "ellmers-core/browser";
+import { JsonTaskArray } from "ellmers-core/browser";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 
 const initialJsonObj: JsonTaskArray = [
   {
@@ -47,16 +48,23 @@ export const App = () => {
   const [jsonData, setJsonData] = useState<string>(initialJson);
 
   return (
-    <>
-      <ReactFlowProvider>
-        <RunGraphFlow json={jsonData} running={isRunning} setIsRunning={setIsRunning} />
-      </ReactFlowProvider>
-      <JsonEditor
-        initialJson={jsonData}
-        onJsonChange={(json) => setJsonData(json)}
-        run={() => setIsRunning(true)}
-        running={isRunning}
-      />
-    </>
+    <ResizablePanelGroup direction="horizontal">
+      <ResizablePanel defaultSize={400}>
+        <ReactFlowProvider>
+          <RunGraphFlow json={jsonData} running={isRunning} setIsRunning={setIsRunning} />
+        </ReactFlowProvider>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={200}>
+        <div className="flex h-full w-full">
+          <JsonEditor
+            initialJson={jsonData}
+            onJsonChange={(json) => setJsonData(json)}
+            run={() => setIsRunning(true)}
+            running={isRunning}
+          />
+        </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 };
