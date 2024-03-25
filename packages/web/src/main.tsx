@@ -36,7 +36,7 @@ console.log(
   .%crename%c(%c'text'%c, %c'message'%c)
   .%cDebugLog%c({ %clevel%c: %c'info'%c });
   
-  JSON.stringify(builder.toJSON());
+  console.log(JSON.stringify(builder.toJSON(),null,2));
   `,
   "color: #ddd; font-weight: normal;",
   "color: #f3ce49; font-weight: normal;",
