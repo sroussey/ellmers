@@ -13,6 +13,7 @@ import {
   type TaskInputDefinition,
   type TaskOutputDefinition,
   ValueTypesIndex,
+  ElVector,
 } from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
 import { nanoid } from "nanoid";
@@ -198,7 +199,8 @@ export abstract class TaskBase {
     return validateItem(valueType as ValueTypesIndex, item);
   }
   validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
-    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
+    const classRef = this.constructor as typeof TaskBase;
+    const inputdefs = classRef.inputs ?? [];
     const inputdef = inputdefs.find((def) => def.id === inputId);
     if (!inputdef) {
       return false;
@@ -206,6 +208,9 @@ export abstract class TaskBase {
     if (typeof input !== "object") return false;
     if (!inputdef.defaultValue && input[inputId] === undefined) {
       // if there is no default value, that implies the value is required
+      console.warn(
+        `No default value for '${inputId}' in a ${classRef.type} so assumed required and not given (id:${this.config.id})`
+      );
       return false;
     } else if (input[inputId] === undefined) {
       input[inputId] = inputdef.defaultValue;
@@ -220,9 +225,13 @@ export abstract class TaskBase {
     }
     // check the length of the vectors are the same
     if (inputdef.valueType === "vector" && inputdef.isArray) {
-      const len = input[inputId][0].length;
+      const vec = input[inputId] as ElVector;
+      const len = vec.vector.length;
       for (const item of input[inputId]) {
         if (item.length !== len) {
+          console.warn(
+            `Vectors in '${inputId}' should all be of the same dimension in ${classRef.type} (id:${this.config.id})`
+          );
           return false;
         }
       }
@@ -245,6 +254,9 @@ export abstract class TaskBase {
   }
 
   async run(): Promise<TaskOutput> {
+    if (!this.validateInputData(this.runInputData)) {
+      throw new Error("Invalid input data");
+    }
     this.emit("start");
     const result = this.runSyncOnly();
     this.emit("complete");
@@ -295,6 +307,7 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     });
   }
   async run(nodeProvenance: TaskInput = {}): Promise<TaskOutput> {
+    if (!this.validateInputData(this.runInputData)) throw new Error("Invalid input data");
     this.emit("start");
     const runner = new TaskGraphRunner(this.subGraph);
     this.runOutputData.outputs = await runner.runGraph(nodeProvenance);
@@ -320,7 +333,7 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
 export class RegenerativeCompoundTask extends CompoundTask {
   static readonly type: TaskTypeName = "CompoundTask";
   public regenerateGraph() {
-    this.emit("regenerate");
+    this.emit("regenerate", this.subGraph);
   }
 }
 
