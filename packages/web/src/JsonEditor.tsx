@@ -9,14 +9,14 @@ import "./JsonEditor.css";
 const extensions = [json()];
 
 interface PopupProps {
-  initialJson: string;
+  json: string;
   onJsonChange: (json: string) => void;
   running: boolean;
   run: () => void;
 }
 
-export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, run, running }) => {
-  const [code, setCode] = useState<string>(initialJson);
+export const JsonEditor: React.FC<PopupProps> = ({ json, onJsonChange, run, running }) => {
+  const [code, setCode] = useState<string>(json);
   const [isValidJSON, setIsValidJSON] = useState<boolean>(true);
 
   // Function to validate JSON
@@ -28,7 +28,7 @@ export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, ru
       new JsonTask({ name: "Test JSON", input: { json: jsonString } });
 
       setIsValidJSON(true);
-      // setCode(jsonString);
+      setCode(jsonString);
       onJsonChange(jsonString);
     } catch (error) {
       setIsValidJSON(false);
@@ -39,6 +39,10 @@ export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, ru
   useEffect(() => {
     validateJSON(code);
   }, [code]);
+
+  useEffect(() => {
+    validateJSON(json);
+  }, [json]);
 
   return (
     <div className="flex h-full w-full p-6 bg-[#333] text-[#ddd] flex-col">

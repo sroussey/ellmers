@@ -5,6 +5,7 @@ import "./main.css";
 import {
   TaskGraphBuilderConsoleFormatter,
   TaskGraphBuilderTaskFormatter,
+  isDarkMode,
 } from "./ConsoleFormatters";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -19,59 +20,66 @@ window["devtoolsFormatters"] = [
   new TaskGraphBuilderTaskFormatter(),
 ];
 
+const dark = isDarkMode();
+const grey = dark ? "#aaa" : "#333";
+const yellow = dark ? "#f3ce49" : "#a68307";
+const orange = dark ? "#da885e" : "#953402";
+
 console.log("%cWelcome to Ellmers!", "color: green; font-size: 16px;");
 console.log(
   "%cOpen DevTools settings, and under Console, turn on 'enable custom formatters' for best experience.",
   "color: red;"
 );
-console.log("You can build a task graph using the builder API: ");
 console.log(
-  `  %cbuilder = new %cTaskGraphBuilder%c();
+  "To get started, type 'builder.reset()' in the console. Then you can build a task graph using the builder API, and it will be reflected in the web page. For example, here is how the page started: "
+);
+console.log(
+  `  %cbuilder.%creset%c();
 
-  builder
-  .%cDownloadModel%c({ %cmodel%c: [%c'Xenova/LaMini-Flan-T5-783M']%c })
-  .%cTextRewriter%c({ %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %cprompt%c: [%c'Rewrite the following text in reverse:'%c, %c'Rewrite this to sound like a pirate:'%c] })
-  .%crename%c(%c'text'%c, %c'message'%c)
-  .%cDebugLog%c({ %clevel%c: %c'info'%c });
+
+  builder.%cDownloadModel%c({ %cmodel%c: [%c'Xenova/LaMini-Flan-T5-783M']%c });
+  builder.%cTextRewriter%c({ %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %cprompt%c: [%c'Rewrite the following text in reverse:'%c, %c'Rewrite this to sound like a pirate:'%c] });
+  builder.%crename%c(%c'text'%c, %c'message'%c);
+  builder.%cDebugLog%c({ %clevel%c: %c'info'%c });
   
   console.log(JSON.stringify(builder.toJSON(),null,2));
   `,
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: bold;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: bold;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: bold;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: bold;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
 
   // rename
-  "color: #f3ce49; font-weight: normal;",
+  `color: ${yellow}; font-weight: normal;`,
   "color: #ddd; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
 
   // DebugLog
-  "color: #f3ce49; font-weight: bold;",
-  "color: #aaa; font-weight: normal;",
-  "color: #f3ce49; font-weight: normal;",
-  "color: #aaa; font-weight: normal;",
-  "color: #da885e; font-weight: normal;",
-  "color: #aaa; font-weight: normal;"
+  `color: ${yellow}; font-weight: bold;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${yellow}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`,
+  `color: ${orange}; font-weight: normal;`,
+  `color: ${grey}; font-weight: normal;`
 );
-console.log(new TaskGraphBuilder());
+console.log(window["builder"]);

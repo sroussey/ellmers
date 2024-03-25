@@ -1,4 +1,4 @@
-import { TaskGraphBuilder } from "ellmers-core/browser";
+import { TaskGraphBuilder, TaskInputDefinition, TaskOutputDefinition } from "ellmers-core/browser";
 
 type Config = Record<string, any>;
 
@@ -18,6 +18,10 @@ abstract class ConsoleFormatter {
   abstract header(value: any, config?: Config): JsonMLElementDef | null;
   abstract hasBody(value: any, config?: Config): boolean;
   abstract body(value: any, config?: Config): JsonMLElementDef;
+}
+
+export function isDarkMode() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
@@ -45,11 +49,14 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
   }
 
   body(obj: any, config?: Config) {
-    const body = new JsonMLElement("ol").setStyle("list-style-type: none; padding-left: 10px;");
+    const body = new JsonMLElement("div");
+    const api = body.createChild("ol").setStyle("list-style-type: none; padding-left: 10px;");
+    api.createTextChild("API:");
     for (const [key, value] of Object.entries(obj.constructor.prototype)) {
-      const item = body.createChild("li").setStyle("list-style-type: none; padding-left: 10px;");
-      item.createChild("span").createTextChild(".");
-      item.createObjectTag(value, key);
+      const item = api.createChild("li").setStyle("list-style-type: none; padding-left: 10px;");
+      const a = item.createChild("span");
+      a.createChild("span").createTextChild(".");
+      a.createObjectTag(value, key);
     }
 
     return body.toJsonML();
@@ -58,19 +65,30 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
 
 export class TaskGraphBuilderTaskFormatter extends ConsoleFormatter {
   header(obj: any, config?: Config) {
+    const dark = isDarkMode();
+    const grey = dark ? "#aaa" : "#333";
+    const yellow = dark ? "#f3ce49" : "#a68307";
+
     if ((obj.inputs && obj.outputs) || (obj.constructor.inputs && obj.constructor.outputs)) {
       const header = new JsonMLElement("div");
       const name = obj.constructor.runtype ?? obj.constructor.type ?? obj.type.replace(/Task$/, "");
-      const inputs = (obj.inputs ?? obj.constructor.inputs).map((i) => i.id + ": ...");
-      const outputs = (obj.outputs ?? obj.constructor.outputs).map((i) => i.id + ": ...");
-      header.createChild("span").setStyle("font-weight: bold;color:#f3ce49").createTextChild(name);
+      const inputs = (obj.inputs ?? obj.constructor.inputs).map(
+        (i: TaskInputDefinition) => i.id + ": …"
+      );
+      const outputs = (obj.outputs ?? obj.constructor.outputs).map(
+        (i: TaskOutputDefinition) => i.id + ": …"
+      );
       header
         .createChild("span")
-        .setStyle("color:#ddd;")
+        .setStyle(`font-weight: bold;color:${yellow}`)
+        .createTextChild(name);
+      header
+        .createChild("span")
+        .setStyle(`color:${grey}`)
         .createTextChild(`({${inputs.join(", ")}})`);
       header
         .createChild("span")
-        .setStyle("color:#ccc;")
+        .setStyle(`color:${grey}`)
         .createTextChild(`: {${outputs.join(", ")}}`);
       return header.toJsonML();
     }
