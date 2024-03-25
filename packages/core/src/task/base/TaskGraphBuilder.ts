@@ -15,7 +15,8 @@ export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) =
 export function TaskGraphBuilderHelper<I extends TaskInput>(
   taskClass: typeof CompoundTask | typeof SingleTask
 ) {
-  return function (this: TaskGraphBuilder, input?: Partial<I>): TaskGraphBuilder {
+  const result = function (this: TaskGraphBuilder, input?: Partial<I>): TaskGraphBuilder {
+    this._error = "";
     const nodes = this._graph.getNodes();
     const parent = nodes.length > 0 ? nodes[nodes.length - 1] : undefined;
     const task = new taskClass({ input });
@@ -23,9 +24,9 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
     if (this._dataFlows.length > 0) {
       this._dataFlows.forEach((dataFlow) => {
         if (taskClass.inputs.find((i) => i.id === dataFlow.targetTaskInputId) === undefined) {
-          throw new Error(
-            `Input ${dataFlow.targetTaskInputId} not found on task ${task.config.id}`
-          );
+          this._error = `Input ${dataFlow.targetTaskInputId} not found on task ${task.config.id}`;
+          console.error(this._error);
+          return this;
         }
         dataFlow.targetTaskId = task.config.id;
         this._graph.addDataFlow(dataFlow);
@@ -65,20 +66,26 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
       );
       makeMatch((output, input) => output.valueType === input.valueType);
       if (matches.size === 0) {
-        console.warn(
-          `Could not find a match between the outputs of ${
-            (parent.constructor as any).type
-          } and the inputs of ${(parent.constructor as any).type}. You now need to specify the inputs manually.`
-        );
+        this._error = `Could not find a match between the outputs of ${
+          (parent.constructor as any).type
+        } and the inputs of ${(task.constructor as any).type}. You now need to connect the outputs to the inputs via connect() manually before adding this task. Task not added.`;
+        console.error(this._error);
+        this._graph.removeNode(task.config.id);
       }
     }
     return this;
   };
+  // @ts-expect-error  -
+  result.type = taskClass.runtype ?? taskClass.type;
+  result.inputs = taskClass.inputs;
+  result.outputs = taskClass.outputs;
+  return result;
 }
 
 export class TaskGraphBuilder {
   _graph: TaskGraph;
   _runner: TaskGraphRunner;
+  _error: string = "";
 
   constructor() {
     this._graph = new TaskGraph();
@@ -88,8 +95,12 @@ export class TaskGraphBuilder {
   async run() {
     return this._runner.runGraph();
   }
+  toJSON() {
+    return this._graph.toJSON();
+  }
 
   parallel(...args: Array<(b: TaskGraphBuilder) => void>) {
+    this._error = "";
     const group = new TaskGraphBuilder();
     for (const fn of args) {
       fn(group);
@@ -101,12 +112,14 @@ export class TaskGraphBuilder {
   }
 
   _dataFlows: DataFlow[] = [];
-  connect(source: string, target: string) {
+  rename(source: string, target: string) {
+    this._error = "";
     const nodes = this._graph.getNodes();
     const lastNode = nodes[nodes.length - 1];
     const sourceTaskOutputs = (lastNode.constructor as typeof TaskBase).outputs;
     if (!sourceTaskOutputs.find((o) => o.id === source)) {
-      throw new Error(`Output ${source} not found on task ${lastNode.config.id}`);
+      this._error = `Output ${source} not found on task ${lastNode.config.id}`;
+      throw new Error(this._error);
     }
     this._dataFlows.push(new DataFlow(lastNode.config.id, source, undefined, target));
     return this;

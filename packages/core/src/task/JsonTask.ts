@@ -38,6 +38,13 @@ export class JsonTask extends RegenerativeCompoundTask {
       valueType: "text",
     },
   ] as const;
+  public static outputs = [
+    {
+      id: "output",
+      name: "Output",
+      valueType: "any",
+    },
+  ] as const;
 
   declare runInputData: JsonTaskInput;
   declare runOutputData: JsonTaskOutput;

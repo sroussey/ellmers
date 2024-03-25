@@ -12,7 +12,8 @@ import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 import { TaskOutput } from "./base/Task";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { ModelUseCaseEnum, findModelByName } from "browser";
+import { ModelUseCaseEnum } from "../model/Model";
+import { findModelByName } from "../storage/InMemoryStorage";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
 export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;
