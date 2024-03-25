@@ -56,14 +56,12 @@ export const App = () => {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={200}>
-        <div className="flex h-full w-full">
-          <JsonEditor
-            initialJson={jsonData}
-            onJsonChange={(json) => setJsonData(json)}
-            run={() => setIsRunning(true)}
-            running={isRunning}
-          />
-        </div>
+        <JsonEditor
+          initialJson={jsonData}
+          onJsonChange={(json) => setJsonData(json)}
+          run={() => setIsRunning(true)}
+          running={isRunning}
+        />
       </ResizablePanel>
     </ResizablePanelGroup>
   );

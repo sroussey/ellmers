@@ -41,29 +41,9 @@ export const JsonEditor: React.FC<PopupProps> = ({ initialJson, onJsonChange, ru
   }, [code]);
 
   return (
-    <div
-      style={{
-        flexGrow: 1,
-        padding: 20,
-        color: "#ddd",
-        backgroundColor: "#333",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
+    <div className="flex h-full w-full p-6 bg-[#333] text-[#ddd] flex-col">
       <div>Enter JSON definition to run:</div>
-      <div
-        style={{
-          flexGrow: 1,
-          fontFamily: '"Fira code", "Fira Mono", monospace',
-          fontSize: 12,
-          border: "1px solid #3d3d3d",
-          borderRadius: 4,
-          marginTop: "10px",
-          marginBottom: "10px",
-          backgroundColor: "#222",
-        }}
-      >
+      <div className="flex-1 border-1 border-[#3d3d3d] rounded-md mt-2 mb-2 bg-[#222] text-xs">
         <CodeMirror
           value={code}
           onChange={setCode}
