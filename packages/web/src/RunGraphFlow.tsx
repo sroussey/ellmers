@@ -172,7 +172,7 @@ export const RunGraphFlow: React.FC<{
   const graphRef = useRef<TaskGraph | null>(null);
 
   const initialized = useNodesInitialized() && !nodes.some((n) => !n.computed);
-  // const { fitView } = useReactFlow();
+  const { fitView } = useReactFlow();
 
   useEffect(() => {
     if (initialized) {
@@ -182,9 +182,21 @@ export const RunGraphFlow: React.FC<{
         new GraphPipelineLayout(),
         new GraphPipelineLayout({ startTop: 100, startLeft: 20 })
       ) as Node<TurboNodeData>[];
-
-      setNodes(computedNodes);
-      // window.requestAnimationFrame(() => fitView()); // TODO: does not work as expected
+      setNodes(
+        computedNodes.map((n) => {
+          n.style = { opacity: 1 };
+          return n;
+        })
+      );
+      setEdges(
+        edges.map((n) => {
+          n.style = { opacity: 1 };
+          return n;
+        })
+      );
+      setTimeout(() => {
+        fitView();
+      }, 5); // TODO: does not work as expected
     }
   }, [initialized]);
 
@@ -194,7 +206,12 @@ export const RunGraphFlow: React.FC<{
       oldJson.current = json;
       graphRef.current = jsonTask.subGraph;
       const nodes = convertGraphToNodes(jsonTask.subGraph);
-      setNodes(nodes);
+      setNodes(
+        nodes.map((n) => {
+          n.style = { opacity: 0 };
+          return n;
+        })
+      );
 
       setEdges(
         jsonTask.subGraph.getEdges().map(([source, target, edge]) => {
@@ -202,6 +219,7 @@ export const RunGraphFlow: React.FC<{
             id: edge.id,
             source: source as string,
             target: target as string,
+            style: { opacity: 0 },
           };
         })
       );
