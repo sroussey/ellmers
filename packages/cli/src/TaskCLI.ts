@@ -149,7 +149,7 @@ export function AddBaseCommands(program: Command) {
         .TextEmbedding({
           text: "The quick brown fox jumps over the lazy dog.",
         })
-        .connect("vector", "message")
+        .rename("vector", "message")
         .DebugLog();
 
       try {

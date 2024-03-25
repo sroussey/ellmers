@@ -31,7 +31,7 @@ export class DebugLogTask extends OutputTask {
       defaultValue: "info",
     },
   ] as const;
-  public static outputs = [{ id: "out", name: "Outputs", valueType: "any" }] as const;
+  public static outputs = [{ id: "output", name: "Output", valueType: "any" }] as const;
   runSyncOnly() {
     const level = this.runInputData.level || "log";
     if (level == "dir") {
@@ -39,7 +39,7 @@ export class DebugLogTask extends OutputTask {
     } else {
       console[level](this.runInputData.message);
     }
-    this.runOutputData.out = this.runInputData.message;
+    this.runOutputData.output = this.runInputData.message;
     return this.runOutputData;
   }
 }
