@@ -18,10 +18,15 @@ export type JsonTaskItem = {
   name?: string;
   input?: TaskInput;
   dependencies?: {
-    [x: string]: {
-      id: unknown;
-      output: string;
-    };
+    [x: string]:
+      | {
+          id: unknown;
+          output: string;
+        }
+      | {
+          id: unknown;
+          output: string;
+        }[];
   };
   provenance?: TaskInput;
   subtasks?: JsonTaskArray;
@@ -108,12 +113,15 @@ export class JsonTask extends RegenerativeCompoundTask {
     for (const item of jsonItems) {
       if (!item.dependencies) continue;
       for (const [input, dependency] of Object.entries(item.dependencies)) {
-        const sourceTask = this.subGraph.getTask(dependency.id);
-        if (!sourceTask) {
-          throw new Error(`Dependency id ${dependency.id} not found`);
+        let dependencies = Array.isArray(dependency) ? dependency : [dependency];
+        for (const dep of dependencies) {
+          const sourceTask = this.subGraph.getTask(dep.id);
+          if (!sourceTask) {
+            throw new Error(`Dependency id ${dep.id} not found`);
+          }
+          const df = new DataFlow(sourceTask.config.id, dep.output, item.id, input);
+          this.subGraph.addDataFlow(df);
         }
-        const df = new DataFlow(sourceTask.config.id, dependency.output, item.id, input);
-        this.subGraph.addDataFlow(df);
       }
     }
     super.regenerateGraph();

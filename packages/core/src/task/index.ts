@@ -25,3 +25,5 @@ export * from "./TextGenerationTask";
 export * from "./TextSummaryTask";
 export * from "./TextEmbeddingTask";
 export * from "./TextQuestionAnswerTask";
+export * from "./TextTranslationTask";
+export * from "./SimilarityTask";

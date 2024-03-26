@@ -21,7 +21,7 @@ import {
   registerHuggingfaceLocalTasksInMemory,
   registerMediaPipeTfJsLocalInMemory,
 } from "ellmers-core/browser";
-import { GraphPipelineLayout, computeLayout } from "./layout";
+import { GraphPipelineCenteredLayout, GraphPipelineLayout, computeLayout } from "./layout";
 
 registerHuggingfaceLocalTasksInMemory();
 registerMediaPipeTfJsLocalInMemory();
@@ -46,7 +46,7 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
           subline: node.config.name,
         },
         type: node.isCompound ? "compound" : "single",
-        draggable: false,
+        // draggable: false,
       },
     ];
     if (node.isCompound) {
@@ -86,7 +86,7 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   task.on("start", () => {
-    console.log("Node started", task.config.id);
+    console.log("Task started", task.config.id);
     setNodes((nds) =>
       nds.map((nd) => {
         if (nd.id === task.config.id) {
@@ -105,7 +105,25 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   task.on("complete", () => {
-    console.log("Node completed", task.config.id);
+    console.log("Task completed", task.config.id);
+    setNodes((nds) =>
+      nds.map((nd) => {
+        if (nd.id === task.config.id) {
+          return {
+            ...nd,
+            data: {
+              ...nd.data,
+              active: false,
+              progress: 100,
+            },
+          };
+        }
+        return nd;
+      })
+    );
+  });
+  task.on("error", () => {
+    console.log("Task had fatal error", task.config.id);
     setNodes((nds) =>
       nds.map((nd) => {
         if (nd.id === task.config.id) {
@@ -182,7 +200,7 @@ export const RunGraphFlow: React.FC<{
       const computedNodes = computeLayout(
         nodes,
         edges,
-        new GraphPipelineLayout(),
+        new GraphPipelineCenteredLayout(),
         new GraphPipelineLayout({ startTop: 100, startLeft: 20 })
       ) as Node<TurboNodeData>[];
       setNodes(

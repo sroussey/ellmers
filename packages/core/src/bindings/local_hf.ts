@@ -5,6 +5,7 @@ import {
   HuggingFaceLocal_TextQuestionAnswerRun,
   HuggingFaceLocal_TextRewriterRun,
   HuggingFaceLocal_TextSummaryRun,
+  HuggingFaceLocal_TextTranslationRun,
 } from "provider/local-hugging-face/HuggingFaceLocal_TaskRun";
 import { ModelProcessorEnum } from "../model/Model";
 import { getProviderRegistry } from "../provider/ProviderRegistry";
@@ -15,6 +16,7 @@ import {
   TextQuestionAnswerTask,
   TextRewriterTask,
   TextSummaryTask,
+  TextTranslationTask,
 } from "task";
 
 export async function registerHuggingfaceLocalTasks() {
@@ -36,6 +38,12 @@ export async function registerHuggingfaceLocalTasks() {
     TextGenerationTask.type,
     ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextGenerationRun
+  );
+
+  ProviderRegistry.registerRunFn(
+    TextTranslationTask.type,
+    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    HuggingFaceLocal_TextTranslationRun
   );
 
   ProviderRegistry.registerRunFn(

@@ -62,6 +62,11 @@ export class DownloadModelTask extends JobQueueLlmTask {
       name: "",
       valueType: "text_question_answering_model",
     },
+    {
+      id: "text_translation_model",
+      name: "",
+      valueType: "text_translation_model",
+    },
   ] as const;
 
   declare runInputData: DownloadModelTaskInput;
@@ -90,9 +95,9 @@ export class DownloadModelTask extends JobQueueLlmTask {
       if (model.useCase.includes(ModelUseCaseEnum.TEXT_QUESTION_ANSWERING)) {
         this.runOutputData.text_question_answering_model = model.name;
       }
-      // if (model.useCase.includes(ModelUseCaseEnum.TEXT_CLASSIFICATION)) {
-      //   this.runOutputData.text_classification_model = model.name;
-      // }
+      if (model.useCase.includes(ModelUseCaseEnum.TEXT_TRANSLATION)) {
+        this.runOutputData.text_translation_model = model.name;
+      }
     }
     return this.runOutputData;
   }

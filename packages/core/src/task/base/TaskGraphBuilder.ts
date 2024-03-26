@@ -135,6 +135,19 @@ export class TaskGraphBuilder {
     this.emit("complete");
     return out;
   }
+
+  pop() {
+    this._error = "";
+    const nodes = this._graph.getNodes();
+    if (nodes.length === 0) {
+      this._error = "No tasks to remove";
+      console.error(this._error);
+    }
+    const lastNode = nodes[nodes.length - 1];
+    this._graph.removeNode(lastNode.config.id);
+    return this;
+  }
+
   toJSON() {
     return this._graph.toJSON();
   }
@@ -152,11 +165,15 @@ export class TaskGraphBuilder {
   }
 
   _dataFlows: DataFlow[] = [];
-  rename(source: string, target: string) {
+  rename(source: string, target: string, index: number = -1) {
     this._error = "";
     const nodes = this._graph.getNodes();
-    const lastNode = nodes[nodes.length - 1];
-    const sourceTaskOutputs = (lastNode.constructor as typeof TaskBase).outputs;
+    if (-index > nodes.length) {
+      this._error = `Back index greater than number of tasks`;
+      throw new Error(this._error);
+    }
+    const lastNode = nodes[nodes.length + index];
+    const sourceTaskOutputs = (lastNode?.constructor as typeof TaskBase)?.outputs;
     if (!sourceTaskOutputs.find((o) => o.id === source)) {
       this._error = `Output ${source} not found on task ${lastNode.config.id}`;
       throw new Error(this._error);

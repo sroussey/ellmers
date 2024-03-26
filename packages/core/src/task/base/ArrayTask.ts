@@ -120,13 +120,6 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
       if (isArray(input[key])) result[key as keyof T] = input[key][valueIndex];
     });
 
-    // Remove properties not in inputMakeArray from the result
-    Object.keys(result).forEach((key) => {
-      if (!inputMakeArray.includes(key as keyof T)) {
-        delete result[key as keyof T];
-      }
-    });
-
     return result;
   });
 }

@@ -22,6 +22,7 @@ export enum ModelUseCaseEnum {
   TEXT_SUMMARIZATION = "TEXT_SUMMARIZATION",
   TEXT_QUESTION_ANSWERING = "TEXT_QUESTION_ANSWERING",
   TEXT_CLASSIFICATION = "TEXT_CLASSIFICATION",
+  TEXT_TRANSLATION = "TEXT_TRANSLATION",
 }
 
 const runningOnServer = typeof (globalThis as any).window === "undefined";
@@ -33,6 +34,7 @@ export interface ModelOptions {
   extras?: Record<string, string | number>;
   browserOnly?: boolean;
   parameters?: number;
+  languageStyle?: string;
 }
 
 export abstract class Model implements ModelOptions {

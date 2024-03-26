@@ -21,12 +21,18 @@ builder.run = async () => {
 };
 window["builder"] = builder;
 builder
-  .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M"] })
+  .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
   .TextRewriter({
     text: "The quick brown fox jumps over the lazy dog.",
     prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
   })
+  .TextTranslation({
+    model: "Xenova/m2m100_418M",
+    source: "en",
+    target: "es",
+  })
   .rename("text", "message")
+  .rename("text", "message", -2)
   .DebugLog({ level: "info" });
 
 const initialJsonObj: JsonTaskArray = builder.toJSON();

@@ -7,6 +7,7 @@
 
 import {
   pipeline,
+  env,
   type PipelineType,
   type FeatureExtractionPipeline,
   type TextGenerationPipeline,
@@ -15,12 +16,14 @@ import {
   type SummarizationSingle,
   type QuestionAnsweringPipeline,
   type DocumentQuestionAnsweringSingle,
-  env,
+  type TranslationPipeline,
+  type TranslationSingle,
 } from "@sroussey/transformers";
 import { findModelByName } from "../../storage/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
   ElVector,
+  JobQueueLlmTask,
   DownloadModelTask,
   DownloadModelTaskInput,
   DownloadModelTaskOutput,
@@ -39,7 +42,9 @@ import {
   TextSummaryTask,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
-  JobQueueLlmTask,
+  TextTranslationTask,
+  TextTranslationTaskInput,
+  TextTranslationTaskOutput,
 } from "task";
 
 env.cacheDir = "./.cache";
@@ -195,6 +200,32 @@ export async function HuggingFaceLocal_TextGenerationRun(
   }
   return {
     text: (results[0] as TextGenerationSingle)?.generated_text,
+  };
+}
+
+/**
+ * Text translation
+ *
+ * Model pipeline must be "translation"
+ */
+export async function HuggingFaceLocal_TextTranslationRun(
+  task: TextTranslationTask,
+  runInputData: TextTranslationTaskInput
+): Promise<Partial<TextTranslationTaskOutput>> {
+  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+
+  const translate: TranslationPipeline = await getPipeline(task, model);
+
+  let results = await translate(runInputData.text, {
+    src_lang: runInputData.source,
+    tgt_lang: runInputData.target,
+    callback_function: generateProgressCallback(task, translate),
+  } as any);
+  if (!Array.isArray(results)) {
+    results = [results];
+  }
+  return {
+    text: (results[0] as TranslationSingle)?.translation_text,
   };
 }
 

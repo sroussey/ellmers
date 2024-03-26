@@ -108,6 +108,27 @@ export const distilbartCnn = new ONNXTransformerJsModel(
   "summarization"
 );
 
+export const nllb200distilled600m = new ONNXTransformerJsModel(
+  "Xenova/nllb-200-distilled-600M",
+  [ModelUseCaseEnum.TEXT_TRANSLATION],
+  "translation",
+  { languageStyle: "FLORES-200" }
+);
+
+export const m2m100_418M = new ONNXTransformerJsModel(
+  "Xenova/m2m100_418M",
+  [ModelUseCaseEnum.TEXT_TRANSLATION],
+  "translation",
+  { languageStyle: "ISO-639" }
+);
+
+export const mbartLarge50many2manyMmt = new ONNXTransformerJsModel(
+  "Xenova/mbart-large-50-many-to-many-mmt",
+  [ModelUseCaseEnum.TEXT_TRANSLATION],
+  "translation",
+  { languageStyle: "ISO-639_ISO-3166-1-alpha-2" }
+);
+
 // export const llamav2p7b = new GgmlLocalModel(
 //   "GGUF/LlamaV2-7B-16f",
 //   [ModelUseCaseEnum.TEXT_GENERATION],

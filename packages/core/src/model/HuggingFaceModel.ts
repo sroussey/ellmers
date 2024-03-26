@@ -12,7 +12,7 @@ export class ONNXTransformerJsModel extends Model {
     name: string,
     useCase: ModelUseCaseEnum[],
     public pipeline: string,
-    options?: Pick<ModelOptions, "dimensions" | "parameters">
+    options?: Pick<ModelOptions, "dimensions" | "parameters" | "languageStyle">
   ) {
     super(name, useCase, options);
   }

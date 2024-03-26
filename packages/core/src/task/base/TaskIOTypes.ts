@@ -71,6 +71,10 @@ export const valueTypes = {
     name: "Generation Model",
     tsType: "string",
   },
+  text_translation_model: {
+    name: "Translation Model",
+    tsType: "string",
+  },
   text_summarization_model: {
     name: "Summarization Model",
     tsType: "string",
@@ -102,6 +106,10 @@ export const valueTypes = {
   similarity_fn: {
     name: "Similarity Function",
     tsType: "similarity_fn",
+  },
+  language: {
+    name: "Language",
+    tsType: "string",
   },
 } as const;
 
@@ -145,6 +153,8 @@ export function validateItem(valueType: ValueTypesIndex, item: any): boolean {
     case "text_generation_model":
     case "text_summarization_model":
     case "text_question_answering_model":
+    case "text_translation_model":
+    case "language":
     case "similarity_fn":
     case "file":
       return typeof item === "string";

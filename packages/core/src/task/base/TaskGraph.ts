@@ -102,10 +102,25 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
       if (!target.dependencies) {
         target.dependencies = {};
       }
-      target.dependencies[edge.targetTaskInputId] = {
-        id: edge.sourceTaskId,
-        output: edge.sourceTaskOutputId,
-      };
+      const targetDeps = target.dependencies[edge.targetTaskInputId];
+      if (!targetDeps) {
+        target.dependencies[edge.targetTaskInputId] = {
+          id: edge.sourceTaskId,
+          output: edge.sourceTaskOutputId,
+        };
+      } else {
+        if (Array.isArray(targetDeps)) {
+          targetDeps.push({
+            id: edge.sourceTaskId,
+            output: edge.sourceTaskOutputId,
+          });
+        } else {
+          target.dependencies[edge.targetTaskInputId] = [
+            targetDeps,
+            { id: edge.sourceTaskId, output: edge.sourceTaskOutputId },
+          ];
+        }
+      }
     });
     return nodes;
   }
