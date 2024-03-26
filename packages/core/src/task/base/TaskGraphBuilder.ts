@@ -5,12 +5,13 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { DataFlow, TaskGraph } from "task/base/TaskGraph";
+import EventEmitter from "eventemitter3";
+import { GraphEvents } from "@sroussey/typescript-graph";
+import { DataFlow, TaskGraph } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
-import EventEmitter from "eventemitter3";
-import { GraphEvents } from "@sroussey/typescript-graph";
+import { ITaskOutputRepository } from "../../storage/ITaskOutputRepository";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 
@@ -91,8 +92,9 @@ type BuilderEvents = GraphEvents | "changed" | "reset" | "error" | "start" | "co
 
 export class TaskGraphBuilder {
   _graph: TaskGraph = new TaskGraph();
-  _runner: TaskGraphRunner = new TaskGraphRunner(this._graph);
+  _runner: TaskGraphRunner;
   _error: string = "";
+  _repository?: ITaskOutputRepository;
 
   events = new EventEmitter<BuilderEvents>();
   on(name: BuilderEvents, fn: (...args: any[]) => void) {
@@ -105,7 +107,9 @@ export class TaskGraphBuilder {
     this.events.emit.call(this.events, name, ...args);
   }
 
-  constructor() {
+  constructor(repository?: ITaskOutputRepository) {
+    this._repository = repository;
+    this._runner = new TaskGraphRunner(this._graph, this._repository);
     this._onChanged = this._onChanged.bind(this);
     this.setupEvents();
   }
@@ -188,7 +192,7 @@ export class TaskGraphBuilder {
   reset() {
     this.clearEvents();
     this._graph = new TaskGraph();
-    this._runner = new TaskGraphRunner(this._graph);
+    this._runner = new TaskGraphRunner(this._graph, this._repository);
     this._dataFlows = [];
     this._error = "";
     this.setupEvents();

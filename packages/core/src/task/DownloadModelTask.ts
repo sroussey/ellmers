@@ -68,7 +68,7 @@ export class DownloadModelTask extends JobQueueLlmTask {
       valueType: "text_translation_model",
     },
   ] as const;
-
+  static sideeffects = true;
   declare runInputData: DownloadModelTaskInput;
   declare runOutputData: DownloadModelTaskOutput;
   declare defaults: Partial<DownloadModelTaskInput>;

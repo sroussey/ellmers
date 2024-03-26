@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { ITaskOutputRepository } from "storage/ITaskOutputRepository";
-import { TaskInput, Task, TaskOutput } from "task/base/Task";
+import { TaskInput, Task, TaskOutput, TaskBase } from "task/base/Task";
 import { TaskGraph } from "task/base/TaskGraph";
 
 export class TaskGraphRunner {
@@ -89,12 +89,27 @@ export class TaskGraphRunner {
     this.provenanceInput.set(task.config.id, nodeProvenance);
     this.copyInputFromEdgesToNode(task);
 
-    let results = await this.repository?.getOutput(
-      (task.constructor as any).type,
-      task.runInputData
-    );
+    const shouldUseRepository = !(task.constructor as any).sideeffects && !task.isCompound;
+
+    let results;
+
+    if (shouldUseRepository) {
+      results = await this.repository?.getOutput((task.constructor as any).type, task.runInputData);
+      if (results) {
+        task.emit("start");
+        task.emit("progress", 100, Object.values(results)[0]);
+        task.emit("complete");
+      }
+    }
     if (!results) {
-      results = await task.run(nodeProvenance);
+      results = await task.run(nodeProvenance, this.repository);
+      if (shouldUseRepository) {
+        await this.repository?.saveOutput(
+          (task.constructor as any).type,
+          task.runInputData,
+          results
+        );
+      }
     }
 
     this.pushOutputFromNodeToEdges(task, results, nodeProvenance);

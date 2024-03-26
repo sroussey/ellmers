@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { Database } from "bun:sqlite";
-import crypto from "crypto";
 import { ITaskOutputRepository } from "./ITaskOutputRepository";
 import { TaskInput, TaskOutput } from "task";
+import { makeFingerprint } from "../util/Misc";
 
 export class SqliteTaskOutputRepository implements ITaskOutputRepository {
   private db: Database;
@@ -20,6 +20,7 @@ export class SqliteTaskOutputRepository implements ITaskOutputRepository {
     }
     this.setupDatabase();
   }
+
   private setupDatabase(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS task_outputs (
@@ -30,20 +31,18 @@ export class SqliteTaskOutputRepository implements ITaskOutputRepository {
       )
     `);
   }
-  private hashInputs(inputs: TaskInput): string {
-    // Implement a hashing function that creates a unique hash based on the inputs
-    return crypto.createHash("sha1").update(JSON.stringify(inputs)).digest("hex");
-  }
+
   async saveOutput(taskId: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
-    const inputsHash = this.hashInputs(inputs);
+    const inputsHash = await makeFingerprint(inputs);
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO task_outputs (task_type, inputs_hash, output)
       VALUES (?, ?, ?)
     `);
     stmt.run(taskId, inputsHash, JSON.stringify(output));
   }
+
   async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
-    const inputsHash = this.hashInputs(inputs);
+    const inputsHash = await makeFingerprint(inputs);
     const stmt = this.db.prepare<{ output: string }, [task_type: string, task_hash: string]>(`
       SELECT output FROM task_outputs WHERE task_type = ? AND inputs_hash = ?
     `);

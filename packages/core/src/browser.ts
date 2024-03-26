@@ -17,6 +17,8 @@ export * from "./model/Model";
 export * from "./model/HuggingFaceModel";
 export * from "./storage/InMemoryStorage";
 export * from "./storage/ITaskOutputRepository";
+export * from "./storage/InMemoryTaskOutputRepository";
+export * from "./storage/IndexedDbTaskOutputRepository";
 export * from "./util/Misc";
 export * from "./job/base/Job";
 export * from "./job/base/JobQueue";

@@ -86,7 +86,6 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   task.on("start", () => {
-    console.log("Task started", task.config.id);
     setNodes((nds) =>
       nds.map((nd) => {
         if (nd.id === task.config.id) {
@@ -105,7 +104,6 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   task.on("complete", () => {
-    console.log("Task completed", task.config.id);
     setNodes((nds) =>
       nds.map((nd) => {
         if (nd.id === task.config.id) {
@@ -123,7 +121,6 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   task.on("error", () => {
-    console.log("Task had fatal error", task.config.id);
     setNodes((nds) =>
       nds.map((nd) => {
         if (nd.id === task.config.id) {
@@ -143,7 +140,7 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
   if (task.isCompound) {
     listenToGraphNodes(task.subGraph, setNodes);
     task.on("regenerate", () => {
-      console.log("Node regenerated", task.config.id);
+      // console.log("Node regenerated", task.config.id);
       setNodes((nodess) => nodess.filter((n) => n.parentNode !== task.config.id));
       setNodes((nodes) =>
         nodes.concat(

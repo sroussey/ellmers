@@ -6,6 +6,7 @@
 //    *******************************************************************************
 
 import { EventEmitter } from "eventemitter3";
+import { nanoid } from "nanoid";
 import { TaskGraph } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import {
@@ -16,7 +17,7 @@ import {
   ElVector,
 } from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
-import { nanoid } from "nanoid";
+import { ITaskOutputRepository } from "../../storage/ITaskOutputRepository";
 
 export enum TaskStatus {
   PENDING = "NEW",
@@ -65,6 +66,7 @@ export abstract class TaskBase {
   // information about the task that should be overriden by the subclasses
   static readonly type: TaskTypeName = "TaskBase";
   static readonly category: string = "Hidden";
+  static readonly sideeffects: boolean = false;
 
   events = new EventEmitter<TaskEvents>();
   on(name: TaskEvents, fn: (...args: any[]) => void) {
@@ -306,10 +308,13 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
       node.resetInputData();
     });
   }
-  async run(nodeProvenance: TaskInput = {}): Promise<TaskOutput> {
+  async run(
+    nodeProvenance: TaskInput = {},
+    repository?: ITaskOutputRepository
+  ): Promise<TaskOutput> {
     if (!this.validateInputData(this.runInputData)) throw new Error("Invalid input data");
     this.emit("start");
-    const runner = new TaskGraphRunner(this.subGraph);
+    const runner = new TaskGraphRunner(this.subGraph, repository);
     this.runOutputData.outputs = await runner.runGraph(nodeProvenance);
     this.emit("complete");
     return this.runOutputData;

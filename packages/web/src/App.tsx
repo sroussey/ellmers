@@ -3,6 +3,8 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
 import {
+  InMemoryTaskOutputRepository,
+  IndexedDbTaskOutputRepository,
   JsonTask,
   JsonTaskArray,
   TaskGraph,
@@ -11,7 +13,7 @@ import {
 } from "ellmers-core/browser";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 
-const builder = new TaskGraphBuilder();
+const builder = new TaskGraphBuilder(new IndexedDbTaskOutputRepository());
 const run = builder.run.bind(builder);
 builder.run = async () => {
   console.log("Running task graph...");
@@ -75,7 +77,7 @@ export const App = () => {
     const task = new JsonTask({ input: { json: json } });
     builder.clearEvents();
     builder._graph = task.subGraph;
-    builder._runner = new TaskGraphRunner(builder._graph);
+    builder._runner = new TaskGraphRunner(builder._graph, builder._repository);
     builder._dataFlows = [];
     builder._error = "";
     builder.setupEvents();

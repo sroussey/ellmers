@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 import { Pool } from "pg";
-import crypto from "crypto";
 import { ITaskOutputRepository } from "./ITaskOutputRepository";
 import { TaskInput, TaskOutput } from "task";
+import { makeFingerprint } from "../util/Misc";
 
 export class PostgresTaskOutputRepository implements ITaskOutputRepository {
   private pool: Pool;
@@ -29,13 +29,8 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
     `);
   }
 
-  private hashInputs(inputs: TaskInput): string {
-    // Implement a hashing function that creates a unique hash based on the inputs
-    return crypto.createHash("sha1").update(JSON.stringify(inputs)).digest("hex");
-  }
-
   async saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
-    const inputsHash = this.hashInputs(inputs);
+    const inputsHash = await makeFingerprint(inputs);
     await this.pool.query(
       `INSERT INTO task_outputs (task_type, inputs_hash, output)
       VALUES ($1, $2, $3)
@@ -46,7 +41,7 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
   }
 
   async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
-    const inputsHash = this.hashInputs(inputs);
+    const inputsHash = await makeFingerprint(inputs);
     const result = await this.pool.query(
       `SELECT output FROM task_outputs WHERE task_type = $1 AND inputs_hash = $2`,
       [taskType, inputsHash]

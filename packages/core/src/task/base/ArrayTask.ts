@@ -146,6 +146,7 @@ export function arrayTaskFactory<
     static readonly type: TaskTypeName = name!;
     static readonly runtype = taskClass.type;
     static readonly category = taskClass.category;
+    static readonly sideeffects = taskClass.sideeffects;
     declare runInputData: PluralInputType;
     declare runOutputData: PluralOutputType;
     declare defaults: Partial<PluralInputType>;
@@ -181,8 +182,8 @@ export function arrayTaskFactory<
       ) as PluralOutputType;
       return this.runOutputData;
     }
-    async run(): Promise<PluralOutputType> {
-      const runDataOut = await super.run();
+    async run(...args: any[]): Promise<PluralOutputType> {
+      const runDataOut = await super.run(...args);
       this.runOutputData = collectPropertyValues<NonPluralOutputType>(
         runDataOut.outputs
       ) as PluralOutputType;

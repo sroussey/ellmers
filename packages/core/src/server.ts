@@ -12,5 +12,4 @@ export * from "./job/SqliteJobQueue";
 export * from "./job/SqliteRateLimiter";
 export * from "./job/PostgreSqlJobQueue";
 export * from "./job/PostgreSqlRateLimiter";
-export * from "./bindings/all_inmemory";
 export * from "./bindings/all_sqlite";
