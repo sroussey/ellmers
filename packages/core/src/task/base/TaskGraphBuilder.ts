@@ -14,6 +14,8 @@ import { GraphEvents } from "@sroussey/typescript-graph";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 
+let id = 0;
+
 export function TaskGraphBuilderHelper<I extends TaskInput>(
   taskClass: typeof CompoundTask | typeof SingleTask
 ) {
@@ -21,7 +23,8 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
     this._error = "";
     const nodes = this._graph.getNodes();
     const parent = nodes.length > 0 ? nodes[nodes.length - 1] : undefined;
-    const task = new taskClass({ input });
+    id++;
+    const task = new taskClass({ id: String(id), input });
     this._graph.addTask(task);
     if (this._dataFlows.length > 0) {
       this._dataFlows.forEach((dataFlow) => {
