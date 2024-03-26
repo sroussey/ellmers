@@ -98,6 +98,8 @@ export class TaskGraphRunner {
       if (results) {
         task.emit("start");
         task.emit("progress", 100, Object.values(results)[0]);
+        task.runOutputData = results;
+        task.runSyncOnly();
         task.emit("complete");
       }
     }
