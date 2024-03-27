@@ -33,6 +33,36 @@ const categoryIcons = {
   Utility: <FiClipboard />,
 };
 
+function sortNodes(nodes: Node<TurboNodeData>[]): Node<TurboNodeData>[] {
+  // Map to hold nodes grouped by their parent ID
+  const parentMap: Map<string | undefined, Node<TurboNodeData>[]> = new Map();
+
+  // Group nodes by parent ID
+  nodes.forEach((node) => {
+    const parent = node.parentNode || "###root###";
+    if (!parentMap.has(parent)) {
+      parentMap.set(parent, []);
+    }
+    parentMap.get(parent)?.push(node);
+  });
+
+  // Recursive function to get a node and all its descendants
+  const appendChildren = (nodeId: string | "###root###"): Node<TurboNodeData>[] => {
+    const children = parentMap.get(nodeId) || [];
+    const result: Node<TurboNodeData>[] = [];
+
+    children.forEach((child) => {
+      // Append the child and its descendants
+      result.push(child, ...appendChildren(child.id));
+    });
+
+    return result;
+  };
+
+  // Start the recursion from the root nodes
+  return appendChildren("###root###");
+}
+
 function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
   const tasks = graph.getNodes();
   const nodes = tasks.flatMap((node, index) => {
@@ -46,7 +76,6 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
           subline: node.config.name,
         },
         type: node.isCompound ? "compound" : "single",
-        // draggable: false,
       },
     ];
     if (node.isCompound) {
@@ -54,10 +83,10 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
         return {
           ...n,
           parentNode: node.config.id as string,
-          extent: "parent" as Node<TurboNodeData>["extent"],
+          extent: "parent",
           selectable: false,
           connectable: false,
-        };
+        } as Node<TurboNodeData>;
       });
       n = [...n, ...subNodes];
     }
@@ -141,19 +170,23 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     listenToGraphNodes(task.subGraph, setNodes);
     task.on("regenerate", () => {
       // console.log("Node regenerated", task.config.id);
-      setNodes((nodess) => nodess.filter((n) => n.parentNode !== task.config.id));
-      setNodes((nodes) =>
-        nodes.concat(
-          convertGraphToNodes(task.subGraph).map((n) => ({
-            ...n,
-            parentNode: task.config.id as string,
-            extent: "parent",
-            selectable: false,
-            connectable: false,
-          }))
-        )
-      );
-      listenToGraphNodes(task.subGraph, setNodes);
+      setNodes((nodes: Node<TurboNodeData>[]) => {
+        const children = convertGraphToNodes(task.subGraph).map(
+          (n) =>
+            ({
+              ...n,
+              parentNode: task.config.id as string,
+              extent: "parent",
+              selectable: false,
+              connectable: false,
+            }) as Node<TurboNodeData>
+        );
+        listenToGraphNodes(task.subGraph, setNodes);
+        let returnNodes = nodes.filter((n) => n.parentNode !== task.config.id); // remove old children
+        returnNodes = [...returnNodes, ...children]; // add new children
+        returnNodes = sortNodes(returnNodes); // sort all nodes (parent, children, parent, children, ...)
+        return returnNodes;
+      });
     });
   }
 }
@@ -200,16 +233,19 @@ export const RunGraphFlow: React.FC<{
         new GraphPipelineCenteredLayout(),
         new GraphPipelineLayout({ startTop: 100, startLeft: 20 })
       ) as Node<TurboNodeData>[];
+      const sortedNodes = sortNodes(computedNodes);
       setNodes(
-        computedNodes.map((n) => {
+        sortedNodes.map((n) => {
           n.style = { opacity: 1 };
           return n;
         })
       );
       setEdges(
         edges.map((n) => {
-          n.style = { opacity: 1 };
-          return n;
+          return {
+            ...n,
+            style: { opacity: 1 },
+          };
         })
       );
       setTimeout(() => {
@@ -221,11 +257,13 @@ export const RunGraphFlow: React.FC<{
   useEffect(() => {
     if (graph !== graphRef.current) {
       graphRef.current = graph;
-      const nodes = convertGraphToNodes(graph);
+      const nodes = sortNodes(convertGraphToNodes(graph));
       setNodes(
         nodes.map((n) => {
-          n.style = { opacity: 0 };
-          return n;
+          return {
+            ...n,
+            style: { opacity: 0 },
+          };
         })
       );
 
