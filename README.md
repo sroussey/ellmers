@@ -19,11 +19,19 @@ The Embedding Large Language Model Experiential Retrieval Service (ELLMERS) is a
 
 - [Steven Roussey](https://stevenroussey.com)
 
-## Overall Background Thoughts
+## Docs
 
-1. [Motivations](docs/background/01_motivations.md)
-2. [Retrieval Augmented Generation](docs/background/02_retrieval_augmented_generation.md)
-3. [Matrix Operations](docs/background/03_matrix_operations.md)
-4. [System Composition](docs/background/04_system_composition.md)
-5. [Task Chains](docs/background/05_task_chains.md)
-6. [Run Graph Orchestration](docs/background/06_run_graph_orchestration.md)
+- **[Getting Started](docs/developers/01_getting_started.md)**
+- **[Architecture](docs/developers/02_architecture.md)**
+
+## Examples
+
+### CLI
+
+![CLI](docs/developers/img/cli.png)
+
+### Web
+
+![Web](docs/developers/img/web.png)
+
+### Node Editor
