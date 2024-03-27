@@ -16,7 +16,6 @@ export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;
 export class DebugLogTask extends OutputTask {
   static readonly type: string = "DebugLogTask";
   static readonly category = "Output";
-  static readonly sideeffects = true;
   declare runInputData: DebugLogTaskInput;
   declare runOutputData: DebugLogTaskOutput;
   public static inputs = [

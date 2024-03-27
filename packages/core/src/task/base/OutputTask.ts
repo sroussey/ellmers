@@ -10,6 +10,7 @@ import { SingleTask, TaskInput } from "./Task";
 export class OutputTask extends SingleTask {
   static readonly category = "Output";
   provenance: TaskInput = {};
+  static readonly sideeffects = true;
   async run(provenance: TaskInput = {}) {
     this.provenance = provenance;
     return super.run();
