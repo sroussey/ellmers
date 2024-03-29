@@ -20,9 +20,9 @@ This document covers the architecture and the reasoning behind the design decisi
 ## Design Principles
 
 - **Simple to Use**: The system should be simple to use and easy to extend.
-- **Orthaganal Sytems**: The system should be composed of orthaganal systems that can be easily swapped out. For example, there is an optional caching layer in the task graph runner, which was many different caching system options (in memory, indexeddb in browser, filesystem, sqlite, postgres, etc.).
+- **Orthogonal Systems**: The system should be composed of orthogonal systems that can be easily swapped out. For example, there is an optional caching layer in the task graph runner, which was many different caching system options (in memory, indexeddb in browser, filesystem, sqlite, postgres, etc.).
 - **Resumable**: The system should be resumable, so that if the user closes the app while processing, they can come back to it later.
-- **No-Code/Low-Code**: The system should be able to be used by no-code/low-code users, so tasks enumerate their inputs and outputs explicitly, as well as some other metadata like if it has side effects, it's name and category, etc.
+- **No-Code/Low-Code**: The system should be able to be used by no-code/low-code users, so tasks enumerate their inputs and outputs explicitly, as well as some other metadata like if it has side effects, its name and category, etc.
 - **Code Generation**: Ideally you should be able to back and forth from a task graph to code and back again.
 - **Task Graphs**: The system should be based on graphs, where tasks are connected by data flows to for a directed acyclic graph (DAG).
 
@@ -59,7 +59,7 @@ Some tasks are run in a queue, so that a full task queue can resume where it lef
 
 Queues can have limiters, like only running one task at a time, or based on rate limits.
 
-- **RateLimiter**: The RateLimiter is a simple rate limiter that can be used to limit the number of tasks that are run in a certain time period. If an task using an API errors out, the rate limiter can use details of error response to determine how long to wait before trying again. There are several different rate limiter implementations, including:
+- **RateLimiter**: The RateLimiter is a simple rate limiter that can be used to limit the number of tasks that are run in a certain time period. If a task using an API errors out, the rate limiter can use details of error response to determine how long to wait before trying again. There are several different rate limiter implementations, including:
   - **SqliteRateLimiter**: The SqliteRateLimiter is a rate limiter that is stored in a Sqlite database.
   - **PostgresRateLimiter**: The PostgresRateLimiter is a rate limiter that is stored in a Postgres database.
   - **InMemoryRateLimiter**: The InMemoryRateLimiter is a rate limiter that is stored in memory.
@@ -71,7 +71,7 @@ Queues can have limiters, like only running one task at a time, or based on rate
 
 Tasks are the main building blocks of the system. They are simple or compound tasks that are the nodes in a directed acyclic graph (DAG), where the edges are DataFlows.
 
-- **Task** Each task class has well defined inputs and outputs definitions. When a task is created, it can some of it's inputs provided (defaults). The remainder of the inputs will come from the outputs of other tasks in the graph. When combined, the data can be found in runInputData at the time the task is run.
+- **Task** Each task class has well defined inputs and outputs definitions. When a task is created, it can some of its inputs provided (defaults). The remainder of the inputs will come from the outputs of other tasks in the graph. When combined, the data can be found in runInputData at the time the task is run.
 - **DataFlow** The tasks in a graph are connected by edges called DataFlows. These define the which task and which output of that task are connected to which input of the next task.
 
 # Tasks
