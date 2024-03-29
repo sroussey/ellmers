@@ -10,6 +10,7 @@
   - [JSON Configuration](#json-configuration)
 - [Going Deeper](#going-deeper)
   - [Tasks](#tasks)
+  - [TaskGraph](#taskgraph)
   - [DataFlows](#dataflows)
 - [Configuration Options](#configuration-options)
   - [Queues](#queues)
@@ -215,13 +216,151 @@ Using Sqlite:
 
 ## TaskGraphBuilder
 
+Every task in the library has a corresponding method in the TaskGraphBuilder. The builder is a simple way to build a graph. It is not meant to be a full replacement for the TaskGraph, but it is a good way to get started.
+
+Tasks are the smallest unit of work, therefore they take simple inputs. Every Task has a corresponding CompoundTask version that takes arrays for some inputs. These are the ones that the task builder uses.
+
+An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input.
+
 ## JSON Configuration
+
+There is a JSONTask that can be used to build a graph. This is useful for saving and loading graphs, or for creating a graph from a JSON file. The Web example also uses this to build a graph from the JSON in the text area.
+
+```json
+[
+  {
+    "id": "1",
+    "type": "DownloadModelCompoundTask",
+    "input": {
+      "model": ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"]
+    }
+  },
+  {
+    "id": "2",
+    "type": "TextRewriterCompoundTask",
+    "input": {
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "prompt": ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"]
+    },
+    "dependencies": {
+      "model": {
+        "id": "1",
+        "output": "text_generation_model"
+      }
+    }
+  },
+  {
+    "id": "3",
+    "type": "TextTranslationCompoundTask",
+    "input": {
+      "model": "Xenova/m2m100_418M",
+      "source": "en",
+      "target": "es"
+    },
+    "dependencies": {
+      "text": {
+        "id": "2",
+        "output": "text"
+      }
+    }
+  },
+  {
+    "id": "4",
+    "type": "DebugLogTask",
+    "input": {
+      "level": "info"
+    },
+    "dependencies": {
+      "message": [
+        {
+          "id": "2",
+          "output": "text"
+        },
+        {
+          "id": "3",
+          "output": "text"
+        }
+      ]
+    }
+  }
+]
+```
+
+The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task.
 
 # Going Deeper
 
 ## Tasks
 
+To use a task, instantiate it with some input and call `run()`:
+
+```ts
+const task = new TextEmbeddingTask({
+  id: "1",
+  input: {
+    model: "Xenova/LaMini-Flan-T5-783M",
+    text: "The quick brown fox jumps over the lazy dog.",
+  },
+});
+const result = await task.run();
+console.log(result);
+```
+
+You will notice that the builder automatically creates ids for you, so it assumes that the object parameter is the input object. Using a task directly, you need to specify input object dierctly as above.
+
+## TaskGraph
+
+The task graph is a collection of tasks (nodes) and data flows (edges). It is the heart of using the library.
+
+Example:
+
+```ts
+const graph = new TaskGraph();
+graph.addTask(
+  new TextRewriterCompoundTask({
+    input: {
+      model: "Xenova/LaMini-Flan-T5-783M",
+      text: "The quick brown fox jumps over the lazy dog.",
+      prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
+    },
+  })
+);
+```
+
 ## DataFlows
+
+DataFlows are the edges in the graph. They connect the output of one task to the input of another. They are created by specifying the source and target tasks and the output and input ids.
+
+Example, adding a data flow to the graph similar to above:
+
+```ts
+const graph = new TaskGraph();
+graph.addTask(
+  new TextRewriterCompoundTask({
+    id: "1",
+    input: {
+      model: "Xenova/LaMini-Flan-T5-783M",
+      text: "The quick brown fox jumps over the lazy dog.",
+      prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
+    },
+  })
+);
+graph.addTask(
+  new DebugLogTask({
+    id: "2",
+  })
+);
+graph.addDataFlow(
+  new DataFlow({
+    sourceTaskId: "1",
+    sourceTaskOutputId: "text",
+    targetTaskId: "2",
+    targetTaskInputId: "message",
+  })
+);
+```
+
+This links the output of the TextRewriterCompoundTask (id 1) to the input of the DebugLogTask (id 2). The output of the TextRewriterCompoundTask is the `text` field, and the input of the DebugLogTask is the `message` field.
 
 # Configuration Options
 
