@@ -350,7 +350,7 @@ const result = await task.run();
 console.log(result);
 ```
 
-You will notice that the builder automatically creates ids for you, so it assumes that the object parameter is the input object. Using a task directly, you need to specify input object dierctly as above.
+You will notice that the builder automatically creates ids for you, so it assumes that the object parameter is the input object. Using a task directly, you need to specify input object directly as above.
 
 ## TaskGraph
 
