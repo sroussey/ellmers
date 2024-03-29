@@ -257,7 +257,7 @@ builder
 await builder.run();
 ```
 
-The first task downloads the models (this is separated mostly for ui purposes so progress on the text embedding is separate from the progress of downloading the models). The second task will take the output of the first task and use it as input, in this case the names of the models. The builder will automatically create that data flow. The `rename` method is used to rename the vector output of the embedding task to match the expected message input of the second task.
+The first task downloads the models (this is separated mostly for ui purposes so progress on the text embedding is separate from the progress of downloading the models). The second task will take the output of the first task and use it as input, in this case the names of the models. The builder will automatically create that data flow. The `rename` method is used to rename the `vector` output of the embedding task to match the expected `message` input of the second task.
 
 ## JSON Configuration
 
