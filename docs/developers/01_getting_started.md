@@ -12,11 +12,6 @@
   - [Tasks](#tasks)
   - [TaskGraph](#taskgraph)
   - [DataFlows](#dataflows)
-- [Configuration Options](#configuration-options)
-  - [Queues](#queues)
-  - [LLM Providers](#llm-providers)
-  - [Storage](#storage)
-    - [Caching](#caching)
 - [Appendix](#appendix)
   - [Source](#source)
     - [`docs/`](#docs)
@@ -361,16 +356,6 @@ graph.addDataFlow(
 ```
 
 This links the output of the TextRewriterCompoundTask (id 1) to the input of the DebugLogTask (id 2). The output of the TextRewriterCompoundTask is the `text` field, and the input of the DebugLogTask is the `message` field.
-
-# Configuration Options
-
-## Queues
-
-## LLM Providers
-
-## Storage
-
-### Caching
 
 # Appendix
 
