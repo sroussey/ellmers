@@ -18,3 +18,4 @@ This project is an attempt to build a framework that can be used to build intell
 - I need the ability to test and iterate quickly on ideas, models, and data using both local and cloud resources. And compare the results of different approaches.
 - Be able to put into production and decide to change approaches later without having to rewrite everything. So switching embedding models part way through a project should be easy.
 - When there is a lot of processing, particularly locally, it needs to be resumable -- the user may close the app while it is processing and then come back to it later.
+- I want to be able to code things using a node editor for no-code and low-code users, and then be able to see the code that was generated and edit it.
