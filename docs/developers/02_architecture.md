@@ -53,7 +53,7 @@ The system is composed of several different systems, several of which that can b
 Some tasks are run in a queue, so that a full task queue can resume where it left off (in concert with a TaskOutputRepository). Queues handling things like retries, timeouts, and other things that are not directly related to the task itself. There are several different queue implementations, including:
 
 - **InMemoryJobQueue**: The InMemoryQueue is a simple in-memory queue that is not resumable.
-- **IndexedDbJobQueue**: The IndexedDbQueue is a queue that is stored in the browser's indexeddb and is resumable.\*
+- **IndexedDbJobQueue**: The IndexedDbQueue is a queue that is stored in the browser's indexeddb and is resumable.
 - **SqliteJobQueue**: The SqliteQueue is a queue that is stored in a Sqlite database and is resumable.
 - **PostgresJobQueue**: The PostgresQueue is a queue that is stored in a Postgres database and is resumable.
 
