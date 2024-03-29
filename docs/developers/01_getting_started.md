@@ -12,6 +12,7 @@
   - [Tasks](#tasks)
   - [TaskGraph](#taskgraph)
   - [DataFlows](#dataflows)
+  - [TaskGraphRunner](#taskgraphrunner)
 - [Appendix](#appendix)
   - [Source](#source)
     - [`docs/`](#docs)
@@ -215,7 +216,48 @@ Every task in the library has a corresponding method in the TaskGraphBuilder. Th
 
 Tasks are the smallest unit of work, therefore they take simple inputs. Every Task has a corresponding CompoundTask version that takes arrays for some inputs. These are the ones that the task builder uses.
 
-An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input.
+An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input. The builder is smart enough to know that the Compound version is needed when an array is passed, and as such, you don't need to differentiate between the two:
+
+```ts
+import { TaskGraphBuilder } from "ellmers-core/server";
+const builder = new TaskGraphBuilder();
+builder.TextEmbedding({
+  model: "Xenova/LaMini-Flan-T5-783M",
+  text: "The quick brown fox jumps over the lazy dog.",
+});
+await builder.run();
+```
+
+OR
+
+```ts
+import { TaskGraphBuilder } from "ellmers-core/server";
+const builder = new TaskGraphBuilder();
+builder.TextEmbedding({
+  model: ["Xenova/LaMini-Flan-T5-783M", "Universal Sentence Encoder"],
+  text: "The quick brown fox jumps over the lazy dog.",
+});
+await builder.run();
+```
+
+The builder will look at outputs of one task and automatically connect it to the input of the next task, if the output and input names match. If they don't, you can use the `rename` method to rename the output of the first task to match the input of the second task.
+
+```ts
+import { TaskGraphBuilder } from "ellmers-core/server";
+const builder = new TaskGraphBuilder();
+builder
+  .DownloadModel({
+    model: ["Xenova/LaMini-Flan-T5-783M", "Universal Sentence Encoder"],
+  })
+  .TextEmbedding({
+    text: "The quick brown fox jumps over the lazy dog.",
+  });
+  .rename("vector", "message")
+  .DebugLog();
+await builder.run();
+```
+
+The first task downloads the models (this is separated mostly for ui purposes so progress on the text embedding is separate from the progress of downloading the models). The second task will take the output of the first task and use it as input, in this case the names of the models. The builder will automatically create that data flow. The `rename` method is used to rename the vector output of the embedding task to match the expected message input of the second task.
 
 ## JSON Configuration
 
@@ -282,6 +324,13 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
 ```
 
 The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task.
+
+```ts
+import { JSONTask } from "ellmers-core/server";
+const json = require("./example.json");
+const task = new JSONTask({ input: { json } });
+await task.run();
+```
 
 # Going Deeper
 
@@ -356,6 +405,15 @@ graph.addDataFlow(
 ```
 
 This links the output of the TextRewriterCompoundTask (id 1) to the input of the DebugLogTask (id 2). The output of the TextRewriterCompoundTask is the `text` field, and the input of the DebugLogTask is the `message` field.
+
+## TaskGraphRunner
+
+The TaskGraphRunner is used to run the graph. It understands that some tasks depend on others, and will run them in the correct order. It also handles compound tasks which have sub graphs.
+
+```ts
+const runner = new TaskGraphRunner(graph);
+runner.run();
+```
 
 # Appendix
 
