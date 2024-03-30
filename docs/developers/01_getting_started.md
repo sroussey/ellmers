@@ -35,6 +35,8 @@ This will bring up a web page where you can edit some json to change the graph. 
 
 Also, you can open the panel (follow the instructions for enabling Console Formatters for best experience). A simple task graph builder is available there. Just type `builder` in the console and you can start building a graph. With the custom formatters, you can see the graph as you build it, as well as documentation. Everything self documents.
 
+After this, plese read [Architecture](02_architecture.md) before attempting to [write your own Tasks](03_extending.md).
+
 # Get Shit Done
 
 ## Using TaskGraphBuilder & a config helper

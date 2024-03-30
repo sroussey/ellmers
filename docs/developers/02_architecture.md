@@ -15,7 +15,7 @@
 
 # Architecture Documentation
 
-This document covers the architecture and the reasoning behind the design decisions. For a more practical guide to getting started, see the [Developer Getting Started](./01_getting_started.md) guide. And if you want a rambling background on the motivations behind this project, see the [Motivations](../background/01_motivations.md) guide.
+This document covers the architecture and the reasoning behind the design decisions. For a more practical guide to getting started, see the [Developer Getting Started](./01_getting_started.md) guide. After reading this document, read [extending the system](03_extending.md) to see how to create your own Tasks. And if you want a rambling background on the motivations behind this project, see the [Motivations](../background/01_motivations.md) guide.
 
 ## Design Principles
 
