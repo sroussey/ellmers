@@ -3,6 +3,9 @@
     - [Tasks must have a `run()` method](#tasks-must-have-a-run-method)
     - [Define Inputs and Outputs](#define-inputs-and-outputs)
     - [Register the Task](#register-the-task)
+  - [Job Queues and LLM tasks](#job-queues-and-llm-tasks)
+  - [Write a new Compound Task](#write-a-new-compound-task)
+  - [Reactive Task UIs](#reactive-task-uis)
 
 # Extending the System
 
@@ -125,3 +128,23 @@ declare module "./base/TaskGraphBuilder" {
 
 TaskGraphBuilder.prototype.SimpleDebug = TaskGraphBuilderHelper(SimpleDebugTask);
 ```
+
+## Job Queues and LLM tasks
+
+We separate any long runing tasks as Jobs. Jobs could potentially be run anywhere, either locally in the same thread, in separate threads, or on a remote server. A job queue will manage these for a single provider (like OpenAI, or a local Transformer.JS ONNX runtime), and handle backoff, retries, etc.
+
+A subclass of `JobQueueTask` will dispatch the job to the correct queue, and wait for the result. The `run()` method will return the result of the job.
+
+Subclasses of `JobQueueLlmTask` are organized around a specific task. Which model is used will determine the queue to use, and is required. This abstract class will look up the model and determine the queue to use based on `ProviderReigstry`.
+
+To add a new embedding source, for example, you would not create a new task, but a new job queue for the new provider and then register the how to run the emedding service in the `ProviderRegistry` for the specific task, in this case `TextEmbeddingTask`. Then you use the existing `TextEmbeddingTask` with your new model name. This allows swapping out the model without changing the task, runing multiple models in parallel, and so on.
+
+## Write a new Compound Task
+
+You can organize a group of tasks to look like one task (think of a grouping UI in an Illustrator type program). This default is referred to as a static `CompoundTask` since the sub graph is always the same. A `RegenerativeCompoundTask` rebuilds the subgraph based on the input data, and will emit a `'regenerate'` event after the subgraph has been rebuilt. This is useful for tasks that have a variable number of subtasks. An example would be the `TextEmbeddingCompoundTask` which takes a list of strings and returns a list of embeddings. Or it can take a list of models and return a list of embeddings for each model.
+
+Compound Tasks are not cached (though any or all of their children may be).
+
+## Reactive Task UIs
+
+Tasks can be reactive at a certain level. This means that they can be triggered by changes in the data they depend on, without "running" the expensive job based task runs. This is useful for a UI node editor. For example, you change a color in one task and it is propagated downstream without incurring costs for re-running the entire graph. It is like a spreadsheet where changing a cell can trigger a recalculation of other cells. This is implemented via a `runSyncOnly()` method that is called when the data changes. Typically, the `run()` will call `runSyncOnly()` on itself at the end of the method.
