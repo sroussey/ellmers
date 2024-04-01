@@ -6,6 +6,8 @@
   - [Preset Configs](#preset-configs)
     - [Registering Providers](#registering-providers)
     - [Registering Provider plus related Job Queue](#registering-provider-plus-related-job-queue)
+      - [In memory:](#in-memory)
+      - [Using Sqlite:](#using-sqlite)
   - [TaskGraphBuilder](#taskgraphbuilder)
   - [JSON Configuration](#json-configuration)
 - [Going Deeper](#going-deeper)
@@ -24,16 +26,18 @@
 
 This project is not yet ready to be published on npm. So for now, use the source Luke.
 
+```bash
 git clone https://github.com/sroussey/ellmers.git
 cd ellmers
 bun install
 bun run build
 cd packages/web
 bun run dev
+```
 
-This will bring up a web page where you can edit some json to change the graph. And there is a RUN button.
+This will bring up a web page where you can edit some json to change the graph, and run it.
 
-Also, you can open the panel (follow the instructions for enabling Console Formatters for best experience). A simple task graph builder is available there. Just type `builder` in the console and you can start building a graph. With the custom formatters, you can see the graph as you build it, as well as documentation. Everything self documents.
+Also, you can open DevTools and edit that way (follow the instructions for enabling Console Formatters for best experience). A simple task graph builder is available there. Just type `builder` in the console and you can start building a graph. With the custom formatters, you can see the graph as you build it, as well as documentation. Everything self documents.
 
 After this, plese read [Architecture](02_architecture.md) before attempting to [write your own Tasks](03_extending.md).
 
@@ -191,6 +195,8 @@ const runner = new TaskGraphRunner(graph);
 runner.run();
 ```
 
+You can use as much or as little "magic" as you want. The config helpers are there to make it easier to get started, but eventually you will want to do it yourself.
+
 ## Preset Configs
 
 ### Registering Providers
@@ -202,21 +208,23 @@ Tasks are agnostic to the provider. Text embedding can me done with several prov
 
 ### Registering Provider plus related Job Queue
 
-In memory:
+LLM providers have long running functions. These are handled by a Job Queue. There are some pre-built ones:
+
+#### In memory:
 
 - **`registerHuggingfaceLocalTasksInMemory`** function sets up the Huggingface Local provider (above), and a InMemoryJobQueue with a Concurrency Limiter so the ONNX queue only runs one task/job at a time.
 - **`registerMediaPipeTfJsLocalInMemory`** does the same for MediaPipe.
 
-Using Sqlite:
+#### Using Sqlite:
 
 - **`registerHuggingfaceLocalTasksSqlite`** function sets up the Huggingface Local provider, and a SqliteJobQueue with a Concurrency Limiter
 - **`registerMediaPipeTfJsLocalSqlite`** does the same for MediaPipe.
 
 ## TaskGraphBuilder
 
-Every task in the library has a corresponding method in the TaskGraphBuilder. The builder is a simple way to build a graph. It is not meant to be a full replacement for the TaskGraph, but it is a good way to get started.
+Every task in the library has a corresponding method in the TaskGraphBuilder. The builder is a simple way to build a graph. It is not meant to be a full replacement for the creating a TaskGraph directly, but it is a good way to get started.
 
-Tasks are the smallest unit of work, therefore they take simple inputs. Every Task has a corresponding CompoundTask version that takes arrays for some inputs. These are the ones that the task builder uses.
+Tasks are the smallest unit of work, therefore they take simple inputs. Most Tasks has a corresponding CompoundTask version that takes arrays for some inputs. These are the ones that the task builder uses.
 
 An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input. The builder is smart enough to know that the Compound version is needed when an array is passed, and as such, you don't need to differentiate between the two:
 
@@ -242,7 +250,7 @@ builder.TextEmbedding({
 await builder.run();
 ```
 
-The builder will look at outputs of one task and automatically connect it to the input of the next task, if the output and input names match. If they don't, you can use the `rename` method to rename the output of the first task to match the input of the second task.
+The builder will look at outputs of one task and automatically connect it to the input of the next task, if the output and input names and types match. If they don't, you can use the `rename` method to rename the output of the first task to match the input of the second task.
 
 ```ts
 import { TaskGraphBuilder } from "ellmers-core/server";
@@ -325,7 +333,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
 ]
 ```
 
-The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task.
+The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task. It is a shorthand for creating a data flow (an edge) in the graph.
 
 ```ts
 import { JSONTask } from "ellmers-core/server";
