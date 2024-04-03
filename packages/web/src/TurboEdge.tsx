@@ -1,5 +1,5 @@
 import React from "react";
-import { EdgeProps, getBezierPath } from "@xyflow/react";
+import { EdgeProps, getBezierPath } from "@sroussey/xyflow-react";
 
 export default function CustomEdge({
   id,

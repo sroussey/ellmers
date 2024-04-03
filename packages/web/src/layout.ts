@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Edge, Node, Position } from "@xyflow/react";
+import { Edge, Node, Position } from "@sroussey/xyflow-react";
 import { DirectedAcyclicGraph } from "@sroussey/typescript-graph";
 
 type PositionXY = {

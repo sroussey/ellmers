@@ -8,9 +8,9 @@ import {
   useNodesInitialized,
   useReactFlow,
   Edge,
-} from "@xyflow/react";
+} from "@sroussey/xyflow-react";
 
-import "@xyflow/react/dist/base.css";
+import "@sroussey/xyflow-react/dist/base.css";
 import "./RunGraphFlow.css";
 import { TurboNodeData, SingleNode, CompoundNode } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
