@@ -10,7 +10,10 @@ import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
 export class RetryError extends Error {
-  constructor(public retryDate: Date, message: string) {
+  constructor(
+    public retryDate: Date,
+    message: string
+  ) {
     super(message);
     this.name = "RetryError";
   }
@@ -22,8 +25,7 @@ type JobEvents =
   | "job_start"
   | "job_complete"
   | "job_error"
-  | "job_retry"
-  | "job_progress";
+  | "job_retry";
 
 export abstract class JobQueue<Input, Output> {
   constructor(
@@ -43,6 +45,13 @@ export abstract class JobQueue<Input, Output> {
 
   events = new EventEmitter<JobEvents>();
 
+  on(event: JobEvents, listener: (...args: any[]) => void) {
+    return this.events.on(event, listener);
+  }
+  off(event: JobEvents, listener?: (...args: any[]) => void) {
+    return this.events.off(event, listener);
+  }
+
   // we do this in case the queue needs to do something queue specific to execute the job
   public async executeJob(job: Job<Input, Output>): Promise<Output> {
     return await job.execute();
@@ -51,11 +60,13 @@ export abstract class JobQueue<Input, Output> {
   protected async processJob(job: Job<Input, Output>) {
     try {
       await this.limiter.recordJobStart();
+      this.events.emit("job_start", this.queue, job.id);
       const output = await this.executeJob(job);
       await this.complete(job.id, output);
     } catch (error) {
       console.error(`Error processing job: ${error}`);
       if (error instanceof RetryError) {
+        this.events.emit("job_retry", this.queue, job.id, error.retryDate);
         await this.limiter.setNextAvailableTime(error.retryDate);
       }
       await this.complete(job.id, null, String(error));
@@ -73,8 +84,10 @@ export abstract class JobQueue<Input, Output> {
     const job = this.waits.get(jobId);
     if (job) {
       if (status === JobStatus.FAILED) {
+        this.events.emit("job_error", this.queue, jobId, error);
         job.reject(error);
       } else if (status === JobStatus.COMPLETED) {
+        this.events.emit("job_complete", this.queue, jobId, output);
         job.resolve(output);
       }
       // Remove the job from the map after completion
@@ -112,11 +125,13 @@ export abstract class JobQueue<Input, Output> {
 
   async start() {
     this.running = true;
+    this.events.emit("queue_start", this.queue);
     this.processJobs();
   }
 
   async stop() {
     this.running = false;
+    this.events.emit("queue_stop", this.queue);
   }
 
   async restart() {
