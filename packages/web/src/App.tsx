@@ -12,6 +12,7 @@ import {
   TaskGraphRunner,
 } from "ellmers-core/browser";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
+import { QueuesStatus } from "./QueueSatus";
 
 const builder = new TaskGraphBuilder(new IndexedDbTaskOutputRepository());
 const run = builder.run.bind(builder);
@@ -95,12 +96,20 @@ export const App = () => {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={30}>
-        <JsonEditor
-          json={jsonData}
-          onJsonChange={setNewJson}
-          run={() => builder.run()}
-          running={isRunning}
-        />
+        <ResizablePanelGroup direction="vertical">
+          <ResizablePanel defaultSize={90}>
+            <JsonEditor
+              json={jsonData}
+              onJsonChange={setNewJson}
+              run={() => builder.run()}
+              running={isRunning}
+            />
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel style={{ backgroundColor: "#222", color: "#fff", padding: "10px" }}>
+            <QueuesStatus />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </ResizablePanel>
     </ResizablePanelGroup>
   );
