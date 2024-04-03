@@ -10,4 +10,6 @@ import { TaskInput, TaskOutput } from "task";
 export interface ITaskOutputRepository {
   saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void>;
   getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
+  clear(): Promise<void>;
+  size(): Promise<number>;
 }

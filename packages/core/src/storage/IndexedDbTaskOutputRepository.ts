@@ -63,4 +63,30 @@ export class IndexedDbTaskOutputRepository implements ITaskOutputRepository {
       };
     });
   }
+
+  async clear(): Promise<void> {
+    const db = await this.dbPromise;
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction("outputs", "readwrite");
+      const store = transaction.objectStore("outputs");
+      const request = store.clear();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  async size(): Promise<number> {
+    const db = await this.dbPromise;
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction("outputs", "readonly");
+      const store = transaction.objectStore("outputs");
+      const request = store.count();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
 }

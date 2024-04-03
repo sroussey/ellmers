@@ -24,4 +24,12 @@ export class InMemoryTaskOutputRepository implements ITaskOutputRepository {
     const out = this.outputs.get(id);
     return out;
   }
+
+  async clear(): Promise<void> {
+    this.outputs.clear();
+  }
+
+  async size(): Promise<number> {
+    return this.outputs.size;
+  }
 }

@@ -6,10 +6,11 @@
 //    *******************************************************************************
 
 import path from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, unlink } from "node:fs/promises";
 import { TaskInput, TaskOutput } from "task";
 import { ITaskOutputRepository } from "./ITaskOutputRepository";
 import { makeFingerprint } from "../util/Misc";
+import { glob } from "glob";
 
 export class FileTaskOutputRepository implements ITaskOutputRepository {
   private folderPath: string;
@@ -31,6 +32,20 @@ export class FileTaskOutputRepository implements ITaskOutputRepository {
     } catch (error) {
       return undefined; // File not found or read error
     }
+  }
+
+  async clear(): Promise<void> {
+    // Delete all files in the folder ending in .json
+    const globPattern = path.join(this.folderPath, "*.json");
+    const filesToDelete = await glob(globPattern);
+    await Promise.all(filesToDelete.map((file) => unlink(file)));
+  }
+
+  async size(): Promise<number> {
+    // Count all files in the folder ending in .json
+    const globPattern = path.join(this.folderPath, "*.json");
+    const files = await glob(globPattern);
+    return files.length;
   }
 
   private async getFilePath(taskType: string, inputs: TaskInput): Promise<string> {

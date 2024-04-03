@@ -53,4 +53,15 @@ export class SqliteTaskOutputRepository implements ITaskOutputRepository {
       return undefined;
     }
   }
+
+  async clear(): Promise<void> {
+    this.db.exec(`DELETE FROM task_outputs`);
+  }
+
+  async size(): Promise<number> {
+    const stmt = this.db.prepare<{ count: number }, []>(`
+      SELECT COUNT(*) AS count FROM task_outputs
+    `);
+    return stmt.get()?.count ?? 0;
+  }
 }

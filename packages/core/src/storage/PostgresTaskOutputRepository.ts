@@ -53,4 +53,13 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
       return undefined;
     }
   }
+
+  async clear(): Promise<void> {
+    await this.pool.query(`DELETE FROM task_outputs`);
+  }
+
+  async size(): Promise<number> {
+    const result = await this.pool.query(`SELECT COUNT(*) FROM task_outputs`);
+    return parseInt(result.rows[0].count, 10);
+  }
 }
