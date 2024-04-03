@@ -6,9 +6,9 @@
 //    *******************************************************************************
 
 // import { GgmlLocalModel } from "../model/GgmlLocalModel";
-import { ONNXTransformerJsModel } from "../model/HuggingFaceModel";
-import { MediaPipeTfJsModel } from "../model/MediaPipeModel";
-import { Model, ModelUseCaseEnum } from "../model/Model";
+import { ONNXTransformerJsModel } from "./HuggingFaceModel";
+import { MediaPipeTfJsModel } from "./MediaPipeModel";
+import { Model, ModelUseCaseEnum } from "./Model";
 
 export const universal_sentence_encoder = new MediaPipeTfJsModel(
   "Universal Sentence Encoder",

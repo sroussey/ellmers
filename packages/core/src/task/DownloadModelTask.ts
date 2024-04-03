@@ -13,7 +13,7 @@ import { TaskOutput } from "./base/Task";
 import { JobQueueTaskConfig } from "./base/JobQueueTask";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 import { ModelUseCaseEnum } from "../model/Model";
-import { findModelByName } from "../storage/InMemoryStorage";
+import { findModelByName } from "../model/InMemoryStorage";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
 export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;

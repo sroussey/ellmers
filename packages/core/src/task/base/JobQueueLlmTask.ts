@@ -9,7 +9,7 @@
  * @description This file contains the implementation of the JobQueueTask class and its derived classes.
  */
 
-import { findModelByName } from "../../storage/InMemoryStorage";
+import { findModelByName } from "../../model/InMemoryStorage";
 import { JobQueueTask, JobQueueTaskConfig } from "./JobQueueTask";
 import type { TaskOutput } from "./Task";
 import { getProviderRegistry } from "provider/ProviderRegistry";

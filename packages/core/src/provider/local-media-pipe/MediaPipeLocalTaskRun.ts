@@ -8,7 +8,7 @@
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
 import { DownloadModelTask, DownloadModelTaskInput } from "../../task/DownloadModelTask";
 import { TextEmbeddingTask, TextEmbeddingTaskInput } from "../../task/TextEmbeddingTask";
-import { findModelByName } from "../../storage/InMemoryStorage";
+import { findModelByName } from "../../model/InMemoryStorage";
 import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
 import { ElVector } from "task";
 

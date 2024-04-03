@@ -19,7 +19,7 @@ import {
   type TranslationPipeline,
   type TranslationSingle,
 } from "@sroussey/transformers";
-import { findModelByName } from "../../storage/InMemoryStorage";
+import { findModelByName } from "../../model/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
   ElVector,
