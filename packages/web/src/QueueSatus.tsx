@@ -20,6 +20,8 @@ export function QueueStatus({ queueType }: { queueType: ModelProcessorEnum }) {
     queue.on("job_complete", listen);
     queue.on("job_error", listen);
 
+    listen();
+
     return () => {
       queue.off("job_start", listen);
       queue.off("job_complete", listen);

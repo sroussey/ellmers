@@ -13,8 +13,10 @@ import {
 } from "ellmers-core/browser";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
+import { RepositoryStatus } from "./RepositoryStatus";
 
-const builder = new TaskGraphBuilder(new IndexedDbTaskOutputRepository());
+const repo = new IndexedDbTaskOutputRepository();
+const builder = new TaskGraphBuilder(repo);
 const run = builder.run.bind(builder);
 builder.run = async () => {
   console.log("Running task graph...");
@@ -108,6 +110,8 @@ export const App = () => {
           <ResizableHandle />
           <ResizablePanel style={{ backgroundColor: "#222", color: "#fff", padding: "10px" }}>
             <QueuesStatus />
+            <br />
+            <RepositoryStatus repository={repo} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </ResizablePanel>
