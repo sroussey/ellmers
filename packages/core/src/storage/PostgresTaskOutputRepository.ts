@@ -6,14 +6,15 @@
 //    *******************************************************************************
 
 import { Pool } from "pg";
-import { ITaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./ITaskOutputRepository";
 import { TaskInput, TaskOutput } from "task";
 import { makeFingerprint } from "../util/Misc";
 
-export class PostgresTaskOutputRepository implements ITaskOutputRepository {
+export class PostgresTaskOutputRepository extends TaskOutputRepository {
   private pool: Pool;
 
   constructor(connectionString: string) {
+    super();
     this.pool = new Pool({ connectionString });
     this.setupDatabase();
   }
@@ -38,6 +39,7 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
       SET output = EXCLUDED.output`,
       [taskType, inputsHash, JSON.stringify(output)]
     );
+    this.emit("output_saved", taskType);
   }
 
   async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
@@ -48,6 +50,7 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
     );
 
     if (result.rows.length > 0) {
+      this.emit("output_retrieved", taskType);
       return result.rows[0].output as TaskOutput;
     } else {
       return undefined;
@@ -56,6 +59,7 @@ export class PostgresTaskOutputRepository implements ITaskOutputRepository {
 
   async clear(): Promise<void> {
     await this.pool.query(`DELETE FROM task_outputs`);
+    this.emit("output_cleared");
   }
 
   async size(): Promise<number> {

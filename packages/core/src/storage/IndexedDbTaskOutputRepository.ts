@@ -6,13 +6,14 @@
 //    *******************************************************************************
 
 import { TaskInput, TaskOutput } from "task";
-import { ITaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./ITaskOutputRepository";
 import { makeFingerprint } from "../util/Misc";
 
-export class IndexedDbTaskOutputRepository implements ITaskOutputRepository {
+export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
   private dbPromise: Promise<IDBDatabase>;
 
   constructor() {
+    super();
     this.dbPromise = new Promise((resolve, reject) => {
       const openRequest = indexedDB.open("TaskOutputsDatabase", 1);
 
@@ -39,7 +40,10 @@ export class IndexedDbTaskOutputRepository implements ITaskOutputRepository {
       const request = store.put({ id, output });
 
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        this.emit("output_saved", taskType);
+        resolve();
+      };
     });
   }
 
@@ -55,6 +59,7 @@ export class IndexedDbTaskOutputRepository implements ITaskOutputRepository {
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
+        this.emit("output_retrieved", taskType);
         if (request.result) {
           resolve(request.result.output);
         } else {
@@ -73,7 +78,10 @@ export class IndexedDbTaskOutputRepository implements ITaskOutputRepository {
       const request = store.clear();
 
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        this.emit("output_cleared", "");
+        resolve();
+      };
     });
   }
 
