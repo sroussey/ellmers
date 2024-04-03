@@ -57,8 +57,8 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
   }
 
-  public async size(): Promise<number> {
-    return this.jobQueue.length;
+  public async size(status = JobStatus.PENDING): Promise<number> {
+    return this.jobQueue.filter((j) => j.status === status).length;
   }
 
   public async complete(id: unknown, output: any, error?: string) {
