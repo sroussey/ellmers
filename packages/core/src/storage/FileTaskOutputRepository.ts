@@ -8,7 +8,7 @@
 import path from "node:path";
 import { readFile, writeFile, unlink } from "node:fs/promises";
 import { TaskInput, TaskOutput } from "task";
-import { TaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./TaskOutputRepository";
 import { makeFingerprint } from "../util/Misc";
 import { glob } from "glob";
 

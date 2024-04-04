@@ -11,7 +11,7 @@ import { DataFlow, TaskGraph } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
-import { ITaskOutputRepository } from "../../storage/ITaskOutputRepository";
+import { TaskOutputRepository } from "../../storage/TaskOutputRepository";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 
@@ -94,7 +94,7 @@ export class TaskGraphBuilder {
   _graph: TaskGraph = new TaskGraph();
   _runner: TaskGraphRunner;
   _error: string = "";
-  _repository?: ITaskOutputRepository;
+  _repository?: TaskOutputRepository;
 
   events = new EventEmitter<BuilderEvents>();
   on(name: BuilderEvents, fn: (...args: any[]) => void) {
@@ -107,7 +107,7 @@ export class TaskGraphBuilder {
     this.events.emit.call(this.events, name, ...args);
   }
 
-  constructor(repository?: ITaskOutputRepository) {
+  constructor(repository?: TaskOutputRepository) {
     this._repository = repository;
     this._runner = new TaskGraphRunner(this._graph, this._repository);
     this._onChanged = this._onChanged.bind(this);

@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { Database } from "bun:sqlite";
-import { TaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./TaskOutputRepository";
 import { TaskInput, TaskOutput } from "task";
 import { makeFingerprint } from "../util/Misc";
 

@@ -10,15 +10,7 @@ import { TaskInput, TaskOutput } from "task";
 
 export type TaskOutputEvents = "output_saved" | "output_retrieved" | "output_cleared";
 
-export interface ITaskOutputRepository {
-  saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void>;
-  getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
-  clear(): Promise<void>;
-  size(): Promise<number>;
-  on(event: TaskOutputEvents, listener: (event: TaskOutputEvents, taskType: string) => void): void;
-}
-
-export abstract class TaskOutputRepository implements ITaskOutputRepository {
+export abstract class TaskOutputRepository {
   private events = new EventEmitter<TaskOutputEvents>();
   on(name: TaskOutputEvents, fn: (...args: any[]) => void) {
     this.events.on.call(this.events, name, fn);

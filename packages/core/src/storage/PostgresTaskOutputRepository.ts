@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { Pool } from "pg";
-import { TaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./TaskOutputRepository";
 import { TaskInput, TaskOutput } from "task";
 import { makeFingerprint } from "../util/Misc";
 

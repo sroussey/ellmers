@@ -17,7 +17,7 @@ import {
   ElVector,
 } from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
-import { ITaskOutputRepository } from "../../storage/ITaskOutputRepository";
+import { TaskOutputRepository } from "../../storage/TaskOutputRepository";
 
 export enum TaskStatus {
   PENDING = "NEW",
@@ -310,7 +310,7 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
   }
   async run(
     nodeProvenance: TaskInput = {},
-    repository?: ITaskOutputRepository
+    repository?: TaskOutputRepository
   ): Promise<TaskOutput> {
     if (!this.validateInputData(this.runInputData)) throw new Error("Invalid input data");
     this.emit("start");

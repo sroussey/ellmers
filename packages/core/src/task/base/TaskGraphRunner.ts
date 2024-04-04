@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ITaskOutputRepository } from "storage/ITaskOutputRepository";
-import { TaskInput, Task, TaskOutput, TaskBase } from "task/base/Task";
-import { TaskGraph } from "task/base/TaskGraph";
+import { TaskOutputRepository } from "../../storage/TaskOutputRepository";
+import { TaskInput, Task, TaskOutput } from "./Task";
+import { TaskGraph } from "./TaskGraph";
 
 export class TaskGraphRunner {
   public layers: Map<number, Task[]>;
@@ -15,7 +15,7 @@ export class TaskGraphRunner {
 
   constructor(
     public dag: TaskGraph,
-    public repository?: ITaskOutputRepository
+    public repository?: TaskOutputRepository
   ) {
     this.layers = new Map();
     this.provenanceInput = new Map();

@@ -16,7 +16,7 @@ export * from "./provider/ProviderRegistry";
 export * from "./model/Model";
 export * from "./model/HuggingFaceModel";
 export * from "./model/InMemoryStorage";
-export * from "./storage/ITaskOutputRepository";
+export * from "./storage/TaskOutputRepository";
 export * from "./storage/InMemoryTaskOutputRepository";
 export * from "./storage/IndexedDbTaskOutputRepository";
 export * from "./util/Misc";

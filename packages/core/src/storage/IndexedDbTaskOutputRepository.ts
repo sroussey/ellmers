@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { TaskInput, TaskOutput } from "task";
-import { TaskOutputRepository } from "./ITaskOutputRepository";
+import { TaskOutputRepository } from "./TaskOutputRepository";
 import { makeFingerprint } from "../util/Misc";
 
 export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
