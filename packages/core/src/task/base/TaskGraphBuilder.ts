@@ -11,7 +11,7 @@ import { DataFlow, TaskGraph } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
-import { TaskOutputRepository } from "../../storage/TaskOutputRepository";
+import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 

@@ -6,8 +6,8 @@
 //    *******************************************************************************
 
 export * from "./browser";
-export * from "./storage/SqliteTaskOutputRepository";
-export * from "./storage/PostgresTaskOutputRepository";
+export * from "./storage/taskoutput/SqliteTaskOutputRepository";
+export * from "./storage/taskoutput/PostgresTaskOutputRepository";
 export * from "./job/SqliteJobQueue";
 export * from "./job/SqliteRateLimiter";
 export * from "./job/PostgreSqlJobQueue";

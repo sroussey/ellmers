@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { FileTaskOutputRepository } from "../FileTaskOutputRepository";
+import { FileTaskOutputRepository } from "../taskoutput/FileTaskOutputRepository";
 import { TaskInput, TaskOutput } from "../../task/base/Task";
 import { rmdirSync } from "fs";
 

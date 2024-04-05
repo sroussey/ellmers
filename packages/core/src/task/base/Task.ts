@@ -17,7 +17,7 @@ import {
   ElVector,
 } from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
-import { TaskOutputRepository } from "../../storage/TaskOutputRepository";
+import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
 
 export enum TaskStatus {
   PENDING = "NEW",

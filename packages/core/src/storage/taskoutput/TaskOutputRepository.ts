@@ -6,8 +6,8 @@
 //    *******************************************************************************
 
 import EventEmitter from "eventemitter3";
-import { TaskInput, TaskOutput } from "../task/base/Task";
-import { KVRepository } from "./base/KVRepository";
+import { TaskInput, TaskOutput } from "../../task/base/Task";
+import { KVRepository } from "../base/KVRepository";
 
 export type TaskOutputEvents = "output_saved" | "output_retrieved" | "output_cleared";
 

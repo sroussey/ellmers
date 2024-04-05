@@ -5,19 +5,18 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { TaskInput, TaskOutput } from "../../task/base/Task";
 import { TaskOutputDiscriminator, TaskOutputRepository } from "./TaskOutputRepository";
-import { TaskInput, TaskOutput } from "../task/base/Task";
-import { SqliteKVRepository } from "./base/SqliteKVRepository";
+import { FileKVRepository } from "../base/FileKVRepository";
 
-export class SqliteTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: SqliteKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
+export class FileTaskOutputRepository extends TaskOutputRepository {
+  kvRepository: FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
 
-  constructor(dbOrPath: string) {
+  constructor(folderPath: string) {
     super();
-    this.kvRepository = new SqliteKVRepository<
-      TaskInput,
-      TaskOutput,
-      typeof TaskOutputDiscriminator
-    >(dbOrPath, "task_outputs", TaskOutputDiscriminator);
+    this.kvRepository = new FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>(
+      folderPath,
+      TaskOutputDiscriminator
+    );
   }
 }

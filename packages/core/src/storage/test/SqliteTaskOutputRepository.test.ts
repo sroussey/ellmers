@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { SqliteTaskOutputRepository } from "../SqliteTaskOutputRepository";
+import { SqliteTaskOutputRepository } from "../taskoutput/SqliteTaskOutputRepository";
 import { TaskInput, TaskOutput } from "../../task/base/Task";
 
 describe("SqliteTaskOutputRepository", () => {

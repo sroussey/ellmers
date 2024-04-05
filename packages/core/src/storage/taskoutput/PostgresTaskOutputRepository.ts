@@ -5,19 +5,19 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "../task/base/Task";
 import { TaskOutputDiscriminator, TaskOutputRepository } from "./TaskOutputRepository";
-import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
+import { TaskInput, TaskOutput } from "../../task/base/Task";
+import { PostgresKVRepository } from "../base/PostgresKVRepository";
 
-export class InMemoryTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: InMemoryKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
+export class PostgresTaskOutputRepository extends TaskOutputRepository {
+  kvRepository: PostgresKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
 
-  constructor() {
+  constructor(connectionString: string) {
     super();
-    this.kvRepository = new InMemoryKVRepository<
+    this.kvRepository = new PostgresKVRepository<
       TaskInput,
       TaskOutput,
       typeof TaskOutputDiscriminator
-    >();
+    >(connectionString, "task_outputs", TaskOutputDiscriminator);
   }
 }

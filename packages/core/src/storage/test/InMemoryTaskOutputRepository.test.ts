@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { InMemoryTaskOutputRepository } from "../InMemoryTaskOutputRepository";
+import { InMemoryTaskOutputRepository } from "../taskoutput/InMemoryTaskOutputRepository";
 import { TaskInput, TaskOutput } from "../../task/base/Task";
 
 describe("InMemoryTaskOutputRepository", () => {

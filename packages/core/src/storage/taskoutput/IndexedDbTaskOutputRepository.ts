@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "../task/base/Task";
+import { TaskInput, TaskOutput } from "../../task/base/Task";
 import { TaskOutputDiscriminator, TaskOutputRepository } from "./TaskOutputRepository";
-import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
+import { IndexedDbKVRepository } from "../base/IndexedDbKVRepository";
 
 export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
   kvRepository: IndexedDbKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
