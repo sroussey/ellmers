@@ -5,34 +5,19 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput } from "task";
-import { TaskOutputRepository } from "./TaskOutputRepository";
-import { makeFingerprint } from "../util/Misc";
+import { TaskInput, TaskOutput } from "../task/base/Task";
+import { TaskOutputDiscriminator, TaskOutputRepository } from "./TaskOutputRepository";
+import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
 export class InMemoryTaskOutputRepository extends TaskOutputRepository {
-  outputs = new Map<string, TaskOutput>();
+  kvRepository: InMemoryKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
 
-  async saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
-    const inputsHash = await makeFingerprint(inputs);
-    const id = `${taskType}_${inputsHash}`;
-    this.outputs.set(id, output);
-    this.emit("output_saved", taskType);
-  }
-
-  async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
-    const inputsHash = await makeFingerprint(inputs);
-    const id = `${taskType}_${inputsHash}`;
-    const out = this.outputs.get(id);
-    this.emit("output_retrieved", taskType);
-    return out;
-  }
-
-  async clear(): Promise<void> {
-    this.outputs.clear();
-    this.emit("output_cleared");
-  }
-
-  async size(): Promise<number> {
-    return this.outputs.size;
+  constructor() {
+    super();
+    this.kvRepository = new InMemoryKVRepository<
+      TaskInput,
+      TaskOutput,
+      typeof TaskOutputDiscriminator
+    >();
   }
 }

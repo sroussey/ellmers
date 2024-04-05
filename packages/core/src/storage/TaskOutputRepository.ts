@@ -6,11 +6,17 @@
 //    *******************************************************************************
 
 import EventEmitter from "eventemitter3";
-import { TaskInput, TaskOutput } from "task";
+import { TaskInput, TaskOutput } from "../task/base/Task";
+import { KVRepository } from "./base/KVRepository";
 
 export type TaskOutputEvents = "output_saved" | "output_retrieved" | "output_cleared";
 
+export const TaskOutputDiscriminator = {
+  taskType: "string",
+} as const;
+
 export abstract class TaskOutputRepository {
+  abstract kvRepository: KVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
   private events = new EventEmitter<TaskOutputEvents>();
   on(name: TaskOutputEvents, fn: (...args: any[]) => void) {
     this.events.on.call(this.events, name, fn);
@@ -22,8 +28,23 @@ export abstract class TaskOutputRepository {
     this.events.emit.call(this.events, name, ...args);
   }
 
-  abstract saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void>;
-  abstract getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
-  abstract clear(): Promise<void>;
-  abstract size(): Promise<number>;
+  async saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
+    await this.kvRepository.put({ taskType, inputs }, output);
+    this.emit("output_saved", taskType);
+  }
+
+  async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
+    const output = await this.kvRepository.get({ taskType, inputs });
+    this.emit("output_retrieved", taskType);
+    return output as TaskOutput;
+  }
+
+  async clear(): Promise<void> {
+    await this.kvRepository.clear();
+    this.emit("output_cleared");
+  }
+
+  async size(): Promise<number> {
+    return await this.kvRepository.size();
+  }
 }
