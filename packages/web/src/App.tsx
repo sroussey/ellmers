@@ -99,7 +99,7 @@ export const App = () => {
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={30}>
         <ResizablePanelGroup direction="vertical">
-          <ResizablePanel defaultSize={90}>
+          <ResizablePanel defaultSize={82}>
             <JsonEditor
               json={jsonData}
               onJsonChange={setNewJson}
