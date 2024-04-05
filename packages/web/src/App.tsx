@@ -3,7 +3,6 @@ import { ReactFlowProvider } from "@sroussey/xyflow-react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
 import {
-  InMemoryTaskOutputRepository,
   IndexedDbTaskOutputRepository,
   JsonTask,
   JsonTaskArray,
@@ -108,7 +107,7 @@ export const App = () => {
             />
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel style={{ backgroundColor: "#222", color: "#fff", padding: "10px" }}>
+          <ResizablePanel style={{ backgroundColor: "#222", color: "#bbb", padding: "10px" }}>
             <QueuesStatus />
             <br />
             <RepositoryStatus repository={repo} />

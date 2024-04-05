@@ -180,7 +180,15 @@ export abstract class TaskBase {
     const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
     for (const input of inputdefs) {
       if (overrides?.[input.id] !== undefined) {
-        if (input.isArray) {
+        let isArray = input.isArray;
+        if (
+          input.valueType === "any" &&
+          (Array.isArray(overrides[input.id]) || Array.isArray(this.runInputData[input.id]))
+        ) {
+          isArray = true;
+        }
+
+        if (isArray) {
           const newitems = [...(this.runInputData[input.id] || [])];
           const overrideItem = overrides[input.id];
           if (Array.isArray(overrideItem)) {
