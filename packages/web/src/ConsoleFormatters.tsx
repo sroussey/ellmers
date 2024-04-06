@@ -37,7 +37,7 @@ export class TaskGraphBuilderConsoleFormatter extends ConsoleFormatter {
       header
         .createChild("span")
         .setStyle("color: green; margin-left: 10px;")
-        .createTextChild(`(${obj._graph.getNodes().length} nodes)`);
+        .createTextChild(`(${obj.graph.getNodes().length} nodes)`);
       if (obj._error) {
         header
           .createChild("span")

@@ -25,7 +25,7 @@ export function RepositoryStatus({ repository }: { repository: TaskOutputReposit
 
   return (
     <div>
-      Repo: {repository.constructor.name} {size}
+      {repository.constructor.name} {size}
       <button onClick={clear} className="float-right">
         Clear
       </button>

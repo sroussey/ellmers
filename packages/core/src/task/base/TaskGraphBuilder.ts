@@ -22,11 +22,11 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
 ) {
   const result = function (this: TaskGraphBuilder, input?: Partial<I>): TaskGraphBuilder {
     this._error = "";
-    const nodes = this._graph.getNodes();
+    const nodes = this.graph.getNodes();
     const parent = nodes.length > 0 ? nodes[nodes.length - 1] : undefined;
     id++;
     const task = new taskClass({ id: String(id), input });
-    this._graph.addTask(task);
+    this.graph.addTask(task);
     if (this._dataFlows.length > 0) {
       this._dataFlows.forEach((dataFlow) => {
         if (taskClass.inputs.find((i) => i.id === dataFlow.targetTaskInputId) === undefined) {
@@ -35,11 +35,11 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
           return this;
         }
         dataFlow.targetTaskId = task.config.id;
-        this._graph.addDataFlow(dataFlow);
+        this.graph.addDataFlow(dataFlow);
       });
       this._dataFlows = [];
     }
-    if (parent && this._graph.outEdges(parent.config.id).length === 0) {
+    if (parent && this.graph.outEdges(parent.config.id).length === 0) {
       const parentOutputs = (parent.constructor as typeof TaskBase).outputs;
       const taskInputs = (task.constructor as typeof TaskBase).inputs;
       // find matches between parent outputs and task inputs based on valueType
@@ -58,7 +58,7 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
                 task.config.id,
                 taskInput.id
               );
-              this._graph.addDataFlow(df);
+              this.graph.addDataFlow(df);
             }
           }
         }
@@ -76,7 +76,7 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
           (parent.constructor as any).type
         } and the inputs of ${(task.constructor as any).type}. You now need to connect the outputs to the inputs via connect() manually before adding this task. Task not added.`;
         console.error(this._error);
-        this._graph.removeNode(task.config.id);
+        this.graph.removeNode(task.config.id);
       }
     }
     return this;
@@ -91,10 +91,23 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
 type BuilderEvents = GraphEvents | "changed" | "reset" | "error" | "start" | "complete";
 
 export class TaskGraphBuilder {
-  _graph: TaskGraph = new TaskGraph();
-  _runner: TaskGraphRunner;
+  private _graph: TaskGraph = new TaskGraph();
+  private _runner: TaskGraphRunner;
   _error: string = "";
   _repository?: TaskOutputRepository;
+
+  public get graph(): TaskGraph {
+    return this._graph;
+  }
+  public set graph(value: TaskGraph) {
+    this._dataFlows = [];
+    this._error = "";
+    this.clearEvents();
+    this._graph = value;
+    this._runner = new TaskGraphRunner(this._graph, this._repository);
+    this.setupEvents();
+    this.events.emit("reset");
+  }
 
   events = new EventEmitter<BuilderEvents>();
   on(name: BuilderEvents, fn: (...args: any[]) => void) {
@@ -157,6 +170,10 @@ export class TaskGraphBuilder {
 
   toJSON() {
     return this._graph.toJSON();
+  }
+
+  toDependencyJSON() {
+    return this._graph.toDependencyJSON();
   }
 
   parallel(...args: Array<(b: TaskGraphBuilder) => void>) {

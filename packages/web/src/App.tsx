@@ -13,8 +13,8 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { RepositoryStatus } from "./RepositoryStatus";
 
-const repo = new IndexedDbTaskOutputRepository();
-const builder = new TaskGraphBuilder(repo);
+const taskOutputCache = new IndexedDbTaskOutputRepository();
+const builder = new TaskGraphBuilder(taskOutputCache);
 const run = builder.run.bind(builder);
 builder.run = async () => {
   console.log("Running task graph...");
@@ -22,7 +22,7 @@ builder.run = async () => {
   console.log("Task graph complete.");
   return data;
 };
-window["builder"] = builder;
+
 builder
   .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
   .TextRewriter({
@@ -41,21 +41,25 @@ builder
 const initialJsonObj: JsonTask[] = builder.toDependencyJSON();
 const initialJson = JSON.stringify(initialJsonObj, null, 2);
 
+window["builder"] = builder;
+
 export const App = () => {
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [graph, setGraph] = useState<TaskGraph>(builder._graph);
+  const [graph, setGraph] = useState<TaskGraph>(builder.graph);
   const [jsonData, setJsonData] = useState<string>(initialJson);
 
   // changes coming from builder in console
   useEffect(() => {
     function listen() {
       setJsonData(JSON.stringify(builder.toJSON(), null, 2));
-      setGraph(builder._graph);
+      setGraph(builder.graph);
     }
     builder.on("changed", listen);
+    builder.on("reset", listen);
     listen();
     return () => {
       builder.off("changed", listen);
+      builder.off("reset", listen);
     };
   }, []);
 
@@ -76,14 +80,7 @@ export const App = () => {
 
   const setNewJson = useCallback((json: string) => {
     const task = new JsonTask({ input: { json: json } });
-    builder.clearEvents();
-    builder._graph = task.subGraph;
-    builder._runner = new TaskGraphRunner(builder._graph, builder._repository);
-    builder._dataFlows = [];
-    builder._error = "";
-    builder.setupEvents();
-    builder.events.emit("changed");
-    builder.events.emit("reset");
+    builder.graph = task.subGraph;
     setJsonData(json);
   }, []);
 
@@ -108,6 +105,8 @@ export const App = () => {
           <ResizableHandle />
           <ResizablePanel style={{ backgroundColor: "#222", color: "#bbb", padding: "10px" }}>
             <QueuesStatus />
+            <hr className="my-2 border-[#777]" />
+            <RepositoryStatus repository={taskOutputCache} />
             <br />
             <RepositoryStatus repository={repo} />
           </ResizablePanel>

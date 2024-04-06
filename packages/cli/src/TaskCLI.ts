@@ -60,7 +60,7 @@ export function AddBaseCommands(program: Command) {
       } else {
         const build = new TaskGraphBuilder();
         build.TextEmbedding({ model, text });
-        await runTask(build._graph);
+        await runTask(build.graph);
       }
     });
 
@@ -78,7 +78,7 @@ export function AddBaseCommands(program: Command) {
       } else {
         const build = new TaskGraphBuilder();
         build.TextSummary({ model, text });
-        await runTask(build._graph);
+        await runTask(build.graph);
       }
     });
 
@@ -97,7 +97,7 @@ export function AddBaseCommands(program: Command) {
       } else {
         const build = new TaskGraphBuilder();
         build.TextRewriter({ model, text, prompt: options.prompt });
-        await runTask(build._graph);
+        await runTask(build.graph);
       }
     });
 
