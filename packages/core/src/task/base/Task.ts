@@ -7,7 +7,7 @@
 
 import { EventEmitter } from "eventemitter3";
 import { nanoid } from "nanoid";
-import { TaskGraph } from "./TaskGraph";
+import { TaskGraph, TaskGraphItemJson } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import {
   validateItem,
@@ -286,6 +286,9 @@ export abstract class TaskBase {
       ...(Object.keys(p).length ? { provenance: p } : {}),
     };
   }
+  toDependencyJSON(): JsonTaskItem {
+    return this.toJSON();
+  }
 }
 
 export type TaskIdType = TaskBase["config"]["id"];
@@ -337,9 +340,14 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
    * This serializes the task and its subtasks into a format that can be stored in a database
    * @returns TaskExportFormat
    */
-  toJSON(): JsonTaskItem {
+  toJSON(): TaskGraphItemJson {
     this.resetInputData();
-    return { ...super.toJSON(), subtasks: this.subGraph.toJSON() };
+    return { ...super.toJSON(), subgraph: this.subGraph.toJSON() };
+  }
+
+  toDependencyJSON(): JsonTaskItem {
+    this.resetInputData();
+    return { ...super.toDependencyJSON(), subtasks: this.subGraph.toDependencyJSON() };
   }
 }
 

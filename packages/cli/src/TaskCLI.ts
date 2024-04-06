@@ -15,11 +15,10 @@ import {
   DownloadModelTask,
   ModelUseCaseEnum,
   TaskGraph,
-  JsonTaskArray,
   JsonTask,
   TaskGraphBuilder,
   DownloadModelCompoundTask,
-  Task,
+  JsonTaskItem,
 } from "ellmers-core/server";
 
 export function AddBaseCommands(program: Command) {
@@ -108,7 +107,7 @@ export function AddBaseCommands(program: Command) {
     .argument("[json]", "json text to rewrite and vectorize")
     .action(async (json) => {
       if (!json) {
-        const exampleJson: JsonTaskArray = [
+        const exampleJson: JsonTaskItem[] = [
           {
             id: "1",
             type: "DownloadModelTask",

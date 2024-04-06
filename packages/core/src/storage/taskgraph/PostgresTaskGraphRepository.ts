@@ -5,13 +5,18 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./browser";
-export * from "./storage/taskoutput/SqliteTaskOutputRepository";
-export * from "./storage/taskoutput/PostgresTaskOutputRepository";
-export * from "./storage/taskgraph/SqliteTaskGraphRepository";
-export * from "./storage/taskgraph/PostgresTaskGraphRepository";
-export * from "./job/SqliteJobQueue";
-export * from "./job/SqliteRateLimiter";
-export * from "./job/PostgreSqlJobQueue";
-export * from "./job/PostgreSqlRateLimiter";
-export * from "./bindings/all_sqlite";
+import { TaskGraphJson } from "../../task/base/TaskGraph";
+import { TaskGraphRepository } from "./TaskGraphRepository";
+import { PostgresKVRepository } from "../base/PostgresKVRepository";
+
+export class PostgresTaskGraphRepository extends TaskGraphRepository {
+  kvRepository: PostgresKVRepository<unknown, TaskGraphJson>;
+
+  constructor(connectionString: string) {
+    super();
+    this.kvRepository = new PostgresKVRepository<unknown, TaskGraphJson>(
+      connectionString,
+      "task_graphs"
+    );
+  }
+}

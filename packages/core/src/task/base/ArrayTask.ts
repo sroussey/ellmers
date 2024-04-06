@@ -190,7 +190,11 @@ export function arrayTaskFactory<
       return this.runOutputData;
     }
     toJSON(): JsonTaskItem {
-      const { subtasks, ...result } = super.toJSON();
+      const { subgraph, ...result } = super.toJSON();
+      return result;
+    }
+    toDependencyJSON(): JsonTaskItem {
+      const { subtasks, ...result } = super.toDependencyJSON();
       return result;
     }
   }

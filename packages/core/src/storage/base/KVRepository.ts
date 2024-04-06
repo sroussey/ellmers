@@ -11,7 +11,11 @@ export type KVEvents = "put" | "get" | "clear";
 
 export type DiscriminatorSchema = Record<string, "string" | "number" | "boolean">;
 
-export abstract class KVRepository<Key, Value, Discriminators extends DiscriminatorSchema> {
+export abstract class KVRepository<
+  Key,
+  Value,
+  Discriminators extends DiscriminatorSchema = DiscriminatorSchema,
+> {
   // KV repository event emitter
   private events = new EventEmitter<KVEvents>();
   on(

@@ -5,7 +5,6 @@ import { JsonEditor } from "./JsonEditor";
 import {
   IndexedDbTaskOutputRepository,
   JsonTask,
-  JsonTaskArray,
   TaskGraph,
   TaskGraphBuilder,
   TaskGraphRunner,
@@ -39,7 +38,7 @@ builder
   .rename("text", "message", -2)
   .DebugLog({ level: "info" });
 
-const initialJsonObj: JsonTaskArray = builder.toJSON();
+const initialJsonObj: JsonTask[] = builder.toDependencyJSON();
 const initialJson = JSON.stringify(initialJsonObj, null, 2);
 
 export const App = () => {

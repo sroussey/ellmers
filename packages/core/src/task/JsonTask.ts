@@ -11,7 +11,6 @@ import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilde
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
-export type JsonTaskArray = Array<JsonTaskItem>;
 export type JsonTaskItem = {
   id: unknown;
   type: string;
@@ -29,7 +28,7 @@ export type JsonTaskItem = {
         }[];
   };
   provenance?: TaskInput;
-  subtasks?: JsonTaskArray;
+  subtasks?: JsonTaskItem[];
 };
 
 type JsonTaskInput = CreateMappedType<typeof JsonTask.inputs>;
@@ -70,7 +69,7 @@ export class JsonTask extends RegenerativeCompoundTask {
     return this;
   }
 
-  public _createTask(item: JsonTaskItem) {
+  private createTask(item: JsonTaskItem) {
     if (!item.id) throw new Error("Task id required");
     if (!item.type) throw new Error("Task type required");
     if (item.input && (Array.isArray(item.input) || Array.isArray(item.provenance)))
@@ -94,19 +93,19 @@ export class JsonTask extends RegenerativeCompoundTask {
     return task;
   }
 
-  public createSubGraph(jsonItems: JsonTaskArray) {
+  private createSubGraph(jsonItems: JsonTaskItem[]) {
     const subGraph = new TaskGraph();
     for (const subitem of jsonItems) {
-      subGraph.addTask(this._createTask(subitem));
+      subGraph.addTask(this.createTask(subitem));
     }
     return subGraph;
   }
 
   public regenerateGraph() {
     if (!this.runInputData.json) return;
-    let data = JSON.parse(this.runInputData.json) as JsonTaskArray | JsonTaskItem;
+    let data = JSON.parse(this.runInputData.json) as JsonTaskItem[] | JsonTaskItem;
     if (!Array.isArray(data)) data = [data];
-    const jsonItems: JsonTaskArray = data as JsonTaskArray;
+    const jsonItems: JsonTaskItem[] = data as JsonTaskItem[];
     // create the task nodes
     this.subGraph = this.createSubGraph(jsonItems);
     // create the data flow edges

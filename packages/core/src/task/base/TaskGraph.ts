@@ -10,19 +10,9 @@ import { TaskIdType, TaskInput, TaskOutput } from "./Task";
 import { Task, TaskStream } from "./Task";
 import type { JsonTaskItem } from "../JsonTask";
 
-export type IDataFlow = {
-  sourceTaskId: TaskIdType;
-  sourceTaskOutputId: string;
-  targetTaskId: TaskIdType;
-  targetTaskInputId: string;
-  id: string;
-  value: TaskOutput;
-  provenance: TaskInput;
-};
+export type DataFlowIdType = string;
 
-export type DataFlowIdType = IDataFlow["id"];
-
-export class DataFlow implements IDataFlow {
+export class DataFlow {
   constructor(
     public sourceTaskId: TaskIdType,
     public sourceTaskOutputId: string,
@@ -34,13 +24,43 @@ export class DataFlow implements IDataFlow {
   }
   public value: TaskOutput = {};
   public provenance: TaskInput = {};
+
+  toJSON(): DataFlowJson {
+    return {
+      sourceTaskId: this.sourceTaskId,
+      sourceTaskOutputId: this.sourceTaskOutputId,
+      targetTaskId: this.targetTaskId,
+      targetTaskInputId: this.targetTaskInputId,
+    };
+  }
 }
 
-export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType, DataFlowIdType> {
+export type TaskGraphItemJson = {
+  id: unknown;
+  type: string;
+  name?: string;
+  input?: TaskInput;
+  provenance?: TaskInput;
+  subgraph?: TaskGraphJson;
+};
+
+export type TaskGraphJson = {
+  nodes: TaskGraphItemJson[];
+  edges: DataFlowJson[];
+};
+
+export type DataFlowJson = {
+  sourceTaskId: unknown;
+  sourceTaskOutputId: string;
+  targetTaskId: unknown;
+  targetTaskInputId: string;
+};
+
+export class TaskGraph extends DirectedAcyclicGraph<Task, DataFlow, TaskIdType, DataFlowIdType> {
   constructor() {
     super(
       (task: Task) => task.config.id,
-      (dataFlow: IDataFlow) => dataFlow.id
+      (dataFlow: DataFlow) => dataFlow.id
     );
   }
   public getTask(id: TaskIdType): Task | undefined {
@@ -56,12 +76,12 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
     return super.addEdge(dataflow.sourceTaskId, dataflow.targetTaskId, dataflow);
   }
   public addDataFlows(dataflows: DataFlow[]) {
-    const addedEdges = dataflows.map<[s: unknown, t: unknown, e: IDataFlow]>((edge) => {
+    const addedEdges = dataflows.map<[s: unknown, t: unknown, e: DataFlow]>((edge) => {
       return [edge.sourceTaskId, edge.targetTaskId, edge];
     });
     return super.addEdges(addedEdges);
   }
-  public getDataFlow(id: DataFlowIdType): IDataFlow | undefined {
+  public getDataFlow(id: DataFlowIdType): DataFlow | undefined {
     for (const i in this.adjacency) {
       for (const j in this.adjacency[i]) {
         const maybeEdges = this.adjacency[i][j];
@@ -75,7 +95,7 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
       }
     }
   }
-  public getDataFlows(): IDataFlow[] {
+  public getDataFlows(): DataFlow[] {
     return this.getEdges().map((edge) => edge[2]);
   }
 
@@ -95,8 +115,17 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, IDataFlow, TaskIdType,
     return this.getTargetDataFlows(taskId).map((dataFlow) => this.getNode(dataFlow.targetTaskId)!);
   }
 
-  public toJSON(): JsonTaskItem[] {
-    const nodes = this.getNodes().flatMap((node) => node.toJSON());
+  public toJSON(): TaskGraphJson {
+    const nodes = this.getNodes().map((node) => node.toJSON());
+    const edges = this.getDataFlows().map((df) => df.toJSON());
+    return {
+      nodes,
+      edges,
+    };
+  }
+
+  public toDependencyJSON(): JsonTaskItem[] {
+    const nodes = this.getNodes().flatMap((node) => node.toDependencyJSON());
     this.getDataFlows().forEach((edge) => {
       const target = nodes.find((node) => node.id === edge.targetTaskId)!;
       if (!target.dependencies) {
@@ -138,8 +167,8 @@ function serialGraphEdges(
   tasks: TaskStream,
   outputHandle: string,
   inputHandle: string
-): IDataFlow[] {
-  const edges: IDataFlow[] = [];
+): DataFlow[] {
+  const edges: DataFlow[] = [];
   for (let i = 0; i < tasks.length - 1; i++) {
     edges.push(new DataFlow(tasks[i].config.id, inputHandle, tasks[i + 1].config.id, outputHandle));
   }
