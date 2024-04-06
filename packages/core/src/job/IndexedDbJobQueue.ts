@@ -10,28 +10,7 @@ import { Job } from "./base/Job";
 import { JobQueue } from "./base/JobQueue";
 import { ILimiter } from "./base/ILimiter";
 import { makeFingerprint } from "../util/Misc";
-
-// Utility functions for handling common IndexedDB operations
-function openDatabase(
-  name: string,
-  version: number,
-  onUpgradeNeeded: (db: IDBDatabase) => void
-): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, version);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = () => onUpgradeNeeded(request.result);
-  });
-}
-
-function transaction(
-  db: IDBDatabase,
-  storeName: string,
-  mode: IDBTransactionMode = "readonly"
-): IDBTransaction {
-  return db.transaction(storeName, mode);
-}
+import { ensureIndexedDbTable } from "../util/IndexedDbTable";
 
 // The IndexedDbQueue class
 export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
@@ -44,31 +23,14 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     public version: number = 1
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
-    this.dbPromise = openDatabase(this.queue, this.version, (db) => {
-      // Create the 'jobs' object store if it doesn't already exist
-      let store;
-      if (!db.objectStoreNames.contains("jobs")) {
-        store = db.createObjectStore("jobs", { keyPath: "id" });
-      } else {
-        store = transaction(db, "jobs", "versionchange").objectStore("jobs");
-      }
-
-      // Index for status, useful for the 'processing' method
-      if (!store.indexNames.contains("status")) {
-        store.createIndex("status", "status", { unique: false });
-      }
-
-      // Compound index for status and runAfter, useful for 'next' method
-      if (!store.indexNames.contains("status_runAfter")) {
-        store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
-      }
-
-      // Compound index for taskType, fingerprint, and status, useful for 'outputForInput' method
-      if (!store.indexNames.contains("taskType_fingerprint_status")) {
-        store.createIndex("taskType_fingerprint_status", ["taskType", "fingerprint", "status"], {
-          unique: false,
-        });
-      }
+    const tableName = `jobqueue_${queue}`;
+    this.dbPromise = ensureIndexedDbTable(tableName, (db) => {
+      const store = db.createObjectStore("jobs", { keyPath: "id" });
+      store.createIndex("status", "status", { unique: false });
+      store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
+      store.createIndex("taskType_fingerprint_status", ["taskType", "fingerprint", "status"], {
+        unique: false,
+      });
     });
   }
 
@@ -78,7 +40,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     job.fingerprint = await makeFingerprint(job.input);
 
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readwrite");
+    const tx = db.transaction("jobs", "readwrite");
     tx.objectStore("jobs").add(job);
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve(job.id);
@@ -88,7 +50,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async get(id: unknown): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readonly");
+    const tx = db.transaction("jobs", "readonly");
     const request = tx.objectStore("jobs").get(id as string);
     return new Promise((resolve) => {
       request.onsuccess = () => resolve(request.result);
@@ -98,7 +60,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async peek(num: number = 100): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readonly");
+    const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status_runAfter");
     const request = index.getAll(IDBKeyRange.only("PENDING"), num);
@@ -110,7 +72,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async processing(): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readonly");
+    const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status");
     const request = index.getAll(IDBKeyRange.only("PROCESSING"));
@@ -122,7 +84,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async next(): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readwrite");
+    const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
 
     const index = store.index("status_runAfter");
@@ -145,7 +107,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async size(): Promise<number> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readonly");
+    const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const request = store.count();
 
@@ -160,7 +122,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     error: string | null = null
   ): Promise<void> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readwrite");
+    const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
     const request = store.get(id as string);
 
@@ -182,7 +144,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async clear(): Promise<void> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readwrite");
+    const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
     const request = store.clear();
 
@@ -194,7 +156,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async outputForInput(taskType: string, input: Input): Promise<Output | null> {
     const db = await this.dbPromise;
-    const tx = transaction(db, "jobs", "readonly");
+    const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
 
     const fingerprint = await makeFingerprint(input);

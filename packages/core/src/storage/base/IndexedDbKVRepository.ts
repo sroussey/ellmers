@@ -7,9 +7,10 @@
 
 import { DiscriminatorSchema, KVRepository } from "./KVRepository";
 import { makeFingerprint } from "../../util/Misc";
+import { ensureIndexedDbTable } from "../../util/IndexedDbTable";
 
 // IndexedDbKVRepository is a key-value store that uses IndexedDB as the backend for
-// simple browser-based examples with no server-side component. It does not support discriminators.
+// simple browser-based examples with no server-side component. It does not support di
 
 export class IndexedDbKVRepository<
   Key = string,
@@ -18,23 +19,10 @@ export class IndexedDbKVRepository<
 > extends KVRepository<Key, Value, Discriminator> {
   private dbPromise: Promise<IDBDatabase>;
 
-  constructor(
-    public dbName: string = "EllmersDB",
-    public table: string = "kv_store"
-  ) {
+  constructor(public table: string = "kv_store") {
     super();
-    this.dbPromise = new Promise((resolve, reject) => {
-      const openRequest = indexedDB.open(dbName, 1);
-
-      openRequest.onupgradeneeded = () => {
-        const db = openRequest.result;
-        if (!db.objectStoreNames.contains(this.table)) {
-          db.createObjectStore(this.table, { keyPath: "id" });
-        }
-      };
-
-      openRequest.onerror = () => reject(openRequest.error);
-      openRequest.onsuccess = () => resolve(openRequest.result);
+    this.dbPromise = ensureIndexedDbTable(this.table, (db) => {
+      db.createObjectStore(table, { keyPath: "id" });
     });
   }
 

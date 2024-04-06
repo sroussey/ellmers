@@ -207,6 +207,7 @@ export class TaskGraphBuilder {
   }
 
   reset() {
+    id = 0;
     this.clearEvents();
     this._graph = new TaskGraph();
     this._runner = new TaskGraphRunner(this._graph, this._repository);

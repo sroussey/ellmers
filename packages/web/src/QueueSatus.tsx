@@ -35,7 +35,7 @@ export function QueueStatus({ queueType }: { queueType: ModelProcessorEnum }) {
     setProcessing(0);
     setCompleted(0);
     setErrors(0);
-  }, []);
+  }, [queue]);
 
   return (
     <span>

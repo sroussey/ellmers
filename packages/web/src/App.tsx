@@ -3,15 +3,16 @@ import { ReactFlowProvider } from "@sroussey/xyflow-react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
 import {
+  IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
   JsonTask,
   TaskGraph,
   TaskGraphBuilder,
-  TaskGraphRunner,
 } from "ellmers-core/browser";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { RepositoryStatus } from "./RepositoryStatus";
+import { GraphStoreStatus } from "./GraphStoreStatus";
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);
@@ -23,24 +24,47 @@ builder.run = async () => {
   return data;
 };
 
-builder
-  .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
-  .TextRewriter({
-    text: "The quick brown fox jumps over the lazy dog.",
-    prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
-  })
-  .TextTranslation({
-    model: "Xenova/m2m100_418M",
-    source: "en",
-    target: "es",
-  })
-  .rename("text", "message")
-  .rename("text", "message", -2)
-  .DebugLog({ level: "info" });
+const taskGraphRepo = new IndexedDbTaskGraphRepository();
+const graph = await taskGraphRepo.getTaskGraph("default");
+const resetGraph = () => {
+  builder
+    .reset()
+    .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
+    .TextRewriter({
+      text: "The quick brown fox jumps over the lazy dog.",
+      prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
+    })
+    .TextTranslation({
+      model: "Xenova/m2m100_418M",
+      source: "en",
+      target: "es",
+    })
+    .rename("text", "message")
+    .rename("text", "message", -2)
+    .DebugLog({ level: "info" });
+  taskGraphRepo.saveTaskGraph("default", builder.graph);
+};
 
+if (graph) {
+  builder.graph = graph;
+} else {
+  resetGraph();
+}
+
+builder.on("changed", () => {
+  taskGraphRepo.saveTaskGraph("default", builder.graph);
+});
+builder.on("reset", () => {
+  taskGraphRepo.saveTaskGraph("default", builder.graph);
+});
+taskGraphRepo.on("graph_cleared", () => {
+  resetGraph();
+  builder.emit("reset");
+});
 const initialJsonObj: JsonTask[] = builder.toDependencyJSON();
 const initialJson = JSON.stringify(initialJsonObj, null, 2);
 
+// console access. what happens there will be reflected in the UI
 window["builder"] = builder;
 
 export const App = () => {
@@ -51,7 +75,7 @@ export const App = () => {
   // changes coming from builder in console
   useEffect(() => {
     function listen() {
-      setJsonData(JSON.stringify(builder.toJSON(), null, 2));
+      setJsonData(JSON.stringify(builder.toDependencyJSON(), null, 2));
       setGraph(builder.graph);
     }
     builder.on("changed", listen);
@@ -107,8 +131,8 @@ export const App = () => {
             <QueuesStatus />
             <hr className="my-2 border-[#777]" />
             <RepositoryStatus repository={taskOutputCache} />
-            <br />
-            <RepositoryStatus repository={repo} />
+            <hr className="my-2 border-[#777]" />
+            <GraphStoreStatus repository={taskGraphRepo} />
           </ResizablePanel>
         </ResizablePanelGroup>
       </ResizablePanel>

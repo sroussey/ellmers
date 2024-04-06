@@ -14,9 +14,6 @@ export class IndexedDbTaskGraphRepository extends TaskGraphRepository {
 
   constructor() {
     super();
-    this.kvRepository = new IndexedDbKVRepository<unknown, TaskGraphJson>(
-      "EllmersDB",
-      "task_graphs"
-    );
+    this.kvRepository = new IndexedDbKVRepository<unknown, TaskGraphJson>("task_graphs");
   }
 }

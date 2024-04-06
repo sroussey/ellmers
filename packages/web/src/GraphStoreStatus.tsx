@@ -1,10 +1,17 @@
 import { TaskGraphRepository } from "ellmers-core/browser";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
 export function GraphStoreStatus({ repository }: { repository: TaskGraphRepository }) {
+  const clear = useCallback(() => {
+    repository.clear();
+  }, [repository]);
+
   return (
     <div>
-      <h2>TaskGraph</h2>
+      <span>{repository.constructor.name}</span>
+      <button className="float-right" onClick={clear}>
+        Reset
+      </button>
     </div>
   );
 }

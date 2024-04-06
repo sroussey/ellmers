@@ -18,6 +18,6 @@ export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
       TaskInput,
       TaskOutput,
       typeof TaskOutputDiscriminator
-    >("EllmersDB", "task_outputs");
+    >("task_outputs");
   }
 }
