@@ -7,11 +7,12 @@
 
 import EventEmitter from "eventemitter3";
 import { GraphEvents } from "@sroussey/typescript-graph";
-import { DataFlow, TaskGraph } from "./TaskGraph";
+import { DataFlow, TaskGraph, TaskGraphJson } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
 import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
 import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
+import { JsonTaskItem } from "../JsonTask";
 
 export type TaskGraphBuilderHelper<I extends TaskInput> = (input?: Partial<I>) => TaskGraphBuilder;
 
@@ -168,11 +169,11 @@ export class TaskGraphBuilder {
     return this;
   }
 
-  toJSON() {
+  toJSON(): TaskGraphJson {
     return this._graph.toJSON();
   }
 
-  toDependencyJSON() {
+  toDependencyJSON(): JsonTaskItem[] {
     return this._graph.toDependencyJSON();
   }
 

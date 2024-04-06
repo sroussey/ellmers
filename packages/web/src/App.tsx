@@ -6,6 +6,7 @@ import {
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
   JsonTask,
+  JsonTaskItem,
   TaskGraph,
   TaskGraphBuilder,
 } from "ellmers-core/browser";
@@ -61,7 +62,7 @@ taskGraphRepo.on("graph_cleared", () => {
   resetGraph();
   builder.emit("reset");
 });
-const initialJsonObj: JsonTask[] = builder.toDependencyJSON();
+const initialJsonObj: JsonTaskItem[] = builder.toDependencyJSON();
 const initialJson = JSON.stringify(initialJsonObj, null, 2);
 
 // console access. what happens there will be reflected in the UI
