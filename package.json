@@ -7,7 +7,7 @@
     "./packages/*"
   ],
   "scripts": {
-    "build": "( cd packages/core && bun run build ) && ( cd packages/cli && bun run build )",
+    "build": "( cd packages/core && bun run build ) && ( cd packages/cli && bun run build ) && ( cd packages/web && bun run build )",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
     "watch": "bunx concurrently -c 'auto' -n core,cli 'cd packages/core && bun run watch' 'sleep 1 && cd packages/cli && bun run watch'",
     "docs": "typedoc",
