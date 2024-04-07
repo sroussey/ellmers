@@ -18,7 +18,7 @@ export class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";
 
   constructor(config: JobQueueTaskConfig = {}) {
-    config.name ||= `${new.target.name}${
+    config.name ||= `${new.target.type || new.target.name}${
       config.input?.model ? " with model " + config.input?.model : ""
     }`;
     super(config);

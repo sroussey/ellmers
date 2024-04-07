@@ -107,7 +107,7 @@ export abstract class TaskBase {
     this.resetInputData();
 
     // setup the configuration
-    const name = (this.constructor as any).type ?? this.constructor.name;
+    const name = new.target.type || new.target.name;
     this.config = Object.assign(
       {
         id: nanoid(),
