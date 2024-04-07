@@ -33,6 +33,8 @@ The Embedding Large Language Model Experiential Retrieval Service (ELLMERS) is a
 
 ### Web
 
+[Demo](https://loquacious-valkyrie-d5baf1.netlify.app/)
+
 ![Web](docs/developers/img/web.png)
 
 ### Node Editor
