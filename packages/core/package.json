@@ -10,8 +10,8 @@
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-server-bun && bun run build-types-map",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-browser": "bun build --target=browser --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser*.ts",
-    "build-server-bun": "bun build --target=bun --minify-whitespace --minify-syntax --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server*.ts",
+    "build-browser": "bun build --target=browser --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/browser*.ts",
+    "build-server-bun": "bun build --target=bun --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server*.ts",
     "build-types": "tsc",
     "build-types-map": "tsc --declarationMap",
     "test": "bun test"
