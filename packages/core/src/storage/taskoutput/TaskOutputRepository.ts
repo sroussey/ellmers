@@ -16,6 +16,7 @@ export const TaskOutputDiscriminator = {
 } as const;
 
 export abstract class TaskOutputRepository {
+  public type = "TaskOutputRepository";
   abstract kvRepository: KVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
   private events = new EventEmitter<TaskOutputEvents>();
   on(name: TaskOutputEvents, fn: (...args: any[]) => void) {

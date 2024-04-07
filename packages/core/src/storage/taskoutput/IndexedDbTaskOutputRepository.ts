@@ -11,7 +11,7 @@ import { IndexedDbKVRepository } from "../base/IndexedDbKVRepository";
 
 export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
   kvRepository: IndexedDbKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
-
+  public type = "IndexedDbTaskOutputRepository" as const;
   constructor() {
     super();
     this.kvRepository = new IndexedDbKVRepository<

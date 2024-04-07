@@ -11,7 +11,7 @@ import { InMemoryKVRepository } from "../base/InMemoryKVRepository";
 
 export class InMemoryTaskGraphRepository extends TaskGraphRepository {
   kvRepository: InMemoryKVRepository<unknown, TaskGraphJson>;
-
+  public type = "InMemoryTaskGraphRepository" as const;
   constructor() {
     super();
     this.kvRepository = new InMemoryKVRepository<unknown, TaskGraphJson>();

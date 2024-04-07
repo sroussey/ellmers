@@ -12,7 +12,7 @@ import {
 } from "ellmers-core/browser";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
-import { RepositoryStatus } from "./RepositoryStatus";
+import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
@@ -131,7 +131,7 @@ export const App = () => {
           <ResizablePanel style={{ backgroundColor: "#222", color: "#bbb", padding: "10px" }}>
             <QueuesStatus />
             <hr className="my-2 border-[#777]" />
-            <RepositoryStatus repository={taskOutputCache} />
+            <OutputRepositoryStatus repository={taskOutputCache} />
             <hr className="my-2 border-[#777]" />
             <GraphStoreStatus repository={taskGraphRepo} />
           </ResizablePanel>

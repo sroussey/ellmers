@@ -11,7 +11,7 @@ import { InMemoryKVRepository } from "../base/InMemoryKVRepository";
 
 export class InMemoryTaskOutputRepository extends TaskOutputRepository {
   kvRepository: InMemoryKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
-
+  public type = "InMemoryTaskOutputRepository" as const;
   constructor() {
     super();
     this.kvRepository = new InMemoryKVRepository<

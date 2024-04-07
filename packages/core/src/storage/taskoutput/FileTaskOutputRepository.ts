@@ -11,7 +11,7 @@ import { FileKVRepository } from "../base/FileKVRepository";
 
 export class FileTaskOutputRepository extends TaskOutputRepository {
   kvRepository: FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
-
+  public type = "FileTaskOutputRepository" as const;
   constructor(folderPath: string) {
     super();
     this.kvRepository = new FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>(

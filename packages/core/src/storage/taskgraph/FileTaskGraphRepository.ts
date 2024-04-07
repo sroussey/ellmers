@@ -11,7 +11,7 @@ import { FileKVRepository } from "../base/FileKVRepository";
 
 export class FileTaskGraphRepository extends TaskGraphRepository {
   kvRepository: FileKVRepository<unknown, TaskGraphJson>;
-
+  public type = "FileTaskGraphRepository" as const;
   constructor(folderPath: string) {
     super();
     this.kvRepository = new FileKVRepository<unknown, TaskGraphJson>(folderPath);

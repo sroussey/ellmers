@@ -8,7 +8,7 @@ export function GraphStoreStatus({ repository }: { repository: TaskGraphReposito
 
   return (
     <div>
-      <span>{repository.constructor.name}</span>
+      <span>{repository.type}</span>
       <button className="float-right" onClick={clear}>
         Reset
       </button>

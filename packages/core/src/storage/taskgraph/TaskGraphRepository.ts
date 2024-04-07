@@ -14,6 +14,7 @@ import { TaskRegistry } from "../../task/base/TaskRegistry";
 export type TaskGraphEvents = "graph_saved" | "graph_retrieved" | "graph_cleared";
 
 export abstract class TaskGraphRepository {
+  public type = "TaskGraphRepository";
   abstract kvRepository: KVRepository<unknown, TaskGraphJson>;
   private events = new EventEmitter<TaskGraphEvents>();
   on(name: TaskGraphEvents, fn: (...args: any[]) => void) {

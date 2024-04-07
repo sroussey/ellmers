@@ -11,7 +11,7 @@ import { SqliteKVRepository } from "../base/SqliteKVRepository";
 
 export class SqliteTaskOutputRepository extends TaskOutputRepository {
   kvRepository: SqliteKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
-
+  public type = "SqliteTaskOutputRepository" as const;
   constructor(dbOrPath: string) {
     super();
     this.kvRepository = new SqliteKVRepository<

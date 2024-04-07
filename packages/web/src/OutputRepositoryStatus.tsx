@@ -1,7 +1,7 @@
 import { TaskOutputRepository } from "ellmers-core/browser";
 import { useCallback, useEffect, useState } from "react";
 
-export function RepositoryStatus({ repository }: { repository: TaskOutputRepository }) {
+export function OutputRepositoryStatus({ repository }: { repository: TaskOutputRepository }) {
   const [size, setSize] = useState<number>(0);
   const clear = useCallback(() => {
     repository.clear();
@@ -25,7 +25,7 @@ export function RepositoryStatus({ repository }: { repository: TaskOutputReposit
 
   return (
     <div>
-      {repository.constructor.name} {size}
+      {repository.type}: {size}
       <button onClick={clear} className="float-right">
         Clear
       </button>

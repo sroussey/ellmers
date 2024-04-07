@@ -11,7 +11,7 @@ import { PostgresKVRepository } from "../base/PostgresKVRepository";
 
 export class PostgresTaskGraphRepository extends TaskGraphRepository {
   kvRepository: PostgresKVRepository<unknown, TaskGraphJson>;
-
+  public type = "PostgresTaskGraphRepository" as const;
   constructor(connectionString: string) {
     super();
     this.kvRepository = new PostgresKVRepository<unknown, TaskGraphJson>(

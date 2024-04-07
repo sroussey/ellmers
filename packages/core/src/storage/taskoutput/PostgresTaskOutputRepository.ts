@@ -11,7 +11,7 @@ import { PostgresKVRepository } from "../base/PostgresKVRepository";
 
 export class PostgresTaskOutputRepository extends TaskOutputRepository {
   kvRepository: PostgresKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
-
+  public type = "PostgresTaskOutputRepository" as const;
   constructor(connectionString: string) {
     super();
     this.kvRepository = new PostgresKVRepository<
