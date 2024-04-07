@@ -9,13 +9,15 @@
   "scripts": {
     "build": "( cd packages/core && bun run build ) && ( cd packages/cli && bun run build ) && ( cd packages/web && bun run build )",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
-    "watch": "bunx concurrently -c 'auto' -n core,cli 'cd packages/core && bun run watch' 'sleep 1 && cd packages/cli && bun run watch'",
+    "watch": "concurrently -c 'auto' -n core,cli 'cd packages/core && bun run watch' 'sleep 1 && cd packages/cli && bun run watch'",
     "docs": "typedoc",
     "format": "eslint \"{packages}/*/src/**/*.{js,ts,tsx,json}\" --fix && prettier \"{packages}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "release": "npm run build && npm publish",
     "test": "jest"
   },
   "dependencies": {
+    "@mediapipe/tasks-text": "^0.10.12",
+    "@sroussey/transformers": "^3.0.0-alpha.1",
     "@sroussey/typescript-graph": "^0.3.14",
     "@types/better-sqlite3": "^7.6.9",
     "@types/pg": "^8.11.2",
@@ -23,6 +25,7 @@
     "bun-types": "^1.0.33",
     "chalk": "^5.3.0",
     "commander": "=11.1.0",
+    "concurrently": "^8.2.2",
     "eventemitter3": "^5.0.1",
     "listr2": "^8.0.2",
     "nanoid": "^5.0.6",
@@ -30,9 +33,7 @@
     "postcss": "^8.4.36",
     "postgres": "^3.4.3",
     "rxjs": "^7.8.1",
-    "uuid": "^9.0.1",
-    "@mediapipe/tasks-text": "^0.10.12",
-    "@sroussey/transformers": "^3.0.0-alpha.1"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/bun": "^1.0.8",

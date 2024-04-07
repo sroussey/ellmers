@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
-    "watch": "bunx concurrently -c 'auto' -n 'cli:' 'npm:watch-*'",
+    "watch": "concurrently -c 'auto' -n 'cli:' 'npm:watch-*'",
     "watch-js": "bun build --watch --target=node --sourcemap=external --external listr2 --external @sroussey/transformers --outdir ./dist ./src/lib.ts ./src/ellmers.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-js && bun run build-types-map",
