@@ -88,7 +88,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const store = tx.objectStore("jobs");
 
     const index = store.index("status_runAfter");
-    let cursorRequest = index.openCursor(IDBKeyRange.only("PENDING"), "next");
+    const cursorRequest = index.openCursor(IDBKeyRange.only("PENDING"), "next");
 
     return new Promise((resolve) => {
       cursorRequest.onsuccess = (e) => {

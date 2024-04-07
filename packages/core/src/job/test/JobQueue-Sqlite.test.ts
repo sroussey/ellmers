@@ -20,9 +20,9 @@ class TestJob extends Job<TaskInput, TaskOutput> {
 }
 
 describe("SqliteJobQueue", () => {
-  let db = getDatabase(":memory:");
-  let queueName = "sqlite_test_queue";
-  let jobQueue = new SqliteJobQueue(
+  const db = getDatabase(":memory:");
+  const queueName = "sqlite_test_queue";
+  const jobQueue = new SqliteJobQueue(
     db,
     queueName,
     new SqliteRateLimiter(db, queueName, 4, 1).ensureTableExists(),

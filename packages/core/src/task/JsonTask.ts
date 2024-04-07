@@ -112,7 +112,7 @@ export class JsonTask extends RegenerativeCompoundTask {
     for (const item of jsonItems) {
       if (!item.dependencies) continue;
       for (const [input, dependency] of Object.entries(item.dependencies)) {
-        let dependencies = Array.isArray(dependency) ? dependency : [dependency];
+        const dependencies = Array.isArray(dependency) ? dependency : [dependency];
         for (const dep of dependencies) {
           const sourceTask = this.subGraph.getTask(dep.id);
           if (!sourceTask) {

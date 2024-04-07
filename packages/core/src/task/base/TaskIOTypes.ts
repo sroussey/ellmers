@@ -133,7 +133,7 @@ type DocParser = (typeof doc_parsers)[number];
 // Provided lookup type
 interface TsTypes {
   any: any;
-  function: Function;
+  function: (...args: any[]) => any;
   boolean: boolean;
   string: string;
   number: number;
@@ -164,8 +164,6 @@ export function validateItem(valueType: ValueTypesIndex, item: any): boolean {
       return typeof item === "boolean";
     case "function":
       return typeof item === "function";
-    case "vector":
-      return item instanceof ElVector;
     case "log_level":
       return log_levels.includes(item);
     case "doc_parser":

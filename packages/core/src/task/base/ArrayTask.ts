@@ -94,8 +94,8 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
   );
 
   // Initialize indices and combinations
-  let indices = arraysToCombine.map(() => 0);
-  let combinations: number[][] = [];
+  const indices = arraysToCombine.map(() => 0);
+  const combinations: number[][] = [];
   let done = false;
 
   while (!done) {
@@ -112,7 +112,7 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
 
   // Build objects based on the combinations
   return combinations.map((combination) => {
-    let result = { ...input }; // Start with a shallow copy of the input
+    const result = { ...input }; // Start with a shallow copy of the input
 
     // Set values from the arrays based on the current combination
     combination.forEach((valueIndex, arrayIndex) => {

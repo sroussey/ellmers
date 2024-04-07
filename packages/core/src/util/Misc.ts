@@ -5,8 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput } from "../task/base/Task";
-
 export function forceArray<T = any>(input: T | T[]): T[] {
   if (Array.isArray(input)) return input;
   return [input];
@@ -39,14 +37,14 @@ export function deepEqual(a: any, b: any): boolean {
     return false;
   }
 
-  let keysA = Object.keys(a);
-  let keysB = Object.keys(b);
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
 
   if (keysA.length !== keysB.length) {
     return false;
   }
 
-  for (let key of keysA) {
+  for (const key of keysA) {
     if (!keysB.includes(key)) {
       return false;
     }
@@ -86,6 +84,7 @@ export async function sha256(data: string): Promise<string> {
     });
   } else if (typeof process === "object" && process.versions && process.versions.node) {
     // Node.js environment
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const crypto = require("crypto");
     return Promise.resolve(crypto.createHash("sha256").update(data).digest("hex"));
   } else {

@@ -29,7 +29,7 @@ const orange = dark ? "#da885e" : "#953402";
 
 console.log("%cWelcome to Ellmers!", "color: green; font-size: 16px;");
 console.log(
-  "%cOpen DevTools settings, and under Console, turn on 'enable custom formatters' for best experience.",
+  "%cOpen DevTools settings, and under Console, turn on 'enable custom formatters' for best experience. Then reload the page.",
   "color: red;"
 );
 console.log(

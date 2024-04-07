@@ -67,7 +67,7 @@ export abstract class KVRepository<
     let keyClone: any = { ...keySimpleOrObject };
     if (discriminatorKeys.length > 0) {
       discriminatorKeys.forEach((k) => {
-        if (keyClone.hasOwnProperty(k)) {
+        if (Object.prototype.hasOwnProperty.call(keyClone, k)) {
           discriminators[k] = keyClone[k];
           delete keyClone[k];
         }

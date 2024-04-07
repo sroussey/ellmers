@@ -129,7 +129,7 @@ function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
       skip_special_tokens: true,
     });
     const len = decodedText.split(" ").length;
-    let result = 100 * (1 - Math.exp(-0.05 * len));
+    const result = 100 * (1 - Math.exp(-0.05 * len));
     task.progress = Math.min(result, 100);
     task.emit("progress", task.progress, decodedText);
   };
@@ -162,7 +162,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
-  var hfVector = await generateEmbedding(runInputData.text, {
+  const hfVector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
     normalize: model.normalize,
   });

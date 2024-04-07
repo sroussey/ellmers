@@ -82,7 +82,7 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
     }
     return this;
   };
-  // @ts-expect-error  -
+  // @ts-expect-error - runtype is hack from ArrayTask TODO: fix
   result.type = taskClass.runtype ?? taskClass.type;
   result.inputs = taskClass.inputs;
   result.outputs = taskClass.outputs;

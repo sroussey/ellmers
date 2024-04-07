@@ -14,6 +14,7 @@
     "build-server-bun": "bun build --target=bun --sourcemap=external --external @sroussey/transformers --outdir ./dist ./src/server*.ts",
     "build-types": "tsc",
     "build-types-map": "tsc --declarationMap",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "module": "dist/server.js",

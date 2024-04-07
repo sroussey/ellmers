@@ -102,6 +102,6 @@ export function getProviderRegistry() {
   if (!providerRegistry) providerRegistry = new ProviderRegistry();
   return providerRegistry;
 }
-export function setProviderRegistry(providerRegistry: ProviderRegistry<TaskInput, TaskOutput>) {
-  providerRegistry = providerRegistry;
+export function setProviderRegistry(pr: ProviderRegistry<TaskInput, TaskOutput>) {
+  providerRegistry = pr;
 }

@@ -78,8 +78,10 @@ export class DownloadModelTask extends JobQueueLlmTask {
   runSyncOnly(): TaskOutput {
     const model = findModelByName(this.runInputData.model);
     if (model) {
-      // @ts-expect-error
-      this.runOutputData[String(model.useCase).toLowerCase()] = model.name;
+      model.useCase.forEach((useCase) => {
+        // @ts-expect-error -- we really can use this an index
+        this.runOutputData[String(useCase).toLowerCase()] = model.name;
+      });
       this.runOutputData.model = model.name;
       this.runOutputData.dimensions = model.dimensions!;
       this.runOutputData.normalize = model.normalize;

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -c 'auto' -n app,types 'vite' 'tsc -w --noEmit'",
-    "build": "vite build",
+    "build": "vite build && tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
