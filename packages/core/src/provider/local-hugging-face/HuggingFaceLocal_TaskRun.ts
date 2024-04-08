@@ -105,6 +105,7 @@ const getPipeline = async (
     pipelines.set(
       model,
       await pipeline(model.pipeline as PipelineType, model.name, {
+        // @ts-expect-error - this is a bug in the transformer types, check again later. TODO
         quantized,
         session_options,
         progress_callback: downloadProgressCallback(task),
