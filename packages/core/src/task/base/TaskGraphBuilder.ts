@@ -30,7 +30,7 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
     this.graph.addTask(task);
     if (this._dataFlows.length > 0) {
       this._dataFlows.forEach((dataFlow) => {
-        if (taskClass.inputs.find((i) => i.id === dataFlow.targetTaskInputId) === undefined) {
+        if (task.inputs.find((i) => i.id === dataFlow.targetTaskInputId) === undefined) {
           this._error = `Input ${dataFlow.targetTaskInputId} not found on task ${task.config.id}`;
           console.error(this._error);
           return this;
@@ -41,16 +41,14 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
       this._dataFlows = [];
     }
     if (parent && this.graph.outEdges(parent.config.id).length === 0) {
-      const parentOutputs = (parent.constructor as typeof TaskBase).outputs;
-      const taskInputs = (task.constructor as typeof TaskBase).inputs;
       // find matches between parent outputs and task inputs based on valueType
       const matches = new Map<string, string>();
 
       const makeMatch = (
         comparator: (output: TaskOutputDefinition, input: TaskInputDefinition) => boolean
       ) => {
-        for (const parentOutput of parentOutputs) {
-          for (const taskInput of taskInputs) {
+        for (const parentOutput of parent.outputs) {
+          for (const taskInput of task.inputs) {
             if (!matches.has(taskInput.id) && comparator(parentOutput, taskInput)) {
               matches.set(taskInput.id, parentOutput.id);
               const df = new DataFlow(

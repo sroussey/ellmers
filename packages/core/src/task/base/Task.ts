@@ -68,6 +68,27 @@ export abstract class TaskBase {
   static readonly category: string = "Hidden";
   static readonly sideeffects: boolean = false;
 
+  _inputs: TaskInputDefinition[] | undefined = undefined;
+  _outputs: TaskOutputDefinition[] | undefined = undefined;
+  get inputs(): TaskInputDefinition[] {
+    if (this._inputs) {
+      return this._inputs;
+    }
+    return ((this.constructor as typeof TaskBase).inputs as TaskInputDefinition[]) ?? [];
+  }
+  set inputs(inputs: TaskInputDefinition[]) {
+    this._inputs = inputs;
+  }
+  get outputs(): TaskOutputDefinition[] {
+    if (this._outputs) {
+      return this._outputs;
+    }
+    return ((this.constructor as typeof TaskBase).outputs as TaskInputDefinition[]) ?? [];
+  }
+  set outputs(outputs: TaskOutputDefinition[]) {
+    this._outputs = outputs;
+  }
+
   events = new EventEmitter<TaskEvents>();
   on(name: TaskEvents, fn: (...args: any[]) => void) {
     this.events.on.call(this.events, name, fn);
@@ -78,6 +99,7 @@ export abstract class TaskBase {
   emit(name: TaskEvents, ...args: any[]) {
     this.events.emit.call(this.events, name, ...args);
   }
+
   /**
    * Does this task have subtasks?
    */
@@ -96,8 +118,7 @@ export abstract class TaskBase {
   constructor(config: TaskConfig = {}) {
     // pull out input data from the config
     const { input = {}, ...rest } = config;
-    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
-    const inputDefaults = inputdefs.reduce<Record<string, any>>((acc, cur) => {
+    const inputDefaults = this.inputs.reduce<Record<string, any>>((acc, cur) => {
       if (cur.defaultValue !== undefined) {
         acc[cur.id] = cur.defaultValue;
       }
@@ -177,8 +198,7 @@ export abstract class TaskBase {
    * @returns
    */
   addInputData<T extends TaskInput>(overrides: Partial<T> | undefined) {
-    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
-    for (const input of inputdefs) {
+    for (const input of this.inputs) {
       if (overrides?.[input.id] !== undefined) {
         let isArray = input.isArray;
         if (
@@ -210,8 +230,7 @@ export abstract class TaskBase {
   }
   validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
     const classRef = this.constructor as typeof TaskBase;
-    const inputdefs = classRef.inputs ?? [];
-    const inputdef = inputdefs.find((def) => def.id === inputId);
+    const inputdef = this.inputs.find((def) => def.id === inputId);
     if (!inputdef) {
       return false;
     }
@@ -254,8 +273,7 @@ export abstract class TaskBase {
   }
 
   validateInputData(input: Partial<TaskInput>) {
-    const inputdefs = (this.constructor as typeof TaskBase).inputs ?? [];
-    for (const inputdef of inputdefs) {
+    for (const inputdef of this.inputs) {
       if (this.validateInputItem(input, inputdef.id) === false) {
         return false;
       }

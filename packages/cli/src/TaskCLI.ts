@@ -153,6 +153,8 @@ export function AddBaseCommands(program: Command) {
 
       try {
         await builder.run();
-      } catch {}
+      } catch {
+        console.error(builder._error);
+      }
     });
 }
