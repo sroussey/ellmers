@@ -68,25 +68,11 @@ export abstract class TaskBase {
   static readonly category: string = "Hidden";
   static readonly sideeffects: boolean = false;
 
-  _inputs: TaskInputDefinition[] | undefined = undefined;
-  _outputs: TaskOutputDefinition[] | undefined = undefined;
   get inputs(): TaskInputDefinition[] {
-    if (this._inputs) {
-      return this._inputs;
-    }
     return ((this.constructor as typeof TaskBase).inputs as TaskInputDefinition[]) ?? [];
   }
-  set inputs(inputs: TaskInputDefinition[]) {
-    this._inputs = inputs;
-  }
   get outputs(): TaskOutputDefinition[] {
-    if (this._outputs) {
-      return this._outputs;
-    }
     return ((this.constructor as typeof TaskBase).outputs as TaskInputDefinition[]) ?? [];
-  }
-  set outputs(outputs: TaskOutputDefinition[]) {
-    this._outputs = outputs;
   }
 
   events = new EventEmitter<TaskEvents>();
