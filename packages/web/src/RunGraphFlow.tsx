@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, useEffect, useRef } from "react";
+import React, { Dispatch, SetStateAction, useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
@@ -218,9 +218,17 @@ const defaultEdgeOptions = {
 export const RunGraphFlow: React.FC<{
   graph: TaskGraph;
 }> = ({ graph }) => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurboNodeData>>([]);
+  const [nodes, setNodes, onNodesChangeTheirs] = useNodesState<Node<TurboNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const graphRef = useRef<TaskGraph | null>(null);
+
+  const onNodesChange = useCallback(
+    (changes: any) => {
+      console.log("Nodes changed", changes);
+      onNodesChangeTheirs(changes);
+    },
+    [onNodesChangeTheirs, nodes, edges]
+  );
 
   const initialized = useNodesInitialized() && !nodes.some((n) => !n.measured);
   const { fitView } = useReactFlow();
