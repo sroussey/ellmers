@@ -66,12 +66,17 @@
   width: 250px;
 }
 
-.react-flow__node-compound .wrapper {
-  width: 300px;
+.react-flow__node-compound {
+  min-height: 150px;
 }
 
-.react-flow__node-compound {
-  min-height: 450px;
+.react-flow__node-compound .outside {
+  display: flex;
+  flex-direction: column;
+}
+
+.react-flow__node-compound .wrapper {
+  width: 300px;
 }
 
 .gradient:before {

@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, useEffect, useRef } from "react";
+import React, { Dispatch, SetStateAction, useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
@@ -22,6 +22,7 @@ import {
   registerMediaPipeTfJsLocalInMemory,
 } from "ellmers-core/browser";
 import { GraphPipelineCenteredLayout, GraphPipelineLayout, computeLayout } from "./layout";
+import { NodeChange } from "./changes";
 
 registerHuggingfaceLocalTasksInMemory();
 registerMediaPipeTfJsLocalInMemory();
@@ -94,7 +95,7 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
   });
   return nodes;
 }
-
+// TODO: unlisten to tasks
 function listenToTask(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>) {
   task.on("progress", (progress, progressText) => {
     setNodes((nds) =>
@@ -167,7 +168,7 @@ function listenToTask(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
     );
   });
   if (task.isCompound) {
-    listenToGraphNodes(task.subGraph, setNodes);
+    listenToGraphTasks(task.subGraph, setNodes);
     task.on("regenerate", () => {
       // console.log("Node regenerated", task.config.id);
       setNodes((nodes: Node<TurboNodeData>[]) => {
@@ -181,7 +182,7 @@ function listenToTask(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
               connectable: false,
             }) as Node<TurboNodeData>
         );
-        listenToGraphNodes(task.subGraph, setNodes);
+        listenToGraphTasks(task.subGraph, setNodes);
         let returnNodes = nodes.filter((n) => n.parentId !== task.config.id); // remove old children
         returnNodes = [...returnNodes, ...children]; // add new children
         returnNodes = sortNodes(returnNodes); // sort all nodes (parent, children, parent, children, ...)
@@ -191,7 +192,7 @@ function listenToTask(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
   }
 }
 
-function listenToGraphNodes(
+function listenToGraphTasks(
   graph: TaskGraph,
   setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>
 ) {
@@ -218,15 +219,33 @@ const defaultEdgeOptions = {
 export const RunGraphFlow: React.FC<{
   graph: TaskGraph;
 }> = ({ graph }) => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<TurboNodeData>>([]);
+  const [nodes, setNodes, onNodesChangeTheirs] = useNodesState<Node<TurboNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const graphRef = useRef<TaskGraph | null>(null);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<Node<TurboNodeData>>[]) => {
+      console.log("Nodes changed", changes);
+      onNodesChangeTheirs(changes);
+      // const computedNodes = computeLayout(
+      //   nodes,
+      //   edges,
+      //   new GraphPipelineCenteredLayout(),
+      //   new GraphPipelineLayout({ startTop: 100, startLeft: 20 })
+      // ) as Node<TurboNodeData>[];
+      // const sortedNodes = sortNodes(computedNodes);
+      // console.log(nodes, sortedNodes);
+    },
+    [onNodesChangeTheirs, nodes, edges]
+  );
 
   const initialized = useNodesInitialized() && !nodes.some((n) => !n.measured);
   const { fitView } = useReactFlow();
 
   useEffect(() => {
+    const id: Timer | null = null;
     if (initialized) {
+      console.log("Nodes initialized", nodes);
       const computedNodes = computeLayout(
         nodes,
         edges,
@@ -252,11 +271,13 @@ export const RunGraphFlow: React.FC<{
         fitView();
       }, 5);
     }
-  }, [initialized]);
+  }, [initialized, setNodes, setEdges, fitView]);
 
   useEffect(() => {
     if (graph !== graphRef.current) {
+      console.log("Graph changed", graph);
       graphRef.current = graph;
+      console.log("Graph changed", graph);
       const nodes = sortNodes(convertGraphToNodes(graph));
       setNodes(
         nodes.map((n) => {
@@ -277,9 +298,9 @@ export const RunGraphFlow: React.FC<{
           };
         })
       );
-      listenToGraphNodes(graph, setNodes);
+      listenToGraphTasks(graph, setNodes);
     }
-  }, [graph]);
+  }, [graph, setNodes, setEdges, graphRef.current]);
 
   // const onConnect = useCallback(
   //   (params: any) => setEdges((els) => addEdge(params, els)),

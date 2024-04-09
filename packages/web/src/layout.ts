@@ -21,7 +21,7 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   protected layerHeight: number[] = [];
   protected layers: Map<number, T[]> = new Map();
   public nodeWidthMin: number = 190;
-  public nodeHeightMin: number = 150;
+  public nodeHeightMin: number = 50;
   public horizontalSpacing = 80; // Horizontal spacing between layers
   public verticalSpacing = 20; // Vertical spacing between nodes within a layer
   public startTop = 50; // Starting position of the top layer
@@ -194,6 +194,11 @@ export function computeLayout(
         subFlowLayout ?? layout,
         node.id
       );
+      const last = childNodes[childNodes.length - 1];
+      const w = last.position.x + last.measured.width;
+      const h = last.position.y + last.measured.height;
+      node.height = layout.startTop * 2 + h + 500;
+      console.log("Children", childNodes, w, h, node.height, layout.startTop * 2 + h);
       returnNodes.push(...childNodes);
     }
   }
