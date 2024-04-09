@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ReactFlowProvider } from "@sroussey/xyflow-react";
+import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
 import {

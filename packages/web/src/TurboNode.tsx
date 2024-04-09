@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import { Handle, NodeProps, Position, Node } from "@sroussey/xyflow-react";
+import { Handle, NodeProps, Position, Node } from "@xyflow/react";
 import { FiCloud, FiCloudLightning } from "react-icons/fi";
 
 export type TurboNodeData = {

@@ -1,4 +1,4 @@
-import { Edge, Node, Position } from "@sroussey/xyflow-react";
+import { Edge, Node, Position } from "@xyflow/react";
 import { DirectedAcyclicGraph } from "@sroussey/typescript-graph";
 
 type PositionXY = {
@@ -105,11 +105,11 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   }
 
   protected getNodeHeight(node: T): number {
-    return Math.max(node.computed?.height, this.nodeHeightMin);
+    return Math.max(node.measured?.height, this.nodeHeightMin);
   }
 
   protected getNodeWidth(node: T): number {
-    return Math.max(node.computed?.width, this.nodeWidthMin);
+    return Math.max(node.measured?.width, this.nodeWidthMin);
   }
 
   public getNodePosition(nodeIdentity: string): PositionXY | undefined {
@@ -154,7 +154,7 @@ export function computeLayout(
   nodes = nodes.filter((node) => !node.hidden);
 
   const topLevelNodes = nodes.filter(
-    (node) => node.parentNode === undefined || node.parentNode === parentId
+    (node) => node.parentId === undefined || node.parentId === parentId
   );
 
   topLevelNodes.forEach((node) => {
@@ -184,7 +184,7 @@ export function computeLayout(
   });
 
   for (const node of topLevelNodes) {
-    const children = nodes.filter((n) => n.parentNode === node.id);
+    const children = nodes.filter((n) => n.parentId === node.id);
 
     if (children.length > 0) {
       const childNodes = computeLayout(

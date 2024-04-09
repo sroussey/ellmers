@@ -8,9 +8,9 @@ import {
   useNodesInitialized,
   useReactFlow,
   Edge,
-} from "@sroussey/xyflow-react";
+} from "@xyflow/react";
 
-import "@sroussey/xyflow-react/dist/base.css";
+import "@xyflow/react/dist/base.css";
 import "./RunGraphFlow.css";
 import { TurboNodeData, SingleNode, CompoundNode } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
@@ -39,7 +39,7 @@ function sortNodes(nodes: Node<TurboNodeData>[]): Node<TurboNodeData>[] {
 
   // Group nodes by parent ID
   nodes.forEach((node) => {
-    const parent = node.parentNode || "###root###";
+    const parent = node.parentId || "###root###";
     if (!parentMap.has(parent)) {
       parentMap.set(parent, []);
     }
@@ -82,7 +82,7 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
       const subNodes = convertGraphToNodes(node.subGraph).map((n) => {
         return {
           ...n,
-          parentNode: node.config.id as string,
+          parentId: node.config.id as string,
           extent: "parent",
           selectable: false,
           connectable: false,
@@ -95,7 +95,7 @@ function convertGraphToNodes(graph: TaskGraph): Node<TurboNodeData>[] {
   return nodes;
 }
 
-function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>) {
+function listenToTask(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>) {
   task.on("progress", (progress, progressText) => {
     setNodes((nds) =>
       nds.map((nd) => {
@@ -175,14 +175,14 @@ function listenToNode(task: Task, setNodes: Dispatch<SetStateAction<Node<TurboNo
           (n) =>
             ({
               ...n,
-              parentNode: task.config.id as string,
+              parentId: task.config.id as string,
               extent: "parent",
               selectable: false,
               connectable: false,
             }) as Node<TurboNodeData>
         );
         listenToGraphNodes(task.subGraph, setNodes);
-        let returnNodes = nodes.filter((n) => n.parentNode !== task.config.id); // remove old children
+        let returnNodes = nodes.filter((n) => n.parentId !== task.config.id); // remove old children
         returnNodes = [...returnNodes, ...children]; // add new children
         returnNodes = sortNodes(returnNodes); // sort all nodes (parent, children, parent, children, ...)
         return returnNodes;
@@ -197,7 +197,7 @@ function listenToGraphNodes(
 ) {
   const nodes = graph.getNodes();
   for (const node of nodes) {
-    listenToNode(node, setNodes);
+    listenToTask(node, setNodes);
   }
 }
 
@@ -222,7 +222,7 @@ export const RunGraphFlow: React.FC<{
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const graphRef = useRef<TaskGraph | null>(null);
 
-  const initialized = useNodesInitialized() && !nodes.some((n) => !n.computed);
+  const initialized = useNodesInitialized() && !nodes.some((n) => !n.measured);
   const { fitView } = useReactFlow();
 
   useEffect(() => {
