@@ -16,10 +16,10 @@ interface LayoutOptions {
 }
 
 export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
-  protected dag: DirectedAcyclicGraph<T, boolean, string, string>;
+  protected dataflowDAG: DirectedAcyclicGraph<T, boolean, string, string>;
   protected positions: Map<string, PositionXY> = new Map();
   protected layerHeight: number[] = [];
-  protected layers: Map<number, T[]> = new Map();
+  public layers: Map<number, T[]> = new Map();
   public nodeWidthMin: number = 190;
   public nodeHeightMin: number = 50;
   public horizontalSpacing = 80; // Horizontal spacing between layers
@@ -32,20 +32,18 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
   }
 
   public setGraph(dag: DirectedAcyclicGraph<T, boolean, string, string>) {
-    this.dag = dag;
-    this.positions = new Map();
+    this.dataflowDAG = dag;
     this.layers = new Map();
     this.layerHeight = [];
   }
 
   public layoutGraph() {
-    const sortedNodes = this.dag.topologicallySortedNodes();
+    const sortedNodes = this.dataflowDAG.topologicallySortedNodes();
     this.assignLayers(sortedNodes);
     this.positionNodes();
-    // Optionally, you can include edge drawing logic here or handle it separately
   }
 
-  private assignLayers(sortedNodes: T[]) {
+  public assignLayers(sortedNodes: T[]) {
     this.layers = new Map();
     const nodeToLayer = new Map<string, number>();
 
@@ -56,7 +54,7 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
       let maxLayer = -1;
 
       // Get all incoming edges (dependencies) of the node
-      const incomingEdges = this.dag.inEdges(node.id).map(([from]) => from);
+      const incomingEdges = this.dataflowDAG.inEdges(node.id).map(([from]) => from);
 
       incomingEdges.forEach((from) => {
         // Find the layer of the dependency
@@ -85,10 +83,7 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
       let nodeWidth = this.nodeWidthMin;
       let currentY = this.startTop;
       nodes.forEach((node) => {
-        this.positions.set(node.id, {
-          x: currentX,
-          y: currentY,
-        });
+        node.position = { x: currentX, y: currentY };
 
         const nodeHeight = this.getNodeHeight(node);
 
@@ -104,16 +99,14 @@ export class GraphPipelineLayout<T extends Node> implements LayoutOptions {
     });
   }
 
-  protected getNodeHeight(node: T): number {
-    return Math.max(node.measured?.height, this.nodeHeightMin);
+  public getNodeHeight(node: T): number {
+    const baseHeight = node.height || node.measured?.height || this.nodeHeightMin;
+    return Math.max(baseHeight, this.nodeHeightMin);
   }
 
-  protected getNodeWidth(node: T): number {
-    return Math.max(node.measured?.width, this.nodeWidthMin);
-  }
-
-  public getNodePosition(nodeIdentity: string): PositionXY | undefined {
-    return this.positions.get(nodeIdentity);
+  public getNodeWidth(node: T): number {
+    const baseWidth = node.width || node.measured?.width || this.nodeWidthMin;
+    return Math.max(baseWidth, this.nodeWidthMin);
   }
 }
 
@@ -126,10 +119,10 @@ export class GraphPipelineCenteredLayout<T extends Node> extends GraphPipelineLa
       nodes.forEach((node) => {
         const nodeHeight = this.getNodeHeight(node);
 
-        this.positions.set(node.id, {
-          x: this.positions.get(node.id)!.x,
+        node.position = {
+          x: node.position.x,
           y: currentY,
-        });
+        };
 
         currentY += nodeHeight + this.verticalSpacing;
       });
@@ -141,66 +134,87 @@ export class GraphPipelineCenteredLayout<T extends Node> extends GraphPipelineLa
     return Math.max(...this.layerHeight);
   }
 }
+const groupBy = <T = any>(items: T[], key: keyof T) =>
+  items.reduce(
+    (result: Record<string, T[]>, item: T) => ({
+      ...result,
+      [String(item[key])]: [...(result[String(item[key])] || []), item],
+    }),
+    {}
+  );
 
 export function computeLayout(
   nodes: Node[],
   edges: Edge[],
   layout: GraphPipelineLayout<Node>,
-  subFlowLayout?: GraphPipelineLayout<Node>,
-  parentId?: string
+  subFlowLayout?: GraphPipelineLayout<Node>
 ): Node[] {
-  const g = new DirectedAcyclicGraph<Node, boolean, string, string>((node) => node.id);
-
+  // before we bother with anything, ignore hidden nodes
   nodes = nodes.filter((node) => !node.hidden);
 
-  const topLevelNodes = nodes.filter(
-    (node) => node.parentId === undefined || node.parentId === parentId
-  );
+  const subgraphSize = new Map<string, { height: number; width: number }>();
+  const subgraphDAG = new DirectedAcyclicGraph<Node, boolean, string, string>((node) => node.id);
 
-  topLevelNodes.forEach((node) => {
-    g.insert(node);
+  nodes.forEach((node) => {
+    subgraphDAG.insert(node);
   });
 
-  edges.forEach((edge) => {
-    try {
-      g.addEdge(edge.source, edge.target);
-    } catch (e) {
-      // might be an edge to a hidden node
+  nodes.forEach((node) => {
+    if (node.parentId) {
+      subgraphDAG.addEdge(node.parentId, node.id);
     }
   });
 
-  layout.setGraph(g);
-  layout.layoutGraph();
+  const subgraphDepthLayout = new GraphPipelineLayout();
+  subgraphDepthLayout.setGraph(subgraphDAG);
+  const sortedNodes = subgraphDAG.topologicallySortedNodes();
+  subgraphDepthLayout.assignLayers(sortedNodes);
+  const allgraphs = Array.from(subgraphDepthLayout.layers.values());
 
-  const returnNodes: Node[] = topLevelNodes.map((node) => {
-    const nodePosition = layout.getNodePosition(node.id)!;
+  const returnNodes: Node[] = [];
+  for (let i = allgraphs.length - 1; i >= 0; i--) {
+    const graphs = groupBy<Node>(allgraphs[i], "parentId");
+    for (const parentId in graphs) {
+      // This loop goes from innermost graph to outermost graph
+      // and lays out the nodes in each graph. We do innermost
+      // first so that the outer nodes can be positioned based on
+      // the size and layout of the inner nodes (the parent needs
+      // to expand to fit the children).
 
-    return {
-      ...node,
-      targetPosition: Position.Left,
-      sourcePosition: Position.Right,
-      position: { x: nodePosition.x, y: nodePosition.y },
-    };
-  });
+      const subgraphNodes = graphs[parentId];
 
-  for (const node of topLevelNodes) {
-    const children = nodes.filter((n) => n.parentId === node.id);
-
-    if (children.length > 0) {
-      const childNodes = computeLayout(
-        children,
-        edges,
-        subFlowLayout ?? layout,
-        subFlowLayout ?? layout,
-        node.id
+      const dataflowDAG = new DirectedAcyclicGraph<Node, boolean, string, string>(
+        (node) => node.id
       );
-      const last = childNodes[childNodes.length - 1];
-      const w = last.position.x + last.measured.width;
-      const h = last.position.y + last.measured.height;
-      node.height = layout.startTop * 2 + h + 500;
-      console.log("Children", childNodes, w, h, node.height, layout.startTop * 2 + h);
-      returnNodes.push(...childNodes);
+
+      subgraphNodes.forEach((node) => {
+        dataflowDAG.insert(node);
+      });
+
+      edges.forEach((edge) => {
+        if (dataflowDAG.hasNode(edge.source) && dataflowDAG.hasNode(edge.target))
+          dataflowDAG.addEdge(edge.source, edge.target);
+      });
+      subgraphNodes.forEach((node) => {
+        if (subgraphSize.has(node.id)) {
+          const sizes = subgraphSize.get(node.id);
+          node.height = sizes.height;
+          node.width = sizes.width;
+        }
+      });
+      const last = subgraphNodes[subgraphNodes.length - 1];
+      const l = parentId === "undefined" ? layout : subFlowLayout;
+      l.setGraph(dataflowDAG);
+      l.layoutGraph();
+
+      subgraphSize.set(parentId, {
+        width: l.startLeft + (last.position?.x || 0) + l.getNodeWidth(last),
+        height: l.startTop / 2 + (last.position?.y || 0) + l.getNodeHeight(last),
+      });
+
+      returnNodes.push(...subgraphNodes);
     }
   }
-  return returnNodes;
+
+  return returnNodes.toReversed().map((node) => ({ ...node }));
 }
