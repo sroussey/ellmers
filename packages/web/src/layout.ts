@@ -216,5 +216,5 @@ export function computeLayout(
     }
   }
 
-  return returnNodes.toReversed().map((node) => ({ ...node }));
+  return returnNodes.reverse().map((node) => ({ ...node }));
 }

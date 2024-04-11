@@ -133,7 +133,6 @@ function doNodeLayout(
 function listenToTask(
   task: Task,
   setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>,
-  edges: Edge[],
   setEdges: Dispatch<SetStateAction<Edge[]>>
 ) {
   task.on("progress", (progress, progressText) => {
@@ -209,7 +208,7 @@ function listenToTask(
     );
   });
   if (task.isCompound) {
-    listenToGraphTasks(task.subGraph, setNodes, edges, setEdges);
+    listenToGraphTasks(task.subGraph, setNodes, setEdges);
     task.on("regenerate", () => {
       // console.log("Node regenerated", task.config.id);
       setNodes((nodes: Node<TurboNodeData>[]) => {
@@ -223,7 +222,7 @@ function listenToTask(
               connectable: false,
             }) as Node<TurboNodeData>
         );
-        listenToGraphTasks(task.subGraph, setNodes, edges, setEdges);
+        listenToGraphTasks(task.subGraph, setNodes, setEdges);
         let returnNodes = nodes.filter((n) => n.parentId !== task.config.id); // remove old children
         returnNodes = [...returnNodes, ...children]; // add new children
         returnNodes = sortNodes(returnNodes); // sort all nodes (parent, children, parent, children, ...)
@@ -236,12 +235,11 @@ function listenToTask(
 function listenToGraphTasks(
   graph: TaskGraph,
   setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>,
-  edges: Edge[],
   setEdges: Dispatch<SetStateAction<Edge[]>>
 ) {
   const nodes = graph.getNodes();
   for (const node of nodes) {
-    listenToTask(node, setNodes, edges, setEdges);
+    listenToTask(node, setNodes, setEdges);
   }
 }
 
@@ -270,7 +268,6 @@ export const RunGraphFlow: React.FC<{
   const { fitView } = useReactFlow();
 
   useEffect(() => {
-    const id: Timer | null = null;
     if (shouldLayout) {
       doNodeLayout(setNodes, setEdges);
       setTimeout(() => {
@@ -303,7 +300,7 @@ export const RunGraphFlow: React.FC<{
           };
         })
       );
-      listenToGraphTasks(graph, setNodes, edges, setEdges);
+      listenToGraphTasks(graph, setNodes, setEdges);
     }
   }, [graph, setNodes, setEdges, graphRef.current]);
 
