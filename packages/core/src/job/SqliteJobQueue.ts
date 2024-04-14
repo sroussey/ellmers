@@ -80,7 +80,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         input: string,
         runAfter: string | null,
         deadlineAt: string | null,
-        maxRetries: number
+        maxRetries: number,
       ]
     >(AddQuery);
 
@@ -183,8 +183,8 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const status = output
       ? JobStatus.COMPLETED
       : error && job.retries >= job.maxRetries
-      ? JobStatus.FAILED
-      : JobStatus.PENDING;
+        ? JobStatus.FAILED
+        : JobStatus.PENDING;
 
     const UpdateQuery = `
         UPDATE job_queue 

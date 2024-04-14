@@ -71,8 +71,8 @@ export class PostgreSqlJobQueue<Input, Output> extends JobQueue<Input, Output> {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
           VALUES (${this.queue!}, ${fingerprint}, ${
-        job.input as any
-      }::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+            job.input as any
+          }::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
           RETURNING id`;
     });
   }
@@ -161,8 +161,8 @@ export class PostgreSqlJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const status = output
       ? JobStatus.COMPLETED
       : error && job.retries >= job.maxRetries
-      ? JobStatus.FAILED
-      : JobStatus.PENDING;
+        ? JobStatus.FAILED
+        : JobStatus.PENDING;
     if (!output || error) job.retries += 1;
     await this.sql.begin(async (sql) => {
       const result = await sql`    
