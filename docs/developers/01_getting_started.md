@@ -21,6 +21,7 @@
     - [`packages/core`](#packagescore)
     - [`packages/cli`](#packagescli)
     - [`packages/web`](#packagesweb)
+    - [`packages/ngraph`](#packagesngraph)
 
 # Developer Getting Started
 
@@ -450,3 +451,9 @@ An example project that uses the library in a web setting, running locally in br
 ![web example](img/web.png)
 
 Don't forget to open the console for some goodies.
+
+### `packages/ngraph`
+
+A graph editor tool that uses ngraph. It is not yet ready for prime time.
+
+![ngraph example](img/ngraph.png)

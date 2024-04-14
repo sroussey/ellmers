@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Embedding Large Language Model Experiential Retrieval Service (ELLMERS) is a simple tool for testing LLM embedding strategies for document retreival. It is designed to be simple to use and easy to extend.
+The Embedding Large Language Model Experiential retrieval Service (ELLMERS) is a simple tool for testing LLM embedding strategies for document retreival. It is designed to be simple to use and easy to extend.
 
 ## Features
 
@@ -38,3 +38,5 @@ The Embedding Large Language Model Experiential Retrieval Service (ELLMERS) is a
 ![Web](docs/developers/img/web.png)
 
 ### Node Editor
+
+![Node Editor](docs/developers/img/ngraph.png)
