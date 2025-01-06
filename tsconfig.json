@@ -15,6 +15,9 @@
     "allowJs": true,
     "declaration": true,
     "emitDeclarationOnly": true,
+    "sourceMap": true,
+    "declarationMap": true,
+    "outDir": "./dist",
     "types": ["bun-types"]
   }
 }

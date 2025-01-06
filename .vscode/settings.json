@@ -7,11 +7,17 @@
   "editor.formatOnType": false,
   "editor.formatOnSave": true,
   "eslint.format.enable": true,
+  "files.exclude": {
+    // "**/dist": true,
+    // "**/build": true,
+    "**/*.tsbuildinfo": true,
+    "**/*.js": { "when": "$(basename).ts" },
+    "**/*.d.ts": { "when": "$(basename).ts" }
+  },
   "search.exclude": {
-    "data-files/**": true,
-    "data-out/**": true,
-    "dist/**": true,
-    "**/package-lock.json": true
+    "**/dist": true,
+    "**/package-lock.json": true,
+    "**/*.tsbuildinfo": true
   },
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
@@ -25,6 +31,8 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "typescript.format.enable": true,
+  "typescript.disableAutomaticTypeAcquisition": false,
+  "typescript.preferences.importModuleSpecifier": "relative",
   "html.format.enable": true,
   "json.format.enable": true,
   "javascript.format.enable": true,

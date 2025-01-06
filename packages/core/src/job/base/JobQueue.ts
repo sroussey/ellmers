@@ -10,10 +10,7 @@ import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
 export class RetryError extends Error {
-  constructor(
-    public retryDate: Date,
-    message: string
-  ) {
+  constructor(public retryDate: Date, message: string) {
     super(message);
     this.name = "RetryError";
   }

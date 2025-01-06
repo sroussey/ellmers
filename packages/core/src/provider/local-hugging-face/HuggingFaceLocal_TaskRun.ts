@@ -18,7 +18,8 @@ import {
   type DocumentQuestionAnsweringSingle,
   type TranslationPipeline,
   type TranslationSingle,
-} from "@sroussey/transformers";
+  TextStreamer,
+} from "@huggingface/transformers";
 import { findModelByName } from "../../model/InMemoryStorage";
 import { ONNXTransformerJsModel } from "model";
 import {
@@ -193,14 +194,25 @@ export async function HuggingFaceLocal_TextGenerationRun(
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
 
-  let results = await generateText(runInputData.prompt, {
+  const streamer = new TextStreamer(generateText.tokenizer, {
+    skip_prompt: true,
     callback_function: generateProgressCallback(task, generateText),
+  });
+
+  let results = await generateText(runInputData.prompt, {
+    streamer,
   } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
+  let text = (results[0] as TextGenerationSingle)?.generated_text;
+
+  if (Array.isArray(text)) {
+    text = text[text.length - 1]?.content;
+  }
+
   return {
-    text: (results[0] as TextGenerationSingle)?.generated_text,
+    text,
   };
 }
 
@@ -217,10 +229,15 @@ export async function HuggingFaceLocal_TextTranslationRun(
 
   const translate: TranslationPipeline = await getPipeline(task, model);
 
+  const streamer = new TextStreamer(translate.tokenizer, {
+    skip_prompt: true,
+    callback_function: generateProgressCallback(task, translate),
+  });
+
   let results = await translate(runInputData.text, {
     src_lang: runInputData.source,
     tgt_lang: runInputData.target,
-    callback_function: generateProgressCallback(task, translate),
+    streamer,
   } as any);
   if (!Array.isArray(results)) {
     results = [results];
@@ -242,17 +259,24 @@ export async function HuggingFaceLocal_TextRewriterRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
+  const streamer = new TextStreamer(generateText.tokenizer, {
+    skip_prompt: true,
+    callback_function: generateProgressCallback(task, generateText),
+  });
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
   const promptedtext = (runInputData.prompt ? runInputData.prompt + "\n" : "") + runInputData.text;
   let results = await generateText(promptedtext, {
-    callback_function: generateProgressCallback(task, generateText),
+    streamer,
   } as any);
   if (!Array.isArray(results)) {
     results = [results];
   }
 
-  const text = (results[0] as TextGenerationSingle)?.generated_text;
+  let text = (results[0] as TextGenerationSingle)?.generated_text;
+  if (Array.isArray(text)) {
+    text = text[text.length - 1]?.content;
+  }
   if (text == promptedtext) {
     throw "Rewriter failed to generate new text";
   }
@@ -273,9 +297,13 @@ export async function HuggingFaceLocal_TextSummaryRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
   const generateSummary: SummarizationPipeline = await getPipeline(task, model);
+  const streamer = new TextStreamer(generateSummary.tokenizer, {
+    skip_prompt: true,
+    callback_function: generateProgressCallback(task, generateSummary),
+  });
 
   let results = await generateSummary(runInputData.text, {
-    callback_function: generateProgressCallback(task, generateSummary),
+    streamer,
   } as any);
   if (!Array.isArray(results)) {
     results = [results];
@@ -298,9 +326,13 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
 
   const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
+  const streamer = new TextStreamer(generateAnswer.tokenizer, {
+    skip_prompt: true,
+    callback_function: generateProgressCallback(task, generateAnswer),
+  });
 
   let results = await generateAnswer(runInputData.question, runInputData.context, {
-    callback_function: generateProgressCallback(task, generateAnswer),
+    streamer,
   } as any);
   if (!Array.isArray(results)) {
     results = [results];

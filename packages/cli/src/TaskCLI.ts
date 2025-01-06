@@ -7,7 +7,7 @@
 
 import { Command } from "commander";
 import { runTask } from "./TaskStreamToListr2";
-import "@sroussey/transformers";
+import "@huggingface/transformers";
 import {
   findAllModels,
   findModelByName,

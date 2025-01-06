@@ -5,6 +5,7 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "composite": true,
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -16,8 +17,13 @@
 
     /* Linting */
 
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "ellmers-core": ["./packages/core/"]
+    }
   },
   "include": ["src"],
+  "exclude": ["dist"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
