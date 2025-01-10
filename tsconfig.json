@@ -5,7 +5,6 @@
     "target": "esnext",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
-    "allowImportingTsExtensions": true,
     "composite": true,
     "strict": true,
     "downlevelIteration": true,
@@ -15,7 +14,6 @@
     "allowJs": true,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "sourceMap": true,
     "declarationMap": true,
     "outDir": "./dist",
     "types": ["bun-types"]

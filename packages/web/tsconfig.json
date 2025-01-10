@@ -9,7 +9,6 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -23,7 +22,6 @@
       "ellmers-core": ["./packages/core/"]
     }
   },
-  "include": ["src"],
-  "exclude": ["dist"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src", "vite.config.js"],
+  "exclude": ["dist"]
 }

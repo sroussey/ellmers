@@ -24,7 +24,7 @@
     "ellmers-core": "workspace:packages/core"
   },
   "devDependencies": {
-    "@types/react": "^19.0.3",
+    "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "@typescript-eslint/eslint-plugin": "^8.19.1",
     "@typescript-eslint/parser": "^8.19.1",

@@ -129,88 +129,66 @@ function doNodeLayout(
   });
 }
 
+function updateNodeData(
+  nodeId: unknown,
+  newData: Partial<TurboNodeData>,
+  setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>
+) {
+  setNodes((prevNodes) => {
+    const newNodes = prevNodes.map((nd) => {
+      if (nd.id != nodeId) {
+        return nd;
+      }
+      return {
+        ...nd,
+        data: {
+          ...nd.data,
+          ...newData,
+        },
+      };
+    });
+
+    return newNodes;
+  });
+}
+
 // TODO: unlisten to tasks
 function listenToTask(
   task: Task,
   setNodes: Dispatch<SetStateAction<Node<TurboNodeData>[]>>,
   setEdges: Dispatch<SetStateAction<Edge[]>>
 ) {
-  task.on("progress", (progress, progressText) => {
-    setNodes((nds) => {
-      nds.map((nd) => {
-        if (nd.id === task.config.id) {
-          return {
-            ...nd,
-            data: {
-              ...nd.data,
-              active: true,
-              progress,
-              progressText,
-            },
-          };
-        }
-        return nd;
-      });
-      doNodeLayout(setNodes, setEdges);
-      return nds;
-    });
-  });
+  const taskId = task.config.id;
   task.on("start", () => {
-    setNodes((nds) =>
-      nds.map((nd) => {
-        if (nd.id === task.config.id) {
-          return {
-            ...nd,
-            data: {
-              ...nd.data,
-              active: true,
-              progress: 1,
-              progressText: "",
-            },
-          };
-        }
-        return nd;
-      })
-    );
+    updateNodeData(taskId, { active: true, progress: 1, progressText: "" }, setNodes);
   });
   task.on("complete", () => {
-    setNodes((nds) =>
-      nds.map((nd) => {
-        if (nd.id === task.config.id) {
-          return {
-            ...nd,
-            data: {
-              ...nd.data,
-              active: false,
-              progress: 100,
-            },
-          };
-        }
-        return nd;
-      })
+    const progressText = task.runOutputData?.text ?? task.runOutputData?.model;
+    updateNodeData(
+      taskId,
+      {
+        active: false,
+        progress: 100,
+        progressText: Array.isArray(progressText) ? "" : progressText,
+      },
+      setNodes
     );
   });
-  task.on("error", () => {
-    setNodes((nds) =>
-      nds.map((nd) => {
-        if (nd.id === task.config.id) {
-          return {
-            ...nd,
-            data: {
-              ...nd.data,
-              active: false,
-              progress: 100,
-            },
-          };
-        }
-        return nd;
-      })
+  task.on("error", (text) => {
+    updateNodeData(
+      taskId,
+      { active: false, progress: 100, progressText: "Error: " + text },
+      setNodes
     );
   });
+  task.on("progress", (progress, progressText) => {
+    updateNodeData(taskId, { active: true, progress, progressText }, setNodes);
+  });
+
   if (task.isCompound) {
     listenToGraphTasks(task.subGraph, setNodes, setEdges);
     task.on("regenerate", () => {
-      // console.log("Node regenerated", task.config.id);
+      // console.log("Node regenerated", taskId);
       setNodes((nodes: Node<TurboNodeData>[]) => {
         const children = convertGraphToNodes(task.subGraph).map(
           (n) =>
@@ -220,7 +198,7 @@ function listenToTask(
               extent: "parent",
               selectable: false,
               connectable: false,
-            }) as Node<TurboNodeData>
+            } as Node<TurboNodeData>)
         );
         listenToGraphTasks(task.subGraph, setNodes, setEdges);
         let returnNodes = nodes.filter((n) => n.parentId !== task.config.id); // remove old children

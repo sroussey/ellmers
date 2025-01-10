@@ -4,7 +4,7 @@
   "files": ["src/browser.ts", "src/server.ts"],
   "exclude": ["**/*.test.ts", "dist"],
   "compilerOptions": {
-    "outDir": "dist",
+    "outDir": "./dist",
     "baseUrl": "./src",
     "rootDir": "./src",
     "paths": {

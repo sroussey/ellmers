@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 // import { GgmlLocalModel } from "../model/GgmlLocalModel";
-import { ONNXTransformerJsModel } from "./HuggingFaceModel";
+import { DATA_TYPES, ONNXTransformerJsModel } from "./HuggingFaceModel";
 import { MediaPipeTfJsModel } from "./MediaPipeModel";
 import { Model, ModelUseCaseEnum } from "./Model";
 
@@ -102,11 +102,24 @@ export const flanT5p786m = new ONNXTransformerJsModel(
   "text2text-generation"
 );
 
-export const distilbartCnn = new ONNXTransformerJsModel(
-  "Xenova/distilbart-cnn-6-6",
+export const text_summarization = new ONNXTransformerJsModel(
+  "Falconsai/text_summarization",
   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
-  "summarization"
+  "summarization",
+  { dtype: DATA_TYPES.fp32 }
 );
+
+// export const distilbartCnn = new ONNXTransformerJsModel(
+//   "Xenova/distilbart-cnn-6-6",
+//   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
+//   "summarization"
+// );
+
+// export const bartLargeCnn = new ONNXTransformerJsModel(
+//   "Xenova/bart-large-cnn",
+//   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
+//   "summarization"
+// );
 
 export const nllb200distilled600m = new ONNXTransformerJsModel(
   "Xenova/nllb-200-distilled-600M",

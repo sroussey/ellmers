@@ -97,18 +97,14 @@ const pipelines = new Map<ONNXTransformerJsModel, any>();
 const getPipeline = async (
   task: JobQueueLlmTask,
   model: ONNXTransformerJsModel,
-  { quantized, config, session_options }: any = {
-    quantized: true,
-    session_options: { logSeverityLevel: 4 },
-  }
+  options: any = {}
 ) => {
   if (!pipelines.has(model)) {
     pipelines.set(
       model,
       await pipeline(model.pipeline as PipelineType, model.name, {
-        // @ts-expect-error - this is a bug in the transformer types, check again later. TODO
-        quantized,
-        session_options,
+        dtype: model.dtype || "q8",
+        session_options: options?.session_options,
         progress_callback: downloadProgressCallback(task),
       })
     );
@@ -118,22 +114,21 @@ const getPipeline = async (
 
 function downloadProgressCallback(task: JobQueueLlmTask) {
   return (status: CallbackStatus) => {
+    const progess = status.status === "progress" ? Math.round(status.progress) : 0;
     if (status.status === "progress") {
-      task.progress = status.progress;
-      task.emit("progress", status.progress, status.file);
+      task.progress = progess;
+      task.emit("progress", progess, status.file);
     }
   };
 }
 
-function generateProgressCallback(task: JobQueueLlmTask, instance: any) {
-  return (beams: any[]) => {
-    const decodedText = instance.tokenizer.decode(beams[0].output_token_ids, {
-      skip_special_tokens: true,
-    });
-    const len = decodedText.split(" ").length;
-    const result = 100 * (1 - Math.exp(-0.05 * len));
-    task.progress = Math.min(result, 100);
-    task.emit("progress", task.progress, decodedText);
+function generateProgressCallback(task: JobQueueLlmTask) {
+  let count = 0;
+  return (text: string) => {
+    count++;
+    const result = 100 * (1 - Math.exp(-0.05 * count));
+    task.progress = Math.round(Math.min(result, 100));
+    task.emit("progress", task.progress, text);
   };
 }
 
@@ -196,7 +191,8 @@ export async function HuggingFaceLocal_TextGenerationRun(
 
   const streamer = new TextStreamer(generateText.tokenizer, {
     skip_prompt: true,
-    callback_function: generateProgressCallback(task, generateText),
+    decode_kwargs: { skip_special_tokens: true },
+    callback_function: generateProgressCallback(task),
   });
 
   let results = await generateText(runInputData.prompt, {
@@ -231,7 +227,8 @@ export async function HuggingFaceLocal_TextTranslationRun(
 
   const streamer = new TextStreamer(translate.tokenizer, {
     skip_prompt: true,
-    callback_function: generateProgressCallback(task, translate),
+    decode_kwargs: { skip_special_tokens: true },
+    callback_function: generateProgressCallback(task),
   });
 
   let results = await translate(runInputData.text, {
@@ -261,7 +258,8 @@ export async function HuggingFaceLocal_TextRewriterRun(
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateText.tokenizer, {
     skip_prompt: true,
-    callback_function: generateProgressCallback(task, generateText),
+    decode_kwargs: { skip_special_tokens: true },
+    callback_function: generateProgressCallback(task),
   });
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
@@ -299,7 +297,8 @@ export async function HuggingFaceLocal_TextSummaryRun(
   const generateSummary: SummarizationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateSummary.tokenizer, {
     skip_prompt: true,
-    callback_function: generateProgressCallback(task, generateSummary),
+    decode_kwargs: { skip_special_tokens: true },
+    callback_function: generateProgressCallback(task),
   });
 
   let results = await generateSummary(runInputData.text, {
@@ -308,7 +307,6 @@ export async function HuggingFaceLocal_TextSummaryRun(
   if (!Array.isArray(results)) {
     results = [results];
   }
-
   return {
     text: (results[0] as SummarizationSingle)?.summary_text,
   };
@@ -328,7 +326,8 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateAnswer.tokenizer, {
     skip_prompt: true,
-    callback_function: generateProgressCallback(task, generateAnswer),
+    decode_kwargs: { skip_special_tokens: true },
+    callback_function: generateProgressCallback(task),
   });
 
   let results = await generateAnswer(runInputData.question, runInputData.context, {

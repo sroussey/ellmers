@@ -10,9 +10,7 @@
   "files.exclude": {
     // "**/dist": true,
     // "**/build": true,
-    "**/*.tsbuildinfo": true,
-    "**/*.js": { "when": "$(basename).ts" },
-    "**/*.d.ts": { "when": "$(basename).ts" }
+    "**/*.tsbuildinfo": true
   },
   "search.exclude": {
     "**/dist": true,
