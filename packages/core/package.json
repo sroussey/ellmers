@@ -8,7 +8,7 @@
     "watch-browser": "bun build --watch --target=browser --sourcemap=external --external @huggingface/transformers --outdir ./dist ./src/browser.ts",
     "watch-server-bun": "bun build --watch --target=bun --sourcemap=external --external @huggingface/transformers --outdir ./dist ./src/server.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-server-bun && bun run build-types-map",
+    "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-server-bun",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --external @huggingface/transformers --outdir ./dist ./src/browser*.ts",
     "build-server-bun": "bun build --target=bun --sourcemap=external --external @huggingface/transformers --outdir ./dist ./src/server*.ts",

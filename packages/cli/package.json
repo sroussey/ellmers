@@ -7,11 +7,10 @@
     "watch": "concurrently -c 'auto' -n 'cli:' 'bun:watch-*'",
     "watch-js": "bun build --watch --target=node --sourcemap=external --external listr2 --external @huggingface/transformers --outdir ./dist ./src/lib.ts ./src/ellmers.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build": "bun run build-clean && bun run build-types && bun run build-js && bun run build-types-map",
+    "build": "bun run build-clean && bun run build-types && bun run build-js",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-js": "bun build --target=node --sourcemap=external --external listr2 --external @huggingface/transformers --outdir ./dist ./src/lib.ts ./src/ellmers.ts",
     "build-types": "tsc",
-    "build-types-map": "tsc --declarationMap",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "bin": "./src/ellmers.js",
