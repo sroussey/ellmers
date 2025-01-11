@@ -24,6 +24,8 @@
     "dist"
   ],
   "dependencies": {
-    "ellmers-core": "workspace:packages/core"
+    "ellmers-core": "workspace:packages/core",
+    "ellmers-provider-hf-transformers": "workspace:packages/provider-hf-transformers",
+    "ellmers-provider-tf-mediapipe": "workspace:packages/provider-tf-mediapipe"
   }
 }

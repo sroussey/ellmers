@@ -19,9 +19,11 @@
   - [Source](#source)
     - [`docs/`](#docs)
     - [`packages/core`](#packagescore)
-    - [`packages/cli`](#packagescli)
-    - [`packages/web`](#packagesweb)
-    - [`packages/ngraph`](#packagesngraph)
+    - [`packages/provider-hf-transformers`](#packagesprovider-hf-transformers)
+    - [`packages/provider-tf-mediapipe`](#packagesprovider-tf-mediapipe)
+    - [`examples/cli`](#examplescli)
+    - [`examples/web`](#examplesweb)
+    - [`examples/ngraph`](#examplesngraph)
 
 # Developer Getting Started
 
@@ -32,7 +34,7 @@ git clone https://github.com/sroussey/ellmers.git
 cd ellmers
 bun install
 bun run build
-cd packages/web
+cd examples/web
 bun run dev
 ```
 
@@ -438,13 +440,21 @@ You are here.
 
 This is the main library code.
 
-### `packages/cli`
+### `packages/provider-hf-transformers`
+
+This is the Huggingface Transformers JS (using ONNX)provider.
+
+### `packages/provider-tf-mediapipe`
+
+This is the TensorFlow MediaPipe provider.
+
+### `examples/cli`
 
 An example project that uses the library in a CLI settings using listr2 (`cat example.json | ellmers json`, for example)
 
 ![cli example](img/cli.png)
 
-### `packages/web`
+### `examples/web`
 
 An example project that uses the library in a web setting, running locally in browser.
 
@@ -452,7 +462,7 @@ An example project that uses the library in a web setting, running locally in br
 
 Don't forget to open the console for some goodies.
 
-### `packages/ngraph`
+### `examples/ngraph`
 
 A graph editor tool that uses ngraph. It is not yet ready for prime time.
 

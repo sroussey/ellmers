@@ -6,11 +6,11 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { DownloadModelTask, DownloadModelTaskInput } from "../../task/DownloadModelTask";
-import { TextEmbeddingTask, TextEmbeddingTaskInput } from "../../task/TextEmbeddingTask";
-import { findModelByName } from "../../model/InMemoryStorage";
-import { MediaPipeTfJsModel } from "../../model/MediaPipeModel";
-import { ElVector } from "task";
+import { DownloadModelTask, DownloadModelTaskInput } from "ellmers-core";
+import { TextEmbeddingTask, TextEmbeddingTaskInput } from "ellmers-core";
+import { findModelByName } from "ellmers-core";
+import { ElVector } from "ellmers-core";
+import { MediaPipeTfJsModel } from "../model/MediaPipeModel";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.

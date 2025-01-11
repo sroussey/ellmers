@@ -5,4 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./Model";
+export * from "./provider/MediaPipeLocalTaskRun";
+export * from "./model/MediaPipeModel";
+export * from "./bindings/local_mp";
+export * from "./bindings/all_inmemory";

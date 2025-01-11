@@ -13,12 +13,9 @@ import {
 import { TurboNodeData, SingleNode, CompoundNode } from "./TurboNode";
 import TurboEdge from "./TurboEdge";
 import { FiFileText, FiClipboard, FiDownload, FiUpload } from "react-icons/fi";
-import {
-  Task,
-  TaskGraph,
-  registerHuggingfaceLocalTasksInMemory,
-  registerMediaPipeTfJsLocalInMemory,
-} from "ellmers-core/browser";
+import { Task, TaskGraph } from "ellmers-core";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider-hf-transformers";
+import { registerMediaPipeTfJsLocalInMemory } from "ellmers-provider-tf-mediapipe";
 import { GraphPipelineCenteredLayout, GraphPipelineLayout, computeLayout } from "./layout";
 
 import "@xyflow/react/dist/base.css";

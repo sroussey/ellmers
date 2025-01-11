@@ -1,10 +1,10 @@
+import { ModelProcessorEnum } from "ellmers-core";
+import { getProviderRegistry } from "ellmers-core";
+import { DownloadModelTask, TextEmbeddingTask } from "ellmers-core";
 import {
   MediaPipeTfJsLocal_Download,
   MediaPipeTfJsLocal_Embedding,
-} from "../provider/local-media-pipe/MediaPipeLocalTaskRun";
-import { ModelProcessorEnum } from "../model/Model";
-import { getProviderRegistry } from "../provider/ProviderRegistry";
-import { DownloadModelTask, TextEmbeddingTask } from "task";
+} from "../provider/MediaPipeLocalTaskRun";
 
 export const registerMediaPipeTfJsLocalTasks = () => {
   const ProviderRegistry = getProviderRegistry();

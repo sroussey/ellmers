@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Model, ModelOptions, ModelProcessorEnum, ModelUseCaseEnum } from "./Model";
+import { Model, ModelProcessorEnum, ModelUseCaseEnum, type ModelOptions } from "ellmers-core";
 
 export enum DATA_TYPES {
   auto = "auto", // Auto-detect based on environment

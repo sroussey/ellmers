@@ -20,8 +20,8 @@ import {
   type TranslationSingle,
   TextStreamer,
 } from "@huggingface/transformers";
-import { findModelByName } from "../../model/InMemoryStorage";
-import { ONNXTransformerJsModel } from "model";
+import { findModelByName } from "ellmers-core";
+import { ONNXTransformerJsModel } from "../model/ONNXTransformerJsModel";
 import {
   ElVector,
   JobQueueLlmTask,
@@ -46,7 +46,7 @@ import {
   TextTranslationTask,
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
-} from "task";
+} from "ellmers-core";
 
 env.cacheDir = "./.cache";
 

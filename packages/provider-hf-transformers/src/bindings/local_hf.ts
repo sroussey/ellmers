@@ -6,9 +6,9 @@ import {
   HuggingFaceLocal_TextRewriterRun,
   HuggingFaceLocal_TextSummaryRun,
   HuggingFaceLocal_TextTranslationRun,
-} from "provider/local-hugging-face/HuggingFaceLocal_TaskRun";
-import { ModelProcessorEnum } from "../model/Model";
-import { getProviderRegistry } from "../provider/ProviderRegistry";
+} from "../provider/HuggingFaceLocal_TaskRun";
+import { ModelProcessorEnum } from "ellmers-core";
+import { getProviderRegistry } from "ellmers-core";
 import {
   DownloadModelTask,
   TextEmbeddingTask,
@@ -17,7 +17,7 @@ import {
   TextRewriterTask,
   TextSummaryTask,
   TextTranslationTask,
-} from "task";
+} from "ellmers-core";
 
 export async function registerHuggingfaceLocalTasks() {
   const ProviderRegistry = getProviderRegistry();

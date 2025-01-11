@@ -4,14 +4,21 @@
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "workspaces": [
-    "./packages/*"
+    "./packages/*",
+    "./samples/*"
   ],
   "scripts": {
-    "build": "( cd packages/core && bun run build ) && ( cd packages/cli && bun run build ) && ( cd packages/web && bun run build )",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
-    "watch": "concurrently --kill-others -c 'auto' -n core,cli 'cd packages/core && bun run watch' 'sleep 1 && cd packages/cli && bun run watch'",
+    "build": "bun run build:packages && bun run build:examples",
+    "build:packages": "bun run build:core && bun run build:providers && bun run build:cli && bun run build:web",
+    "build:core": "cd packages/core && bun run build",
+    "build:providers": "(cd packages/provider-hf-transformers && bun run build) && (cd packages/provider-tf-mediapipe && bun run build)",
+    "build:examples": "bun run bun run build:cli && bun run build:web",
+    "build:cli": "cd samples/cli && bun run build",
+    "build:web": "cd samples/web && bun run build",
+    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/src/**\\.d\\.ts packages/*/src/**\\.map examples/*/node_modules examples/*/dist examples/*/src/**\\.d\\.ts examples/*/src/**\\.map",
+    "watch:packages": "concurrently --kill-others -c 'auto' -n core,hf-trans,tf-media 'cd packages/core && bun run watch' 'sleep 5 && cd packages/provider-hf-transformers && bun run watch' 'sleep 5 && cd packages/provider-tf-mediapipe && bun run watch'",
     "docs": "typedoc",
-    "format": "eslint \"{packages}/*/src/**/*.{js,ts,tsx,json}\" --fix && prettier \"{packages}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
+    "format": "eslint \"{packages|examples}/*/src/**/*.{js,ts,tsx,json}\" --fix && prettier \"{packages|examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "release": "bun run build && bun publish",
     "test": "jest"
   },

@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*"],
+  "files": ["src/lib.ts", "src/ellmers.ts"],
+  "exclude": ["**/*.test.ts"],
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": "./src",
+    "rootDir": "./src",
+    "paths": {
+      "#/*": ["./src/*"],
+      "ellmers-core": ["../../packages/core/src"],
+      "ellmers-provider-hf-transformers": ["../../packages/provider-hf-transformers/src"],
+      "ellmers-provider-tf-mediapipe": ["../../packages/provider-tf-mediapipe/src"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/provider-hf-transformers" },
+    { "path": "../../packages/provider-tf-mediapipe" }
+  ]
+}
