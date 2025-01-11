@@ -14,7 +14,6 @@ import {
   TaskGraphRunner,
   type Task,
   CompoundTask,
-  SqliteTaskOutputRepository,
 } from "ellmers-core/server";
 import { createBar } from "./TaskHelper";
 

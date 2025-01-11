@@ -1,9 +1,13 @@
-import { getProviderRegistry } from "ellmers-core";
+import {
+  getProviderRegistry,
+  InMemoryJobQueue,
+  ModelProcessorEnum,
+  ConcurrencyLimiter,
+  TaskInput,
+  TaskOutput,
+} from "ellmers-core";
 import { registerHuggingfaceLocalTasks } from "./local_hf";
-import { InMemoryJobQueue } from "ellmers-core";
-import { ModelProcessorEnum } from "ellmers-core";
-import { ConcurrencyLimiter } from "ellmers-core";
-import { TaskInput, TaskOutput } from "ellmers-core";
+import "../model/ONNXModelSamples";
 
 export async function registerHuggingfaceLocalTasksInMemory() {
   registerHuggingfaceLocalTasks();

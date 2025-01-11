@@ -9,11 +9,14 @@ import {
   JsonTaskItem,
   TaskGraph,
   TaskGraphBuilder,
-} from "ellmers-core/browser";
+} from "ellmers-core";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider-hf-transformers";
+
+registerHuggingfaceLocalTasksInMemory();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);

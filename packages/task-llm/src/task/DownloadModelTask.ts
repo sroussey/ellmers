@@ -5,15 +5,20 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "./base/ArrayTask";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import {
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  CreateMappedType,
+  TaskRegistry,
+  ConvertAllToArrays,
+  ConvertSomeToOptionalArray,
+  arrayTaskFactory,
+  TaskOutput,
+  JobQueueTaskConfig,
+  findModelByName,
+  ModelUseCaseEnum,
+} from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { TaskOutput } from "./base/Task";
-import { JobQueueTaskConfig } from "./base/JobQueueTask";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { ModelUseCaseEnum } from "../model/Model";
-import { findModelByName } from "../model/InMemoryStorage";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
 export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;
@@ -106,6 +111,7 @@ export class DownloadModelTask extends JobQueueLlmTask {
   static readonly type = "DownloadModelTask";
   static readonly category = "Text Model";
 }
+
 TaskRegistry.registerTask(DownloadModelTask);
 
 type DownloadModelCompoundTaskInput = ConvertSomeToOptionalArray<DownloadModelTaskInput, "model">;
@@ -122,7 +128,7 @@ export const DownloadModel = (input: DownloadModelCompoundTaskInput) => {
   }
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     DownloadModel: TaskGraphBuilderHelper<DownloadModelCompoundTaskInput>;
   }

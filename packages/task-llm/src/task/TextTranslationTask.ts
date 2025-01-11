@@ -5,12 +5,12 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "./base/ArrayTask";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "ellmers-core";
+import { CreateMappedType } from "ellmers-core";
+import { TaskRegistry } from "ellmers-core";
+import { JobQueueTaskConfig } from "ellmers-core";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { JobQueueTaskConfig } from "./base/JobQueueTask";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextTranslationTaskInput = CreateMappedType<typeof TextTranslationTask.inputs>;
 export type TextTranslationTaskOutput = CreateMappedType<typeof TextTranslationTask.outputs>;
@@ -75,7 +75,7 @@ export const TextTranslation = (input: TextTranslationCompoundTaskInput) => {
   return new TextTranslationCompoundTask({ input }).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     TextTranslation: TaskGraphBuilderHelper<TextTranslationCompoundTaskInput>;
   }

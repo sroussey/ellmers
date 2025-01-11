@@ -10,12 +10,13 @@ import {
   ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-} from "./base/ArrayTask";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+  CreateMappedType,
+  TaskRegistry,
+  JobQueueTaskConfig,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+} from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { JobQueueTaskConfig } from "./base/JobQueueTask";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
 export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTask.outputs>;
@@ -63,7 +64,7 @@ export const TextGeneration = (input: TextGenerationCompoundTaskInput) => {
   return new TextGenerationCompoundTask({ input }).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     TextGeneration: TaskGraphBuilderHelper<TextGenerationCompoundTaskInput>;
   }

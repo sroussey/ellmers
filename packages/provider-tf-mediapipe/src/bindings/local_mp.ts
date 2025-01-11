@@ -1,6 +1,5 @@
-import { ModelProcessorEnum } from "ellmers-core";
-import { getProviderRegistry } from "ellmers-core";
-import { DownloadModelTask, TextEmbeddingTask } from "ellmers-core";
+import { ModelProcessorEnum, getProviderRegistry } from "ellmers-core";
+import { DownloadModelTask, TextEmbeddingTask } from "ellmers-task-llm";
 import {
   MediaPipeTfJsLocal_Download,
   MediaPipeTfJsLocal_Embedding,

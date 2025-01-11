@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "include": ["src/**/*"],
-  "files": ["src/index.ts", "src/server.ts", "src/worker.ts"],
+  "files": ["src/index.ts", "src/worker.ts"],
   "exclude": ["**/*.test.ts", "dist"],
   "compilerOptions": {
     "outDir": "./dist",
@@ -9,9 +9,8 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../core/src"],
-      "ellmers-task-llm": ["../task-llm/src"]
+      "ellmers-core": ["../core/src"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../task-llm" }]
+  "references": [{ "path": "../core" }]
 }

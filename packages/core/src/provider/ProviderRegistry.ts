@@ -5,11 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import type { JobQueueLlmTask } from "../task/base/JobQueueLlmTask";
 import type { ModelProcessorEnum } from "../model/Model";
 import { Job, JobConstructorDetails } from "../job/base/Job";
 import type { JobQueue } from "../job/base/JobQueue";
 import { TaskInput, TaskOutput } from "../task/base/Task";
+import { JobQueueTask } from "../task";
 
 export enum JobQueueRunType {
   local = "local",
@@ -46,7 +46,7 @@ export class ProviderRegistry<Input, Output> {
 
   jobAsRunFn(runtype: string, modelType: ModelProcessorEnum) {
     const fn = this.runFnRegistry[runtype]?.[modelType];
-    return async (task: JobQueueLlmTask, input: Input) => {
+    return async (task: JobQueueTask, input: Input) => {
       const queue = this.queues.get(modelType)!;
       const job = new ProviderJob({
         queueName: queue.queue,

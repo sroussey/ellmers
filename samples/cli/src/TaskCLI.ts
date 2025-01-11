@@ -12,14 +12,14 @@ import {
   findAllModels,
   findModelByName,
   findModelByUseCase,
-  DownloadModelTask,
   ModelUseCaseEnum,
   TaskGraph,
   JsonTask,
   TaskGraphBuilder,
-  DownloadModelCompoundTask,
   JsonTaskItem,
 } from "ellmers-core/server";
+
+import { DownloadModelTask, DownloadModelCompoundTask } from "ellmers-task-llm";
 
 export function AddBaseCommands(program: Command) {
   program

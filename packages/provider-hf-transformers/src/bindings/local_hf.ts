@@ -1,3 +1,13 @@
+import { ModelProcessorEnum, getProviderRegistry } from "ellmers-core";
+import {
+  DownloadModelTask,
+  TextEmbeddingTask,
+  TextGenerationTask,
+  TextQuestionAnswerTask,
+  TextRewriterTask,
+  TextSummaryTask,
+  TextTranslationTask,
+} from "ellmers-task-llm";
 import {
   HuggingFaceLocal_DownloadRun,
   HuggingFaceLocal_EmbeddingRun,
@@ -7,17 +17,6 @@ import {
   HuggingFaceLocal_TextSummaryRun,
   HuggingFaceLocal_TextTranslationRun,
 } from "../provider/HuggingFaceLocal_TaskRun";
-import { ModelProcessorEnum } from "ellmers-core";
-import { getProviderRegistry } from "ellmers-core";
-import {
-  DownloadModelTask,
-  TextEmbeddingTask,
-  TextGenerationTask,
-  TextQuestionAnswerTask,
-  TextRewriterTask,
-  TextSummaryTask,
-  TextTranslationTask,
-} from "ellmers-core";
 
 export async function registerHuggingfaceLocalTasks() {
   const ProviderRegistry = getProviderRegistry();

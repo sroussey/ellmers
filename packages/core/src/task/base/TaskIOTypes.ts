@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { similarity_fn } from "../SimilarityTask";
 import { Document } from "../../source/Document";
 
 export type AnyNumberArray =
@@ -141,7 +140,7 @@ interface TsTypes {
   log_level: LogLevel;
   doc_parser: DocParser;
   doc_variant: DocVariant;
-  similarity_fn: (typeof similarity_fn)[number];
+  similarity_fn: (a: number[], b: number[]) => number;
   document: Document;
 }
 

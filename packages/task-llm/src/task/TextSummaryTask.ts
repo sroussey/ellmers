@@ -6,16 +6,16 @@
 //    *******************************************************************************
 
 import {
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  CreateMappedType,
+  TaskRegistry,
   ConvertAllToArrays,
-  ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-} from "./base/ArrayTask";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+  JobQueueTaskConfig,
+} from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { JobQueueTaskConfig } from "./base/JobQueueTask";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextSummaryTaskInput = CreateMappedType<typeof TextSummaryTask.inputs>;
 export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outputs>;
@@ -64,7 +64,7 @@ export const TextSummary = (input: TextSummaryCompoundTaskInput) => {
   return new TextSummaryCompoundTask({ input }).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     TextSummary: TaskGraphBuilderHelper<TextSummaryCompoundTaskInput>;
   }

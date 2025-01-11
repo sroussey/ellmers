@@ -9,8 +9,9 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../core/src"]
+      "ellmers-core": ["../core/src"],
+      "ellmers-task-llm": ["../task-llm/src"]
     }
   },
-  "references": [{ "path": "../core" }]
+  "references": [{ "path": "../core" }, { "path": "../task-llm" }]
 }

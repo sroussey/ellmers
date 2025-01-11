@@ -5,10 +5,17 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType, ElVector, ValueTypesIndex } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import {
+  CreateMappedType,
+  TaskRegistry,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  ElVector,
+  ValueTypesIndex,
+  SingleTask,
+  TaskOutput,
+  TaskConfig,
+} from "ellmers-core";
 
 // ===============================================================================
 
@@ -141,7 +148,7 @@ export const Similarity = (input: SimilarityTaskInput) => {
   return SimilarityBuilder(input).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     Similarity: TaskGraphBuilderHelper<SimilarityTaskInput>;
   }

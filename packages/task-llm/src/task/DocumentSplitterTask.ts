@@ -5,11 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Document, DocumentFragment } from "../source/Document";
-import { SingleTask } from "./base/Task";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import {
+  Document,
+  DocumentFragment,
+  SingleTask,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  CreateMappedType,
+  TaskRegistry,
+} from "ellmers-core";
 
 export type DocumentSplitterTaskInput = CreateMappedType<typeof DocumentSplitterTask.inputs>;
 export type DocumentSplitterTaskOutput = CreateMappedType<typeof DocumentSplitterTask.outputs>;
@@ -73,7 +77,7 @@ export const DocumentSplitter = (input: DocumentSplitterTaskInput) => {
   return DocumentSplitterBuilder(input).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     DocumentSplitter: TaskGraphBuilderHelper<DocumentSplitterTask>;
   }

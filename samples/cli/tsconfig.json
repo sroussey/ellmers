@@ -10,12 +10,14 @@
     "paths": {
       "#/*": ["./src/*"],
       "ellmers-core": ["../../packages/core/src"],
+      "ellmers-task-llm": ["../../packages/task-llm/src"],
       "ellmers-provider-hf-transformers": ["../../packages/provider-hf-transformers/src"],
       "ellmers-provider-tf-mediapipe": ["../../packages/provider-tf-mediapipe/src"]
     }
   },
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/task-llm" },
     { "path": "../../packages/provider-hf-transformers" },
     { "path": "../../packages/provider-tf-mediapipe" }
   ]

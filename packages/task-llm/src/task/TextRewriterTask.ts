@@ -5,12 +5,18 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "./base/ArrayTask";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import {
+  ConvertAllToArrays,
+  ConvertSomeToArray,
+  ConvertSomeToOptionalArray,
+  arrayTaskFactory,
+  CreateMappedType,
+  TaskRegistry,
+  JobQueueTaskConfig,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+} from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { JobQueueTaskConfig } from "./base/JobQueueTask";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
 
 export type TextRewriterTaskInput = CreateMappedType<typeof TextRewriterTask.inputs>;
 export type TextRewriterTaskOutput = CreateMappedType<typeof TextRewriterTask.outputs>;
@@ -68,7 +74,7 @@ export const TextRewriter = (input: TextRewriterCompoundTaskInput) => {
   }
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     TextRewriter: TaskGraphBuilderHelper<TextRewriterCompoundTaskInput>;
   }
