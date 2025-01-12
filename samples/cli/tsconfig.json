@@ -10,14 +10,14 @@
     "paths": {
       "#/*": ["./src/*"],
       "ellmers-core": ["../../packages/core/src"],
-      "ellmers-task-llm": ["../../packages/task-llm/src"],
+      "ellmers-ai": ["../../packages/ai/src"],
       "ellmers-storage": ["../../packages/storage/src"],
       "ellmers-provider": ["../../packages/provider/src"]
     }
   },
   "references": [
     { "path": "../../packages/core" },
-    { "path": "../../packages/task-llm" },
+    { "path": "../../packages/ai" },
     { "path": "../../packages/storage" },
     { "path": "../../packages/provider" }
   ]

@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Model, ModelOptions, ModelProcessorEnum, ModelUseCaseEnum } from "ellmers-task-llm";
+import { Model, ModelOptions, ModelProcessorEnum, ModelUseCaseEnum } from "ellmers-ai";
 
 export class MediaPipeTfJsModel extends Model {
   constructor(

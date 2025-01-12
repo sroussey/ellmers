@@ -10,7 +10,7 @@ import {
   ModelOptions,
   ModelProcessorEnum,
   ModelUseCaseEnum,
-} from "../../../../task-llm/src/model/Model";
+} from "../../../../ai/src/model/Model";
 
 export class GgmlLocalModel extends Model {
   constructor(name: string, useCase: ModelUseCaseEnum[], options?: ModelOptions) {

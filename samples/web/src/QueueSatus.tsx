@@ -1,5 +1,5 @@
 import { JobStatus } from "ellmers-core";
-import { ModelProcessorEnum, getProviderRegistry } from "ellmers-task-llm";
+import { ModelProcessorEnum, getProviderRegistry } from "ellmers-ai";
 import { useCallback, useEffect, useState } from "react";
 
 export function QueueStatus({ queueType }: { queueType: ModelProcessorEnum }) {

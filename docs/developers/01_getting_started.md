@@ -20,7 +20,7 @@
     - [`docs/`](#docs)
     - [`packages/core`](#packagescore)
     - [`packages/storage`](#packagesstorage)
-    - [`packages/task-llm`](#packagestask-llm)
+    - [`packages/ai`](#packagesai)
     - [`packages/provider`](#packagesprovider)
     - [`samples/cli`](#samplescli)
     - [`samples/web`](#samplesweb)
@@ -446,7 +446,7 @@ This is the main library code.
 
 Storage for queues, caches, etc.
 
-### `packages/task-llm`
+### `packages/ai`
 
 These are the LLM tasks.
 

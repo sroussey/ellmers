@@ -17,8 +17,8 @@
     "paths": {
       "#/*": ["./src/*"],
       "ellmers-core": ["../core/src"],
-      "ellmers-task-llm": ["../task-llm/src"]
+      "ellmers-ai": ["../ai/src"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../task-llm" }]
+  "references": [{ "path": "../core" }, { "path": "../ai" }]
 }

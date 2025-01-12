@@ -46,7 +46,7 @@ import {
   TextTranslationTask,
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
-} from "ellmers-task-llm";
+} from "ellmers-ai";
 
 env.cacheDir = "./.cache";
 

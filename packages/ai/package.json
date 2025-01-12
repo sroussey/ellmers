@@ -1,5 +1,5 @@
 {
-  "name": "ellmers-task-llm",
+  "name": "ellmers-ai",
   "type": "module",
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",

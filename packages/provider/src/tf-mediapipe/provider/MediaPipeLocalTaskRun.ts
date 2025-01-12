@@ -13,7 +13,7 @@ import {
   DownloadModelTaskInput,
   TextEmbeddingTask,
   TextEmbeddingTaskInput,
-} from "ellmers-task-llm";
+} from "ellmers-ai";
 import { MediaPipeTfJsModel } from "../model/MediaPipeModel";
 
 /**

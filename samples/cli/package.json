@@ -25,7 +25,7 @@
   ],
   "dependencies": {
     "ellmers-core": "workspace:packages/core",
-    "ellmers-task-llm": "workspace:packages/task-llm",
+    "ellmers-ai": "workspace:packages/ai",
     "ellmers-storage": "workspace:packages/storage",
     "ellmers-provider": "workspace:packages/provider"
   }

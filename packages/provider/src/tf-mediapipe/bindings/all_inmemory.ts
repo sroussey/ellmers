@@ -1,6 +1,6 @@
-import { getProviderRegistry } from "ellmers-task-llm";
+import { getProviderRegistry } from "ellmers-ai";
 import { InMemoryJobQueue } from "ellmers-core";
-import { ModelProcessorEnum } from "ellmers-task-llm";
+import { ModelProcessorEnum } from "ellmers-ai";
 import { ConcurrencyLimiter } from "ellmers-core";
 import { TaskInput, TaskOutput } from "ellmers-core";
 import { registerMediaPipeTfJsLocalTasks } from "./local_mp";

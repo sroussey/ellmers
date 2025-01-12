@@ -24,7 +24,7 @@
     "ellmers-core": "workspace:packages/core",
     "ellmers-storage": "workspace:packages/storage",
     "ellmers-provider": "workspace:packages/provider",
-    "ellmers-task-llm": "workspace:packages/task-llm"
+    "ellmers-ai": "workspace:packages/ai"
   },
   "devDependencies": {
     "@types/react": "^19.0.4",
