@@ -21,13 +21,15 @@
     "paths": {
       "ellmers-core": ["../../packages/core/src"],
       "ellmers-ai-provider": ["../../packages/ai-provider/src"],
-      "ellmers-storage": ["../../packages/storage/src"]
+      "ellmers-storage": ["../../packages/storage/src"],
+      "ellmers-task": ["../../packages/task/src"]
     }
   },
   "include": ["src"],
   "exclude": ["dist"],
   "references": [
     { "path": "../../packages/core" },
+    { "path": "../../packages/task" },
     { "path": "../../packages/ai-provider" },
     { "path": "../../packages/storage" }
   ]

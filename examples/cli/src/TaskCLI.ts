@@ -18,6 +18,7 @@ import {
   findModelByUseCase,
   ModelUseCaseEnum,
 } from "ellmers-ai";
+import "ellmers-task";
 
 export function AddBaseCommands(program: Command) {
   program

@@ -6,10 +6,15 @@
 //    *******************************************************************************
 
 import { Interpreter } from "../util/interpreter";
-import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType } from "./base/TaskIOTypes";
-import { TaskRegistry } from "./base/TaskRegistry";
+import {
+  SingleTask,
+  TaskConfig,
+  TaskOutput,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  CreateMappedType,
+  TaskRegistry,
+} from "ellmers-core";
 
 export type JavaScriptTaskInput = CreateMappedType<typeof JavaScriptTask.inputs>;
 export type JavaScriptTaskOutput = CreateMappedType<typeof JavaScriptTask.outputs>;
@@ -64,7 +69,7 @@ export const JavaScript = (input: JavaScriptTaskInput) => {
   return JavaScriptBuilder(input).run();
 };
 
-declare module "./base/TaskGraphBuilder" {
+declare module "ellmers-core" {
   interface TaskGraphBuilder {
     JavaScript: TaskGraphBuilderHelper<JavaScriptTaskInput>;
   }

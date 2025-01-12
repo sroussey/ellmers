@@ -27,6 +27,7 @@
     "ellmers-core": "workspace:packages/core",
     "ellmers-ai": "workspace:packages/ai",
     "ellmers-storage": "workspace:packages/storage",
-    "ellmers-ai-provider": "workspace:packages/ai-provider"
+    "ellmers-ai-provider": "workspace:packages/ai-provider",
+    "ellmers-task": "workspace:packages/task"
   }
 }

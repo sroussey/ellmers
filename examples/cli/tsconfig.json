@@ -18,7 +18,8 @@
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/ai" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/ai-provider" }
+    { "path": "../../packages/ai-provider" },
+    { "path": "../../packages/task" },
+    { "path": "../../packages/storage" }
   ]
 }

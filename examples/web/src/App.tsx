@@ -12,6 +12,7 @@ import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/browser";
+import "ellmers-task";
 
 registerHuggingfaceLocalTasksInMemory();
 
