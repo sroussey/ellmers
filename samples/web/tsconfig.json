@@ -20,7 +20,7 @@
 
     "paths": {
       "ellmers-core": ["../../packages/core/src"],
-      "ellmers-provider": ["../../packages/provider/src"],
+      "ellmers-ai-provider": ["../../packages/ai-provider/src"],
       "ellmers-storage": ["../../packages/storage/src"]
     }
   },
@@ -28,7 +28,7 @@
   "exclude": ["dist"],
   "references": [
     { "path": "../../packages/core" },
-    { "path": "../../packages/provider" },
+    { "path": "../../packages/ai-provider" },
     { "path": "../../packages/storage" }
   ]
 }

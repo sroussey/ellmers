@@ -1,5 +1,5 @@
 {
-  "name": "ellmers-provider",
+  "name": "ellmers-ai-provider",
   "type": "module",
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",

@@ -12,13 +12,13 @@
       "ellmers-core": ["../../packages/core/src"],
       "ellmers-ai": ["../../packages/ai/src"],
       "ellmers-storage": ["../../packages/storage/src"],
-      "ellmers-provider": ["../../packages/provider/src"]
+      "ellmers-ai-provider": ["../../packages/ai-provider/src"]
     }
   },
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/ai" },
     { "path": "../../packages/storage" },
-    { "path": "../../packages/provider" }
+    { "path": "../../packages/ai-provider" }
   ]
 }

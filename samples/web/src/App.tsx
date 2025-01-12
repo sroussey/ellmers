@@ -11,7 +11,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/browser";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/browser";
 
 registerHuggingfaceLocalTasksInMemory();
 

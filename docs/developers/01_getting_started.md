@@ -21,7 +21,7 @@
     - [`packages/core`](#packagescore)
     - [`packages/storage`](#packagesstorage)
     - [`packages/ai`](#packagesai)
-    - [`packages/provider`](#packagesprovider)
+    - [`packages/ai-provider`](#packagesai-provider)
     - [`samples/cli`](#samplescli)
     - [`samples/web`](#samplesweb)
     - [`samples/ngraph`](#samplesngraph)
@@ -51,7 +51,7 @@ After this, plese read [Architecture](02_architecture.md) before attempting to [
 
 ```ts
 import { TaskGraphBuilder } from "ellmers-core";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/server";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/server";
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
 
@@ -448,9 +448,9 @@ Storage for queues, caches, etc.
 
 ### `packages/ai`
 
-These are the LLM tasks.
+These are the LLM tasks, models, etc.
 
-### `packages/provider`
+### `packages/ai-provider`
 
 This is the Huggingface Transformers JS (using ONNX) and TensorFlow MediaPipe providers.
 
