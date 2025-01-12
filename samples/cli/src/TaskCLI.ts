@@ -17,7 +17,7 @@ import {
   JsonTask,
   TaskGraphBuilder,
   JsonTaskItem,
-} from "ellmers-core/server";
+} from "ellmers-core";
 
 import { DownloadModelTask, DownloadModelCompoundTask } from "ellmers-task-llm";
 

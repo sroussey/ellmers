@@ -19,11 +19,12 @@
   - [Source](#source)
     - [`docs/`](#docs)
     - [`packages/core`](#packagescore)
-    - [`packages/provider-hf-transformers`](#packagesprovider-hf-transformers)
-    - [`packages/provider-tf-mediapipe`](#packagesprovider-tf-mediapipe)
-    - [`examples/cli`](#examplescli)
-    - [`examples/web`](#examplesweb)
-    - [`examples/ngraph`](#examplesngraph)
+    - [`packages/storage`](#packagesstorage)
+    - [`packages/task-llm`](#packagestask-llm)
+    - [`packages/provider`](#packagesprovider)
+    - [`samples/cli`](#samplescli)
+    - [`samples/web`](#samplesweb)
+    - [`samples/ngraph`](#samplesngraph)
 
 # Developer Getting Started
 
@@ -34,7 +35,7 @@ git clone https://github.com/sroussey/ellmers.git
 cd ellmers
 bun install
 bun run build
-cd examples/web
+cd samples/web
 bun run dev
 ```
 
@@ -49,7 +50,8 @@ After this, plese read [Architecture](02_architecture.md) before attempting to [
 ## Using TaskGraphBuilder & a config helper
 
 ```ts
-import { TaskGraphBuilder, registerHuggingfaceLocalTasksInMemory } from "ellmers-core/server";
+import { TaskGraphBuilder } from "ellmers-core";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/server";
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
 
@@ -78,7 +80,7 @@ import {
   TaskGraph,
   TaskGraphRunner,
   registerHuggingfaceLocalTasksInMemory,
-} from "ellmers-core/server";
+} from "ellmers-core";
 
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
@@ -137,7 +139,7 @@ import {
   ConcurrencyLimiter,
   TaskInput,
   TaskOutput,
-} from "ellmers-core/server";
+} from "ellmers-core";
 
 // config and start up
 const ProviderRegistry = getProviderRegistry();
@@ -232,7 +234,7 @@ Tasks are the smallest unit of work, therefore they take simple inputs. Most Tas
 An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input. The builder is smart enough to know that the Compound version is needed when an array is passed, and as such, you don't need to differentiate between the two:
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core/server";
+import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
   model: "Xenova/LaMini-Flan-T5-783M",
@@ -244,7 +246,7 @@ await builder.run();
 OR
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core/server";
+import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
   model: ["Xenova/LaMini-Flan-T5-783M", "Universal Sentence Encoder"],
@@ -256,7 +258,7 @@ await builder.run();
 The builder will look at outputs of one task and automatically connect it to the input of the next task, if the output and input names and types match. If they don't, you can use the `rename` method to rename the output of the first task to match the input of the second task.
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core/server";
+import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder
   .DownloadModel({
@@ -339,7 +341,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
 The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task. It is a shorthand for creating a data flow (an edge) in the graph.
 
 ```ts
-import { JSONTask } from "ellmers-core/server";
+import { JSONTask } from "ellmers-core";
 const json = require("./example.json");
 const task = new JSONTask({ input: { json } });
 await task.run();
@@ -440,21 +442,25 @@ You are here.
 
 This is the main library code.
 
-### `packages/provider-hf-transformers`
+### `packages/storage`
 
-This is the Huggingface Transformers JS (using ONNX)provider.
+Storage for queues, caches, etc.
 
-### `packages/provider-tf-mediapipe`
+### `packages/task-llm`
 
-This is the TensorFlow MediaPipe provider.
+These are the LLM tasks.
 
-### `examples/cli`
+### `packages/provider`
+
+This is the Huggingface Transformers JS (using ONNX) and TensorFlow MediaPipe providers.
+
+### `samples/cli`
 
 An example project that uses the library in a CLI settings using listr2 (`cat example.json | ellmers json`, for example)
 
 ![cli example](img/cli.png)
 
-### `examples/web`
+### `samples/web`
 
 An example project that uses the library in a web setting, running locally in browser.
 
@@ -462,7 +468,7 @@ An example project that uses the library in a web setting, running locally in br
 
 Don't forget to open the console for some goodies.
 
-### `examples/ngraph`
+### `samples/ngraph`
 
 A graph editor tool that uses ngraph. It is not yet ready for prime time.
 

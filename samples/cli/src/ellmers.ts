@@ -3,9 +3,9 @@
 import { program } from "commander";
 import { argv } from "process";
 import { AddBaseCommands } from "./TaskCLI";
-import { getProviderRegistry } from "ellmers-core/server";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider-hf-transformers";
-import { registerMediaPipeTfJsLocalInMemory } from "ellmers-provider-tf-mediapipe";
+import { getProviderRegistry } from "ellmers-core";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/server";
+import { registerMediaPipeTfJsLocalInMemory } from "ellmers-provider/tf-mediapipe/server";
 
 program.version("1.0.0").description("A CLI to run Ellmers.");
 

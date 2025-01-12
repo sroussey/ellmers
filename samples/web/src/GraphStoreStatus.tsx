@@ -1,4 +1,4 @@
-import { TaskGraphRepository } from "ellmers-core/browser";
+import { TaskGraphRepository } from "ellmers-core";
 import { useCallback } from "react";
 
 export function GraphStoreStatus({ repository }: { repository: TaskGraphRepository }) {

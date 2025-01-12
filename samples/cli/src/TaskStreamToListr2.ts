@@ -14,7 +14,7 @@ import {
   TaskGraphRunner,
   type Task,
   CompoundTask,
-} from "ellmers-core/server";
+} from "ellmers-core";
 import { createBar } from "./TaskHelper";
 
 const options = {

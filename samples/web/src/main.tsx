@@ -1,6 +1,6 @@
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { TaskGraphBuilder } from "ellmers-core/browser";
+import { TaskGraphBuilder } from "ellmers-core";
 import "./main.css";
 import {
   TaskConsoleFormatter,

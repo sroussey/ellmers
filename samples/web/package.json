@@ -22,8 +22,8 @@
     "react-icons": "^5.4.0",
     "react-resizable-panels": "^2.1.7",
     "ellmers-core": "workspace:packages/core",
-    "ellmers-provider-hf-transformers": "workspace:packages/provider-hf-transformers",
-    "ellmers-provider-tf-mediapipe": "workspace:packages/provider-tf-mediapipe"
+    "ellmers-storage": "workspace:packages/storage",
+    "ellmers-provider": "workspace:packages/provider"
   },
   "devDependencies": {
     "@types/react": "^19.0.4",

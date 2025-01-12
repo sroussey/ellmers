@@ -11,14 +11,14 @@
       "#/*": ["./src/*"],
       "ellmers-core": ["../../packages/core/src"],
       "ellmers-task-llm": ["../../packages/task-llm/src"],
-      "ellmers-provider-hf-transformers": ["../../packages/provider-hf-transformers/src"],
-      "ellmers-provider-tf-mediapipe": ["../../packages/provider-tf-mediapipe/src"]
+      "ellmers-storage": ["../../packages/storage/src"],
+      "ellmers-provider": ["../../packages/provider/src"]
     }
   },
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/task-llm" },
-    { "path": "../../packages/provider-hf-transformers" },
-    { "path": "../../packages/provider-tf-mediapipe" }
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/provider" }
   ]
 }

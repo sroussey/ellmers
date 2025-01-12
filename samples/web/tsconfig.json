@@ -20,15 +20,15 @@
 
     "paths": {
       "ellmers-core": ["../../packages/core/src"],
-      "ellmers-provider-hf-transformers": ["../../packages/provider-hf-transformers/src"],
-      "ellmers-provider-tf-mediapipe": ["../../packages/provider-tf-mediapipe/src"]
+      "ellmers-provider": ["../../packages/provider/src"],
+      "ellmers-storage": ["../../packages/storage/src"]
     }
   },
   "include": ["src"],
   "exclude": ["dist"],
   "references": [
     { "path": "../../packages/core" },
-    { "path": "../../packages/provider-hf-transformers" },
-    { "path": "../../packages/provider-tf-mediapipe" }
+    { "path": "../../packages/provider" },
+    { "path": "../../packages/storage" }
   ]
 }

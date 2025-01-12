@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*"],
+  "files": [
+    "src/hf-transformers/browser.ts",
+    "src/hf-transformers/server.ts",
+    "src/hf-transformers/worker.ts",
+    "src/tf-mediapipe/browser.ts",
+    "src/tf-mediapipe/server.ts",
+    "src/tf-mediapipe/worker.ts"
+  ],
+  "exclude": ["**/*.test.ts", "dist"],
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": "./src",
+    "rootDir": "./src",
+    "paths": {
+      "#/*": ["./src/*"],
+      "ellmers-core": ["../core/src"],
+      "ellmers-task-llm": ["../task-llm/src"]
+    }
+  },
+  "references": [{ "path": "../core" }, { "path": "../task-llm" }]
+}

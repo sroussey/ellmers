@@ -3,7 +3,7 @@ import {
   TaskInputDefinition,
   TaskOutputDefinition,
   TaskStatus,
-} from "ellmers-core/browser";
+} from "ellmers-core";
 
 type Config = Record<string, any>;
 

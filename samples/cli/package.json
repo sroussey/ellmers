@@ -26,7 +26,7 @@
   "dependencies": {
     "ellmers-core": "workspace:packages/core",
     "ellmers-task-llm": "workspace:packages/task-llm",
-    "ellmers-provider-hf-transformers": "workspace:packages/provider-hf-transformers",
-    "ellmers-provider-tf-mediapipe": "workspace:packages/provider-tf-mediapipe"
+    "ellmers-storage": "workspace:packages/storage",
+    "ellmers-provider": "workspace:packages/provider"
   }
 }

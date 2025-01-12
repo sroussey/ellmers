@@ -1,4 +1,4 @@
-import { TaskOutputRepository } from "ellmers-core/browser";
+import { TaskOutputRepository } from "ellmers-core";
 import { useCallback, useEffect, useState } from "react";
 
 export function OutputRepositoryStatus({ repository }: { repository: TaskOutputRepository }) {

@@ -1,4 +1,4 @@
-import { Job, JobStatus, ModelProcessorEnum, getProviderRegistry } from "ellmers-core/browser";
+import { Job, JobStatus, ModelProcessorEnum, getProviderRegistry } from "ellmers-core";
 import { useCallback, useEffect, useState } from "react";
 
 export function QueueStatus({ queueType }: { queueType: ModelProcessorEnum }) {

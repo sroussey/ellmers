@@ -2,19 +2,16 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
+import { JsonTask, JsonTaskItem, TaskGraph, TaskGraphBuilder } from "ellmers-core";
 import {
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
-  JsonTask,
-  JsonTaskItem,
-  TaskGraph,
-  TaskGraphBuilder,
-} from "ellmers-core";
+} from "ellmers-storage/browser/indexeddb";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider-hf-transformers";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/browser";
 
 registerHuggingfaceLocalTasksInMemory();
 
