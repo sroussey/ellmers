@@ -22,9 +22,9 @@
     - [`packages/storage`](#packagesstorage)
     - [`packages/ai`](#packagesai)
     - [`packages/ai-provider`](#packagesai-provider)
-    - [`samples/cli`](#samplescli)
-    - [`samples/web`](#samplesweb)
-    - [`samples/ngraph`](#samplesngraph)
+    - [`examples/cli`](#samplescli)
+    - [`examples/web`](#samplesweb)
+    - [`examples/ngraph`](#samplesngraph)
 
 # Developer Getting Started
 
@@ -35,7 +35,7 @@ git clone https://github.com/sroussey/ellmers.git
 cd ellmers
 bun install
 bun run build
-cd samples/web
+cd examples/web
 bun run dev
 ```
 
@@ -454,13 +454,13 @@ These are the LLM tasks, models, etc.
 
 This is the Huggingface Transformers JS (using ONNX) and TensorFlow MediaPipe providers.
 
-### `samples/cli`
+### `examples/cli`
 
 An example project that uses the library in a CLI settings using listr2 (`cat example.json | ellmers json`, for example)
 
 ![cli example](img/cli.png)
 
-### `samples/web`
+### `examples/web`
 
 An example project that uses the library in a web setting, running locally in browser.
 
@@ -468,7 +468,7 @@ An example project that uses the library in a web setting, running locally in br
 
 Don't forget to open the console for some goodies.
 
-### `samples/ngraph`
+### `examples/ngraph`
 
 A graph editor tool that uses ngraph. It is not yet ready for prime time.
 
