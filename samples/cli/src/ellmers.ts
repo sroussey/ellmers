@@ -3,7 +3,7 @@
 import { program } from "commander";
 import { argv } from "process";
 import { AddBaseCommands } from "./TaskCLI";
-import { getProviderRegistry } from "ellmers-core";
+import { getProviderRegistry } from "ellmers-task-llm";
 import { registerHuggingfaceLocalTasksInMemory } from "ellmers-provider/hf-transformers/server";
 import { registerMediaPipeTfJsLocalInMemory } from "ellmers-provider/tf-mediapipe/server";
 

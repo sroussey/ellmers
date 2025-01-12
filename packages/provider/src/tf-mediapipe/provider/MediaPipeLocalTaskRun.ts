@@ -6,8 +6,9 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { findModelByName, ElVector } from "ellmers-core";
+import { ElVector } from "ellmers-core";
 import {
+  findModelByName,
   DownloadModelTask,
   DownloadModelTaskInput,
   TextEmbeddingTask,

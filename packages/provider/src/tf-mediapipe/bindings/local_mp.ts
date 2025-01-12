@@ -1,4 +1,4 @@
-import { ModelProcessorEnum, getProviderRegistry } from "ellmers-core";
+import { ModelProcessorEnum, getProviderRegistry } from "ellmers-task-llm";
 import { DownloadModelTask, TextEmbeddingTask } from "ellmers-task-llm";
 import {
   MediaPipeTfJsLocal_Download,

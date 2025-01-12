@@ -15,9 +15,9 @@ import {
   arrayTaskFactory,
   TaskOutput,
   JobQueueTaskConfig,
-  findModelByName,
-  ModelUseCaseEnum,
 } from "ellmers-core";
+import { ModelUseCaseEnum } from "../model/Model";
+import { findModelByName } from "../model/InMemoryStorage";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;

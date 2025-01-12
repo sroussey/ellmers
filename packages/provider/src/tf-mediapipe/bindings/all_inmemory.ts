@@ -1,9 +1,10 @@
-import { getProviderRegistry } from "ellmers-core";
+import { getProviderRegistry } from "ellmers-task-llm";
 import { InMemoryJobQueue } from "ellmers-core";
-import { ModelProcessorEnum } from "ellmers-core";
+import { ModelProcessorEnum } from "ellmers-task-llm";
 import { ConcurrencyLimiter } from "ellmers-core";
 import { TaskInput, TaskOutput } from "ellmers-core";
 import { registerMediaPipeTfJsLocalTasks } from "./local_mp";
+import "../model/MediaPipeModelSamples";
 
 export async function registerMediaPipeTfJsLocalInMemory() {
   registerMediaPipeTfJsLocalTasks();

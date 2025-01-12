@@ -9,13 +9,9 @@
  * @description This file contains the implementation of the JobQueueTask class and its derived classes.
  */
 
-import {
-  findModelByName,
-  JobQueueTask,
-  JobQueueTaskConfig,
-  getProviderRegistry,
-  type TaskOutput,
-} from "ellmers-core";
+import { JobQueueTask, JobQueueTaskConfig, type TaskOutput } from "ellmers-core";
+import { findModelByName } from "../../model/InMemoryStorage";
+import { getProviderRegistry } from "../../provider/ProviderRegistry";
 
 export class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";

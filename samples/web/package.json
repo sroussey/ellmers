@@ -23,7 +23,8 @@
     "react-resizable-panels": "^2.1.7",
     "ellmers-core": "workspace:packages/core",
     "ellmers-storage": "workspace:packages/storage",
-    "ellmers-provider": "workspace:packages/provider"
+    "ellmers-provider": "workspace:packages/provider",
+    "ellmers-task-llm": "workspace:packages/task-llm"
   },
   "devDependencies": {
     "@types/react": "^19.0.4",

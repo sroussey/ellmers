@@ -20,9 +20,10 @@ import {
   type TranslationSingle,
   TextStreamer,
 } from "@huggingface/transformers";
-import { findModelByName, ElVector } from "ellmers-core";
+import { ElVector } from "ellmers-core";
 import { ONNXTransformerJsModel } from "../model/ONNXTransformerJsModel";
 import {
+  findModelByName,
   JobQueueLlmTask,
   DownloadModelTask,
   DownloadModelTaskInput,

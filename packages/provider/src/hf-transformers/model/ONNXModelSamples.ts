@@ -1,5 +1,5 @@
 import { DATA_TYPES, ONNXTransformerJsModel } from "./ONNXTransformerJsModel";
-import { ModelUseCaseEnum } from "ellmers-core";
+import { ModelUseCaseEnum } from "ellmers-task-llm";
 
 export const supabaseGteSmall = new ONNXTransformerJsModel(
   "Supabase/gte-small",

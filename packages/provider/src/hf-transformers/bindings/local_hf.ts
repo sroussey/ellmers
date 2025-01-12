@@ -1,5 +1,6 @@
-import { ModelProcessorEnum, getProviderRegistry } from "ellmers-core";
 import {
+  ModelProcessorEnum,
+  getProviderRegistry,
   DownloadModelTask,
   TextEmbeddingTask,
   TextGenerationTask,

@@ -6,10 +6,14 @@
 //    *******************************************************************************
 
 import type { ModelProcessorEnum } from "../model/Model";
-import { Job, JobConstructorDetails } from "../job/base/Job";
-import type { JobQueue } from "../job/base/JobQueue";
-import { TaskInput, TaskOutput } from "../task/base/Task";
-import { JobQueueTask } from "../task";
+import {
+  Job,
+  type JobQueue,
+  JobConstructorDetails,
+  TaskInput,
+  TaskOutput,
+  JobQueueTask,
+} from "ellmers-core";
 
 export enum JobQueueRunType {
   local = "local",

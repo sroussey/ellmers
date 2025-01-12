@@ -44,7 +44,6 @@
     "dist"
   ],
   "dependencies": {
-    "ellmers-core": "workspace:packages/core",
-    "ellmers-task-llm": "workspace:packages/task-llm"
+    "ellmers-core": "workspace:packages/core"
   }
 }

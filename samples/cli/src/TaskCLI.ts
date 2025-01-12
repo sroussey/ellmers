@@ -8,18 +8,16 @@
 import { Command } from "commander";
 import { runTask } from "./TaskStreamToListr2";
 import "@huggingface/transformers";
+import { TaskGraph, JsonTask, TaskGraphBuilder, JsonTaskItem } from "ellmers-core";
+
 import {
+  DownloadModelTask,
+  DownloadModelCompoundTask,
   findAllModels,
   findModelByName,
   findModelByUseCase,
   ModelUseCaseEnum,
-  TaskGraph,
-  JsonTask,
-  TaskGraphBuilder,
-  JsonTaskItem,
-} from "ellmers-core";
-
-import { DownloadModelTask, DownloadModelCompoundTask } from "ellmers-task-llm";
+} from "ellmers-task-llm";
 
 export function AddBaseCommands(program: Command) {
   program

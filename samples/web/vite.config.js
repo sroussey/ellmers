@@ -9,6 +9,22 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "huggingface-transformers": ["@huggingface/transformers"],
+          "tf-mediapipe": ["@mediapipe/tasks-text"],
+          react: [
+            "react",
+            "react-dom",
+            "@xyflow/react",
+            "react-hotkeys-hook",
+            "react-icons",
+            "react-resizable-panels",
+          ],
+        },
+      },
+    },
   },
   optimizeDeps: {
     esbuildOptions: {

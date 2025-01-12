@@ -1,4 +1,4 @@
-import { ModelUseCaseEnum } from "ellmers-core";
+import { ModelUseCaseEnum } from "ellmers-task-llm";
 import { MediaPipeTfJsModel } from "./MediaPipeModel";
 
 export const universal_sentence_encoder = new MediaPipeTfJsModel(
