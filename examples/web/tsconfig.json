@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "composite": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "ellmers-core": ["../../packages/core/src"],
+      "ellmers-ai-provider": ["../../packages/ai-provider/src"],
+      "ellmers-storage": ["../../packages/storage/src"],
+      "ellmers-task": ["../../packages/task/src"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["dist"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/task" },
+    { "path": "../../packages/ai-provider" },
+    { "path": "../../packages/storage" }
+  ]
+}

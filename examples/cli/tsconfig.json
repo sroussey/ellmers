@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*"],
+  "files": ["src/lib.ts", "src/ellmers.ts"],
+  "exclude": ["**/*.test.ts"],
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": "./src",
+    "rootDir": "./src",
+    "paths": {
+      "#/*": ["./src/*"],
+      "ellmers-core": ["../../packages/core/src"],
+      "ellmers-ai": ["../../packages/ai/src"],
+      "ellmers-storage": ["../../packages/storage/src"],
+      "ellmers-ai-provider": ["../../packages/ai-provider/src"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/ai-provider" },
+    { "path": "../../packages/task" },
+    { "path": "../../packages/storage" }
+  ]
+}

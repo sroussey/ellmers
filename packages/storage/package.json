@@ -1,0 +1,49 @@
+{
+  "name": "ellmers-storage",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-browser": "bun build --watch --no-clear-screen--target=browser --sourcemap=external --external ellmers-core --outdir ./dist/browser ./src/browser/*/index.ts",
+    "watch-node": "bun build --watch --no-clear-screen--target=node --sourcemap=external --external ellmers-core --outdir ./dist ./src/node/*/index.ts",
+    "watch-bun": "bun build --watch --no-clear-screen--target=bun --sourcemap=external --external ellmers-core --outdir ./dist ./src/bun/*/index.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-node && bun run build-bun",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-browser": "bun build --target=browser --sourcemap=external --external ellmers-core --outdir ./dist --entry-naming \"browser/[dir]/[name].[ext]\" ./src/browser/*/index.ts",
+    "build-node": "bun build --target=node --sourcemap=external --external ellmers-core --outdir ./dist --entry-naming \"node/[dir]/[name].[ext]\" ./src/node/*/index.ts",
+    "build-bun": "bun build --target=bun --sourcemap=external --external ellmers-core --outdir ./dist --entry-naming \"bun/[dir]/[name].[ext]\" ./src/bun/*/index.ts",
+    "build-types": "tsc",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./browser/indexeddb": {
+      "import": "./dist/browser/indexeddb/index.js",
+      "types": "./dist/browser/indexeddb/index.d.ts"
+    },
+    "./node/sqlite": {
+      "import": "./dist/node/sqlite/index.js",
+      "types": "./dist/node/sqlite/index.d.ts"
+    },
+    "./bun/sqlite": {
+      "import": "./dist/bun/sqlite/index.js",
+      "types": "./dist/bun/sqlite/index.d.ts"
+    },
+    "./node/filesystem": {
+      "import": "./dist/node/filesystem/index.js",
+      "types": "./dist/node/filesystem/index.d.ts"
+    },
+    "./node/postgres": {
+      "import": "./dist/node/postgres/index.js",
+      "types": "./dist/node/postgres/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "ellmers-core": "workspace:packages/core"
+  }
+}

@@ -15,7 +15,7 @@ import { makeFingerprint } from "../../util/Misc";
 export class SqliteKVRepository<
   Key = string,
   Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema,
+  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
 > extends KVRepository<Key, Value, Discriminator> {
   private db: Database;
   constructor(

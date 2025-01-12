@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*"],
+  "files": [
+    "src/browser/indexeddb/index.ts",
+    "src/node/sqlite/index.ts",
+    "src/bun/sqlite/index.ts",
+    "src/node/filesystem/index.ts",
+    "src/node/postgres/index.ts"
+  ],
+  "exclude": ["**/*.test.ts", "dist"],
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": "./src",
+    "rootDir": "./src",
+    "paths": {
+      "#/*": ["./src/*"],
+      "ellmers-core": ["../core/src"]
+    }
+  },
+  "references": [{ "path": "../core" }]
+}
