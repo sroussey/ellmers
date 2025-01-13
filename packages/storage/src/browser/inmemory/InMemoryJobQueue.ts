@@ -5,11 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { makeFingerprint } from "../util/Misc";
-import { Job, JobStatus } from "./base/Job";
-import { JobQueue } from "./base/JobQueue";
-import { ILimiter } from "./base/ILimiter";
 import { nanoid } from "nanoid";
+import { Job, JobStatus, JobQueue, ILimiter } from "ellmers-core";
+import { makeFingerprint } from "../../util/Misc";
 
 export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {

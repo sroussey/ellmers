@@ -1,5 +1,5 @@
 import { getProviderRegistry } from "ellmers-ai";
-import { InMemoryJobQueue } from "ellmers-core";
+import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { ModelProcessorEnum } from "ellmers-ai";
 import { ConcurrencyLimiter } from "ellmers-core";
 import { TaskInput, TaskOutput } from "ellmers-core";

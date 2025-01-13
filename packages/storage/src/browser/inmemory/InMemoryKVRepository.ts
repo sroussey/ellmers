@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { DiscriminatorSchema, KVRepository } from "./KVRepository";
+import { DiscriminatorSchema, KVRepository } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
 // InMemoryKVRepository is a simple in-memory key-value store that can be used for testing or as a cache
@@ -14,7 +14,7 @@ import { makeFingerprint } from "../../util/Misc";
 export class InMemoryKVRepository<
   Key = string,
   Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema,
+  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
 > extends KVRepository<Key, Value, Discriminator> {
   values = new Map<string, Value>();
 

@@ -5,9 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskGraphJson } from "../../task/base/TaskGraph";
-import { TaskGraphRepository } from "./TaskGraphRepository";
-import { InMemoryKVRepository } from "../base/InMemoryKVRepository";
+import { TaskGraphJson, TaskGraphRepository } from "ellmers-core";
+import { InMemoryKVRepository } from "./InMemoryKVRepository";
 
 export class InMemoryTaskGraphRepository extends TaskGraphRepository {
   kvRepository: InMemoryKVRepository<unknown, TaskGraphJson>;

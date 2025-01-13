@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter } from "./base/ILimiter";
+import { ILimiter } from "ellmers-core";
 
 export class InMemoryRateLimiter implements ILimiter {
   private requests: Date[] = [];

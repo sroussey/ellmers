@@ -6,8 +6,8 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { InMemoryTaskOutputRepository } from "../taskoutput/InMemoryTaskOutputRepository";
-import { TaskInput, TaskOutput } from "../../task/base/Task";
+import { InMemoryTaskOutputRepository } from "../InMemoryTaskOutputRepository";
+import { TaskInput, TaskOutput } from "ellmers-core";
 
 describe("InMemoryTaskOutputRepository", () => {
   let repository: InMemoryTaskOutputRepository;

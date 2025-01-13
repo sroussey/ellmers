@@ -1,6 +1,6 @@
-import { InMemoryJobQueue, ConcurrencyLimiter, TaskInput, TaskOutput } from "ellmers-core";
+import { ConcurrencyLimiter, TaskInput, TaskOutput } from "ellmers-core";
 import { getProviderRegistry, ModelProcessorEnum } from "ellmers-ai";
-
+import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { registerHuggingfaceLocalTasks } from "./local_hf";
 import "../model/ONNXModelSamples";
 
