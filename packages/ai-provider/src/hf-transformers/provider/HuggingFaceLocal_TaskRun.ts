@@ -22,8 +22,8 @@ import {
 } from "@huggingface/transformers";
 import { ElVector } from "ellmers-core";
 import { ONNXTransformerJsModel } from "../model/ONNXTransformerJsModel";
-import {
-  findModelByName,
+import { findModelByName } from "ellmers-ai";
+import type {
   JobQueueLlmTask,
   DownloadModelTask,
   DownloadModelTaskInput,
