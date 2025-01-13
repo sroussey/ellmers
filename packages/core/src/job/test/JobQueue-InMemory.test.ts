@@ -6,9 +6,8 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { InMemoryJobQueue } from "../InMemoryJobQueue";
 import { Job, JobStatus } from "../base/Job";
-import { InMemoryRateLimiter } from "../InMemoryRateLimiter";
+import { InMemoryJobQueue, InMemoryRateLimiter } from "ellmers-storage/inmemory";
 import { sleep } from "../../util/Misc";
 import { TaskInput, TaskOutput } from "../../task/base/Task";
 
