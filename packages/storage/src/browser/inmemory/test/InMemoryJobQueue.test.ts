@@ -6,10 +6,9 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { Job, JobStatus } from "../base/Job";
+import { Job, JobStatus, TaskInput, TaskOutput } from "ellmers-core";
 import { InMemoryJobQueue, InMemoryRateLimiter } from "ellmers-storage/inmemory";
-import { sleep } from "../../util/Misc";
-import { TaskInput, TaskOutput } from "../../task/base/Task";
+import { sleep } from "ellmers-core";
 
 class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute() {
@@ -17,7 +16,7 @@ class TestJob extends Job<TaskInput, TaskOutput> {
   }
 }
 
-describe("LocalJobQueue", () => {
+describe("InMemoryJobQueue", () => {
   let jobQueue: InMemoryJobQueue<TaskInput, TaskOutput>;
 
   beforeEach(() => {
