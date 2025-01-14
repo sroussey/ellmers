@@ -124,11 +124,13 @@ export abstract class JobQueue<Input, Output> {
     this.running = true;
     this.events.emit("queue_start", this.queue);
     this.processJobs();
+    return this;
   }
 
   async stop() {
     this.running = false;
     this.events.emit("queue_stop", this.queue);
+    return this;
   }
 
   async restart() {
@@ -138,5 +140,6 @@ export abstract class JobQueue<Input, Output> {
     this.waits.forEach(({ reject }) => reject("Queue Restarted"));
     this.waits.clear();
     await this.start();
+    return this;
   }
 }

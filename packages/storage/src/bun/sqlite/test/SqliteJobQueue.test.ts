@@ -26,8 +26,8 @@ describe("SqliteJobQueue", () => {
     db,
     queueName,
     new SqliteRateLimiter(db, queueName, 4, 1).ensureTableExists(),
-    TestJob,
-    0
+    0,
+    TestJob
   ).ensureTableExists();
 
   afterEach(() => {

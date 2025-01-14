@@ -1,4 +1,4 @@
-import { DATA_TYPES, ONNXTransformerJsModel } from "./ONNXTransformerJsModel";
+import { DATA_TYPES, ONNXTransformerJsModel } from "ellmers-ai-provider/hf-transformers/browser";
 import { ModelUseCaseEnum } from "ellmers-ai";
 
 export const supabaseGteSmall = new ONNXTransformerJsModel(
@@ -46,6 +46,12 @@ export const xenovaDistilbertMnli = new ONNXTransformerJsModel(
   "Xenova/distilbert-base-uncased-mnli",
   [ModelUseCaseEnum.TEXT_CLASSIFICATION],
   "zero-shot-classification"
+);
+
+export const modernBertBase = new ONNXTransformerJsModel(
+  "answerdotai/ModernBERT-base",
+  [ModelUseCaseEnum.TEXT_CLASSIFICATION],
+  "fill-mask"
 );
 
 export const stentancetransformerMultiQaMpnetBaseDotV1 = new ONNXTransformerJsModel(

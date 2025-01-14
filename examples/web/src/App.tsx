@@ -2,8 +2,17 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
-import { JsonTask, JsonTaskItem, TaskGraph, TaskGraphBuilder } from "ellmers-core";
 import {
+  ConcurrencyLimiter,
+  JsonTask,
+  JsonTaskItem,
+  TaskGraph,
+  TaskGraphBuilder,
+  TaskInput,
+  TaskOutput,
+} from "ellmers-core";
+import {
+  IndexedDbQueue,
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
 } from "ellmers-storage/browser/indexeddb";
@@ -11,10 +20,29 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/browser";
+import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+import { registerHuggingfaceLocalTasks } from "ellmers-ai-provider/hf-transformers/browser";
+import { getProviderRegistry, ModelProcessorEnum } from "ellmers-ai";
+import { registerMediaPipeTfJsLocalTasks } from "ellmers-ai-provider/tf-mediapipe/browser";
 import "ellmers-task";
+import "ellmers-test";
 
-registerHuggingfaceLocalTasksInMemory();
+const ProviderRegistry = getProviderRegistry();
+
+registerHuggingfaceLocalTasks();
+ProviderRegistry.registerQueue(
+  ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+  new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
+);
+
+registerMediaPipeTfJsLocalTasks();
+ProviderRegistry.registerQueue(
+  ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
+  new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
+);
+
+ProviderRegistry.clearQueues();
+ProviderRegistry.startQueues();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);

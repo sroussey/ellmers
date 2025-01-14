@@ -1,5 +1,5 @@
 import { ModelUseCaseEnum } from "ellmers-ai";
-import { MediaPipeTfJsModel } from "./MediaPipeModel";
+import { MediaPipeTfJsModel } from "../../../ai-provider/src/tf-mediapipe/model/MediaPipeModel";
 
 export const universal_sentence_encoder = new MediaPipeTfJsModel(
   "Universal Sentence Encoder",
