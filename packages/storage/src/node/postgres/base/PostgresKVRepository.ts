@@ -17,6 +17,7 @@ import {
   DefaultValueType,
   KVRepository,
 } from "ellmers-core";
+import { validateTableAndSchema } from "../../../util/common_sql_helpers";
 
 // PostgresKVRepository is a key-value store that uses PostgreSQL as the backend for
 // multi-user scenarios. It supports discriminators.
@@ -38,6 +39,7 @@ export class PostgresKVRepository<
   ) {
     super(primaryKeySchema, valueSchema);
     this.pool = new Pool({ connectionString });
+    validateTableAndSchema(this.table, this.primaryKeySchema, this.valueSchema);
     this.setupDatabase();
   }
 

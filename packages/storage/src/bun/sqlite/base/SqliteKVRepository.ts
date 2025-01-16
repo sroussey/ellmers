@@ -17,8 +17,7 @@ import {
   KVRepository,
   BasicValueType,
 } from "ellmers-core";
-
-type SQLiteValueTypes = string | number | boolean | null;
+import { validateTableAndSchema } from "../../../util/common_sql_helpers";
 
 // SqliteKVRepository is a key-value store that uses SQLite as the backend for
 // in app data.
@@ -43,6 +42,7 @@ export class SqliteKVRepository<
     } else {
       this.db = dbOrPath;
     }
+    validateTableAndSchema(this.table, this.primaryKeySchema, this.valueSchema);
     this.setupDatabase();
   }
 
