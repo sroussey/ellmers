@@ -1,8 +1,8 @@
 import { JobStatus } from "ellmers-core";
-import { ModelProcessorEnum, getProviderRegistry } from "ellmers-ai";
+import { ModelProviderEnum, getProviderRegistry } from "ellmers-ai";
 import { useCallback, useEffect, useState } from "react";
 
-export function QueueStatus({ queueType }: { queueType: ModelProcessorEnum }) {
+export function QueueStatus({ queueType }: { queueType: ModelProviderEnum }) {
   const queue = getProviderRegistry().getQueue(queueType);
   const [pending, setPending] = useState<number>(0);
   const [processing, setProcessing] = useState<number>(0);

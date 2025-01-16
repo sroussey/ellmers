@@ -1,5 +1,5 @@
 import {
-  ModelProcessorEnum,
+  ModelProviderEnum,
   getProviderRegistry,
   DownloadModelTask,
   TextEmbeddingTask,
@@ -24,43 +24,43 @@ export async function registerHuggingfaceLocalTasks() {
 
   ProviderRegistry.registerRunFn(
     DownloadModelTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_DownloadRun
   );
 
   ProviderRegistry.registerRunFn(
     TextEmbeddingTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_EmbeddingRun
   );
 
   ProviderRegistry.registerRunFn(
     TextGenerationTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextGenerationRun
   );
 
   ProviderRegistry.registerRunFn(
     TextTranslationTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextTranslationRun
   );
 
   ProviderRegistry.registerRunFn(
     TextRewriterTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextRewriterRun
   );
 
   ProviderRegistry.registerRunFn(
     TextSummaryTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextSummaryRun
   );
 
   ProviderRegistry.registerRunFn(
     TextQuestionAnswerTask.type,
-    ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+    ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
     HuggingFaceLocal_TextQuestionAnswerRun
   );
 }

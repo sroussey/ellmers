@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-import { getProviderRegistry, ModelProcessorEnum, ModelUseCaseEnum } from "ellmers-ai";
+import { getProviderRegistry, ModelProviderEnum, ModelUseCaseEnum } from "ellmers-ai";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { SqliteJobQueue } from "ellmers-storage/bun/sqlite";
 import { registerMediaPipeTfJsLocalTasks } from "../bindings/registerTasks";
@@ -34,8 +34,8 @@ describe("TfMediaPipeBinding", () => {
         new ConcurrencyLimiter(1, 10),
         10
       );
-      ProviderRegistry.registerQueue(ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL, jobQueue);
-      const queue = ProviderRegistry.getQueue(ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL);
+      ProviderRegistry.registerQueue(ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL, jobQueue);
+      const queue = ProviderRegistry.getQueue(ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(TFQUEUE);
 
@@ -68,8 +68,8 @@ describe("TfMediaPipeBinding", () => {
         10
       );
       jobQueue.ensureTableExists();
-      ProviderRegistry.registerQueue(ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL, jobQueue);
-      const queue = ProviderRegistry.getQueue(ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL);
+      ProviderRegistry.registerQueue(ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL, jobQueue);
+      const queue = ProviderRegistry.getQueue(ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(TFQUEUE);
 

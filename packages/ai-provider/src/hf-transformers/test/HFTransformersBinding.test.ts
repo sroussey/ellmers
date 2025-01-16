@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-import { getProviderRegistry, ModelProcessorEnum, ModelUseCaseEnum } from "ellmers-ai";
+import { getProviderRegistry, ModelProviderEnum, ModelUseCaseEnum } from "ellmers-ai";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { SqliteJobQueue } from "ellmers-storage/bun/sqlite";
 import { registerHuggingfaceLocalTasks } from "../bindings/registerTasks";
@@ -33,8 +33,8 @@ describe("HFTransformersBinding", () => {
         new ConcurrencyLimiter(1, 10),
         10
       );
-      providerRegistry.registerQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
-      const queue = providerRegistry.getQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS);
+      providerRegistry.registerQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+      const queue = providerRegistry.getQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(HFQUEUE);
 
@@ -60,8 +60,8 @@ describe("HFTransformersBinding", () => {
         10
       );
       jobQueue.ensureTableExists();
-      providerRegistry.registerQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
-      const queue = providerRegistry.getQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS);
+      providerRegistry.registerQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+      const queue = providerRegistry.getQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(HFQUEUE);
 

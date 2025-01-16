@@ -13,7 +13,6 @@ import { TaskGraph, JsonTask, TaskGraphBuilder, JsonTaskItem } from "ellmers-cor
 import {
   DownloadModelTask,
   DownloadModelCompoundTask,
-  findAllModels,
   findModelByName,
   findModelByUseCase,
   ModelUseCaseEnum,
@@ -24,9 +23,8 @@ export function AddBaseCommands(program: Command) {
   program
     .command("download")
     .description("download models")
-    .option("--model <name>", "model to download")
+    .requiredOption("--model <name>", "model to download")
     .action(async (options) => {
-      const models = findAllModels();
       const graph = new TaskGraph();
       if (options.model) {
         const model = findModelByName(options.model);
@@ -35,12 +33,6 @@ export function AddBaseCommands(program: Command) {
         } else {
           program.error(`Unknown model ${options.model}`);
         }
-      } else {
-        graph.addTask(
-          new DownloadModelCompoundTask({
-            input: { model: models.map((m) => m.name) },
-          })
-        );
       }
       await runTask(graph);
     });

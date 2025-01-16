@@ -5,17 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Model, ModelUseCaseEnum } from "./Model";
+import { Model, ModelRepository } from "ellmers-ai";
+import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
+import { ModelPrimaryKeySchema } from "ellmers-ai";
 
-export function findModelByName(name: string) {
-  if (typeof name != "string") return undefined;
-  return Model.all.find((m) => m.name.toLowerCase() == name.toLowerCase());
-}
-
-export function findModelByUseCase(usecase: ModelUseCaseEnum) {
-  return Model.all.filter((m) => m.useCase.includes(usecase));
-}
-
-export function findAllModels() {
-  return Model.all.slice();
+export class InMemoryModelRepository extends ModelRepository {
+  kvRepository: InMemoryKVRepository<unknown, Model, typeof ModelPrimaryKeySchema>;
+  public type = "InMemoryModelRepository" as const;
+  constructor() {
+    super();
+    this.kvRepository = new InMemoryKVRepository<unknown, Model, typeof ModelPrimaryKeySchema>();
+  }
 }

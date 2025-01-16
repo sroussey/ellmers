@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Model, ModelOptions, ModelProcessorEnum, ModelUseCaseEnum } from "ellmers-ai";
+import { Model, ModelOptions, ModelProviderEnum, ModelUseCaseEnum } from "ellmers-ai";
 
 export class MediaPipeTfJsModel extends Model {
   constructor(
@@ -16,5 +16,5 @@ export class MediaPipeTfJsModel extends Model {
   ) {
     super(name, useCase, options);
   }
-  readonly type = ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL;
+  readonly type = ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL;
 }

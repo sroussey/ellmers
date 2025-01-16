@@ -22,7 +22,7 @@ import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { registerHuggingfaceLocalTasks } from "ellmers-ai-provider/hf-transformers/browser";
-import { getProviderRegistry, ModelProcessorEnum } from "ellmers-ai";
+import { getProviderRegistry, ModelProviderEnum } from "ellmers-ai";
 import { registerMediaPipeTfJsLocalTasks } from "ellmers-ai-provider/tf-mediapipe/browser";
 import "ellmers-task";
 import "ellmers-test";
@@ -31,13 +31,13 @@ const ProviderRegistry = getProviderRegistry();
 
 registerHuggingfaceLocalTasks();
 ProviderRegistry.registerQueue(
-  ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+  ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
 );
 
 registerMediaPipeTfJsLocalTasks();
 ProviderRegistry.registerQueue(
-  ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL,
+  ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
 );
 
