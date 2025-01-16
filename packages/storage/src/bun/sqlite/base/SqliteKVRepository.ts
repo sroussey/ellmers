@@ -6,55 +6,83 @@
 //    *******************************************************************************
 
 import { Database } from "bun:sqlite";
-import { DiscriminatorSchema, KVRepository } from "ellmers-core";
-import { makeFingerprint } from "../../../util/Misc";
+import {
+  BaseValueSchema,
+  BasicKeyType,
+  BasePrimaryKeySchema,
+  DefaultValueType,
+  DefaultValueSchema,
+  DefaultPrimaryKeyType,
+  DefaultPrimaryKeySchema,
+  KVRepository,
+  BasicValueType,
+} from "ellmers-core";
+
+type SQLiteValueTypes = string | number | boolean | null;
+
 // SqliteKVRepository is a key-value store that uses SQLite as the backend for
-// in app data. It supports discriminators.
+// in app data.
 
 export class SqliteKVRepository<
-  Key = string,
-  Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
-> extends KVRepository<Key, Value, Discriminator> {
+  Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
+  Value extends Record<string, any> = DefaultValueType,
+  PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
+  ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
+  Combined extends Key & Value = Key & Value
+> extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private db: Database;
   constructor(
     dbOrPath: string,
     public table: string = "kv_store",
-    discriminatorsSchema: Discriminator = {} as Discriminator
+    primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
+    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema
   ) {
-    super();
+    super(primaryKeySchema, valueSchema);
     if (typeof dbOrPath === "string") {
       this.db = new Database(dbOrPath);
     } else {
       this.db = dbOrPath;
     }
-    this.discriminatorsSchema = discriminatorsSchema;
     this.setupDatabase();
   }
 
-  private setupDatabase(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.table} (
-        ${this.constructDiscriminatorColumns()}
-        key TEXT NOT NULL,
-        value TEXT NOT NULL,
+  public setupDatabase(): void {
+    const sql = `
+      CREATE TABLE IF NOT EXISTS \`${this.table}\` (
+        ${this.constructPrimaryKeyColumns()},
+        ${this.constructValueColumns()},
         PRIMARY KEY (${this.primaryKeyColumnList()}) 
       )
-    `);
+    `;
+    this.db.exec(sql);
   }
 
-  private constructDiscriminatorColumns(): string {
-    const cols = Object.entries(this.discriminatorsSchema)
+  private constructPrimaryKeyColumns(): string {
+    const cols = Object.entries(this.primaryKeySchema)
       .map(([key, type]) => {
         // Convert the provided type to a SQL type, assuming simple mappings; adjust as necessary
         const sqlType = this.mapTypeToSQL(type);
-        return `${key} ${sqlType} NOT NULL`;
+        return `\`${key}\` ${sqlType} NOT NULL`;
       })
       .join(", ");
-    if (cols.length > 0) {
-      return `${cols}, `;
-    }
-    return "";
+    return cols;
+  }
+
+  private constructValueColumns(): string {
+    const cols = Object.entries(this.valueSchema)
+      .map(([key, type]) => {
+        const sqlType = this.mapTypeToSQL(type);
+        return `\`${key}\` ${sqlType} NULL`;
+      })
+      .join(", ");
+    return cols;
+  }
+
+  protected primaryKeyColumnList(): string {
+    return "`" + this.primaryKeyColumns().join("`, `") + "`";
+  }
+  protected valueColumnList(): string {
+    return "`" + this.valueColumns().join("`, `") + "`";
   }
 
   private mapTypeToSQL(type: string): string {
@@ -70,44 +98,92 @@ export class SqliteKVRepository<
     }
   }
 
-  async put(keySimpleOrObject: Key, value: Value): Promise<void> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO ${this.table} (${this.primaryKeyColumnList()}, value)
-      VALUES (${this.primaryKeyColumns().map((i) => "?")}, ?)
-    `);
-    const values = Object.values(discriminators).concat(id, JSON.stringify(value));
-    stmt.run(...values);
-    this.emit("put", id, discriminators);
+  // JS objects are not ordered, so we need to convert them to an ordered array
+  // so that we can use them as parameters in a SQL query
+  // we will order base on the valueSchema
+  getValueAsOrderedArray(value: Value): BasicValueType[] {
+    const orderedParams: BasicValueType[] = [];
+    // Iterate through valueSchema to maintain consistent order
+    for (const [key, type] of Object.entries(this.valueSchema)) {
+      if (key in value) {
+        orderedParams.push(value[key]);
+      } else {
+        throw new Error(`Missing required value field: ${key}`);
+      }
+    }
+    return orderedParams;
   }
 
-  async get(keySimpleOrObject: Key): Promise<Value | undefined> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
+  // JS objects are not ordered, so we need to convert them to an ordered array
+  // so that we can use them as parameters in a SQL query
+  // we will order base on the primaryKeySchema
+  getPrimaryKeyAsOrderedArray(key: Key): BasicKeyType[] {
+    const orderedParams: BasicKeyType[] = [];
+    // Iterate through primaryKeySchema to maintain consistent order
+    for (const [k, type] of Object.entries(this.primaryKeySchema)) {
+      if (k in key) {
+        orderedParams.push(key[k]);
+      } else {
+        throw new Error(`Missing required primary key field: ${k}`);
+      }
+    }
+    return orderedParams;
+  }
 
-    const whereClauses = this.primaryKeyColumns()
-      .map((discriminatorKey) => `${discriminatorKey} = ?`)
+  async putKeyValue(key: Key, value: Value): Promise<void> {
+    const sql = `
+      INSERT OR REPLACE INTO ${
+        this.table
+      } (${this.primaryKeyColumnList()}, ${this.valueColumnList()})
+      VALUES (
+        ${this.primaryKeyColumns().map((i) => "?")},
+        ${this.valueColumns().map((i) => "?")}
+      )
+    `;
+    const stmt = this.db.prepare(sql);
+
+    const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
+    const valueParams = this.getValueAsOrderedArray(value);
+    const params = [...primaryKeyParams, ...valueParams];
+
+    const result = stmt.run(...params);
+
+    this.emit("put", key);
+  }
+
+  async getKeyValue(key: Key): Promise<Value | undefined> {
+    const whereClauses = (this.primaryKeyColumns() as string[])
+      .map((key) => `\`${key}\` = ?`)
       .join(" AND ");
 
-    const stmt = this.db.prepare<{ value: string }, [key: string]>(`
-      SELECT value FROM ${this.table} WHERE ${whereClauses}
-    `);
-
-    const values = Object.values(discriminators).concat(id);
-
-    const row = stmt.get(...(values as [string])) as { value: string } | undefined;
-    if (row) {
-      this.emit("get", id, discriminators);
-      return JSON.parse(row.value) as Value;
+    const sql = `
+      SELECT ${this.valueColumnList()} FROM ${this.table} WHERE ${whereClauses}
+    `;
+    // const sql = `SELECT * FROM ${this.table} `;
+    const stmt = this.db.prepare<Value, BasicKeyType[]>(sql);
+    const params = this.getPrimaryKeyAsOrderedArray(key);
+    const value = stmt.get(...params);
+    if (value) {
+      this.emit("get", key, value);
+      return value;
     } else {
       return undefined;
     }
   }
 
-  async clear(): Promise<void> {
+  async deleteKeyValue(key: Key): Promise<void> {
+    const whereClauses = (this.primaryKeyColumns() as string[])
+      .map((key) => `${key} = ?`)
+      .join(" AND ");
+    const params = this.getPrimaryKeyAsOrderedArray(key);
+    const stmt = this.db.prepare(`DELETE FROM ${this.table} WHERE ${whereClauses}`);
+    stmt.run(...params);
+    this.emit("delete", key);
+  }
+
+  async deleteAll(): Promise<void> {
     this.db.exec(`DELETE FROM ${this.table}`);
-    this.emit("clear");
+    this.emit("clearall");
   }
 
   async size(): Promise<number> {

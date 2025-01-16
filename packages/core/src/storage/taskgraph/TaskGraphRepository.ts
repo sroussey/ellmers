@@ -15,7 +15,7 @@ export type TaskGraphEvents = "graph_saved" | "graph_retrieved" | "graph_cleared
 
 export abstract class TaskGraphRepository {
   public type = "TaskGraphRepository";
-  abstract kvRepository: KVRepository<unknown, TaskGraphJson>;
+  abstract kvRepository: KVRepository;
   private events = new EventEmitter<TaskGraphEvents>();
   on(name: TaskGraphEvents, fn: (...args: any[]) => void) {
     this.events.on.call(this.events, name, fn);
@@ -69,26 +69,27 @@ export abstract class TaskGraphRepository {
     return subGraph;
   }
 
-  async saveTaskGraph(id: unknown, output: TaskGraph): Promise<void> {
-    const jsonObj = output.toJSON();
-    await this.kvRepository.put(id, jsonObj);
-    this.emit("graph_saved", id);
+  async saveTaskGraph(key: string, output: TaskGraph): Promise<void> {
+    const value = JSON.stringify(output.toJSON());
+    await this.kvRepository.put(key, value);
+    this.emit("graph_saved", key);
   }
 
-  async getTaskGraph(id: unknown): Promise<TaskGraph | undefined> {
-    const jsonObj = await this.kvRepository.get(id);
-    if (!jsonObj) {
+  async getTaskGraph(key: string): Promise<TaskGraph | undefined> {
+    const jsonStr = (await this.kvRepository.get(key)) as string;
+    if (!jsonStr) {
       return undefined;
     }
+    const jsonObj = JSON.parse(jsonStr);
 
     const graph = this.createSubGraph(jsonObj);
 
-    this.emit("graph_retrieved", id);
+    this.emit("graph_retrieved", key);
     return graph;
   }
 
   async clear(): Promise<void> {
-    await this.kvRepository.clear();
+    await this.kvRepository.deleteAll();
     this.emit("graph_cleared");
   }
 

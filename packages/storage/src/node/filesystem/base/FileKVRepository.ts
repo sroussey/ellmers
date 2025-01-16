@@ -6,55 +6,79 @@
 //    *******************************************************************************
 
 import path from "node:path";
-import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
-import { DiscriminatorSchema, KVRepository } from "ellmers-core";
-import { makeFingerprint } from "../../../util/Misc";
+import { readFile, writeFile, rm } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
 import { glob } from "glob";
+import {
+  BaseValueSchema,
+  BasePrimaryKeySchema,
+  BasicKeyType,
+  DefaultValueType,
+  DefaultValueSchema,
+  DefaultPrimaryKeyType,
+  DefaultPrimaryKeySchema,
+  KVRepository,
+} from "ellmers-core";
 
 // FileKVRepository is a key-value store that uses the file system as the backend for
-// simple scenarios. It does support discriminators.
+// simple scenarios.
 
 export class FileKVRepository<
-  Key = string,
-  Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
-> extends KVRepository<Key, Value, Discriminator> {
+  Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
+  Value extends Record<string, any> = DefaultValueType,
+  PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
+  ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
+  Combined extends Key & Value = Key & Value
+> extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private folderPath: string;
 
-  constructor(folderPath: string, discriminatorsSchema: Discriminator = {} as Discriminator) {
-    super();
-    this.discriminatorsSchema = discriminatorsSchema;
-    this.folderPath = folderPath;
-    mkdir(this.folderPath, { recursive: true });
+  constructor(
+    folderPath: string,
+    primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
+    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema
+  ) {
+    super(primaryKeySchema, valueSchema);
+    this.folderPath = path.dirname(folderPath);
+    mkdirSync(this.folderPath, { recursive: true });
   }
 
-  async put(keySimpleOrObject: Key, value: Value): Promise<void> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-    const filePath = await this.getFilePath(key, discriminators);
-    await writeFile(filePath, JSON.stringify(value));
+  async putKeyValue(key: Key, value: Value): Promise<void> {
+    const filePath = await this.getFilePath(key);
+    try {
+      await writeFile(filePath, JSON.stringify(value));
+    } catch (error) {
+      console.error("Error writing file", filePath, error);
+    }
     this.emit("put", key);
   }
 
-  async get(keySimpleOrObject: Key): Promise<Value | undefined> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-    const filePath = await this.getFilePath(key, discriminators);
+  async getKeyValue(key: Key): Promise<Value | undefined> {
+    const filePath = await this.getFilePath(key);
     try {
       const data = await readFile(filePath, "utf-8");
-      this.emit("get", key);
-      return JSON.parse(data);
+      const value = JSON.parse(data) as Value;
+      this.emit("get", key, value);
+      return value;
     } catch (error) {
+      // console.info("Error getting file (may not exist)", filePath);
       return undefined; // File not found or read error
     }
   }
 
-  async clear(): Promise<void> {
+  async deleteKeyValue(key: Key): Promise<void> {
+    const filePath = await this.getFilePath(key);
+    try {
+      await rm(filePath);
+    } catch (error) {
+      // console.error("Error deleting file", filePath, error);
+    }
+    this.emit("delete", key);
+  }
+
+  async deleteAll(): Promise<void> {
     // Delete all files in the folder ending in .json
-    const globPattern = path.join(this.folderPath, "*.json");
-    const filesToDelete = await glob(globPattern);
-    await Promise.all(filesToDelete.map((file) => unlink(file)));
-    this.emit("clear");
+    await rm(this.folderPath, { recursive: true, force: true });
+    this.emit("clearall");
   }
 
   async size(): Promise<number> {
@@ -64,12 +88,9 @@ export class FileKVRepository<
     return files.length;
   }
 
-  private async getFilePath(
-    key: Key,
-    discriminators: Record<string, string | number | boolean>
-  ): Promise<string> {
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-    const filename = Object.values(discriminators).concat(id).join("_");
-    return path.join(this.folderPath, `${filename}.json`);
+  private async getFilePath(key: Key | BasicKeyType): Promise<string> {
+    const filename = await this.getKeyAsIdString(key);
+    const fullPath = path.join(this.folderPath, `${filename}.json`);
+    return fullPath;
   }
 }

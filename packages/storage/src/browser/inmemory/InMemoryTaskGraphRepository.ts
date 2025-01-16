@@ -5,14 +5,14 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskGraphJson, TaskGraphRepository } from "ellmers-core";
-import { InMemoryKVRepository } from "./InMemoryKVRepository";
+import { TaskGraphRepository } from "ellmers-core";
+import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
 export class InMemoryTaskGraphRepository extends TaskGraphRepository {
-  kvRepository: InMemoryKVRepository<unknown, TaskGraphJson>;
+  kvRepository: InMemoryKVRepository;
   public type = "InMemoryTaskGraphRepository" as const;
   constructor() {
     super();
-    this.kvRepository = new InMemoryKVRepository<unknown, TaskGraphJson>();
+    this.kvRepository = new InMemoryKVRepository();
   }
 }

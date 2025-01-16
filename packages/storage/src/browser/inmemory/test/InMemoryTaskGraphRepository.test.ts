@@ -6,7 +6,6 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { rmdirSync } from "fs";
 import { SingleTask, TaskOutput, DataFlow, TaskGraph, TaskRegistry } from "ellmers-core";
 import { InMemoryTaskGraphRepository } from "ellmers-storage/inmemory";
 
@@ -22,7 +21,6 @@ describe("FileTaskGraphRepository", () => {
   let repository: InMemoryTaskGraphRepository;
 
   beforeEach(() => {
-    rmdirSync(".cache/test/file-task-graph", { recursive: true });
     repository = new InMemoryTaskGraphRepository();
   });
 

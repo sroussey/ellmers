@@ -5,7 +5,16 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { DiscriminatorSchema, KVRepository } from "ellmers-core";
+import {
+  BaseValueSchema,
+  BasePrimaryKeySchema,
+  BasicKeyType,
+  DefaultValueType,
+  DefaultValueSchema,
+  DefaultPrimaryKeyType,
+  DefaultPrimaryKeySchema,
+  KVRepository,
+} from "ellmers-core";
 import { ensureIndexedDbTable } from "./IndexedDbTable";
 import { makeFingerprint } from "../../../util/Misc";
 
@@ -13,10 +22,12 @@ import { makeFingerprint } from "../../../util/Misc";
 // simple browser-based examples with no server-side component. It does not support di
 
 export class IndexedDbKVRepository<
-  Key = string,
-  Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
-> extends KVRepository<Key, Value, Discriminator> {
+  Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
+  Value extends Record<string, any> = DefaultValueType,
+  PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
+  ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
+  Combined extends Key & Value = Key & Value
+> extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private dbPromise: Promise<IDBDatabase>;
 
   constructor(public table: string = "kv_store") {
@@ -26,8 +37,8 @@ export class IndexedDbKVRepository<
     });
   }
 
-  async put(key: Key, value: Value): Promise<void> {
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
+  async putKeyValue(key: Key, value: Value): Promise<void> {
+    const id = await makeFingerprint(key);
     const db = await this.dbPromise;
 
     return new Promise((resolve, reject) => {
@@ -43,8 +54,8 @@ export class IndexedDbKVRepository<
     });
   }
 
-  async get(key: Key): Promise<Value | undefined> {
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
+  async getKeyValue(key: Key): Promise<Value | undefined> {
+    const id = await makeFingerprint(key);
     const db = await this.dbPromise;
 
     return new Promise((resolve, reject) => {
@@ -64,7 +75,24 @@ export class IndexedDbKVRepository<
     });
   }
 
-  async clear(): Promise<void> {
+  async deleteKeyValue(key: Key): Promise<void> {
+    const id = await makeFingerprint(key);
+    const db = await this.dbPromise;
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.table, "readwrite");
+      const store = transaction.objectStore(this.table);
+      const request = store.delete(id);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.emit("delete", id);
+        resolve();
+      };
+    });
+  }
+
+  async deleteAll(): Promise<void> {
     const db = await this.dbPromise;
 
     return new Promise((resolve, reject) => {
@@ -74,7 +102,7 @@ export class IndexedDbKVRepository<
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.emit("clear");
+        this.emit("clearall");
         resolve();
       };
     });

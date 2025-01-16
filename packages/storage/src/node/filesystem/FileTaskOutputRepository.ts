@@ -5,17 +5,28 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput, TaskOutputDiscriminator, TaskOutputRepository } from "ellmers-core";
+import {
+  DefaultValueType,
+  TaskInput,
+  TaskOutputPrimaryKey,
+  TaskOutputPrimaryKeySchema,
+  TaskOutputRepository,
+} from "ellmers-core";
 import { FileKVRepository } from "./base/FileKVRepository";
 
 export class FileTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
+  kvRepository: FileKVRepository<
+    TaskOutputPrimaryKey,
+    DefaultValueType,
+    typeof TaskOutputPrimaryKeySchema
+  >;
   public type = "FileTaskOutputRepository" as const;
   constructor(folderPath: string) {
     super();
-    this.kvRepository = new FileKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>(
-      folderPath,
-      TaskOutputDiscriminator
-    );
+    this.kvRepository = new FileKVRepository<
+      TaskOutputPrimaryKey,
+      DefaultValueType,
+      typeof TaskOutputPrimaryKeySchema
+    >(folderPath, TaskOutputPrimaryKeySchema);
   }
 }
