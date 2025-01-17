@@ -14,38 +14,57 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-  KVRepository,
-  BasicValueType,
 } from "ellmers-core";
-import { validateTableAndSchema } from "../../../util/common_sql_helpers";
+import { BaseSqlKVRepository } from "../../../util/base/BaseSqlKVRepository";
 
 // SqliteKVRepository is a key-value store that uses SQLite as the backend for
 // in app data.
 
+/**
+ * A SQLite-based key-value repository implementation.
+ * @template Key - The type of the primary key object, must be a record of basic types
+ * @template Value - The type of the value object being stored
+ * @template PrimaryKeySchema - Schema definition for the primary key
+ * @template ValueSchema - Schema definition for the value
+ * @template Combined - Combined type of Key & Value
+ */
 export class SqliteKVRepository<
   Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
   Combined extends Key & Value = Key & Value
-> extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
+> extends BaseSqlKVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
+  /** The SQLite database instance */
   private db: Database;
+
+  /**
+   * Creates a new SQLite key-value repository
+   * @param dbOrPath - Either a Database instance or a path to the SQLite database file
+   * @param table - The name of the table to use for storage (defaults to 'kv_store')
+   * @param primaryKeySchema - Schema defining the structure of the primary key
+   * @param valueSchema - Schema defining the structure of the values
+   * @param searchable - Array of columns to make searchable
+   */
   constructor(
     dbOrPath: string,
-    public table: string = "kv_store",
+    table: string = "kv_store",
     primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
-    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema
+    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema,
+    searchable: Array<keyof Combined> = []
   ) {
-    super(primaryKeySchema, valueSchema);
+    super(table, primaryKeySchema, valueSchema, searchable);
     if (typeof dbOrPath === "string") {
       this.db = new Database(dbOrPath);
     } else {
       this.db = dbOrPath;
     }
-    validateTableAndSchema(this.table, this.primaryKeySchema, this.valueSchema);
     this.setupDatabase();
   }
 
+  /**
+   * Creates the database table if it doesn't exist with the defined schema
+   */
   public setupDatabase(): void {
     const sql = `
       CREATE TABLE IF NOT EXISTS \`${this.table}\` (
@@ -55,37 +74,24 @@ export class SqliteKVRepository<
       )
     `;
     this.db.exec(sql);
+    for (const column of this.searchable) {
+      /* Makes other columns searchable, but excludes the first column 
+         of a primary key (which would be redundant) */
+      if (column !== this.primaryKeyColumns()[0]) {
+        this.db.exec(
+          `CREATE INDEX IF NOT EXISTS \`${this.table}_${column as string}\`
+             ON \`${this.table}\` (\`${column as string}\`)`
+        );
+      }
+    }
   }
 
-  private constructPrimaryKeyColumns(): string {
-    const cols = Object.entries(this.primaryKeySchema)
-      .map(([key, type]) => {
-        // Convert the provided type to a SQL type, assuming simple mappings; adjust as necessary
-        const sqlType = this.mapTypeToSQL(type);
-        return `\`${key}\` ${sqlType} NOT NULL`;
-      })
-      .join(", ");
-    return cols;
-  }
-
-  private constructValueColumns(): string {
-    const cols = Object.entries(this.valueSchema)
-      .map(([key, type]) => {
-        const sqlType = this.mapTypeToSQL(type);
-        return `\`${key}\` ${sqlType} NULL`;
-      })
-      .join(", ");
-    return cols;
-  }
-
-  protected primaryKeyColumnList(): string {
-    return "`" + this.primaryKeyColumns().join("`, `") + "`";
-  }
-  protected valueColumnList(): string {
-    return "`" + this.valueColumns().join("`, `") + "`";
-  }
-
-  private mapTypeToSQL(type: string): string {
+  /**
+   * Maps TypeScript/JavaScript types to their SQLite column type equivalents
+   * @param type - The TypeScript/JavaScript type to map
+   * @returns The corresponding SQLite column type
+   */
+  protected mapTypeToSQL(type: string): string {
     // Basic type mapping; extend according to your needs
     switch (type) {
       case "string":
@@ -98,43 +104,17 @@ export class SqliteKVRepository<
     }
   }
 
-  // JS objects are not ordered, so we need to convert them to an ordered array
-  // so that we can use them as parameters in a SQL query
-  // we will order base on the valueSchema
-  getValueAsOrderedArray(value: Value): BasicValueType[] {
-    const orderedParams: BasicValueType[] = [];
-    // Iterate through valueSchema to maintain consistent order
-    for (const [key, type] of Object.entries(this.valueSchema)) {
-      if (key in value) {
-        orderedParams.push(value[key]);
-      } else {
-        throw new Error(`Missing required value field: ${key}`);
-      }
-    }
-    return orderedParams;
-  }
-
-  // JS objects are not ordered, so we need to convert them to an ordered array
-  // so that we can use them as parameters in a SQL query
-  // we will order base on the primaryKeySchema
-  getPrimaryKeyAsOrderedArray(key: Key): BasicKeyType[] {
-    const orderedParams: BasicKeyType[] = [];
-    // Iterate through primaryKeySchema to maintain consistent order
-    for (const [k, type] of Object.entries(this.primaryKeySchema)) {
-      if (k in key) {
-        orderedParams.push(key[k]);
-      } else {
-        throw new Error(`Missing required primary key field: ${k}`);
-      }
-    }
-    return orderedParams;
-  }
-
+  /**
+   * Stores a key-value pair in the database
+   * @param key - The primary key object
+   * @param value - The value object to store
+   * @emits 'put' event when successful
+   */
   async putKeyValue(key: Key, value: Value): Promise<void> {
     const sql = `
-      INSERT OR REPLACE INTO ${
+      INSERT OR REPLACE INTO \`${
         this.table
-      } (${this.primaryKeyColumnList()}, ${this.valueColumnList()})
+      }\` (${this.primaryKeyColumnList()}, ${this.valueColumnList()})
       VALUES (
         ${this.primaryKeyColumns().map((i) => "?")},
         ${this.valueColumns().map((i) => "?")}
@@ -151,15 +131,20 @@ export class SqliteKVRepository<
     this.emit("put", key);
   }
 
+  /**
+   * Retrieves a value from the database by its key
+   * @param key - The primary key object to look up
+   * @returns The stored value or undefined if not found
+   * @emits 'get' event when successful
+   */
   async getKeyValue(key: Key): Promise<Value | undefined> {
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key) => `\`${key}\` = ?`)
       .join(" AND ");
 
     const sql = `
-      SELECT ${this.valueColumnList()} FROM ${this.table} WHERE ${whereClauses}
+      SELECT ${this.valueColumnList()} FROM \`${this.table}\` WHERE ${whereClauses}
     `;
-    // const sql = `SELECT * FROM ${this.table} `;
     const stmt = this.db.prepare<Value, BasicKeyType[]>(sql);
     const params = this.getPrimaryKeyAsOrderedArray(key);
     const value = stmt.get(...params);
@@ -171,6 +156,39 @@ export class SqliteKVRepository<
     }
   }
 
+  /**
+   * Method to be implemented by concrete repositories to search for key-value pairs
+   * based on a partial key.
+   *
+   * @param key - Partial key to search for
+   * @returns Promise resolving to an array of combined key-value objects or undefined if not found
+   */
+  public async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
+    const search = Object.keys(key);
+    if (search.length !== 1) {
+      //TODO: make this work with any prefix of primary key
+      throw new Error("Search must be a single key");
+    }
+
+    const sql = `
+      SELECT * FROM \`${this.table}\` 
+      WHERE \`${search[0]}\` = ?
+    `;
+    const stmt = this.db.prepare<Combined, any[]>(sql);
+    const value = stmt.all(key[search[0]]);
+    if (value) {
+      this.emit("search");
+      return value;
+    } else {
+      return undefined;
+    }
+  }
+
+  /**
+   * Deletes a key-value pair from the database
+   * @param key - The primary key object to delete
+   * @emits 'delete' event when successful
+   */
   async deleteKeyValue(key: Key): Promise<void> {
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key) => `${key} = ?`)
@@ -181,11 +199,19 @@ export class SqliteKVRepository<
     this.emit("delete", key);
   }
 
+  /**
+   * Deletes all entries from the database table
+   * @emits 'clearall' event when successful
+   */
   async deleteAll(): Promise<void> {
     this.db.exec(`DELETE FROM ${this.table}`);
     this.emit("clearall");
   }
 
+  /**
+   * Gets the total number of entries in the database table
+   * @returns The count of entries
+   */
   async size(): Promise<number> {
     const stmt = this.db.prepare<{ count: number }, []>(`
       SELECT COUNT(*) AS count FROM ${this.table}

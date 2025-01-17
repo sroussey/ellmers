@@ -29,7 +29,7 @@ describe("FileKVRepository", () => {
   rmdirSync(testDir, { recursive: true });
 
   beforeEach(() => {
-    repository = new FileKVRepository(testDir, {});
+    repository = new FileKVRepository(testDir);
   });
   afterEach(() => {
     repository.deleteAll();
@@ -67,7 +67,7 @@ describe("FileKVRepository", () => {
       repository = new FileKVRepository<PrimaryKey, Value>(testDir, PrimaryKeySchema, ValueSchema);
     });
     afterEach(async () => {
-      await repository.deleteAll();
+      // await repository.deleteAll();
     });
 
     it("should store and retrieve values for a key", async () => {

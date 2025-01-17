@@ -30,8 +30,8 @@ describe("InMemoryKVRepository", () => {
     });
 
     it("should store and retrieve values for a key", async () => {
-      const key = "key";
-      const value = "value";
+      const key = "key1";
+      const value = "value1";
       await repository.put(key, value);
       const output = await repository.get(key);
 

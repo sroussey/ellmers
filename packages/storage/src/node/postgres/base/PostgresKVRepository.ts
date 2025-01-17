@@ -10,39 +10,68 @@ import {
   BaseValueSchema,
   BasePrimaryKeySchema,
   BasicKeyType,
-  BasicValueType,
   DefaultValueSchema,
   DefaultPrimaryKeySchema,
   DefaultPrimaryKeyType,
   DefaultValueType,
-  KVRepository,
 } from "ellmers-core";
-import { validateTableAndSchema } from "../../../util/common_sql_helpers";
+import { BaseSqlKVRepository } from "../../../util/base/BaseSqlKVRepository";
 
-// PostgresKVRepository is a key-value store that uses PostgreSQL as the backend for
-// multi-user scenarios. It supports discriminators.
+/// ******************************************************************
+/// *
+/// ******************************************************************
+/// **********************    NOT TESTED YET   ***********************
+/// ******************************************************************
+/// *
+/// ******************************************************************
+/// really... i wrote it and it passes the linter only!
 
+/**
+/**
+ * A PostgreSQL-based key-value repository implementation that extends BaseSqlKVRepository.
+ * This class provides persistent storage for key-value pairs in a PostgreSQL database,
+ * making it suitable for multi-user scenarios.
+ *
+ * @template Key - The type of the primary key, must be a record of basic types
+ * @template Value - The type of the stored value, can be any record type
+ * @template PrimaryKeySchema - Schema definition for the primary key
+ * @template ValueSchema - Schema definition for the value
+ * @template Combined - Combined type of Key & Value
+ */
 export class PostgresKVRepository<
   Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
   Combined extends Key & Value = Key & Value
-> extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
+> extends BaseSqlKVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private pool: Pool;
 
+  /**
+   * Creates a new PostgresKVRepository instance.
+   *
+   * @param connectionString - PostgreSQL connection string
+   * @param table - Name of the table to store key-value pairs (defaults to "kv_store")
+   * @param primaryKeySchema - Schema definition for primary key columns
+   * @param valueSchema - Schema definition for value columns
+   * @param searchable - Array of columns to make searchable
+   */
   constructor(
     connectionString: string,
     public table: string = "kv_store",
     primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
-    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema
+    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema,
+    searchable: Array<keyof Combined> = []
   ) {
-    super(primaryKeySchema, valueSchema);
+    super(table, primaryKeySchema, valueSchema, searchable);
     this.pool = new Pool({ connectionString });
-    validateTableAndSchema(this.table, this.primaryKeySchema, this.valueSchema);
     this.setupDatabase();
   }
 
+  /**
+   * Initializes the database table with the required schema.
+   * Creates the table if it doesn't exist with primary key and value columns.
+   */
   private async setupDatabase(): Promise<void> {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS \`${this.table}\` (
@@ -51,37 +80,25 @@ export class PostgresKVRepository<
         PRIMARY KEY (${this.primaryKeyColumnList()}) 
       )
     `);
+    for (const column of this.searchable) {
+      if (column !== this.primaryKeyColumns()[0]) {
+        /* Makes other columns searchable, but excludes the first column 
+         of a primary key (which would be redundant) */
+        await this.pool.query(
+          `CREATE INDEX IF NOT EXISTS \`${this.table}_${column as string}\` 
+             ON \`${this.table}\` (\`${column as string}\`)`
+        );
+      }
+    }
   }
 
-  private constructPrimaryKeyColumns(): string {
-    const cols = Object.entries(this.primaryKeySchema)
-      .map(([key, type]) => {
-        // Convert the provided type to a SQL type, assuming simple mappings; adjust as necessary
-        const sqlType = this.mapTypeToSQL(type);
-        return `\`${key}\` ${sqlType} NOT NULL`;
-      })
-      .join(", ");
-    return cols;
-  }
-
-  private constructValueColumns(): string {
-    const cols = Object.entries(this.valueSchema)
-      .map(([key, type]) => {
-        const sqlType = this.mapTypeToSQL(type);
-        return `\`${key}\` ${sqlType} NULL`;
-      })
-      .join(", ");
-    return cols;
-  }
-
-  protected primaryKeyColumnList(): string {
-    return "`" + this.primaryKeyColumns().join("`, `") + "`";
-  }
-  protected valueColumnList(): string {
-    return "`" + this.valueColumns().join("`, `") + "`";
-  }
-
-  private mapTypeToSQL(type: string): string {
+  /**
+   * Maps TypeScript/JavaScript types to corresponding PostgreSQL data types.
+   *
+   * @param type - The TypeScript/JavaScript type to map
+   * @returns The corresponding PostgreSQL data type
+   */
+  protected mapTypeToSQL(type: string): string {
     // Basic type mapping; extend according to your needs
     switch (type) {
       case "string":
@@ -94,34 +111,14 @@ export class PostgresKVRepository<
     }
   }
 
-  // JS objects are not ordered, so we need to convert them to an ordered array
-  // so that we can use them as parameters in a SQL query
-  // we will order base on the valueSchema
-  getValueAsOrderedArray(value: Value): BasicValueType[] {
-    const orderedParams: BasicValueType[] = [];
-    // Iterate through valueSchema to maintain consistent order
-    for (const [key, type] of Object.entries(this.valueSchema)) {
-      orderedParams.push(value[key] ?? null);
-    }
-    return orderedParams;
-  }
-
-  // JS objects are not ordered, so we need to convert them to an ordered array
-  // so that we can use them as parameters in a SQL query
-  // we will order base on the primaryKeySchema
-  getPrimaryKeyAsOrderedArray(key: Key): BasicKeyType[] {
-    const orderedParams: BasicKeyType[] = [];
-    // Iterate through primaryKeySchema to maintain consistent order
-    for (const [k, type] of Object.entries(this.primaryKeySchema)) {
-      if (k in key) {
-        orderedParams.push(key[k]);
-      } else {
-        throw new Error(`Missing required primary key field: ${k}`);
-      }
-    }
-    return orderedParams;
-  }
-
+  /**
+   * Stores or updates a key-value pair in the database.
+   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
+   *
+   * @param key - The primary key object
+   * @param value - The value object to store
+   * @emits "put" event with the key when successful
+   */
   async putKeyValue(key: Key, value: Value): Promise<void> {
     const sql = `
     INSERT INTO \`${this.table}\` (
@@ -143,6 +140,13 @@ export class PostgresKVRepository<
     this.emit("put", key);
   }
 
+  /**
+   * Retrieves a value from the database by its primary key.
+   *
+   * @param key - The primary key object to look up
+   * @returns The stored value or undefined if not found
+   * @emits "get" event with the key when successful
+   */
   async getKeyValue(key: Key): Promise<Value | undefined> {
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((discriminatorKey, i) => `\`${discriminatorKey}\` = $${i + 1}`)
@@ -163,6 +167,39 @@ export class PostgresKVRepository<
     }
   }
 
+  /**
+   * Method to be implemented by concrete repositories to search for key-value pairs
+   * based on a partial key.
+   *
+   * @param key - Partial key to search for
+   * @returns Promise resolving to an array of combined key-value objects or undefined if not found
+   */
+  public async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
+    const search = Object.keys(key);
+    if (search.length !== 1) {
+      //TODO: make this work with any prefix of primary key
+      throw new Error("Search must be a single key");
+    }
+
+    const sql = `
+      SELECT * FROM \`${this.table}\` 
+      WHERE \`${search[0]}\` = ?
+    `;
+    const result = await this.pool.query<Combined, any[]>(sql, [key[search[0]]]);
+    if (result.rows.length > 0) {
+      this.emit("search");
+      return result.rows;
+    } else {
+      return undefined;
+    }
+  }
+
+  /**
+   * Deletes a key-value pair from the database.
+   *
+   * @param key - The primary key object to delete
+   * @emits "delete" event with the key when successful
+   */
   async deleteKeyValue(key: Key): Promise<void> {
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key, i) => `\`${key}\` = $${i + 1}`)
@@ -173,13 +210,22 @@ export class PostgresKVRepository<
     this.emit("delete", key);
   }
 
+  /**
+   * Deletes all key-value pairs from the database table.
+   * @emits "clearall" event when successful
+   */
   async deleteAll(): Promise<void> {
     await this.pool.query(`DELETE FROM \`${this.table}\``);
     this.emit("clearall");
   }
 
+  /**
+   * Returns the total number of key-value pairs in the database.
+   *
+   * @returns Promise resolving to the count of stored items
+   */
   async size(): Promise<number> {
-    const result = await this.pool.query(`SELECT COUNT(*) FROM ${this.table}`);
+    const result = await this.pool.query(`SELECT COUNT(*) FROM \`${this.table}\``);
     return parseInt(result.rows[0].count, 10);
   }
 }
