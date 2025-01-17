@@ -43,7 +43,7 @@ export class LambdaTask extends SingleTask {
   constructor(config: TaskConfig & { input?: LambdaTaskInput } = {}) {
     super(config);
   }
-  runSyncOnly() {
+  runReactive() {
     if (!this.runInputData.fn) {
       throw new Error("No runner provided");
     }

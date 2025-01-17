@@ -79,7 +79,7 @@ export class DownloadModelTask extends JobQueueLlmTask {
   constructor(config: JobQueueTaskConfig & { input?: DownloadModelTaskInput } = {}) {
     super(config);
   }
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     const model = getGlobalModelRepository().findByName(this.runInputData.model);
     if (model) {
       const tasks = getGlobalModelRepository().findTasksByModel(model.name);

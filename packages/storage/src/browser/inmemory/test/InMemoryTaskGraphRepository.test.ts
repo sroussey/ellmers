@@ -11,7 +11,7 @@ import { InMemoryTaskGraphRepository } from "ellmers-storage/inmemory";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     return {};
   }
 }

@@ -37,7 +37,7 @@ class TestSquareTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TestSquareTaskOutput {
+  runReactive(): TestSquareTaskOutput {
     return { output: this.runInputData.input * this.runInputData.input };
   }
 }
@@ -63,7 +63,7 @@ class TestDoubleTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TestDoubleTaskOutput {
+  runReactive(): TestDoubleTaskOutput {
     return { output: this.runInputData.input * 2 };
   }
 }
@@ -90,7 +90,7 @@ class TestAddTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     const inputs = Array.isArray(this.runInputData.input)
       ? this.runInputData.input
       : [this.runInputData.input ?? 0];

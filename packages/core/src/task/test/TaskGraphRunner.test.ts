@@ -13,7 +13,7 @@ import { CreateMappedType } from "../base/TaskIOTypes";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     return {};
   }
 }
@@ -40,7 +40,7 @@ class TestSquareTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TestSquareTaskOutput {
+  runReactive(): TestSquareTaskOutput {
     return { output: this.runInputData.input * this.runInputData.input };
   }
 }
@@ -66,7 +66,7 @@ class TestDoubleTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TestDoubleTaskOutput {
+  runReactive(): TestDoubleTaskOutput {
     return { output: this.runInputData.input * 2 };
   }
 }
@@ -98,7 +98,7 @@ class TestAddTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     const input = this.runInputData;
     return { output: input.a + input.b };
   }
@@ -148,11 +148,11 @@ describe("TaskGraphRunner", () => {
 
   describe("runGraphSyncOnly", () => {
     it("should run nodes in each layer synchronously", () => {
-      const runSyncOnlySpy = spyOn(nodes[0], "runSyncOnly");
+      const runReactiveSpy = spyOn(nodes[0], "runReactive");
 
       runner.runGraphSyncOnly();
 
-      expect(runSyncOnlySpy).toHaveBeenCalledTimes(1);
+      expect(runReactiveSpy).toHaveBeenCalledTimes(1);
     });
   });
 

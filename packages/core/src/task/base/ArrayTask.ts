@@ -104,8 +104,7 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
     // Move to the next combination of indices
     for (let i = indices.length - 1; i >= 0; i--) {
       if (++indices[i] < arraysToCombine[i].length) break; // Increment current index if possible
-      if (i === 0)
-        done = true; // All combinations have been generated
+      if (i === 0) done = true; // All combinations have been generated
       else indices[i] = 0; // Reset current index and move to the next position
     }
   }
@@ -126,7 +125,7 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
 
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
-  PluralOutputType extends TaskOutput = TaskOutput,
+  PluralOutputType extends TaskOutput = TaskOutput
 >(
   taskClass: typeof SingleTask | typeof CompoundTask,
   inputMakeArray: Array<keyof PluralInputType>,
@@ -175,8 +174,8 @@ export function arrayTaskFactory<
       return this;
     }
 
-    runSyncOnly(): PluralOutputType {
-      const runDataOut = super.runSyncOnly();
+    runReactive(): PluralOutputType {
+      const runDataOut = super.runReactive();
       this.runOutputData = collectPropertyValues<NonPluralOutputType>(
         runDataOut.outputs
       ) as PluralOutputType;

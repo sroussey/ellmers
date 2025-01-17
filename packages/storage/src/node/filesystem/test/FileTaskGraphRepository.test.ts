@@ -12,7 +12,7 @@ import { SingleTask, TaskOutput, TaskRegistry, DataFlow, TaskGraph } from "ellme
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     return {};
   }
 }

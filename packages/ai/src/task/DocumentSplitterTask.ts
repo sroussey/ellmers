@@ -63,7 +63,7 @@ export class DocumentSplitterTask extends SingleTask {
     }
   }
 
-  runSyncOnly(): DocumentSplitterTaskOutput {
+  runReactive(): DocumentSplitterTaskOutput {
     return { texts: this.flattenFragmentsToTexts(this.runInputData.file) };
   }
 }

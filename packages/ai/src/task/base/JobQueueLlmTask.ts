@@ -50,10 +50,10 @@ export class JobQueueLlmTask extends JobQueueTask {
     }
     this.emit("complete");
     this.runOutputData = results ?? {};
-    this.runOutputData = this.runSyncOnly();
+    this.runOutputData = this.runReactive();
     return this.runOutputData;
   }
-  runSyncOnly(): TaskOutput {
+  runReactive(): TaskOutput {
     return this.runOutputData ?? {};
   }
 }

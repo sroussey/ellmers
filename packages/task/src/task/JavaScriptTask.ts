@@ -46,7 +46,7 @@ export class JavaScriptTask extends SingleTask {
   constructor(config: TaskConfig & { input?: JavaScriptTaskInput } = {}) {
     super(config);
   }
-  runSyncOnly() {
+  runReactive() {
     if (this.runInputData.code) {
       try {
         const myInterpreter = new Interpreter(this.runInputData.code);

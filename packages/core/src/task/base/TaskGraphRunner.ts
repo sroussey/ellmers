@@ -13,10 +13,7 @@ export class TaskGraphRunner {
   public layers: Map<number, Task[]>;
   public provenanceInput: Map<unknown, TaskInput>;
 
-  constructor(
-    public dag: TaskGraph,
-    public repository?: TaskOutputRepository
-  ) {
+  constructor(public dag: TaskGraph, public repository?: TaskOutputRepository) {
     this.layers = new Map();
     this.provenanceInput = new Map();
   }
@@ -99,7 +96,7 @@ export class TaskGraphRunner {
         task.emit("start");
         task.emit("progress", 100, Object.values(results)[0]);
         task.runOutputData = results;
-        task.runSyncOnly();
+        task.runReactive();
         task.emit("complete");
       }
     }
@@ -140,7 +137,7 @@ export class TaskGraphRunner {
     for (const [_layerNumber, nodes] of this.layers.entries()) {
       results = nodes.map((node) => {
         this.copyInputFromEdgesToNode(node);
-        const results = node.runSyncOnly();
+        const results = node.runReactive();
         this.pushOutputFromNodeToEdges(node, results);
         return results;
       });
