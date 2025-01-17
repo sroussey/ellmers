@@ -51,7 +51,7 @@
     "typescript": "^5.7.3"
   },
   "engines": {
-    "bun": "^1.1.43"
+    "bun": "^1.1.45"
   },
   "trustedDependencies": [
     "better-sqlite3",
