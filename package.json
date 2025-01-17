@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "bun run build:packages && bun run build:examples",
-    "build:packages": "bun run build:core && bun run build:storage && bun run build:task && bun run build:ai && bun run build:ai-provider",
+    "build:packages": "bun run build:core && bun run build:ai && bun run build:storage && bun run build:task && bun run build:ai-provider && bun run build:test",
     "build:core": "cd packages/core && bun run build",
     "build:ai": "cd packages/ai && bun run build",
     "build:ai-provider": "cd packages/ai-provider && bun run build",
@@ -28,12 +28,12 @@
   },
   "dependencies": {
     "@mediapipe/tasks-text": "^0.10.20",
-    "@huggingface/transformers": "^3.2.4",
+    "@huggingface/transformers": "^3.3.1",
     "@sroussey/typescript-graph": "^0.3.14",
     "@types/better-sqlite3": "^7.6.12",
     "@types/pg": "^8.11.10",
     "better-sqlite3": "^9.4.3",
-    "bun-types": "^1.1.43",
+    "bun-types": "^1.1.45",
     "chalk": "^5.4.1",
     "commander": "=11.1.0",
     "eventemitter3": "^5.0.1",
@@ -42,7 +42,7 @@
     "pg": "^8.13.1",
     "postgres": "^3.4.5",
     "rxjs": "^7.8.1",
-    "storybook": "^8.4.7",
+    "storybook": "^8.5.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
