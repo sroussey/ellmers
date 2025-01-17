@@ -1,6 +1,12 @@
-import { getProviderRegistry, ModelProcessorEnum } from "ellmers-ai";
-import { registerHuggingfaceLocalTasks } from "ellmers-ai-provider/hf-transformers/browser";
-import { registerMediaPipeTfJsLocalTasks } from "ellmers-ai-provider/tf-mediapipe/browser";
+import { getProviderRegistry } from "ellmers-ai";
+import {
+  LOCAL_ONNX_TRANSFORMERJS,
+  registerHuggingfaceLocalTasks,
+} from "ellmers-ai-provider/hf-transformers/browser";
+import {
+  MEDIA_PIPE_TFJS_MODEL,
+  registerMediaPipeTfJsLocalTasks,
+} from "ellmers-ai-provider/tf-mediapipe/browser";
 import { ConcurrencyLimiter, TaskInput, TaskOutput } from "ellmers-core";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 
@@ -15,7 +21,7 @@ export async function registerHuggingfaceLocalTasksInMemory() {
     new ConcurrencyLimiter(1, 10),
     10
   );
-  ProviderRegistry.registerQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+  ProviderRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
   jobQueue.start();
 }
 
@@ -27,6 +33,6 @@ export async function registerMediaPipeTfJsLocalInMemory() {
     new ConcurrencyLimiter(1, 10),
     10
   );
-  ProviderRegistry.registerQueue(ModelProcessorEnum.MEDIA_PIPE_TFJS_MODEL, jobQueue);
+  ProviderRegistry.registerQueue(MEDIA_PIPE_TFJS_MODEL, jobQueue);
   jobQueue.start();
 }

@@ -7,7 +7,7 @@
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @huggingface/transformers --external ellmers-core --external ellmers-ai --external ellmers-ai-provider --external ellmers-storage --outdir ./dist/ ./src/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build": "bun run build-clean && bun run build-types && bun run build-hf-transformers && bun run build-tf-mediapipe",
+    "build": "bun run build-clean && bun run build-types && bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @mediapipe/tasks-text --external @huggingface/transformers --external ellmers-core --external ellmers-ai --external ellmers-ai-provider --external ellmers-storage --outdir ./dist/ ./src/index.ts",
     "build-types": "tsc",

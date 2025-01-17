@@ -21,8 +21,8 @@ import {
   TextStreamer,
 } from "@huggingface/transformers";
 import { ElVector } from "ellmers-core";
-import { ONNXTransformerJsModel } from "../model/ONNXTransformerJsModel";
-import { findModelByName } from "ellmers-ai";
+
+import { getGlobalModelRepository } from "ellmers-ai";
 import type {
   JobQueueLlmTask,
   DownloadModelTask,
@@ -46,7 +46,9 @@ import type {
   TextTranslationTask,
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
+  Model,
 } from "ellmers-ai";
+import { QUANTIZATION_DATA_TYPES } from "../browser";
 
 env.cacheDir = "./.cache";
 
@@ -83,7 +85,7 @@ type StatusFile = StatusFileBookends | StatusFileProgress;
 type StatusRun = StatusRunReady | StatusRunUpdate | StatusRunComplete;
 export type CallbackStatus = StatusFile | StatusRun;
 
-const pipelines = new Map<ONNXTransformerJsModel, any>();
+const pipelines = new Map<Model, any>();
 
 /**
  *
@@ -94,16 +96,12 @@ const pipelines = new Map<ONNXTransformerJsModel, any>();
  * @param model
  * @param options
  */
-const getPipeline = async (
-  task: JobQueueLlmTask,
-  model: ONNXTransformerJsModel,
-  options: any = {}
-) => {
+const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {}) => {
   if (!pipelines.has(model)) {
     pipelines.set(
       model,
-      await pipeline(model.pipeline as PipelineType, model.name, {
-        dtype: model.dtype || "q8",
+      await pipeline(model.pipeline as PipelineType, model.url, {
+        dtype: (model.quantization as QUANTIZATION_DATA_TYPES) || "q8",
         session_options: options?.session_options,
         progress_callback: downloadProgressCallback(task),
       })
@@ -142,9 +140,9 @@ export async function HuggingFaceLocal_DownloadRun(
   task: DownloadModelTask,
   runInputData: DownloadModelTaskInput
 ): Promise<Partial<DownloadModelTaskOutput>> {
-  const model = findModelByName(runInputData.model)! as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
   await getPipeline(task, model);
-  return { model: model.name, dimensions: model.dimensions || 0, normalize: model.normalize };
+  return { model: model.name, dimensions: model.nativeDimensions || 0, normalize: model.normalize };
 }
 
 /**
@@ -156,7 +154,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   task: TextEmbeddingTask,
   runInputData: TextEmbeddingTaskInput
 ): Promise<TextEmbeddingTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
   const hfVector = await generateEmbedding(runInputData.text, {
@@ -164,15 +162,15 @@ export async function HuggingFaceLocal_EmbeddingRun(
     normalize: model.normalize,
   });
 
-  if (hfVector.size !== model.dimensions) {
+  if (hfVector.size !== model.nativeDimensions) {
     console.warn(
-      `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.dimensions}`,
+      `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.nativeDimensions}`,
       runInputData,
       hfVector
     );
-    throw `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.dimensions}`;
+    throw `HuggingFaceLocal Embedding vector length does not match model dimensions v${hfVector.size} != m${model.nativeDimensions}`;
   }
-  const vector = new ElVector(hfVector.data, model.normalize);
+  const vector = new ElVector(hfVector.data, model.normalize ?? true);
   return { vector };
 }
 
@@ -185,7 +183,7 @@ export async function HuggingFaceLocal_TextGenerationRun(
   task: TextGenerationTask,
   runInputData: TextGenerationTaskInput
 ): Promise<TextGenerationTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
 
@@ -221,7 +219,7 @@ export async function HuggingFaceLocal_TextTranslationRun(
   task: TextTranslationTask,
   runInputData: TextTranslationTaskInput
 ): Promise<Partial<TextTranslationTaskOutput>> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
 
   const translate: TranslationPipeline = await getPipeline(task, model);
 
@@ -253,7 +251,7 @@ export async function HuggingFaceLocal_TextRewriterRun(
   task: TextRewriterTask,
   runInputData: TextRewriterTaskInput
 ): Promise<TextRewriterTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateText.tokenizer, {
@@ -292,7 +290,7 @@ export async function HuggingFaceLocal_TextSummaryRun(
   task: TextSummaryTask,
   runInputData: TextSummaryTaskInput
 ): Promise<TextSummaryTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
 
   const generateSummary: SummarizationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateSummary.tokenizer, {
@@ -321,7 +319,7 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   task: TextQuestionAnswerTask,
   runInputData: TextQuestionAnswerTaskInput
 ): Promise<TextQuestionAnswerTaskOutput> {
-  const model = findModelByName(runInputData.model) as ONNXTransformerJsModel;
+  const model = getGlobalModelRepository().findByName(runInputData.model)!;
 
   const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateAnswer.tokenizer, {

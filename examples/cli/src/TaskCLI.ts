@@ -9,15 +9,11 @@ import { Command } from "commander";
 import { runTask } from "./TaskStreamToListr2";
 import "@huggingface/transformers";
 import { TaskGraph, JsonTask, TaskGraphBuilder, JsonTaskItem } from "ellmers-core";
-
-import {
-  DownloadModelTask,
-  DownloadModelCompoundTask,
-  findModelByName,
-  findModelByUseCase,
-  ModelUseCaseEnum,
-} from "ellmers-ai";
+import { DownloadModelTask, getGlobalModelRepository } from "ellmers-ai";
+import { registerHuggingfaceLocalModels } from "ellmers-test";
 import "ellmers-task";
+
+registerHuggingfaceLocalModels();
 
 export function AddBaseCommands(program: Command) {
   program
@@ -27,7 +23,7 @@ export function AddBaseCommands(program: Command) {
     .action(async (options) => {
       const graph = new TaskGraph();
       if (options.model) {
-        const model = findModelByName(options.model);
+        const model = getGlobalModelRepository().findByName(options.model);
         if (model) {
           graph.addTask(new DownloadModelTask({ input: { model: model.name } }));
         } else {
@@ -44,8 +40,10 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text: string, options) => {
       const model = options.model
-        ? findModelByName(options.model)?.name
-        : findModelByUseCase(ModelUseCaseEnum.TEXT_EMBEDDING).map((m) => m.name);
+        ? getGlobalModelRepository().findByName(options.model)?.name
+        : getGlobalModelRepository()
+            .findModelsByTask("TextEmbeddingTask")
+            .map((m) => m.name);
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {
@@ -62,8 +60,10 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
       const model = options.model
-        ? findModelByName(options.model)?.name
-        : findModelByUseCase(ModelUseCaseEnum.TEXT_SUMMARIZATION).map((m) => m.name);
+        ? getGlobalModelRepository().findByName(options.model)?.name
+        : getGlobalModelRepository()
+            .findModelsByTask("TextSummaryTask")
+            .map((m) => m.name);
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {
@@ -81,8 +81,10 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
       const model = options.model
-        ? findModelByName(options.model)?.name
-        : findModelByUseCase(ModelUseCaseEnum.TEXT_REWRITING).map((m) => m.name);
+        ? getGlobalModelRepository().findByName(options.model)?.name
+        : getGlobalModelRepository()
+            .findModelsByTask("TextRewriterTask")
+            .map((m) => m.name);
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {
@@ -103,7 +105,7 @@ export function AddBaseCommands(program: Command) {
             id: "1",
             type: "DownloadModelTask",
             input: {
-              model: "Xenova/LaMini-Flan-T5-783M",
+              model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
             },
           },
           {

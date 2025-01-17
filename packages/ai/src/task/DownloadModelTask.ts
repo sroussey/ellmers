@@ -16,8 +16,7 @@ import {
   TaskOutput,
   JobQueueTaskConfig,
 } from "ellmers-core";
-import { ModelUseCaseEnum } from "../model/Model";
-import { findModelByName } from "../model/InMemoryStorage";
+import { getGlobalModelRepository } from "../model/ModelRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
 
 export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
@@ -81,28 +80,28 @@ export class DownloadModelTask extends JobQueueLlmTask {
     super(config);
   }
   runSyncOnly(): TaskOutput {
-    const model = findModelByName(this.runInputData.model);
+    const model = getGlobalModelRepository().findByName(this.runInputData.model);
     if (model) {
-      model.useCase.forEach((useCase) => {
-        // @ts-expect-error -- we really can use this an index
-        this.runOutputData[String(useCase).toLowerCase()] = model.name;
+      const tasks = getGlobalModelRepository().findTasksByModel(model.name);
+      tasks.forEach((task) => {
+        // this.runOutputData[String(task).toLowerCase()] = model.name;
       });
       this.runOutputData.model = model.name;
-      this.runOutputData.dimensions = model.dimensions!;
-      this.runOutputData.normalize = model.normalize;
-      if (model.useCase.includes(ModelUseCaseEnum.TEXT_EMBEDDING)) {
+      this.runOutputData.dimensions = model.usingDimensions!;
+      this.runOutputData.normalize = model.normalize!;
+      if (tasks.includes("TextEmbeddingTask")) {
         this.runOutputData.text_embedding_model = model.name;
       }
-      if (model.useCase.includes(ModelUseCaseEnum.TEXT_GENERATION)) {
+      if (tasks.includes("TextGenerationTask")) {
         this.runOutputData.text_generation_model = model.name;
       }
-      if (model.useCase.includes(ModelUseCaseEnum.TEXT_SUMMARIZATION)) {
+      if (tasks.includes("TextSummaryTask")) {
         this.runOutputData.text_summarization_model = model.name;
       }
-      if (model.useCase.includes(ModelUseCaseEnum.TEXT_QUESTION_ANSWERING)) {
+      if (tasks.includes("TextQuestionAnswerTask")) {
         this.runOutputData.text_question_answering_model = model.name;
       }
-      if (model.useCase.includes(ModelUseCaseEnum.TEXT_TRANSLATION)) {
+      if (tasks.includes("TextTranslationTask")) {
         this.runOutputData.text_translation_model = model.name;
       }
     }

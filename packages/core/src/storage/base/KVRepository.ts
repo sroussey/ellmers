@@ -47,7 +47,7 @@ export abstract class KVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Key & Value = Key & Value
+  Combined extends Record<string, any> = Key & Value
 > {
   // KV repository event emitter
   private events = new EventEmitter<KVEvents>();
@@ -88,14 +88,15 @@ export abstract class KVRepository<
   ) {
     this.primaryKeySchema = primaryKeySchema;
     this.valueSchema = valueSchema;
-    if (Object.keys(primaryKeySchema).length === 1) {
+    if (this.primaryKeyColumns().length === 1) {
       this.primaryKeyIndex = this.primaryKeyColumns()[0] as string;
     }
-    if (Object.keys(valueSchema).length === 1) {
+    if (this.valueColumns().length === 1) {
       this.valueIndex = this.valueColumns()[0] as string;
     }
-    if (!searchable.includes(this.primaryKeyColumns()[0])) {
-      searchable.push(this.primaryKeyColumns()[0]);
+    const firstKeyPart = this.primaryKeyColumns()[0] as keyof Combined;
+    if (!searchable.includes(firstKeyPart)) {
+      searchable.push(firstKeyPart);
     }
     this.searchable = searchable;
 
@@ -162,12 +163,12 @@ export abstract class KVRepository<
 
   /**
    * Abstract method to be implemented by concrete repositories to search for key-value pairs
-   * based on a partial key.
+   * based on a partial key or value.
    *
-   * @param key - Partial key to search for
+   * @param key - Partial key or value to search for
    * @returns Promise resolving to an array of combined key-value objects or undefined if not found
    */
-  public abstract search(key: Partial<Key>): Promise<Combined[] | undefined>;
+  public abstract search(key: Partial<Combined>): Promise<Combined[] | undefined>;
 
   /**
    * Retrieves both key and value as a combined object.
@@ -223,10 +224,10 @@ export abstract class KVRepository<
     const value: Partial<Value> = {};
     const key: Partial<Key> = {};
     for (const k of primaryKeyNames) {
-      key[k] = obj[k];
+      key[k] = obj[k as keyof Combined];
     }
     for (const k of valueNames) {
-      value[k] = obj[k];
+      value[k] = obj[k as keyof Combined];
     }
 
     return { value: value as Value, key: key as Key };

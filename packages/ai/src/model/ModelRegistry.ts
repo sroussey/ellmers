@@ -1,0 +1,48 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
+import { Model } from "./Model";
+import { Task2ModelPrimaryKey } from "./ModelRepository";
+
+// temporary model registry that is synchronous until we have a proper model repository
+
+class ModelRegistry {
+  models: Model[] = [];
+  task2models: Task2ModelPrimaryKey[] = [];
+
+  addModel(model: Model) {
+    if (this.models.some((m) => m.name === model.name)) {
+      this.models = this.models.filter((m) => m.name !== model.name);
+    }
+
+    this.models.push(model);
+  }
+  findModelsByTask(task: string) {
+    return this.task2models
+      .filter((t2m) => t2m.task === task)
+      .map((t2m) => this.models.find((m) => m.name === t2m.model))
+      .filter((m) => m !== undefined);
+  }
+  findTasksByModel(name: string) {
+    return this.task2models.filter((t2m) => t2m.model === name).map((t2m) => t2m.task);
+  }
+  findByName(name: string) {
+    return this.models.find((m) => m.name === name);
+  }
+  connectTaskToModel(task: string, model: string) {
+    this.task2models.push({ task, model });
+  }
+}
+
+let modelRegistry: ModelRegistry;
+export function getGlobalModelRepository() {
+  if (!modelRegistry) modelRegistry = new ModelRegistry();
+  return modelRegistry;
+}
+export function setGlobalModelRepository(pr: ModelRegistry) {
+  modelRegistry = pr;
+}

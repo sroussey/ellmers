@@ -7,25 +7,35 @@
 
 import { describe, expect, it } from "bun:test";
 import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-import { getProviderRegistry, ModelProviderEnum, ModelUseCaseEnum } from "ellmers-ai";
+import { getProviderRegistry, getGlobalModelRepository } from "ellmers-ai";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
-import { SqliteJobQueue } from "ellmers-storage/bun/sqlite";
+import { getDatabase, SqliteJobQueue } from "ellmers-storage/bun/sqlite";
 import { registerHuggingfaceLocalTasks } from "../bindings/registerTasks";
-import { getDatabase } from "../../../../storage/src/util/db_sqlite";
 import { sleep } from "bun";
-import { ONNXTransformerJsModel } from "../model/ONNXTransformerJsModel";
+import { LOCAL_ONNX_TRANSFORMERJS } from "../model/ONNXTransformerJsModel";
 
 const HFQUEUE = "local_hf";
 
 describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {
     it("Should have an item queued", async () => {
-      // the model gets self-registered
-      const flanT5p786m = new ONNXTransformerJsModel(
-        "Xenova/LaMini-Flan-T5-783M",
-        [ModelUseCaseEnum.TEXT_GENERATION, ModelUseCaseEnum.TEXT_REWRITING],
-        "text2text-generation"
+      getGlobalModelRepository().addModel({
+        name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        url: "Xenova/LaMini-Flan-T5-783M",
+        availableOnBrowser: true,
+        availableOnServer: true,
+        provider: LOCAL_ONNX_TRANSFORMERJS,
+        pipeline: "text2text-generation",
+      });
+      getGlobalModelRepository().connectTaskToModel(
+        "TextGenerationTask",
+        "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
+      getGlobalModelRepository().connectTaskToModel(
+        "TextRewritingTask",
+        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      );
+
       registerHuggingfaceLocalTasks();
       const providerRegistry = getProviderRegistry();
       const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
@@ -33,14 +43,14 @@ describe("HFTransformersBinding", () => {
         new ConcurrencyLimiter(1, 10),
         10
       );
-      providerRegistry.registerQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
-      const queue = providerRegistry.getQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS);
+      providerRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+      const queue = providerRegistry.getQueue(LOCAL_ONNX_TRANSFORMERJS);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(HFQUEUE);
 
       const builder = new TaskGraphBuilder();
       builder.DownloadModel({
-        model: "Xenova/LaMini-Flan-T5-783M",
+        model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
       });
       builder.run();
       await sleep(1);
@@ -54,20 +64,20 @@ describe("HFTransformersBinding", () => {
       registerHuggingfaceLocalTasks();
       const providerRegistry = getProviderRegistry();
       const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
-        getDatabase(),
+        getDatabase(":memory:"),
         HFQUEUE,
         new ConcurrencyLimiter(1, 10),
         10
       );
       jobQueue.ensureTableExists();
-      providerRegistry.registerQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
-      const queue = providerRegistry.getQueue(ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS);
+      providerRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+      const queue = providerRegistry.getQueue(LOCAL_ONNX_TRANSFORMERJS);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(HFQUEUE);
 
       const builder = new TaskGraphBuilder();
       builder.DownloadModel({
-        model: "Xenova/LaMini-Flan-T5-783M",
+        model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
       });
       builder.run();
       await sleep(1);

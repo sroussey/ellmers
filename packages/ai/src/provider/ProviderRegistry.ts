@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import type { ModelProviderEnum } from "../model/Model";
 import {
   Job,
   type JobQueue,
@@ -41,14 +40,14 @@ export class ProviderRegistry<Input, Output> {
     {};
   registerRunFn(
     taskType: string,
-    modelType: ModelProviderEnum,
+    modelProvider: string,
     runFn: (task: any, runInputData: any) => Promise<Output>
   ) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
-    this.runFnRegistry[taskType][modelType] = runFn;
+    this.runFnRegistry[taskType][modelProvider] = runFn;
   }
 
-  jobAsRunFn(runtype: string, modelType: ModelProviderEnum) {
+  jobAsRunFn(runtype: string, modelType: string) {
     const fn = this.runFnRegistry[runtype]?.[modelType];
     return async (task: JobQueueTask, input: Input) => {
       const queue = this.queues.get(modelType)!;
@@ -69,16 +68,16 @@ export class ProviderRegistry<Input, Output> {
     };
   }
 
-  getDirectRunFn(taskType: string, modelType: ModelProviderEnum) {
+  getDirectRunFn(taskType: string, modelType: string) {
     return this.runFnRegistry[taskType]?.[modelType];
   }
 
-  queues: Map<ModelProviderEnum, JobQueue<Input, Output>> = new Map();
-  registerQueue(modelType: ModelProviderEnum, jobQueue: JobQueue<Input, Output>) {
+  queues: Map<string, JobQueue<Input, Output>> = new Map();
+  registerQueue(modelType: string, jobQueue: JobQueue<Input, Output>) {
     this.queues.set(modelType, jobQueue);
   }
 
-  getQueue(modelType: ModelProviderEnum) {
+  getQueue(modelType: string) {
     return this.queues.get(modelType);
   }
 

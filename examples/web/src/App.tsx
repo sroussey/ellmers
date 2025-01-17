@@ -12,7 +12,6 @@ import {
   TaskOutput,
 } from "ellmers-core";
 import {
-  IndexedDbQueue,
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
 } from "ellmers-storage/browser/indexeddb";
@@ -21,25 +20,36 @@ import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
-import { registerHuggingfaceLocalTasks } from "ellmers-ai-provider/hf-transformers/browser";
-import { getProviderRegistry, ModelProviderEnum } from "ellmers-ai";
-import { registerMediaPipeTfJsLocalTasks } from "ellmers-ai-provider/tf-mediapipe/browser";
+import { getProviderRegistry } from "ellmers-ai";
+import {
+  LOCAL_ONNX_TRANSFORMERJS,
+  registerHuggingfaceLocalTasks,
+} from "ellmers-ai-provider/hf-transformers/browser";
+import {
+  MEDIA_PIPE_TFJS_MODEL,
+  registerMediaPipeTfJsLocalTasks,
+} from "ellmers-ai-provider/tf-mediapipe/browser";
 import "ellmers-task";
 import "ellmers-test";
+import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
+import { registerHuggingfaceLocalModels } from "ellmers-test";
 
 const ProviderRegistry = getProviderRegistry();
 
 registerHuggingfaceLocalTasks();
 ProviderRegistry.registerQueue(
-  ModelProviderEnum.LOCAL_ONNX_TRANSFORMERJS,
+  LOCAL_ONNX_TRANSFORMERJS,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
 );
 
 registerMediaPipeTfJsLocalTasks();
 ProviderRegistry.registerQueue(
-  ModelProviderEnum.MEDIA_PIPE_TFJS_MODEL,
+  MEDIA_PIPE_TFJS_MODEL,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
 );
+
+registerHuggingfaceLocalModels();
+registerMediaPipeTfJsLocalModels();
 
 ProviderRegistry.clearQueues();
 ProviderRegistry.startQueues();
@@ -59,13 +69,13 @@ const graph = await taskGraphRepo.getTaskGraph("default");
 const resetGraph = () => {
   builder
     .reset()
-    .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
+    .DownloadModel({ model: ["ONNX Xenova/LaMini-Flan-T5-783M q8", "ONNX Xenova/m2m100_418M q8"] })
     .TextRewriter({
       text: "The quick brown fox jumps over the lazy dog.",
       prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     })
     .TextTranslation({
-      model: "Xenova/m2m100_418M",
+      model: "ONNX Xenova/m2m100_418M q8",
       source: "en",
       target: "es",
     })

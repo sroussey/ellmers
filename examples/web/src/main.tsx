@@ -1,6 +1,6 @@
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { TaskGraphBuilder } from "ellmers-core";
+import { TaskGraphBuilder, TaskRegistry } from "ellmers-core";
 import "./main.css";
 import {
   TaskConsoleFormatter,
@@ -8,6 +8,7 @@ import {
   TaskGraphBuilderHelperConsoleFormatter,
   isDarkMode,
 } from "./ConsoleFormatters";
+import { getGlobalModelRepository } from "ellmers-ai";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   // <React.StrictMode>
@@ -39,7 +40,7 @@ console.log(
   `  %cbuilder.%creset%c();
 
 
-  builder.%cDownloadModel%c({ %cmodel%c: [%c'Xenova/LaMini-Flan-T5-783M']%c });
+  builder.%cDownloadModel%c({ %cmodel%c: [%c'ONNX Xenova/LaMini-Flan-T5-783M q8']%c });
   builder.%cTextRewriter%c({ %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %cprompt%c: [%c'Rewrite the following text in reverse:'%c, %c'Rewrite this to sound like a pirate:'%c] });
   builder.%crename%c(%c'text'%c, %c'message'%c);
   builder.%cDebugLog%c({ %clevel%c: %c'info'%c });
@@ -85,3 +86,13 @@ console.log(
   `color: ${grey}; font-weight: normal;`
 );
 console.log(window["builder"]);
+
+console.log(
+  "Models Available: ",
+  getGlobalModelRepository().models.map((m) => m.name)
+);
+
+console.log(
+  "Tasks Available: ",
+  Array.from(TaskRegistry.all.entries()).map(([name]) => name)
+);

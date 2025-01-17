@@ -22,7 +22,8 @@
       "ellmers-core": ["../../packages/core/src"],
       "ellmers-ai-provider": ["../../packages/ai-provider/src"],
       "ellmers-storage": ["../../packages/storage/src"],
-      "ellmers-task": ["../../packages/task/src"]
+      "ellmers-task": ["../../packages/task/src"],
+      "ellmers-test": ["../../packages/test/src"]
     }
   },
   "include": ["src"],
@@ -31,6 +32,7 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/task" },
     { "path": "../../packages/ai-provider" },
-    { "path": "../../packages/storage" }
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/test" }
   ]
 }

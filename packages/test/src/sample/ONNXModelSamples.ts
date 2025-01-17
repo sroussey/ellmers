@@ -1,126 +1,178 @@
-import { DATA_TYPES, ONNXTransformerJsModel } from "ellmers-ai-provider/hf-transformers/browser";
-import { ModelUseCaseEnum } from "ellmers-ai";
+import {
+  LOCAL_ONNX_TRANSFORMERJS,
+  QUANTIZATION_DATA_TYPES,
+} from "ellmers-ai-provider/hf-transformers/browser";
+import { getGlobalModelRepository, Model } from "ellmers-ai";
 
-export const supabaseGteSmall = new ONNXTransformerJsModel(
-  "Supabase/gte-small",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 384 }
-);
+function addONNXModel(info: Partial<Model>, tasks: string[]) {
+  const name = info.name
+    ? info.name
+    : "ONNX " + info.url + " " + (info.quantization ?? QUANTIZATION_DATA_TYPES.q8);
 
-export const baaiBgeBaseEnV15 = new ONNXTransformerJsModel(
-  "Xenova/bge-base-en-v1.5",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 768 }
-);
+  const model = Object.assign(
+    {
+      provider: LOCAL_ONNX_TRANSFORMERJS,
+      quantization: QUANTIZATION_DATA_TYPES.q8,
+      normalize: true,
+      contextWindow: 4096,
+      availableOnBrowser: true,
+      availableOnServer: true,
+      parameters: null,
+      languageStyle: null,
+      usingDimensions: info.nativeDimensions ?? null,
+    },
+    info,
+    { name }
+  ) as Model;
 
-export const xenovaMiniL6v2 = new ONNXTransformerJsModel(
-  "Xenova/all-MiniLM-L6-v2",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 384 }
-);
+  getGlobalModelRepository().addModel(model);
+  tasks.forEach((task) => {
+    getGlobalModelRepository().connectTaskToModel(task, name);
+  });
+}
 
-export const whereIsAIUAELargeV1 = new ONNXTransformerJsModel(
-  "WhereIsAI/UAE-Large-V1",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 1024 }
-);
+export function registerHuggingfaceLocalModels() {
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 384,
+      url: "Supabase/gte-small",
+    },
+    ["TextEmbeddingTask"]
+  );
 
-export const baaiBgeSmallEnV15 = new ONNXTransformerJsModel(
-  "Xenova/bge-small-en-v1.5",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 384 }
-);
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 768,
+      url: "Xenova/bge-base-en-v1.5",
+    },
+    ["TextEmbeddingTask"]
+  );
 
-export const xenovaDistilbert = new ONNXTransformerJsModel(
-  "Xenova/distilbert-base-uncased-distilled-squad",
-  [ModelUseCaseEnum.TEXT_QUESTION_ANSWERING],
-  "question-answering"
-);
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 384,
+      url: "Xenova/all-MiniLM-L6-v2",
+    },
+    ["TextEmbeddingTask"]
+  );
 
-export const xenovaDistilbertMnli = new ONNXTransformerJsModel(
-  "Xenova/distilbert-base-uncased-mnli",
-  [ModelUseCaseEnum.TEXT_CLASSIFICATION],
-  "zero-shot-classification"
-);
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 1024,
+      url: "WhereIsAI/UAE-Large-V1",
+    },
+    ["TextEmbeddingTask"]
+  );
 
-export const modernBertBase = new ONNXTransformerJsModel(
-  "answerdotai/ModernBERT-base",
-  [ModelUseCaseEnum.TEXT_CLASSIFICATION],
-  "fill-mask"
-);
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 384,
+      url: "Xenova/bge-small-en-v1.5",
+    },
+    ["TextEmbeddingTask"]
+  );
+  addONNXModel(
+    {
+      pipeline: "question-answering",
+      url: "Xenova/distilbert-base-uncased-distilled-squad",
+    },
+    ["TextQuestionAnsweringTask"]
+  );
 
-export const stentancetransformerMultiQaMpnetBaseDotV1 = new ONNXTransformerJsModel(
-  "Xenova/multi-qa-mpnet-base-dot-v1",
-  [ModelUseCaseEnum.TEXT_EMBEDDING],
-  "feature-extraction",
-  { dimensions: 768 }
-);
+  addONNXModel(
+    {
+      pipeline: "zero-shot-classification",
+      url: "Xenova/distilbert-base-uncased-mnli",
+    },
+    ["TextClassificationTask"]
+  );
 
-export const gpt2 = new ONNXTransformerJsModel(
-  "Xenova/gpt2",
-  [ModelUseCaseEnum.TEXT_GENERATION],
-  "text-generation"
-);
+  addONNXModel(
+    {
+      pipeline: "fill-mask",
+      url: "answerdotai/ModernBERT-base",
+    },
+    ["TextClassificationTask"]
+  );
 
-export const distillgpt2 = new ONNXTransformerJsModel(
-  "Xenova/distilgpt2",
-  [ModelUseCaseEnum.TEXT_GENERATION],
-  "text-generation"
-);
+  addONNXModel(
+    {
+      pipeline: "feature-extraction",
+      nativeDimensions: 768,
+      url: "Xenova/multi-qa-mpnet-base-dot-v1",
+    },
+    ["TextEmbeddingTask"]
+  );
 
-export const flanT5small = new ONNXTransformerJsModel(
-  "Xenova/flan-t5-small",
-  [ModelUseCaseEnum.TEXT_GENERATION],
-  "text2text-generation"
-);
+  addONNXModel(
+    {
+      pipeline: "text-generation",
+      url: "Xenova/gpt2",
+    },
+    ["TextGenerationTask"]
+  );
 
-export const flanT5p786m = new ONNXTransformerJsModel(
-  "Xenova/LaMini-Flan-T5-783M",
-  [ModelUseCaseEnum.TEXT_GENERATION, ModelUseCaseEnum.TEXT_REWRITING],
-  "text2text-generation"
-);
+  addONNXModel(
+    {
+      pipeline: "text-generation",
+      url: "Xenova/distilgpt2",
+    },
+    ["TextGenerationTask"]
+  );
 
-export const text_summarization = new ONNXTransformerJsModel(
-  "Falconsai/text_summarization",
-  [ModelUseCaseEnum.TEXT_SUMMARIZATION],
-  "summarization",
-  { dtype: DATA_TYPES.fp32 }
-);
+  addONNXModel(
+    {
+      pipeline: "text2text-generation",
+      url: "Xenova/flan-t5-small",
+    },
+    ["TextGenerationTask"]
+  );
 
-// export const distilbartCnn = new ONNXTransformerJsModel(
-//   "Xenova/distilbart-cnn-6-6",
-//   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
-//   "summarization"
-// );
+  addONNXModel(
+    {
+      pipeline: "text2text-generation",
+      url: "Xenova/LaMini-Flan-T5-783M",
+    },
+    ["TextGenerationTask"]
+  );
 
-// export const bartLargeCnn = new ONNXTransformerJsModel(
-//   "Xenova/bart-large-cnn",
-//   [ModelUseCaseEnum.TEXT_SUMMARIZATION],
-//   "summarization"
-// );
+  addONNXModel(
+    {
+      pipeline: "summarization",
+      url: "Falconsai/text_summarization",
+    },
+    ["TextSummaryTask"]
+  );
 
-export const nllb200distilled600m = new ONNXTransformerJsModel(
-  "Xenova/nllb-200-distilled-600M",
-  [ModelUseCaseEnum.TEXT_TRANSLATION],
-  "translation",
-  { languageStyle: "FLORES-200" }
-);
+  addONNXModel(
+    {
+      pipeline: "translation",
+      url: "Xenova/nllb-200-distilled-600M",
+      languageStyle: "FLORES-200",
+    },
+    ["TextTranslationTask"]
+  );
 
-export const m2m100_418M = new ONNXTransformerJsModel(
-  "Xenova/m2m100_418M",
-  [ModelUseCaseEnum.TEXT_TRANSLATION],
-  "translation",
-  { languageStyle: "ISO-639" }
-);
+  addONNXModel(
+    {
+      pipeline: "translation",
+      url: "Xenova/m2m100_418M",
+      languageStyle: "ISO-639",
+    },
+    ["TextTranslationTask"]
+  );
 
-export const mbartLarge50many2manyMmt = new ONNXTransformerJsModel(
-  "Xenova/mbart-large-50-many-to-many-mmt",
-  [ModelUseCaseEnum.TEXT_TRANSLATION],
-  "translation",
-  { languageStyle: "ISO-639_ISO-3166-1-alpha-2" }
-);
+  addONNXModel(
+    {
+      pipeline: "translation",
+      url: "Xenova/mbart-large-50-many-to-many-mmt",
+      languageStyle: "ISO-639_ISO-3166-1-alpha-2",
+    },
+    ["TextTranslationTask"]
+  );
+}

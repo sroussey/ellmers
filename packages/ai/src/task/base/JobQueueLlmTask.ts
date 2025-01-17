@@ -10,8 +10,8 @@
  */
 
 import { JobQueueTask, JobQueueTaskConfig, type TaskOutput } from "ellmers-core";
-import { findModelByName } from "../../model/InMemoryStorage";
 import { getProviderRegistry } from "../../provider/ProviderRegistry";
+import { getGlobalModelRepository } from "../../model/ModelRegistry";
 
 export class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";
@@ -35,9 +35,12 @@ export class JobQueueLlmTask extends JobQueueTask {
       const ProviderRegistry = getProviderRegistry();
       const modelname = this.runInputData["model"];
       if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
-      const model = findModelByName(modelname);
-      if (!model) throw new Error("JobQueueTaskTask: No model found");
-      const runFn = ProviderRegistry.jobAsRunFn(runtype, model.type);
+      const model = getGlobalModelRepository().findByName(modelname);
+
+      if (!model) {
+        throw new Error(`JobQueueTaskTask: No model ${modelname} found ${modelname}`);
+      }
+      const runFn = ProviderRegistry.jobAsRunFn(runtype, model.provider);
       if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {

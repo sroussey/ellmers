@@ -6,22 +6,26 @@
 //    *******************************************************************************
 
 import {
-  TaskInput,
-  TaskOutput,
+  DefaultValueType,
+  TaskOutputPrimaryKey,
   TaskOutputPrimaryKeySchema,
   TaskOutputRepository,
 } from "ellmers-core";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 
 export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: IndexedDbKVRepository<TaskInput, TaskOutput, typeof TaskOutputPrimaryKeySchema>;
+  kvRepository: IndexedDbKVRepository<
+    TaskOutputPrimaryKey,
+    DefaultValueType,
+    typeof TaskOutputPrimaryKeySchema
+  >;
   public type = "IndexedDbTaskOutputRepository" as const;
   constructor() {
     super();
     this.kvRepository = new IndexedDbKVRepository<
-      TaskInput,
-      TaskOutput,
+      TaskOutputPrimaryKey,
+      DefaultValueType,
       typeof TaskOutputPrimaryKeySchema
-    >("task_outputs");
+    >("task_outputs", TaskOutputPrimaryKeySchema);
   }
 }

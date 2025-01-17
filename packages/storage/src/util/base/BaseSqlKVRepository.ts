@@ -34,7 +34,7 @@ export abstract class BaseSqlKVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Key & Value = Key & Value
+  Combined extends Record<string, any> = Key & Value
 > extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   /**
    * Creates a new instance of BaseSqlKVRepository

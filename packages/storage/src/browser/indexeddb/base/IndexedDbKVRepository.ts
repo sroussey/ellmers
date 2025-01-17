@@ -37,7 +37,7 @@ export class IndexedDbKVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Key & Value = Key & Value
+  Combined extends Record<string, any> = Key & Value
 > extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   /** Promise that resolves to the IndexedDB database instance */
   private dbPromise: Promise<IDBDatabase>;

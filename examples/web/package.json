@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others -c 'auto' -n app,types 'bunx --bun vite' 'tsc -w --noEmit'",
+    "dev": "concurrently --kill-others -c 'auto' -n app,types 'bunx --bun vite' 'tsc -w --noEmit --preserveWatchOutput'",
     "build": "vite build && tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
@@ -24,7 +24,8 @@
     "ellmers-core": "workspace:packages/core",
     "ellmers-storage": "workspace:packages/storage",
     "ellmers-ai-provider": "workspace:packages/ai-provider",
-    "ellmers-ai": "workspace:packages/ai"
+    "ellmers-ai": "workspace:packages/ai",
+    "ellmers-test": "workspace:packages/test"
   },
   "devDependencies": {
     "@types/react": "^19.0.4",
