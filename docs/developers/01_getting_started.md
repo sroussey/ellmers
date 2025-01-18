@@ -64,12 +64,16 @@ builder
   })
   .rename("text", "message")
   .DebugLog();
-builder.run();
+await builder.run();
+
+// Export the graph
+const graphJson = builder.toJSON();
+console.log(graphJson);
 ```
 
 ## Using Task and TaskGraph directly (& a config helper)
 
-This is equivalent to creating the graph directly:
+This is equivalent to creating the graph directly, with additional features like caching and reactive execution:
 
 ```ts
 import {
@@ -118,7 +122,7 @@ graph.addDataFlow(
 );
 
 const runner = new TaskGraphRunner(graph);
-runner.run();
+await runner.run();
 ```
 
 ## Using Task and TaskGraph directly (no config helper)

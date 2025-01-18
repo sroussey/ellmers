@@ -265,11 +265,24 @@ style Task type:abstract,stroke-dasharray: 5 5
 classDiagram
 
   class TaskGraphRunner{
-    TaskGraph _graph
-    run() TaskOutput
+    Map<number, Task[]> layers
+    Map<unknown, TaskInput> provenanceInput
+    TaskGraph dag
+    TaskOutputRepository repository
+    assignLayers(Task[] sortedNodes)
+    runGraph(TaskInput parentProvenance) TaskOutput
+    runGraphReactive() TaskOutput
   }
 
 ```
+
+The TaskGraphRunner is responsible for executing tasks in a task graph. Key features include:
+
+- **Layer-based Execution**: Tasks are organized into layers based on dependencies, allowing parallel execution of independent tasks
+- **Provenance Tracking**: Tracks the lineage and input data that led to each task's output
+- **Caching Support**: Can use a TaskOutputRepository to cache task outputs and avoid re-running tasks
+- **Reactive Mode**: Supports reactive execution where tasks can respond to input changes without full re-execution
+- **Smart Task Scheduling**: Automatically determines task execution order based on dependencies
 
 ## TaskGraphBuilder
 
@@ -279,9 +292,16 @@ classDiagram
   class TaskGraphBuilder{
     -TaskGraphRunner _runner
     -TaskGraph _graph
+    -TaskOutputRepository _repository
+    -DataFlow[] _dataFlows
+    +EventEmitter events
     run() TaskOutput
-    +rename(string outputName, string inputName)
-    +pop()
+    pop()
+    parallel(...builders) TaskGraphBuilder
+    rename(string source, string target, number index) TaskGraphBuilder
+    reset() TaskGraphBuilder
+    toJSON() TaskGraphJson
+    toDependencyJSON() JsonTaskItem[]
     +DownloadModel(model)
     +TextEmbedding(model text)
     +TextGeneration(model prompt)
@@ -294,8 +314,16 @@ classDiagram
     +JavaScript(code input)
   }
 
-
 ```
+
+The TaskGraphBuilder provides a fluent interface for constructing task graphs. Key features include:
+
+- **Event System**: Emits events for graph changes and execution status
+- **Parallel Execution**: Can run multiple task graphs in parallel
+- **Repository Integration**: Optional integration with TaskOutputRepository for caching
+- **JSON Support**: Can import/export graphs as JSON
+- **Smart Task Connection**: Automatically connects task outputs to inputs based on naming
+- **Task Management**: Methods for adding, removing, and modifying tasks in the graph
 
 # Warnings / ToDo
 
