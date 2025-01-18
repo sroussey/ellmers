@@ -26,7 +26,7 @@ class TestTask extends SingleTask {
   ] as const;
   static readonly outputs = [
     {
-      id: "syncOnly",
+      id: "reactiveOnly",
       name: "Output",
       valueType: "boolean",
     },
@@ -41,11 +41,11 @@ class TestTask extends SingleTask {
       valueType: "text",
     },
   ] as const;
-  runReactive(): TestTaskOutput {
-    return { all: false, key: this.runInputData.key, syncOnly: true };
+  async runReactive(): Promise<TestTaskOutput> {
+    return { all: false, key: this.runInputData.key, reactiveOnly: true };
   }
   async run(): Promise<TestTaskOutput> {
-    return { all: true, key: this.runInputData.key, syncOnly: false };
+    return { all: true, key: this.runInputData.key, reactiveOnly: false };
   }
 }
 
@@ -62,7 +62,7 @@ class TestCompoundTask extends CompoundTask {
   ] as const;
   static readonly outputs = [
     {
-      id: "syncOnly",
+      id: "reactiveOnly",
       name: "Output",
       valueType: "boolean",
     },
@@ -78,12 +78,12 @@ class TestCompoundTask extends CompoundTask {
     },
   ] as const;
   static readonly type = "TestCompoundTask";
-  runReactive(): TestTaskOutput {
-    this.runOutputData = { key: this.runInputData.key, all: false, syncOnly: true };
+  async runReactive(): Promise<TestTaskOutput> {
+    this.runOutputData = { key: this.runInputData.key, all: false, reactiveOnly: true };
     return this.runOutputData;
   }
   async run(): Promise<TestTaskOutput> {
-    this.runOutputData = { key: this.runInputData.key, all: true, syncOnly: false };
+    this.runOutputData = { key: this.runInputData.key, all: true, reactiveOnly: false };
     return this.runOutputData;
   }
 }
@@ -95,14 +95,14 @@ describe("Task", () => {
       const input = { key: "value" };
       node.addInputData(input);
       const output = await node.run();
-      expect(output).toEqual({ ...input, syncOnly: false, all: true });
+      expect(output).toEqual({ ...input, reactiveOnly: false, all: true });
       expect(node.runInputData).toEqual(input);
     });
 
-    it("should run the task synchronously", () => {
+    it("should run the task reactively", async () => {
       const node = new TestTask();
-      const output = node.runReactive();
-      expect(output).toEqual({ key: "", syncOnly: true, all: false });
+      const output = await node.runReactive();
+      expect(output).toEqual({ key: "", reactiveOnly: true, all: false });
     });
   });
 
@@ -123,14 +123,14 @@ describe("Task", () => {
       const input = { key: "value" };
       node.addInputData(input);
       const output = await node.run();
-      expect(output).toEqual({ key: "value", all: true, syncOnly: false });
+      expect(output).toEqual({ key: "value", all: true, reactiveOnly: false });
       expect(node.runInputData).toEqual(input);
     });
 
-    it("should run the task synchronously", () => {
+    it("should run the task synchronously", async () => {
       const node = new TestCompoundTask({ input: { key: "value2" } });
-      const output = node.runReactive();
-      expect(output).toEqual({ key: "value2", syncOnly: true, all: false });
+      const output = await node.runReactive();
+      expect(output).toEqual({ key: "value2", reactiveOnly: true, all: false });
     });
   });
 });

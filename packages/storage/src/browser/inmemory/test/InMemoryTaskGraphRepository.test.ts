@@ -11,7 +11,7 @@ import { InMemoryTaskGraphRepository } from "ellmers-storage/inmemory";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runReactive(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     return {};
   }
 }

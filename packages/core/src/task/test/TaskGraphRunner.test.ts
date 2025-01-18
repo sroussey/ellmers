@@ -13,7 +13,7 @@ import { CreateMappedType } from "../base/TaskIOTypes";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runReactive(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     return {};
   }
 }
@@ -40,7 +40,7 @@ class TestSquareTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runReactive(): TestSquareTaskOutput {
+  async runReactive(): Promise<TestSquareTaskOutput> {
     return { output: this.runInputData.input * this.runInputData.input };
   }
 }
@@ -66,7 +66,7 @@ class TestDoubleTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runReactive(): TestDoubleTaskOutput {
+  async runReactive(): Promise<TestDoubleTaskOutput> {
     return { output: this.runInputData.input * 2 };
   }
 }
@@ -98,7 +98,7 @@ class TestAddTask extends SingleTask {
       valueType: "number",
     },
   ] as const;
-  runReactive(): TaskOutput {
+  async runReactive(): Promise<TestAddTaskOutput> {
     const input = this.runInputData;
     return { output: input.a + input.b };
   }
@@ -146,11 +146,11 @@ describe("TaskGraphRunner", () => {
     });
   });
 
-  describe("runGraphSyncOnly", () => {
-    it("should run nodes in each layer synchronously", () => {
+  describe("runGraphReactive", () => {
+    it("should run nodes in each layer synchronously", async () => {
       const runReactiveSpy = spyOn(nodes[0], "runReactive");
 
-      runner.runGraphSyncOnly();
+      await runner.runGraphReactive();
 
       expect(runReactiveSpy).toHaveBeenCalledTimes(1);
     });

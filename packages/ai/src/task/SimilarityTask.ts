@@ -115,7 +115,7 @@ export class SimilarityTask extends SingleTask {
     }
   }
 
-  runReactive() {
+  async runReactive() {
     const query = this.runInputData.query as ElVector<Float32Array>;
     let similarities = [];
     const fns = { cosine_similarity };

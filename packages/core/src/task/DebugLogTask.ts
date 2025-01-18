@@ -32,7 +32,7 @@ export class DebugLogTask extends OutputTask {
     },
   ] as const;
   public static outputs = [{ id: "output", name: "Output", valueType: "any" }] as const;
-  runReactive() {
+  async runReactive() {
     const level = this.runInputData.level || "log";
     if (level == "dir") {
       console.dir(this.runInputData.message, { depth: null });

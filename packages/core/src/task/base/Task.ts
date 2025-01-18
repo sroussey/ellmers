@@ -272,12 +272,12 @@ export abstract class TaskBase {
       throw new Error("Invalid input data");
     }
     this.emit("start");
-    const result = this.runReactive();
+    const result = await this.runReactive();
     this.emit("complete");
     this.runOutputData = result;
     return result;
   }
-  runReactive(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     return this.runOutputData;
   }
 
@@ -334,9 +334,9 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     this.emit("complete");
     return this.runOutputData;
   }
-  runReactive(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     const runner = new TaskGraphRunner(this.subGraph);
-    this.runOutputData.outputs = runner.runGraphSyncOnly();
+    this.runOutputData.outputs = await runner.runGraphReactive();
     return this.runOutputData;
   }
 

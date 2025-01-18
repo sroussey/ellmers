@@ -174,8 +174,8 @@ export function arrayTaskFactory<
       return this;
     }
 
-    runReactive(): PluralOutputType {
-      const runDataOut = super.runReactive();
+    async runReactive(): Promise<PluralOutputType> {
+      const runDataOut = await super.runReactive();
       this.runOutputData = collectPropertyValues<NonPluralOutputType>(
         runDataOut.outputs
       ) as PluralOutputType;

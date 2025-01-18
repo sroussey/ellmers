@@ -96,7 +96,7 @@ export class TaskGraphRunner {
         task.emit("start");
         task.emit("progress", 100, Object.values(results)[0]);
         task.runOutputData = results;
-        task.runReactive();
+        await task.runReactive();
         task.emit("complete");
       }
     }
@@ -132,23 +132,26 @@ export class TaskGraphRunner {
     return results;
   }
 
-  private runTasksSync() {
+  private async runTasksReactive() {
     let results: TaskOutput[] = [];
     for (const [_layerNumber, nodes] of this.layers.entries()) {
-      results = nodes.map((node) => {
-        this.copyInputFromEdgesToNode(node);
-        const results = node.runReactive();
-        this.pushOutputFromNodeToEdges(node, results);
-        return results;
-      });
+      const settledResults = await Promise.allSettled(
+        nodes.map(async (node) => {
+          this.copyInputFromEdgesToNode(node);
+          const results = await node.runReactive();
+          this.pushOutputFromNodeToEdges(node, results);
+          return results;
+        })
+      );
+      results = settledResults.map((r) => (r.status === "fulfilled" ? r.value : {}));
     }
     return results;
   }
 
-  public runGraphSyncOnly() {
+  public async runGraphReactive() {
     this.dag.getNodes().forEach((node) => node.resetInputData());
     const sortedNodes = this.dag.topologicallySortedNodes();
     this.assignLayers(sortedNodes);
-    return this.runTasksSync();
+    return await this.runTasksReactive();
   }
 }
