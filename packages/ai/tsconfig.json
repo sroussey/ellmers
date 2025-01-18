@@ -4,6 +4,7 @@
   "files": ["src/index.ts", "src/worker.ts"],
   "exclude": ["**/*.test.ts", "dist"],
   "compilerOptions": {
+    "composite": true,
     "outDir": "./dist",
     "baseUrl": "./src",
     "rootDir": "./src",
