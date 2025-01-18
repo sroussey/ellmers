@@ -5,18 +5,27 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskOutputDiscriminator, TaskOutputRepository, TaskInput, TaskOutput } from "ellmers-core";
+import {
+  TaskOutputPrimaryKeySchema,
+  TaskOutputRepository,
+  TaskOutputPrimaryKey,
+  DefaultValueType,
+} from "ellmers-core";
 import { SqliteKVRepository } from "./base/SqliteKVRepository";
 
 export class SqliteTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: SqliteKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
+  kvRepository: SqliteKVRepository<
+    TaskOutputPrimaryKey,
+    DefaultValueType,
+    typeof TaskOutputPrimaryKeySchema
+  >;
   public type = "SqliteTaskOutputRepository" as const;
   constructor(dbOrPath: string) {
     super();
     this.kvRepository = new SqliteKVRepository<
-      TaskInput,
-      TaskOutput,
-      typeof TaskOutputDiscriminator
-    >(dbOrPath, "task_outputs", TaskOutputDiscriminator);
+      TaskOutputPrimaryKey,
+      DefaultValueType,
+      typeof TaskOutputPrimaryKeySchema
+    >(dbOrPath, "task_outputs", TaskOutputPrimaryKeySchema);
   }
 }

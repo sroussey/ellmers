@@ -10,7 +10,12 @@ import { Job, JobStatus, JobQueue, ILimiter } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
 export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
-  constructor(queue: string, limiter: ILimiter, waitDurationInMilliseconds = 100) {
+  constructor(
+    queue: string,
+    limiter: ILimiter,
+    waitDurationInMilliseconds = 100,
+    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
+  ) {
     super(queue, limiter, waitDurationInMilliseconds);
     this.jobQueue = [];
   }

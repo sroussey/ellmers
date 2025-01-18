@@ -7,5 +7,4 @@
 
 export * from "./provider/HuggingFaceLocal_TaskRun";
 export * from "./model/ONNXTransformerJsModel";
-export * from "./bindings/local_hf";
-export * from "./bindings/all_inmemory";
+export * from "./bindings/registerTasks";

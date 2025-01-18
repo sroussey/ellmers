@@ -11,7 +11,7 @@ import { SingleTask, TaskOutput, DataFlow, TaskGraph, TaskRegistry } from "ellme
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     return {};
   }
 }

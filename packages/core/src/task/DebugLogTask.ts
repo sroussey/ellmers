@@ -13,6 +13,17 @@ import { TaskRegistry } from "./base/TaskRegistry";
 export type DebugLogTaskInput = CreateMappedType<typeof DebugLogTask.inputs>;
 export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;
 
+/**
+ * DebugLogTask provides console logging functionality as a task within the system.
+ *
+ * Features:
+ * - Supports multiple log levels (info, warn, error, dir)
+ * - Passes through the logged message as output
+ * - Configurable logging format and depth
+ *
+ * This task is particularly useful for debugging task graphs and monitoring
+ * data flow between tasks during development and testing.
+ */
 export class DebugLogTask extends OutputTask {
   static readonly type: string = "DebugLogTask";
   static readonly category = "Output";
@@ -32,7 +43,7 @@ export class DebugLogTask extends OutputTask {
     },
   ] as const;
   public static outputs = [{ id: "output", name: "Output", valueType: "any" }] as const;
-  runSyncOnly() {
+  async runReactive() {
     const level = this.runInputData.level || "log";
     if (level == "dir") {
       console.dir(this.runInputData.message, { depth: null });

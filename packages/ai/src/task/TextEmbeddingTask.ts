@@ -22,7 +22,11 @@ export type TextEmbeddingTaskInput = CreateMappedType<typeof TextEmbeddingTask.i
 export type TextEmbeddingTaskOutput = CreateMappedType<typeof TextEmbeddingTask.outputs>;
 
 /**
- * This is a task that generates an embedding for a single piece of text
+ * A task that generates vector embeddings for text using a specified embedding model.
+ * Embeddings are numerical representations of text that capture semantic meaning,
+ * useful for similarity comparisons and semantic search.
+ *
+ * @extends JobQueueLlmTask
  */
 export class TextEmbeddingTask extends JobQueueLlmTask {
   public static inputs = [
@@ -41,6 +45,7 @@ export class TextEmbeddingTask extends JobQueueLlmTask {
   constructor(config: JobQueueTaskConfig & { input?: TextEmbeddingTaskInput } = {}) {
     super(config);
   }
+
   declare runInputData: TextEmbeddingTaskInput;
   declare runOutputData: TextEmbeddingTaskOutput;
   declare defaults: Partial<TextEmbeddingTaskInput>;
@@ -52,11 +57,20 @@ TaskRegistry.registerTask(TextEmbeddingTask);
 type TextEmbeddingCompoundTaskOutput = ConvertAllToArrays<TextEmbeddingTaskOutput>;
 type TextEmbeddingCompoundTaskInput = ConvertSomeToOptionalArray<TextEmbeddingTaskInput, "model">;
 
+/**
+ * A compound task factory that creates a task capable of processing multiple texts
+ * and generating embeddings in parallel
+ */
 export const TextEmbeddingCompoundTask = arrayTaskFactory<
   TextEmbeddingCompoundTaskInput,
   TextEmbeddingCompoundTaskOutput
 >(TextEmbeddingTask, ["model", "text"]);
 
+/**
+ * Convenience function to create and run a TextEmbeddingCompoundTask
+ * @param {TextEmbeddingCompoundTaskInput} input - Input containing text(s) and model(s) for embedding
+ * @returns {Promise<TextEmbeddingCompoundTaskOutput>} Promise resolving to the generated embeddings
+ */
 export const TextEmbedding = (input: TextEmbeddingCompoundTaskInput) => {
   return new TextEmbeddingCompoundTask({ input }).run();
 };

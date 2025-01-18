@@ -16,14 +16,14 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     protected db: Database,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
-    waitDurationInMilliseconds = 100
+    waitDurationInMilliseconds = 100,
+    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
   ) {
     super(queue, limiter, waitDurationInMilliseconds);
   }
 
   public ensureTableExists() {
-    this.db.exec(`
+    const a = this.db.exec(`
 
       CREATE TABLE IF NOT EXISTS job_queue (
         id INTEGER PRIMARY KEY,

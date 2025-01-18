@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Model, ModelProcessorEnum, ModelUseCaseEnum, type ModelOptions } from "ellmers-ai";
+export const LOCAL_ONNX_TRANSFORMERJS = "LOCAL_ONNX_TRANSFORMERJS";
 
-export enum DATA_TYPES {
+export enum QUANTIZATION_DATA_TYPES {
   auto = "auto", // Auto-detect based on environment
   fp32 = "fp32",
   fp16 = "fp16",
@@ -17,25 +17,4 @@ export enum DATA_TYPES {
   q4 = "q4",
   bnb4 = "bnb4",
   q4f16 = "q4f16", // fp16 model with int4 block weight quantization
-}
-
-export interface ONNXTransformerJsModelOptions extends ModelOptions {
-  dtype?: DATA_TYPES | { [key: string]: DATA_TYPES };
-}
-
-export class ONNXTransformerJsModel extends Model implements ONNXTransformerJsModelOptions {
-  constructor(
-    name: string,
-    useCase: ModelUseCaseEnum[],
-    public pipeline: string,
-    options?: Pick<
-      ONNXTransformerJsModelOptions,
-      "dimensions" | "parameters" | "languageStyle" | "dtype"
-    >
-  ) {
-    super(name, useCase, options);
-    this.dtype = options?.dtype ?? DATA_TYPES.q8;
-  }
-  readonly type = ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS;
-  dtype?: DATA_TYPES | { [key: string]: DATA_TYPES } | undefined;
 }

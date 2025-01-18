@@ -8,6 +8,18 @@
 import chalk from "chalk";
 import { ListrTaskWrapper } from "listr2";
 
+/**
+ * TaskHelper provides CLI progress visualization utilities.
+ *
+ * Features:
+ * - Unicode-based progress bar generation
+ * - Customizable bar length and progress indication
+ * - Color-coded output using chalk
+ *
+ * Used to create visual feedback for long-running tasks in the CLI interface,
+ * with smooth progress transitions and clear visual indicators.
+ */
+
 export function createBar(progress: number, length: number): string {
   let distance = progress * length;
   let bar = "";
@@ -47,11 +59,7 @@ export function createBar(progress: number, length: number): string {
   // Extend empty bar
   bar += "\u258F".repeat(length > bar.length ? length - bar.length : 0);
 
-  return chalk.rgb(
-    70,
-    70,
-    240
-  )("\u2595" + chalk.bgRgb(20, 20, 70)(bar) + "\u258F");
+  return chalk.rgb(70, 70, 240)("\u2595" + chalk.bgRgb(20, 20, 70)(bar) + "\u258F");
 }
 
 export class TaskHelper<T = any> {

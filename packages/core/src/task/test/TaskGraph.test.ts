@@ -11,7 +11,7 @@ import { TaskGraph, DataFlow, serialGraph } from "../base/TaskGraph";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
-  runSyncOnly(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     return {};
   }
 }

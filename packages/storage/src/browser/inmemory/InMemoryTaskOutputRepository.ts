@@ -5,18 +5,29 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskInput, TaskOutput, TaskOutputDiscriminator, TaskOutputRepository } from "ellmers-core";
-import { InMemoryKVRepository } from "./InMemoryKVRepository";
+import {
+  DefaultValueType,
+  TaskInput,
+  TaskOutput,
+  TaskOutputPrimaryKey,
+  TaskOutputPrimaryKeySchema,
+  TaskOutputRepository,
+} from "ellmers-core";
+import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
 export class InMemoryTaskOutputRepository extends TaskOutputRepository {
-  kvRepository: InMemoryKVRepository<TaskInput, TaskOutput, typeof TaskOutputDiscriminator>;
+  kvRepository: InMemoryKVRepository<
+    TaskOutputPrimaryKey,
+    DefaultValueType,
+    typeof TaskOutputPrimaryKeySchema
+  >;
   public type = "InMemoryTaskOutputRepository" as const;
   constructor() {
     super();
     this.kvRepository = new InMemoryKVRepository<
-      TaskInput,
-      TaskOutput,
-      typeof TaskOutputDiscriminator
-    >();
+      TaskOutputPrimaryKey,
+      DefaultValueType,
+      typeof TaskOutputPrimaryKeySchema
+    >(TaskOutputPrimaryKeySchema);
   }
 }

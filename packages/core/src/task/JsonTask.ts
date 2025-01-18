@@ -11,42 +11,52 @@ import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilde
 import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
+/**
+ * Represents a single task item in the JSON configuration.
+ * This structure defines how tasks should be configured in JSON format.
+ */
 export type JsonTaskItem = {
-  id: unknown;
-  type: string;
-  name?: string;
-  input?: TaskInput;
+  id: unknown; // Unique identifier for the task
+  type: string; // Type of task to create
+  name?: string; // Optional display name for the task
+  input?: TaskInput; // Input configuration for the task
   dependencies?: {
-    [x: string]:
-      | {
-          id: unknown;
-          output: string;
+    // Defines data flow between tasks
+    [x: string]: // Input parameter name
+    | {
+          id: unknown; // ID of the source task
+          output: string; // Output parameter name from source task
         }
       | {
           id: unknown;
           output: string;
         }[];
   };
-  provenance?: TaskInput;
-  subtasks?: JsonTaskItem[];
+  provenance?: TaskInput; // Optional metadata about task origin
+  subtasks?: JsonTaskItem[]; // Nested tasks for compound operations
 };
 
 type JsonTaskInput = CreateMappedType<typeof JsonTask.inputs>;
 type JsonTaskOutput = CreateMappedType<typeof JsonTask.outputs>;
 
+/**
+ * JsonTask is a specialized task that creates and manages task graphs from JSON configurations.
+ * It allows dynamic creation of task networks by parsing JSON definitions of tasks and their relationships.
+ */
 export class JsonTask extends RegenerativeCompoundTask {
   public static inputs = [
     {
       id: "json",
       name: "JSON",
-      valueType: "text",
+      valueType: "text", // Expects JSON string input
     },
   ] as const;
+
   public static outputs = [
     {
       id: "output",
       name: "Output",
-      valueType: "any",
+      valueType: "any", // Output type depends on the generated task graph
     },
   ] as const;
 
@@ -61,6 +71,9 @@ export class JsonTask extends RegenerativeCompoundTask {
     }
   }
 
+  /**
+   * Updates the task's input data and regenerates the graph if JSON input changes
+   */
   public addInputData(overrides: Partial<JsonTaskInput> | undefined) {
     let changed = false;
     if (overrides?.json != this.runInputData.json) changed = true;
@@ -69,6 +82,10 @@ export class JsonTask extends RegenerativeCompoundTask {
     return this;
   }
 
+  /**
+   * Creates a task instance from a JSON task item configuration
+   * Validates required fields and resolves task type from registry
+   */
   private createTask(item: JsonTaskItem) {
     if (!item.id) throw new Error("Task id required");
     if (!item.type) throw new Error("Task type required");
@@ -93,6 +110,10 @@ export class JsonTask extends RegenerativeCompoundTask {
     return task;
   }
 
+  /**
+   * Creates a task graph from an array of JSON task items
+   * Recursively processes subtasks for compound tasks
+   */
   private createSubGraph(jsonItems: JsonTaskItem[]) {
     const subGraph = new TaskGraph();
     for (const subitem of jsonItems) {
@@ -101,14 +122,20 @@ export class JsonTask extends RegenerativeCompoundTask {
     return subGraph;
   }
 
+  /**
+   * Regenerates the entire task graph based on the current JSON input
+   * Creates task nodes and establishes data flow connections between them
+   */
   public regenerateGraph() {
     if (!this.runInputData.json) return;
     let data = JSON.parse(this.runInputData.json) as JsonTaskItem[] | JsonTaskItem;
     if (!Array.isArray(data)) data = [data];
     const jsonItems: JsonTaskItem[] = data as JsonTaskItem[];
-    // create the task nodes
+
+    // Create task nodes
     this.subGraph = this.createSubGraph(jsonItems);
-    // create the data flow edges
+
+    // Establish data flow connections
     for (const item of jsonItems) {
       if (!item.dependencies) continue;
       for (const [input, dependency] of Object.entries(item.dependencies)) {
@@ -130,16 +157,24 @@ export class JsonTask extends RegenerativeCompoundTask {
   static readonly category = "Utility";
 }
 
+// Register JsonTask with the task registry
 TaskRegistry.registerTask(JsonTask);
 
+/**
+ * Helper function to create and configure a JsonTask instance
+ */
 const JsonBuilder = (input: JsonTaskInput) => {
   return new JsonTask({ input });
 };
 
+/**
+ * Convenience function to create and run a JsonTask
+ */
 export const Json = (input: JsonTaskInput) => {
   return JsonBuilder(input).run();
 };
 
+// Add Json task builder to TaskGraphBuilder interface
 declare module "./base/TaskGraphBuilder" {
   interface TaskGraphBuilder {
     Json: TaskGraphBuilderHelper<JsonTaskInput>;

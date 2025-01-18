@@ -62,6 +62,9 @@ export interface IConfig {
   provenance?: TaskInput;
 }
 
+/**
+ * Base class for all tasks
+ */
 export abstract class TaskBase {
   // information about the task that should be overriden by the subclasses
   static readonly type: TaskTypeName = "TaskBase";
@@ -211,9 +214,22 @@ export abstract class TaskBase {
     return this;
   }
 
+  /**
+   * Validates an item against the task's input definition
+   * @param valueType The type of the item
+   * @param item The item to validate
+   * @returns True if the item is valid, false otherwise
+   */
   validateItem(valueType: string, item: any) {
     return validateItem(valueType as ValueTypesIndex, item);
   }
+
+  /**
+   * Validates an input item against the task's input definition
+   * @param input The input to validate
+   * @param inputId The id of the input to validate
+   * @returns True if the input is valid, false otherwise
+   */
   validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
     const classRef = this.constructor as typeof TaskBase;
     const inputdef = this.inputs.find((def) => def.id === inputId);
@@ -258,6 +274,11 @@ export abstract class TaskBase {
     return true;
   }
 
+  /**
+   * Validates an input data object against the task's input definition
+   * @param input The input to validate
+   * @returns True if the input is valid, false otherwise
+   */
   validateInputData(input: Partial<TaskInput>) {
     for (const inputdef of this.inputs) {
       if (this.validateInputItem(input, inputdef.id) === false) {
@@ -267,20 +288,32 @@ export abstract class TaskBase {
     return true;
   }
 
+  /**
+   * Runs the task
+   * @returns The output of the task
+   */
   async run(): Promise<TaskOutput> {
     if (!this.validateInputData(this.runInputData)) {
       throw new Error("Invalid input data");
     }
     this.emit("start");
-    const result = this.runSyncOnly();
+    const result = await this.runReactive();
     this.emit("complete");
     this.runOutputData = result;
     return result;
   }
-  runSyncOnly(): TaskOutput {
+  /**
+   * Runs the task reactively
+   * @returns The output of the task
+   */
+  async runReactive(): Promise<TaskOutput> {
     return this.runOutputData;
   }
 
+  /**
+   * Converts the task to a JSON format suitable for dependency tracking
+   * @returns The task in JSON format
+   */
   toJSON(): JsonTaskItem {
     const p = this.getProvenance();
     return {
@@ -290,6 +323,10 @@ export abstract class TaskBase {
       ...(Object.keys(p).length ? { provenance: p } : {}),
     };
   }
+  /**
+   * Converts the task to a JSON format suitable for dependency tracking
+   * @returns The task in JSON format
+   */
   toDependencyJSON(): JsonTaskItem {
     return this.toJSON();
   }
@@ -297,32 +334,55 @@ export abstract class TaskBase {
 
 export type TaskIdType = TaskBase["config"]["id"];
 
+/**
+ * Represents a single task, which is a basic unit of work in the task graph
+ */
 export class SingleTask extends TaskBase implements ITaskSimple {
   static readonly type: TaskTypeName = "SingleTask";
   readonly isCompound = false;
 }
 
+/**
+ * Represents a compound task, which is a task that contains other tasks
+ */
 export class CompoundTask extends TaskBase implements ITaskCompound {
   static readonly type: TaskTypeName = "CompoundTask";
 
   declare runOutputData: TaskOutput;
   readonly isCompound = true;
   _subGraph: TaskGraph | null = null;
+  /**
+   * Sets the subtask graph for the compound task
+   * @param subGraph The subtask graph to set
+   */
   set subGraph(subGraph: TaskGraph) {
     this._subGraph = subGraph;
   }
+  /**
+   * Gets the subtask graph for the compound task
+   * @returns The subtask graph
+   */
   get subGraph() {
     if (!this._subGraph) {
       this._subGraph = new TaskGraph();
     }
     return this._subGraph;
   }
+  /**
+   * Resets the input data for the compound task and its subtasks
+   */
   resetInputData() {
     super.resetInputData();
     this.subGraph.getNodes().forEach((node) => {
       node.resetInputData();
     });
   }
+  /**
+   * Runs the compound task
+   * @param nodeProvenance The provenance for the subtasks
+   * @param repository The repository to use for caching task outputs
+   * @returns The output of the compound task
+   */
   async run(
     nodeProvenance: TaskInput = {},
     repository?: TaskOutputRepository
@@ -334,9 +394,9 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     this.emit("complete");
     return this.runOutputData;
   }
-  runSyncOnly(): TaskOutput {
+  async runReactive(): Promise<TaskOutput> {
     const runner = new TaskGraphRunner(this.subGraph);
-    this.runOutputData.outputs = runner.runGraphSyncOnly();
+    this.runOutputData.outputs = await runner.runGraphReactive();
     return this.runOutputData;
   }
 
@@ -348,15 +408,24 @@ export class CompoundTask extends TaskBase implements ITaskCompound {
     this.resetInputData();
     return { ...super.toJSON(), subgraph: this.subGraph.toJSON() };
   }
-
+  /**
+   * Converts the task to a JSON format suitable for dependency tracking
+   * @returns The task in JSON format
+   */
   toDependencyJSON(): JsonTaskItem {
     this.resetInputData();
     return { ...super.toDependencyJSON(), subtasks: this.subGraph.toDependencyJSON() };
   }
 }
 
+/**
+ * Represents a regenerative compound task, which is a task that contains other tasks and can regenerate its subtasks
+ */
 export class RegenerativeCompoundTask extends CompoundTask {
   static readonly type: TaskTypeName = "CompoundTask";
+  /**
+   * Emits a "regenerate" event when the subtask graph is regenerated
+   */
   public regenerateGraph() {
     this.emit("regenerate", this.subGraph);
   }

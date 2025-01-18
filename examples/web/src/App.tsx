@@ -2,7 +2,15 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
-import { JsonTask, JsonTaskItem, TaskGraph, TaskGraphBuilder } from "ellmers-core";
+import {
+  ConcurrencyLimiter,
+  JsonTask,
+  JsonTaskItem,
+  TaskGraph,
+  TaskGraphBuilder,
+  TaskInput,
+  TaskOutput,
+} from "ellmers-core";
 import {
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
@@ -11,10 +19,37 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/browser";
+import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+import { getProviderRegistry } from "ellmers-ai";
+import {
+  LOCAL_ONNX_TRANSFORMERJS,
+  registerHuggingfaceLocalTasks,
+} from "ellmers-ai-provider/hf-transformers/browser";
+import {
+  MEDIA_PIPE_TFJS_MODEL,
+  registerMediaPipeTfJsLocalTasks,
+} from "ellmers-ai-provider/tf-mediapipe/browser";
 import "ellmers-task";
+import "ellmers-test";
+import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
+import { registerHuggingfaceLocalModels } from "ellmers-test";
 
-registerHuggingfaceLocalTasksInMemory();
+const ProviderRegistry = getProviderRegistry();
+
+registerHuggingfaceLocalTasks();
+ProviderRegistry.registerQueue(
+  LOCAL_ONNX_TRANSFORMERJS,
+  new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
+);
+
+registerMediaPipeTfJsLocalTasks();
+ProviderRegistry.registerQueue(
+  MEDIA_PIPE_TFJS_MODEL,
+  new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
+);
+
+ProviderRegistry.clearQueues();
+ProviderRegistry.startQueues();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);
@@ -31,13 +66,13 @@ const graph = await taskGraphRepo.getTaskGraph("default");
 const resetGraph = () => {
   builder
     .reset()
-    .DownloadModel({ model: ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"] })
+    .DownloadModel({ model: ["ONNX Xenova/LaMini-Flan-T5-783M q8", "ONNX Xenova/m2m100_418M q8"] })
     .TextRewriter({
       text: "The quick brown fox jumps over the lazy dog.",
       prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     })
     .TextTranslation({
-      model: "Xenova/m2m100_418M",
+      model: "ONNX Xenova/m2m100_418M q8",
       source: "en",
       target: "es",
     })
@@ -76,6 +111,12 @@ export const App = () => {
 
   // changes coming from builder in console
   useEffect(() => {
+    async function init() {
+      await registerHuggingfaceLocalModels();
+      await registerMediaPipeTfJsLocalModels();
+    }
+    init();
+
     function listen() {
       setJsonData(JSON.stringify(builder.toDependencyJSON(), null, 2));
       setGraph(builder.graph);

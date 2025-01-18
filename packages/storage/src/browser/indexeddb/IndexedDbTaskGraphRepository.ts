@@ -5,14 +5,14 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskGraphJson, TaskGraphRepository } from "ellmers-core";
+import { TaskGraphRepository } from "ellmers-core";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 
 export class IndexedDbTaskGraphRepository extends TaskGraphRepository {
-  kvRepository: IndexedDbKVRepository<unknown, TaskGraphJson>;
+  kvRepository: IndexedDbKVRepository;
   public type = "IndexedDbTaskGraphRepository" as const;
   constructor() {
     super();
-    this.kvRepository = new IndexedDbKVRepository<unknown, TaskGraphJson>("task_graphs");
+    this.kvRepository = new IndexedDbKVRepository("task_graphs");
   }
 }

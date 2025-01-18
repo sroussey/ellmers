@@ -6,56 +6,99 @@
 //    *******************************************************************************
 
 import { Pool } from "pg";
-import { DiscriminatorSchema, KVRepository } from "ellmers-core";
-import { makeFingerprint } from "../../../util/Misc";
+import {
+  BaseValueSchema,
+  BasePrimaryKeySchema,
+  BasicKeyType,
+  DefaultValueSchema,
+  DefaultPrimaryKeySchema,
+  DefaultPrimaryKeyType,
+  DefaultValueType,
+} from "ellmers-core";
+import { BaseSqlKVRepository } from "../../../util/base/BaseSqlKVRepository";
 
-// PostgresKVRepository is a key-value store that uses PostgreSQL as the backend for
-// multi-user scenarios. It supports discriminators.
+/// ******************************************************************
+/// *
+/// ******************************************************************
+/// **********************    NOT TESTED YET   ***********************
+/// ******************************************************************
+/// *
+/// ******************************************************************
+/// really... i wrote it and it passes the linter only!
 
+/**
+/**
+ * A PostgreSQL-based key-value repository implementation that extends BaseSqlKVRepository.
+ * This class provides persistent storage for key-value pairs in a PostgreSQL database,
+ * making it suitable for multi-user scenarios.
+ *
+ * @template Key - The type of the primary key, must be a record of basic types
+ * @template Value - The type of the stored value, can be any record type
+ * @template PrimaryKeySchema - Schema definition for the primary key
+ * @template ValueSchema - Schema definition for the value
+ * @template Combined - Combined type of Key & Value
+ */
 export class PostgresKVRepository<
-  Key = string,
-  Value = string,
-  Discriminator extends DiscriminatorSchema = DiscriminatorSchema
-> extends KVRepository<Key, Value, Discriminator> {
+  Key extends Record<string, BasicKeyType> = DefaultPrimaryKeyType,
+  Value extends Record<string, any> = DefaultValueType,
+  PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
+  ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
+  Combined extends Record<string, any> = Key & Value
+> extends BaseSqlKVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private pool: Pool;
 
+  /**
+   * Creates a new PostgresKVRepository instance.
+   *
+   * @param connectionString - PostgreSQL connection string
+   * @param table - Name of the table to store key-value pairs (defaults to "kv_store")
+   * @param primaryKeySchema - Schema definition for primary key columns
+   * @param valueSchema - Schema definition for value columns
+   * @param searchable - Array of columns to make searchable
+   */
   constructor(
     connectionString: string,
     public table: string = "kv_store",
-    discriminatorsSchema: Discriminator = {} as Discriminator
+    primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
+    valueSchema: ValueSchema = DefaultValueSchema as ValueSchema,
+    searchable: Array<keyof Combined> = []
   ) {
-    super();
-    this.discriminatorsSchema = discriminatorsSchema;
+    super(table, primaryKeySchema, valueSchema, searchable);
     this.pool = new Pool({ connectionString });
-    this.setupDatabase(table);
+    this.setupDatabase();
   }
 
-  private async setupDatabase(table: string): Promise<void> {
+  /**
+   * Initializes the database table with the required schema.
+   * Creates the table if it doesn't exist with primary key and value columns.
+   */
+  private async setupDatabase(): Promise<void> {
     await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS ${this.table} (
-        ${this.constructDiscriminatorColumns()}
-        key TEXT NOT NULL,
-        value JSONB NOT NULL,
+      CREATE TABLE IF NOT EXISTS \`${this.table}\` (
+        ${this.constructPrimaryKeyColumns()},
+        ${this.constructValueColumns()},
         PRIMARY KEY (${this.primaryKeyColumnList()}) 
       )
     `);
-  }
-
-  private constructDiscriminatorColumns(): string {
-    const cols = Object.entries(this.discriminatorsSchema)
-      .map(([key, type]) => {
-        // Convert the provided type to a SQL type, assuming simple mappings; adjust as necessary
-        const sqlType = this.mapTypeToSQL(type);
-        return `${key} ${sqlType} NOT NULL`;
-      })
-      .join(", ");
-    if (cols.length > 0) {
-      return `${cols}, `;
+    for (const column of this.searchable) {
+      if (column !== this.primaryKeyColumns()[0]) {
+        /* Makes other columns searchable, but excludes the first column 
+         of a primary key (which would be redundant) */
+        await this.pool.query(
+          `CREATE INDEX IF NOT EXISTS \`${this.table}_${column as string}\` 
+             ON \`${this.table}\` (\`${column as string}\`)`
+        );
+      }
     }
-    return "";
   }
 
-  private mapTypeToSQL(type: string): string {
+  /**
+   * Maps TypeScript/JavaScript types to corresponding PostgreSQL data types.
+   *
+   * @param type - The TypeScript/JavaScript type to map
+   * @returns The corresponding PostgreSQL data type
+   */
+  protected mapTypeToSQL(type: string): string {
     // Basic type mapping; extend according to your needs
     switch (type) {
       case "string":
@@ -68,50 +111,121 @@ export class PostgresKVRepository<
     }
   }
 
-  async put(keySimpleOrObject: Key, value: Value): Promise<void> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-    const values = Object.values(discriminators).concat(id, JSON.stringify(value));
-    await this.pool.query(
-      `INSERT INTO ${this.table} (${this.primaryKeyColumnList()}, value)
-      VALUES (${this.primaryKeyColumns().map((i) => "?")}, ?)
-      ON CONFLICT (key) DO UPDATE
-      SET value = EXCLUDED.value`,
-      values
-    );
-    this.emit("put", id, discriminators);
+  /**
+   * Stores or updates a key-value pair in the database.
+   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
+   *
+   * @param key - The primary key object
+   * @param value - The value object to store
+   * @emits "put" event with the key when successful
+   */
+  async putKeyValue(key: Key, value: Value): Promise<void> {
+    const sql = `
+    INSERT INTO \`${this.table}\` (
+      ${this.primaryKeyColumnList()},
+      ${this.valueColumnList()}
+    )
+    VALUES (
+      ${this.primaryKeyColumns().map((i) => "?")}
+    )
+    ON CONFLICT (${this.primaryKeyColumnList()}) DO UPDATE
+    SET 
+    ${(this.valueColumns() as string[]).map((col) => `\`${col}\` = EXCLUDED.\`${col}\``).join(", ")}
+    `;
+
+    const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
+    const valueParams = this.getValueAsOrderedArray(value);
+    const params = [...primaryKeyParams, ...valueParams];
+    await this.pool.query(sql, params);
+    this.emit("put", key);
   }
 
-  async get(keySimpleOrObject: Key): Promise<Value | undefined> {
-    const { discriminators, key } = this.extractDiscriminators(keySimpleOrObject);
-    const id = typeof key === "object" ? await makeFingerprint(key) : String(key);
-
-    const whereClauses = this.primaryKeyColumns()
-      .map((discriminatorKey, i) => `${discriminatorKey} = $${i + 1}`)
+  /**
+   * Retrieves a value from the database by its primary key.
+   *
+   * @param key - The primary key object to look up
+   * @returns The stored value or undefined if not found
+   * @emits "get" event with the key when successful
+   */
+  async getKeyValue(key: Key): Promise<Value | undefined> {
+    const whereClauses = (this.primaryKeyColumns() as string[])
+      .map((discriminatorKey, i) => `\`${discriminatorKey}\` = $${i + 1}`)
       .join(" AND ");
 
-    const values = Object.values(discriminators).concat(id);
+    const params = this.getPrimaryKeyAsOrderedArray(key);
 
     const result = await this.pool.query(
-      `SELECT value FROM ${this.table} WHERE ${whereClauses}`,
-      values
+      `SELECT ${this.valueColumnList()} FROM \`${this.table}\` WHERE ${whereClauses}`,
+      params
     );
 
     if (result.rows.length > 0) {
-      this.emit("get", id, discriminators);
-      return result.rows[0].value as Value;
+      this.emit("get", key);
+      return result.rows[0] as Value;
     } else {
       return undefined;
     }
   }
 
-  async clear(): Promise<void> {
-    await this.pool.query(`DELETE FROM ${this.table}`);
-    this.emit("clear");
+  /**
+   * Method to be implemented by concrete repositories to search for key-value pairs
+   * based on a partial key.
+   *
+   * @param key - Partial key to search for
+   * @returns Promise resolving to an array of combined key-value objects or undefined if not found
+   */
+  public async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
+    const search = Object.keys(key);
+    if (search.length !== 1) {
+      //TODO: make this work with any prefix of primary key
+      throw new Error("Search must be a single key");
+    }
+
+    const sql = `
+      SELECT * FROM \`${this.table}\` 
+      WHERE \`${search[0]}\` = ?
+    `;
+    const result = await this.pool.query<Combined, any[]>(sql, [key[search[0]]]);
+    if (result.rows.length > 0) {
+      this.emit("search");
+      return result.rows;
+    } else {
+      return undefined;
+    }
   }
 
+  /**
+   * Deletes a key-value pair from the database.
+   *
+   * @param key - The primary key object to delete
+   * @emits "delete" event with the key when successful
+   */
+  async deleteKeyValue(key: Key): Promise<void> {
+    const whereClauses = (this.primaryKeyColumns() as string[])
+      .map((key, i) => `\`${key}\` = $${i + 1}`)
+      .join(" AND ");
+
+    const params = this.getPrimaryKeyAsOrderedArray(key);
+    await this.pool.query(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`, params);
+    this.emit("delete", key);
+  }
+
+  /**
+   * Deletes all key-value pairs from the database table.
+   * @emits "clearall" event when successful
+   */
+  async deleteAll(): Promise<void> {
+    await this.pool.query(`DELETE FROM \`${this.table}\``);
+    this.emit("clearall");
+  }
+
+  /**
+   * Returns the total number of key-value pairs in the database.
+   *
+   * @returns Promise resolving to the count of stored items
+   */
   async size(): Promise<number> {
-    const result = await this.pool.query(`SELECT COUNT(*) FROM ${this.table}`);
+    const result = await this.pool.query(`SELECT COUNT(*) FROM \`${this.table}\``);
     return parseInt(result.rows[0].count, 10);
   }
 }

@@ -123,7 +123,7 @@ classDiagram
       static TaskOutputDefinition[] outputs$
       static readonly sideeffects = false$
       run() TaskOutput
-      runSyncOnly() TaskOutput
+      runReactive() TaskOutput
     }
     <<abstract>> TaskBase
     style TaskBase type:abstract,stroke-dasharray: 5 5

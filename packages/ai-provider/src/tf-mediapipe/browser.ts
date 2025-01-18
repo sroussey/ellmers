@@ -7,5 +7,4 @@
 
 export * from "./provider/MediaPipeLocalTaskRun";
 export * from "./model/MediaPipeModel";
-export * from "./bindings/local_mp";
-export * from "./bindings/all_inmemory";
+export * from "./bindings/registerTasks";

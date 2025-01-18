@@ -9,30 +9,31 @@
   ],
   "scripts": {
     "build": "bun run build:packages && bun run build:examples",
-    "build:packages": "bun run build:core && bun run build:storage && bun run build:task && bun run build:ai && bun run build:ai-provider",
+    "build:packages": "bun run build:core && bun run build:ai && bun run build:storage && bun run build:task && bun run build:ai-provider && bun run build:test",
     "build:core": "cd packages/core && bun run build",
     "build:ai": "cd packages/ai && bun run build",
     "build:ai-provider": "cd packages/ai-provider && bun run build",
     "build:storage": "cd packages/storage && bun run build",
     "build:task": "cd packages/task && bun run build",
+    "build:test": "cd packages/test && bun run build",
     "build:examples": "bun run bun run build:cli && bun run build:web",
     "build:cli": "cd examples/cli && bun run build",
     "build:web": "cd examples/web && bun run build",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/src/**/*\\.d\\.ts packages/*/src/**/*\\.map examples/*/node_modules examples/*/dist examples/*/src/**/*\\.d\\.ts examples/*/src/**/*\\.map",
-    "watch:packages": "concurrently --kill-others -c 'auto' -n core,task,storage,ai,provider 'cd packages/core && bun run watch' 'sleep 3 && cd packages/task && bun run watch' 'sleep 3 && cd packages/storage && bun run watch' 'sleep 3 && cd packages/ai && bun run watch' 'sleep 6 && cd packages/ai-provider && bun run watch'",
+    "watch:packages": "concurrently --kill-others -c 'auto' -n core,task,storage,ai,provider,test 'cd packages/core && bun run watch' 'sleep 3 && cd packages/task && bun run watch' 'sleep 3 && cd packages/storage && bun run watch' 'sleep 3 && cd packages/ai && bun run watch' 'sleep 6 && cd packages/ai-provider && bun run watch' 'sleep 10 && cd packages/test && bun run watch'",
     "docs": "typedoc",
     "format": "eslint \"{packages|examples}/*/src/**/*.{js,ts,tsx,json}\" --fix && prettier \"{packages|examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "release": "bun run build && bun publish",
     "test": "jest"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.3.1",
     "@mediapipe/tasks-text": "^0.10.20",
-    "@huggingface/transformers": "^3.2.4",
     "@sroussey/typescript-graph": "^0.3.14",
     "@types/better-sqlite3": "^7.6.12",
     "@types/pg": "^8.11.10",
     "better-sqlite3": "^9.4.3",
-    "bun-types": "^1.1.43",
+    "bun-types": "^1.1.45",
     "chalk": "^5.4.1",
     "commander": "=11.1.0",
     "eventemitter3": "^5.0.1",
@@ -40,8 +41,9 @@
     "nanoid": "^5.0.9",
     "pg": "^8.13.1",
     "postgres": "^3.4.5",
+    "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "storybook": "^8.4.7",
+    "storybook": "^8.5.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
@@ -50,7 +52,7 @@
     "typescript": "^5.7.3"
   },
   "engines": {
-    "bun": "^1.1.43"
+    "bun": "^1.1.45"
   },
   "trustedDependencies": [
     "better-sqlite3",

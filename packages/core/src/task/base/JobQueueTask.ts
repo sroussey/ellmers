@@ -7,11 +7,17 @@
 
 import { SingleTask, TaskConfig } from "./Task";
 
+/**
+ * Configuration interface for job queue tasks
+ */
 export interface JobQueueTaskConfig extends TaskConfig {
   queue?: string;
   currentJobId?: unknown;
 }
 
+/**
+ * Base class for job queue tasks
+ */
 export abstract class JobQueueTask extends SingleTask {
   static readonly type: string = "JobQueueTask";
   declare config: JobQueueTaskConfig & { id: unknown };

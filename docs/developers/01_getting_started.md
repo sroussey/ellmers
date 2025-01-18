@@ -22,9 +22,9 @@
     - [`packages/storage`](#packagesstorage)
     - [`packages/ai`](#packagesai)
     - [`packages/ai-provider`](#packagesai-provider)
-    - [`examples/cli`](#samplescli)
-    - [`examples/web`](#samplesweb)
-    - [`examples/ngraph`](#samplesngraph)
+    - [`examples/cli`](#examplescli)
+    - [`examples/web`](#examplesweb)
+    - [`examples/ngraph`](#examplesngraph)
 
 # Developer Getting Started
 
@@ -51,13 +51,13 @@ After this, plese read [Architecture](02_architecture.md) before attempting to [
 
 ```ts
 import { TaskGraphBuilder } from "ellmers-core";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-ai-provider/hf-transformers/server";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-test";
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
 
 const builder = new TaskGraphBuilder();
 builder
-  .DownloadModel({ model: "Xenova/LaMini-Flan-T5-783M" })
+  .DownloadModel({ model: "ONNX Xenova/LaMini-Flan-T5-783M q8" })
   .TextRewriter({
     text: "The quick brown fox jumps over the lazy dog.",
     prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
@@ -79,15 +79,17 @@ import {
   DataFlow,
   TaskGraph,
   TaskGraphRunner,
-  registerHuggingfaceLocalTasksInMemory,
 } from "ellmers-core";
+import { registerHuggingfaceLocalTasksInMemory } from "ellmers-test";
 
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
 
 // build and run graph
 const graph = new TaskGraph();
-graph.addTask(new DownloadModel({ id: "1", input: { model: "Xenova/LaMini-Flan-T5-783M" } }));
+graph.addTask(
+  new DownloadModel({ id: "1", input: { model: "ONNX Xenova/LaMini-Flan-T5-783M q8" } })
+);
 graph.addTask(
   new TextRewriterCompoundTask({
     id: "2",
@@ -284,7 +286,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
     "id": "1",
     "type": "DownloadModelCompoundTask",
     "input": {
-      "model": ["Xenova/LaMini-Flan-T5-783M", "Xenova/m2m100_418M"]
+      "model": ["ONNX Xenova/LaMini-Flan-T5-783M q8", "ONNX Xenova/m2m100_418M q8"]
     }
   },
   {
@@ -305,7 +307,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
     "id": "3",
     "type": "TextTranslationCompoundTask",
     "input": {
-      "model": "Xenova/m2m100_418M",
+      "model": "ONNX Xenova/m2m100_418M q8",
       "source": "en",
       "target": "es"
     },

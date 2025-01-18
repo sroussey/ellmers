@@ -5,7 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import type { ModelProcessorEnum } from "../model/Model";
 import {
   Job,
   type JobQueue,
@@ -15,11 +14,18 @@ import {
   JobQueueTask,
 } from "ellmers-core";
 
+/**
+ * Enum to define the types of job queue execution
+ */
 export enum JobQueueRunType {
   local = "local",
   api = "api",
 }
 
+/**
+ * Extends the base Job class to provide custom execution functionality
+ * through a provided function.
+ */
 class ProviderJob<Input, Output> extends Job<Input, Output> {
   constructor(
     details: JobConstructorDetails<Input, Output> & {
@@ -36,19 +42,36 @@ class ProviderJob<Input, Output> extends Job<Input, Output> {
   }
 }
 
+/**
+ * Registry that manages provider-specific task execution functions and job queues.
+ * Handles the registration, retrieval, and execution of task processing functions
+ * for different model providers and task types.
+ */
 export class ProviderRegistry<Input, Output> {
+  // Registry of task execution functions organized by task type and model provider
   runFnRegistry: Record<string, Record<string, (task: any, runInputData: any) => Promise<Output>>> =
     {};
+
+  /**
+   * Registers a task execution function for a specific task type and model provider
+   * @param taskType - The type of task (e.g., 'text-generation', 'embedding')
+   * @param modelProvider - The provider of the model (e.g., 'hf-transformers', 'tf-mediapipe', 'openai', etc)
+   * @param runFn - The function that executes the task
+   */
   registerRunFn(
     taskType: string,
-    modelType: ModelProcessorEnum,
+    modelProvider: string,
     runFn: (task: any, runInputData: any) => Promise<Output>
   ) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
-    this.runFnRegistry[taskType][modelType] = runFn;
+    this.runFnRegistry[taskType][modelProvider] = runFn;
   }
 
-  jobAsRunFn(runtype: string, modelType: ModelProcessorEnum) {
+  /**
+   * Creates a job wrapper around a task execution function
+   * This allows the task to be queued and executed asynchronously
+   */
+  jobAsRunFn(runtype: string, modelType: string) {
     const fn = this.runFnRegistry[runtype]?.[modelType];
     return async (task: JobQueueTask, input: Input) => {
       const queue = this.queues.get(modelType)!;
@@ -69,16 +92,26 @@ export class ProviderRegistry<Input, Output> {
     };
   }
 
-  getDirectRunFn(taskType: string, modelType: ModelProcessorEnum) {
+  /**
+   * Retrieves the direct execution function for a task type and model
+   * Bypasses the job queue system for immediate execution
+   */
+  getDirectRunFn(taskType: string, modelType: string) {
     return this.runFnRegistry[taskType]?.[modelType];
   }
 
-  queues: Map<ModelProcessorEnum, JobQueue<Input, Output>> = new Map();
-  registerQueue(modelType: ModelProcessorEnum, jobQueue: JobQueue<Input, Output>) {
+  // Map of model types to their corresponding job queues
+  queues: Map<string, JobQueue<Input, Output>> = new Map();
+
+  /**
+   * Queue management methods for starting, stopping, and clearing job queues
+   * These methods help control the execution flow of tasks across all providers
+   */
+  registerQueue(modelType: string, jobQueue: JobQueue<Input, Output>) {
     this.queues.set(modelType, jobQueue);
   }
 
-  getQueue(modelType: ModelProcessorEnum) {
+  getQueue(modelType: string) {
     return this.queues.get(modelType);
   }
 
@@ -101,6 +134,7 @@ export class ProviderRegistry<Input, Output> {
   }
 }
 
+// Singleton instance management for the ProviderRegistry
 let providerRegistry: ProviderRegistry<TaskInput, TaskOutput>;
 export function getProviderRegistry() {
   if (!providerRegistry) providerRegistry = new ProviderRegistry();
