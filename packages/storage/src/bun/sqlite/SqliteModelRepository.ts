@@ -17,6 +17,10 @@ import {
 import { SqliteKVRepository } from "./base/SqliteKVRepository";
 import { DefaultValueType } from "ellmers-core";
 
+/**
+ * SQLite implementation of a model repository.
+ * Provides storage and retrieval for models and task-to-model mappings using SQLite.
+ */
 export class SqliteModelRepository extends ModelRepository {
   public type = "SqliteModelRepository" as const;
   modelKvRepository: SqliteKVRepository<

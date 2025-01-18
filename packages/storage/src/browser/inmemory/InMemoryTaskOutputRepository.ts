@@ -15,6 +15,10 @@ import {
 } from "ellmers-core";
 import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
+/**
+ * In-memory implementation of a task output repository.
+ * Provides storage and retrieval for task outputs.
+ */
 export class InMemoryTaskOutputRepository extends TaskOutputRepository {
   kvRepository: InMemoryKVRepository<
     TaskOutputPrimaryKey,

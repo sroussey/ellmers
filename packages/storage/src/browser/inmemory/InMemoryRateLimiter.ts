@@ -7,6 +7,10 @@
 
 import { ILimiter } from "ellmers-core";
 
+/**
+ * In-memory implementation of a rate limiter.
+ * Manages request counts and delays to control job execution.
+ */
 export class InMemoryRateLimiter implements ILimiter {
   private requests: Date[] = [];
   private nextAvailableTime: Date = new Date(); // New property to track externally set delay

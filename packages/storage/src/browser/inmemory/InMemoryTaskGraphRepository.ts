@@ -8,6 +8,10 @@
 import { TaskGraphRepository } from "ellmers-core";
 import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
+/**
+ * In-memory implementation of a task graph repository.
+ * Provides storage and retrieval for task graphs.
+ */
 export class InMemoryTaskGraphRepository extends TaskGraphRepository {
   kvRepository: InMemoryKVRepository;
   public type = "InMemoryTaskGraphRepository" as const;

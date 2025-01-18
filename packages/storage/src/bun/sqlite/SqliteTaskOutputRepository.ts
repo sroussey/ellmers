@@ -13,6 +13,10 @@ import {
 } from "ellmers-core";
 import { SqliteKVRepository } from "./base/SqliteKVRepository";
 
+/**
+ * SQLite implementation of a task output repository.
+ * Provides storage and retrieval for task outputs using SQLite.
+ */
 export class SqliteTaskOutputRepository extends TaskOutputRepository {
   kvRepository: SqliteKVRepository<
     TaskOutputPrimaryKey,

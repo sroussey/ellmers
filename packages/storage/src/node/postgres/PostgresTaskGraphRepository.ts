@@ -8,6 +8,10 @@
 import { TaskGraphRepository } from "ellmers-core";
 import { PostgresKVRepository } from "./base/PostgresKVRepository";
 
+/**
+ * PostgreSQL implementation of a task graph repository.
+ * Provides storage and retrieval for task graphs using PostgreSQL.
+ */
 export class PostgresTaskGraphRepository extends TaskGraphRepository {
   kvRepository: PostgresKVRepository;
   public type = "PostgresTaskGraphRepository" as const;

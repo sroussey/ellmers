@@ -8,6 +8,10 @@
 import { TaskGraphRepository } from "ellmers-core";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 
+/**
+ * IndexedDB implementation of a task graph repository.
+ * Provides storage and retrieval for task graphs using IndexedDB.
+ */
 export class IndexedDbTaskGraphRepository extends TaskGraphRepository {
   kvRepository: IndexedDbKVRepository;
   public type = "IndexedDbTaskGraphRepository" as const;

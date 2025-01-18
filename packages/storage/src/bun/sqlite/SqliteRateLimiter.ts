@@ -9,6 +9,10 @@ import { type Database } from "better-sqlite3";
 import { ILimiter } from "ellmers-core";
 import { toSQLiteTimestamp } from "../../util/Misc";
 
+/**
+ * SQLite implementation of a rate limiter.
+ * Manages request counts and delays to control job execution.
+ */
 export class SqliteRateLimiter implements ILimiter {
   private readonly db: Database;
   private readonly queueName: string;

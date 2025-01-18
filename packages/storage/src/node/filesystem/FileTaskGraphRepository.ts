@@ -8,6 +8,10 @@
 import { TaskGraphRepository } from "ellmers-core";
 import { FileKVRepository } from "./base/FileKVRepository";
 
+/**
+ * File-based implementation of a task graph repository.
+ * Provides storage and retrieval for task graphs using a file system.
+ */
 export class FileTaskGraphRepository extends TaskGraphRepository {
   kvRepository: FileKVRepository;
   public type = "FileTaskGraphRepository" as const;

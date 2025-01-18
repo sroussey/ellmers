@@ -11,6 +11,10 @@ import { type Database } from "bun:sqlite";
 
 // TODO: reuse prepared statements
 
+/**
+ * SQLite implementation of a job queue.
+ * Provides storage and retrieval for job execution states using SQLite.
+ */
 export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(
     protected db: Database,
@@ -49,6 +53,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return this;
   }
 
+  /**
+   * Creates a new job instance from the provided database results.
+   * @param results - The job data from the database
+   * @returns A new Job instance with populated properties
+   */
   public createNewJob(results: any): Job<Input, Output> {
     return new this.jobClass({
       ...results,
@@ -61,6 +70,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  /**
+   * Adds a new job to the queue.
+   * @param job - The job to add
+   * @returns The ID of the added job
+   */
   public async add(job: Job<Input, Output>) {
     job.queueName = this.queue;
     const fingerprint = await makeFingerprint(job.input);
@@ -95,6 +109,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return result?.id;
   }
 
+  /**
+   * Retrieves a job by its ID.
+   * @param id - The ID of the job to retrieve
+   * @returns The job if found, undefined otherwise
+   */
   public async get(id: string) {
     const JobQuery = `
       SELECT *
@@ -106,6 +125,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return result ? this.createNewJob(result) : undefined;
   }
 
+  /**
+   * Retrieves a slice of jobs from the queue.
+   * @param num - Maximum number of jobs to return
+   * @returns An array of jobs
+   */
   public async peek(num: number = 100) {
     num = Number(num) || 100; // TS does not validate, so ensure it is a number since we put directly in SQL string
     const FutureJobQuery = `
@@ -123,6 +147,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return ret;
   }
 
+  /**
+   * Retrieves all jobs currently being processed.
+   * @returns An array of jobs
+   */
   public async processing() {
     const ProcessingQuery = `
       SELECT *
@@ -136,6 +164,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return ret;
   }
 
+  /**
+   * Retrieves the next available job that is ready to be processed.
+   * @returns The next job or undefined if no job is available
+   */
   public async next() {
     let id: string | undefined;
     {
@@ -164,6 +196,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
   }
 
+  /**
+   * Retrieves the number of jobs in the queue with a specific status.
+   * @param status - The status of the jobs to count
+   * @returns The count of jobs with the specified status
+   */
   public async size(status = JobStatus.PENDING) {
     const sizeQuery = `
       SELECT COUNT(*) as count
@@ -175,6 +212,13 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return result.count;
   }
 
+  /**
+   * Marks a job as complete with its output or error.
+   * Handles retries for failed jobs and triggers completion callbacks.
+   * @param id - ID of the job to complete
+   * @param output - Result of the job execution
+   * @param error - Optional error message if job failed
+   */
   public async complete(id: string, output: Output | null = null, error: string | null = null) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
@@ -206,6 +250,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     await this.limiter.clear();
   }
 
+  /**
+   * Looks up cached output for a given task type and input
+   * Uses input fingerprinting for efficient matching
+   * @returns The cached output or null if not found
+   */
   public async outputForInput(taskType: string, input: Input) {
     const fingerprint = await makeFingerprint(input);
     const OutputQuery = `

@@ -13,6 +13,10 @@ import {
 } from "ellmers-core";
 import { PostgresKVRepository } from "./base/PostgresKVRepository";
 
+/**
+ * PostgreSQL implementation of a task output repository.
+ * Provides storage and retrieval for task outputs using PostgreSQL.
+ */
 export class PostgresTaskOutputRepository extends TaskOutputRepository {
   kvRepository: PostgresKVRepository<
     TaskOutputPrimaryKey,

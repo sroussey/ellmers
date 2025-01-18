@@ -13,6 +13,10 @@ import {
 } from "ellmers-core";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 
+/**
+ * IndexedDB implementation of a task output repository.
+ * Provides storage and retrieval for task outputs using IndexedDB.
+ */
 export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
   kvRepository: IndexedDbKVRepository<
     TaskOutputPrimaryKey,

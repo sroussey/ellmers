@@ -7,6 +7,9 @@
 
 import { Document, DocumentMetadata } from "./Document";
 
+/**
+ * Abstract class for converting different types of content into a Document.
+ */
 export abstract class DocumentConverter {
   public metadata: DocumentMetadata;
   constructor(metadata: DocumentMetadata) {

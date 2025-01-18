@@ -14,6 +14,10 @@ import {
 } from "ellmers-core";
 import { FileKVRepository } from "./base/FileKVRepository";
 
+/**
+ * File-based implementation of a task output repository.
+ * Provides storage and retrieval for task outputs using a file system.
+ */
 export class FileTaskOutputRepository extends TaskOutputRepository {
   kvRepository: FileKVRepository<
     TaskOutputPrimaryKey,

@@ -8,6 +8,10 @@
 import { ILimiter } from "ellmers-core";
 import { Sql } from "postgres";
 
+/**
+ * PostgreSQL implementation of a rate limiter.
+ * Manages request counts and delays to control job execution.
+ */
 export class PostgresRateLimiter implements ILimiter {
   private readonly windowSizeInMilliseconds: number;
 
@@ -36,6 +40,10 @@ export class PostgresRateLimiter implements ILimiter {
     await this.sql`DELETE FROM job_rate_limit`;
   }
 
+  /**
+   * Checks if a job can proceed based on rate limiting rules.
+   * @returns True if the job can proceed, false otherwise
+   */
   async canProceed(): Promise<boolean> {
     const now = new Date();
     const attemptedAtThreshold = new Date(now.getTime() - this.windowSizeInMilliseconds);
@@ -66,6 +74,10 @@ export class PostgresRateLimiter implements ILimiter {
     return true;
   }
 
+  /**
+   * Records a new job attempt.
+   * @returns The ID of the added job
+   */
   async recordJobStart(): Promise<void> {
     // Record a new job attempt
     await this.sql`
@@ -78,6 +90,10 @@ export class PostgresRateLimiter implements ILimiter {
     // Optional for rate limiting: Cleanup or track completions if needed
   }
 
+  /**
+   * Retrieves the next available time for the specific queue.
+   * @returns The next available time
+   */
   async getNextAvailableTime(): Promise<Date> {
     // Query for the earliest job attempt within the window that reaches the limit
     const result = await this.sql`
@@ -96,6 +112,10 @@ export class PostgresRateLimiter implements ILimiter {
     }
   }
 
+  /**
+   * Sets the next available time for the specific queue.
+   * @param date - The new next available time
+   */
   async setNextAvailableTime(date: Date): Promise<void> {
     // Update the next available time for the specific queue. If no entry exists, insert a new one.
     await this.sql`

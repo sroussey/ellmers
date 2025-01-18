@@ -10,7 +10,10 @@ import { Job, JobQueue, ILimiter } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 import { ensureIndexedDbTable } from "./base/IndexedDbTable";
 
-// The IndexedDbQueue class
+/**
+ * IndexedDB implementation of a job queue.
+ * Provides storage and retrieval for job execution states using IndexedDB.
+ */
 export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
   private dbPromise: Promise<IDBDatabase>;
 

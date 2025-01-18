@@ -21,6 +21,9 @@ export interface DocumentSectionMetadata {
   title: string;
 }
 
+/**
+ * Represents a document with its content and metadata.
+ */
 export class Document {
   public metadata: DocumentMetadata;
 
@@ -81,11 +84,7 @@ export class Document {
 }
 
 export class DocumentSection extends Document {
-  constructor(
-    public parent: Document,
-    content?: ContentType,
-    metadata?: DocumentSectionMetadata
-  ) {
+  constructor(public parent: Document, content?: ContentType, metadata?: DocumentSectionMetadata) {
     super(content, metadata);
     this.parent = parent;
   }

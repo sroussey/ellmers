@@ -19,6 +19,10 @@ import {
 } from "ellmers-ai";
 import { DefaultValueType } from "ellmers-core";
 
+/**
+ * In-memory implementation of a model repository.
+ * Provides storage and retrieval for models and task-to-model mappings.
+ */
 export class InMemoryModelRepository extends ModelRepository {
   modelKvRepository: InMemoryKVRepository<
     ModelPrimaryKey,
