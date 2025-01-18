@@ -23,6 +23,11 @@ const HFQUEUE = "local_hf";
 describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {
     it("Should have an item queued", async () => {
+      const providerRegistry = getProviderRegistry();
+      const jobQueue = new InMemoryJobQueue(HFQUEUE, new ConcurrencyLimiter(1, 10), 10);
+      providerRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+
+      registerHuggingfaceLocalTasks();
       setGlobalModelRepository(new InMemoryModelRepository());
       await getGlobalModelRepository().addModel({
         name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
@@ -41,14 +46,6 @@ describe("HFTransformersBinding", () => {
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
 
-      registerHuggingfaceLocalTasks();
-      const providerRegistry = getProviderRegistry();
-      const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
-        HFQUEUE,
-        new ConcurrencyLimiter(1, 10),
-        10
-      );
-      providerRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
       const queue = providerRegistry.getQueue(LOCAL_ONNX_TRANSFORMERJS);
       expect(queue).toBeDefined();
       expect(queue?.queue).toEqual(HFQUEUE);
@@ -85,7 +82,7 @@ describe("HFTransformersBinding", () => {
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
       const providerRegistry = getProviderRegistry();
-      const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
+      const jobQueue = new SqliteJobQueue(
         getDatabase(":memory:"),
         HFQUEUE,
         new ConcurrencyLimiter(1, 10),
