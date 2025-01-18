@@ -1,7 +1,7 @@
 import { MEDIA_PIPE_TFJS_MODEL } from "ellmers-ai-provider/tf-mediapipe/browser";
 import { getGlobalModelRepository, Model } from "ellmers-ai";
 
-function addMediaPipeModel(info: Partial<Model>, tasks: string[]) {
+async function addMediaPipeModel(info: Partial<Model>, tasks: string[]) {
   const name = "MEDIAPIPE " + info.name;
 
   const model = Object.assign(
@@ -20,14 +20,14 @@ function addMediaPipeModel(info: Partial<Model>, tasks: string[]) {
     { name }
   ) as Model;
 
-  getGlobalModelRepository().addModel(model);
-  tasks.forEach((task) => {
-    getGlobalModelRepository().connectTaskToModel(task, name);
-  });
+  await getGlobalModelRepository().addModel(model);
+  await Promise.allSettled(
+    tasks.map((task) => getGlobalModelRepository().connectTaskToModel(task, name))
+  );
 }
 
-export function registerMediaPipeTfJsLocalModels() {
-  addMediaPipeModel(
+export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
+  await addMediaPipeModel(
     {
       name: "Universal Sentence Encoder",
       pipeline: "text_embedder",
@@ -37,7 +37,7 @@ export function registerMediaPipeTfJsLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addMediaPipeModel(
+  await addMediaPipeModel(
     {
       name: "Text Encoder",
       pipeline: "text_embedder",

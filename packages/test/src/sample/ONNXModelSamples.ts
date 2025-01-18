@@ -4,7 +4,7 @@ import {
 } from "ellmers-ai-provider/hf-transformers/browser";
 import { getGlobalModelRepository, Model } from "ellmers-ai";
 
-function addONNXModel(info: Partial<Model>, tasks: string[]) {
+async function addONNXModel(info: Partial<Model>, tasks: string[]) {
   const name = info.name
     ? info.name
     : "ONNX " + info.url + " " + (info.quantization ?? QUANTIZATION_DATA_TYPES.q8);
@@ -25,14 +25,14 @@ function addONNXModel(info: Partial<Model>, tasks: string[]) {
     { name }
   ) as Model;
 
-  getGlobalModelRepository().addModel(model);
-  tasks.forEach((task) => {
-    getGlobalModelRepository().connectTaskToModel(task, name);
-  });
+  await getGlobalModelRepository().addModel(model);
+  await Promise.allSettled(
+    tasks.map((task) => getGlobalModelRepository().connectTaskToModel(task, name))
+  );
 }
 
-export function registerHuggingfaceLocalModels() {
-  addONNXModel(
+export async function registerHuggingfaceLocalModels(): Promise<void> {
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 384,
@@ -41,7 +41,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 768,
@@ -50,7 +50,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 384,
@@ -59,7 +59,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 1024,
@@ -68,7 +68,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 384,
@@ -76,7 +76,7 @@ export function registerHuggingfaceLocalModels() {
     },
     ["TextEmbeddingTask"]
   );
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "question-answering",
       url: "Xenova/distilbert-base-uncased-distilled-squad",
@@ -84,7 +84,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextQuestionAnsweringTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "zero-shot-classification",
       url: "Xenova/distilbert-base-uncased-mnli",
@@ -92,7 +92,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextClassificationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "fill-mask",
       url: "answerdotai/ModernBERT-base",
@@ -100,7 +100,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextClassificationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "feature-extraction",
       nativeDimensions: 768,
@@ -109,7 +109,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextEmbeddingTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "text-generation",
       url: "Xenova/gpt2",
@@ -117,7 +117,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextGenerationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "text-generation",
       url: "Xenova/distilgpt2",
@@ -125,7 +125,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextGenerationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "text2text-generation",
       url: "Xenova/flan-t5-small",
@@ -133,7 +133,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextGenerationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "text2text-generation",
       url: "Xenova/LaMini-Flan-T5-783M",
@@ -141,7 +141,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextGenerationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "summarization",
       url: "Falconsai/text_summarization",
@@ -149,7 +149,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextSummaryTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "translation",
       url: "Xenova/nllb-200-distilled-600M",
@@ -158,7 +158,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextTranslationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "translation",
       url: "Xenova/m2m100_418M",
@@ -167,7 +167,7 @@ export function registerHuggingfaceLocalModels() {
     ["TextTranslationTask"]
   );
 
-  addONNXModel(
+  await addONNXModel(
     {
       pipeline: "translation",
       url: "Xenova/mbart-large-50-many-to-many-mmt",

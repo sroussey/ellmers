@@ -25,7 +25,7 @@ export async function MediaPipeTfJsLocal_Download(
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"
   );
-  const model = getGlobalModelRepository().findByName(runInputData.model);
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   if (!model) {
     throw `MediaPipeTfJsLocal_Download: Model ${runInputData.model} not found`;
   }
@@ -50,7 +50,7 @@ export async function MediaPipeTfJsLocal_Embedding(
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"
   );
-  const model = getGlobalModelRepository().findByName(runInputData.model);
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   if (!model) {
     throw `MediaPipeTfJsLocal_Embedding: Model ${runInputData.model} not found`;
   }

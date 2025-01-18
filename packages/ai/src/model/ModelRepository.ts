@@ -27,7 +27,7 @@ export type ModelEvents =
 export type Task2ModelPrimaryKey = {
   /** The task identifier */
   task: string;
-  /** The model identifier */
+  /** The model name identifier */
   model: string;
 };
 
@@ -120,7 +120,7 @@ export abstract class ModelRepository {
    * @param task - The task identifier to search for
    * @returns Promise resolving to an array of associated models, or undefined if none found
    */
-  async findModelByTask(task: string) {
+  async findModelsByTask(task: string) {
     if (typeof task != "string") return undefined;
     const junctions = await this.task2ModelKvRepository.search({ task });
     if (!junctions || junctions.length === 0) return undefined;
@@ -133,12 +133,24 @@ export abstract class ModelRepository {
   }
 
   /**
+   * Finds all tasks associated with a specific model
+   * @param model - The model identifier to search for
+   * @returns Promise resolving to an array of associated tasks, or undefined if none found
+   */
+  async findTasksByModel(model: string) {
+    if (typeof model != "string") return undefined;
+    const junctions = await this.task2ModelKvRepository.search({ model });
+    if (!junctions || junctions.length === 0) return undefined;
+    return junctions.map((junction) => junction.task);
+  }
+
+  /**
    * Creates an association between a task and a model
    * @param task - The task identifier
    * @param model - The model to associate with the task
    */
-  async connectModelToTask(task: string, model: Model) {
-    this.task2ModelKvRepository.put({ task, model: model.name }, { details: null });
+  async connectTaskToModel(task: string, model: string) {
+    await this.task2ModelKvRepository.putKeyValue({ task, model }, { details: null });
     this.emit("task_model_connected", task, model);
   }
 

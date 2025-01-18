@@ -6,43 +6,43 @@
 //    *******************************************************************************
 
 import { Model } from "./Model";
-import { Task2ModelPrimaryKey } from "./ModelRepository";
+import { ModelRepository, Task2ModelPrimaryKey } from "./ModelRepository";
 
 // temporary model registry that is synchronous until we have a proper model repository
 
-class ModelRegistry {
+class FallbackModelRegistry {
   models: Model[] = [];
   task2models: Task2ModelPrimaryKey[] = [];
 
-  addModel(model: Model) {
+  public async addModel(model: Model) {
     if (this.models.some((m) => m.name === model.name)) {
       this.models = this.models.filter((m) => m.name !== model.name);
     }
 
     this.models.push(model);
   }
-  findModelsByTask(task: string) {
+  public async findModelsByTask(task: string) {
     return this.task2models
       .filter((t2m) => t2m.task === task)
       .map((t2m) => this.models.find((m) => m.name === t2m.model))
       .filter((m) => m !== undefined);
   }
-  findTasksByModel(name: string) {
+  public async findTasksByModel(name: string) {
     return this.task2models.filter((t2m) => t2m.model === name).map((t2m) => t2m.task);
   }
-  findByName(name: string) {
+  public async findByName(name: string) {
     return this.models.find((m) => m.name === name);
   }
-  connectTaskToModel(task: string, model: string) {
+  public async connectTaskToModel(task: string, model: string) {
     this.task2models.push({ task, model });
   }
 }
 
-let modelRegistry: ModelRegistry;
+let modelRegistry: FallbackModelRegistry | ModelRepository;
 export function getGlobalModelRepository() {
-  if (!modelRegistry) modelRegistry = new ModelRegistry();
+  if (!modelRegistry) modelRegistry = new FallbackModelRegistry();
   return modelRegistry;
 }
-export function setGlobalModelRepository(pr: ModelRegistry) {
+export function setGlobalModelRepository(pr: FallbackModelRegistry | ModelRepository) {
   modelRegistry = pr;
 }

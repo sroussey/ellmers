@@ -140,7 +140,7 @@ export async function HuggingFaceLocal_DownloadRun(
   task: DownloadModelTask,
   runInputData: DownloadModelTaskInput
 ): Promise<Partial<DownloadModelTaskOutput>> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   await getPipeline(task, model);
   return { model: model.name, dimensions: model.nativeDimensions || 0, normalize: model.normalize };
 }
@@ -154,7 +154,7 @@ export async function HuggingFaceLocal_EmbeddingRun(
   task: TextEmbeddingTask,
   runInputData: TextEmbeddingTaskInput
 ): Promise<TextEmbeddingTaskOutput> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
 
   const hfVector = await generateEmbedding(runInputData.text, {
@@ -183,7 +183,7 @@ export async function HuggingFaceLocal_TextGenerationRun(
   task: TextGenerationTask,
   runInputData: TextGenerationTaskInput
 ): Promise<TextGenerationTaskOutput> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
 
@@ -219,7 +219,7 @@ export async function HuggingFaceLocal_TextTranslationRun(
   task: TextTranslationTask,
   runInputData: TextTranslationTaskInput
 ): Promise<Partial<TextTranslationTaskOutput>> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
   const translate: TranslationPipeline = await getPipeline(task, model);
 
@@ -251,7 +251,7 @@ export async function HuggingFaceLocal_TextRewriterRun(
   task: TextRewriterTask,
   runInputData: TextRewriterTaskInput
 ): Promise<TextRewriterTaskOutput> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
   const generateText: TextGenerationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateText.tokenizer, {
@@ -290,7 +290,7 @@ export async function HuggingFaceLocal_TextSummaryRun(
   task: TextSummaryTask,
   runInputData: TextSummaryTaskInput
 ): Promise<TextSummaryTaskOutput> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
   const generateSummary: SummarizationPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateSummary.tokenizer, {
@@ -319,7 +319,7 @@ export async function HuggingFaceLocal_TextQuestionAnswerRun(
   task: TextQuestionAnswerTask,
   runInputData: TextQuestionAnswerTaskInput
 ): Promise<TextQuestionAnswerTaskOutput> {
-  const model = getGlobalModelRepository().findByName(runInputData.model)!;
+  const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
   const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
   const streamer = new TextStreamer(generateAnswer.tokenizer, {

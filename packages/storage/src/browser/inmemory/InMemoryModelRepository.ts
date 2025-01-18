@@ -44,6 +44,6 @@ export class InMemoryModelRepository extends ModelRepository {
       Task2ModelDetail,
       typeof Task2ModelPrimaryKeySchema,
       typeof Task2ModelDetailSchema
-    >(Task2ModelPrimaryKeySchema, Task2ModelDetailSchema);
+    >(Task2ModelPrimaryKeySchema, Task2ModelDetailSchema, ["model"]);
   }
 }

@@ -48,9 +48,6 @@ ProviderRegistry.registerQueue(
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
 );
 
-registerHuggingfaceLocalModels();
-registerMediaPipeTfJsLocalModels();
-
 ProviderRegistry.clearQueues();
 ProviderRegistry.startQueues();
 
@@ -114,6 +111,12 @@ export const App = () => {
 
   // changes coming from builder in console
   useEffect(() => {
+    async function init() {
+      await registerHuggingfaceLocalModels();
+      await registerMediaPipeTfJsLocalModels();
+    }
+    init();
+
     function listen() {
       setJsonData(JSON.stringify(builder.toDependencyJSON(), null, 2));
       setGraph(builder.graph);

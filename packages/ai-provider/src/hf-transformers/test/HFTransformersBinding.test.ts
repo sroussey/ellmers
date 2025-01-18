@@ -7,8 +7,12 @@
 
 import { describe, expect, it } from "bun:test";
 import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-import { getProviderRegistry, getGlobalModelRepository } from "ellmers-ai";
-import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+import {
+  getProviderRegistry,
+  getGlobalModelRepository,
+  setGlobalModelRepository,
+} from "ellmers-ai";
+import { InMemoryJobQueue, InMemoryModelRepository } from "ellmers-storage/inmemory";
 import { getDatabase, SqliteJobQueue } from "ellmers-storage/bun/sqlite";
 import { registerHuggingfaceLocalTasks } from "../bindings/registerTasks";
 import { sleep } from "bun";
@@ -19,7 +23,8 @@ const HFQUEUE = "local_hf";
 describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {
     it("Should have an item queued", async () => {
-      getGlobalModelRepository().addModel({
+      setGlobalModelRepository(new InMemoryModelRepository());
+      await getGlobalModelRepository().addModel({
         name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
         url: "Xenova/LaMini-Flan-T5-783M",
         availableOnBrowser: true,
@@ -27,11 +32,11 @@ describe("HFTransformersBinding", () => {
         provider: LOCAL_ONNX_TRANSFORMERJS,
         pipeline: "text2text-generation",
       });
-      getGlobalModelRepository().connectTaskToModel(
+      await getGlobalModelRepository().connectTaskToModel(
         "TextGenerationTask",
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
-      getGlobalModelRepository().connectTaskToModel(
+      await getGlobalModelRepository().connectTaskToModel(
         "TextRewritingTask",
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
@@ -62,6 +67,23 @@ describe("HFTransformersBinding", () => {
   describe("SqliteJobQueue", () => {
     it("Should have an item queued", async () => {
       registerHuggingfaceLocalTasks();
+      setGlobalModelRepository(new InMemoryModelRepository());
+      await getGlobalModelRepository().addModel({
+        name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        url: "Xenova/LaMini-Flan-T5-783M",
+        availableOnBrowser: true,
+        availableOnServer: true,
+        provider: LOCAL_ONNX_TRANSFORMERJS,
+        pipeline: "text2text-generation",
+      });
+      await getGlobalModelRepository().connectTaskToModel(
+        "TextGenerationTask",
+        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      );
+      await getGlobalModelRepository().connectTaskToModel(
+        "TextRewritingTask",
+        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      );
       const providerRegistry = getProviderRegistry();
       const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
         getDatabase(":memory:"),

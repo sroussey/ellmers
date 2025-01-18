@@ -10,10 +10,7 @@ import { runTask } from "./TaskStreamToListr2";
 import "@huggingface/transformers";
 import { TaskGraph, JsonTask, TaskGraphBuilder, JsonTaskItem } from "ellmers-core";
 import { DownloadModelTask, getGlobalModelRepository } from "ellmers-ai";
-import { registerHuggingfaceLocalModels } from "ellmers-test";
 import "ellmers-task";
-
-registerHuggingfaceLocalModels();
 
 export function AddBaseCommands(program: Command) {
   program
@@ -23,7 +20,7 @@ export function AddBaseCommands(program: Command) {
     .action(async (options) => {
       const graph = new TaskGraph();
       if (options.model) {
-        const model = getGlobalModelRepository().findByName(options.model);
+        const model = await getGlobalModelRepository().findByName(options.model);
         if (model) {
           graph.addTask(new DownloadModelTask({ input: { model: model.name } }));
         } else {
@@ -40,10 +37,11 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text: string, options) => {
       const model = options.model
-        ? getGlobalModelRepository().findByName(options.model)?.name
-        : getGlobalModelRepository()
-            .findModelsByTask("TextEmbeddingTask")
-            .map((m) => m.name);
+        ? (await getGlobalModelRepository().findByName(options.model))?.name
+        : (await getGlobalModelRepository().findModelsByTask("TextEmbeddingTask"))?.map(
+            (m) => m.name
+          );
+
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {
@@ -60,10 +58,10 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
       const model = options.model
-        ? getGlobalModelRepository().findByName(options.model)?.name
-        : getGlobalModelRepository()
-            .findModelsByTask("TextSummaryTask")
-            .map((m) => m.name);
+        ? (await getGlobalModelRepository().findByName(options.model))?.name
+        : (await getGlobalModelRepository().findModelsByTask("TextSummaryTask"))?.map(
+            (m) => m.name
+          );
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {
@@ -81,10 +79,10 @@ export function AddBaseCommands(program: Command) {
     .option("--model <name>", "model to use")
     .action(async (text, options) => {
       const model = options.model
-        ? getGlobalModelRepository().findByName(options.model)?.name
-        : getGlobalModelRepository()
-            .findModelsByTask("TextRewriterTask")
-            .map((m) => m.name);
+        ? (await getGlobalModelRepository().findByName(options.model))?.name
+        : (await getGlobalModelRepository().findModelsByTask("TextRewriterTask"))?.map(
+            (m) => m.name
+          );
       if (!model) {
         program.error(`Unknown model ${options.model}`);
       } else {

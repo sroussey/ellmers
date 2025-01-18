@@ -80,9 +80,9 @@ export class DownloadModelTask extends JobQueueLlmTask {
     super(config);
   }
   async runReactive(): Promise<TaskOutput> {
-    const model = getGlobalModelRepository().findByName(this.runInputData.model);
+    const model = await getGlobalModelRepository().findByName(this.runInputData.model);
     if (model) {
-      const tasks = getGlobalModelRepository().findTasksByModel(model.name);
+      const tasks = (await getGlobalModelRepository().findTasksByModel(model.name)) || [];
       tasks.forEach((task) => {
         // this.runOutputData[String(task).toLowerCase()] = model.name;
       });

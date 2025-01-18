@@ -88,11 +88,6 @@ console.log(
 console.log(window["builder"]);
 
 console.log(
-  "Models Available: ",
-  getGlobalModelRepository().models.map((m) => m.name)
-);
-
-console.log(
   "Tasks Available: ",
   Array.from(TaskRegistry.all.entries()).map(([name]) => name)
 );

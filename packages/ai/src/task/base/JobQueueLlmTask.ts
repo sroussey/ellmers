@@ -35,7 +35,7 @@ export class JobQueueLlmTask extends JobQueueTask {
       const ProviderRegistry = getProviderRegistry();
       const modelname = this.runInputData["model"];
       if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
-      const model = getGlobalModelRepository().findByName(modelname);
+      const model = await getGlobalModelRepository().findByName(modelname);
 
       if (!model) {
         throw new Error(`JobQueueTaskTask: No model ${modelname} found ${modelname}`);

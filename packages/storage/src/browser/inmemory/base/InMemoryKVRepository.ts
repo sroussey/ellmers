@@ -83,8 +83,8 @@ export class InMemoryKVRepository<
   }
 
   /**
-   * Searches for entries matching a partial key-value pair
-   * @param key - Partial combined key-value object to search for
+   * Searches for entries matching a partial key
+   * @param key - Partial key object to search for
    * @returns Array of matching combined objects
    * @throws Error if search criteria contains more than one key
    */
