@@ -112,10 +112,10 @@ const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {
 
 function downloadProgressCallback(task: JobQueueLlmTask) {
   return (status: CallbackStatus) => {
-    const progess = status.status === "progress" ? Math.round(status.progress) : 0;
+    const progress = status.status === "progress" ? Math.round(status.progress) : 0;
     if (status.status === "progress") {
-      task.progress = progess;
-      task.emit("progress", progess, status.file);
+      task.progress = progress;
+      task.emit("progress", progress, status.file);
     }
   };
 }
