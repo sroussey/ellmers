@@ -8,6 +8,19 @@
 import { Document, DocumentMetadata, TextFragment } from "./Document";
 import { DocumentConverter } from "./DocumentConverter";
 
+/**
+ * MasterDocument represents a container for managing multiple versions/variants of a document.
+ * It maintains the original document and its transformed variants for different use cases.
+ *
+ * Key features:
+ * - Stores original document and metadata
+ * - Maintains a master version and variants
+ * - Automatically creates paragraph-split variant
+ *
+ * The paragraph variant splits text fragments by newlines while preserving other fragment types,
+ * which is useful for more granular text processing.
+ */
+
 export class MasterDocument {
   public metadata: DocumentMetadata;
   public original: DocumentConverter;

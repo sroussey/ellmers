@@ -9,15 +9,38 @@ import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputReposit
 import { TaskInput, Task, TaskOutput } from "./Task";
 import { TaskGraph } from "./TaskGraph";
 
+/**
+ * Class for running a task graph
+ * Manages the execution of tasks in a task graph, including provenance tracking and caching
+ */
 export class TaskGraphRunner {
+  /**
+   * Map of layers, where each layer contains an array of tasks
+   * @type {Map<number, Task[]>}
+   */
   public layers: Map<number, Task[]>;
+
+  /**
+   * Map of provenance input for each task
+   * @type {Map<unknown, TaskInput>}
+   */
   public provenanceInput: Map<unknown, TaskInput>;
 
+  /**
+   * Constructor for TaskGraphRunner
+   * @param dag The task graph to run
+   * @param repository The task output repository to use for caching task outputs
+   */
   constructor(public dag: TaskGraph, public repository?: TaskOutputRepository) {
     this.layers = new Map();
     this.provenanceInput = new Map();
   }
 
+  /**
+   * Assigns layers to tasks based on their dependencies. Each layer is a set of tasks
+   * that can be run in parallel as a set, the next layer is run after the previous layer has completed.
+   * @param sortedNodes The topologically sorted list of tasks
+   */
   public assignLayers(sortedNodes: Task[]) {
     this.layers = new Map();
     const nodeToLayer = new Map<unknown, number>();
@@ -56,6 +79,11 @@ export class TaskGraphRunner {
     });
   }
 
+  /**
+   * Retrieves the provenance input for a task
+   * @param node The task to retrieve provenance input for
+   * @returns The provenance input for the task
+   */
   private getInputProvenance(node: Task): TaskInput {
     const nodeProvenance: TaskInput = {};
     this.dag.getSourceDataFlows(node.config.id).forEach((dataFlow) => {
@@ -64,6 +92,12 @@ export class TaskGraphRunner {
     return nodeProvenance;
   }
 
+  /**
+   * Pushes the output of a task to its target tasks
+   * @param node The task that produced the output
+   * @param results The output of the task
+   * @param nodeProvenance The provenance input for the task
+   */
   private pushOutputFromNodeToEdges(node: Task, results: TaskOutput, nodeProvenance?: TaskInput) {
     this.dag.getTargetDataFlows(node.config.id).forEach((dataFlow) => {
       if (results[dataFlow.sourceTaskOutputId] !== undefined) {
@@ -73,6 +107,12 @@ export class TaskGraphRunner {
     });
   }
 
+  /**
+   * Runs a task with provenance input
+   * @param task The task to run
+   * @param parentProvenance The provenance input for the task
+   * @returns The output of the task
+   */
   private async runTaskWithProvenance(
     task: Task,
     parentProvenance: TaskInput
@@ -115,6 +155,11 @@ export class TaskGraphRunner {
     return results;
   }
 
+  /**
+   * Runs the task graph
+   * @param parentProvenance The provenance input for the task graph
+   * @returns The output of the task graph
+   */
   public async runGraph(parentProvenance: TaskInput = {}) {
     this.provenanceInput = new Map();
     this.dag.getNodes().forEach((node) => node.resetInputData());
@@ -132,6 +177,10 @@ export class TaskGraphRunner {
     return results;
   }
 
+  /**
+   * Runs the task graph in a reactive manner
+   * @returns The output of the task graph
+   */
   private async runTasksReactive() {
     let results: TaskOutput[] = [];
     for (const [_layerNumber, nodes] of this.layers.entries()) {
@@ -148,6 +197,10 @@ export class TaskGraphRunner {
     return results;
   }
 
+  /**
+   * Runs the task graph in a reactive manner
+   * @returns The output of the task graph
+   */
   public async runGraphReactive() {
     this.dag.getNodes().forEach((node) => node.resetInputData());
     const sortedNodes = this.dag.topologicallySortedNodes();

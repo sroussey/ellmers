@@ -73,7 +73,9 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
       if (matches.size === 0) {
         this._error = `Could not find a match between the outputs of ${
           (parent.constructor as any).type
-        } and the inputs of ${(task.constructor as any).type}. You now need to connect the outputs to the inputs via connect() manually before adding this task. Task not added.`;
+        } and the inputs of ${
+          (task.constructor as any).type
+        }. You now need to connect the outputs to the inputs via connect() manually before adding this task. Task not added.`;
         console.error(this._error);
         this.graph.removeNode(task.config.id);
       }
@@ -89,6 +91,10 @@ export function TaskGraphBuilderHelper<I extends TaskInput>(
 
 type BuilderEvents = GraphEvents | "changed" | "reset" | "error" | "start" | "complete";
 
+/**
+ * Class for building and managing a task graph
+ * Provides methods for adding tasks, connecting outputs to inputs, and running the task graph
+ */
 export class TaskGraphBuilder {
   private _graph: TaskGraph = new TaskGraph();
   private _runner: TaskGraphRunner;
@@ -148,6 +154,10 @@ export class TaskGraphBuilder {
     this._graph.events.off("edge-removed", this._onChanged);
   }
 
+  /**
+   * Runs the task graph
+   * @returns The output of the task graph
+   */
   async run() {
     this.emit("start");
     const out = await this._runner.runGraph();
@@ -155,6 +165,10 @@ export class TaskGraphBuilder {
     return out;
   }
 
+  /**
+   * Removes the last task from the task graph
+   * @returns The current task graph builder
+   */
   pop() {
     this._error = "";
     const nodes = this._graph.getNodes();
@@ -175,6 +189,11 @@ export class TaskGraphBuilder {
     return this._graph.toDependencyJSON();
   }
 
+  /**
+   * Creates a new task graph builder that runs multiple task graph builders in parallel
+   * @param args The task graph builders to run in parallel
+   * @returns The current task graph builder
+   */
   parallel(...args: Array<(b: TaskGraphBuilder) => void>) {
     this._error = "";
     const group = new TaskGraphBuilder();
@@ -188,6 +207,13 @@ export class TaskGraphBuilder {
   }
 
   _dataFlows: DataFlow[] = [];
+  /**
+   * Renames an output of a task to a new target input
+   * @param source The id of the output to rename
+   * @param target The id of the input to rename to
+   * @param index The index of the task to rename the output of, defaults to the last task
+   * @returns The current task graph builder
+   */
   rename(source: string, target: string, index: number = -1) {
     this._error = "";
     const nodes = this._graph.getNodes();
@@ -205,6 +231,10 @@ export class TaskGraphBuilder {
     return this;
   }
 
+  /**
+   * Resets the task graph builder to its initial state
+   * @returns The current task graph builder
+   */
   reset() {
     id = 0;
     this.clearEvents();

@@ -55,11 +55,22 @@ type TextGenerationCompoundTaskInput = ConvertSomeToOptionalArray<
   TextGenerationTaskInput,
   "model" | "prompt"
 >;
+
+/**
+ * Factory-generated task class for handling batch text generation operations.
+ * Created using arrayTaskFactory to support processing multiple prompts/models simultaneously.
+ */
 export const TextGenerationCompoundTask = arrayTaskFactory<
   TextGenerationCompoundTaskInput,
   TextGenerationCompoundOutput
 >(TextGenerationTask, ["model", "prompt"]);
 
+/**
+ * Convenience function to run text generation tasks.
+ * Creates and executes a TextGenerationCompoundTask with the provided input.
+ * @param input The input parameters for text generation (prompts and models)
+ * @returns Promise resolving to the generated text output(s)
+ */
 export const TextGeneration = (input: TextGenerationCompoundTaskInput) => {
   return new TextGenerationCompoundTask({ input }).run();
 };

@@ -19,24 +19,35 @@ import { TaskGraph } from "./TaskGraph";
 import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 
+// Type utilities for array transformations
+// Makes specified properties optional arrays
 export type ConvertSomeToOptionalArray<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> | T[P] : T[P];
 };
 
+// Makes all properties optional arrays
 export type ConvertAllToOptionalArray<T> = {
   [P in keyof T]: Array<T[P]> | T[P];
 };
 
+// Makes specified properties required arrays
 export type ConvertSomeToArray<T, K extends keyof T> = {
   [P in keyof T]: P extends K ? Array<T[P]> : T[P];
 };
 
+// Makes all properties required arrays
 export type ConvertAllToArrays<T> = {
   [P in keyof T]: Array<T[P]>;
 };
 
+// Removes readonly modifiers from object properties
 type Writeable<T> = { -readonly [P in keyof T]: T[P] };
 
+/**
+ * Takes an array of objects and collects values for each property into arrays
+ * @param input Array of objects to process
+ * @returns Object with arrays of values for each property
+ */
 function collectPropertyValues<T extends object>(input: T[]): { [K in keyof T]?: T[K][] } {
   const output: { [K in keyof T]?: T[K][] } = {};
 
@@ -54,6 +65,12 @@ function collectPropertyValues<T extends object>(input: T[]): { [K in keyof T]?:
   return output;
 }
 
+/**
+ * Converts specified IO definitions to array type
+ * @param io Array of input/output definitions
+ * @param id Optional ID to target specific definition
+ * @returns Modified array of definitions with isArray set to true
+ */
 function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
   io: D[],
   id?: string | number | symbol
@@ -69,6 +86,12 @@ function convertToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
   return results as D[];
 }
 
+/**
+ * Converts multiple IO definitions to array type based on provided IDs
+ * @param io Array of input/output definitions
+ * @param ids Array of IDs to target specific definitions
+ * @returns Modified array of definitions with isArray set to true for matching IDs
+ */
 function convertMultipleToArray<D extends TaskInputDefinition | TaskOutputDefinition>(
   io: D[],
   ids: Array<string | number | symbol>
@@ -84,6 +107,12 @@ function convertMultipleToArray<D extends TaskInputDefinition | TaskOutputDefini
   return results as D[];
 }
 
+/**
+ * Generates all possible combinations of array inputs
+ * @param input Input object containing arrays
+ * @param inputMakeArray Keys of properties to generate combinations for
+ * @returns Array of input objects with all possible combinations
+ */
 function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (keyof T)[]): T[] {
   // Helper function to check if a property is an array
   const isArray = (value: any): value is Array<any> => Array.isArray(value);
@@ -123,6 +152,14 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
   });
 }
 
+/**
+ * Factory function to create array-based task classes
+ * Creates a task that can process arrays of inputs in parallel
+ * @param taskClass Base task class to wrap
+ * @param inputMakeArray Array of input keys to process as arrays
+ * @param name Optional name for the generated task class
+ * @returns New task class that handles array inputs
+ */
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
   PluralOutputType extends TaskOutput = TaskOutput
@@ -141,6 +178,10 @@ export function arrayTaskFactory<
   const nameWithoutTask = taskClass.type.slice(0, -4);
   name ??= nameWithoutTask + "CompoundTask";
 
+  /**
+   * A task class that handles array-based processing by creating subtasks for each combination of inputs
+   * Extends RegenerativeCompoundTask to manage a collection of child tasks running in parallel
+   */
   class ArrayTask extends RegenerativeCompoundTask {
     static readonly type: TaskTypeName = name!;
     static readonly runtype = taskClass.type;
@@ -154,10 +195,16 @@ export function arrayTaskFactory<
 
     static inputs = inputs;
     static override outputs = outputs;
+
     constructor(config: TaskConfig & { input?: Partial<PluralInputType> } = {}) {
       super(config);
       this.regenerateGraph();
     }
+
+    /**
+     * Regenerates the task graph by creating child tasks for each input combination
+     * Each child task processes a single combination of the array inputs
+     */
     regenerateGraph() {
       this.subGraph = new TaskGraph();
       const combinations = generateCombinations(this.runInputData, inputMakeArray);
@@ -168,12 +215,20 @@ export function arrayTaskFactory<
       super.regenerateGraph();
     }
 
+    /**
+     * Adds new input data and regenerates the task graph to handle the updated inputs
+     * @param overrides Partial input data to merge with existing inputs
+     */
     addInputData<PluralInputType>(overrides: Partial<PluralInputType>) {
       super.addInputData(overrides);
       this.regenerateGraph();
       return this;
     }
 
+    /**
+     * Runs the task reactively, collecting outputs from all child tasks into arrays
+     * @returns Combined output with arrays of values from all child tasks
+     */
     async runReactive(): Promise<PluralOutputType> {
       const runDataOut = await super.runReactive();
       this.runOutputData = collectPropertyValues<NonPluralOutputType>(
@@ -181,6 +236,11 @@ export function arrayTaskFactory<
       ) as PluralOutputType;
       return this.runOutputData;
     }
+
+    /**
+     * Runs the task synchronously, collecting outputs from all child tasks into arrays
+     * @returns Combined output with arrays of values from all child tasks
+     */
     async run(...args: any[]): Promise<PluralOutputType> {
       const runDataOut = await super.run(...args);
       this.runOutputData = collectPropertyValues<NonPluralOutputType>(
@@ -188,10 +248,12 @@ export function arrayTaskFactory<
       ) as PluralOutputType;
       return this.runOutputData;
     }
+
     toJSON(): JsonTaskItem {
       const { subgraph, ...result } = super.toJSON();
       return result;
     }
+
     toDependencyJSON(): JsonTaskItem {
       const { subtasks, ...result } = super.toDependencyJSON();
       return result;
