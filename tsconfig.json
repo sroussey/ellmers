@@ -12,8 +12,6 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
     "declaration": true,
     "emitDeclarationOnly": true,
     "declarationMap": true,

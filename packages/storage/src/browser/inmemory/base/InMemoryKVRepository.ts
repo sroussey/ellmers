@@ -17,8 +17,6 @@ import {
 } from "ellmers-core";
 import { makeFingerprint } from "../../../util/Misc";
 
-// InMemoryKVRepository is a simple in-memory key-value store that can be used for testing or as a cache
-
 /**
  * A generic in-memory key-value repository implementation.
  * Provides a simple, non-persistent storage solution suitable for testing and caching scenarios.

@@ -18,9 +18,6 @@ import {
 import { ensureIndexedDbTable } from "./IndexedDbTable";
 import { makeFingerprint } from "../../../util/Misc";
 
-// IndexedDbKVRepository is a key-value store that uses IndexedDB as the backend for
-// simple browser-based examples with no server-side component. It does not support di
-
 /**
  * A key-value repository implementation using IndexedDB for browser-based storage.
  * This class provides a simple persistent storage solution for web applications
