@@ -27,13 +27,13 @@
     "test": "jest"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.3.1",
+    "@huggingface/transformers": "^3.3.2",
     "@mediapipe/tasks-text": "^0.10.20",
     "@sroussey/typescript-graph": "^0.3.14",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/pg": "^8.11.10",
-    "better-sqlite3": "^9.4.3",
-    "bun-types": "^1.1.45",
+    "@types/pg": "^8.11.11",
+    "better-sqlite3": "^9.6.0",
+    "bun-types": "^1.2.1",
     "chalk": "^5.4.1",
     "commander": "=11.1.0",
     "eventemitter3": "^5.0.1",
@@ -43,7 +43,7 @@
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "storybook": "^8.5.0",
+    "storybook": "^8.5.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

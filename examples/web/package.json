@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@xyflow/react": "^12.4.1",
+    "@xyflow/react": "^12.4.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "@uiw/react-codemirror": "^4.23.7",
@@ -28,15 +28,15 @@
     "ellmers-test": "workspace:packages/test"
   },
   "devDependencies": {
-    "@types/react": "^19.0.7",
+    "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
-    "@typescript-eslint/eslint-plugin": "^8.20.0",
-    "@typescript-eslint/parser": "^8.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^9.18.0",
+    "eslint": "^9.19.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",
-    "vite": "^6.0.7",
+    "vite": "^6.0.11",
     "tailwindcss": "3.4.17",
     "postcss": "8.5.1",
     "autoprefixer": "10.4.20"
