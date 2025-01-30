@@ -36,6 +36,7 @@ import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
 
 env.backends.onnx.wasm.proxy = true;
+env.allowLocalModels = true;
 
 const ProviderRegistry = getProviderRegistry();
 
