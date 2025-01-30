@@ -48,9 +48,9 @@ export class JobQueueLlmTask extends JobQueueTask {
       console.error(err);
       return {};
     }
-    this.emit("complete");
     this.runOutputData = results ?? {};
     this.runOutputData = await this.runReactive();
+    this.emit("complete");
     return this.runOutputData;
   }
   async runReactive(): Promise<TaskOutput> {

@@ -298,8 +298,8 @@ export abstract class TaskBase {
     }
     this.emit("start");
     const result = await this.runReactive();
-    this.emit("complete");
     this.runOutputData = result;
+    this.emit("complete");
     return result;
   }
   /**
