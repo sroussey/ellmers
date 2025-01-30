@@ -25,7 +25,7 @@ The Embedding Large Language Model Experiential retrieval Service (ELLMERS) is a
 - **[Architecture](docs/developers/02_architecture.md)**
 - **[Extending the System](docs/developers/03_extending.md)**
 
-## Samples
+## Examples
 
 ### CLI
 
