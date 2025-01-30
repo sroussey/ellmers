@@ -22,7 +22,9 @@ describe("FileTaskGraphRepository", () => {
   let repository: FileTaskGraphRepository;
 
   beforeEach(() => {
-    rmdirSync(".cache/test/file-task-graph", { recursive: true });
+    try {
+      rmdirSync(".cache/test/file-task-graph", { recursive: true });
+    } catch (error) {}
     repository = new FileTaskGraphRepository(".cache/test/file-task-graph");
   });
 

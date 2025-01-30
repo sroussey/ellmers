@@ -16,7 +16,7 @@ import {
   HuggingFaceLocal_TextRewriterRun,
   HuggingFaceLocal_TextSummaryRun,
   HuggingFaceLocal_TextTranslationRun,
-} from "../provider/HuggingFaceLocal_TaskRun";
+} from "../provider/HFT_TaskRun";
 import { LOCAL_ONNX_TRANSFORMERJS } from "../model/ONNXTransformerJsModel";
 
 export async function registerHuggingfaceLocalTasks() {

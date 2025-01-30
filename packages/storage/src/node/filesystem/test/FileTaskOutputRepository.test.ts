@@ -14,7 +14,9 @@ describe("FileTaskOutputRepository", () => {
   let repository: FileTaskOutputRepository;
 
   beforeEach(() => {
+    try {
     rmdirSync(".cache/test/file-task-output", { recursive: true });
+    } catch (error) {}
     repository = new FileTaskOutputRepository(".cache/test/file-task-output");
   });
 

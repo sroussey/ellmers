@@ -24,7 +24,7 @@ describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {
     it("Should have an item queued", async () => {
       const providerRegistry = getProviderRegistry();
-      const jobQueue = new InMemoryJobQueue(HFQUEUE, new ConcurrencyLimiter(1, 10), 10);
+      const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(HFQUEUE, new ConcurrencyLimiter(1, 10), 10);
       providerRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
 
       registerHuggingfaceLocalTasks();
@@ -82,7 +82,7 @@ describe("HFTransformersBinding", () => {
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
       const providerRegistry = getProviderRegistry();
-      const jobQueue = new SqliteJobQueue(
+      const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
         getDatabase(":memory:"),
         HFQUEUE,
         new ConcurrencyLimiter(1, 10),

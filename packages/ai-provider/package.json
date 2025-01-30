@@ -17,7 +17,7 @@
     "build-hf-transformers": "bun run build-hf-transformers-browser && bun run build-hf-transformers-server && bun run build-hf-transformers-worker",
     "build-hf-transformers-browser": "bun build --target=browser --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/browser.ts",
     "build-hf-transformers-server": "bun build --target=node --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/server.ts",
-    "build-hf-transformers-worker": "bun build --target=bun --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/worker.ts",
+    "build-hf-transformers-worker": "bun build --target=bun --sourcemap=external --outdir ./dist/hf-transformers ./src/hf-transformers/worker.ts",
     "build-tf-mediapipe": "bun run build-tf-mediapipe-browser && bun run build-tf-mediapipe-server && bun run build-tf-mediapipe-worker",
     "build-tf-mediapipe-browser": "bun build --target=browser --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/browser.ts",
     "build-tf-mediapipe-server": "bun build --target=node --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/server.ts",
