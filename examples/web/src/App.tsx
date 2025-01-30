@@ -33,6 +33,9 @@ import "ellmers-task";
 import "ellmers-test";
 import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
 import { registerHuggingfaceLocalModels } from "ellmers-test";
+import { env } from "@huggingface/transformers";
+
+env.backends.onnx.wasm.proxy = true;
 
 const ProviderRegistry = getProviderRegistry();
 
