@@ -4,7 +4,7 @@ import {
   MediaPipeTfJsLocal_Download,
   MediaPipeTfJsLocal_Embedding,
 } from "../provider/MediaPipeLocalTaskRun";
-import { MEDIA_PIPE_TFJS_MODEL } from "../browser";
+import { MEDIA_PIPE_TFJS_MODEL } from "..";
 
 export const registerMediaPipeTfJsLocalTasks = () => {
   const ProviderRegistry = getProviderRegistry();

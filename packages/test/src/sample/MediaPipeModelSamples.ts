@@ -1,4 +1,4 @@
-import { MEDIA_PIPE_TFJS_MODEL } from "ellmers-ai-provider/tf-mediapipe/browser";
+import { MEDIA_PIPE_TFJS_MODEL } from "../../../ai-provider/dist/tf-mediapipe";
 import { getGlobalModelRepository, Model } from "ellmers-ai";
 
 async function addMediaPipeModel(info: Partial<Model>, tasks: string[]) {

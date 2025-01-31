@@ -8,7 +8,7 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { setGlobalModelRepository, getGlobalModelRepository } from "ellmers-ai";
 import { InMemoryModelRepository } from "../InMemoryModelRepository";
-import { LOCAL_ONNX_TRANSFORMERJS } from "ellmers-ai-provider/hf-transformers/server";
+import { LOCAL_ONNX_TRANSFORMERJS } from "ellmers-ai-provider/hf-transformers";
 
 describe("InMemoryModelRepository", () => {
   it("store and find model by task", async () => {

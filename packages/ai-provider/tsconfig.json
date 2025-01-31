@@ -1,14 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "include": ["src/**/*"],
-  "files": [
-    "src/hf-transformers/browser.ts",
-    "src/hf-transformers/server.ts",
-    "src/hf-transformers/worker.ts",
-    "src/tf-mediapipe/browser.ts",
-    "src/tf-mediapipe/server.ts",
-    "src/tf-mediapipe/worker.ts"
-  ],
+  "files": ["src/hf-transformers/index.ts", "src/tf-mediapipe/index.ts"],
   "exclude": ["**/*.test.ts", "dist"],
   "compilerOptions": {
     "composite": true,
