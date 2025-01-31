@@ -60,7 +60,15 @@ export class DebugLogTask extends OutputTask {
     this.runOutputData.output = this.runInputData.message;
     return this.runOutputData;
   }
+
+  async validateItem(valueType: string, item: any) {
+    if (valueType == "log_level") {
+      return log_levels.includes(item);
+    }
+    return super.validateItem(valueType, item);
+  }
 }
+
 TaskRegistry.registerTask(DebugLogTask);
 
 export const DebugLog = (input: DebugLogTaskInput) => {

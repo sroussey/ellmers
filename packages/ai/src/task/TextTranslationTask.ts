@@ -66,6 +66,12 @@ export class TextTranslationTask extends JobQueueLlmTask {
   declare defaults: Partial<TextTranslationTaskInput>;
   static readonly type = "TextTranslationTask";
   static readonly category = "Text Model";
+  async validateItem(valueType: string, item: any) {
+    if (valueType == "language") {
+      return typeof item == "string" && item.length == 2;
+    }
+    return super.validateItem(valueType, item);
+  }
 }
 TaskRegistry.registerTask(TextTranslationTask);
 

@@ -232,6 +232,8 @@ export abstract class TaskBase {
    */
   async validateItem(valueType: string, item: any) {
     switch (valueType) {
+      case "any":
+        return true;
       case "number":
         return typeof item === "bigint" || typeof item === "number";
       case "text":

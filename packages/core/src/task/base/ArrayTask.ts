@@ -260,6 +260,10 @@ export function arrayTaskFactory<
       const { subtasks, ...result } = super.toDependencyJSON();
       return result;
     }
+
+    async validateItem(valueType: string, item: any) {
+      return true; // let children validate
+    }
   }
 
   TaskRegistry.registerTask(ArrayTask);
