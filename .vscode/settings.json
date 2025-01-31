@@ -10,6 +10,7 @@
   "files.exclude": {
     // "**/dist": true,
     // "**/build": true,
+    "**/storybook-static": true,
     "**/*.tsbuildinfo": true,
     "**/node_modules": true,
     "**/dist": true
