@@ -1,9 +1,9 @@
 import { JobStatus } from "ellmers-core";
-import { getProviderRegistry } from "ellmers-ai";
+import { getAiProviderRegistry } from "ellmers-ai";
 import { useCallback, useEffect, useState } from "react";
 
 export function QueueStatus({ queueType }: { queueType: string }) {
-  const queue = getProviderRegistry().getQueue(queueType);
+  const queue = getAiProviderRegistry().getQueue(queueType);
   const [pending, setPending] = useState<number>(0);
   const [processing, setProcessing] = useState<number>(0);
   const [completed, setCompleted] = useState<number>(0);
@@ -51,7 +51,7 @@ export function QueueStatus({ queueType }: { queueType: string }) {
 }
 
 export function QueuesStatus() {
-  const queues = getProviderRegistry().queues;
+  const queues = getAiProviderRegistry().queues;
   const queueKeys = Array.from(queues.keys());
 
   return (

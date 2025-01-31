@@ -5,13 +5,25 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./base/Task";
-export * from "./base/TaskRegistry";
-export * from "./base/TaskGraph";
-export * from "./base/TaskGraphRunner";
-export * from "./base/TaskGraphBuilder";
-export * from "./base/ArrayTask";
-export * from "./base/JobQueueTask";
-export * from "./LambdaTask";
-export * from "./DebugLogTask";
-export * from "./JsonTask";
+export type AnyNumberArray =
+  | number[]
+  | Float64Array
+  | Float32Array
+  | Int32Array
+  | Int16Array
+  | Int8Array
+  | Uint8Array
+  | Uint16Array
+  | Uint32Array
+  | Uint8ClampedArray
+  | BigInt64Array
+  | BigUint64Array;
+
+export class ElVector<T extends AnyNumberArray = AnyNumberArray> {
+  normalized: boolean;
+  vector: T;
+  constructor(vector: T, normalized: boolean) {
+    this.vector = vector;
+    this.normalized = normalized;
+  }
+}

@@ -7,15 +7,19 @@
 
 import { SingleTask, TaskConfig, TaskOutput } from "./base/Task";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
 /**
  * Type definitions for LambdaTask input and output
  * These types are generated from the static input/output definitions
  */
-export type LambdaTaskInput = CreateMappedType<typeof LambdaTask.inputs>;
-export type LambdaTaskOutput = CreateMappedType<typeof LambdaTask.outputs>;
+export type LambdaTaskInput = {
+  fn: (...args: any[]) => any;
+  input: any;
+};
+export type LambdaTaskOutput = {
+  output: any;
+};
 
 /**
  * LambdaTask provides a way to execute arbitrary functions within the task framework

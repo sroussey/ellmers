@@ -9,8 +9,14 @@ import EventEmitter from "eventemitter3";
 import { GraphEvents } from "@sroussey/typescript-graph";
 import { DataFlow, TaskGraph, TaskGraphJson } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
-import { CompoundTask, SingleTask, TaskBase, TaskInput } from "./Task";
-import { TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
+import {
+  CompoundTask,
+  SingleTask,
+  TaskBase,
+  TaskInput,
+  TaskInputDefinition,
+  TaskOutputDefinition,
+} from "./Task";
 import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
 import { JsonTaskItem } from "../JsonTask";
 

@@ -10,7 +10,7 @@
  */
 
 import { JobQueueTask, JobQueueTaskConfig, type TaskOutput } from "ellmers-core";
-import { getProviderRegistry } from "../../provider/ProviderRegistry";
+import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import { getGlobalModelRepository } from "../../model/ModelRegistry";
 
 export class JobQueueLlmTask extends JobQueueTask {
@@ -32,7 +32,7 @@ export class JobQueueLlmTask extends JobQueueTask {
     let results;
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
     try {
-      const ProviderRegistry = getProviderRegistry();
+      const ProviderRegistry = getAiProviderRegistry();
       const modelname = this.runInputData["model"];
       if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
       const model = await getGlobalModelRepository().findByName(modelname);
@@ -53,6 +53,28 @@ export class JobQueueLlmTask extends JobQueueTask {
     this.emit("complete");
     return this.runOutputData;
   }
+
+  /**
+   * Validates that a model name really exists
+   * @param valueType The type of the item ("model")
+   * @param item The item to validate
+   * @returns True if the item is valid, false otherwise
+   */
+  async validateItem(valueType: string, item: any) {
+    const modelRepo = getGlobalModelRepository();
+
+    switch (valueType) {
+      case "model":
+        return !!modelRepo.findByName(item);
+    }
+    if (valueType.endsWith("_model")) {
+      const tasks = await modelRepo.findTasksByModel(item);
+      return !!tasks?.includes((this.constructor as typeof JobQueueLlmTask).type);
+    }
+
+    return super.validateItem(valueType, item);
+  }
+
   async runReactive(): Promise<TaskOutput> {
     return this.runOutputData ?? {};
   }

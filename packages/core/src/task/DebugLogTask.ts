@@ -7,11 +7,18 @@
 
 import { OutputTask } from "./base/OutputTask";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
-export type DebugLogTaskInput = CreateMappedType<typeof DebugLogTask.inputs>;
-export type DebugLogTaskOutput = CreateMappedType<typeof DebugLogTask.outputs>;
+const log_levels = ["dir", "log", "debug", "info", "warn", "error"] as const;
+type LogLevel = (typeof log_levels)[number];
+
+export type DebugLogTaskInput = {
+  message: any;
+  level: LogLevel;
+};
+export type DebugLogTaskOutput = {
+  output: any;
+};
 
 /**
  * DebugLogTask provides console logging functionality as a task within the system.

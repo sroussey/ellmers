@@ -47,7 +47,7 @@ class ProviderJob<Input, Output> extends Job<Input, Output> {
  * Handles the registration, retrieval, and execution of task processing functions
  * for different model providers and task types.
  */
-export class ProviderRegistry<Input, Output> {
+export class AiProviderRegistry<Input, Output> {
   // Registry of task execution functions organized by task type and model provider
   runFnRegistry: Record<string, Record<string, (task: any, runInputData: any) => Promise<Output>>> =
     {};
@@ -135,11 +135,11 @@ export class ProviderRegistry<Input, Output> {
 }
 
 // Singleton instance management for the ProviderRegistry
-let providerRegistry: ProviderRegistry<TaskInput, TaskOutput>;
-export function getProviderRegistry() {
-  if (!providerRegistry) providerRegistry = new ProviderRegistry();
+let providerRegistry: AiProviderRegistry<TaskInput, TaskOutput>;
+export function getAiProviderRegistry() {
+  if (!providerRegistry) providerRegistry = new AiProviderRegistry();
   return providerRegistry;
 }
-export function setProviderRegistry(pr: ProviderRegistry<TaskInput, TaskOutput>) {
+export function setAiProviderRegistry(pr: AiProviderRegistry<TaskInput, TaskOutput>) {
   providerRegistry = pr;
 }

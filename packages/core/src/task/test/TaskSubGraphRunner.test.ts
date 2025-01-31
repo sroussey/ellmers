@@ -9,15 +9,18 @@ import { describe, expect, it, beforeEach, spyOn } from "bun:test";
 import { TaskGraphRunner } from "../base/TaskGraphRunner";
 import { Task, SingleTask, TaskOutput } from "../base/Task";
 import { DataFlow, TaskGraph } from "../base/TaskGraph";
-import { CreateMappedType } from "../base/TaskIOTypes";
 import {
   ConvertAllToArrays,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
 } from "../base/ArrayTask";
 
-type TestSquareTaskInput = CreateMappedType<typeof TestSquareTask.inputs>;
-type TestSquareTaskOutput = CreateMappedType<typeof TestSquareTask.outputs>;
+type TestSquareTaskInput = {
+  input: number;
+};
+type TestSquareTaskOutput = {
+  output: number;
+};
 class TestSquareTask extends SingleTask {
   static readonly type = "TestSquareTask";
   declare runInputData: TestSquareTaskInput;
@@ -42,8 +45,12 @@ class TestSquareTask extends SingleTask {
   }
 }
 
-type TestDoubleTaskInput = CreateMappedType<typeof TestDoubleTask.inputs>;
-type TestDoubleTaskOutput = CreateMappedType<typeof TestDoubleTask.outputs>;
+type TestDoubleTaskInput = {
+  input: number;
+};
+type TestDoubleTaskOutput = {
+  output: number;
+};
 class TestDoubleTask extends SingleTask {
   static readonly type = "TestDoubleTask";
   declare runInputData: TestDoubleTaskInput;
@@ -68,8 +75,12 @@ class TestDoubleTask extends SingleTask {
   }
 }
 
-type TestAddTaskInput = CreateMappedType<typeof TestAddTask.inputs>;
-type TestAddTaskOutput = CreateMappedType<typeof TestAddTask.outputs>;
+type TestAddTaskInput = {
+  input: number[];
+};
+type TestAddTaskOutput = {
+  output: number;
+};
 class TestAddTask extends SingleTask {
   static readonly type = "TestAddTask";
   declare runInputData: TestAddTaskInput;

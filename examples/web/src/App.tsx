@@ -20,7 +20,7 @@ import { QueuesStatus } from "./QueueSatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
-import { getProviderRegistry } from "ellmers-ai";
+import { getAiProviderRegistry } from "ellmers-ai";
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
@@ -38,7 +38,7 @@ import { env } from "@huggingface/transformers";
 env.backends.onnx.wasm.proxy = true;
 env.allowLocalModels = true;
 
-const ProviderRegistry = getProviderRegistry();
+const ProviderRegistry = getAiProviderRegistry();
 
 registerHuggingfaceLocalTasks();
 ProviderRegistry.registerQueue(
@@ -77,8 +77,8 @@ const resetGraph = () => {
     })
     .TextTranslation({
       model: "ONNX Xenova/m2m100_418M q8",
-      source: "en",
-      target: "es",
+      source_lang: "en",
+      target_lang: "es",
     })
     .rename("text", "message")
     .rename("text", "message", -2)

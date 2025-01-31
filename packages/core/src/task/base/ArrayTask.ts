@@ -14,9 +14,10 @@ import {
   TaskTypeName,
   SingleTask,
   RegenerativeCompoundTask,
+  TaskInputDefinition,
+  TaskOutputDefinition,
 } from "./Task";
 import { TaskGraph } from "./TaskGraph";
-import { CreateMappedType, TaskInputDefinition, TaskOutputDefinition } from "./TaskIOTypes";
 import { TaskRegistry } from "./TaskRegistry";
 
 // Type utilities for array transformations
@@ -164,12 +165,12 @@ function generateCombinations<T extends TaskInput>(input: T, inputMakeArray: (ke
 export function arrayTaskFactory<
   PluralInputType extends TaskInput = TaskInput,
   PluralOutputType extends TaskOutput = TaskOutput,
+  SingleOutputType extends TaskOutput = TaskOutput,
 >(
   taskClass: typeof SingleTask | typeof CompoundTask,
   inputMakeArray: Array<keyof PluralInputType>,
   name?: string
 ) {
-  type NonPluralOutputType = CreateMappedType<typeof taskClass.inputs>;
   const inputs = convertMultipleToArray<TaskInputDefinition>(
     Array.from(taskClass.inputs),
     inputMakeArray
@@ -232,7 +233,7 @@ export function arrayTaskFactory<
      */
     async runReactive(): Promise<PluralOutputType> {
       const runDataOut = await super.runReactive();
-      this.runOutputData = collectPropertyValues<NonPluralOutputType>(
+      this.runOutputData = collectPropertyValues<SingleOutputType>(
         runDataOut.outputs
       ) as PluralOutputType;
       return this.runOutputData;
@@ -244,7 +245,7 @@ export function arrayTaskFactory<
      */
     async run(...args: any[]): Promise<PluralOutputType> {
       const runDataOut = await super.run(...args);
-      this.runOutputData = collectPropertyValues<NonPluralOutputType>(
+      this.runOutputData = collectPropertyValues<SingleOutputType>(
         runDataOut.outputs
       ) as PluralOutputType;
       return this.runOutputData;
@@ -265,5 +266,3 @@ export function arrayTaskFactory<
 
   return ArrayTask;
 }
-
-export type ArrayTaskType = ReturnType<typeof arrayTaskFactory>;

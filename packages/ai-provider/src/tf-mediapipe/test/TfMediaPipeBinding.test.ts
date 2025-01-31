@@ -7,7 +7,7 @@
 
 // import { describe, expect, it } from "bun:test";
 // import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-// import { getGlobalModelRepository, getProviderRegistry, Model } from "ellmers-ai";
+// import { getGlobalModelRepository, getAiProviderRegistry, Model } from "ellmers-ai";
 // import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 // import { SqliteJobQueue } from "../../../../storage/dist/bun/sqlite";
 // import { registerMediaPipeTfJsLocalTasks } from "../bindings/registerTasks";
@@ -35,7 +35,7 @@
 //         universal_sentence_encoder.name
 //       );
 //       registerMediaPipeTfJsLocalTasks();
-//       const ProviderRegistry = getProviderRegistry();
+//       const ProviderRegistry = getAiProviderRegistry();
 //       const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
 //         TFQUEUE,
 //         new ConcurrencyLimiter(1, 10),
@@ -74,7 +74,7 @@
 //         universal_sentence_encoder.name
 //       );
 //       registerMediaPipeTfJsLocalTasks();
-//       const ProviderRegistry = getProviderRegistry();
+//       const ProviderRegistry = getAiProviderRegistry();
 //       const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
 //         getDatabase(":memory:"),
 //         TFQUEUE,

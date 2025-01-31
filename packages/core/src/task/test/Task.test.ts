@@ -8,10 +8,15 @@
 import { describe, expect, it } from "bun:test";
 import { SingleTask, CompoundTask } from "../base/Task";
 import { TaskGraph } from "../base/TaskGraph";
-import { CreateMappedType } from "../base/TaskIOTypes";
 
-type TestTaskInput = CreateMappedType<typeof TestTask.inputs>;
-type TestTaskOutput = CreateMappedType<typeof TestTask.outputs>;
+type TestTaskInput = {
+  key: string;
+};
+type TestTaskOutput = {
+  reactiveOnly: boolean;
+  all: boolean;
+  key: string;
+};
 class TestTask extends SingleTask {
   static readonly type = "TestTask";
   declare runInputData: TestTaskInput;

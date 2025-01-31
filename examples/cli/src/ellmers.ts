@@ -3,7 +3,7 @@
 import { program } from "commander";
 import { argv } from "process";
 import { AddBaseCommands } from "./TaskCLI";
-import { getProviderRegistry } from "ellmers-ai";
+import { getAiProviderRegistry } from "ellmers-ai";
 import {
   registerHuggingfaceLocalModels,
   registerHuggingfaceLocalTasksInMemory,
@@ -24,4 +24,4 @@ registerMediaPipeTfJsLocalInMemory();
 
 await program.parseAsync(argv);
 
-getProviderRegistry().stopQueues();
+getAiProviderRegistry().stopQueues();

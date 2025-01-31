@@ -6,13 +6,13 @@
 //    *******************************************************************************
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
-import { ElVector } from "ellmers-core";
 import {
   DownloadModelTask,
   DownloadModelTaskInput,
   TextEmbeddingTask,
   TextEmbeddingTaskInput,
   getGlobalModelRepository,
+  ElVector,
 } from "ellmers-ai";
 
 /**

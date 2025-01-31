@@ -1,4 +1,4 @@
-import { getProviderRegistry } from "ellmers-ai";
+import { getAiProviderRegistry } from "ellmers-ai";
 import { DownloadModelTask, TextEmbeddingTask } from "ellmers-ai";
 import {
   MediaPipeTfJsLocal_Download,
@@ -7,7 +7,7 @@ import {
 import { MEDIA_PIPE_TFJS_MODEL } from "..";
 
 export const registerMediaPipeTfJsLocalTasks = () => {
-  const ProviderRegistry = getProviderRegistry();
+  const ProviderRegistry = getAiProviderRegistry();
 
   ProviderRegistry.registerRunFn(
     DownloadModelTask.type,

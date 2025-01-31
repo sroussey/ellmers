@@ -20,8 +20,7 @@ import {
   type TranslationSingle,
   TextStreamer,
 } from "@huggingface/transformers";
-import { ElVector } from "ellmers-core";
-import { getGlobalModelRepository } from "ellmers-ai";
+import { ElVector, getGlobalModelRepository } from "ellmers-ai";
 import type {
   JobQueueLlmTask,
   DownloadModelTask,
@@ -229,8 +228,8 @@ export async function HuggingFaceLocal_TextTranslationRun(
   });
 
   let results = await translate(runInputData.text, {
-    src_lang: runInputData.source,
-    tgt_lang: runInputData.target,
+    src_lang: runInputData.source_lang,
+    tgt_lang: runInputData.target_lang,
     streamer,
   } as any);
   if (!Array.isArray(results)) {
