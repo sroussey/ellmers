@@ -14,6 +14,10 @@ class FallbackModelRegistry {
   models: Model[] = [];
   task2models: Task2ModelPrimaryKey[] = [];
 
+  constructor() {
+    console.warn("Using FallbackModelRegistry");
+  }
+
   public async addModel(model: Model) {
     if (this.models.some((m) => m.name === model.name)) {
       this.models = this.models.filter((m) => m.name !== model.name);
@@ -32,6 +36,19 @@ class FallbackModelRegistry {
   }
   public async findByName(name: string) {
     return this.models.find((m) => m.name === name);
+  }
+  public async enumerateAllModels() {
+    return this.models;
+  }
+  public async enumerateAllTasks() {
+    const tasks = new Set<string>();
+    for (const t2m of this.task2models) {
+      tasks.add(t2m.task);
+    }
+    return Array.from(tasks);
+  }
+  public async size() {
+    return this.models.length;
   }
   public async connectTaskToModel(task: string, model: string) {
     this.task2models.push({ task, model });

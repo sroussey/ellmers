@@ -145,6 +145,27 @@ export abstract class ModelRepository {
   }
 
   /**
+   * Enumerates all tasks in the repository
+   * @returns Promise resolving to an array of task identifiers
+   */
+  async enumerateAllTasks() {
+    const junctions = await this.task2ModelKvRepository.getAll();
+    if (!junctions || junctions.length === 0) return undefined;
+    const uniqueTasks = [...new Set(junctions.map((junction) => junction.task))];
+    return uniqueTasks;
+  }
+
+  /**
+   * Enumerates all models in the repository
+   * @returns Promise resolving to an array of model instances
+   */
+  async enumerateAllModels() {
+    const models = await this.modelKvRepository.getAll();
+    if (!models || models.length === 0) return undefined;
+    return models;
+  }
+
+  /**
    * Creates an association between a task and a model
    * @param task - The task identifier
    * @param model - The model to associate with the task
