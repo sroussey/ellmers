@@ -38,5 +38,6 @@
   "json.format.enable": true,
   "javascript.format.enable": true,
   "editor.wordWrapColumn": 100,
-  "prettier.printWidth": 100
+  "prettier.printWidth": 100,
+  "bun.debugTerminal.enabled": true
 }
