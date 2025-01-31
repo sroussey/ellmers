@@ -200,6 +200,17 @@ export class SqliteKVRepository<
   }
 
   /**
+   * Retrieves all entries from the database table
+   * @returns Promise resolving to an array of entries or undefined if not found
+   */
+  async getAll(): Promise<Combined[] | undefined> {
+    const sql = `SELECT * FROM \`${this.table}\``;
+    const stmt = this.db.prepare<Combined, []>(sql);
+    const value = stmt.all();
+    return value.length ? value : undefined;
+  }
+
+  /**
    * Deletes all entries from the database table
    * @emits 'clearall' event when successful
    */

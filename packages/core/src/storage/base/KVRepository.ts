@@ -116,6 +116,7 @@ export abstract class KVRepository<
   abstract putKeyValue(key: Key, value: Value): Promise<void>;
   abstract getKeyValue(key: Key): Promise<Value | undefined>;
   abstract deleteKeyValue(key: Key | Combined): Promise<void>;
+  abstract getAll(): Promise<Combined[] | undefined>;
   abstract deleteAll(): Promise<void>;
   abstract size(): Promise<number>;
 

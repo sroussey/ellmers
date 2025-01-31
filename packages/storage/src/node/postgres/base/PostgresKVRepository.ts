@@ -211,6 +211,16 @@ export class PostgresKVRepository<
   }
 
   /**
+   * Retrieves all entries from the database table
+   * @returns Promise resolving to an array of entries or undefined if not found
+   */
+  async getAll(): Promise<Combined[] | undefined> {
+    const sql = `SELECT * FROM \`${this.table}\``;
+    const result = await this.pool.query<Combined, []>(sql);
+    return result.rows.length ? result.rows : undefined;
+  }
+
+  /**
    * Deletes all key-value pairs from the database table.
    * @emits "clearall" event when successful
    */

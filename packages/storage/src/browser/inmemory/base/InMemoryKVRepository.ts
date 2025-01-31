@@ -118,8 +118,16 @@ export class InMemoryKVRepository<
   }
 
   /**
+   * Returns an array of all entries in the repository
+   * @returns Array of all entries in the repository
+   */
+  async getAll(): Promise<Combined[] | undefined> {
+    return Array.from(this.values.values());
+  }
+
+  /**
    * Returns the number of entries in the repository
-   * @returns The total count of stored key-value pairs
+   * @returns The total count of stored entries
    */
   async size(): Promise<number> {
     return this.values.size;

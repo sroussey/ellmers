@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import path from "node:path";
-import { readFile, writeFile, rm } from "node:fs/promises";
+import { readFile, writeFile, rm, readdir } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { glob } from "glob";
 import {
@@ -106,6 +106,38 @@ export class FileKVRepository<
       // console.error("Error deleting file", filePath, error);
     }
     this.emit("delete", key);
+  }
+
+  /**
+   * Retrieves all key-value pairs stored in the repository
+   * @returns Array of combined objects (key-value pairs) if found, undefined otherwise
+   */
+  async getAll(): Promise<Combined[] | undefined> {
+    try {
+      const files = await readdir(this.folderPath);
+      const jsonFiles = files.filter((file) => file.endsWith(".json"));
+      if (jsonFiles.length === 0) {
+        return undefined;
+      }
+      const results = await Promise.allSettled(
+        jsonFiles.map(async (file) => {
+            const content = await readFile(path.join(this.folderPath, file), 'utf-8');
+            const data = JSON.parse(content) as Combined;
+            return data;
+          }
+        )
+      );
+      
+      const values = results
+        .filter((result) => 
+          result.status === 'fulfilled')
+        .map(result => result.value);
+        
+      return values.length > 0 ? values : undefined;
+    } catch (error) {
+      console.error('Error in getAll:', error);
+      throw error;
+    }
   }
 
   /**
