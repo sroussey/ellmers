@@ -10,7 +10,7 @@ import {
   registerMediaPipeTfJsLocalInMemory,
   registerMediaPipeTfJsLocalModels,
 } from "ellmers-test";
-import "ellmers-test";
+import "@huggingface/transformers";
 
 program.version("1.0.0").description("A CLI to run Ellmers.");
 

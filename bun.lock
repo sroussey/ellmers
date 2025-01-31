@@ -48,6 +48,7 @@
         "ellmers-core": "workspace:packages/core",
         "ellmers-storage": "workspace:packages/storage",
         "ellmers-task": "workspace:packages/task",
+        "ellmers-test": "workspace:packages/test",
       },
     },
     "examples/web": {
