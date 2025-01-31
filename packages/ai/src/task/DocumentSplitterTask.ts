@@ -5,15 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import {
-  Document,
-  DocumentFragment,
-  SingleTask,
-  TaskGraphBuilder,
-  TaskGraphBuilderHelper,
-  TaskRegistry,
-} from "ellmers-core";
-
+import { SingleTask, TaskGraphBuilder, TaskGraphBuilderHelper, TaskRegistry } from "ellmers-core";
+import { Document, DocumentFragment } from "../source/Document";
 export type DocumentSplitterTaskInput = {
   parser: "txt" | "md";
   file: Document;

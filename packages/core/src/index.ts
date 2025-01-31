@@ -5,9 +5,6 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-export * from "./source/Document";
-export * from "./source/DocumentConverterText";
-export * from "./source/DocumentConverterMarkdown";
 export * from "./task/index";
 export * from "./storage/base/KVRepository";
 export * from "./storage/taskoutput/TaskOutputRepository";
