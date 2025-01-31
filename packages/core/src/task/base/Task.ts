@@ -9,13 +9,6 @@ import { EventEmitter } from "eventemitter3";
 import { nanoid } from "nanoid";
 import { TaskGraph, TaskGraphItemJson } from "./TaskGraph";
 import { TaskGraphRunner } from "./TaskGraphRunner";
-import {
-  validateItem,
-  type TaskInputDefinition,
-  type TaskOutputDefinition,
-  ValueTypesIndex,
-  ElVector,
-} from "./TaskIOTypes";
 import type { JsonTaskItem } from "../JsonTask";
 import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
 
@@ -61,6 +54,21 @@ export interface IConfig {
   name?: string;
   provenance?: TaskInput;
 }
+
+export type TaskInputDefinition = {
+  readonly id: string;
+  readonly name: string;
+  readonly valueType: string;
+  readonly isArray?: boolean;
+  readonly defaultValue?: unknown;
+};
+
+export type TaskOutputDefinition = {
+  readonly id: string;
+  readonly name: string;
+  readonly valueType: string;
+  readonly isArray?: boolean;
+};
 
 /**
  * Base class for all tasks
@@ -216,12 +224,25 @@ export abstract class TaskBase {
 
   /**
    * Validates an item against the task's input definition
+   *
+   * By default, we only check "number", "text", "boolean", and "function"
    * @param valueType The type of the item
    * @param item The item to validate
    * @returns True if the item is valid, false otherwise
    */
-  validateItem(valueType: string, item: any) {
-    return validateItem(valueType as ValueTypesIndex, item);
+  async validateItem(valueType: string, item: any) {
+    switch (valueType) {
+      case "number":
+        return typeof item === "bigint" || typeof item === "number";
+      case "text":
+        return typeof item === "string";
+      case "boolean":
+        return typeof item === "boolean";
+      case "function":
+        return typeof item === "function";
+    }
+    console.warn(`validateItem: Unknown value type: ${valueType}`);
+    return false;
   }
 
   /**
@@ -230,7 +251,7 @@ export abstract class TaskBase {
    * @param inputId The id of the input to validate
    * @returns True if the input is valid, false otherwise
    */
-  validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
+  async validateInputItem(input: Partial<TaskInput>, inputId: keyof TaskInput) {
     const classRef = this.constructor as typeof TaskBase;
     const inputdef = this.inputs.find((def) => def.id === inputId);
     if (!inputdef) {
@@ -247,31 +268,19 @@ export abstract class TaskBase {
       input[inputId] = inputdef.defaultValue;
     }
     if (inputdef.isArray) {
-      if (
-        (inputdef.valueType === "vector" && !Array.isArray(input[inputId][0])) ||
-        !Array.isArray(input[inputId])
-      ) {
+      if (!Array.isArray(input[inputId])) {
         input[inputId] = [input[inputId]];
       }
     }
-    // check the length of the vectors are the same
-    if (inputdef.valueType === "vector" && inputdef.isArray) {
-      const vec = input[inputId] as ElVector;
-      const len = vec.vector.length;
-      for (const item of input[inputId]) {
-        if (item.length !== len) {
-          console.warn(
-            `Vectors in '${inputId}' should all be of the same dimension in ${classRef.type} (id:${this.config.id})`
-          );
-          return false;
-        }
-      }
-    }
-    const inputlist = inputdef.isArray ? input[inputId] : [input[inputId]];
-    for (const item of inputlist) {
-      if (this.validateItem(inputdef.valueType as string, item) === false) return false;
-    }
-    return true;
+
+    const inputlist: any[] = inputdef.isArray ? input[inputId] : [input[inputId]];
+
+    // Rewritten using Promise.all for asynchronous validation
+    const validationPromises = inputlist.map((item) =>
+      this.validateItem(inputdef.valueType as string, item)
+    );
+    const validationResults = await Promise.all(validationPromises);
+    return validationResults.every(Boolean);
   }
 
   /**
@@ -279,9 +288,9 @@ export abstract class TaskBase {
    * @param input The input to validate
    * @returns True if the input is valid, false otherwise
    */
-  validateInputData(input: Partial<TaskInput>) {
+  async validateInputData(input: Partial<TaskInput>) {
     for (const inputdef of this.inputs) {
-      if (this.validateInputItem(input, inputdef.id) === false) {
+      if ((await this.validateInputItem(input, inputdef.id)) === false) {
         return false;
       }
     }
@@ -293,7 +302,7 @@ export abstract class TaskBase {
    * @returns The output of the task
    */
   async run(): Promise<TaskOutput> {
-    if (!this.validateInputData(this.runInputData)) {
+    if (!(await this.validateInputData(this.runInputData))) {
       throw new Error("Invalid input data");
     }
     this.emit("start");

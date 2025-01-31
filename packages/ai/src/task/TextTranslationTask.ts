@@ -6,14 +6,23 @@
 //    *******************************************************************************
 
 import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "ellmers-core";
-import { CreateMappedType } from "ellmers-core";
 import { TaskRegistry } from "ellmers-core";
 import { JobQueueTaskConfig } from "ellmers-core";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { language } from "./base/TaskIOTypes";
+import { translation_model } from "./base/TaskIOTypes";
 
-export type TextTranslationTaskInput = CreateMappedType<typeof TextTranslationTask.inputs>;
-export type TextTranslationTaskOutput = CreateMappedType<typeof TextTranslationTask.outputs>;
+export type TextTranslationTaskInput = {
+  text: string;
+  model: translation_model;
+  source_lang: language;
+  target_lang: language;
+};
+export type TextTranslationTaskOutput = {
+  text: string;
+  target_lang: language;
+};
 
 /**
  * This generates text from a prompt
@@ -28,15 +37,15 @@ export class TextTranslationTask extends JobQueueLlmTask {
     {
       id: "model",
       name: "Model",
-      valueType: "text_translation_model",
+      valueType: "translation_model",
     },
     {
-      id: "source",
+      id: "source_lang",
       name: "Input Language",
       valueType: "language",
     },
     {
-      id: "target",
+      id: "target_lang",
       name: "Output Language",
       valueType: "language",
     },
@@ -44,7 +53,7 @@ export class TextTranslationTask extends JobQueueLlmTask {
   public static outputs = [
     { id: "text", name: "Text", valueType: "text" },
     {
-      id: "target",
+      id: "target_lang",
       name: "Output Language",
       valueType: "language",
     },
@@ -68,7 +77,8 @@ type TextTranslationCompoundTaskInput = ConvertSomeToOptionalArray<
 >;
 export const TextTranslationCompoundTask = arrayTaskFactory<
   TextTranslationCompoundTaskInput,
-  TextTranslationCompoundOutput
+  TextTranslationCompoundOutput,
+  TextTranslationTaskOutput
 >(TextTranslationTask, ["model", "text"]);
 
 export const TextTranslation = (input: TextTranslationCompoundTaskInput) => {

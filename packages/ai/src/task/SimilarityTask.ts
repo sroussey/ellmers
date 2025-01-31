@@ -6,16 +6,14 @@
 //    *******************************************************************************
 
 import {
-  CreateMappedType,
   TaskRegistry,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-  ElVector,
-  ValueTypesIndex,
   SingleTask,
   TaskOutput,
   TaskConfig,
 } from "ellmers-core";
+import { AnyNumberArray, ElVector } from "./base/TaskIOTypes";
 
 // ===============================================================================
 
@@ -28,7 +26,10 @@ export type SimilarityTaskInput = {
   similarity: (typeof similarity_fn)[number];
 };
 
-export type SimilarityTaskOutput = CreateMappedType<typeof SimilarityTask.outputs>;
+export type SimilarityTaskOutput = {
+  output: ElVector<AnyNumberArray>[];
+  score: number[];
+};
 
 export class SimilarityTask extends SingleTask {
   static readonly type = "SimilarityTask";
@@ -78,18 +79,17 @@ export class SimilarityTask extends SingleTask {
     super(config);
   }
 
-  validateItem(valueType: string, item: any): boolean {
-    if (!super.validateItem(valueType as ValueTypesIndex, item)) return false;
+  async validateItem(valueType: string, item: any): Promise<boolean> {
     if (valueType === "similarity_fn") {
       return similarity_fn.includes(item);
     }
-    return true;
+    if (valueType === "vector") {
+      return item instanceof ElVector;
+    }
+    return super.validateItem(valueType, item);
   }
 
-  validateInputItem(input: Partial<SimilarityTaskInput>, inputId: keyof SimilarityTaskInput) {
-    const parent = super.validateInputItem(input, inputId);
-    if (!parent) return false;
-    if (typeof input !== "object") return false;
+  async validateInputItem(input: Partial<SimilarityTaskInput>, inputId: keyof SimilarityTaskInput) {
     switch (inputId) {
       case "k": {
         const val = input[inputId];
@@ -111,7 +111,7 @@ export class SimilarityTask extends SingleTask {
         return true;
       }
       default:
-        return true;
+        return super.validateInputItem(input, inputId);
     }
   }
 

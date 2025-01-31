@@ -8,7 +8,6 @@
 import {
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-  CreateMappedType,
   TaskRegistry,
   ConvertAllToArrays,
   ConvertSomeToOptionalArray,
@@ -18,9 +17,28 @@ import {
 } from "ellmers-core";
 import { getGlobalModelRepository } from "../model/ModelRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import {
+  embedding_model,
+  generation_model,
+  model,
+  question_answering_model,
+  summarization_model,
+  translation_model,
+} from "./base/TaskIOTypes";
 
-export type DownloadModelTaskInput = CreateMappedType<typeof DownloadModelTask.inputs>;
-export type DownloadModelTaskOutput = CreateMappedType<typeof DownloadModelTask.outputs>;
+export type DownloadModelTaskInput = {
+  model: string;
+};
+export type DownloadModelTaskOutput = {
+  model: model;
+  dimensions: number;
+  normalize: boolean;
+  embedding_model: embedding_model;
+  generation_model: generation_model;
+  summarization_model: summarization_model;
+  question_answering_model: question_answering_model;
+  translation_model: translation_model;
+};
 
 export class DownloadModelTask extends JobQueueLlmTask {
   public static inputs = [
@@ -47,29 +65,29 @@ export class DownloadModelTask extends JobQueueLlmTask {
       valueType: "boolean",
     },
     {
-      id: "text_embedding_model",
+      id: "embedding_model",
       name: "",
-      valueType: "text_embedding_model",
+      valueType: "embedding_model",
     },
     {
-      id: "text_generation_model",
+      id: "generation_model",
       name: "",
-      valueType: "text_generation_model",
+      valueType: "generation_model",
     },
     {
-      id: "text_summarization_model",
+      id: "summarization_model",
       name: "",
-      valueType: "text_summarization_model",
+      valueType: "summarization_model",
     },
     {
-      id: "text_question_answering_model",
+      id: "question_answering_model",
       name: "",
-      valueType: "text_question_answering_model",
+      valueType: "question_answering_model",
     },
     {
-      id: "text_translation_model",
+      id: "translation_model",
       name: "",
-      valueType: "text_translation_model",
+      valueType: "translation_model",
     },
   ] as const;
   static sideeffects = true;
@@ -90,19 +108,19 @@ export class DownloadModelTask extends JobQueueLlmTask {
       this.runOutputData.dimensions = model.usingDimensions!;
       this.runOutputData.normalize = model.normalize!;
       if (tasks.includes("TextEmbeddingTask")) {
-        this.runOutputData.text_embedding_model = model.name;
+        this.runOutputData.embedding_model = model.name;
       }
       if (tasks.includes("TextGenerationTask")) {
-        this.runOutputData.text_generation_model = model.name;
+        this.runOutputData.generation_model = model.name;
       }
       if (tasks.includes("TextSummaryTask")) {
-        this.runOutputData.text_summarization_model = model.name;
+        this.runOutputData.summarization_model = model.name;
       }
       if (tasks.includes("TextQuestionAnswerTask")) {
-        this.runOutputData.text_question_answering_model = model.name;
+        this.runOutputData.question_answering_model = model.name;
       }
       if (tasks.includes("TextTranslationTask")) {
-        this.runOutputData.text_translation_model = model.name;
+        this.runOutputData.translation_model = model.name;
       }
     }
     return this.runOutputData;
@@ -116,7 +134,8 @@ TaskRegistry.registerTask(DownloadModelTask);
 type DownloadModelCompoundTaskInput = ConvertSomeToOptionalArray<DownloadModelTaskInput, "model">;
 export const DownloadModelCompoundTask = arrayTaskFactory<
   DownloadModelCompoundTaskInput,
-  ConvertAllToArrays<DownloadModelTaskOutput>
+  ConvertAllToArrays<DownloadModelTaskOutput>,
+  DownloadModelTaskOutput
 >(DownloadModelTask, ["model"]);
 
 export const DownloadModel = (input: DownloadModelCompoundTaskInput) => {

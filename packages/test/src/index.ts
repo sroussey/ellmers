@@ -1,4 +1,4 @@
-import { getProviderRegistry } from "ellmers-ai";
+import { getAiProviderRegistry } from "ellmers-ai";
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
@@ -15,7 +15,7 @@ export * from "./sample/ONNXModelSamples";
 
 export async function registerHuggingfaceLocalTasksInMemory() {
   registerHuggingfaceLocalTasks();
-  const ProviderRegistry = getProviderRegistry();
+  const ProviderRegistry = getAiProviderRegistry();
   const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
     "local_hf",
     new ConcurrencyLimiter(1, 10),
@@ -27,7 +27,7 @@ export async function registerHuggingfaceLocalTasksInMemory() {
 
 export async function registerMediaPipeTfJsLocalInMemory() {
   registerMediaPipeTfJsLocalTasks();
-  const ProviderRegistry = getProviderRegistry();
+  const ProviderRegistry = getAiProviderRegistry();
   const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
     "local_media_pipe",
     new ConcurrencyLimiter(1, 10),

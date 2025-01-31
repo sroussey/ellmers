@@ -7,19 +7,24 @@
 
 import {
   ConvertAllToArrays,
-  ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-  CreateMappedType,
   TaskRegistry,
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { AnyNumberArray, embedding_model } from "./base/TaskIOTypes";
+import { ElVector } from "./base/TaskIOTypes";
 
-export type TextEmbeddingTaskInput = CreateMappedType<typeof TextEmbeddingTask.inputs>;
-export type TextEmbeddingTaskOutput = CreateMappedType<typeof TextEmbeddingTask.outputs>;
+export type TextEmbeddingTaskInput = {
+  text: string;
+  model: embedding_model;
+};
+export type TextEmbeddingTaskOutput = {
+  vector: ElVector<AnyNumberArray>;
+};
 
 /**
  * A task that generates vector embeddings for text using a specified embedding model.
@@ -38,7 +43,7 @@ export class TextEmbeddingTask extends JobQueueLlmTask {
     {
       id: "model",
       name: "Model",
-      valueType: "text_embedding_model",
+      valueType: "embedding_model",
     },
   ] as const;
   public static outputs = [{ id: "vector", name: "Embedding", valueType: "vector" }] as const;
@@ -63,7 +68,8 @@ type TextEmbeddingCompoundTaskInput = ConvertSomeToOptionalArray<TextEmbeddingTa
  */
 export const TextEmbeddingCompoundTask = arrayTaskFactory<
   TextEmbeddingCompoundTaskInput,
-  TextEmbeddingCompoundTaskOutput
+  TextEmbeddingCompoundTaskOutput,
+  TextEmbeddingTaskOutput
 >(TextEmbeddingTask, ["model", "text"]);
 
 /**

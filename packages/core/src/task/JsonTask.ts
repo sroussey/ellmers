@@ -8,7 +8,6 @@
 import { CompoundTask, RegenerativeCompoundTask, TaskConfig, TaskInput } from "./base/Task";
 import { DataFlow, TaskGraph } from "./base/TaskGraph";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "./base/TaskGraphBuilder";
-import { CreateMappedType } from "./base/TaskIOTypes";
 import { TaskRegistry } from "./base/TaskRegistry";
 
 /**
@@ -36,8 +35,12 @@ export type JsonTaskItem = {
   subtasks?: JsonTaskItem[]; // Nested tasks for compound operations
 };
 
-type JsonTaskInput = CreateMappedType<typeof JsonTask.inputs>;
-type JsonTaskOutput = CreateMappedType<typeof JsonTask.outputs>;
+type JsonTaskInput = {
+  json: string;
+};
+type JsonTaskOutput = {
+  output: any;
+};
 
 /**
  * JsonTask is a specialized task that creates and manages task graphs from JSON configurations.

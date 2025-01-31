@@ -12,12 +12,16 @@ import {
   TaskOutput,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-  CreateMappedType,
   TaskRegistry,
 } from "ellmers-core";
 
-export type JavaScriptTaskInput = CreateMappedType<typeof JavaScriptTask.inputs>;
-export type JavaScriptTaskOutput = CreateMappedType<typeof JavaScriptTask.outputs>;
+export type JavaScriptTaskInput = {
+  code: string;
+  input: any;
+};
+export type JavaScriptTaskOutput = {
+  output: any;
+};
 
 export class JavaScriptTask extends SingleTask {
   static readonly type = "JavaScriptTask";

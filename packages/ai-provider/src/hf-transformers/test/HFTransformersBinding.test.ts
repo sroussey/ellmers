@@ -8,7 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
 import {
-  getProviderRegistry,
+  getAiProviderRegistry,
   getGlobalModelRepository,
   setGlobalModelRepository,
 } from "ellmers-ai";
@@ -23,7 +23,7 @@ const HFQUEUE = "local_hf";
 describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {
     it("Should have an item queued", async () => {
-      const providerRegistry = getProviderRegistry();
+      const providerRegistry = getAiProviderRegistry();
       const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
         HFQUEUE,
         new ConcurrencyLimiter(1, 10),
@@ -85,7 +85,7 @@ describe("HFTransformersBinding", () => {
         "TextRewritingTask",
         "ONNX Xenova/LaMini-Flan-T5-783M q8"
       );
-      const providerRegistry = getProviderRegistry();
+      const providerRegistry = getAiProviderRegistry();
       const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
         getDatabase(":memory:"),
         HFQUEUE,

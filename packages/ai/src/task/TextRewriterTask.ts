@@ -7,19 +7,24 @@
 
 import {
   ConvertAllToArrays,
-  ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-  CreateMappedType,
   TaskRegistry,
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { rewriting_model } from "./base/TaskIOTypes";
 
-export type TextRewriterTaskInput = CreateMappedType<typeof TextRewriterTask.inputs>;
-export type TextRewriterTaskOutput = CreateMappedType<typeof TextRewriterTask.outputs>;
+export type TextRewriterTaskInput = {
+  text: string;
+  prompt: string;
+  model: rewriting_model;
+};
+export type TextRewriterTaskOutput = {
+  text: string;
+};
 
 /**
  * This is a special case of text generation that takes a prompt and text to rewrite
@@ -40,7 +45,7 @@ export class TextRewriterTask extends JobQueueLlmTask {
     {
       id: "model",
       name: "Model",
-      valueType: "text_generation_model",
+      valueType: "generation_model",
     },
   ] as const;
   public static outputs = [{ id: "text", name: "Text", valueType: "text" }] as const;
@@ -63,7 +68,8 @@ type TextRewriterCompoundTaskInput = ConvertSomeToOptionalArray<
 >;
 export const TextRewriterCompoundTask = arrayTaskFactory<
   TextRewriterCompoundTaskInput,
-  TextRewriterCompoundTaskOutput
+  TextRewriterCompoundTaskOutput,
+  TextRewriterTaskOutput
 >(TextRewriterTask, ["model", "text", "prompt"]);
 
 export const TextRewriter = (input: TextRewriterCompoundTaskInput) => {

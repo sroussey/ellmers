@@ -5,18 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import {
-  Document,
-  DocumentFragment,
-  SingleTask,
-  TaskGraphBuilder,
-  TaskGraphBuilderHelper,
-  CreateMappedType,
-  TaskRegistry,
-} from "ellmers-core";
-
-export type DocumentSplitterTaskInput = CreateMappedType<typeof DocumentSplitterTask.inputs>;
-export type DocumentSplitterTaskOutput = CreateMappedType<typeof DocumentSplitterTask.outputs>;
+import { SingleTask, TaskGraphBuilder, TaskGraphBuilderHelper, TaskRegistry } from "ellmers-core";
+import { Document, DocumentFragment } from "../source/Document";
+export type DocumentSplitterTaskInput = {
+  parser: "txt" | "md";
+  file: Document;
+};
+export type DocumentSplitterTaskOutput = {
+  texts: string[];
+};
 
 export class DocumentSplitterTask extends SingleTask {
   static readonly type: string = "DocumentSplitterTask";

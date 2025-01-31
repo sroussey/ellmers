@@ -15,3 +15,4 @@ export * from "./TextQuestionAnswerTask";
 export * from "./TextTranslationTask";
 export * from "./SimilarityTask";
 export * from "./DownloadModelTask";
+export * from "./base/TaskIOTypes";

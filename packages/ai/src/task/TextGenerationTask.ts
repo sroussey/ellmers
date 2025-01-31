@@ -7,19 +7,23 @@
 
 import {
   ConvertAllToArrays,
-  ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-  CreateMappedType,
   TaskRegistry,
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { generation_model } from "./base/TaskIOTypes";
 
-export type TextGenerationTaskInput = CreateMappedType<typeof TextGenerationTask.inputs>;
-export type TextGenerationTaskOutput = CreateMappedType<typeof TextGenerationTask.outputs>;
+export type TextGenerationTaskInput = {
+  prompt: string;
+  model: generation_model;
+};
+export type TextGenerationTaskOutput = {
+  text: string;
+};
 
 /**
  * This generates text from a prompt
@@ -34,7 +38,7 @@ export class TextGenerationTask extends JobQueueLlmTask {
     {
       id: "model",
       name: "Model",
-      valueType: "text_generation_model",
+      valueType: "generation_model",
     },
   ] as const;
   public static outputs = [{ id: "text", name: "Text", valueType: "text" }] as const;
@@ -62,7 +66,8 @@ type TextGenerationCompoundTaskInput = ConvertSomeToOptionalArray<
  */
 export const TextGenerationCompoundTask = arrayTaskFactory<
   TextGenerationCompoundTaskInput,
-  TextGenerationCompoundOutput
+  TextGenerationCompoundOutput,
+  TextGenerationTaskOutput
 >(TextGenerationTask, ["model", "prompt"]);
 
 /**

@@ -7,19 +7,23 @@
 
 import {
   ConvertAllToArrays,
-  ConvertSomeToArray,
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
-  CreateMappedType,
   TaskRegistry,
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-
-export type TextQuestionAnswerTaskInput = CreateMappedType<typeof TextQuestionAnswerTask.inputs>;
-export type TextQuestionAnswerTaskOutput = CreateMappedType<typeof TextQuestionAnswerTask.outputs>;
+import { question_answering_model } from "./base/TaskIOTypes";
+export type TextQuestionAnswerTaskInput = {
+  context: string;
+  question: string;
+  model: question_answering_model;
+};
+export type TextQuestionAnswerTaskOutput = {
+  text: string;
+};
 
 /**
  * This is a special case of text generation that takes a context and a question
@@ -63,7 +67,8 @@ type TextQuestionAnswerCompoundTaskInput = ConvertSomeToOptionalArray<
 
 export const TextQuestionAnswerCompoundTask = arrayTaskFactory<
   TextQuestionAnswerCompoundTaskInput,
-  TextQuestionAnswerCompoundTaskOutput
+  TextQuestionAnswerCompoundTaskOutput,
+  TextQuestionAnswerTaskOutput
 >(TextQuestionAnswerTask, ["model", "context", "question"]);
 
 export const TextQuestionAnswer = (input: TextQuestionAnswerCompoundTaskInput) => {

@@ -13,6 +13,18 @@ enum DocumentType {
   TABLE = "table",
 }
 
+const doc_variants = [
+  "tree",
+  "flat",
+  "tree-paragraphs",
+  "flat-paragraphs",
+  "tree-sentences",
+  "flat-sentences",
+] as const;
+type DocVariant = (typeof doc_variants)[number];
+const doc_parsers = ["txt", "md"] as const; // | "html" | "pdf" | "csv";
+type DocParser = (typeof doc_parsers)[number];
+
 export interface DocumentMetadata {
   title: string;
 }

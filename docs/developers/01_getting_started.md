@@ -131,21 +131,23 @@ And unrolling the config helpers, we get the following equivalent code:
 
 ```ts
 import {
-  DownloadModelTask,
-  TextRewriterCompoundTask,
   DebugLog,
   DataFlow,
   TaskGraph,
   TaskGraphRunner,
-  getProviderRegistry,
-  HuggingFaceLocal_DownloadRun,
-  HuggingFaceLocal_TextRewriterRun,
-  InMemoryJobQueue,
-  ModelProcessorEnum,
   ConcurrencyLimiter,
   TaskInput,
   TaskOutput,
 } from "ellmers-core";
+
+import { DownloadModelTask, TextRewriterCompoundTask, getAiProviderRegistry } from "ellmers-ai";
+
+import {
+  HuggingFaceLocal_DownloadRun,
+  HuggingFaceLocal_TextRewriterRun,
+} from "ellmers-ai-provider/hf-transformers";
+
+import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 
 // config and start up
 getGlobalModelRepository(new InMemoryModelRepository());
@@ -166,7 +168,7 @@ await getGlobalModelRepository().connectTaskToModel(
   "ONNX Xenova/LaMini-Flan-T5-783M q8"
 );
 
-const ProviderRegistry = getProviderRegistry();
+const ProviderRegistry = getAiProviderRegistry();
 ProviderRegistry.registerRunFn(
   DownloadModelTask.type,
   ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
@@ -187,7 +189,9 @@ jobQueue.start();
 
 // build and run graph
 const graph = new TaskGraph();
-graph.addTask(new DownloadModel({ id: "1", input: { model: "Xenova/LaMini-Flan-T5-783M" } }));
+graph.addTask(
+  new DownloadModel({ id: "1", input: { model: "ONNX Xenova/LaMini-Flan-T5-783M q8" } })
+);
 graph.addTask(
   new TextRewriterCompoundTask({
     id: "2",
@@ -256,7 +260,7 @@ An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a
 import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
-  model: "Xenova/LaMini-Flan-T5-783M",
+  model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
   text: "The quick brown fox jumps over the lazy dog.",
 });
 await builder.run();
@@ -268,7 +272,7 @@ OR
 import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
-  model: ["Xenova/LaMini-Flan-T5-783M", "Universal Sentence Encoder"],
+  model: ["ONNX Xenova/LaMini-Flan-T5-783M q8", "Universal Sentence Encoder"],
   text: "The quick brown fox jumps over the lazy dog.",
 });
 await builder.run();
@@ -281,7 +285,7 @@ import { TaskGraphBuilder } from "ellmers-core";
 const builder = new TaskGraphBuilder();
 builder
   .DownloadModel({
-    model: ["Xenova/LaMini-Flan-T5-783M", "Universal Sentence Encoder"],
+    model: ["ONNX Xenova/LaMini-Flan-T5-783M q8", "Universal Sentence Encoder"],
   })
   .TextEmbedding({
     text: "The quick brown fox jumps over the lazy dog.",
@@ -316,7 +320,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
     "dependencies": {
       "model": {
         "id": "1",
-        "output": "text_generation_model"
+        "output": "generation_model"
       }
     }
   },
@@ -376,7 +380,7 @@ To use a task, instantiate it with some input and call `run()`:
 const task = new TextEmbeddingTask({
   id: "1",
   input: {
-    model: "Xenova/LaMini-Flan-T5-783M",
+    model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
     text: "The quick brown fox jumps over the lazy dog.",
   },
 });
@@ -397,7 +401,7 @@ const graph = new TaskGraph();
 graph.addTask(
   new TextRewriterCompoundTask({
     input: {
-      model: "Xenova/LaMini-Flan-T5-783M",
+      model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
       text: "The quick brown fox jumps over the lazy dog.",
       prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     },
@@ -417,7 +421,7 @@ graph.addTask(
   new TextRewriterCompoundTask({
     id: "1",
     input: {
-      model: "Xenova/LaMini-Flan-T5-783M",
+      model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
       text: "The quick brown fox jumps over the lazy dog.",
       prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     },

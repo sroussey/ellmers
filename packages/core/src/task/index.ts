@@ -11,7 +11,6 @@ export * from "./base/TaskGraph";
 export * from "./base/TaskGraphRunner";
 export * from "./base/TaskGraphBuilder";
 export * from "./base/ArrayTask";
-export * from "./base/TaskIOTypes";
 export * from "./base/JobQueueTask";
 export * from "./LambdaTask";
 export * from "./DebugLogTask";

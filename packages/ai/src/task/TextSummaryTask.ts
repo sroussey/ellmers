@@ -8,7 +8,6 @@
 import {
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-  CreateMappedType,
   TaskRegistry,
   ConvertAllToArrays,
   ConvertSomeToOptionalArray,
@@ -16,9 +15,15 @@ import {
   JobQueueTaskConfig,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { summarization_model } from "./base/TaskIOTypes";
 
-export type TextSummaryTaskInput = CreateMappedType<typeof TextSummaryTask.inputs>;
-export type TextSummaryTaskOutput = CreateMappedType<typeof TextSummaryTask.outputs>;
+export type TextSummaryTaskInput = {
+  text: string;
+  model: summarization_model;
+};
+export type TextSummaryTaskOutput = {
+  text: string;
+};
 
 /**
  * This summarizes a piece of text
@@ -34,7 +39,7 @@ export class TextSummaryTask extends JobQueueLlmTask {
     {
       id: "model",
       name: "Model",
-      valueType: "text_summarization_model",
+      valueType: "summarization_model",
     },
   ] as const;
   public static outputs = [{ id: "text", name: "Text", valueType: "text" }] as const;
@@ -57,7 +62,8 @@ type TextSummaryCompoundTaskInput = ConvertSomeToOptionalArray<
 >;
 export const TextSummaryCompoundTask = arrayTaskFactory<
   TextSummaryCompoundTaskInput,
-  TextSummaryCompoundTaskOutput
+  TextSummaryCompoundTaskOutput,
+  TextSummaryTaskOutput
 >(TextSummaryTask, ["model", "text"]);
 
 export const TextSummary = (input: TextSummaryCompoundTaskInput) => {

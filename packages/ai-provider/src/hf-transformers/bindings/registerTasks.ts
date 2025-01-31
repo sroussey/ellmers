@@ -1,5 +1,5 @@
 import {
-  getProviderRegistry,
+  getAiProviderRegistry,
   DownloadModelTask,
   TextEmbeddingTask,
   TextGenerationTask,
@@ -20,7 +20,7 @@ import {
 import { LOCAL_ONNX_TRANSFORMERJS } from "../model/ONNXTransformerJsModel";
 
 export async function registerHuggingfaceLocalTasks() {
-  const ProviderRegistry = getProviderRegistry();
+  const ProviderRegistry = getAiProviderRegistry();
 
   ProviderRegistry.registerRunFn(
     DownloadModelTask.type,
