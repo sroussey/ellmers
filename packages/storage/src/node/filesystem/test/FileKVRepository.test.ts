@@ -26,7 +26,9 @@ const testDir = ".cache/test/testing";
 
 describe("FileKVRepository", () => {
   let repository: FileKVRepository;
-  rmdirSync(testDir, { recursive: true });
+  try {
+    rmdirSync(testDir, { recursive: true });
+  } catch {}
 
   beforeEach(() => {
     repository = new FileKVRepository(testDir);
