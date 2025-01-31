@@ -47,7 +47,7 @@ import type {
   TextTranslationTaskOutput,
   Model,
 } from "ellmers-ai";
-import { QUANTIZATION_DATA_TYPES } from "../browser";
+import { QUANTIZATION_DATA_TYPES } from "..";
 
 env.cacheDir = "./.cache";
 

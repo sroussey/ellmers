@@ -5,51 +5,25 @@
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-hf-transformers-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/browser.ts",
-    "watch-hf-transformers-server": "bun build --watch --no-clear-screen --target=node --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/server.ts",
-    "watch-hf-transformers-worker": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/worker.ts",
-    "watch-tf-mediapipe-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/browser.ts",
-    "watch-tf-mediapipe-server": "bun build --watch --no-clear-screen --target=node --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/server.ts",
-    "watch-tf-mediapipe-worker": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/worker.ts",
+    "watch-hf-transformers": "bun build --watch --no-clear-screen --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
+    "watch-tf-mediapipe": "bun build --watch --no-clear-screen --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-hf-transformers && bun run build-tf-mediapipe",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-hf-transformers": "bun run build-hf-transformers-browser && bun run build-hf-transformers-server && bun run build-hf-transformers-worker",
-    "build-hf-transformers-browser": "bun build --target=browser --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/browser.ts",
-    "build-hf-transformers-server": "bun build --target=node --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/server.ts",
-    "build-hf-transformers-worker": "bun build --target=bun --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/worker.ts",
-    "build-tf-mediapipe": "bun run build-tf-mediapipe-browser && bun run build-tf-mediapipe-server && bun run build-tf-mediapipe-worker",
-    "build-tf-mediapipe-browser": "bun build --target=browser --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/browser.ts",
-    "build-tf-mediapipe-server": "bun build --target=node --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/server.ts",
-    "build-tf-mediapipe-worker": "bun build --target=bun --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/worker.ts",
+    "build-hf-transformers": "bun build --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
+    "build-tf-mediapipe": "bun build --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
     "build-types": "tsc",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "exports": {
-    "./hf-transformers/browser": {
-      "import": "./dist/hf-transformers/browser.js",
-      "types": "./dist/hf-transformers/browser.d.ts"
+    "./hf-transformers": {
+      "import": "./dist/hf-transformers/index.js",
+      "types": "./dist/hf-transformers/index.d.ts"
     },
-    "./hf-transformers/server": {
-      "import": "./dist/hf-transformers/server.js",
-      "types": "./dist/hf-transformers/server.d.ts"
-    },
-    "./hf-transformers/worker": {
-      "import": "./dist/hf-transformers/worker.js",
-      "types": "./dist/hf-transformers/worker.d.ts"
-    },
-    "./tf-mediapipe/browser": {
-      "import": "./dist/tf-mediapipe/browser.js",
-      "types": "./dist/tf-mediapipe/browser.d.ts"
-    },
-    "./tf-mediapipe/server": {
-      "import": "./dist/tf-mediapipe/server.js",
-      "types": "./dist/tf-mediapipe/server.d.ts"
-    },
-    "./tf-mediapipe/worker": {
-      "import": "./dist/tf-mediapipe/worker.js",
-      "types": "./dist/tf-mediapipe/worker.d.ts"
+    "./tf-mediapipe": {
+      "import": "./dist/tf-mediapipe/index.js",
+      "types": "./dist/tf-mediapipe/index.d.ts"
     }
   },
   "files": [

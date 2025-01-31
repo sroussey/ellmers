@@ -5,13 +5,11 @@
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external ellmers-core --outdir ./dist ./src/index.ts",
-    "watch-worker": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --external ellmers-core --outdir ./dist ./src/worker.ts",
+    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external ellmers-core --outdir ./dist ./src/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build": "bun run build-clean && bun run build-types && bun run build-browser && bun run build-worker",
+    "build": "bun run build-clean && bun run build-types && bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-browser": "bun build --target=browser --sourcemap=external --external ellmers-core --outdir ./dist ./src/index.ts",
-    "build-worker": "bun build --target=bun --sourcemap=external --external ellmers-core --outdir ./dist ./src/worker.ts",
+    "build-code": "bun build --target=browser --sourcemap=external --external ellmers-core --outdir ./dist ./src/index.ts",
     "build-types": "tsc",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -22,10 +20,6 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    },
-    "./worker": {
-      "import": "./dist/worker.js",
-      "types": "./dist/worker.d.ts"
     }
   },
   "files": [

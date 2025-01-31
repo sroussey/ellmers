@@ -2,11 +2,11 @@ import { getProviderRegistry } from "ellmers-ai";
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
-} from "ellmers-ai-provider/hf-transformers/browser";
+} from "ellmers-ai-provider/hf-transformers";
 import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
-} from "ellmers-ai-provider/tf-mediapipe/browser";
+} from "../../ai-provider/dist/tf-mediapipe";
 import { ConcurrencyLimiter, TaskInput, TaskOutput } from "ellmers-core";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 
