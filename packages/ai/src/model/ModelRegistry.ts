@@ -27,7 +27,7 @@ export class FallbackModelRegistry {
     }
   }
 
-  public async findModelsByTask(task: string): Promise<Model[]|undefined> {
+  public async findModelsByTask(task: string): Promise<Model[] | undefined> {
     const models = this.task2models
       .filter((t2m) => t2m.task === task)
       .map((t2m) => this.models.find((m) => m.name === t2m.model));
@@ -36,7 +36,7 @@ export class FallbackModelRegistry {
       console.warn(`Some models for task ${task} were not found`);
     }
 
-    const found = models.filter((m): m is Model => m !== undefined)
+    const found = models.filter((m): m is Model => m !== undefined);
     return found.length > 0 ? found : undefined;
   }
   public async findTasksByModel(name: string): Promise<string[]> {
@@ -51,7 +51,7 @@ export class FallbackModelRegistry {
   }
 
   public async enumerateAllTasks(): Promise<string[]> {
-    return Array.from(new Set(this.task2models.map(t2m => t2m.task)));
+    return Array.from(new Set(this.task2models.map((t2m) => t2m.task)));
   }
 
   public async size(): Promise<number> {
@@ -62,7 +62,7 @@ export class FallbackModelRegistry {
     if (!this.findByName(modelName)) {
       throw new Error(`Model ${modelName} not found when connecting to task ${task}`);
     }
-    
+
     this.task2models.push({ task, model: modelName });
   }
 }

@@ -112,7 +112,7 @@ export class IndexedDbKVRepository<
    * Returns an array of all entries in the repository
    * @returns Array of all entries in the repository
    */
-  async getAll(): Promise<Combined[]| undefined> {
+  async getAll(): Promise<Combined[] | undefined> {
     const db = await this.dbPromise;
     const transaction = db.transaction(this.table, "readonly");
     const store = transaction.objectStore(this.table);
@@ -121,7 +121,7 @@ export class IndexedDbKVRepository<
     return new Promise((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const values = request.result.map(item => ({ ...item.value, id: item.id }));
+        const values = request.result.map((item) => ({ ...item.value, id: item.id }));
         resolve(values.length > 0 ? values : undefined);
       };
     });

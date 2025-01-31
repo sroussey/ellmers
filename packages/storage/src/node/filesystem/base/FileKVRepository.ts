@@ -121,21 +121,19 @@ export class FileKVRepository<
       }
       const results = await Promise.allSettled(
         jsonFiles.map(async (file) => {
-            const content = await readFile(path.join(this.folderPath, file), 'utf-8');
-            const data = JSON.parse(content) as Combined;
-            return data;
-          }
-        )
+          const content = await readFile(path.join(this.folderPath, file), "utf-8");
+          const data = JSON.parse(content) as Combined;
+          return data;
+        })
       );
-      
+
       const values = results
-        .filter((result) => 
-          result.status === 'fulfilled')
-        .map(result => result.value);
-        
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value);
+
       return values.length > 0 ? values : undefined;
     } catch (error) {
-      console.error('Error in getAll:', error);
+      console.error("Error in getAll:", error);
       throw error;
     }
   }
