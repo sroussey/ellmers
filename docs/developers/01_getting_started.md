@@ -148,12 +148,25 @@ import {
 } from "ellmers-core";
 
 // config and start up
-const ProviderRegistry = getProviderRegistry();
-export const flanT5p786m = new ONNXTransformerJsModel( // auto registers on creation
-  "Xenova/LaMini-Flan-T5-783M",
-  [ModelUseCaseEnum.TEXT_GENERATION, ModelUseCaseEnum.TEXT_REWRITING],
-  "text2text-generation"
+getGlobalModelRepository(new InMemoryModelRepository());
+await getGlobalModelRepository().addModel({
+  name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+  url: "Xenova/LaMini-Flan-T5-783M",
+  availableOnBrowser: true,
+  availableOnServer: true,
+  provider: LOCAL_ONNX_TRANSFORMERJS,
+  pipeline: "text2text-generation",
+});
+await getGlobalModelRepository().connectTaskToModel(
+  "TextGenerationTask",
+  "ONNX Xenova/LaMini-Flan-T5-783M q8"
 );
+await getGlobalModelRepository().connectTaskToModel(
+  "TextRewritingTask",
+  "ONNX Xenova/LaMini-Flan-T5-783M q8"
+);
+
+const ProviderRegistry = getProviderRegistry();
 ProviderRegistry.registerRunFn(
   DownloadModelTask.type,
   ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
