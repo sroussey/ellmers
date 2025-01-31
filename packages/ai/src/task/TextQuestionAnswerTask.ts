@@ -15,11 +15,11 @@ import {
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-
+import { question_answering_model } from "./base/TaskIOTypes";
 export type TextQuestionAnswerTaskInput = {
   context: string;
   question: string;
-  model: string;
+  model: question_answering_model;
 };
 export type TextQuestionAnswerTaskOutput = {
   text: string;

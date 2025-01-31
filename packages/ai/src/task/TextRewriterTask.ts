@@ -15,11 +15,12 @@ import {
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { rewriting_model } from "./base/TaskIOTypes";
 
 export type TextRewriterTaskInput = {
   text: string;
   prompt: string;
-  model: string;
+  model: rewriting_model;
 };
 export type TextRewriterTaskOutput = {
   text: string;

@@ -15,14 +15,14 @@ import {
   JobQueueTaskConfig,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { summarization_model } from "./base/TaskIOTypes";
 
 export type TextSummaryTaskInput = {
   text: string;
-  model: string;
+  model: summarization_model;
 };
-export type summarization_model = string;
 export type TextSummaryTaskOutput = {
-  text: summarization_model;
+  text: string;
 };
 
 /**

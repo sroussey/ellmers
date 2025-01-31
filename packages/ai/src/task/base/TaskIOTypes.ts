@@ -27,3 +27,23 @@ export class ElVector<T extends AnyNumberArray = AnyNumberArray> {
     this.normalized = normalized;
   }
 }
+
+export type embedding_model = string;
+export type generation_model = string;
+export type question_answering_model = string;
+export type rewriting_model = string;
+export type classification_model = string;
+export type summarization_model = string;
+export type translation_model = string;
+export type language = string;
+
+export type model =
+  | embedding_model
+  | generation_model
+  | question_answering_model
+  | rewriting_model
+  | classification_model
+  | summarization_model
+  | translation_model
+  | generation_model
+  | embedding_model;

@@ -10,10 +10,9 @@ import { TaskRegistry } from "ellmers-core";
 import { JobQueueTaskConfig } from "ellmers-core";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { getGlobalModelRepository } from "../model/ModelRegistry";
+import { language } from "./base/TaskIOTypes";
+import { translation_model } from "./base/TaskIOTypes";
 
-export type translation_model = string;
-export type language = string;
 export type TextTranslationTaskInput = {
   text: string;
   model: translation_model;

@@ -17,19 +17,27 @@ import {
 } from "ellmers-core";
 import { getGlobalModelRepository } from "../model/ModelRegistry";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import {
+  embedding_model,
+  generation_model,
+  model,
+  question_answering_model,
+  summarization_model,
+  translation_model,
+} from "./base/TaskIOTypes";
 
 export type DownloadModelTaskInput = {
   model: string;
 };
 export type DownloadModelTaskOutput = {
-  model: string;
+  model: model;
   dimensions: number;
   normalize: boolean;
-  embedding_model: string;
-  generation_model: string;
-  summarization_model: string;
-  text_question_answering_model: string;
-  translation_model: string;
+  embedding_model: embedding_model;
+  generation_model: generation_model;
+  summarization_model: summarization_model;
+  question_answering_model: question_answering_model;
+  translation_model: translation_model;
 };
 
 export class DownloadModelTask extends JobQueueLlmTask {
@@ -72,9 +80,9 @@ export class DownloadModelTask extends JobQueueLlmTask {
       valueType: "summarization_model",
     },
     {
-      id: "text_question_answering_model",
+      id: "question_answering_model",
       name: "",
-      valueType: "text_question_answering_model",
+      valueType: "question_answering_model",
     },
     {
       id: "translation_model",
@@ -109,7 +117,7 @@ export class DownloadModelTask extends JobQueueLlmTask {
         this.runOutputData.summarization_model = model.name;
       }
       if (tasks.includes("TextQuestionAnswerTask")) {
-        this.runOutputData.text_question_answering_model = model.name;
+        this.runOutputData.question_answering_model = model.name;
       }
       if (tasks.includes("TextTranslationTask")) {
         this.runOutputData.translation_model = model.name;

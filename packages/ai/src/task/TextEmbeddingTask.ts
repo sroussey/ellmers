@@ -15,10 +15,9 @@ import {
   TaskGraphBuilderHelper,
 } from "ellmers-core";
 import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
-import { AnyNumberArray } from "./base/TaskIOTypes";
+import { AnyNumberArray, embedding_model } from "./base/TaskIOTypes";
 import { ElVector } from "./base/TaskIOTypes";
 
-export type embedding_model = string;
 export type TextEmbeddingTaskInput = {
   text: string;
   model: embedding_model;
