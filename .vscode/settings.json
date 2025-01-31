@@ -16,7 +16,7 @@
   },
   "search.exclude": {
     "**/dist": true,
-    "**/package-lock.json": true,
+    "**/bun.lock": true,
     "**/*.tsbuildinfo": true
   },
   "editor.codeActionsOnSave": {

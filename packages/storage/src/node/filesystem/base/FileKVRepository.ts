@@ -35,7 +35,7 @@ export class FileKVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Key & Value = Key & Value
+  Combined extends Key & Value = Key & Value,
 > extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   private folderPath: string;
 

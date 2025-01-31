@@ -22,7 +22,7 @@
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist packages/*/src/**/*\\.d\\.ts packages/*/src/**/*\\.map examples/*/node_modules examples/*/dist examples/*/src/**/*\\.d\\.ts examples/*/src/**/*\\.map",
     "watch:packages": "concurrently --kill-others -c 'auto' -n core,task,storage,ai,provider,test 'cd packages/core && bun run watch' 'sleep 3 && cd packages/task && bun run watch' 'sleep 3 && cd packages/storage && bun run watch' 'sleep 3 && cd packages/ai && bun run watch' 'sleep 6 && cd packages/ai-provider && bun run watch' 'sleep 10 && cd packages/test && bun run watch'",
     "docs": "typedoc",
-    "format": "eslint --fix && prettier \"{packages|examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
+    "format": "eslint --fix && prettier \"{packages,examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "release": "bun run build && bun publish",
     "test": "jest"
   },
@@ -57,6 +57,7 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-regexp": "^2.7.0",
     "globals": "^15.14.0",
+    "prettier": "^3.4.2",
     "typescript": "^5.7.3"
   },
   "engines": {

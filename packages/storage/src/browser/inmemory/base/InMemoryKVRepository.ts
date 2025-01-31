@@ -32,7 +32,7 @@ export class InMemoryKVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Record<string, any> = Key & Value
+  Combined extends Record<string, any> = Key & Value,
 > extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   /** Internal storage using a Map with fingerprint strings as keys */
   values = new Map<string, Combined>();

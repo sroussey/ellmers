@@ -47,7 +47,7 @@ export abstract class KVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Record<string, any> = Key & Value
+  Combined extends Record<string, any> = Key & Value,
 > {
   // KV repository event emitter
   private events = new EventEmitter<KVEvents>();

@@ -190,7 +190,7 @@ function listenToTask(
               extent: "parent",
               selectable: false,
               connectable: false,
-            } as Node<TurboNodeData>)
+            }) as Node<TurboNodeData>
         );
         listenToGraphTasks(task.subGraph, setNodes, setEdges);
         let returnNodes = nodes.filter((n) => n.parentId !== task.config.id); // remove old children

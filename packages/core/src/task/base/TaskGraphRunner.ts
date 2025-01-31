@@ -31,7 +31,10 @@ export class TaskGraphRunner {
    * @param dag The task graph to run
    * @param repository The task output repository to use for caching task outputs
    */
-  constructor(public dag: TaskGraph, public repository?: TaskOutputRepository) {
+  constructor(
+    public dag: TaskGraph,
+    public repository?: TaskOutputRepository
+  ) {
     this.layers = new Map();
     this.provenanceInput = new Map();
   }

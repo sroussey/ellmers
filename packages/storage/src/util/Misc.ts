@@ -60,10 +60,13 @@ export function deepEqual(a: any, b: any): boolean {
 export function sortObject(obj: Record<string, any>): Record<string, any> {
   return Object.keys(obj)
     .sort()
-    .reduce((result, key) => {
-      result[key] = obj[key];
-      return result;
-    }, {} as Record<string, any>);
+    .reduce(
+      (result, key) => {
+        result[key] = obj[key];
+        return result;
+      },
+      {} as Record<string, any>
+    );
 }
 
 export function serialize(obj: Record<string, any>): string {

@@ -33,7 +33,7 @@ export class SqliteKVRepository<
   Value extends Record<string, any> = DefaultValueType,
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
-  Combined extends Record<string, any> = Key & Value
+  Combined extends Record<string, any> = Key & Value,
 > extends BaseSqlKVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   /** The SQLite database instance */
   private db: Database;
