@@ -8,8 +8,7 @@
 import { SingleTask, TaskInput } from "./Task";
 
 /**
- * A task class that handles array-based processing by creating subtasks for each combination of inputs
- * Extends RegenerativeCompoundTask to manage a collection of child tasks running in parallel
+ * Output tasks have side effects, and so need to always run and not be cached
  */
 export class OutputTask extends SingleTask {
   static readonly category = "Output";
