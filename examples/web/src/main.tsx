@@ -86,8 +86,3 @@ console.log(
   `color: ${grey}; font-weight: normal;`
 );
 console.log(window["builder"]);
-
-console.log(
-  "Tasks Available: ",
-  Array.from(TaskRegistry.all.entries()).map(([name]) => name)
-);
