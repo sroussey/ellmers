@@ -14,7 +14,7 @@ describe("SqliteModelRepository", () => {
   it("store and find model by task", async () => {
     setGlobalModelRepository(new SqliteModelRepository(":memory:"));
     await getGlobalModelRepository().addModel({
-      name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+      name: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       url: "Xenova/LaMini-Flan-T5-783M",
       availableOnBrowser: true,
       availableOnServer: true,
@@ -23,14 +23,14 @@ describe("SqliteModelRepository", () => {
     });
     await getGlobalModelRepository().connectTaskToModel(
       "TextGenerationTask",
-      "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      "onnx:Xenova/LaMini-Flan-T5-783M:q8"
     );
     await getGlobalModelRepository().connectTaskToModel(
       "TextRewritingTask",
-      "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      "onnx:Xenova/LaMini-Flan-T5-783M:q8"
     );
     const tasks = await getGlobalModelRepository().findTasksByModel(
-      "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      "onnx:Xenova/LaMini-Flan-T5-783M:q8"
     );
     expect(tasks).toBeDefined();
     expect(tasks?.length).toEqual(2);
@@ -41,7 +41,7 @@ describe("SqliteModelRepository", () => {
   it("store and find model by name", async () => {
     setGlobalModelRepository(new SqliteModelRepository(":memory:"));
     await getGlobalModelRepository().addModel({
-      name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+      name: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       url: "Xenova/LaMini-Flan-T5-783M",
       availableOnBrowser: true,
       availableOnServer: true,
@@ -49,14 +49,14 @@ describe("SqliteModelRepository", () => {
       pipeline: "text2text-generation",
     });
 
-    const model = await getGlobalModelRepository().findByName("ONNX Xenova/LaMini-Flan-T5-783M q8");
+    const model = await getGlobalModelRepository().findByName("onnx:Xenova/LaMini-Flan-T5-783M:q8");
     expect(model).toBeDefined();
-    expect(model?.name).toEqual("ONNX Xenova/LaMini-Flan-T5-783M q8");
+    expect(model?.name).toEqual("onnx:Xenova/LaMini-Flan-T5-783M:q8");
     const tasks = await getGlobalModelRepository().findTasksByModel(
-      "ONNX Xenova/LaMini-Flan-T5-783M q8"
+      "onnx:Xenova/LaMini-Flan-T5-783M:q8"
     );
     expect(tasks).toBeUndefined();
-    const model2 = await getGlobalModelRepository().findByName("ONNX Xenova/no-exist");
+    const model2 = await getGlobalModelRepository().findByName("onnx:Xenova/no-exist");
     expect(model2).toBeUndefined();
   });
 });

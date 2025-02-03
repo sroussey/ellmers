@@ -26,6 +26,8 @@ export type ModelDetail = {
   contextWindow?: number;
   numParameters?: number;
   languageStyle?: string;
+  device?: string;
+  use_external_data_format?: boolean;
 };
 
 export type Model = ModelPrimaryKey & ModelDetail;

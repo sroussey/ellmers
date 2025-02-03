@@ -70,13 +70,13 @@ const graph = await taskGraphRepo.getTaskGraph("default");
 const resetGraph = () => {
   builder
     .reset()
-    .DownloadModel({ model: ["ONNX Xenova/LaMini-Flan-T5-783M q8", "ONNX Xenova/m2m100_418M q8"] })
+    .DownloadModel({ model: ["onnx:Xenova/LaMini-Flan-T5-783M:q8", "onnx:Xenova/m2m100_418M:q8"] })
     .TextRewriter({
       text: "The quick brown fox jumps over the lazy dog.",
       prompt: ["Rewrite the following text in reverse:", "Rewrite this to sound like a pirate:"],
     })
     .TextTranslation({
-      model: "ONNX Xenova/m2m100_418M q8",
+      model: "onnx:Xenova/m2m100_418M:q8",
       source_lang: "en",
       target_lang: "es",
     })

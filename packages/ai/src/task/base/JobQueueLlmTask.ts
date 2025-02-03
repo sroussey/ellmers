@@ -65,7 +65,7 @@ export class JobQueueLlmTask extends JobQueueTask {
 
     switch (valueType) {
       case "model":
-        return !!modelRepo.findByName(item);
+        return typeof item == "string" && !!(await modelRepo.findByName(item));
     }
     if (valueType.endsWith("_model")) {
       const tasks = await modelRepo.findTasksByModel(item);

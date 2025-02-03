@@ -46,7 +46,10 @@ import type {
   TextTranslationTaskOutput,
   Model,
 } from "ellmers-ai";
-import { QUANTIZATION_DATA_TYPES } from "..";
+import { QUANTIZATION_DATA_TYPES } from "../model/ONNXTransformerJsModel";
+
+// @ts-ignore
+const IS_WEBGPU_AVAILABLE = !!globalThis.navigator?.gpu;
 
 env.cacheDir = "./.cache";
 
@@ -98,14 +101,18 @@ const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {
   if (!pipelines.has(model)) {
     pipelines.set(
       model,
-      await pipeline(model.pipeline as PipelineType, model.url, {
+      pipeline(model.pipeline as PipelineType, model.url, {
         dtype: (model.quantization as QUANTIZATION_DATA_TYPES) || "q8",
         session_options: options?.session_options,
         progress_callback: downloadProgressCallback(task),
+        ...(model.use_external_data_format
+          ? { use_external_data_format: model.use_external_data_format }
+          : {}),
+        ...(model.device && IS_WEBGPU_AVAILABLE ? { device: model.device as any } : {}),
       })
     );
   }
-  return pipelines.get(model);
+  return await pipelines.get(model);
 };
 
 function downloadProgressCallback(task: JobQueueLlmTask) {

@@ -4,13 +4,10 @@ import {
 } from "ellmers-ai-provider/hf-transformers";
 import { getGlobalModelRepository, Model } from "ellmers-ai";
 
-async function addONNXModel(info: Partial<Model>, tasks: string[]) {
-  const name = info.name
-    ? info.name
-    : "ONNX " + info.url + " " + (info.quantization ?? QUANTIZATION_DATA_TYPES.q8);
-
+export async function addONNXModel(info: Partial<Model>, tasks: string[]) {
   const model = Object.assign(
     {
+      name: "onnx:" + info.url + ":" + (info.quantization ?? QUANTIZATION_DATA_TYPES.q8),
       provider: LOCAL_ONNX_TRANSFORMERJS,
       quantization: QUANTIZATION_DATA_TYPES.q8,
       normalize: true,
@@ -21,13 +18,12 @@ async function addONNXModel(info: Partial<Model>, tasks: string[]) {
       languageStyle: null,
       usingDimensions: info.nativeDimensions ?? null,
     },
-    info,
-    { name }
+    info
   ) as Model;
 
   await getGlobalModelRepository().addModel(model);
   await Promise.allSettled(
-    tasks.map((task) => getGlobalModelRepository().connectTaskToModel(task, name))
+    tasks.map((task) => getGlobalModelRepository().connectTaskToModel(task, model.name))
   );
 }
 
@@ -113,6 +109,41 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
     {
       pipeline: "text-generation",
       url: "Xenova/gpt2",
+    },
+    ["TextGenerationTask"]
+  );
+
+  await addONNXModel(
+    {
+      pipeline: "text-generation",
+      url: "Xenova/Phi-3-mini-4k-instruct",
+      device: "webgpu",
+      quantization: QUANTIZATION_DATA_TYPES.q4,
+      use_external_data_format: true,
+    },
+    ["TextGenerationTask"]
+  );
+
+  await addONNXModel(
+    {
+      name: "onnx:Xenova/Phi-3-mini-4k-instruct:q4f16",
+      pipeline: "text-generation",
+      url: "Xenova/Phi-3-mini-4k-instruct_fp16",
+      device: "webgpu",
+      quantization: QUANTIZATION_DATA_TYPES.q4,
+      use_external_data_format: true,
+    },
+    ["TextGenerationTask"]
+  );
+
+  await addONNXModel(
+    {
+      name: "onnx:onnx-community/DeepSeek-R1-Distill-Qwen-1.5B:fp16",
+      pipeline: "text-generation",
+      url: "onnx-community/DeepSeek-R1-Distill-Qwen-1.5B-ONNX",
+      device: "webgpu",
+      quantization: QUANTIZATION_DATA_TYPES.fp16,
+      use_external_data_format: true,
     },
     ["TextGenerationTask"]
   );

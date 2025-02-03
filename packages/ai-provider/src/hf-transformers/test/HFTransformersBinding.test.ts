@@ -34,7 +34,7 @@ describe("HFTransformersBinding", () => {
       registerHuggingfaceLocalTasks();
       setGlobalModelRepository(new InMemoryModelRepository());
       await getGlobalModelRepository().addModel({
-        name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        name: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
         url: "Xenova/LaMini-Flan-T5-783M",
         availableOnBrowser: true,
         availableOnServer: true,
@@ -43,11 +43,11 @@ describe("HFTransformersBinding", () => {
       });
       await getGlobalModelRepository().connectTaskToModel(
         "TextGenerationTask",
-        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+        "onnx:Xenova/LaMini-Flan-T5-783M:q8"
       );
       await getGlobalModelRepository().connectTaskToModel(
         "TextRewritingTask",
-        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+        "onnx:Xenova/LaMini-Flan-T5-783M:q8"
       );
 
       const queue = providerRegistry.getQueue(LOCAL_ONNX_TRANSFORMERJS);
@@ -56,7 +56,7 @@ describe("HFTransformersBinding", () => {
 
       const builder = new TaskGraphBuilder();
       builder.DownloadModel({
-        model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        model: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       });
       builder.run();
       await sleep(1);
@@ -70,7 +70,7 @@ describe("HFTransformersBinding", () => {
       registerHuggingfaceLocalTasks();
       setGlobalModelRepository(new InMemoryModelRepository());
       await getGlobalModelRepository().addModel({
-        name: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        name: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
         url: "Xenova/LaMini-Flan-T5-783M",
         availableOnBrowser: true,
         availableOnServer: true,
@@ -79,11 +79,11 @@ describe("HFTransformersBinding", () => {
       });
       await getGlobalModelRepository().connectTaskToModel(
         "TextGenerationTask",
-        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+        "onnx:Xenova/LaMini-Flan-T5-783M:q8"
       );
       await getGlobalModelRepository().connectTaskToModel(
         "TextRewritingTask",
-        "ONNX Xenova/LaMini-Flan-T5-783M q8"
+        "onnx:Xenova/LaMini-Flan-T5-783M:q8"
       );
       const providerRegistry = getAiProviderRegistry();
       const jobQueue = new SqliteJobQueue<TaskInput, TaskOutput>(
@@ -100,7 +100,7 @@ describe("HFTransformersBinding", () => {
 
       const builder = new TaskGraphBuilder();
       builder.DownloadModel({
-        model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+        model: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       });
       builder.run();
       await sleep(1);

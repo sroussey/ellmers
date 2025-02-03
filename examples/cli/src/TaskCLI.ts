@@ -103,7 +103,7 @@ export function AddBaseCommands(program: Command) {
             id: "1",
             type: "DownloadModelTask",
             input: {
-              model: "ONNX Xenova/LaMini-Flan-T5-783M q8",
+              model: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
             },
           },
           {
