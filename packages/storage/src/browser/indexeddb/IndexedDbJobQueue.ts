@@ -6,7 +6,14 @@
 //    *******************************************************************************
 
 import { nanoid } from "nanoid";
-import { Job, JobQueue, ILimiter } from "ellmers-core";
+import {
+  Job,
+  JobQueue,
+  ILimiter,
+  JobError,
+  RetryableJobError,
+  PermanentJobError,
+} from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 import { ensureIndexedDbTable } from "./base/IndexedDbTable";
 
@@ -129,11 +136,12 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
-  async complete(
-    id: unknown,
-    output: Output | null = null,
-    error: string | null = null
-  ): Promise<void> {
+  /**
+   * Marks a job as complete with its output or error.
+   * Uses enhanced error handling to update the job's status.
+   * If a retryable error occurred, the job's retry count is incremented and its runAfter updated.
+   */
+  async complete(id: unknown, output: Output | null = null, error?: JobError): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
@@ -146,12 +154,37 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
           reject(new Error(`Job ${id} not found`));
           return;
         }
-        job.output = output;
-        job.error = error;
-        job.status = error ? "FAILED" : "COMPLETED";
+
+        if (error) {
+          job.error = error.message;
+          job.retries = (job.retries || 0) + 1;
+          if (error instanceof RetryableJobError) {
+            if (job.retries >= job.maxRetries) {
+              job.status = "FAILED";
+            } else {
+              job.status = "PENDING";
+              job.runAfter = error.retryDate;
+            }
+          } else if (error instanceof PermanentJobError) {
+            job.status = "FAILED";
+          } else {
+            job.status = "FAILED";
+          }
+        } else {
+          job.status = "COMPLETED";
+          job.output = output;
+        }
+
         store.put(job);
+
+        if (job.status === "COMPLETED" || job.status === "FAILED") {
+          this.onCompleted(job.id, job.status, output, error);
+        }
+
         resolve();
       };
+
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -175,7 +208,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const fingerprint = await makeFingerprint(input);
 
     const index = store.index("taskType_fingerprint_status");
-    // We use compound key for querying in IndexedDB
+    // We use a compound key for querying in IndexedDB
     const queryKey = [taskType, fingerprint, "COMPLETED"];
     const request = index.get(queryKey);
 

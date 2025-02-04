@@ -9,14 +9,27 @@ import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
 
-export class RetryError extends Error {
+export abstract class JobError extends Error {
+  public abstract retryable: boolean;
+}
+
+export class RetryableJobError extends JobError {
   constructor(
-    public retryDate: Date,
-    message: string
+    message: string,
+    public retryDate: Date
   ) {
     super(message);
-    this.name = "RetryError";
+    this.name = "JobTransientError";
   }
+  public retryable = true;
+}
+
+export class PermanentJobError extends JobError {
+  constructor(message: string) {
+    super(message);
+    this.name = "JobPermanentError";
+  }
+  public retryable = false;
 }
 
 /**
@@ -52,7 +65,7 @@ export abstract class JobQueue<Input, Output> {
   public abstract processing(): Promise<Array<Job<Input, Output>>>;
   public abstract aborting(): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
-  public abstract complete(id: unknown, output?: Output | null, error?: string): Promise<void>;
+  public abstract complete(id: unknown, output?: Output | null, error?: JobError): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
 
@@ -76,13 +89,23 @@ export abstract class JobQueue<Input, Output> {
       this.events.emit("job_start", this.queue, job.id);
       const output = await this.executeJob(job);
       await this.complete(job.id, output);
-    } catch (error) {
-      console.error(`Error processing job: ${error}`);
-      if (error instanceof RetryError) {
-        this.events.emit("job_retry", this.queue, job.id, error.retryDate);
-        await this.limiter.setNextAvailableTime(error.retryDate);
+    } catch (err: any) {
+      console.error(`Error processing job: ${err}`);
+
+      if (err instanceof RetryableJobError) {
+        // Emit a retry event and let the concrete implementation update scheduling
+        this.events.emit("job_retry", this.queue, job.id, err.retryDate);
+      } else if (err instanceof PermanentJobError) {
+        // Emit an error event for permanent errors
+        this.events.emit("job_error", this.queue, job.id, err.message);
+      } else {
+        // For any generic error, treat it as permanent by wrapping it in a PermanentJobError
+        err = new PermanentJobError(err.message || String(err));
+        this.events.emit("job_error", this.queue, job.id, err.message);
       }
-      await this.complete(job.id, null, String(error));
+
+      // Pass the error object (instead of its string) to the complete() method
+      await this.complete(job.id, null, err);
     } finally {
       await this.limiter.recordJobCompletion();
     }
@@ -92,12 +115,17 @@ export abstract class JobQueue<Input, Output> {
   /**
    *  This method is called when a job is really completed, after retries etc.
    */
-  protected onCompleted(jobId: unknown, status: JobStatus, output: Output | null, error?: string) {
+  protected onCompleted(
+    jobId: unknown,
+    status: JobStatus,
+    output: Output | null,
+    error?: JobError
+  ) {
     // Find the job by jobId and resolve its promise if it exists
     const job = this.waits.get(jobId);
     if (job) {
       if (status === JobStatus.FAILED) {
-        this.events.emit("job_error", this.queue, jobId, error);
+        this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
         job.reject(error);
       } else if (status === JobStatus.COMPLETED) {
         this.events.emit("job_complete", this.queue, jobId, output);
@@ -152,8 +180,8 @@ export abstract class JobQueue<Input, Output> {
   async restart() {
     await this.stop(); // if not already
     const jobs = await this.processing();
-    jobs.forEach((job) => this.complete(job.id, null, "Queue Restarted"));
-    this.waits.forEach(({ reject }) => reject("Queue Restarted"));
+    jobs.forEach((job) => this.complete(job.id, null, new PermanentJobError("Queue Restarted")));
+    this.waits.forEach(({ reject }) => reject(new PermanentJobError("Queue Restarted")));
     this.waits.clear();
     await this.start();
     return this;

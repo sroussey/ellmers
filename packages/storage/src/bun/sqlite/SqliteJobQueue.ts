@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter, JobQueue, Job, JobStatus } from "ellmers-core";
+import { ILimiter, JobQueue, Job, JobStatus, RetryableJobError, JobError } from "ellmers-core";
 import { makeFingerprint, toSQLiteTimestamp } from "../../util/Misc";
 import { type Database } from "bun:sqlite";
 
@@ -28,7 +28,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   public ensureTableExists() {
     const a = this.db.exec(`
-
       CREATE TABLE IF NOT EXISTS job_queue (
         id INTEGER PRIMARY KEY,
         fingerprint text NOT NULL,
@@ -48,7 +47,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
       
       CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
       CREATE INDEX IF NOT EXISTS job_queue_fingerprint_idx ON job_queue (queue, fingerprint, status);
-
     `);
     return this;
   }
@@ -231,30 +229,52 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   /**
    * Marks a job as complete with its output or error.
-   * Handles retries for failed jobs and triggers completion callbacks.
-   * @param id - ID of the job to complete
-   * @param output - Result of the job execution
-   * @param error - Optional error message if job failed
+   * Enhanced error handling:
+   * - Increments the retry count.
+   * - For a retryable error, updates runAfter with the retry date.
+   * - Marks the job as FAILED for permanent or generic errors.
    */
-  public async complete(id: string, output: Output | null = null, error: string | null = null) {
+  public async complete(id: string, output: Output | null = null, error?: JobError) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
-    const status = output
-      ? JobStatus.COMPLETED
-      : error && job.retries >= job.maxRetries
-        ? JobStatus.FAILED
-        : JobStatus.PENDING;
-
-    const UpdateQuery = `
-        UPDATE job_queue 
-          SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
-          WHERE id = ? AND queue = ?`;
-
-    this.db.exec<
-      [output: any, error: string | null, status: JobStatus, id: unknown, queue: string]
-    >(UpdateQuery, [JSON.stringify(output), error, status, id, this.queue]);
+    let status: JobStatus;
+    if (error) {
+      job.error = error.message;
+      job.retries = (job.retries || 0) + 1;
+      if (error instanceof RetryableJobError) {
+        status = job.retries >= job.maxRetries ? JobStatus.FAILED : JobStatus.PENDING;
+      } else {
+        status = JobStatus.FAILED;
+      }
+    } else {
+      status = JobStatus.COMPLETED;
+      job.output = output;
+    }
+    let updateQuery: string;
+    let params: any[];
+    if (error && error instanceof RetryableJobError && status === JobStatus.PENDING) {
+      updateQuery = `
+          UPDATE job_queue 
+            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP, runAfter = ?
+            WHERE id = ? AND queue = ?`;
+      params = [
+        JSON.stringify(output),
+        error.message,
+        status,
+        error.retryDate.toISOString(),
+        id,
+        this.queue,
+      ];
+    } else {
+      updateQuery = `
+          UPDATE job_queue 
+            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
+            WHERE id = ? AND queue = ?`;
+      params = [JSON.stringify(output), error ? error.message : null, status, id, this.queue];
+    }
+    this.db.exec(updateQuery, params);
     if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(id, status, output, error || undefined);
+      this.onCompleted(job.id, status, output, error);
     }
   }
 

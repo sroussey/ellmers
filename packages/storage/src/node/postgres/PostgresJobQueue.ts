@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { Sql } from "postgres";
-import { Job, JobStatus, JobQueue, ILimiter } from "ellmers-core";
+import { Job, JobStatus, JobQueue, ILimiter, RetryableJobError, JobError } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
 // TODO: prepared statements
@@ -28,7 +28,6 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   public ensureTableExists() {
     this.sql`
-
     CREATE TABLE IF NOT EXISTS job_queue (
       id bigint SERIAL NOT NULL,
       fingerprint text NOT NULL,
@@ -48,7 +47,6 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
     CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
     CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
-    
     `;
     return this;
   }
@@ -81,9 +79,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return await this.sql.begin(async (sql) => {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
-          VALUES (${this.queue!}, ${fingerprint}, ${
-            job.input as any
-          }::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
           RETURNING id`;
     });
   }
@@ -113,7 +109,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async peek(num: number = 100) {
     num = Number(num) || 100; // TS does not validate, so ensure it is a number
     return await this.sql.begin(async (sql) => {
-      const result = await this.sql`
+      const result = await sql`
       SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
         FROM job_queue
         WHERE queue = ${this.queue}
@@ -208,31 +204,53 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   /**
    * Marks a job as complete with its output or error.
-   * Handles retries for failed jobs and triggers completion callbacks.
-   * @param id - ID of the job to complete
-   * @param output - Result of the job execution
-   * @param error - Optional error message if job failed
+   * Enhanced error handling:
+   * - For a retryable error, increments retries and updates runAfter.
+   * - Marks a job as FAILED immediately for permanent or generic errors.
    */
-  public async complete(id: number, output: Output | null = null, error: string | null = null) {
+  public async complete(id: number, output: Output | null = null, error?: JobError): Promise<void> {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
-    const status = output
-      ? JobStatus.COMPLETED
-      : error && job.retries >= job.maxRetries
-        ? JobStatus.FAILED
-        : JobStatus.PENDING;
-    if (!output || error) job.retries += 1;
+
+    let status: JobStatus;
+    if (error) {
+      job.error = error.message;
+      job.retries = (job.retries || 0) + 1;
+      if (error instanceof RetryableJobError) {
+        status = job.retries >= job.maxRetries ? JobStatus.FAILED : JobStatus.PENDING;
+      } else {
+        status = JobStatus.FAILED;
+      }
+    } else {
+      status = JobStatus.COMPLETED;
+      job.output = output;
+    }
+
     await this.sql.begin(async (sql) => {
-      const result = await sql`    
-        UPDATE job_queue 
-          SET output = ${
-            output as any
-          }::jsonb, error = ${error}, status = ${status}, retries = retires + 1, lastRanAt = NOW()  
+      if (error && error instanceof RetryableJobError && status === JobStatus.PENDING) {
+        await sql`
+          UPDATE job_queue 
+          SET output = ${output as any}::jsonb, 
+              error = ${error.message}, 
+              status = ${status}, 
+              retries = retries + 1, 
+              runAfter = ${error.retryDate.toISOString()}, 
+              lastRanAt = NOW()  
           WHERE id = ${id}`;
-      return result[0].rows[0];
+      } else {
+        await sql`
+          UPDATE job_queue 
+          SET output = ${output as any}::jsonb, 
+              error = ${error ? error.message : null}, 
+              status = ${status}, 
+              retries = retries + 1, 
+              lastRanAt = NOW()  
+          WHERE id = ${id}`;
+      }
     });
+
     if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(id, status, output, error || undefined);
+      this.onCompleted(id, status, output, error);
     }
   }
 

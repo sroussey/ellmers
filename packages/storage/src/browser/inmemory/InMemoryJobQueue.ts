@@ -6,7 +6,15 @@
 //    *******************************************************************************
 
 import { nanoid } from "nanoid";
-import { Job, JobStatus, JobQueue, ILimiter } from "ellmers-core";
+import {
+  Job,
+  JobStatus,
+  JobQueue,
+  ILimiter,
+  JobError,
+  RetryableJobError,
+  PermanentJobError,
+} from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
 /**
@@ -99,24 +107,34 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * @param output - Result of the job execution
    * @param error - Optional error message if job failed
    */
-  public async complete(id: unknown, output: any, error?: string) {
+  public async complete(id: unknown, output: any, error?: JobError) {
     const job = this.jobQueue.find((j) => j.id === id);
     if (!job) {
       throw new Error(`Job ${id} not found`);
     }
     job.completedAt = new Date();
+
     if (error) {
-      job.error = error;
-      job.retries += 1;
-      if (job.retries >= job.maxRetries) {
+      job.error = error.message;
+      job.errorCode = error.name;
+      if (error instanceof RetryableJobError) {
+        job.retries++;
+        if (job.retries >= job.maxRetries) {
+          job.status = JobStatus.FAILED;
+        } else {
+          job.status = JobStatus.PENDING;
+          job.runAfter = error.retryDate;
+        }
+      } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
       } else {
-        job.status = JobStatus.PENDING;
+        job.status = JobStatus.FAILED;
       }
     } else {
       job.status = JobStatus.COMPLETED;
       job.output = output;
     }
+
     if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
       this.onCompleted(job.id, job.status, output, error);
     }
