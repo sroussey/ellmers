@@ -29,8 +29,6 @@ import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
 } from "ellmers-ai-provider/tf-mediapipe";
-import "ellmers-task";
-import "ellmers-test";
 import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
 import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
@@ -38,22 +36,22 @@ import { env } from "@huggingface/transformers";
 env.backends.onnx.wasm.proxy = true;
 env.allowLocalModels = true;
 
-const ProviderRegistry = getAiProviderRegistry();
+const aiProviderRegistry = getAiProviderRegistry();
 
 registerHuggingfaceLocalTasks();
-ProviderRegistry.registerQueue(
+aiProviderRegistry.registerQueue(
   LOCAL_ONNX_TRANSFORMERJS,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
 );
 
 registerMediaPipeTfJsLocalTasks();
-ProviderRegistry.registerQueue(
+aiProviderRegistry.registerQueue(
   MEDIA_PIPE_TFJS_MODEL,
   new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
 );
 
-ProviderRegistry.clearQueues();
-ProviderRegistry.startQueues();
+aiProviderRegistry.clearQueues();
+aiProviderRegistry.startQueues();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);

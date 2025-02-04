@@ -143,7 +143,8 @@ function generateProgressCallback(task: JobQueueLlmTask) {
 
 export async function HuggingFaceLocal_DownloadRun(
   task: DownloadModelTask,
-  runInputData: DownloadModelTaskInput
+  runInputData: DownloadModelTaskInput,
+  signal?: AbortSignal
 ): Promise<Partial<DownloadModelTaskOutput>> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   await getPipeline(task, model);
@@ -157,7 +158,8 @@ export async function HuggingFaceLocal_DownloadRun(
  */
 export async function HuggingFaceLocal_EmbeddingRun(
   task: TextEmbeddingTask,
-  runInputData: TextEmbeddingTaskInput
+  runInputData: TextEmbeddingTaskInput,
+  signal?: AbortSignal
 ): Promise<TextEmbeddingTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
@@ -186,7 +188,8 @@ export async function HuggingFaceLocal_EmbeddingRun(
  */
 export async function HuggingFaceLocal_TextGenerationRun(
   task: TextGenerationTask,
-  runInputData: TextGenerationTaskInput
+  runInputData: TextGenerationTaskInput,
+  signal?: AbortSignal
 ): Promise<TextGenerationTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -222,7 +225,8 @@ export async function HuggingFaceLocal_TextGenerationRun(
  */
 export async function HuggingFaceLocal_TextTranslationRun(
   task: TextTranslationTask,
-  runInputData: TextTranslationTaskInput
+  runInputData: TextTranslationTaskInput,
+  signal?: AbortSignal
 ): Promise<Partial<TextTranslationTaskOutput>> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -254,7 +258,8 @@ export async function HuggingFaceLocal_TextTranslationRun(
  */
 export async function HuggingFaceLocal_TextRewriterRun(
   task: TextRewriterTask,
-  runInputData: TextRewriterTaskInput
+  runInputData: TextRewriterTaskInput,
+  signal?: AbortSignal
 ): Promise<TextRewriterTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -293,7 +298,8 @@ export async function HuggingFaceLocal_TextRewriterRun(
 
 export async function HuggingFaceLocal_TextSummaryRun(
   task: TextSummaryTask,
-  runInputData: TextSummaryTaskInput
+  runInputData: TextSummaryTaskInput,
+  signal?: AbortSignal
 ): Promise<TextSummaryTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -322,7 +328,8 @@ export async function HuggingFaceLocal_TextSummaryRun(
  */
 export async function HuggingFaceLocal_TextQuestionAnswerRun(
   task: TextQuestionAnswerTask,
-  runInputData: TextQuestionAnswerTaskInput
+  runInputData: TextQuestionAnswerTaskInput,
+  signal?: AbortSignal
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 

@@ -29,16 +29,16 @@ export enum JobQueueRunType {
 class ProviderJob<Input, Output> extends Job<Input, Output> {
   constructor(
     details: JobConstructorDetails<Input, Output> & {
-      fn: () => Promise<Output>;
+      fn: (signal?: AbortSignal) => Promise<Output>;
     }
   ) {
     const { fn, ...rest } = details;
     super(rest);
     this.fn = fn;
   }
-  fn: () => Promise<Output>;
-  execute(): Promise<Output> {
-    return this.fn();
+  fn: (signal?: AbortSignal) => Promise<Output>;
+  execute(signal?: AbortSignal): Promise<Output> {
+    return this.fn(signal);
   }
 }
 
@@ -49,8 +49,10 @@ class ProviderJob<Input, Output> extends Job<Input, Output> {
  */
 export class AiProviderRegistry<Input, Output> {
   // Registry of task execution functions organized by task type and model provider
-  runFnRegistry: Record<string, Record<string, (task: any, runInputData: any) => Promise<Output>>> =
-    {};
+  runFnRegistry: Record<
+    string,
+    Record<string, (task: any, runInputData: any, signal?: AbortSignal) => Promise<Output>>
+  > = {};
 
   /**
    * Registers a task execution function for a specific task type and model provider
@@ -61,7 +63,7 @@ export class AiProviderRegistry<Input, Output> {
   registerRunFn(
     taskType: string,
     modelProvider: string,
-    runFn: (task: any, runInputData: any) => Promise<Output>
+    runFn: (task: any, runInputData: any, signal?: AbortSignal) => Promise<Output>
   ) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
     this.runFnRegistry[taskType][modelProvider] = runFn;
@@ -73,14 +75,14 @@ export class AiProviderRegistry<Input, Output> {
    */
   jobAsRunFn(runtype: string, modelType: string) {
     const fn = this.runFnRegistry[runtype]?.[modelType];
-    return async (task: JobQueueTask, input: Input) => {
+    return async (task: JobQueueTask, input: Input, signal?: AbortSignal) => {
       const queue = this.queues.get(modelType)!;
       const job = new ProviderJob({
         queueName: queue.queue,
         taskType: runtype,
         input: input,
         fn: async () => {
-          return fn(task, input);
+          return fn(task, input, signal);
         },
       });
       const jobid = await queue.add(job);

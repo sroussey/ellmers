@@ -100,7 +100,7 @@ export abstract class JobQueue<Input, Output> {
     return this.events.off(event, listener);
   }
 
-  protected activeJobSignals = new Map<unknown, AbortController>();
+  private activeJobSignals = new Map<unknown, AbortController>();
   private activeJobPromises = new Map<
     unknown,
     { resolve: (out: Output) => void; reject: (err: JobError) => void }
@@ -120,6 +120,7 @@ export abstract class JobQueue<Input, Output> {
   }
 
   protected async processJob(job: Job<Input, Output>) {
+    console.error(`Processing job: ${job.id}`);
     const abortController = new AbortController();
     // Store the controller so that it can abort this job if needed.
     this.activeJobSignals.set(job.id, abortController);
