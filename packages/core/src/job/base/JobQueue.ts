@@ -13,6 +13,11 @@ export abstract class JobError extends Error {
   public abstract retryable: boolean;
 }
 
+/**
+ * A job error that is retryable
+ *
+ * Examples: network timeouts, temporary unavailability of an external service, or rate-limiting
+ */
 export class RetryableJobError extends JobError {
   constructor(
     message: string,
@@ -24,6 +29,12 @@ export class RetryableJobError extends JobError {
   public retryable = true;
 }
 
+/**
+ * A job error that is not retryable
+ *
+ * Examples: invalid input, missing required parameters, or a permanent failure of
+ * an external service, permission errors, running out of money for an API, etc.
+ */
 export class PermanentJobError extends JobError {
   constructor(message: string) {
     super(message);
