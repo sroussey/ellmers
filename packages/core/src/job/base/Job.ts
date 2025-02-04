@@ -9,6 +9,7 @@ export enum JobStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
   COMPLETED = "COMPLETED",
+  ABORTING = "ABORTING",
   FAILED = "FAILED",
 }
 
@@ -46,7 +47,9 @@ export class Job<Input, Output> {
   public lastRanAt: Date | null = null;
   public completedAt: Date | null = null;
   public deadlineAt: Date | null = null;
+  public abortedAt: Date | null = null;
   public error: string | null = null;
+  public errorCode: string | null = null;
 
   constructor({
     queueName,

@@ -165,6 +165,23 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
+   * Retrieves all jobs currently being processed.
+   * @returns An array of jobs
+   */
+  public async aborting() {
+    const AbortingQuery = `
+      SELECT *
+        FROM job_queue
+        WHERE queue = $1
+        AND status = 'ABORTING'`;
+    const stmt = this.db.prepare(AbortingQuery);
+    const result = stmt.all(this.queue) as any[];
+    const ret: Array<Job<Input, Output>> = [];
+    for (const job of result || []) ret.push(this.createNewJob(job));
+    return ret;
+  }
+
+  /**
    * Retrieves the next available job that is ready to be processed.
    * @returns The next job or undefined if no job is available
    */

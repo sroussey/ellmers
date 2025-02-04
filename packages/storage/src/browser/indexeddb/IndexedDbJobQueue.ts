@@ -83,6 +83,18 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  async aborting(): Promise<Job<Input, Output>[]> {
+    const db = await this.dbPromise;
+    const tx = db.transaction("jobs", "readonly");
+    const store = tx.objectStore("jobs");
+    const index = store.index("status");
+    const request = index.getAll(IDBKeyRange.only("ABORTING"));
+
+    return new Promise((resolve) => {
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
   async next(): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");

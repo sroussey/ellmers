@@ -19,10 +19,22 @@ export class RetryError extends Error {
   }
 }
 
+/**
+ * Events that can be emitted by the JobQueue
+ *
+ * @event queue_start - Emitted when the queue starts
+ * @event queue_stop - Emitted when the queue stops
+ * @event job_start - Emitted when a job starts
+ * @event job_aborting - Emitted when a job is aborting
+ * @event job_complete - Emitted when a job is complete (after start and retries)
+ * @event job_error - Emitted when a job errors (after aborting)
+ * @event job_retry - Emitted when a job is retried
+ */
 type JobEvents =
   | "queue_start"
   | "queue_stop"
   | "job_start"
+  | "job_aborting"
   | "job_complete"
   | "job_error"
   | "job_retry";
@@ -38,6 +50,7 @@ export abstract class JobQueue<Input, Output> {
   public abstract next(): Promise<Job<Input, Output> | undefined>;
   public abstract peek(num: number): Promise<Array<Job<Input, Output>>>;
   public abstract processing(): Promise<Array<Job<Input, Output>>>;
+  public abstract aborting(): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
   public abstract complete(id: unknown, output?: Output | null, error?: string): Promise<void>;
   public abstract clear(): Promise<void>;

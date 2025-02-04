@@ -146,6 +146,23 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
+   * Retrieves all jobs currently being aborted.
+   * @returns An array of jobs
+   */
+  public async aborting() {
+    return await this.sql.begin(async (sql) => {
+      const result = await sql`
+      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+        FROM job_queue
+        WHERE queue = ${this.queue}
+        AND status = 'ABORTING'`;
+      if (!result) return [];
+      const ret = result[0].rows.map((r: any) => this.createNewJob(r));
+      return ret;
+    });
+  }
+
+  /**
    * Retrieves the next available job that is ready to be processed.
    * @returns The next job or undefined if no job is available
    */

@@ -70,6 +70,10 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return this.jobQueue.filter((job) => job.status === JobStatus.PROCESSING);
   }
 
+  public async aborting() {
+    return this.jobQueue.filter((job) => job.status === JobStatus.ABORTING);
+  }
+
   /**
    * Retrieves the next available job that is ready to be processed
    * Updates the job status to PROCESSING before returning
