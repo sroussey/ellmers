@@ -69,6 +69,8 @@ export abstract class JobQueue<Input, Output> {
     protected limiter: ILimiter,
     protected waitDurationInMilliseconds: number
   ) {}
+
+  // Public methods that must be implemented by the queue
   public abstract add(job: Job<Input, Output>): Promise<unknown>;
   public abstract get(id: unknown): Promise<Job<Input, Output> | undefined>;
   public abstract next(): Promise<Job<Input, Output> | undefined>;
@@ -79,32 +81,62 @@ export abstract class JobQueue<Input, Output> {
   public abstract complete(id: unknown, output?: Output | null, error?: JobError): Promise<void>;
   public abstract clear(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
+  public abstract abort(jobId: unknown): Promise<void>;
 
-  events = new EventEmitter<JobEvents>();
+  // Optional methods that can be overridden by the queue
+  public async executeJob(job: Job<Input, Output>, signal?: AbortSignal): Promise<Output> {
+    return await job.execute(signal);
+  }
 
-  on(event: JobEvents, listener: (...args: any[]) => void) {
+  // Private methods
+
+  // Events
+
+  private events = new EventEmitter<JobEvents>();
+  public on(event: JobEvents, listener: (...args: any[]) => void) {
     return this.events.on(event, listener);
   }
-  off(event: JobEvents, listener?: (...args: any[]) => void) {
+  public off(event: JobEvents, listener?: (...args: any[]) => void) {
     return this.events.off(event, listener);
   }
 
-  // we do this in case the queue needs to do something queue specific to execute the job
-  public async executeJob(job: Job<Input, Output>): Promise<Output> {
-    return await job.execute();
+  protected activeJobSignals = new Map<unknown, AbortController>();
+  private activeJobPromises = new Map<
+    unknown,
+    { resolve: (out: Output) => void; reject: (err: JobError) => void }
+  >();
+  /**
+   * Aborts a running job (if supported).
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  protected abortJob(jobId: unknown): void {
+    const controller = this.activeJobSignals.get(jobId);
+    if (controller) {
+      controller.abort();
+      this.events.emit("job_aborting", this.queue, jobId);
+    }
   }
 
   protected async processJob(job: Job<Input, Output>) {
+    const abortController = new AbortController();
+    // Store the controller so that it can abort this job if needed.
+    this.activeJobSignals.set(job.id, abortController);
+
     try {
       await this.limiter.recordJobStart();
       this.events.emit("job_start", this.queue, job.id);
-      const output = await this.executeJob(job);
+      const output = await this.executeJob(job, abortController.signal);
       await this.complete(job.id, output);
     } catch (err: any) {
       console.error(`Error processing job: ${err}`);
 
-      if (err instanceof RetryableJobError) {
-        // Emit a retry event and let the concrete implementation update scheduling
+      // If the error is an abort signal, optionally handle it here.
+      if (err.name === "AbortError") {
+        // The job was aborted. You might wish to differentiate this case.
+        this.events.emit("job_aborting", this.queue, job.id);
+      } else if (err instanceof RetryableJobError) {
         this.events.emit("job_retry", this.queue, job.id, err.retryDate);
       } else if (err instanceof PermanentJobError) {
         // Emit an error event for permanent errors
@@ -114,45 +146,41 @@ export abstract class JobQueue<Input, Output> {
         err = new PermanentJobError(err.message || String(err));
         this.events.emit("job_error", this.queue, job.id, err.message);
       }
-
-      // Pass the error object (instead of its string) to the complete() method
       await this.complete(job.id, null, err);
     } finally {
       await this.limiter.recordJobCompletion();
+      this.activeJobSignals.delete(job.id);
     }
   }
 
-  private waits = new Map();
   /**
-   *  This method is called when a job is really completed, after retries etc.
+   * Called when a job is completed (after retries)
+   *
+   * This method resolves or rejects the promise associated with the job.
+   * It also emits the appropriate events based on the job's status.
    */
-  protected onCompleted(
-    jobId: unknown,
-    status: JobStatus,
-    output: Output | null,
-    error?: JobError
-  ) {
+  protected onCompleted(jobId: unknown, status: JobStatus, output?: Output, error?: JobError) {
     // Find the job by jobId and resolve its promise if it exists
-    const job = this.waits.get(jobId);
+    const job = this.activeJobPromises.get(jobId);
     if (job) {
       if (status === JobStatus.FAILED) {
         this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
-        job.reject(error);
+        job.reject(error!);
       } else if (status === JobStatus.COMPLETED) {
         this.events.emit("job_complete", this.queue, jobId, output);
-        job.resolve(output);
+        job.resolve(output!);
       }
       // Remove the job from the map after completion
-      this.waits.delete(jobId);
+      this.activeJobPromises.delete(jobId);
     }
   }
 
-  waitFor(jobId: unknown): Promise<Output> {
+  public waitFor(jobId: unknown): Promise<Output> {
     // Return a new promise for the job
     return new Promise((resolve, reject) => {
       // Store the resolve and reject functions in the map using jobId as the key
       // This allows us to resolve or reject the promise later when onCompleted is called
-      this.waits.set(jobId, { resolve, reject });
+      this.activeJobPromises.set(jobId, { resolve, reject });
     });
   }
 
@@ -163,7 +191,7 @@ export abstract class JobQueue<Input, Output> {
     try {
       const canProceed = await this.limiter.canProceed();
       if (canProceed) {
-        const job = await this.next(); // Fetch the next job if available
+        const job = await this.next();
         if (job) {
           this.processJob(job).catch((error) => console.error(`Error processing job: ${error}`));
         }
@@ -175,25 +203,51 @@ export abstract class JobQueue<Input, Output> {
     }
   }
 
-  async start() {
+  /**
+   * Starts the queue and processes jobs.
+   *
+   * This method will start the queue and process jobs in the background.
+   * It will emit the appropriate events based on the job's status.
+   */
+  public async start() {
     this.running = true;
     this.events.emit("queue_start", this.queue);
     this.processJobs();
     return this;
   }
 
-  async stop() {
+  /**
+   * Stops the queue and aborts all active jobs.
+   *
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  public async stop() {
     this.running = false;
+    for (const [jobId, controller] of this.activeJobSignals.entries()) {
+      controller.abort();
+      this.events.emit("job_aborting", this.queue, jobId);
+    }
+    this.activeJobSignals.clear();
     this.events.emit("queue_stop", this.queue);
     return this;
   }
 
-  async restart() {
-    await this.stop(); // if not already
+  /**
+   * Restarts the queue and aborts all active jobs.
+   *
+   * This method will stop the queue and clear all active jobs.
+   * It will then restart the queue and process jobs in the background.
+   */
+  public async restart() {
+    await this.stop();
     const jobs = await this.processing();
     jobs.forEach((job) => this.complete(job.id, null, new PermanentJobError("Queue Restarted")));
-    this.waits.forEach(({ reject }) => reject(new PermanentJobError("Queue Restarted")));
-    this.waits.clear();
+    this.activeJobPromises.forEach(({ reject }) =>
+      reject(new PermanentJobError("Queue Restarted"))
+    );
+    this.activeJobPromises.clear();
     await this.start();
     return this;
   }

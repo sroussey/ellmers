@@ -180,6 +180,22 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
+   * Aborts a job by setting its status to "ABORTING".
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  public async abort(jobId: string) {
+    const AbortQuery = `
+      UPDATE job_queue
+        SET status = 'ABORTING'
+        WHERE id = $1 AND queue = $2`;
+    const stmt = this.db.prepare(AbortQuery);
+    stmt.run(jobId, this.queue);
+    this.abortJob(jobId);
+  }
+
+  /**
    * Retrieves the next available job that is ready to be processed.
    * @returns The next job or undefined if no job is available
    */
@@ -274,7 +290,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
     this.db.exec(updateQuery, params);
     if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(job.id, status, output, error);
+      this.onCompleted(job.id, status, output!, error);
     }
   }
 

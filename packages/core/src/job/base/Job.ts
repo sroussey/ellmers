@@ -87,7 +87,7 @@ export class Job<Input, Output> {
     this.output = output;
     this.error = error;
   }
-  execute(): Promise<Output> {
+  execute(signal?: AbortSignal): Promise<Output> {
     throw new Error("Method not implemented.");
   }
 }

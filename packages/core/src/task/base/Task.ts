@@ -16,6 +16,7 @@ export enum TaskStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
   COMPLETED = "COMPLETED",
+  ABORTING = "ABORTING",
   FAILED = "FAILED",
 }
 

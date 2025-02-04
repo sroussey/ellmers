@@ -125,6 +125,10 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  /**
+   * Retrieves the number of jobs in the queue.
+   * Returns the count of jobs in the queue.
+   */
   async size(): Promise<number> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readonly");
@@ -178,7 +182,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
         store.put(job);
 
         if (job.status === "COMPLETED" || job.status === "FAILED") {
-          this.onCompleted(job.id, job.status, output, error);
+          this.onCompleted(job.id, job.status, output!, error);
         }
 
         resolve();
@@ -188,6 +192,44 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  /**
+   * Aborts a job by setting its status to "ABORTING".
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  async abort(jobId: unknown): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction("jobs", "readwrite");
+    const store = tx.objectStore("jobs");
+    const request = store.get(jobId as string);
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const job = request.result;
+        if (!job) {
+          reject(new Error(`Job ${jobId} not found`));
+          return;
+        }
+
+        job.status = "ABORTING";
+
+        // Persist the updated job back to IndexedDB.
+        const updateRequest = store.put(job);
+        updateRequest.onsuccess = () => {
+          this.abortJob(jobId);
+          resolve();
+        };
+        updateRequest.onerror = () => reject(updateRequest.error);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Clears all jobs from the queue.
+   */
   async clear(): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
@@ -200,6 +242,10 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     });
   }
 
+  /**
+   * Retrieves the output for a job based on its task type and input.
+   * Uses a compound key to query the IndexedDB for the job's output.
+   */
   async outputForInput(taskType: string, input: Input): Promise<Output | null> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readonly");

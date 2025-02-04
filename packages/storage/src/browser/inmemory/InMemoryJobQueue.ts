@@ -140,6 +140,14 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
   }
 
+  public async abort(jobId: unknown) {
+    const job = this.jobQueue.find((j) => j.id === jobId);
+    if (job) {
+      job.status = JobStatus.ABORTING;
+    }
+    this.abortJob(jobId);
+  }
+
   public async clear() {
     this.jobQueue = [];
   }

@@ -250,10 +250,13 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     });
 
     if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(id, status, output, error);
+      this.onCompleted(id, status, output!, error);
     }
   }
 
+  /**
+   * Clears all jobs from the queue.
+   */
   public async clear() {
     return await this.sql.begin(async (sql) => {
       await sql`
@@ -276,5 +279,18 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
         WHERE taskType = ${taskType} AND fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
       return result[0].rows[0].output;
     });
+  }
+
+  /**
+   * Aborts a job by setting its status to "ABORTING".
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  public async abort(jobId: number) {
+    await this.sql.begin(async (sql) => {
+      await sql`UPDATE job_queue SET status = 'ABORTING' WHERE id = ${jobId} AND queue = ${this.queue}`;
+    });
+    this.abortJob(jobId);
   }
 }
