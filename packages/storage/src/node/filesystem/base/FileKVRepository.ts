@@ -17,9 +17,8 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-  KVRepository,
 } from "ellmers-core";
-
+import { KVRepository } from "../../../util/base/KVRepository";
 /**
  * A key-value repository implementation that uses the filesystem for storage.
  * Each key-value pair is stored as a separate JSON file in the specified directory.

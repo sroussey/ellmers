@@ -70,7 +70,7 @@ describe("SqliteKVRepository", () => {
     });
     it("should get undefined for a key that doesn't exist", async () => {
       const key = { name: "key", type: "string" };
-      const output = await repository.get(key);
+      const output = await repository.getKeyValue(key);
 
       expect(output == undefined).toEqual(true);
     });

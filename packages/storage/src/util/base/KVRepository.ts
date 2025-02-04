@@ -7,6 +7,7 @@
 
 import EventEmitter from "eventemitter3";
 import { makeFingerprint } from "../../util/Misc";
+import { IKVRepository } from "ellmers-core";
 
 /**
  * Type definitions for key-value repository events
@@ -48,7 +49,8 @@ export abstract class KVRepository<
   PrimaryKeySchema extends BasePrimaryKeySchema = typeof DefaultPrimaryKeySchema,
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
   Combined extends Record<string, any> = Key & Value,
-> {
+> implements IKVRepository<Key, Value, Combined>
+{
   // KV repository event emitter
   private events = new EventEmitter<KVEvents>();
   on(
@@ -122,44 +124,39 @@ export abstract class KVRepository<
 
   /**
    * Stores a key-value pair in the repository.
-   * Automatically converts simple types to structured format if using default schema.
+   * This is a convenience method that automatically converts simple types to structured format if using default schema.
    *
-   * @param key - Primary key (can be simple type if using a single property key like default schema)
+   * @param key - Primary key to look up (basic key like default schema)
    * @param value - Value to store (can be simple type if using a single property value like default schema)
    */
-  public put(key: BasicKeyType | Key, value: Value | BasicValueType): Promise<void> {
-    if (typeof key !== "object" && this.primaryKeyIndex) {
-      key = { [this.primaryKeyIndex]: key } as Key;
-      if (typeof value !== "object" && this.valueIndex) {
-        value = { [this.valueIndex]: value } as Value;
-      }
+  public put(bkey: BasicKeyType, bvalue: BasicValueType): Promise<void> {
+    if (!this.primaryKeyIndex || !this.valueIndex) {
+      throw new Error("Can not use simple key type with this repository");
     }
-    return this.putKeyValue(key as Key, value as Value);
+
+    const key = { [this.primaryKeyIndex]: bkey } as Key;
+    const value = { [this.valueIndex]: bvalue } as Value;
+
+    return this.putKeyValue(key, value);
   }
 
   /**
    * Retrieves a value by its key.
-   * For default schema, returns the simple value type directly.
+   * This is a convenience method that automatically converts simple types to structured format if using default schema.
    *
-   * @param key - Primary key to look up (can be simple type if using a single property key like default schema)
+   * @param key - Primary key to look up (basic key like default schema)
    * @returns The stored value or undefined if not found
    */
-  public async get(key: BasicKeyType | Key): Promise<Value | BasicValueType | undefined> {
-    /* if the key is not an object, and there is a primary key index, then we need to convert the key to an object
-     * this allows us to do simple "key" / "value" situations without having to use objects like a compound key
-     * would require */
-    const isKeySimple = !!(typeof key !== "object" && this.primaryKeyIndex);
-    if (isKeySimple) {
-      key = { [this.primaryKeyIndex!]: key } as Key;
+  public async get(bkey: BasicKeyType): Promise<BasicValueType | undefined> {
+    if (!this.primaryKeyIndex || !this.valueIndex) {
+      throw new Error("Can not use simple key type with this repository");
     }
-    const value = await this.getKeyValue(key as Key);
-    if (typeof value !== "object") return value;
-    if (isKeySimple && this.valueIndex) {
-      /* if it looks like we are doing a simple "key" / "value" situation, then we need to return 
-      the value as a simple type as well. */
-      return value[this.valueIndex] as BasicValueType;
-    }
-    return value as Value;
+
+    const key = { [this.primaryKeyIndex]: bkey } as Key;
+
+    const value = await this.getKeyValue(key);
+    if (!value) return undefined;
+    return value[this.valueIndex] as BasicValueType;
   }
 
   /**

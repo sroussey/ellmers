@@ -7,7 +7,7 @@
 
 import EventEmitter from "eventemitter3";
 import { TaskInput, TaskOutput } from "../../task/base/Task";
-import { DefaultValueType, KVRepository } from "../base/KVRepository";
+import { DefaultValueType, IKVRepository } from "../base/IKVRepository";
 import { makeFingerprint } from "../../util/Misc";
 
 export type TaskOutputEvents = "output_saved" | "output_retrieved" | "output_cleared";
@@ -27,11 +27,7 @@ export const TaskOutputPrimaryKeySchema = {
  */
 export abstract class TaskOutputRepository {
   public type = "TaskOutputRepository";
-  abstract kvRepository: KVRepository<
-    TaskOutputPrimaryKey,
-    DefaultValueType,
-    typeof TaskOutputPrimaryKeySchema
-  >;
+  abstract kvRepository: IKVRepository<TaskOutputPrimaryKey, DefaultValueType>;
   private events = new EventEmitter<TaskOutputEvents>();
 
   /**

@@ -13,9 +13,9 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-  KVRepository,
 } from "ellmers-core";
 import { makeFingerprint } from "../../../util/Misc";
+import { KVRepository } from "../../../util/base/KVRepository";
 
 /**
  * A generic in-memory key-value repository implementation.

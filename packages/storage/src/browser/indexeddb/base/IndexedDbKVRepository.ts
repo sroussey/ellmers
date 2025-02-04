@@ -13,11 +13,10 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-  KVRepository,
 } from "ellmers-core";
 import { ensureIndexedDbTable } from "./IndexedDbTable";
 import { makeFingerprint } from "../../../util/Misc";
-
+import { KVRepository } from "../../../util/base/KVRepository";
 /**
  * A key-value repository implementation using IndexedDB for browser-based storage.
  * This class provides a simple persistent storage solution for web applications

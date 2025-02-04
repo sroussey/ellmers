@@ -75,7 +75,7 @@ describe("FileKVRepository", () => {
     it("should store and retrieve values for a key", async () => {
       const key = { name: "key", type: "string" };
       const value = { option: "value", success: true };
-      await repository.put(key, value);
+      await repository.putKeyValue(key, value);
       const output = await repository.getKeyValue(key);
 
       expect(output?.option).toEqual("value");
@@ -83,12 +83,12 @@ describe("FileKVRepository", () => {
 
       await repository.delete(key);
 
-      const output2 = await repository.get(key);
+      const output2 = await repository.getKeyValue(key);
       expect(output2 == undefined).toEqual(true);
     });
     it("should get undefined for a key that doesn't exist", async () => {
       const key = { name: "key-unknown", type: "string" };
-      const output = await repository.get(key);
+      const output = await repository.getKeyValue(key);
 
       expect(output == undefined).toEqual(true);
     });

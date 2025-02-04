@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 export * from "./task/index";
-export * from "./storage/base/KVRepository";
+export * from "./storage/base/IKVRepository";
 export * from "./storage/taskoutput/TaskOutputRepository";
 export * from "./storage/taskgraph/TaskGraphRepository";
 export * from "./util/Misc";

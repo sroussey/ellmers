@@ -6,8 +6,8 @@
 //    *******************************************************************************
 
 import EventEmitter from "eventemitter3";
-import { DefaultValueType, KVRepository } from "ellmers-core";
-import { Model, ModelPrimaryKey, ModelPrimaryKeySchema } from "./Model";
+import { DefaultValueType, IKVRepository } from "ellmers-core";
+import { Model, ModelPrimaryKey } from "./Model";
 
 /**
  * Events that can be emitted by the ModelRepository
@@ -60,21 +60,12 @@ export abstract class ModelRepository {
   /**
    * Repository for storing and managing Model instances
    */
-  abstract modelKvRepository: KVRepository<
-    ModelPrimaryKey,
-    DefaultValueType,
-    typeof ModelPrimaryKeySchema
-  >;
+  abstract modelKvRepository: IKVRepository<ModelPrimaryKey, DefaultValueType>;
 
   /**
    * Repository for managing relationships between tasks and models
    */
-  abstract task2ModelKvRepository: KVRepository<
-    Task2ModelPrimaryKey,
-    Task2ModelDetail,
-    typeof Task2ModelPrimaryKeySchema,
-    typeof Task2ModelDetailSchema
-  >;
+  abstract task2ModelKvRepository: IKVRepository<Task2ModelPrimaryKey, Task2ModelDetail>;
 
   /** Event emitter for repository events */
   private events = new EventEmitter<ModelEvents>();
@@ -111,7 +102,10 @@ export abstract class ModelRepository {
    * @param model - The model instance to add
    */
   async addModel(model: Model) {
-    await this.modelKvRepository.put({ name: model.name }, { "kv-value": JSON.stringify(model) });
+    await this.modelKvRepository.putKeyValue(
+      { name: model.name },
+      { "kv-value": JSON.stringify(model) }
+    );
     this.emit("model_added", model);
   }
 
@@ -162,7 +156,7 @@ export abstract class ModelRepository {
   async enumerateAllModels() {
     const models = await this.modelKvRepository.getAll();
     if (!models || models.length === 0) return undefined;
-    return models;
+    return models.map((model) => JSON.parse(model["kv-value"]));
   }
 
   /**

@@ -13,10 +13,9 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-  KVRepository,
   BasicValueType,
 } from "ellmers-core";
-
+import { KVRepository } from "./KVRepository";
 // BaseKVRepository is a key-value store that uses SQLite and Postgres use as common code
 
 /**
