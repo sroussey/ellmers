@@ -13,6 +13,14 @@ import { SingleTask, TaskConfig } from "./Task";
 export interface JobQueueTaskConfig extends TaskConfig {
   queue?: string;
   currentJobId?: unknown;
+  currentJobRunId?: string;
+}
+
+/**
+ * Configuration interface for job queue tasks with ids
+ */
+interface JobQueueTaskWithIdsConfig extends JobQueueTaskConfig {
+  id: unknown;
 }
 
 /**
@@ -20,7 +28,7 @@ export interface JobQueueTaskConfig extends TaskConfig {
  */
 export abstract class JobQueueTask extends SingleTask {
   static readonly type: string = "JobQueueTask";
-  declare config: JobQueueTaskConfig & { id: unknown };
+  declare config: JobQueueTaskWithIdsConfig;
   constructor(config: JobQueueTaskConfig) {
     super(config);
   }

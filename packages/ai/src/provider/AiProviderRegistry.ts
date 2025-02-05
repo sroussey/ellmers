@@ -66,23 +66,25 @@ export class AiProviderRegistry<Input, Output> {
    * Creates a job wrapper around a task execution function
    * This allows the task to be queued and executed asynchronously
    */
-  jobAsRunFn(runtype: string, modelType: string) {
-    const fn = this.runFnRegistry[runtype]?.[modelType];
+  jobAsRunFn(taskType: string, modelType: string) {
+    const fn = this.runFnRegistry[taskType]?.[modelType];
     return async (task: JobQueueTask, input: Input, signal?: AbortSignal) => {
       const queue = this.queues.get(modelType)!;
       const job = new ProviderJob({
         queueName: queue.queue,
-        taskType: runtype,
+        jobRunId: task.config.currentJobRunId, // could be undefined
+        taskType: taskType,
         input: input,
         fn: async () => {
           return fn(task, input, signal);
         },
       });
-      const jobid = await queue.add(job);
-      task.config.currentJobId = jobid;
+      const jobId = await queue.add(job);
       task.config.queue = queue.queue;
+      task.config.currentJobRunId = job.jobRunId; // no longer undefined
+      task.config.currentJobId = jobId;
 
-      const result = queue.waitFor(jobid);
+      const result = queue.waitFor(jobId);
       return result;
     };
   }
