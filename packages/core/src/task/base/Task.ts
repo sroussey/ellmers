@@ -84,18 +84,18 @@ export abstract class TaskBase {
     return ((this.constructor as typeof TaskBase).inputs as TaskInputDefinition[]) ?? [];
   }
   get outputs(): TaskOutputDefinition[] {
-    return ((this.constructor as typeof TaskBase).outputs as TaskInputDefinition[]) ?? [];
+    return ((this.constructor as typeof TaskBase).outputs as TaskOutputDefinition[]) ?? [];
   }
 
   events = new EventEmitter<TaskEvents>();
   on(name: TaskEvents, fn: (...args: any[]) => void) {
-    this.events.on.call(this.events, name, fn);
+    this.events.on(name, fn);
   }
   off(name: TaskEvents, fn: (...args: any[]) => void) {
-    this.events.off.call(this.events, name, fn);
+    this.events.off(name, fn);
   }
   emit(name: TaskEvents, ...args: any[]) {
-    this.events.emit.call(this.events, name, ...args);
+    this.events.emit(name, ...args);
   }
 
   /**
@@ -111,7 +111,7 @@ export abstract class TaskBase {
   createdAt: Date = new Date();
   startedAt?: Date;
   completedAt?: Date;
-  error: string | undefined = undefined;
+  error?: string;
 
   constructor(config: TaskConfig = {}) {
     // pull out input data from the config
@@ -248,9 +248,10 @@ export abstract class TaskBase {
         return typeof item === "boolean";
       case "function":
         return typeof item === "function";
+      default:
+        console.warn(`validateItem: Unknown value type: ${valueType}`);
+        return false;
     }
-    console.warn(`validateItem: Unknown value type: ${valueType}`);
-    return false;
   }
 
   /**
@@ -275,10 +276,8 @@ export abstract class TaskBase {
     } else if (input[inputId] === undefined) {
       input[inputId] = inputdef.defaultValue;
     }
-    if (inputdef.isArray) {
-      if (!Array.isArray(input[inputId])) {
-        input[inputId] = [input[inputId]];
-      }
+    if (inputdef.isArray && !Array.isArray(input[inputId])) {
+      input[inputId] = [input[inputId]];
     }
 
     const inputlist: any[] = inputdef.isArray ? input[inputId] : [input[inputId]];
