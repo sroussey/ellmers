@@ -5,14 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import {
-  Job,
-  type JobQueue,
-  JobConstructorDetails,
-  TaskInput,
-  TaskOutput,
-  JobQueueTask,
-} from "ellmers-core";
+import { Job, type JobQueue, JobDetails, TaskInput, TaskOutput, JobQueueTask } from "ellmers-core";
 
 /**
  * Enum to define the types of job queue execution
@@ -28,7 +21,7 @@ export enum JobQueueRunType {
  */
 class ProviderJob<Input, Output> extends Job<Input, Output> {
   constructor(
-    details: JobConstructorDetails<Input, Output> & {
+    details: JobDetails<Input, Output> & {
       fn: (signal?: AbortSignal) => Promise<Output>;
     }
   ) {

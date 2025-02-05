@@ -7,7 +7,7 @@
 
 import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
-import { Job, JobStatus } from "./Job";
+import { Job, JobStatus, JobDetails } from "./Job";
 import { sleep } from "../../util/Misc";
 
 export abstract class JobError extends Error {
@@ -131,6 +131,21 @@ export abstract class JobQueue<Input, Output> {
   public abstract deleteAll(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
   public abstract abort(jobId: unknown): Promise<void>;
+  public abstract getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>>;
+
+  /**
+   * Aborts all jobs in a job run
+   */
+  public async abortJobRun(jobRunId: string): Promise<void> {
+    const jobs = await this.getJobsByRunId(jobRunId);
+    await Promise.allSettled(
+      jobs.map((job) => {
+        if ([JobStatus.PROCESSING, JobStatus.PENDING].includes(job.status)) {
+          this.abort(job.id);
+        }
+      })
+    );
+  }
 
   /**
    * Executes a job with the provided abort signal.

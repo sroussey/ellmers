@@ -13,6 +13,7 @@ import {
   JobError,
   RetryableJobError,
   PermanentJobError,
+  JobStatus,
 } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 import { ensureIndexedDbTable } from "./base/IndexedDbTable";
@@ -36,6 +37,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
       const store = db.createObjectStore("jobs", { keyPath: "id" });
       store.createIndex("status", "status", { unique: false });
       store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
+      store.createIndex("jobRunId", "jobRunId", { unique: false });
       store.createIndex("taskType_fingerprint_status", ["taskType", "fingerprint", "status"], {
         unique: false,
       });
@@ -44,6 +46,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async add(job: Job<Input, Output>): Promise<unknown> {
     job.id = job.id ?? nanoid();
+    job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
 
@@ -71,7 +74,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status_runAfter");
-    const request = index.getAll(IDBKeyRange.only("PENDING"), num);
+    const request = index.getAll(IDBKeyRange.only(JobStatus.PENDING), num);
 
     return new Promise((resolve) => {
       request.onsuccess = () => resolve(request.result);
@@ -83,7 +86,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status");
-    const request = index.getAll(IDBKeyRange.only("PROCESSING"));
+    const request = index.getAll(IDBKeyRange.only(JobStatus.PROCESSING));
 
     return new Promise((resolve) => {
       request.onsuccess = () => resolve(request.result);
@@ -95,7 +98,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status");
-    const request = index.getAll(IDBKeyRange.only("ABORTING"));
+    const request = index.getAll(IDBKeyRange.only(JobStatus.ABORTING));
 
     return new Promise((resolve) => {
       request.onsuccess = () => resolve(request.result);
@@ -108,14 +111,14 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const store = tx.objectStore("jobs");
 
     const index = store.index("status_runAfter");
-    const cursorRequest = index.openCursor(IDBKeyRange.only("PENDING"), "next");
+    const cursorRequest = index.openCursor(IDBKeyRange.only(JobStatus.PENDING), "next");
 
     return new Promise((resolve) => {
       cursorRequest.onsuccess = (e) => {
         const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
           const job = cursor.value;
-          job.status = "PROCESSING";
+          job.status = JobStatus.PROCESSING;
           cursor.update(job);
           resolve(job);
         } else {
@@ -164,24 +167,24 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
           job.retries = (job.retries || 0) + 1;
           if (error instanceof RetryableJobError) {
             if (job.retries >= job.maxRetries) {
-              job.status = "FAILED";
+              job.status = JobStatus.FAILED;
             } else {
-              job.status = "PENDING";
+              job.status = JobStatus.PENDING;
               job.runAfter = error.retryDate;
             }
           } else if (error instanceof PermanentJobError) {
-            job.status = "FAILED";
+            job.status = JobStatus.FAILED;
           } else {
-            job.status = "FAILED";
+            job.status = JobStatus.FAILED;
           }
         } else {
-          job.status = "COMPLETED";
+          job.status = JobStatus.COMPLETED;
           job.output = output;
         }
 
         store.put(job);
 
-        if (job.status === "COMPLETED" || job.status === "FAILED") {
+        if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
           this.onCompleted(job.id, job.status, output!, error);
         }
 
@@ -212,7 +215,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
           return;
         }
 
-        job.status = "ABORTING";
+        job.status = JobStatus.ABORTING;
 
         // Persist the updated job back to IndexedDB.
         const updateRequest = store.put(job);
@@ -224,6 +227,16 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
       };
 
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getJobsByRunId(jobRunId: string): Promise<Job<Input, Output>[]> {
+    const db = await this.dbPromise;
+    const tx = db.transaction("jobs", "readonly");
+    const store = tx.objectStore("jobs");
+    const request = store.index("jobRunId").getAll(jobRunId);
+    return new Promise((resolve) => {
+      request.onsuccess = () => resolve(request.result);
     });
   }
 
@@ -255,7 +268,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
 
     const index = store.index("taskType_fingerprint_status");
     // We use a compound key for querying in IndexedDB
-    const queryKey = [taskType, fingerprint, "COMPLETED"];
+    const queryKey = [taskType, fingerprint, JobStatus.COMPLETED];
     const request = index.get(queryKey);
 
     return new Promise((resolve) => {
