@@ -13,9 +13,17 @@ import { JobQueueTask, JobQueueTaskConfig, type TaskOutput } from "ellmers-core"
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import { getGlobalModelRepository } from "../../model/ModelRegistry";
 
+/**
+ * A base class for AI related tasks that run in a job queue.
+ * Extends the JobQueueTask class to provide LLM-specific functionality.
+ */
 export class JobQueueLlmTask extends JobQueueTask {
   static readonly type: string = "JobQueueLlmTask";
 
+  /**
+   * Creates a new JobQueueLlmTask instance
+   * @param config - Configuration object for the task
+   */
   constructor(config: JobQueueTaskConfig = {}) {
     config.name ||= `${new.target.type || new.target.name}${
       config.input?.model ? " with model " + config.input?.model : ""
@@ -23,6 +31,11 @@ export class JobQueueLlmTask extends JobQueueTask {
     super(config);
   }
 
+  /**
+   * Executes the LLM AI task
+   * @returns Promise<TaskOutput> - The results of the task execution
+   * @throws Error if input data is invalid or if required components are not found
+   */
   async run(): Promise<TaskOutput> {
     if (!this.validateInputData(this.runInputData)) {
       throw new Error("Invalid input data");
@@ -75,6 +88,11 @@ export class JobQueueLlmTask extends JobQueueTask {
     return super.validateItem(valueType, item);
   }
 
+  /**
+   * Processes the task output data after the main execution
+   * Can be overridden by derived classes to implement reactive behavior
+   * @returns Promise<TaskOutput> - The processed output data
+   */
   async runReactive(): Promise<TaskOutput> {
     return this.runOutputData ?? {};
   }
