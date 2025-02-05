@@ -42,7 +42,7 @@ export abstract class JobQueueTask extends SingleTask {
     if (this.config.queue) {
       const queue = getTaskQueueRegistry().getQueue(this.config.queue);
       if (queue) {
-        await queue.abort(this.config.currentJobId);
+        queue.abort(this.config.currentJobId);
       }
     }
     super.abort();

@@ -185,7 +185,12 @@ export abstract class TaskBase {
   }
 
   resetInputData() {
-    this.runInputData = { ...this.defaults };
+    // Use deep clone to avoid state leakage.
+    if (typeof structuredClone === "function") {
+      this.runInputData = structuredClone(this.defaults);
+    } else {
+      this.runInputData = JSON.parse(JSON.stringify(this.defaults));
+    }
   }
 
   /**
@@ -261,7 +266,7 @@ export abstract class TaskBase {
       return false;
     }
     if (typeof input !== "object") return false;
-    if (!inputdef.defaultValue && input[inputId] === undefined) {
+    if (inputdef.defaultValue !== undefined && input[inputId] === undefined) {
       // if there is no default value, that implies the value is required
       console.warn(
         `No default value for '${inputId}' in a ${classRef.type} so assumed required and not given (id:${this.config.id})`

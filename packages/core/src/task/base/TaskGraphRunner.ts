@@ -130,10 +130,7 @@ export class TaskGraphRunner {
     this.provenanceInput.set(task.config.id, nodeProvenance);
     this.copyInputFromEdgesToNode(task);
 
-    const shouldUseRepository =
-      !(task.constructor as any).sideeffects &&
-      !task.isCompound &&
-      task.status == TaskStatus.PROCESSING;
+    const shouldUseRepository = !(task.constructor as any).sideeffects && !task.isCompound;
 
     let results;
 
