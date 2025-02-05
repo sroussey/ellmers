@@ -188,4 +188,72 @@ describe("SqliteJobQueue", () => {
     // Confirm that the job_aborting event was emitted.
     expect(abortEventTriggered).toBe(true);
   });
+
+  it("should abort all jobs in a job run while leaving other jobs unaffected", async () => {
+    const queueName = "sqlite_test_queue_3";
+    const jobQueue = new SqliteJobQueue(
+      db,
+      queueName,
+      new SqliteRateLimiter(db, queueName, 4, 1).ensureTableExists(),
+      0,
+      NeverendingJob
+    ).ensureTableExists();
+
+    // Create jobs with the same jobRunId
+    const jobRunId1 = "test-run-1";
+    const jobRunId2 = "test-run-2";
+
+    // Add all jobs to queue
+    const job1id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId1,
+        taskType: "long_running",
+        input: { data: "input1" },
+      })
+    );
+    const job2id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId1,
+        taskType: "long_running",
+        input: { data: "input2" },
+      })
+    );
+    const job3id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId2,
+        taskType: "long_running",
+        input: { data: "input3" },
+      })
+    );
+    const job4id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId2,
+        taskType: "long_running",
+        input: { data: "input4" },
+      })
+    );
+    // Start the queue
+    await jobQueue.start();
+    await sleep(5);
+
+    // Verify some jobs have started processing
+    const processingJobs = await jobQueue.processing();
+    expect(processingJobs.length).toBeGreaterThan(0);
+
+    // Abort the first job run
+    await jobQueue.abortJobRun(jobRunId1);
+    await sleep(5);
+
+    // Check jobs from first run - should be aborting
+    expect((await jobQueue.get(job1id!))?.status).toBe(JobStatus.FAILED);
+    expect((await jobQueue.get(job2id!))?.status).toBe(JobStatus.FAILED);
+
+    // Check jobs from second run - should be unaffected
+    const job3Status = (await jobQueue.get(job3id!))?.status;
+    const job4Status = (await jobQueue.get(job4id!))?.status;
+    expect(job3Status).toBe(JobStatus.PROCESSING);
+    expect(job4Status).toBe(JobStatus.PROCESSING);
+
+    await jobQueue.stop();
+  });
 });

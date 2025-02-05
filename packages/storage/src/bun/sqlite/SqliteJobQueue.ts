@@ -28,7 +28,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   public ensureTableExists() {
-    const result = this.db.exec(`
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS job_queue (
         id INTEGER PRIMARY KEY,
         fingerprint text NOT NULL,

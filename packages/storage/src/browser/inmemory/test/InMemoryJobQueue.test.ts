@@ -178,4 +178,64 @@ describe("InMemoryJobQueue", () => {
     // Confirm that the job_aborting event was emitted.
     expect(abortEventTriggered).toBe(true);
   });
+
+  it("should abort all jobs in a job run while leaving other jobs unaffected", async () => {
+    // Create jobs with the same jobRunId
+    const jobRunId1 = "test-run-1";
+    const jobRunId2 = "test-run-2";
+
+    // Create jobs for first run
+    const job1 = new NeverendingJob({
+      id: "job1",
+      jobRunId: jobRunId1,
+      taskType: "long_running",
+      input: { data: "input1" },
+    });
+    const job2 = new NeverendingJob({
+      id: "job2",
+      jobRunId: jobRunId1,
+      taskType: "long_running",
+      input: { data: "input2" },
+    });
+
+    // Create jobs for second run
+    const job3 = new NeverendingJob({
+      id: "job3",
+      jobRunId: jobRunId2,
+      taskType: "long_running",
+      input: { data: "input3" },
+    });
+    const job4 = new NeverendingJob({
+      id: "job4",
+      jobRunId: jobRunId2,
+      taskType: "long_running",
+      input: { data: "input4" },
+    });
+
+    // Add all jobs to queue
+    await jobQueue.add(job1);
+    await jobQueue.add(job2);
+    await jobQueue.add(job3);
+    await jobQueue.add(job4);
+
+    // Start the queue
+    await jobQueue.start();
+    await sleep(5);
+
+    // Abort the first job run
+    await jobQueue.abortJobRun(jobRunId1);
+    await sleep(5);
+
+    // Check jobs from first run - should be aborting
+    expect((await jobQueue.get("job1"))?.status).toBe(JobStatus.FAILED);
+    expect((await jobQueue.get("job2"))?.status).toBe(JobStatus.FAILED);
+
+    // Check jobs from second run - should be unaffected
+    const job3Status = (await jobQueue.get("job3"))?.status;
+    const job4Status = (await jobQueue.get("job4"))?.status;
+    expect(job3Status).toBe(JobStatus.PROCESSING);
+    expect(job4Status).toBe(JobStatus.PROCESSING);
+
+    await jobQueue.stop();
+  });
 });
