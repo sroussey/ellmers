@@ -44,6 +44,9 @@ export class PermanentJobError extends JobError {
   public retryable = false;
 }
 
+/**
+ *
+ */
 export class AbortSignalJobError extends PermanentJobError {
   constructor(message: string) {
     super(message);
@@ -53,32 +56,70 @@ export class AbortSignalJobError extends PermanentJobError {
 
 /**
  * Events that can be emitted by the JobQueue
- *
- * @event queue_start - Emitted when the queue starts
- * @event queue_stop - Emitted when the queue stops
- * @event job_start - Emitted when a job starts
- * @event job_aborting - Emitted when a job is aborting
- * @event job_complete - Emitted when a job is complete (after start and retries)
- * @event job_error - Emitted when a job errors (after aborting)
- * @event job_retry - Emitted when a job is retried
  */
-type JobEvents =
-  | "queue_start"
-  | "queue_stop"
-  | "job_start"
-  | "job_aborting"
-  | "job_complete"
-  | "job_error"
-  | "job_retry";
+export interface JobQueueEvents<Input, Output> {
+  queue_start: [queueName: string];
+  queue_stop: [queueName: string];
+  job_start: [queueName: string, jobId: unknown];
+  job_aborting: [queueName: string, jobId: unknown];
+  job_complete: [queueName: string, jobId: unknown, output: Output];
+  job_error: [queueName: string, jobId: unknown, error: string];
+  job_retry: [queueName: string, jobId: unknown, retryDate: Date];
+  queue_stats_update: [queueName: string, stats: JobQueueStats];
+}
 
+/**
+ * Statistics tracked for the job queue
+ */
+export interface JobQueueStats {
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  processingJobs: number;
+  pendingJobs: number;
+  abortedJobs: number;
+  retriedJobs: number;
+  averageProcessingTime?: number;
+  lastUpdateTime: Date;
+}
+
+/**
+ * Base class for implementing job queues with different storage backends.
+ * Provides core functionality for job management, execution, and monitoring.
+ */
 export abstract class JobQueue<Input, Output> {
+  protected running: boolean = false;
+  protected stats: JobQueueStats;
+  protected events: EventEmitter<JobQueueEvents<Input, Output>>;
+  protected activeJobSignals: Map<unknown, AbortController>;
+  protected activeJobPromises: Map<
+    unknown,
+    Array<{ resolve: (out: Output) => void; reject: (err: JobError) => void }>
+  >;
+  protected processingTimes: Map<unknown, number>;
+
   constructor(
     public readonly queue: string,
     protected limiter: ILimiter,
     protected waitDurationInMilliseconds: number
-  ) {}
+  ) {
+    this.events = new EventEmitter();
+    this.activeJobSignals = new Map();
+    this.activeJobPromises = new Map();
+    this.processingTimes = new Map();
+    this.stats = {
+      totalJobs: 0,
+      completedJobs: 0,
+      failedJobs: 0,
+      processingJobs: 0,
+      pendingJobs: 0,
+      abortedJobs: 0,
+      retriedJobs: 0,
+      lastUpdateTime: new Date(),
+    };
+  }
 
-  // Public methods that must be implemented by the queue
+  // Required abstract methods that must be implemented by storage-specific queues
   public abstract add(job: Job<Input, Output>): Promise<unknown>;
   public abstract get(id: unknown): Promise<Job<Input, Output> | undefined>;
   public abstract next(): Promise<Job<Input, Output> | undefined>;
@@ -91,28 +132,34 @@ export abstract class JobQueue<Input, Output> {
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
   public abstract abort(jobId: unknown): Promise<void>;
 
-  // Optional methods that can be overridden by the queue
+  /**
+   * Executes a job with the provided abort signal.
+   * Can be overridden by implementations to add custom execution logic.
+   */
   public async executeJob(job: Job<Input, Output>, signal?: AbortSignal): Promise<Output> {
+    if (!job) throw new Error("Cannot execute null or undefined job");
     return await job.execute(signal);
   }
 
-  // Private methods
-
-  // Events
-
-  private events = new EventEmitter<JobEvents>();
-  public on(event: JobEvents, listener: (...args: any[]) => void) {
-    return this.events.on(event, listener);
-  }
-  public off(event: JobEvents, listener?: (...args: any[]) => void) {
-    return this.events.off(event, listener);
+  /**
+   * Registers an event listener for job queue events
+   */
+  public on<K extends keyof JobQueueEvents<Input, Output>>(
+    event: K,
+    listener: (...args: JobQueueEvents<Input, Output>[K]) => void
+  ): void {
+    this.events.on(event, listener);
   }
 
-  private activeJobSignals = new Map<unknown, AbortController>();
-  private activeJobPromises = new Map<
-    unknown,
-    [{ resolve: (out: Output) => void; reject: (err: JobError) => void }]
-  >();
+  /**
+   * Removes an event listener for job queue events
+   */
+  public off<K extends keyof JobQueueEvents<Input, Output>>(
+    event: K,
+    listener?: (...args: JobQueueEvents<Input, Output>[K]) => void
+  ): void {
+    this.events.off(event, listener);
+  }
   /**
    * Aborts a running job (if supported).
    * This method will signal the corresponding AbortController so that
@@ -129,76 +176,141 @@ export abstract class JobQueue<Input, Output> {
     }
   }
 
-  protected async processJob(job: Job<Input, Output>) {
+  /**
+   * Processes a job and handles its lifecycle including retries and error handling
+   */
+  protected async processJob(job: Job<Input, Output>): Promise<void> {
+    if (!job || !job.id) throw new Error("Invalid job provided for processing");
+
     const abortController = new AbortController();
-    // Store the controller so that it can abort this job if needed.
     this.activeJobSignals.set(job.id, abortController);
+    const startTime = Date.now();
 
     try {
+      await this.validateJobState(job);
       await this.limiter.recordJobStart();
+      this.stats.processingJobs++;
+      this.emitStatsUpdate();
+
       this.events.emit("job_start", this.queue, job.id);
       const output = await this.executeJob(job, abortController.signal);
       await this.complete(job.id, output);
-    } catch (err: any) {
-      // console.error(`Error processing job: ${err}`);
 
-      // If the error is an abort signal, optionally handle it here.
-      if (err instanceof AbortSignalJobError || err.name === "AbortSignalJobError") {
+      this.processingTimes.set(job.id, Date.now() - startTime);
+      this.updateAverageProcessingTime();
+    } catch (err: any) {
+      const error = this.normalizeError(err);
+
+      if (error instanceof AbortSignalJobError) {
         this.events.emit("job_aborting", this.queue, job.id);
-      } else if (err instanceof RetryableJobError || err.name === "RetryableJobError") {
-        this.events.emit("job_retry", this.queue, job.id, err.retryDate);
-      } else if (err instanceof PermanentJobError || err.name === "PermanentJobError") {
-        this.events.emit("job_error", this.queue, job.id, err.message);
+        this.stats.abortedJobs++;
+      } else if (error instanceof RetryableJobError) {
+        this.events.emit("job_retry", this.queue, job.id, error.retryDate);
+        this.stats.retriedJobs++;
       } else {
-        // For any generic error, treat it as permanent by wrapping it in a PermanentJobError
-        err = new PermanentJobError(err.message || String(err));
-        this.events.emit("job_error", this.queue, job.id, err.message);
+        this.events.emit("job_error", this.queue, job.id, error.message);
+        this.stats.failedJobs++;
       }
-      await this.complete(job.id, null, err);
+
+      await this.complete(job.id, null, error);
     } finally {
       await this.limiter.recordJobCompletion();
       this.activeJobSignals.delete(job.id);
+      this.stats.processingJobs--;
+      this.emitStatsUpdate();
     }
   }
 
   /**
-   * Called when a job is completed (after retries)
-   *
-   * This method resolves or rejects the promise associated with the job.
-   * It also emits the appropriate events based on the job's status.
+   * Validates the state of a job before processing
    */
-  protected onCompleted(jobId: unknown, status: JobStatus, output?: Output, error?: JobError) {
-    // Find the job by jobId and resolve its promise if it exists
+  protected async validateJobState(job: Job<Input, Output>): Promise<void> {
+    if (job.status === JobStatus.COMPLETED) {
+      throw new Error(`Job ${job.id} is already completed`);
+    }
+    if (job.status === JobStatus.FAILED) {
+      throw new Error(`Job ${job.id} has failed`);
+    }
+    if (job.status === JobStatus.ABORTING) {
+      throw new Error(`Job ${job.id} is being aborted`);
+    }
+    if (job.deadlineAt && job.deadlineAt < new Date()) {
+      throw new Error(`Job ${job.id} has exceeded its deadline`);
+    }
+  }
+
+  /**
+   * Normalizes different types of errors into JobError instances
+   */
+  protected normalizeError(err: any): JobError {
+    if (err instanceof JobError) {
+      return err;
+    }
+    if (err instanceof Error) {
+      return new PermanentJobError(err.message);
+    }
+    return new PermanentJobError(String(err));
+  }
+
+  /**
+   * Updates average processing time statistics
+   */
+  protected updateAverageProcessingTime(): void {
+    const times = Array.from(this.processingTimes.values());
+    if (times.length > 0) {
+      this.stats.averageProcessingTime = times.reduce((a, b) => a + b, 0) / times.length;
+    }
+  }
+
+  /**
+   * Emits updated statistics
+   */
+  protected emitStatsUpdate(): void {
+    this.stats.lastUpdateTime = new Date();
+    this.events.emit("queue_stats_update", this.queue, { ...this.stats });
+  }
+
+  /**
+   * Handles job completion and promise resolution
+   */
+  protected onCompleted(
+    jobId: unknown,
+    status: JobStatus,
+    output?: Output,
+    error?: JobError
+  ): void {
     const promises = this.activeJobPromises.get(jobId) || [];
 
     if (status === JobStatus.FAILED) {
       this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
-      promises.map(({ reject }) => reject(error!));
+      promises.forEach(({ reject }) => reject(error!));
+      this.stats.failedJobs++;
     } else if (status === JobStatus.COMPLETED) {
-      this.events.emit("job_complete", this.queue, jobId, output);
-      promises.map(({ resolve }) => resolve(output!));
+      this.events.emit("job_complete", this.queue, jobId, output!);
+      promises.forEach(({ resolve }) => resolve(output!));
+      this.stats.completedJobs++;
     }
-    // Remove the job from the map after completion
+
     this.activeJobPromises.delete(jobId);
+    this.emitStatsUpdate();
   }
 
+  /**
+   * Returns a promise that resolves when the job completes
+   */
   public waitFor(jobId: unknown): Promise<Output> {
-    // Return a new promise for the job
     return new Promise((resolve, reject) => {
-      // Store the resolve and reject functions in the map using jobId as the key
-      // This allows us to resolve or reject the promise later when onCompleted is called
-      const promises = this.activeJobPromises.get(jobId);
-      if (promises) {
-        promises.push({ resolve, reject });
-      } else {
-        this.activeJobPromises.set(jobId, [{ resolve, reject }]);
-      }
+      const promises = this.activeJobPromises.get(jobId) || [];
+      promises.push({ resolve, reject });
+      this.activeJobPromises.set(jobId, promises);
     });
   }
 
-  private running = false;
-  private async processJobs() {
-    if (!this.running) return; // Stop processing if the queue has been stopped
+  /**
+   * Main job processing loop
+   */
+  private async processJobs(): Promise<void> {
+    if (!this.running) return;
 
     try {
       const canProceed = await this.limiter.canProceed();
@@ -216,12 +328,11 @@ export abstract class JobQueue<Input, Output> {
   }
 
   /**
-   * Starts the queue and processes jobs.
-   *
-   * This method will start the queue and process jobs in the background.
-   * It will emit the appropriate events based on the job's status.
+   * Starts the job queue
    */
-  public async start() {
+  public async start(): Promise<this> {
+    if (this.running) return this;
+
     this.running = true;
     this.events.emit("queue_start", this.queue);
     this.processJobs();
@@ -229,51 +340,67 @@ export abstract class JobQueue<Input, Output> {
   }
 
   /**
-   * Stops the queue and aborts all active jobs.
-   *
-   * This method will signal the corresponding AbortController so that
-   * the job's execute() method (if it supports an AbortSignal parameter)
-   * can clean up and exit.
+   * Stops the job queue and aborts all active jobs
    */
-  public async stop() {
+  public async stop(): Promise<this> {
     this.running = false;
-    await sleep(100); // Wait for many pending jobs to finish
+
+    // Wait for pending operations to settle
+    await sleep(100);
+
+    // Abort all active jobs
     for (const [jobId, controller] of this.activeJobSignals.entries()) {
       controller.abort();
       this.events.emit("job_aborting", this.queue, jobId);
     }
 
+    // Reject all waiting promises
     this.activeJobPromises.forEach((promises) =>
-      promises.map(({ reject }) => reject(new PermanentJobError("Queue Restarted")))
+      promises.forEach(({ reject }) => reject(new PermanentJobError("Queue Stopped")))
     );
+
+    // Wait for abort operations to settle
     await sleep(100);
+
     this.events.emit("queue_stop", this.queue);
     return this;
   }
 
   /**
-   * Clears the queue and aborts all active jobs.
+   * Clears all jobs and resets queue state
    */
-  public async clear() {
+  public async clear(): Promise<this> {
     await this.deleteAll();
     this.activeJobSignals.clear();
     this.activeJobPromises.clear();
-
+    this.processingTimes.clear();
+    this.stats = {
+      totalJobs: 0,
+      completedJobs: 0,
+      failedJobs: 0,
+      processingJobs: 0,
+      pendingJobs: 0,
+      abortedJobs: 0,
+      retriedJobs: 0,
+      lastUpdateTime: new Date(),
+    };
+    this.emitStatsUpdate();
     return this;
   }
 
   /**
-   * Restarts the queue and aborts all active jobs.
-   *
-   * This method will stop the queue and clear all active jobs.
-   * It will then restart the queue and process jobs in the background.
+   * Restarts the job queue
    */
-  public async restart() {
+  public async restart(): Promise<this> {
     await this.stop();
-
     await this.clear();
+    return this.start();
+  }
 
-    await this.start();
-    return this;
+  /**
+   * Returns current queue statistics
+   */
+  public getStats(): JobQueueStats {
+    return { ...this.stats };
   }
 }
