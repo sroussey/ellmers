@@ -31,7 +31,7 @@ export function QueueStatus({ queueType }: { queueType: string }) {
   }, []);
 
   const clear = useCallback(() => {
-    queue.clear();
+    queue.deleteAll();
     setPending(0);
     setProcessing(0);
     setCompleted(0);

@@ -257,7 +257,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   /**
    * Clears all jobs from the queue.
    */
-  public async clear() {
+  public async deleteAll() {
     return await this.sql.begin(async (sql) => {
       await sql`
       DELETE FROM job_queue

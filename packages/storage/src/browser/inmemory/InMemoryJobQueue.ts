@@ -148,7 +148,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     this.abortJob(jobId);
   }
 
-  public async clear() {
+  public async deleteAll() {
     this.jobQueue = [];
   }
 

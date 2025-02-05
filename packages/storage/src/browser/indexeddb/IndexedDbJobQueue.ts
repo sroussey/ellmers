@@ -230,7 +230,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
   /**
    * Clears all jobs from the queue.
    */
-  async clear(): Promise<void> {
+  async deleteAll(): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");

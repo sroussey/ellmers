@@ -103,6 +103,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
       toSQLiteTimestamp(job.deadlineAt),
       job.maxRetries
     );
+
     job.id = result?.id;
     return result?.id;
   }
@@ -185,18 +186,20 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * the job's execute() method (if it supports an AbortSignal parameter)
    * can clean up and exit.
    */
-  public async abort(jobId: string) {
+  public async abort(id: string) {
     const AbortQuery = `
       UPDATE job_queue
         SET status = 'ABORTING'
         WHERE id = $1 AND queue = $2`;
     const stmt = this.db.prepare(AbortQuery);
-    stmt.run(jobId, this.queue);
-    this.abortJob(jobId);
+    stmt.run(id, this.queue);
+    this.abortJob(id);
   }
 
   /**
-   * Retrieves the next available job that is ready to be processed.
+   * Retrieves the next available job that is ready to be processed,
+   * and updates its status to PROCESSING.
+   *
    * @returns The next job or undefined if no job is available
    */
   public async next() {
@@ -294,7 +297,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
   }
 
-  public async clear() {
+  public async deleteAll() {
     const ClearQuery = `
       DELETE FROM job_queue
         WHERE queue = ?`;

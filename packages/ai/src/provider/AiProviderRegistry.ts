@@ -131,7 +131,7 @@ export class AiProviderRegistry<Input, Output> {
 
   clearQueues() {
     for (const queue of this.queues.values()) {
-      queue.clear();
+      queue.deleteAll();
     }
   }
 }

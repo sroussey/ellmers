@@ -6,13 +6,31 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { Job, JobStatus, TaskInput, TaskOutput } from "ellmers-core";
+import { AbortSignalJobError, Job, JobStatus, TaskInput, TaskOutput } from "ellmers-core";
 import { InMemoryJobQueue, InMemoryRateLimiter } from "ellmers-storage/inmemory";
 import { sleep } from "ellmers-core";
 
 class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute() {
     return { result: this.input.data.replace("input", "output") };
+  }
+}
+
+// A long-running Job that periodically checks if its abort signal is set.
+class NeverendingJob extends Job<TaskInput, TaskOutput> {
+  async execute(signal?: AbortSignal): Promise<TaskOutput> {
+    return new Promise((resolve, reject) => {
+      const intervalId = setInterval(() => {
+        // If the signal is aborted, clear the interval and reject.
+        if (signal?.aborted) {
+          clearInterval(intervalId);
+          const error = new AbortSignalJobError("Aborted");
+          reject(error);
+        }
+      }, 1);
+      // Note: we purposely never call resolve so that the job runs indefinitely
+      // until it is aborted.
+    });
   }
 }
 
@@ -72,13 +90,13 @@ describe("InMemoryJobQueue", () => {
     const job1 = new TestJob({ id: "job1", taskType: "task1", input: { data: "input1" } });
     const job2 = new TestJob({ id: "job2", taskType: "task2", input: { data: "input2" } });
     job1.status = JobStatus.COMPLETED;
-    job1.output = { result: "output1" };
+    job1.output = { result: "output1111" };
     await jobQueue.add(job1);
     await jobQueue.add(job2);
 
     const output = await jobQueue.outputForInput("task1", { data: "input1" });
 
-    expect(output).toEqual({ result: "output1" });
+    expect(output).toEqual({ result: "output1111" });
   });
 
   it("should run a job execute method once per job", async () => {
@@ -97,7 +115,7 @@ describe("InMemoryJobQueue", () => {
     const executeSpy4 = spyOn(job4, "execute");
 
     await jobQueue.start();
-    await sleep(50);
+    await sleep(5);
     await jobQueue.stop();
 
     expect(executeSpy1).toHaveBeenCalledTimes(1);
@@ -119,11 +137,45 @@ describe("InMemoryJobQueue", () => {
     );
 
     await jobQueue.start();
-    await sleep(50);
+    await sleep(5);
     await jobQueue.stop();
 
     const job4 = await jobQueue.get(last);
 
     expect(job4?.status).toBe(JobStatus.PENDING);
+  });
+
+  it("should abort a long-running job and trigger the abort event", async () => {
+    const job = new NeverendingJob({
+      id: "job1",
+      taskType: "long_running",
+      input: { data: "input1" },
+    });
+    await jobQueue.add(job);
+
+    // Listen for the abort event.
+    let abortEventTriggered = false;
+    jobQueue.on("job_aborting", (queueName, jobId) => {
+      if (jobId === job.id) {
+        abortEventTriggered = true;
+      }
+    });
+
+    // Start the queue so that it begins processing jobs.
+    await jobQueue.start();
+
+    // Wait briefly to ensure the job has started.
+    await sleep(5);
+
+    // Abort the running job.
+    await jobQueue.abort(job.id);
+
+    expect(jobQueue.waitFor(job.id)).rejects.toMatchObject({
+      name: "AbortSignalJobError",
+      message: "Aborted",
+    });
+
+    // Confirm that the job_aborting event was emitted.
+    expect(abortEventTriggered).toBe(true);
   });
 });

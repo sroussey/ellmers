@@ -8,6 +8,7 @@
 import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
+import { sleep } from "../../util/Misc";
 
 export abstract class JobError extends Error {
   public abstract retryable: boolean;
@@ -24,7 +25,7 @@ export class RetryableJobError extends JobError {
     public retryDate: Date
   ) {
     super(message);
-    this.name = "JobTransientError";
+    this.name = "RetryableJobError";
   }
   public retryable = true;
 }
@@ -38,9 +39,16 @@ export class RetryableJobError extends JobError {
 export class PermanentJobError extends JobError {
   constructor(message: string) {
     super(message);
-    this.name = "JobPermanentError";
+    this.name = "PermanentJobError";
   }
   public retryable = false;
+}
+
+export class AbortSignalJobError extends PermanentJobError {
+  constructor(message: string) {
+    super(message);
+    this.name = "AbortSignalJobError";
+  }
 }
 
 /**
@@ -79,7 +87,7 @@ export abstract class JobQueue<Input, Output> {
   public abstract aborting(): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
   public abstract complete(id: unknown, output?: Output | null, error?: JobError): Promise<void>;
-  public abstract clear(): Promise<void>;
+  public abstract deleteAll(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
   public abstract abort(jobId: unknown): Promise<void>;
 
@@ -103,7 +111,7 @@ export abstract class JobQueue<Input, Output> {
   private activeJobSignals = new Map<unknown, AbortController>();
   private activeJobPromises = new Map<
     unknown,
-    { resolve: (out: Output) => void; reject: (err: JobError) => void }
+    [{ resolve: (out: Output) => void; reject: (err: JobError) => void }]
   >();
   /**
    * Aborts a running job (if supported).
@@ -116,11 +124,12 @@ export abstract class JobQueue<Input, Output> {
     if (controller) {
       controller.abort();
       this.events.emit("job_aborting", this.queue, jobId);
+    } else {
+      console.error(`Job ${jobId} not found in activeJobSignals`);
     }
   }
 
   protected async processJob(job: Job<Input, Output>) {
-    console.error(`Processing job: ${job.id}`);
     const abortController = new AbortController();
     // Store the controller so that it can abort this job if needed.
     this.activeJobSignals.set(job.id, abortController);
@@ -131,16 +140,14 @@ export abstract class JobQueue<Input, Output> {
       const output = await this.executeJob(job, abortController.signal);
       await this.complete(job.id, output);
     } catch (err: any) {
-      console.error(`Error processing job: ${err}`);
+      // console.error(`Error processing job: ${err}`);
 
       // If the error is an abort signal, optionally handle it here.
-      if (err.name === "AbortError") {
-        // The job was aborted. You might wish to differentiate this case.
+      if (err instanceof AbortSignalJobError || err.name === "AbortSignalJobError") {
         this.events.emit("job_aborting", this.queue, job.id);
-      } else if (err instanceof RetryableJobError) {
+      } else if (err instanceof RetryableJobError || err.name === "RetryableJobError") {
         this.events.emit("job_retry", this.queue, job.id, err.retryDate);
-      } else if (err instanceof PermanentJobError) {
-        // Emit an error event for permanent errors
+      } else if (err instanceof PermanentJobError || err.name === "PermanentJobError") {
         this.events.emit("job_error", this.queue, job.id, err.message);
       } else {
         // For any generic error, treat it as permanent by wrapping it in a PermanentJobError
@@ -162,18 +169,17 @@ export abstract class JobQueue<Input, Output> {
    */
   protected onCompleted(jobId: unknown, status: JobStatus, output?: Output, error?: JobError) {
     // Find the job by jobId and resolve its promise if it exists
-    const job = this.activeJobPromises.get(jobId);
-    if (job) {
-      if (status === JobStatus.FAILED) {
-        this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
-        job.reject(error!);
-      } else if (status === JobStatus.COMPLETED) {
-        this.events.emit("job_complete", this.queue, jobId, output);
-        job.resolve(output!);
-      }
-      // Remove the job from the map after completion
-      this.activeJobPromises.delete(jobId);
+    const promises = this.activeJobPromises.get(jobId) || [];
+
+    if (status === JobStatus.FAILED) {
+      this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
+      promises.map(({ reject }) => reject(error!));
+    } else if (status === JobStatus.COMPLETED) {
+      this.events.emit("job_complete", this.queue, jobId, output);
+      promises.map(({ resolve }) => resolve(output!));
     }
+    // Remove the job from the map after completion
+    this.activeJobPromises.delete(jobId);
   }
 
   public waitFor(jobId: unknown): Promise<Output> {
@@ -181,7 +187,12 @@ export abstract class JobQueue<Input, Output> {
     return new Promise((resolve, reject) => {
       // Store the resolve and reject functions in the map using jobId as the key
       // This allows us to resolve or reject the promise later when onCompleted is called
-      this.activeJobPromises.set(jobId, { resolve, reject });
+      const promises = this.activeJobPromises.get(jobId);
+      if (promises) {
+        promises.push({ resolve, reject });
+      } else {
+        this.activeJobPromises.set(jobId, [{ resolve, reject }]);
+      }
     });
   }
 
@@ -194,7 +205,7 @@ export abstract class JobQueue<Input, Output> {
       if (canProceed) {
         const job = await this.next();
         if (job) {
-          this.processJob(job).catch((error) => console.error(`Error processing job: ${error}`));
+          this.processJob(job);
         }
       }
       setTimeout(() => this.processJobs(), this.waitDurationInMilliseconds);
@@ -226,12 +237,28 @@ export abstract class JobQueue<Input, Output> {
    */
   public async stop() {
     this.running = false;
+    await sleep(100); // Wait for many pending jobs to finish
     for (const [jobId, controller] of this.activeJobSignals.entries()) {
       controller.abort();
       this.events.emit("job_aborting", this.queue, jobId);
     }
-    this.activeJobSignals.clear();
+
+    this.activeJobPromises.forEach((promises) =>
+      promises.map(({ reject }) => reject(new PermanentJobError("Queue Restarted")))
+    );
+    await sleep(100);
     this.events.emit("queue_stop", this.queue);
+    return this;
+  }
+
+  /**
+   * Clears the queue and aborts all active jobs.
+   */
+  public async clear() {
+    await this.deleteAll();
+    this.activeJobSignals.clear();
+    this.activeJobPromises.clear();
+
     return this;
   }
 
@@ -243,12 +270,9 @@ export abstract class JobQueue<Input, Output> {
    */
   public async restart() {
     await this.stop();
-    const jobs = await this.processing();
-    jobs.forEach((job) => this.complete(job.id, null, new PermanentJobError("Queue Restarted")));
-    this.activeJobPromises.forEach(({ reject }) =>
-      reject(new PermanentJobError("Queue Restarted"))
-    );
-    this.activeJobPromises.clear();
+
+    await this.clear();
+
     await this.start();
     return this;
   }
