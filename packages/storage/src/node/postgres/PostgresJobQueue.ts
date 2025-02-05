@@ -81,7 +81,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     return await this.sql.begin(async (sql) => {
       return await sql`
         INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries, jobRunId)
-          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries}, ${job.jobRunId})
+          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries}, ${job.jobRunId!})
           RETURNING id`;
     });
   }
