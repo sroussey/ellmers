@@ -51,15 +51,15 @@ export class JobQueueLlmTask extends JobQueueTask {
       const model = await getGlobalModelRepository().findByName(modelname);
 
       if (!model) {
-        throw new Error(`JobQueueTaskTask: No model ${modelname} found ${modelname}`);
+        throw new Error(`JobQueueTaskTask: No model ${modelname} found`);
       }
       const runFn = ProviderRegistry.jobAsRunFn(runtype, model.provider);
       if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {
-      this.emit("error", err);
+      this.emit("error", err instanceof Error ? err.message : String(err));
       console.error(err);
-      return {};
+      throw err;
     }
     this.runOutputData = results ?? {};
     this.runOutputData = await this.runReactive();

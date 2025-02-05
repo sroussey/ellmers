@@ -47,6 +47,7 @@ import type {
   Model,
 } from "ellmers-ai";
 import { QUANTIZATION_DATA_TYPES } from "../model/ONNXTransformerJsModel";
+import { TaskStatus } from "ellmers-core";
 
 // @ts-ignore
 const IS_WEBGPU_AVAILABLE = !!globalThis.navigator?.gpu;
@@ -117,6 +118,9 @@ const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {
 
 function downloadProgressCallback(task: JobQueueLlmTask) {
   return (status: CallbackStatus) => {
+    if (task.status !== TaskStatus.PROCESSING) {
+      return;
+    }
     const progress = status.status === "progress" ? Math.round(status.progress) : 0;
     if (status.status === "progress") {
       task.progress = progress;
@@ -128,6 +132,9 @@ function downloadProgressCallback(task: JobQueueLlmTask) {
 function generateProgressCallback(task: JobQueueLlmTask) {
   let count = 0;
   return (text: string) => {
+    if (task.status !== TaskStatus.PROCESSING) {
+      return;
+    }
     count++;
     const result = 100 * (1 - Math.exp(-0.05 * count));
     task.progress = Math.round(Math.min(result, 100));

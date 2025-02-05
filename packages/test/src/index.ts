@@ -1,4 +1,10 @@
-import { getAiProviderRegistry } from "ellmers-ai";
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
@@ -7,7 +13,7 @@ import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
 } from "../../ai-provider/dist/tf-mediapipe";
-import { ConcurrencyLimiter, TaskInput, TaskOutput } from "ellmers-core";
+import { ConcurrencyLimiter, TaskInput, TaskOutput, getTaskQueueRegistry } from "ellmers-core";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 
 export * from "./sample/MediaPipeModelSamples";
@@ -15,24 +21,22 @@ export * from "./sample/ONNXModelSamples";
 
 export async function registerHuggingfaceLocalTasksInMemory() {
   registerHuggingfaceLocalTasks();
-  const ProviderRegistry = getAiProviderRegistry();
   const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
-    "local_hf",
+    LOCAL_ONNX_TRANSFORMERJS,
     new ConcurrencyLimiter(1, 10),
     10
   );
-  ProviderRegistry.registerQueue(LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+  getTaskQueueRegistry().registerQueue(jobQueue);
   jobQueue.start();
 }
 
 export async function registerMediaPipeTfJsLocalInMemory() {
   registerMediaPipeTfJsLocalTasks();
-  const ProviderRegistry = getAiProviderRegistry();
   const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
-    "local_media_pipe",
+    MEDIA_PIPE_TFJS_MODEL,
     new ConcurrencyLimiter(1, 10),
     10
   );
-  ProviderRegistry.registerQueue(MEDIA_PIPE_TFJS_MODEL, jobQueue);
+  getTaskQueueRegistry().registerQueue(jobQueue);
   jobQueue.start();
 }

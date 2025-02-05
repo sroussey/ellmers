@@ -6,8 +6,9 @@
 //    *******************************************************************************
 
 import { TaskOutputRepository } from "../../storage/taskoutput/TaskOutputRepository";
-import { TaskInput, Task, TaskOutput } from "./Task";
+import { TaskInput, Task, TaskOutput, TaskStatus } from "./Task";
 import { TaskGraph } from "./TaskGraph";
+import { nanoid } from "nanoid";
 
 /**
  * Class for running a task graph
@@ -129,7 +130,10 @@ export class TaskGraphRunner {
     this.provenanceInput.set(task.config.id, nodeProvenance);
     this.copyInputFromEdgesToNode(task);
 
-    const shouldUseRepository = !(task.constructor as any).sideeffects && !task.isCompound;
+    const shouldUseRepository =
+      !(task.constructor as any).sideeffects &&
+      !task.isCompound &&
+      task.status == TaskStatus.PROCESSING;
 
     let results;
 
@@ -164,18 +168,48 @@ export class TaskGraphRunner {
    * @returns The output of the task graph
    */
   public async runGraph(parentProvenance: TaskInput = {}) {
+    const taskRunId = nanoid();
+    this.dag.getNodes().forEach((node) => {
+      if (node.config) {
+        // @ts-ignore
+        node.config.currentJobRunId = taskRunId;
+      }
+      node.resetInputData();
+    });
     this.provenanceInput = new Map();
-    this.dag.getNodes().forEach((node) => node.resetInputData());
     const sortedNodes = this.dag.topologicallySortedNodes();
     this.assignLayers(sortedNodes);
+
     let results: TaskOutput[] = [];
     for (const [layerNumber, nodes] of this.layers.entries()) {
-      results = await Promise.allSettled(
+      const settledResults = await Promise.allSettled(
         nodes.map((node) =>
-          this.runTaskWithProvenance(node, layerNumber == 0 ? parentProvenance : {})
+          this.runTaskWithProvenance(node, layerNumber === 0 ? parentProvenance : {})
         )
       );
-      results = results.map((r) => r.value);
+
+      for (const result of settledResults) {
+        if (result.status === "rejected") {
+          // Abort tasks that support aborting by calling their abort method
+          await Promise.all(
+            this.dag.getNodes().map(async (node: Task) => {
+              if ([TaskStatus.PROCESSING].includes(node.status)) {
+                await node.abort();
+              }
+              if ([TaskStatus.PENDING].includes(node.status)) {
+                node.emit("error", "Aborted");
+              }
+            })
+          );
+          throw new Error(
+            `Task graph aborted due to error in layer ${layerNumber}: ${result.reason}`
+          );
+        }
+      }
+
+      results = settledResults
+        .filter((r): r is PromiseFulfilledResult<TaskOutput> => r.status === "fulfilled") //ts
+        .map((r) => r.value);
     }
     return results;
   }

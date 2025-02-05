@@ -5,6 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import { getTaskQueueRegistry } from "../QueueRegistry";
 import { SingleTask, TaskConfig } from "./Task";
 
 /**
@@ -31,5 +32,19 @@ export abstract class JobQueueTask extends SingleTask {
   declare config: JobQueueTaskWithIdsConfig;
   constructor(config: JobQueueTaskConfig) {
     super(config);
+  }
+
+  /**
+   * Aborts the task
+   * @returns A promise that resolves when the task is aborted
+   */
+  async abort(): Promise<void> {
+    if (this.config.queue) {
+      const queue = getTaskQueueRegistry().getQueue(this.config.queue);
+      if (queue) {
+        await queue.abort(this.config.currentJobId);
+      }
+    }
+    super.abort();
   }
 }

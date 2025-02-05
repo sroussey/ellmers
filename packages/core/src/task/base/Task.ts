@@ -25,7 +25,7 @@ export enum TaskStatus {
  *
  * There is no job queue at the moement.
  */
-export type TaskEvents = "start" | "complete" | "error" | "progress" | "regenerate";
+export type TaskEvents = "start" | "complete" | "abort" | "error" | "progress" | "regenerate";
 
 export interface TaskInput {
   [key: string]: any;
@@ -341,6 +341,14 @@ export abstract class TaskBase {
    */
   toDependencyJSON(): JsonTaskItem {
     return this.toJSON();
+  }
+
+  /**
+   * Aborts the task
+   * @returns A promise that resolves when the task is aborted
+   */
+  async abort(): Promise<void> {
+    this.emit("abort");
   }
 }
 
