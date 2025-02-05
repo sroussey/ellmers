@@ -59,6 +59,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   public async add(job: Job<Input, Output>) {
     job.id = job.id ?? nanoid();
+    job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     this.jobQueue.push(job);
@@ -140,7 +141,19 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     }
   }
 
-  public async clear() {
+  public async abort(jobId: unknown) {
+    const job = this.jobQueue.find((j) => j.id === jobId);
+    if (job) {
+      job.status = JobStatus.ABORTING;
+    }
+    this.abortJob(jobId);
+  }
+
+  public async getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>> {
+    return this.jobQueue.filter((job) => job.jobRunId === jobRunId);
+  }
+
+  public async deleteAll() {
     this.jobQueue = [];
   }
 

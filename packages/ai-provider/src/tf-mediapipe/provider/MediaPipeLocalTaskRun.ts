@@ -20,7 +20,8 @@ import {
  */
 export async function MediaPipeTfJsLocal_Download(
   task: DownloadModelTask,
-  runInputData: DownloadModelTaskInput
+  runInputData: DownloadModelTaskInput,
+  signal?: AbortSignal
 ) {
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"
@@ -45,7 +46,8 @@ export async function MediaPipeTfJsLocal_Download(
  */
 export async function MediaPipeTfJsLocal_Embedding(
   task: TextEmbeddingTask,
-  runInputData: TextEmbeddingTaskInput
+  runInputData: TextEmbeddingTaskInput,
+  signal?: AbortSignal
 ) {
   const textFiles = await FilesetResolver.forTextTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-text@latest/wasm"

@@ -7,15 +7,15 @@ import {
 import { MEDIA_PIPE_TFJS_MODEL } from "..";
 
 export const registerMediaPipeTfJsLocalTasks = () => {
-  const ProviderRegistry = getAiProviderRegistry();
+  const aiProviderRegistry = getAiProviderRegistry();
 
-  ProviderRegistry.registerRunFn(
+  aiProviderRegistry.registerRunFn(
     DownloadModelTask.type,
     MEDIA_PIPE_TFJS_MODEL,
     MediaPipeTfJsLocal_Download
   );
 
-  ProviderRegistry.registerRunFn(
+  aiProviderRegistry.registerRunFn(
     TextEmbeddingTask.type,
     MEDIA_PIPE_TFJS_MODEL,
     MediaPipeTfJsLocal_Embedding

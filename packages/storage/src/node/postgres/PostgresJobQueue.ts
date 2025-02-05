@@ -8,6 +8,7 @@
 import { Sql } from "postgres";
 import { Job, JobStatus, JobQueue, ILimiter, RetryableJobError, JobError } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
+import { nanoid } from "nanoid";
 
 // TODO: prepared statements
 
@@ -75,11 +76,12 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   public async add(job: Job<Input, Output>) {
     job.queueName = this.queue;
+    job.jobRunId = job.jobRunId ?? nanoid();
     const fingerprint = await makeFingerprint(job.input);
     return await this.sql.begin(async (sql) => {
       return await sql`
-        INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries)
-          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries})
+        INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries, jobRunId)
+          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries}, ${job.jobRunId!})
           RETURNING id`;
     });
   }
@@ -92,7 +94,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async get(id: number) {
     return await this.sql.begin(async (sql) => {
       const result = await sql`
-        SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+        SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error, jobRunId
           FROM job_queue
           WHERE id = ${id}
           FOR UPDATE SKIP LOCKED
@@ -110,7 +112,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     num = Number(num) || 100; // TS does not validate, so ensure it is a number
     return await this.sql.begin(async (sql) => {
       const result = await sql`
-      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error, jobRunId
         FROM job_queue
         WHERE queue = ${this.queue}
         AND status = 'NEW'
@@ -131,7 +133,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async processing() {
     return await this.sql.begin(async (sql) => {
       const result = await sql`
-      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error, jobRunId
         FROM job_queue
         WHERE queue = ${this.queue}
         AND status = 'PROCESSING'`;
@@ -148,7 +150,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async aborting() {
     return await this.sql.begin(async (sql) => {
       const result = await sql`
-      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error
+      SELECT id, fingerprint, queue, status, deadlineAt, input, retries, maxRetries, runAfter, lastRanAt, createdAt, error, jobRunId  
         FROM job_queue
         WHERE queue = ${this.queue}
         AND status = 'ABORTING'`;
@@ -168,7 +170,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
         SELECT id
           FROM job_queue
           WHERE queue = ${this.queue}
-          AND status = 'NEW'
+          AND status = ${JobStatus.PENDING}
           AND runAfter <= NOW()
           FOR UPDATE SKIP LOCKED
           LIMIT 1`;
@@ -176,7 +178,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       const id = result[0].rows[0].id;
       const jobresult = await sql`
         UPDATE job_queue 
-          SET status = 'PROCESSING'
+          SET status = ${JobStatus.PROCESSING}
           WHERE id = ${id} AND queue = ${this.queue}
           RETURNING *`;
       const job = this.createNewJob(jobresult[0].rows[0]);
@@ -250,11 +252,14 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     });
 
     if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(id, status, output, error);
+      this.onCompleted(id, status, output!, error);
     }
   }
 
-  public async clear() {
+  /**
+   * Clears all jobs from the queue.
+   */
+  public async deleteAll() {
     return await this.sql.begin(async (sql) => {
       await sql`
       DELETE FROM job_queue
@@ -275,6 +280,32 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
         FROM job_queue
         WHERE taskType = ${taskType} AND fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
       return result[0].rows[0].output;
+    });
+  }
+
+  /**
+   * Aborts a job by setting its status to "ABORTING".
+   * This method will signal the corresponding AbortController so that
+   * the job's execute() method (if it supports an AbortSignal parameter)
+   * can clean up and exit.
+   */
+  public async abort(jobId: number) {
+    await this.sql.begin(async (sql) => {
+      await sql`UPDATE job_queue SET status = 'ABORTING' WHERE id = ${jobId} AND queue = ${this.queue}`;
+    });
+    this.abortJob(jobId);
+  }
+
+  /**
+   * Retrieves all jobs for a given job run ID.
+   * @param jobRunId - The ID of the job run to retrieve
+   * @returns An array of jobs
+   */
+  public async getJobsByRunId(jobRunId: string) {
+    return await this.sql.begin(async (sql) => {
+      const result =
+        await sql`SELECT * FROM job_queue WHERE jobRunId = ${jobRunId} AND queue = ${this.queue}`;
+      return result[0].rows.map((r: any) => this.createNewJob(r));
     });
   }
 }

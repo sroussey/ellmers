@@ -47,6 +47,7 @@ import type {
   Model,
 } from "ellmers-ai";
 import { QUANTIZATION_DATA_TYPES } from "../model/ONNXTransformerJsModel";
+import { TaskStatus } from "ellmers-core";
 
 // @ts-ignore
 const IS_WEBGPU_AVAILABLE = !!globalThis.navigator?.gpu;
@@ -117,6 +118,9 @@ const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {
 
 function downloadProgressCallback(task: JobQueueLlmTask) {
   return (status: CallbackStatus) => {
+    if (task.status !== TaskStatus.PROCESSING) {
+      return;
+    }
     const progress = status.status === "progress" ? Math.round(status.progress) : 0;
     if (status.status === "progress") {
       task.progress = progress;
@@ -128,6 +132,9 @@ function downloadProgressCallback(task: JobQueueLlmTask) {
 function generateProgressCallback(task: JobQueueLlmTask) {
   let count = 0;
   return (text: string) => {
+    if (task.status !== TaskStatus.PROCESSING) {
+      return;
+    }
     count++;
     const result = 100 * (1 - Math.exp(-0.05 * count));
     task.progress = Math.round(Math.min(result, 100));
@@ -143,7 +150,8 @@ function generateProgressCallback(task: JobQueueLlmTask) {
 
 export async function HuggingFaceLocal_DownloadRun(
   task: DownloadModelTask,
-  runInputData: DownloadModelTaskInput
+  runInputData: DownloadModelTaskInput,
+  signal?: AbortSignal
 ): Promise<Partial<DownloadModelTaskOutput>> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   await getPipeline(task, model);
@@ -157,7 +165,8 @@ export async function HuggingFaceLocal_DownloadRun(
  */
 export async function HuggingFaceLocal_EmbeddingRun(
   task: TextEmbeddingTask,
-  runInputData: TextEmbeddingTaskInput
+  runInputData: TextEmbeddingTaskInput,
+  signal?: AbortSignal
 ): Promise<TextEmbeddingTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
   const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
@@ -186,7 +195,8 @@ export async function HuggingFaceLocal_EmbeddingRun(
  */
 export async function HuggingFaceLocal_TextGenerationRun(
   task: TextGenerationTask,
-  runInputData: TextGenerationTaskInput
+  runInputData: TextGenerationTaskInput,
+  signal?: AbortSignal
 ): Promise<TextGenerationTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -222,7 +232,8 @@ export async function HuggingFaceLocal_TextGenerationRun(
  */
 export async function HuggingFaceLocal_TextTranslationRun(
   task: TextTranslationTask,
-  runInputData: TextTranslationTaskInput
+  runInputData: TextTranslationTaskInput,
+  signal?: AbortSignal
 ): Promise<Partial<TextTranslationTaskOutput>> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -254,7 +265,8 @@ export async function HuggingFaceLocal_TextTranslationRun(
  */
 export async function HuggingFaceLocal_TextRewriterRun(
   task: TextRewriterTask,
-  runInputData: TextRewriterTaskInput
+  runInputData: TextRewriterTaskInput,
+  signal?: AbortSignal
 ): Promise<TextRewriterTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -293,7 +305,8 @@ export async function HuggingFaceLocal_TextRewriterRun(
 
 export async function HuggingFaceLocal_TextSummaryRun(
   task: TextSummaryTask,
-  runInputData: TextSummaryTaskInput
+  runInputData: TextSummaryTaskInput,
+  signal?: AbortSignal
 ): Promise<TextSummaryTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
@@ -322,7 +335,8 @@ export async function HuggingFaceLocal_TextSummaryRun(
  */
 export async function HuggingFaceLocal_TextQuestionAnswerRun(
   task: TextQuestionAnswerTask,
-  runInputData: TextQuestionAnswerTaskInput
+  runInputData: TextQuestionAnswerTaskInput,
+  signal?: AbortSignal
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 

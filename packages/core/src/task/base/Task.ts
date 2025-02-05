@@ -16,6 +16,7 @@ export enum TaskStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
   COMPLETED = "COMPLETED",
+  ABORTING = "ABORTING",
   FAILED = "FAILED",
 }
 
@@ -24,7 +25,7 @@ export enum TaskStatus {
  *
  * There is no job queue at the moement.
  */
-export type TaskEvents = "start" | "complete" | "error" | "progress" | "regenerate";
+export type TaskEvents = "start" | "complete" | "abort" | "error" | "progress" | "regenerate";
 
 export interface TaskInput {
   [key: string]: any;
@@ -83,18 +84,18 @@ export abstract class TaskBase {
     return ((this.constructor as typeof TaskBase).inputs as TaskInputDefinition[]) ?? [];
   }
   get outputs(): TaskOutputDefinition[] {
-    return ((this.constructor as typeof TaskBase).outputs as TaskInputDefinition[]) ?? [];
+    return ((this.constructor as typeof TaskBase).outputs as TaskOutputDefinition[]) ?? [];
   }
 
   events = new EventEmitter<TaskEvents>();
   on(name: TaskEvents, fn: (...args: any[]) => void) {
-    this.events.on.call(this.events, name, fn);
+    this.events.on(name, fn);
   }
   off(name: TaskEvents, fn: (...args: any[]) => void) {
-    this.events.off.call(this.events, name, fn);
+    this.events.off(name, fn);
   }
   emit(name: TaskEvents, ...args: any[]) {
-    this.events.emit.call(this.events, name, ...args);
+    this.events.emit(name, ...args);
   }
 
   /**
@@ -110,7 +111,7 @@ export abstract class TaskBase {
   createdAt: Date = new Date();
   startedAt?: Date;
   completedAt?: Date;
-  error: string | undefined = undefined;
+  error?: string;
 
   constructor(config: TaskConfig = {}) {
     // pull out input data from the config
@@ -184,7 +185,12 @@ export abstract class TaskBase {
   }
 
   resetInputData() {
-    this.runInputData = { ...this.defaults };
+    // Use deep clone to avoid state leakage.
+    if (typeof structuredClone === "function") {
+      this.runInputData = structuredClone(this.defaults);
+    } else {
+      this.runInputData = JSON.parse(JSON.stringify(this.defaults));
+    }
   }
 
   /**
@@ -242,9 +248,10 @@ export abstract class TaskBase {
         return typeof item === "boolean";
       case "function":
         return typeof item === "function";
+      default:
+        console.warn(`validateItem: Unknown value type: ${valueType}`);
+        return false;
     }
-    console.warn(`validateItem: Unknown value type: ${valueType}`);
-    return false;
   }
 
   /**
@@ -260,7 +267,7 @@ export abstract class TaskBase {
       return false;
     }
     if (typeof input !== "object") return false;
-    if (!inputdef.defaultValue && input[inputId] === undefined) {
+    if (inputdef.defaultValue !== undefined && input[inputId] === undefined) {
       // if there is no default value, that implies the value is required
       console.warn(
         `No default value for '${inputId}' in a ${classRef.type} so assumed required and not given (id:${this.config.id})`
@@ -269,10 +276,8 @@ export abstract class TaskBase {
     } else if (input[inputId] === undefined) {
       input[inputId] = inputdef.defaultValue;
     }
-    if (inputdef.isArray) {
-      if (!Array.isArray(input[inputId])) {
-        input[inputId] = [input[inputId]];
-      }
+    if (inputdef.isArray && !Array.isArray(input[inputId])) {
+      input[inputId] = [input[inputId]];
     }
 
     const inputlist: any[] = inputdef.isArray ? input[inputId] : [input[inputId]];
@@ -340,6 +345,14 @@ export abstract class TaskBase {
    */
   toDependencyJSON(): JsonTaskItem {
     return this.toJSON();
+  }
+
+  /**
+   * Aborts the task
+   * @returns A promise that resolves when the task is aborted
+   */
+  async abort(): Promise<void> {
+    this.emit("abort");
   }
 }
 

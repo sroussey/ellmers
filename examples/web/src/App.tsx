@@ -1,3 +1,10 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import React, { useCallback, useEffect, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
@@ -10,17 +17,17 @@ import {
   TaskGraphBuilder,
   TaskInput,
   TaskOutput,
+  getTaskQueueRegistry,
 } from "ellmers-core";
 import {
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
 } from "ellmers-storage/browser/indexeddb";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
-import { QueuesStatus } from "./QueueSatus";
+import { QueuesStatus } from "./QueueStatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
-import { getAiProviderRegistry } from "ellmers-ai";
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
@@ -29,8 +36,6 @@ import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
 } from "ellmers-ai-provider/tf-mediapipe";
-import "ellmers-task";
-import "ellmers-test";
 import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
 import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
@@ -38,31 +43,42 @@ import { env } from "@huggingface/transformers";
 env.backends.onnx.wasm.proxy = true;
 env.allowLocalModels = true;
 
-const ProviderRegistry = getAiProviderRegistry();
+const queueRegistry = getTaskQueueRegistry();
 
 registerHuggingfaceLocalTasks();
-ProviderRegistry.registerQueue(
-  LOCAL_ONNX_TRANSFORMERJS,
-  new InMemoryJobQueue<TaskInput, TaskOutput>("local_hft", new ConcurrencyLimiter(1, 10), 10)
+queueRegistry.registerQueue(
+  new InMemoryJobQueue<TaskInput, TaskOutput>(
+    LOCAL_ONNX_TRANSFORMERJS,
+    new ConcurrencyLimiter(1, 10),
+    10
+  )
 );
 
 registerMediaPipeTfJsLocalTasks();
-ProviderRegistry.registerQueue(
-  MEDIA_PIPE_TFJS_MODEL,
-  new InMemoryJobQueue<TaskInput, TaskOutput>("local_mp", new ConcurrencyLimiter(1, 10), 10)
+queueRegistry.registerQueue(
+  new InMemoryJobQueue<TaskInput, TaskOutput>(
+    MEDIA_PIPE_TFJS_MODEL,
+    new ConcurrencyLimiter(1, 10),
+    10
+  )
 );
 
-ProviderRegistry.clearQueues();
-ProviderRegistry.startQueues();
+queueRegistry.clearQueues();
+queueRegistry.startQueues();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);
 const run = builder.run.bind(builder);
 builder.run = async () => {
   console.log("Running task graph...");
-  const data = await run();
-  console.log("Task graph complete.");
-  return data;
+  try {
+    const data = await run();
+    console.log("Task graph complete.");
+    return data;
+  } catch (error) {
+    console.error("Task graph error:", error);
+    throw error;
+  }
 };
 
 const taskGraphRepo = new IndexedDbTaskGraphRepository();
@@ -143,9 +159,11 @@ export const App = () => {
     }
     builder.on("start", start);
     builder.on("complete", complete);
+    builder.on("error", complete);
     return () => {
       builder.off("start", start);
       builder.off("complete", complete);
+      builder.off("error", complete);
     };
   }, []);
 

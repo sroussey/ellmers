@@ -166,9 +166,14 @@ export class TaskGraphBuilder {
    */
   async run() {
     this.emit("start");
-    const out = await this._runner.runGraph();
-    this.emit("complete");
-    return out;
+    try {
+      const out = await this._runner.runGraph();
+      this.emit("complete");
+      return out;
+    } catch (error) {
+      this.emit("error", error);
+      throw error;
+    }
   }
 
   /**

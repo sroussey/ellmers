@@ -6,16 +6,33 @@
 //    *******************************************************************************
 
 import { describe, it, expect, afterEach } from "bun:test";
-import { Job, JobStatus } from "ellmers-core";
+import { TaskInput, TaskOutput, Job, JobStatus, AbortSignalJobError } from "ellmers-core";
 import { SqliteRateLimiter } from "../SqliteRateLimiter";
 import { SqliteJobQueue } from "../SqliteJobQueue";
 import { getDatabase } from "../../../util/db_sqlite";
 import { sleep } from "../../../util/Misc";
-import { TaskInput, TaskOutput } from "ellmers-core";
 
 class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute() {
     return { result: this.input.data.replace("input", "output") };
+  }
+}
+
+// A long-running Job that periodically checks if its abort signal is set.
+class NeverendingJob extends Job<TaskInput, TaskOutput> {
+  async execute(signal?: AbortSignal): Promise<TaskOutput> {
+    return new Promise((resolve, reject) => {
+      const intervalId = setInterval(() => {
+        // If the signal is aborted, clear the interval and reject.
+        if (signal?.aborted) {
+          clearInterval(intervalId);
+          const error = new AbortSignalJobError("Aborted via signal");
+          reject(error);
+        }
+      }, 1);
+      // Note: we purposely never call resolve so that the job runs indefinitely
+      // until it is aborted.
+    });
   }
 }
 
@@ -30,8 +47,8 @@ describe("SqliteJobQueue", () => {
     TestJob
   ).ensureTableExists();
 
-  afterEach(() => {
-    jobQueue.clear();
+  afterEach(async () => {
+    await jobQueue.clear();
   });
 
   it("should add a job to the queue", async () => {
@@ -97,7 +114,7 @@ describe("SqliteJobQueue", () => {
     const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
 
     await jobQueue.start();
-    await sleep(50);
+    await sleep(5);
     await jobQueue.stop();
 
     const job4 = await jobQueue.get(last!);
@@ -115,11 +132,128 @@ describe("SqliteJobQueue", () => {
     const last = await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
 
     await jobQueue.start();
-    await sleep(50);
+    await sleep(5);
     await jobQueue.stop();
 
     const job4 = await jobQueue.get(last!);
 
     expect(job4?.status).toBe(JobStatus.PENDING);
+  });
+
+  it("should abort a long-running job and trigger the abort event", async () => {
+    const queueName = "sqlite_test_queue_2";
+    const jobQueue = new SqliteJobQueue(
+      db,
+      queueName,
+      new SqliteRateLimiter(db, queueName, 4, 1).ensureTableExists(),
+      0,
+      NeverendingJob
+    ).ensureTableExists();
+
+    const job = new NeverendingJob({
+      taskType: "long_running",
+      input: { data: "input101" },
+    });
+
+    await jobQueue.add(job);
+
+    // Listen for the abort event.
+    let abortEventTriggered = false;
+    jobQueue.on("job_aborting", (queueName, jobId) => {
+      if (jobId === job.id) {
+        abortEventTriggered = true;
+      }
+    });
+    const waitPromise = jobQueue.waitFor(job.id);
+
+    // Start the queue so that it begins processing jobs.
+    await jobQueue.start();
+
+    // Wait briefly to ensure the job has started.
+    await sleep(5);
+
+    {
+      const jobcheck = await jobQueue.get(job.id as string);
+      expect(jobcheck?.status).toBe(JobStatus.PROCESSING);
+    }
+
+    // // Abort the running job.
+    await jobQueue.abort(job.id as string);
+
+    expect(waitPromise).rejects.toMatchObject({
+      name: "AbortSignalJobError",
+      message: "Aborted via signal",
+    });
+
+    // Confirm that the job_aborting event was emitted.
+    expect(abortEventTriggered).toBe(true);
+  });
+
+  it("should abort all jobs in a job run while leaving other jobs unaffected", async () => {
+    const queueName = "sqlite_test_queue_3";
+    const jobQueue = new SqliteJobQueue(
+      db,
+      queueName,
+      new SqliteRateLimiter(db, queueName, 4, 1).ensureTableExists(),
+      0,
+      NeverendingJob
+    ).ensureTableExists();
+
+    // Create jobs with the same jobRunId
+    const jobRunId1 = "test-run-1";
+    const jobRunId2 = "test-run-2";
+
+    // Add all jobs to queue
+    const job1id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId1,
+        taskType: "long_running",
+        input: { data: "input1" },
+      })
+    );
+    const job2id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId1,
+        taskType: "long_running",
+        input: { data: "input2" },
+      })
+    );
+    const job3id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId2,
+        taskType: "long_running",
+        input: { data: "input3" },
+      })
+    );
+    const job4id = await jobQueue.add(
+      new NeverendingJob({
+        jobRunId: jobRunId2,
+        taskType: "long_running",
+        input: { data: "input4" },
+      })
+    );
+    // Start the queue
+    await jobQueue.start();
+    await sleep(5);
+
+    // Verify some jobs have started processing
+    const processingJobs = await jobQueue.processing();
+    expect(processingJobs.length).toBeGreaterThan(0);
+
+    // Abort the first job run
+    await jobQueue.abortJobRun(jobRunId1);
+    await sleep(5);
+
+    // Check jobs from first run - should be aborting
+    expect((await jobQueue.get(job1id!))?.status).toBe(JobStatus.FAILED);
+    expect((await jobQueue.get(job2id!))?.status).toBe(JobStatus.FAILED);
+
+    // Check jobs from second run - should be unaffected
+    const job3Status = (await jobQueue.get(job3id!))?.status;
+    const job4Status = (await jobQueue.get(job4id!))?.status;
+    expect(job3Status).toBe(JobStatus.PROCESSING);
+    expect(job4Status).toBe(JobStatus.PROCESSING);
+
+    await jobQueue.stop();
   });
 });

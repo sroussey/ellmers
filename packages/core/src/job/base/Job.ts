@@ -15,13 +15,14 @@ export enum JobStatus {
 
 // ===============================================================================
 
-export type JobConstructorDetails<Input, Output> = {
+export interface JobDetails<Input, Output> {
+  id?: unknown;
+  jobRunId?: string;
   queueName?: string;
   taskType: string;
   input: Input;
   output?: Output | null;
   error?: string | null;
-  id?: unknown;
   fingerprint?: string;
   maxRetries?: number;
   status?: JobStatus;
@@ -30,10 +31,11 @@ export type JobConstructorDetails<Input, Output> = {
   lastRanAt?: Date | string | null;
   runAfter?: Date | string | null;
   retries?: number;
-};
+}
 
-export class Job<Input, Output> {
+export class Job<Input, Output> implements JobDetails<Input, Output> {
   public id: unknown;
+  public jobRunId: string | undefined;
   public queueName: string | undefined;
   public readonly taskType: string;
   public readonly input: Input;
@@ -55,8 +57,9 @@ export class Job<Input, Output> {
     queueName,
     taskType,
     input,
-    error = null,
+    jobRunId,
     id,
+    error = null,
     fingerprint = undefined,
     output = null,
     maxRetries = 10,
@@ -66,7 +69,7 @@ export class Job<Input, Output> {
     retries = 0,
     lastRanAt = null,
     runAfter = null,
-  }: JobConstructorDetails<Input, Output>) {
+  }: JobDetails<Input, Output>) {
     if (typeof runAfter === "string") runAfter = new Date(runAfter);
     if (typeof lastRanAt === "string") lastRanAt = new Date(lastRanAt);
     if (typeof createdAt === "string") createdAt = new Date(createdAt);
@@ -86,8 +89,9 @@ export class Job<Input, Output> {
     this.lastRanAt = lastRanAt;
     this.output = output;
     this.error = error;
+    this.jobRunId = jobRunId;
   }
-  execute(): Promise<Output> {
+  execute(signal?: AbortSignal): Promise<Output> {
     throw new Error("Method not implemented.");
   }
 }

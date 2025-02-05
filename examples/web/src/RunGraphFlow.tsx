@@ -1,3 +1,10 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import React, { Dispatch, SetStateAction, useEffect, useRef } from "react";
 import {
   ReactFlow,
@@ -172,6 +179,9 @@ function listenToTask(
       { active: false, progress: 100, progressText: "Error: " + text },
       setNodes
     );
+  });
+  task.on("abort", (text) => {
+    updateNodeData(taskId, { active: false, progress: 100, progressText: "Aborting" }, setNodes);
   });
   task.on("progress", (progress, progressText) => {
     updateNodeData(taskId, { active: true, progress, progressText }, setNodes);

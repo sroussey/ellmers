@@ -138,9 +138,15 @@ import {
   ConcurrencyLimiter,
   TaskInput,
   TaskOutput,
+  getTaskQueueRegistry,
 } from "ellmers-core";
 
-import { DownloadModelTask, TextRewriterCompoundTask, getAiProviderRegistry } from "ellmers-ai";
+import {
+  DownloadModelTask,
+  TextRewriterCompoundTask,
+  getAiProviderRegistry,
+  getGlobalModelRepository,
+} from "ellmers-ai";
 
 import {
   HuggingFaceLocal_DownloadRun,
@@ -168,23 +174,23 @@ await getGlobalModelRepository().connectTaskToModel(
   "onnx:Xenova/LaMini-Flan-T5-783M:q8"
 );
 
-const ProviderRegistry = getAiProviderRegistry();
-ProviderRegistry.registerRunFn(
+const aiProviderRegistry = getAiProviderRegistry();
+aiProviderRegistry.registerRunFn(
   DownloadModelTask.type,
-  ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+  LOCAL_ONNX_TRANSFORMERJS,
   HuggingFaceLocal_DownloadRun
 );
-ProviderRegistry.registerRunFn(
+aiProviderRegistry.registerRunFn(
   TextRewriterTask.type,
-  ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS,
+  LOCAL_ONNX_TRANSFORMERJS,
   HuggingFaceLocal_TextRewriterRun
 );
 const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
-  "local_hf",
+  LOCAL_ONNX_TRANSFORMERJS,
   new ConcurrencyLimiter(1, 10),
   10
 );
-ProviderRegistry.registerQueue(ModelProcessorEnum.LOCAL_ONNX_TRANSFORMERJS, jobQueue);
+getTaskQueueRegistry().registerQueue(jobQueue);
 jobQueue.start();
 
 // build and run graph

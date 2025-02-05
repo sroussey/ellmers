@@ -238,8 +238,8 @@ export class TaskGraph extends DirectedAcyclicGraph<Task, DataFlow, TaskIdType, 
  */
 function serialGraphEdges(
   tasks: TaskStream,
-  outputHandle: string,
-  inputHandle: string
+  inputHandle: string,
+  outputHandle: string
 ): DataFlow[] {
   const edges: DataFlow[] = [];
   for (let i = 0; i < tasks.length - 1; i++) {
@@ -263,6 +263,6 @@ export function serialGraph(
 ): TaskGraph {
   const graph = new TaskGraph();
   graph.addTasks(tasks);
-  graph.addDataFlows(serialGraphEdges(tasks, outputHandle, inputHandle));
+  graph.addDataFlows(serialGraphEdges(tasks, inputHandle, outputHandle));
   return graph;
 }

@@ -7,13 +7,12 @@
 
 import {
   Job,
-  type JobQueue,
-  JobConstructorDetails,
+  getTaskQueueRegistry,
+  JobDetails,
   TaskInput,
   TaskOutput,
   JobQueueTask,
 } from "ellmers-core";
-
 /**
  * Enum to define the types of job queue execution
  */
@@ -26,19 +25,19 @@ export enum JobQueueRunType {
  * Extends the base Job class to provide custom execution functionality
  * through a provided function.
  */
-class ProviderJob<Input, Output> extends Job<Input, Output> {
+class ProviderJob<Input extends TaskInput, Output extends TaskOutput> extends Job<Input, Output> {
   constructor(
-    details: JobConstructorDetails<Input, Output> & {
-      fn: () => Promise<Output>;
+    details: JobDetails<Input, Output> & {
+      fn: (signal?: AbortSignal) => Promise<Output>;
     }
   ) {
     const { fn, ...rest } = details;
     super(rest);
     this.fn = fn;
   }
-  fn: () => Promise<Output>;
-  execute(): Promise<Output> {
-    return this.fn();
+  fn: (signal?: AbortSignal) => Promise<Output>;
+  execute(signal?: AbortSignal): Promise<Output> {
+    return this.fn(signal);
   }
 }
 
@@ -47,10 +46,12 @@ class ProviderJob<Input, Output> extends Job<Input, Output> {
  * Handles the registration, retrieval, and execution of task processing functions
  * for different model providers and task types.
  */
-export class AiProviderRegistry<Input, Output> {
+export class AiProviderRegistry<Input extends TaskInput, Output extends TaskOutput> {
   // Registry of task execution functions organized by task type and model provider
-  runFnRegistry: Record<string, Record<string, (task: any, runInputData: any) => Promise<Output>>> =
-    {};
+  runFnRegistry: Record<
+    string,
+    Record<string, (task: any, runInputData: any, signal?: AbortSignal) => Promise<Output>>
+  > = {};
 
   /**
    * Registers a task execution function for a specific task type and model provider
@@ -61,7 +62,7 @@ export class AiProviderRegistry<Input, Output> {
   registerRunFn(
     taskType: string,
     modelProvider: string,
-    runFn: (task: any, runInputData: any) => Promise<Output>
+    runFn: (task: any, runInputData: any, signal?: AbortSignal) => Promise<Output>
   ) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
     this.runFnRegistry[taskType][modelProvider] = runFn;
@@ -71,23 +72,25 @@ export class AiProviderRegistry<Input, Output> {
    * Creates a job wrapper around a task execution function
    * This allows the task to be queued and executed asynchronously
    */
-  jobAsRunFn(runtype: string, modelType: string) {
-    const fn = this.runFnRegistry[runtype]?.[modelType];
-    return async (task: JobQueueTask, input: Input) => {
-      const queue = this.queues.get(modelType)!;
+  jobAsRunFn(taskType: string, modelProvider: string) {
+    const fn = this.runFnRegistry[taskType]?.[modelProvider];
+    return async (task: JobQueueTask, input: Input, signal?: AbortSignal) => {
+      const queue = getTaskQueueRegistry().getQueue(modelProvider)!;
       const job = new ProviderJob({
         queueName: queue.queue,
-        taskType: runtype,
+        jobRunId: task.config.currentJobRunId, // could be undefined
+        taskType: taskType,
         input: input,
         fn: async () => {
-          return fn(task, input);
+          return fn(task, input, signal);
         },
       });
-      const jobid = await queue.add(job);
-      task.config.currentJobId = jobid;
+      const jobId = await queue.add(job);
       task.config.queue = queue.queue;
+      task.config.currentJobRunId = job.jobRunId; // no longer undefined
+      task.config.currentJobId = jobId;
 
-      const result = queue.waitFor(jobid);
+      const result = queue.waitFor(jobId);
       return result;
     };
   }
@@ -96,41 +99,8 @@ export class AiProviderRegistry<Input, Output> {
    * Retrieves the direct execution function for a task type and model
    * Bypasses the job queue system for immediate execution
    */
-  getDirectRunFn(taskType: string, modelType: string) {
-    return this.runFnRegistry[taskType]?.[modelType];
-  }
-
-  // Map of model types to their corresponding job queues
-  queues: Map<string, JobQueue<Input, Output>> = new Map();
-
-  /**
-   * Queue management methods for starting, stopping, and clearing job queues
-   * These methods help control the execution flow of tasks across all providers
-   */
-  registerQueue(modelType: string, jobQueue: JobQueue<Input, Output>) {
-    this.queues.set(modelType, jobQueue);
-  }
-
-  getQueue(modelType: string) {
-    return this.queues.get(modelType);
-  }
-
-  startQueues() {
-    for (const queue of this.queues.values()) {
-      queue.start();
-    }
-  }
-
-  stopQueues() {
-    for (const queue of this.queues.values()) {
-      queue.stop();
-    }
-  }
-
-  clearQueues() {
-    for (const queue of this.queues.values()) {
-      queue.clear();
-    }
+  getDirectRunFn(taskType: string, modelProvider: string) {
+    return this.runFnRegistry[taskType]?.[modelProvider];
   }
 }
 

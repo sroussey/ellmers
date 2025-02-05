@@ -1,12 +1,19 @@
-import { JobStatus } from "ellmers-core";
-import { getAiProviderRegistry } from "ellmers-ai";
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
+import { JobStatus, getTaskQueueRegistry } from "ellmers-core";
 import { useCallback, useEffect, useState } from "react";
 
 export function QueueStatus({ queueType }: { queueType: string }) {
-  const queue = getAiProviderRegistry().getQueue(queueType);
+  const queue = getTaskQueueRegistry().getQueue(queueType);
   const [pending, setPending] = useState<number>(0);
   const [processing, setProcessing] = useState<number>(0);
   const [completed, setCompleted] = useState<number>(0);
+  const [aborting, setAborting] = useState<number>(0);
   const [errors, setErrors] = useState<number>(0);
 
   useEffect(() => {
@@ -14,27 +21,30 @@ export function QueueStatus({ queueType }: { queueType: string }) {
       setPending(await queue.size(JobStatus.PENDING));
       setProcessing(await queue.size(JobStatus.PROCESSING));
       setCompleted(await queue.size(JobStatus.COMPLETED));
+      setAborting(await queue.size(JobStatus.ABORTING));
       setErrors(await queue.size(JobStatus.FAILED));
     }
 
     queue.on("job_start", listen);
     queue.on("job_complete", listen);
     queue.on("job_error", listen);
-
+    queue.on("job_aborting", listen);
     listen();
 
     return () => {
       queue.off("job_start", listen);
       queue.off("job_complete", listen);
       queue.off("job_error", listen);
+      queue.off("job_aborting", listen);
     };
   }, []);
 
   const clear = useCallback(() => {
-    queue.clear();
+    queue.deleteAll();
     setPending(0);
     setProcessing(0);
     setCompleted(0);
+    setAborting(0);
     setErrors(0);
   }, [queue]);
 
@@ -42,7 +52,7 @@ export function QueueStatus({ queueType }: { queueType: string }) {
     <span>
       <span>{queue.queue}</span>: <span title="Pending">{pending}</span> /{" "}
       <span title="Processing">{processing}</span> / <span title="Completed">{completed}</span> /{" "}
-      <span title="Errors">{errors}</span>
+      <span title="Aborting">{aborting}</span> / <span title="Errors">{errors}</span>
       <button className="float-right" onClick={clear}>
         Clear
       </button>
@@ -51,7 +61,7 @@ export function QueueStatus({ queueType }: { queueType: string }) {
 }
 
 export function QueuesStatus() {
-  const queues = getAiProviderRegistry().queues;
+  const queues = getTaskQueueRegistry().queues;
   const queueKeys = Array.from(queues.keys());
 
   return (
