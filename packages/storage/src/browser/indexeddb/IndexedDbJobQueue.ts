@@ -22,7 +22,7 @@ import { ensureIndexedDbTable } from "./base/IndexedDbTable";
  * IndexedDB implementation of a job queue.
  * Provides storage and retrieval for job execution states using IndexedDB.
  */
-export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
+export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
   private dbPromise: Promise<IDBDatabase>;
 
   constructor(
