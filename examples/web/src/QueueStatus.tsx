@@ -40,7 +40,7 @@ export function QueueStatus({ queueType }: { queueType: string }) {
   }, []);
 
   const clear = useCallback(() => {
-    queue.deleteAll();
+    queue.clear();
     setPending(0);
     setProcessing(0);
     setCompleted(0);

@@ -61,6 +61,9 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
+    job.status = JobStatus.PENDING;
+
+    this.createAbortController(job.id);
 
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
@@ -286,7 +289,7 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * the job's execute() method (if it supports an AbortSignal parameter)
    * can clean up and exit.
    */
-  async abort(jobId: unknown): Promise<void> {
+  public async abort(jobId: unknown): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");

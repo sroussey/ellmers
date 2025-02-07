@@ -73,6 +73,8 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const fingerprint = await makeFingerprint(job.input);
     job.fingerprint = fingerprint;
     job.jobRunId = job.jobRunId ?? nanoid();
+    job.status = JobStatus.PENDING;
+
     const AddQuery = `
       INSERT INTO job_queue(queue, taskType, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId)
 		    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -103,6 +105,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     );
 
     job.id = result?.id;
+    this.createAbortController(job.id);
     return result?.id;
   }
 

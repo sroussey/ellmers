@@ -10,10 +10,11 @@ import { IndexedDbJobQueue } from "../IndexedDbJobQueue";
 import { InMemoryRateLimiter } from "../../inmemory/InMemoryRateLimiter";
 import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueTests";
 import "fake-indexeddb/auto";
+import { nanoid } from "nanoid";
 
 function createIndexedDbJobQueue() {
   return new IndexedDbJobQueue<TaskInput, TaskOutput>(
-    `indexeddb_test_queue_${Date.now()}`,
+    `indexeddb_test_queue_${nanoid()}`,
     new InMemoryRateLimiter(4, 1),
     TestJob,
     1

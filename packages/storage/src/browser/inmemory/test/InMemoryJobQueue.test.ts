@@ -8,10 +8,11 @@
 import { InMemoryJobQueue } from "../InMemoryJobQueue";
 import { InMemoryRateLimiter } from "../InMemoryRateLimiter";
 import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueTests";
+import { nanoid } from "nanoid";
 
 function createInMemoryJobQueue() {
   return new InMemoryJobQueue(
-    `in_memory_test_queue_${Date.now()}`,
+    `in_memory_test_queue_${nanoid()}`,
     new InMemoryRateLimiter(4, 1),
     TestJob,
     1

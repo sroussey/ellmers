@@ -7,7 +7,7 @@
 
 import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
-import { Job, JobStatus, JobDetails } from "./Job";
+import { Job, JobStatus } from "./Job";
 import { sleep } from "../../util/Misc";
 
 export abstract class JobError extends Error {
@@ -75,8 +75,6 @@ export interface JobQueueStats {
   totalJobs: number;
   completedJobs: number;
   failedJobs: number;
-  processingJobs: number;
-  pendingJobs: number;
   abortedJobs: number;
   retriedJobs: number;
   averageProcessingTime?: number;
@@ -112,8 +110,6 @@ export abstract class JobQueue<Input, Output> {
       totalJobs: 0,
       completedJobs: 0,
       failedJobs: 0,
-      processingJobs: 0,
-      pendingJobs: 0,
       abortedJobs: 0,
       retriedJobs: 0,
       lastUpdateTime: new Date(),
@@ -193,21 +189,35 @@ export abstract class JobQueue<Input, Output> {
   }
 
   /**
+   * Creates an abort controller for a job and adds it to the activeJobSignals map
+   */
+  protected createAbortController(jobId: unknown): AbortController {
+    if (!jobId) throw new Error("Cannot create abort controller for undefined job");
+    if (this.activeJobSignals.has(jobId)) {
+      throw new Error(`Abort controller for job ${jobId} already exists`);
+    }
+    const abortController = new AbortController();
+    this.activeJobSignals.set(jobId, abortController);
+    return abortController;
+  }
+
+  /**
    * Processes a job and handles its lifecycle including retries and error handling
    */
   protected async processJob(job: Job<Input, Output>): Promise<void> {
     if (!job || !job.id) throw new Error("Invalid job provided for processing");
 
-    const abortController = new AbortController();
-    this.activeJobSignals.set(job.id, abortController);
     const startTime = Date.now();
 
     try {
       await this.validateJobState(job);
       await this.limiter.recordJobStart();
-      this.stats.processingJobs++;
       this.emitStatsUpdate();
 
+      const abortController = this.activeJobSignals.get(job.id);
+      if (!abortController) {
+        throw new Error(`Abort controller for job ${job.id} not found`);
+      }
       this.events.emit("job_start", this.queue, job.id);
       const output = await this.executeJob(job, abortController.signal);
       await this.complete(job.id, output);
@@ -215,7 +225,6 @@ export abstract class JobQueue<Input, Output> {
       this.processingTimes.set(job.id, Date.now() - startTime);
       this.updateAverageProcessingTime();
     } catch (err: any) {
-      console.error({ job, err });
       const error = this.normalizeError(err);
 
       if (error instanceof AbortSignalJobError) {
@@ -233,7 +242,6 @@ export abstract class JobQueue<Input, Output> {
     } finally {
       await this.limiter.recordJobCompletion();
       this.activeJobSignals.delete(job.id);
-      this.stats.processingJobs--;
       this.emitStatsUpdate();
     }
   }
@@ -300,12 +308,12 @@ export abstract class JobQueue<Input, Output> {
 
     if (status === JobStatus.FAILED) {
       this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
-      promises.forEach(({ reject }) => reject(error!));
       this.stats.failedJobs++;
+      promises.forEach(({ reject }) => reject(error!));
     } else if (status === JobStatus.COMPLETED) {
       this.events.emit("job_complete", this.queue, jobId, output!);
-      promises.forEach(({ resolve }) => resolve(output!));
       this.stats.completedJobs++;
+      promises.forEach(({ resolve }) => resolve(output!));
     }
 
     this.activeJobPromises.delete(jobId);
@@ -346,8 +354,9 @@ export abstract class JobQueue<Input, Output> {
    * Main job processing loop
    */
   private async processJobs(): Promise<void> {
-    if (!this.running) return;
-
+    if (!this.running) {
+      return;
+    }
     try {
       const canProceed = await this.limiter.canProceed();
       if (canProceed) {
@@ -367,7 +376,9 @@ export abstract class JobQueue<Input, Output> {
    * Starts the job queue
    */
   public async start(): Promise<this> {
-    if (this.running) return this;
+    if (this.running) {
+      return this;
+    }
 
     this.running = true;
     this.events.emit("queue_start", this.queue);
@@ -388,9 +399,8 @@ export abstract class JobQueue<Input, Output> {
     await sleep(sleepTime);
 
     // Abort all active jobs
-    for (const [jobId, controller] of this.activeJobSignals.entries()) {
-      controller.abort();
-      this.events.emit("job_aborting", this.queue, jobId);
+    for (const [jobId] of this.activeJobSignals.entries()) {
+      this.abortJob(jobId);
     }
 
     // Reject all waiting promises
@@ -417,8 +427,6 @@ export abstract class JobQueue<Input, Output> {
       totalJobs: 0,
       completedJobs: 0,
       failedJobs: 0,
-      processingJobs: 0,
-      pendingJobs: 0,
       abortedJobs: 0,
       retriedJobs: 0,
       lastUpdateTime: new Date(),

@@ -9,12 +9,13 @@ import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueT
 import { SqliteJobQueue } from "../SqliteJobQueue";
 import { SqliteRateLimiter } from "../SqliteRateLimiter";
 import { getDatabase } from "../../../util/db_sqlite";
+import { nanoid } from "nanoid";
 
 // Create an in-memory database
 const db = getDatabase(":memory:");
 
 function createSqliteJobQueue() {
-  const queueName = `sqlite_test_queue_${Date.now()}`;
+  const queueName = `sqlite_test_queue_${nanoid()}`;
   return new SqliteJobQueue(
     db,
     queueName,

@@ -14,6 +14,7 @@ import {
   JobError,
   RetryableJobError,
   PermanentJobError,
+  sleep,
 } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
@@ -62,6 +63,8 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
+    job.status = JobStatus.PENDING;
+    this.createAbortController(job.id);
     this.jobQueue.push(job);
     return job.id;
   }
@@ -114,6 +117,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * @param error - Optional error message if job failed
    */
   public async complete(id: unknown, output: Output, error?: JobError) {
+    await sleep(0); // ensure does not run straight through and thus act like the others
     const job = this.jobQueue.find((j) => j.id === id);
     if (!job) {
       throw new Error(`Job ${id} not found`);
