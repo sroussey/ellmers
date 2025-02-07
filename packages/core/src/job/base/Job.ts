@@ -19,7 +19,6 @@ export interface JobDetails<Input, Output> {
   id?: unknown;
   jobRunId?: string;
   queueName?: string;
-  taskType: string;
   input: Input;
   output?: Output | null;
   error?: string | null;
@@ -38,7 +37,6 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
   public id: unknown;
   public jobRunId: string | undefined;
   public queueName: string | undefined;
-  public readonly taskType: string;
   public readonly input: Input;
   public readonly maxRetries: number;
   public readonly createdAt: Date;
@@ -56,7 +54,6 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
 
   constructor({
     queueName,
-    taskType,
     input,
     jobRunId,
     id,
@@ -79,7 +76,6 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     this.id = id;
     this.fingerprint = fingerprint;
     this.queueName = queueName;
-    this.taskType = taskType;
     this.input = input;
     this.maxRetries = maxRetries;
     this.createdAt = createdAt;

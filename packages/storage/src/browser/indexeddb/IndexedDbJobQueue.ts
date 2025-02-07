@@ -49,7 +49,7 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
         store.createIndex("status", "status", { unique: false });
         store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
         store.createIndex("jobRunId", "jobRunId", { unique: false });
-        store.createIndex("taskType_fingerprint_status", ["taskType", "fingerprint", "status"], {
+        store.createIndex("fingerprint_status", ["fingerprint", "status"], {
           unique: false,
         });
       }
@@ -73,7 +73,6 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
       jobRunId: job.jobRunId,
       queueName: this.queue,
       fingerprint: job.fingerprint,
-      taskType: job.taskType,
       input: job.input,
       status: job.status,
       output: job.output,
@@ -350,16 +349,16 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Retrieves the output for a job based on its task type and input.
+   * Retrieves the output for a job based input.
    * Uses a compound key to query the IndexedDB for the job's output.
    */
-  async outputForInput(taskType: string, input: Input): Promise<Output | null> {
+  async outputForInput(input: Input): Promise<Output | null> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const fingerprint = await makeFingerprint(input);
-    const index = store.index("taskType_fingerprint_status");
-    const request = index.get([taskType, fingerprint, JobStatus.COMPLETED]);
+    const index = store.index("fingerprint_status");
+    const request = index.get([fingerprint, JobStatus.COMPLETED]);
 
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {

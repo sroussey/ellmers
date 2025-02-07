@@ -19,7 +19,7 @@ import { IndexedDbJobQueue } from "../browser/indexeddb";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute(signal: AbortSignal): Promise<TaskOutput> {
-    if (this.taskType === "long_running") {
+    if (this.input.taskType === "long_running") {
       return new Promise<TaskOutput>((resolve, reject) => {
         // Add abort listener immediately
         signal.addEventListener(
@@ -54,7 +54,7 @@ export function runGenericJobQueueTests(
     });
 
     it("should complete a job in the queue", async () => {
-      const id = await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+      const id = await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       await sleep(100);
       await jobQueue.complete(id, { result: "success" });
       const job = await jobQueue.get(id);
@@ -63,19 +63,19 @@ export function runGenericJobQueueTests(
     });
 
     it("should add a job to the queue", async () => {
-      const job = new TestJob({ taskType: "task1", input: { data: "input1" } });
+      const job = new TestJob({ input: { taskType: "task1", data: "input1" } });
       const id = await jobQueue.add(job);
       expect(await jobQueue.size()).toBe(1);
       const retrievedJob = await jobQueue.get(id);
       expect(retrievedJob?.status).toBe(JobStatus.PENDING);
-      expect(retrievedJob?.taskType).toBe("task1");
+      expect(retrievedJob?.input.taskType).toBe("task1");
       expect(retrievedJob?.id).toBe(id);
     });
 
     it("should process jobs and get stats", async () => {
       await jobQueue.start();
-      const job1 = new TestJob({ taskType: "other", input: { data: "input1" } });
-      const job2 = new TestJob({ taskType: "other", input: { data: "input2" } });
+      const job1 = new TestJob({ input: { taskType: "other", data: "input1" } });
+      const job2 = new TestJob({ input: { taskType: "other", data: "input2" } });
       const job1id = await jobQueue.add(job1);
       const job2id = await jobQueue.add(job2);
       await jobQueue.waitFor(job1id);
@@ -89,8 +89,8 @@ export function runGenericJobQueueTests(
     });
 
     it("should clear all jobs in the queue", async () => {
-      const job1 = new TestJob({ taskType: "task1", input: { data: "input1" } });
-      const job2 = new TestJob({ taskType: "task1", input: { data: "input1" } });
+      const job1 = new TestJob({ input: { taskType: "task1", data: "input1" } });
+      const job2 = new TestJob({ input: { taskType: "task1", data: "input1" } });
       await jobQueue.add(job1);
       await jobQueue.add(job2);
       await jobQueue.clear();
@@ -98,19 +98,19 @@ export function runGenericJobQueueTests(
     });
 
     it("should retrieve the output for a given task type and input", async () => {
-      const id = await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-      await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
+      const id = await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task2", data: "input2" } }));
       await jobQueue.complete(id, { result: "success" });
-      const output = await jobQueue.outputForInput("task1", { data: "input1" });
+      const output = await jobQueue.outputForInput({ taskType: "task1", data: "input1" });
       expect(output).toEqual({ result: "success" });
     });
 
     it("should run the queue and execute all", async () => {
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-      await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task2", data: "input2" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       const last = await jobQueue.add(
-        new TestJob({ taskType: "task2", input: { data: "input2" } })
+        new TestJob({ input: { taskType: "task2", data: "input2" } })
       );
       await jobQueue.start();
       await jobQueue.waitFor(last);
@@ -122,13 +122,13 @@ export function runGenericJobQueueTests(
     });
 
     it("should run the queue and get rate limited", async () => {
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-      await jobQueue.add(new TestJob({ taskType: "task2", input: { data: "input2" } }));
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
-      await jobQueue.add(new TestJob({ taskType: "task1", input: { data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task2", data: "input2" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       const last = await jobQueue.add(
-        new TestJob({ taskType: "task2", input: { data: "input2" } })
+        new TestJob({ input: { taskType: "task2", data: "input2" } })
       );
       await jobQueue.start();
       await sleep(10);
@@ -139,8 +139,7 @@ export function runGenericJobQueueTests(
 
     it("should abort a long-running job and trigger the abort event", async () => {
       const job = new TestJob({
-        taskType: "long_running",
-        input: { data: "input101" },
+        input: { taskType: "long_running", data: "input101" },
       });
       await jobQueue.add(job);
       let abortEventTriggered = false;
@@ -167,23 +166,19 @@ export function runGenericJobQueueTests(
       const jobRunId2 = "test-run-2";
       const job1 = new TestJob({
         jobRunId: jobRunId1,
-        taskType: "long_running",
-        input: { data: "input1" },
+        input: { taskType: "long_running", data: "input1" },
       });
       const job2 = new TestJob({
         jobRunId: jobRunId1,
-        taskType: "long_running",
-        input: { data: "input2" },
+        input: { taskType: "long_running", data: "input2" },
       });
       const job3 = new TestJob({
         jobRunId: jobRunId2,
-        taskType: "long_running",
-        input: { data: "input3" },
+        input: { taskType: "long_running", data: "input3" },
       });
       const job4 = new TestJob({
         jobRunId: jobRunId2,
-        taskType: "long_running",
-        input: { data: "input4" },
+        input: { taskType: "long_running", data: "input4" },
       });
       const job1id = await jobQueue.add(job1);
       const job2id = await jobQueue.add(job2);

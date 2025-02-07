@@ -43,7 +43,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         queue text NOT NULL,
         jobRunId text NOT NULL,
         status TEXT NOT NULL default 'NEW',
-        taskType TEXT NOT NULL,
         input TEXT NOT NULL,
         output TEXT,
         retries INTEGER default 0,
@@ -76,14 +75,13 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.status = JobStatus.PENDING;
 
     const AddQuery = `
-      INSERT INTO job_queue(queue, taskType, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId)
-		    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId)
+		    VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id`;
     const stmt = this.db.prepare<
       { id: string },
       [
         queue: string,
-        taskType: string,
         fingerpring: string,
         input: string,
         runAfter: string | null,
@@ -95,7 +93,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
     const result = stmt.get(
       this.queue,
-      job.taskType,
       fingerprint,
       JSON.stringify(job.input),
       toSQLiteTimestamp(job.runAfter),
@@ -340,18 +337,18 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a  input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     const OutputQuery = `
       SELECT output
         FROM job_queue
-        WHERE queue = ? AND taskType = ? AND fingerprint = ? AND status = ?`;
+        WHERE queue = ? AND fingerprint = ? AND status = ?`;
     const stmt = this.db.prepare(OutputQuery);
-    const result = stmt.get(this.queue, taskType, fingerprint, JobStatus.COMPLETED) as
+    const result = stmt.get(this.queue, fingerprint, JobStatus.COMPLETED) as
       | {
           output: string;
         }

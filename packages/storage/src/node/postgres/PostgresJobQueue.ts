@@ -279,17 +279,17 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a given input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     return await this.sql.begin(async (sql) => {
       const result = await sql`
       SELECT output
         FROM job_queue
-        WHERE taskType = ${taskType} AND fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
+        WHERE fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
       return result[0].rows[0].output;
     });
   }

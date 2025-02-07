@@ -126,7 +126,7 @@ export abstract class JobQueue<Input, Output> {
   public abstract size(status?: JobStatus): Promise<number>;
   public abstract complete(id: unknown, output?: Output, error?: JobError): Promise<void>;
   protected abstract deleteAll(): Promise<void>;
-  public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
+  public abstract outputForInput(input: Input): Promise<Output | null>;
   public abstract abort(jobId: unknown): Promise<void>;
   public abstract getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>>;
 
@@ -307,12 +307,12 @@ export abstract class JobQueue<Input, Output> {
     const promises = this.activeJobPromises.get(jobId) || [];
 
     if (status === JobStatus.FAILED) {
-      this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
       this.stats.failedJobs++;
+      this.events.emit("job_error", this.queue, jobId, `${error!.name}: ${error!.message}`);
       promises.forEach(({ reject }) => reject(error!));
     } else if (status === JobStatus.COMPLETED) {
-      this.events.emit("job_complete", this.queue, jobId, output!);
       this.stats.completedJobs++;
+      this.events.emit("job_complete", this.queue, jobId, output!);
       promises.forEach(({ resolve }) => resolve(output!));
     }
 

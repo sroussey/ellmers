@@ -174,19 +174,15 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a given and input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     return (
-      this.jobQueue.find(
-        (j) =>
-          j.taskType === taskType &&
-          j.fingerprint === fingerprint &&
-          j.status === JobStatus.COMPLETED
-      )?.output ?? null
+      this.jobQueue.find((j) => j.fingerprint === fingerprint && j.status === JobStatus.COMPLETED)
+        ?.output ?? null
     );
   }
 }
