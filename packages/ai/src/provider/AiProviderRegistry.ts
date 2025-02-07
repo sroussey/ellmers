@@ -13,6 +13,7 @@ import {
   TaskOutput,
   JobQueueTask,
 } from "ellmers-core";
+import { JobQueueAiTask } from "../task/base/JobQueueAiTask";
 /**
  * Enum to define the types of job queue execution
  */
@@ -25,7 +26,7 @@ export enum JobQueueRunType {
  * Extends the base Job class to provide custom execution functionality
  * through a provided function.
  */
-export class ProviderJob<Input extends TaskInput, Output extends TaskOutput> extends Job<
+export class AiProviderJob<Input extends TaskInput, Output extends TaskOutput> extends Job<
   Input,
   Output
 > {
@@ -53,7 +54,10 @@ export class AiProviderRegistry<Input extends TaskInput, Output extends TaskOutp
   // Registry of task execution functions organized by task type and model provider
   runFnRegistry: Record<
     string,
-    Record<string, (task: any, runInputData: any, signal?: AbortSignal) => Promise<Output>>
+    Record<
+      string,
+      (task: JobQueueAiTask, runInputData: any, signal?: AbortSignal) => Promise<Output>
+    >
   > = {};
 
   /**
@@ -75,11 +79,11 @@ export class AiProviderRegistry<Input extends TaskInput, Output extends TaskOutp
    * Creates a job wrapper around a task execution function
    * This allows the task to be queued and executed asynchronously
    */
-  jobAsRunFn(taskType: string, modelProvider: string) {
+  jobAsTaskRunFn(taskType: string, modelProvider: string) {
     const fn = this.runFnRegistry[taskType]?.[modelProvider];
     return async (task: JobQueueTask, input: Input, signal?: AbortSignal) => {
       const queue = getTaskQueueRegistry().getQueue(modelProvider)!;
-      const job = new ProviderJob({
+      const job = new AiProviderJob({
         queueName: queue.queue,
         jobRunId: task.config.currentJobRunId, // could be undefined
         taskType: taskType,

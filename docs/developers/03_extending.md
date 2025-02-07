@@ -135,7 +135,7 @@ We separate any long runing tasks as Jobs. Jobs could potentially be run anywher
 
 A subclass of `JobQueueTask` will dispatch the job to the correct queue, and wait for the result. The `run()` method will return the result of the job.
 
-Subclasses of `JobQueueLlmTask` are organized around a specific task. Which model is used will determine the queue to use, and is required. This abstract class will look up the model and determine the queue to use based on `ProviderReigstry`.
+Subclasses of `JobQueueAiTask` are organized around a specific task. Which model is used will determine the queue to use, and is required. This abstract class will look up the model and determine the queue to use based on `ProviderReigstry`.
 
 To add a new embedding source, for example, you would not create a new task, but a new job queue for the new provider and then register the how to run the emedding service in the `ProviderRegistry` for the specific task, in this case `TextEmbeddingTask`. Then you use the existing `TextEmbeddingTask` with your new model name. This allows swapping out the model without changing the task, runing multiple models in parallel, and so on.
 

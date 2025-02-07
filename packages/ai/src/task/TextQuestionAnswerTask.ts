@@ -14,7 +14,7 @@ import {
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
-import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { question_answering_model } from "./base/TaskIOTypes";
 export type TextQuestionAnswerTaskInput = {
   context: string;
@@ -28,7 +28,7 @@ export type TextQuestionAnswerTaskOutput = {
 /**
  * This is a special case of text generation that takes a context and a question
  */
-export class TextQuestionAnswerTask extends JobQueueLlmTask {
+export class TextQuestionAnswerTask extends JobQueueAiTask {
   public static inputs = [
     {
       id: "context",

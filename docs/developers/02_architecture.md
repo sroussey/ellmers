@@ -159,33 +159,33 @@ classDiagram
     SimpleTask <|-- JobQueueTask
     style JobQueueTask type:abstract,stroke-dasharray: 5 5
 
-    class JobQueueLlmTask{
+    class JobQueueAiTask{
       string model
     }
-    <<abstract>> JobQueueLlmTask
-    JobQueueTask <|-- JobQueueLlmTask
-    style JobQueueLlmTask type:abstract,stroke-dasharray: 5 5
+    <<abstract>> JobQueueAiTask
+    JobQueueTask <|-- JobQueueAiTask
+    style JobQueueAiTask type:abstract,stroke-dasharray: 5 5
 
 
 
   class DownloadModelTask{
     run() model
   }
-  JobQueueLlmTask <|-- DownloadModelTask
+  JobQueueAiTask <|-- DownloadModelTask
   style DownloadModelTask type:model,stroke-width:2px
 
   class TextEmbeddingTask{
     string text
     run() vector
   }
-  JobQueueLlmTask <|-- TextEmbeddingTask
+  JobQueueAiTask <|-- TextEmbeddingTask
   style TextEmbeddingTask type:model,stroke-width:2px
 
   class TextGenerationTask{
     string prompt
     run() text
   }
-  JobQueueLlmTask <|-- TextGenerationTask
+  JobQueueAiTask <|-- TextGenerationTask
   style TextGenerationTask type:model,stroke-width:2px
 
   class TextQuestionAnswerTask{
@@ -193,7 +193,7 @@ classDiagram
     string context
     run() answer
   }
-  JobQueueLlmTask <|-- TextQuestionAnswerTask
+  JobQueueAiTask <|-- TextQuestionAnswerTask
   style TextQuestionAnswerTask type:model,stroke-width:2px
 
   class TextRewriterTask{
@@ -201,14 +201,14 @@ classDiagram
     string text
     run() text
   }
-  JobQueueLlmTask <|-- TextRewriterTask
+  JobQueueAiTask <|-- TextRewriterTask
   style TextRewriterTask type:model,stroke-width:2px
 
   class TextSummaryTask{
     string text
     run() text
   }
-  JobQueueLlmTask <|-- TextSummaryTask
+  JobQueueAiTask <|-- TextSummaryTask
   style TextSummaryTask type:model,stroke-width:2px
 
   class TextTranslationTask{
@@ -217,7 +217,7 @@ classDiagram
     string target
     run() text
   }
-  JobQueueLlmTask <|-- TextTranslationTask
+  JobQueueAiTask <|-- TextTranslationTask
   style TextTranslationTask type:model,stroke-width:2px
 
   class DebugLogTask{

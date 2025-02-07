@@ -22,7 +22,7 @@ import {
 } from "@huggingface/transformers";
 import { ElVector, getGlobalModelRepository } from "ellmers-ai";
 import type {
-  JobQueueLlmTask,
+  JobQueueAiTask,
   DownloadModelTask,
   DownloadModelTaskInput,
   DownloadModelTaskOutput,
@@ -98,7 +98,7 @@ const pipelines = new Map<Model, any>();
  * @param model
  * @param options
  */
-const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {}) => {
+const getPipeline = async (task: JobQueueAiTask, model: Model, options: any = {}) => {
   if (!pipelines.has(model)) {
     pipelines.set(
       model,
@@ -116,7 +116,7 @@ const getPipeline = async (task: JobQueueLlmTask, model: Model, options: any = {
   return await pipelines.get(model);
 };
 
-function downloadProgressCallback(task: JobQueueLlmTask) {
+function downloadProgressCallback(task: JobQueueAiTask) {
   return (status: CallbackStatus) => {
     if (task.status !== TaskStatus.PROCESSING) {
       return;
@@ -129,7 +129,7 @@ function downloadProgressCallback(task: JobQueueLlmTask) {
   };
 }
 
-function generateProgressCallback(task: JobQueueLlmTask) {
+function generateProgressCallback(task: JobQueueAiTask) {
   let count = 0;
   return (text: string) => {
     if (task.status !== TaskStatus.PROCESSING) {

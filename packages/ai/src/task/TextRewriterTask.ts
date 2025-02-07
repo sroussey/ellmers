@@ -14,7 +14,7 @@ import {
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
 } from "ellmers-core";
-import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { rewriting_model } from "./base/TaskIOTypes";
 
 export type TextRewriterTaskInput = {
@@ -30,7 +30,7 @@ export type TextRewriterTaskOutput = {
  * This is a special case of text generation that takes a prompt and text to rewrite
  */
 
-export class TextRewriterTask extends JobQueueLlmTask {
+export class TextRewriterTask extends JobQueueAiTask {
   public static inputs = [
     {
       id: "text",

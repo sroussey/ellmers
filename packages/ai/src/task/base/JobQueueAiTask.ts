@@ -17,11 +17,11 @@ import { getGlobalModelRepository } from "../../model/ModelRegistry";
  * A base class for AI related tasks that run in a job queue.
  * Extends the JobQueueTask class to provide LLM-specific functionality.
  */
-export class JobQueueLlmTask extends JobQueueTask {
-  static readonly type: string = "JobQueueLlmTask";
+export class JobQueueAiTask extends JobQueueTask {
+  static readonly type: string = "JobQueueAiTask";
 
   /**
-   * Creates a new JobQueueLlmTask instance
+   * Creates a new JobQueueAiTask instance
    * @param config - Configuration object for the task
    */
   constructor(config: JobQueueTaskConfig = {}) {
@@ -53,7 +53,7 @@ export class JobQueueLlmTask extends JobQueueTask {
       if (!model) {
         throw new Error(`JobQueueTaskTask: No model ${modelname} found`);
       }
-      const runFn = ProviderRegistry.jobAsRunFn(runtype, model.provider);
+      const runFn = ProviderRegistry.jobAsTaskRunFn(runtype, model.provider);
       if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {
@@ -82,7 +82,7 @@ export class JobQueueLlmTask extends JobQueueTask {
     }
     if (valueType.endsWith("_model")) {
       const tasks = await modelRepo.findTasksByModel(item);
-      return !!tasks?.includes((this.constructor as typeof JobQueueLlmTask).type);
+      return !!tasks?.includes((this.constructor as typeof JobQueueAiTask).type);
     }
 
     return super.validateItem(valueType, item);

@@ -16,7 +16,7 @@ import {
   JobQueueTaskConfig,
 } from "ellmers-core";
 import { getGlobalModelRepository } from "../model/ModelRegistry";
-import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import {
   embedding_model,
   generation_model,
@@ -40,7 +40,7 @@ export type DownloadModelTaskOutput = {
   translation_model: translation_model;
 };
 
-export class DownloadModelTask extends JobQueueLlmTask {
+export class DownloadModelTask extends JobQueueAiTask {
   public static inputs = [
     {
       id: "model",
