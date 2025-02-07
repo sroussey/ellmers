@@ -25,7 +25,10 @@ export enum JobQueueRunType {
  * Extends the base Job class to provide custom execution functionality
  * through a provided function.
  */
-class ProviderJob<Input extends TaskInput, Output extends TaskOutput> extends Job<Input, Output> {
+export class ProviderJob<Input extends TaskInput, Output extends TaskOutput> extends Job<
+  Input,
+  Output
+> {
   constructor(
     details: JobDetails<Input, Output> & {
       fn: (signal?: AbortSignal) => Promise<Output>;

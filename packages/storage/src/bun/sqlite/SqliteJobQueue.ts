@@ -5,7 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter, JobQueue, Job, JobStatus, RetryableJobError, JobError } from "ellmers-core";
+import {
+  ILimiter,
+  JobQueue,
+  Job,
+  JobStatus,
+  RetryableJobError,
+  JobError,
+  PermanentJobError,
+} from "ellmers-core";
 import { makeFingerprint, toSQLiteTimestamp } from "../../util/Misc";
 import { type Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
@@ -21,10 +29,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     protected db: Database,
     queue: string,
     limiter: ILimiter,
-    waitDurationInMilliseconds = 100,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    waitDurationInMilliseconds = 100
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
   }
 
   public ensureTableExists() {
@@ -44,7 +52,8 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         lastRanAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         deadlineAt TEXT,
-        error TEXT
+        error TEXT,
+        errorCode TEXT
       );
       
       CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
@@ -52,23 +61,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
       CREATE INDEX IF NOT EXISTS job_queue_jobRunId_idx ON job_queue (queue, jobRunId);
     `);
     return this;
-  }
-
-  /**
-   * Creates a new job instance from the provided database results.
-   * @param results - The job data from the database
-   * @returns A new Job instance with populated properties
-   */
-  public createNewJob(results: any): Job<Input, Output> {
-    return new this.jobClass({
-      ...results,
-      input: JSON.parse(results.input) as Input,
-      output: results.output ? (JSON.parse(results.output) as Output) : undefined,
-      runAfter: results.runAfter ? new Date(results.runAfter + "Z") : undefined,
-      createdAt: results.createdAt ? new Date(results.createdAt + "Z") : undefined,
-      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt + "Z") : undefined,
-      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt + "Z") : undefined,
-    });
   }
 
   /**
@@ -279,44 +271,59 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async complete(id: string, output: Output | null = null, error?: JobError) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
-    let status: JobStatus;
+
     if (error) {
       job.error = error.message;
+      job.errorCode = error.name;
       job.retries = (job.retries || 0) + 1;
       if (error instanceof RetryableJobError) {
-        status = job.retries >= job.maxRetries ? JobStatus.FAILED : JobStatus.PENDING;
+        if (job.retries >= job.maxRetries) {
+          job.status = JobStatus.FAILED;
+          job.completedAt = new Date();
+        } else {
+          job.status = JobStatus.PENDING;
+          job.runAfter = error.retryDate;
+        }
+      } else if (error instanceof PermanentJobError) {
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       } else {
-        status = JobStatus.FAILED;
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       }
     } else {
-      status = JobStatus.COMPLETED;
+      job.status = JobStatus.COMPLETED;
       job.output = output;
+      job.error = null;
+      job.errorCode = null;
+      job.completedAt = new Date();
     }
+
     let updateQuery: string;
     let params: any[];
-    if (error && error instanceof RetryableJobError && status === JobStatus.PENDING) {
+    if (error && job.status === JobStatus.PENDING) {
       updateQuery = `
           UPDATE job_queue 
-            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP, runAfter = ?
+            SET error = ?, errorCode = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP, runAfter = ?
+            WHERE id = ? AND queue = ?`;
+      params = [error.message, error.name, job.status, job.runAfter.toISOString(), id, this.queue];
+    } else {
+      updateQuery = `
+          UPDATE job_queue 
+            SET output = ?, error = ?, errorCode = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
             WHERE id = ? AND queue = ?`;
       params = [
         JSON.stringify(output),
-        error.message,
-        status,
-        error.retryDate.toISOString(),
+        job.error ?? null,
+        job.errorCode ?? null,
+        job.status,
         id,
         this.queue,
       ];
-    } else {
-      updateQuery = `
-          UPDATE job_queue 
-            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
-            WHERE id = ? AND queue = ?`;
-      params = [JSON.stringify(output), error ? error.message : null, status, id, this.queue];
     }
     this.db.exec(updateQuery, params);
-    if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(job.id, status, output!, error);
+    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
+      this.onCompleted(job.id, job.status, output, error);
     }
   }
 

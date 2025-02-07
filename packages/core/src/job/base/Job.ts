@@ -23,6 +23,7 @@ export interface JobDetails<Input, Output> {
   input: Input;
   output?: Output | null;
   error?: string | null;
+  errorCode?: string | null;
   fingerprint?: string;
   maxRetries?: number;
   status?: JobStatus;

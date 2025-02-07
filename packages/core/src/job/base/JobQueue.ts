@@ -101,6 +101,7 @@ export abstract class JobQueue<Input, Output> {
   constructor(
     public readonly queue: string,
     protected limiter: ILimiter,
+    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     protected waitDurationInMilliseconds: number
   ) {
     this.events = new EventEmitter();
@@ -127,8 +128,8 @@ export abstract class JobQueue<Input, Output> {
   public abstract processing(): Promise<Array<Job<Input, Output>>>;
   public abstract aborting(): Promise<Array<Job<Input, Output>>>;
   public abstract size(status?: JobStatus): Promise<number>;
-  public abstract complete(id: unknown, output?: Output | null, error?: JobError): Promise<void>;
-  public abstract deleteAll(): Promise<void>;
+  public abstract complete(id: unknown, output?: Output, error?: JobError): Promise<void>;
+  protected abstract deleteAll(): Promise<void>;
   public abstract outputForInput(taskType: string, input: Input): Promise<Output | null>;
   public abstract abort(jobId: unknown): Promise<void>;
   public abstract getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>>;
@@ -214,6 +215,7 @@ export abstract class JobQueue<Input, Output> {
       this.processingTimes.set(job.id, Date.now() - startTime);
       this.updateAverageProcessingTime();
     } catch (err: any) {
+      console.error({ job, err });
       const error = this.normalizeError(err);
 
       if (error instanceof AbortSignalJobError) {
@@ -227,7 +229,7 @@ export abstract class JobQueue<Input, Output> {
         this.stats.failedJobs++;
       }
 
-      await this.complete(job.id, null, error);
+      await this.complete(job.id, undefined, error);
     } finally {
       await this.limiter.recordJobCompletion();
       this.activeJobSignals.delete(job.id);
@@ -291,7 +293,7 @@ export abstract class JobQueue<Input, Output> {
   protected onCompleted(
     jobId: unknown,
     status: JobStatus,
-    output?: Output,
+    output: Output | null = null,
     error?: JobError
   ): void {
     const promises = this.activeJobPromises.get(jobId) || [];
@@ -318,6 +320,25 @@ export abstract class JobQueue<Input, Output> {
       const promises = this.activeJobPromises.get(jobId) || [];
       promises.push({ resolve, reject });
       this.activeJobPromises.set(jobId, promises);
+    });
+  }
+
+  /**
+   * Creates a new job instance from the provided database results.
+   * @param results - The job data from the database
+   * @returns A new Job instance with populated properties
+   */
+  public createNewJob(results: any, parseIO = true): Job<Input, Output> {
+    return new this.jobClass({
+      ...results,
+      input: (parseIO ? JSON.parse(results.input) : results.input) as Input,
+      output: results.output
+        ? ((parseIO ? JSON.parse(results.output) : results.output) as Output)
+        : null,
+      runAfter: results.runAfter ? new Date(results.runAfter + "Z") : null,
+      createdAt: results.createdAt ? new Date(results.createdAt + "Z") : null,
+      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt + "Z") : null,
+      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt + "Z") : null,
     });
   }
 
@@ -358,10 +379,13 @@ export abstract class JobQueue<Input, Output> {
    * Stops the job queue and aborts all active jobs
    */
   public async stop(): Promise<this> {
+    if (this.running === false) return this;
     this.running = false;
 
     // Wait for pending operations to settle
-    await sleep(100);
+    const size = await this.size(JobStatus.PROCESSING);
+    const sleepTime = Math.max(100, size * 2);
+    await sleep(sleepTime);
 
     // Abort all active jobs
     for (const [jobId, controller] of this.activeJobSignals.entries()) {
@@ -375,7 +399,7 @@ export abstract class JobQueue<Input, Output> {
     );
 
     // Wait for abort operations to settle
-    await sleep(100);
+    await sleep(sleepTime);
 
     this.events.emit("queue_stop", this.queue);
     return this;

@@ -32,10 +32,10 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(
     queue: string,
     limiter: ILimiter,
-    waitDurationInMilliseconds = 100,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    waitDurationInMilliseconds = 100
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
     this.jobQueue = [];
   }
 
@@ -67,20 +67,25 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   public async get(id: unknown) {
-    return this.jobQueue.find((j) => j.id === id);
+    const result = this.jobQueue.find((j) => j.id === id);
+    return result ? this.createNewJob(result, false) : undefined;
   }
 
   public async peek(num: number) {
     num = Number(num) || 100;
-    return this.jobQueue.slice(0, num);
+    return this.jobQueue.slice(0, num).map((j) => this.createNewJob(j, false));
   }
 
   public async processing() {
-    return this.jobQueue.filter((job) => job.status === JobStatus.PROCESSING);
+    return this.jobQueue
+      .filter((job) => job.status === JobStatus.PROCESSING)
+      .map((j) => this.createNewJob(j, false));
   }
 
   public async aborting() {
-    return this.jobQueue.filter((job) => job.status === JobStatus.ABORTING);
+    return this.jobQueue
+      .filter((job) => job.status === JobStatus.ABORTING)
+      .map((j) => this.createNewJob(j, false));
   }
 
   /**
@@ -93,7 +98,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const job = top[0];
     if (job) {
       job.status = JobStatus.PROCESSING;
-      return job;
+      return this.createNewJob(job, false);
     }
   }
 
@@ -108,12 +113,11 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * @param output - Result of the job execution
    * @param error - Optional error message if job failed
    */
-  public async complete(id: unknown, output: any, error?: JobError) {
+  public async complete(id: unknown, output: Output, error?: JobError) {
     const job = this.jobQueue.find((j) => j.id === id);
     if (!job) {
       throw new Error(`Job ${id} not found`);
     }
-    job.completedAt = new Date();
 
     if (error) {
       job.error = error.message;
@@ -122,18 +126,24 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
         job.retries++;
         if (job.retries >= job.maxRetries) {
           job.status = JobStatus.FAILED;
+          job.completedAt = new Date();
         } else {
           job.status = JobStatus.PENDING;
           job.runAfter = error.retryDate;
         }
       } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       } else {
         job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       }
     } else {
       job.status = JobStatus.COMPLETED;
+      job.completedAt = new Date();
       job.output = output;
+      job.error = null;
+      job.errorCode = null;
     }
 
     if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
@@ -150,7 +160,9 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   public async getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>> {
-    return this.jobQueue.filter((job) => job.jobRunId === jobRunId);
+    return this.jobQueue
+      .filter((job) => job.jobRunId === jobRunId)
+      .map((j) => this.createNewJob(j, false));
   }
 
   public async deleteAll() {

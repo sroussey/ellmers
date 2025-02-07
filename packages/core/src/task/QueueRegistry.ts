@@ -38,7 +38,7 @@ export class TaskQueueRegistry<Input, Output> {
 
   clearQueues() {
     for (const queue of this.queues.values()) {
-      queue.deleteAll();
+      queue.clear();
     }
   }
 }

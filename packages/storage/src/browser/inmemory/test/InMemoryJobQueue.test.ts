@@ -7,10 +7,15 @@
 
 import { InMemoryJobQueue } from "../InMemoryJobQueue";
 import { InMemoryRateLimiter } from "../InMemoryRateLimiter";
-import { runGenericJobQueueTests } from "../../../test/genericJobQueueTests";
+import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueTests";
 
 function createInMemoryJobQueue() {
-  return new InMemoryJobQueue("in_memory_test_queue", new InMemoryRateLimiter(4, 1), 0);
+  return new InMemoryJobQueue(
+    `in_memory_test_queue_${Date.now()}`,
+    new InMemoryRateLimiter(4, 1),
+    TestJob,
+    1
+  );
 }
 
 runGenericJobQueueTests(createInMemoryJobQueue, "InMemoryJobQueue");
