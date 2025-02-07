@@ -79,6 +79,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.progress = 0;
     job.progressMessage = "";
     job.progressDetails = null;
+    job.queue = this;
 
     const AddQuery = `
       INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId, progress, progressMessage, progressDetails)

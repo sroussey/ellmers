@@ -67,6 +67,8 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.progress = 0;
     job.progressMessage = "";
     job.progressDetails = null;
+    job.queue = this;
+
     this.createAbortController(job.id);
     this.jobQueue.push(job);
     return job.id;

@@ -65,6 +65,7 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.progress = 0;
     job.progressMessage = "";
     job.progressDetails = null;
+    job.queue = this;
 
     this.createAbortController(job.id);
 

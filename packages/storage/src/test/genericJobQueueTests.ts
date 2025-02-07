@@ -19,6 +19,10 @@ import { IndexedDbJobQueue } from "../browser/indexeddb";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute(signal: AbortSignal): Promise<TaskOutput> {
+    if (!this.queue) {
+      throw new Error("Job must be added to a queue before execution");
+    }
+
     if (this.input.taskType === "long_running") {
       return new Promise<TaskOutput>((resolve, reject) => {
         // Add abort listener immediately
@@ -29,6 +33,31 @@ export class TestJob extends Job<TaskInput, TaskOutput> {
           },
           { once: true }
         );
+      });
+    }
+    if (this.input.taskType === "progress") {
+      return new Promise<TaskOutput>(async (resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new AbortSignalJobError("Aborted via signal"));
+          },
+          { once: true }
+        );
+
+        try {
+          // Simulate progress updates
+          await sleep(2);
+          await this.updateProgress(25, "Starting task");
+          await sleep(2);
+          await this.updateProgress(50, "Halfway there");
+          await sleep(2);
+          await this.updateProgress(75, "Almost done", { stage: "final" });
+          await sleep(2);
+          resolve({ result: "completed with progress" });
+        } catch (error) {
+          reject(error);
+        }
       });
     }
     return { result: this.input.data.replace("input", "output") };
@@ -202,6 +231,164 @@ export function runGenericJobQueueTests(
         expect(job4Status).toBe(JobStatus.PROCESSING);
       }
       await jobQueue.stop();
+    });
+
+    describe("Progress Monitoring", () => {
+      it("should emit progress events only when progress changes", async () => {
+        await jobQueue.start();
+        const progressEvents: Array<{
+          progress: number;
+          message: string;
+          details: Record<string, any> | null;
+        }> = [];
+
+        const job = new TestJob({ input: { taskType: "progress", data: "input1" } });
+        const jobId = await jobQueue.add(job);
+
+        // Listen for progress events
+        jobQueue.on("job_progress", (_queueName, id, progress, message, details) => {
+          if (id === jobId) {
+            progressEvents.push({ progress, message, details });
+          }
+        });
+
+        // Wait for job completion
+        await jobQueue.waitFor(jobId);
+        await sleep(1); // Give more time for events to settle
+
+        // Verify progress events
+        expect(progressEvents.length).toBe(3); // Should have 3 unique progress updates
+        expect(progressEvents[0]).toEqual({
+          progress: 25,
+          message: "Starting task",
+          details: null,
+        });
+        expect(progressEvents[1]).toEqual({
+          progress: 50,
+          message: "Halfway there",
+          details: null,
+        });
+        expect(progressEvents[2]).toEqual({
+          progress: 75,
+          message: "Almost done",
+          details: { stage: "final" },
+        });
+      });
+
+      it("should validate progress values", async () => {
+        const job = new TestJob({ input: { taskType: "other", data: "input1" } });
+        const jobId = await jobQueue.add(job);
+
+        // Test invalid progress values
+        await jobQueue.updateProgress(jobId, -10, "Should be 0");
+        const jobNeg = await jobQueue.get(jobId);
+        expect(jobNeg?.progress).toBe(0);
+
+        await jobQueue.updateProgress(jobId, 150, "Should be 100");
+        const jobOver = await jobQueue.get(jobId);
+        expect(jobOver?.progress).toBe(100);
+      });
+
+      it("should support job-specific progress listeners", async () => {
+        await jobQueue.start();
+        const progressUpdates: Array<{
+          progress: number;
+          message: string;
+          details: Record<string, any> | null;
+        }> = [];
+
+        const job = new TestJob({ input: { taskType: "progress", data: "input1" } });
+        const jobId = await jobQueue.add(job);
+
+        // Add job-specific listener
+        const cleanup = jobQueue.onJobProgress(jobId, (progress, message, details) => {
+          progressUpdates.push({ progress, message, details });
+        });
+
+        // Wait for job completion
+        await jobQueue.waitFor(jobId);
+        await sleep(2);
+
+        // Clean up listener
+        cleanup();
+
+        // Verify progress updates
+        expect(progressUpdates.length).toBe(3);
+        expect(progressUpdates[0]).toEqual({
+          progress: 25,
+          message: "Starting task",
+          details: null,
+        });
+        expect(progressUpdates[1]).toEqual({
+          progress: 50,
+          message: "Halfway there",
+          details: null,
+        });
+        expect(progressUpdates[2]).toEqual({
+          progress: 75,
+          message: "Almost done",
+          details: { stage: "final" },
+        });
+      });
+
+      it("should clean up progress listeners for completed jobs", async () => {
+        await jobQueue.start();
+        const job = new TestJob({ input: { taskType: "progress", data: "input1" } });
+        const jobId = await jobQueue.add(job);
+
+        let listenerCalls = 0;
+        const cleanup = jobQueue.onJobProgress(jobId, () => {
+          listenerCalls++;
+        });
+
+        // Wait for job completion
+        await jobQueue.waitFor(jobId);
+        await sleep(2);
+
+        // Try to update progress after completion (should not trigger listener)
+        try {
+          await jobQueue.updateProgress(jobId, 99, "Should not emit");
+        } catch (error) {
+          // Expected error for completed job
+        }
+
+        cleanup();
+        expect(listenerCalls).toBe(3); // Should only have the original 3 progress updates
+      });
+
+      it("should handle multiple jobs with progress monitoring", async () => {
+        await jobQueue.start();
+        const progressByJob = new Map<unknown, number[]>();
+
+        // Create and start multiple jobs
+        const jobs = await Promise.all([
+          jobQueue.add(new TestJob({ input: { taskType: "progress", data: "job1" } })),
+          jobQueue.add(new TestJob({ input: { taskType: "progress", data: "job2" } })),
+        ]);
+
+        // Set up listeners for each job
+        const cleanups = jobs.map((jobId) => {
+          progressByJob.set(jobId, []);
+          return jobQueue.onJobProgress(jobId, (progress) => {
+            progressByJob.get(jobId)?.push(progress);
+          });
+        });
+
+        // Wait for all jobs to complete
+        await Promise.all(jobs.map((jobId) => jobQueue.waitFor(jobId)));
+        await sleep(2);
+
+        // Clean up listeners
+        cleanups.forEach((cleanup) => cleanup());
+
+        // Verify each job had correct progress updates
+        jobs.forEach((jobId) => {
+          const updates = progressByJob.get(jobId);
+          expect(updates).toBeDefined();
+          expect(updates?.length).toBe(3);
+          expect(updates).toEqual([25, 50, 75]);
+        });
+      });
     });
   });
 }

@@ -77,6 +77,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.progress = 0;
     job.progressMessage = "";
     job.progressDetails = null;
+    job.queue = this;
 
     return await this.sql.begin(async (sql) => {
       const jobid = await sql`

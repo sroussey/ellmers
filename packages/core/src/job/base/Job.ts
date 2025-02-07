@@ -5,6 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import type { JobQueue } from "./JobQueue";
+
 export enum JobStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
@@ -57,6 +59,7 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
   public progress: number = 0;
   public progressMessage: string = "";
   public progressDetails: Record<string, any> | null = null;
+  public queue: JobQueue<Input, Output> | undefined;
 
   constructor({
     queueName,
@@ -102,5 +105,15 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
   }
   execute(signal?: AbortSignal): Promise<Output> {
     throw new Error("Method not implemented.");
+  }
+  public async updateProgress(
+    progress: number,
+    message: string = "",
+    details: Record<string, any> | null = null
+  ) {
+    this.progress = progress;
+    this.progressMessage = message;
+    this.progressDetails = details;
+    await this.queue?.updateProgress(this.id, progress, message, details);
   }
 }

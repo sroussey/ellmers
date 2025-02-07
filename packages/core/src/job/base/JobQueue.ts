@@ -71,7 +71,7 @@ export interface JobQueueEvents<Input, Output> {
     jobId: unknown,
     progress: number,
     message: string,
-    details: Record<string, any>,
+    details: Record<string, any> | null,
   ];
 }
 
@@ -81,7 +81,7 @@ export interface JobQueueEvents<Input, Output> {
 export type JobProgressListener = (
   progress: number,
   message: string,
-  details: Record<string, any>
+  details: Record<string, any> | null
 ) => void;
 
 /**
@@ -160,18 +160,76 @@ export abstract class JobQueue<Input, Output> {
   }
 
   // Required abstract methods that must be implemented by storage-specific queues
+
+  /**
+   * Adds a job to the queue
+   */
   public abstract add(job: Job<Input, Output>): Promise<unknown>;
+
+  /**
+   * Gets a job from the queue
+   */
   public abstract get(id: unknown): Promise<Job<Input, Output> | undefined>;
+
+  /**
+   * Gets the next job from the queue
+   */
   public abstract next(): Promise<Job<Input, Output> | undefined>;
+
+  /**
+   * Peeks at the next job from the queue
+   */
   public abstract peek(num: number): Promise<Array<Job<Input, Output>>>;
+
+  /**
+   * Gets the jobs that are currently processing
+   */
   public abstract processing(): Promise<Array<Job<Input, Output>>>;
+
+  /**
+   * Gets the jobs that are currently aborting
+   */
   public abstract aborting(): Promise<Array<Job<Input, Output>>>;
+
+  /**
+   * Gets the size of the queue
+   */
   public abstract size(status?: JobStatus): Promise<number>;
+
+  /**
+   * Completes a job
+   */
   public abstract complete(id: unknown, output?: Output, error?: JobError): Promise<void>;
+
+  /**
+   * Deletes all jobs from the queue
+   */
   protected abstract deleteAll(): Promise<void>;
+
+  /**
+   * Gets the output for a given input
+   */
   public abstract outputForInput(input: Input): Promise<Output | null>;
+
+  /**
+   * Aborts a job
+   */
   public abstract abort(jobId: unknown): Promise<void>;
+
+  /**
+   * Gets the jobs by job run id
+   */
   public abstract getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>>;
+  /**
+   * Abstract method to be implemented by storage-specific queue implementations
+   * to persist progress updates
+   */
+  protected abstract saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any> | null
+  ): Promise<void>;
 
   /**
    * Aborts all jobs in a job run
@@ -385,11 +443,21 @@ export abstract class JobQueue<Input, Output> {
     jobId: unknown,
     progress: number,
     message: string = "",
-    details: Record<string, any> = {}
+    details: Record<string, any> | null = null
   ): Promise<void> {
     const job = await this.get(jobId);
     if (!job) {
       throw new Error(`Job ${jobId} not found`);
+    }
+
+    if (job.status === JobStatus.COMPLETED) {
+      throw new Error(`Job ${jobId} is already completed`);
+    }
+    if (job.status === JobStatus.FAILED) {
+      throw new Error(`Job ${jobId} has already failed`);
+    }
+    if (job.status === JobStatus.ABORTING) {
+      throw new Error(`Job ${jobId} is being aborted`);
     }
 
     // Validate progress value
@@ -399,7 +467,7 @@ export abstract class JobQueue<Input, Output> {
     job.progressMessage = message;
     job.progressDetails = details;
 
-    await this.saveProgress(jobId, progress, message, details);
+    await this.saveProgress(jobId, progress, message, details ?? null);
 
     // Emit the general event
     this.events.emit("job_progress", this.queue, jobId, progress, message, details);
@@ -421,15 +489,36 @@ export abstract class JobQueue<Input, Output> {
   }
 
   /**
-   * Abstract method to be implemented by storage-specific queue implementations
-   * to persist progress updates
+   * Adds a progress listener for a specific job
+   * @param jobId - The ID of the job to listen to
+   * @param listener - The callback function to be called when progress updates occur
+   * @returns A cleanup function to remove the listener
    */
-  protected abstract saveProgress(
-    jobId: unknown,
-    progress: number,
-    message: string,
-    details: Record<string, any>
-  ): Promise<void>;
+  public onJobProgress(jobId: unknown, listener: JobProgressListener): () => void {
+    if (!this.jobProgressListeners.has(jobId)) {
+      this.jobProgressListeners.set(jobId, new Set());
+    }
+    const listeners = this.jobProgressListeners.get(jobId)!;
+    listeners.add(listener);
+
+    return () => {
+      const listeners = this.jobProgressListeners.get(jobId);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          this.jobProgressListeners.delete(jobId);
+        }
+      }
+    };
+  }
+
+  /**
+   * Removes all progress listeners for a specific job
+   * @param jobId - The ID of the job to remove listeners for
+   */
+  public removeAllJobProgressListeners(jobId: unknown): void {
+    this.jobProgressListeners.delete(jobId);
+  }
 
   /**
    * Creates a new job instance from the provided database results.
@@ -437,7 +526,7 @@ export abstract class JobQueue<Input, Output> {
    * @returns A new Job instance with populated properties
    */
   public createNewJob(results: any, parseIO = true): Job<Input, Output> {
-    return new this.jobClass({
+    const job = new this.jobClass({
       ...results,
       input: (parseIO ? JSON.parse(results.input) : results.input) as Input,
       output: results.output
@@ -449,8 +538,10 @@ export abstract class JobQueue<Input, Output> {
       lastRanAt: results.lastRanAt ? new Date(results.lastRanAt + "Z") : null,
       progress: results.progress || 0,
       progressMessage: results.progressMessage || "",
-      progressDetails: results.progressDetails ? JSON.parse(results.progressDetails) : {},
+      progressDetails: results.progressDetails ?? null,
     });
+    job.queue = this;
+    return job;
   }
 
   /**
@@ -505,8 +596,8 @@ export abstract class JobQueue<Input, Output> {
           const hasChanged =
             !lastProgress ||
             lastProgress.progress !== currentProgress.progress ||
-            lastProgress.message !== currentProgress.message ||
-            JSON.stringify(lastProgress.details) !== JSON.stringify(currentProgress.details);
+            lastProgress.message !== currentProgress.message;
+          // || JSON.stringify(lastProgress.details) !== JSON.stringify(currentProgress.details);
 
           if (hasChanged) {
             // Update last known state
@@ -603,6 +694,7 @@ export abstract class JobQueue<Input, Output> {
     this.activeJobPromises.clear();
     this.processingTimes.clear();
     this.lastKnownProgress.clear();
+    this.jobProgressListeners.clear();
     this.stats = {
       totalJobs: 0,
       completedJobs: 0,
