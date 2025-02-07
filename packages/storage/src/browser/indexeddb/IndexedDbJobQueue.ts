@@ -62,6 +62,9 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
 
     this.createAbortController(job.id);
 
@@ -81,6 +84,9 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
       retries: job.retries,
       runAfter: job.runAfter,
       createdAt: job.createdAt,
+      progress: job.progress,
+      progressMessage: job.progressMessage,
+      progressDetails: job.progressDetails,
     });
 
     return new Promise((resolve, reject) => {
@@ -364,6 +370,41 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
       request.onsuccess = () => {
         const result = request.result;
         resolve(result ? result.output : null);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction("jobs", "readwrite");
+    const store = tx.objectStore("jobs");
+    const request = store.get(jobId as string);
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const job = request.result;
+        if (!job) {
+          reject(new Error(`Job ${jobId} not found`));
+          return;
+        }
+
+        job.progress = progress;
+        job.progressMessage = message;
+        job.progressDetails = details;
+
+        const updateRequest = store.put(job);
+        updateRequest.onsuccess = () => resolve();
+        updateRequest.onerror = () => reject(updateRequest.error);
       };
       request.onerror = () => reject(request.error);
       tx.onerror = () => reject(tx.error);

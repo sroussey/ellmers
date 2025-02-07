@@ -31,6 +31,9 @@ export interface JobDetails<Input, Output> {
   lastRanAt?: Date | string | null;
   runAfter?: Date | string | null;
   retries?: number;
+  progress?: number;
+  progressMessage?: string;
+  progressDetails?: Record<string, any> | null;
 }
 
 export class Job<Input, Output> implements JobDetails<Input, Output> {
@@ -51,6 +54,9 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
   public abortedAt: Date | null = null;
   public error: string | null = null;
   public errorCode: string | null = null;
+  public progress: number = 0;
+  public progressMessage: string = "";
+  public progressDetails: Record<string, any> | null = null;
 
   constructor({
     queueName,
@@ -67,6 +73,9 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     retries = 0,
     lastRanAt = null,
     runAfter = null,
+    progress = 0,
+    progressMessage = "",
+    progressDetails = null,
   }: JobDetails<Input, Output>) {
     if (typeof runAfter === "string") runAfter = new Date(runAfter);
     if (typeof lastRanAt === "string") lastRanAt = new Date(lastRanAt);
@@ -87,6 +96,9 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     this.output = output;
     this.error = error;
     this.jobRunId = jobRunId;
+    this.progress = progress;
+    this.progressMessage = progressMessage;
+    this.progressDetails = progressDetails;
   }
   execute(signal?: AbortSignal): Promise<Output> {
     throw new Error("Method not implemented.");

@@ -52,7 +52,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         deadlineAt TEXT,
         error TEXT,
-        errorCode TEXT
+        errorCode TEXT,
+        progress REAL DEFAULT 0,
+        progressMessage TEXT DEFAULT '',
+        progressDetails TEXT NULL
       );
       
       CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
@@ -73,21 +76,28 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.fingerprint = fingerprint;
     job.jobRunId = job.jobRunId ?? nanoid();
     job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
 
     const AddQuery = `
-      INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId)
-		    VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId, progress, progressMessage, progressDetails)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id`;
+
     const stmt = this.db.prepare<
       { id: string },
       [
         queue: string,
-        fingerpring: string,
+        fingerprint: string,
         input: string,
         runAfter: string | null,
         deadlineAt: string | null,
         maxRetries: number,
         jobRunId: string,
+        progress: number,
+        progressMessage: string,
+        progressDetails: string | null,
       ]
     >(AddQuery);
 
@@ -98,8 +108,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
       toSQLiteTimestamp(job.runAfter),
       toSQLiteTimestamp(job.deadlineAt),
       job.maxRetries,
-      job.jobRunId
-    );
+      job.jobRunId,
+      job.progress,
+      job.progressMessage,
+      job.progressDetails ? JSON.stringify(job.progressDetails) : null
+    ) as { id: string } | undefined;
 
     job.id = result?.id;
     this.createAbortController(job.id);
@@ -184,14 +197,14 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * the job's execute() method (if it supports an AbortSignal parameter)
    * can clean up and exit.
    */
-  public async abort(id: string) {
+  public async abort(jobId: string) {
     const AbortQuery = `
       UPDATE job_queue
         SET status = $1
         WHERE id = $2 AND queue = $3`;
     const stmt = this.db.prepare(AbortQuery);
-    stmt.run(JobStatus.ABORTING, id, this.queue);
-    this.abortJob(id);
+    stmt.run(JobStatus.ABORTING, jobId, this.queue);
+    this.abortJob(jobId);
   }
 
   /**
@@ -272,6 +285,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
 
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
+
     if (error) {
       job.error = error.message;
       job.errorCode = error.name;
@@ -283,6 +300,7 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         } else {
           job.status = JobStatus.PENDING;
           job.runAfter = error.retryDate;
+          job.progress = 0;
         }
       } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
@@ -304,19 +322,46 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     if (error && job.status === JobStatus.PENDING) {
       updateQuery = `
           UPDATE job_queue 
-            SET error = ?, errorCode = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP, runAfter = ?
+            SET 
+              error = ?, 
+              errorCode = ?, 
+              status = ?, 
+              progress = ?, 
+              runAfter = ?, 
+              progressMessage = "", 
+              progressDetails = NULL, 
+              lastRanAt = CURRENT_TIMESTAMP, 
+              retries = retries + 1 
             WHERE id = ? AND queue = ?`;
-      params = [error.message, error.name, job.status, job.runAfter.toISOString(), id, this.queue];
+      params = [
+        error.message,
+        error.name,
+        job.status,
+        job.progress,
+        job.runAfter.toISOString(),
+        id,
+        this.queue,
+      ];
     } else {
       updateQuery = `
           UPDATE job_queue 
-            SET output = ?, error = ?, errorCode = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
+            SET 
+              output = ?, 
+              error = ?, 
+              errorCode = ?, 
+              status = ?, 
+              progress = ?, 
+              retries = retries + 1, 
+              progressMessage = "", 
+              progressDetails = NULL, 
+              lastRanAt = CURRENT_TIMESTAMP
             WHERE id = ? AND queue = ?`;
       params = [
         JSON.stringify(output),
         job.error ?? null,
         job.errorCode ?? null,
         job.status,
+        job.progress,
         id,
         this.queue,
       ];
@@ -354,5 +399,25 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         }
       | undefined;
     return result?.output ? JSON.parse(result.output) : null;
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    const UpdateProgressQuery = `
+      UPDATE job_queue
+        SET progress = ?,
+            progressMessage = ?,
+            progressDetails = ?
+        WHERE id = ? AND queue = ?`;
+
+    const stmt = this.db.prepare(UpdateProgressQuery);
+    stmt.run(progress, message, JSON.stringify(details), String(jobId), this.queue);
   }
 }

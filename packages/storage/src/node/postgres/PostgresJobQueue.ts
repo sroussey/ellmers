@@ -41,6 +41,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       id bigint SERIAL NOT NULL,
       fingerprint text NOT NULL,
       queue text NOT NULL,
+      jobRunId text NOT NULL,
       status job_status NOT NULL default 'NEW',
       input jsonb NOT NULL,
       output jsonb,
@@ -52,6 +53,9 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       deadlineAt timestamp with time zone,
       error text,
       errorCode text,
+      progress real DEFAULT 0,
+      progressMessage text DEFAULT '',
+      progressDetails jsonb
     );
     
     CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
@@ -70,12 +74,35 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.queueName = this.queue;
     job.jobRunId = job.jobRunId ?? nanoid();
     const fingerprint = await makeFingerprint(job.input);
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
 
     return await this.sql.begin(async (sql) => {
       const jobid = await sql`
-        INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries, jobRunId)
-          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries}, ${job.jobRunId!})
-          RETURNING id`;
+        INSERT INTO job_queue(
+          queue, 
+          fingerprint, 
+          input, 
+          runAfter, 
+          maxRetries, 
+          jobRunId, 
+          progress, 
+          progressMessage, 
+          progressDetails
+        )
+        VALUES (
+          ${this.queue!}, 
+          ${fingerprint}, 
+          ${job.input as any}::jsonb, 
+          ${job.createdAt.toISOString()}, 
+          ${job.maxRetries}, 
+          ${job.jobRunId!},
+          ${job.progress},
+          ${job.progressMessage},
+          ${job.progressDetails as any}::jsonb
+        )
+        RETURNING id`;
       this.createAbortController(jobid);
       job.id = jobid;
       return jobid;
@@ -210,6 +237,10 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
 
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
+
     if (error) {
       job.error = error.message;
       job.errorCode = error.name;
@@ -221,6 +252,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
         } else {
           job.status = JobStatus.PENDING;
           job.runAfter = error.retryDate;
+          job.progress = 0;
         }
       } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
@@ -247,7 +279,10 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
               status = ${job.status}, 
               retries = retries + 1, 
               runAfter = ${job.runAfter.toISOString()}, 
-              lastRanAt = NOW()  
+              lastRanAt = NOW(),
+              progress = ${job.progress},
+              progressMessage = '',
+              progressDetails = NULL
           WHERE id = ${id}`;
       } else {
         await sql`
@@ -257,7 +292,10 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
               errorCode = ${job.errorCode},
               status = ${job.status}, 
               retries = retries + 1, 
-              lastRanAt = NOW()  
+              lastRanAt = NOW(),
+              progress = ${job.progress},
+              progressMessage = '',
+              progressDetails = NULL
           WHERE id = ${id}`;
       }
     });
@@ -317,6 +355,25 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       const result =
         await sql`SELECT * FROM job_queue WHERE jobRunId = ${jobRunId} AND queue = ${this.queue}`;
       return result[0].rows.map((r: any) => this.createNewJob(r));
+    });
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    await this.sql.begin(async (sql) => {
+      await sql`
+        UPDATE job_queue 
+        SET progress = ${progress},
+            progressMessage = ${message},
+            progressDetails = ${details as any}::jsonb
+        WHERE id = ${jobId as number} AND queue = ${this.queue}`;
     });
   }
 }

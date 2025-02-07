@@ -64,6 +64,9 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
     job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
     this.createAbortController(job.id);
     this.jobQueue.push(job);
     return job.id;
@@ -110,6 +113,25 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any> | null
+  ): Promise<void> {
+    const job = this.jobQueue.find((j) => j.id === jobId);
+    if (!job) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    job.progress = progress;
+    job.progressMessage = message;
+    job.progressDetails = details;
+  }
+
+  /**
    * Marks a job as complete with its output or error
    * Handles retries for failed jobs and triggers completion callbacks
    * @param id - ID of the job to complete
@@ -123,6 +145,10 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
       throw new Error(`Job ${id} not found`);
     }
 
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
+
     if (error) {
       job.error = error.message;
       job.errorCode = error.name;
@@ -134,6 +160,7 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
         } else {
           job.status = JobStatus.PENDING;
           job.runAfter = error.retryDate;
+          job.progress = 0;
         }
       } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
