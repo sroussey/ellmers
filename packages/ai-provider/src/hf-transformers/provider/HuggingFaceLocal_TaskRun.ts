@@ -20,31 +20,23 @@ import {
   type TranslationSingle,
   TextStreamer,
 } from "@huggingface/transformers";
-import { ElVector, getGlobalModelRepository } from "ellmers-ai";
+import { ElVector, getGlobalModelRepository, AiProviderRunFn } from "ellmers-ai";
 import type {
-  JobQueueAiTask,
-  DownloadModelTask,
   DownloadModelTaskInput,
-  DownloadModelTaskOutput,
-  TextEmbeddingTask,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
-  TextGenerationTask,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
-  TextRewriterTask,
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
-  TextQuestionAnswerTask,
   TextQuestionAnswerTaskInput,
   TextQuestionAnswerTaskOutput,
-  TextSummaryTask,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
-  TextTranslationTask,
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
   Model,
+  AiProviderJob,
 } from "ellmers-ai";
 import { QUANTIZATION_DATA_TYPES } from "../model/ONNXTransformerJsModel";
 import { TaskStatus } from "ellmers-core";
@@ -98,14 +90,14 @@ const pipelines = new Map<Model, any>();
  * @param model
  * @param options
  */
-const getPipeline = async (task: JobQueueAiTask, model: Model, options: any = {}) => {
+const getPipeline = async (job: AiProviderJob, model: Model, options: any = {}) => {
   if (!pipelines.has(model)) {
     pipelines.set(
       model,
       pipeline(model.pipeline as PipelineType, model.url, {
         dtype: (model.quantization as QUANTIZATION_DATA_TYPES) || "q8",
         session_options: options?.session_options,
-        progress_callback: downloadProgressCallback(task),
+        progress_callback: downloadProgressCallback(job),
         ...(model.use_external_data_format
           ? { use_external_data_format: model.use_external_data_format }
           : {}),
@@ -116,29 +108,21 @@ const getPipeline = async (task: JobQueueAiTask, model: Model, options: any = {}
   return await pipelines.get(model);
 };
 
-function downloadProgressCallback(task: JobQueueAiTask) {
+function downloadProgressCallback(job: AiProviderJob) {
   return (status: CallbackStatus) => {
-    if (task.status !== TaskStatus.PROCESSING) {
-      return;
-    }
     const progress = status.status === "progress" ? Math.round(status.progress) : 0;
     if (status.status === "progress") {
-      task.progress = progress;
-      task.emit("progress", progress, status.file);
+      job.updateProgress(progress, "Downloading model", { file: status.file });
     }
   };
 }
 
-function generateProgressCallback(task: JobQueueAiTask) {
+function generateProgressCallback(job: AiProviderJob) {
   let count = 0;
   return (text: string) => {
-    if (task.status !== TaskStatus.PROCESSING) {
-      return;
-    }
     count++;
     const result = 100 * (1 - Math.exp(-0.05 * count));
-    task.progress = Math.round(Math.min(result, 100));
-    task.emit("progress", task.progress, text);
+    job.updateProgress(Math.round(Math.min(result, 100)), "Generating", { text });
   };
 }
 
@@ -149,13 +133,17 @@ function generateProgressCallback(task: JobQueueAiTask) {
  */
 
 export async function HuggingFaceLocal_DownloadRun(
-  task: DownloadModelTask,
+  job: AiProviderJob,
   runInputData: DownloadModelTaskInput,
   signal?: AbortSignal
-): Promise<Partial<DownloadModelTaskOutput>> {
+) {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
-  await getPipeline(task, model);
-  return { model: model.name, dimensions: model.nativeDimensions || 0, normalize: model.normalize };
+  await getPipeline(job, model);
+  return {
+    model: model.name,
+    dimensions: model.nativeDimensions || 0,
+    normalize: model.normalize,
+  };
 }
 
 /**
@@ -164,12 +152,12 @@ export async function HuggingFaceLocal_DownloadRun(
  * Model pipeline must be "feature-extraction"
  */
 export async function HuggingFaceLocal_EmbeddingRun(
-  task: TextEmbeddingTask,
+  job: AiProviderJob,
   runInputData: TextEmbeddingTaskInput,
   signal?: AbortSignal
 ): Promise<TextEmbeddingTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
-  const generateEmbedding: FeatureExtractionPipeline = await getPipeline(task, model);
+  const generateEmbedding: FeatureExtractionPipeline = await getPipeline(job, model);
 
   const hfVector = await generateEmbedding(runInputData.text, {
     pooling: "mean",
@@ -194,18 +182,18 @@ export async function HuggingFaceLocal_EmbeddingRun(
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export async function HuggingFaceLocal_TextGenerationRun(
-  task: TextGenerationTask,
+  job: AiProviderJob,
   runInputData: TextGenerationTaskInput,
   signal?: AbortSignal
 ): Promise<TextGenerationTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
-  const generateText: TextGenerationPipeline = await getPipeline(task, model);
+  const generateText: TextGenerationPipeline = await getPipeline(job, model);
 
   const streamer = new TextStreamer(generateText.tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
-    callback_function: generateProgressCallback(task),
+    callback_function: generateProgressCallback(job),
   });
 
   let results = await generateText(runInputData.prompt, {
@@ -231,18 +219,18 @@ export async function HuggingFaceLocal_TextGenerationRun(
  * Model pipeline must be "translation"
  */
 export async function HuggingFaceLocal_TextTranslationRun(
-  task: TextTranslationTask,
+  job: AiProviderJob,
   runInputData: TextTranslationTaskInput,
   signal?: AbortSignal
 ): Promise<Partial<TextTranslationTaskOutput>> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
-  const translate: TranslationPipeline = await getPipeline(task, model);
+  const translate: TranslationPipeline = await getPipeline(job, model);
 
   const streamer = new TextStreamer(translate.tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
-    callback_function: generateProgressCallback(task),
+    callback_function: generateProgressCallback(job),
   });
 
   let results = await translate(runInputData.text, {
@@ -264,17 +252,17 @@ export async function HuggingFaceLocal_TextTranslationRun(
  * Model pipeline must be "text-generation" or "text2text-generation"
  */
 export async function HuggingFaceLocal_TextRewriterRun(
-  task: TextRewriterTask,
+  job: AiProviderJob,
   runInputData: TextRewriterTaskInput,
   signal?: AbortSignal
 ): Promise<TextRewriterTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
-  const generateText: TextGenerationPipeline = await getPipeline(task, model);
+  const generateText: TextGenerationPipeline = await getPipeline(job, model);
   const streamer = new TextStreamer(generateText.tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
-    callback_function: generateProgressCallback(task),
+    callback_function: generateProgressCallback(job),
   });
 
   // This lib doesn't support this kind of rewriting with a separate prompt vs text
@@ -304,17 +292,17 @@ export async function HuggingFaceLocal_TextRewriterRun(
  */
 
 export async function HuggingFaceLocal_TextSummaryRun(
-  task: TextSummaryTask,
+  job: AiProviderJob,
   runInputData: TextSummaryTaskInput,
   signal?: AbortSignal
 ): Promise<TextSummaryTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
-  const generateSummary: SummarizationPipeline = await getPipeline(task, model);
+  const generateSummary: SummarizationPipeline = await getPipeline(job, model);
   const streamer = new TextStreamer(generateSummary.tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
-    callback_function: generateProgressCallback(task),
+    callback_function: generateProgressCallback(job),
   });
 
   let results = await generateSummary(runInputData.text, {
@@ -334,17 +322,17 @@ export async function HuggingFaceLocal_TextSummaryRun(
  * Model pipeline must be "question-answering"
  */
 export async function HuggingFaceLocal_TextQuestionAnswerRun(
-  task: TextQuestionAnswerTask,
+  job: AiProviderJob,
   runInputData: TextQuestionAnswerTaskInput,
   signal?: AbortSignal
 ): Promise<TextQuestionAnswerTaskOutput> {
   const model = (await getGlobalModelRepository().findByName(runInputData.model))!;
 
-  const generateAnswer: QuestionAnsweringPipeline = await getPipeline(task, model);
+  const generateAnswer: QuestionAnsweringPipeline = await getPipeline(job, model);
   const streamer = new TextStreamer(generateAnswer.tokenizer, {
     skip_prompt: true,
     decode_kwargs: { skip_special_tokens: true },
-    callback_function: generateProgressCallback(task),
+    callback_function: generateProgressCallback(job),
   });
 
   let results = await generateAnswer(runInputData.question, runInputData.context, {

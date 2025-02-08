@@ -7,19 +7,18 @@
 
 import { FilesetResolver, TextEmbedder } from "@mediapipe/tasks-text";
 import {
-  DownloadModelTask,
   DownloadModelTaskInput,
-  TextEmbeddingTask,
   TextEmbeddingTaskInput,
   getGlobalModelRepository,
   ElVector,
+  AiProviderJob,
 } from "ellmers-ai";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.
  */
 export async function MediaPipeTfJsLocal_Download(
-  task: DownloadModelTask,
+  job: AiProviderJob,
   runInputData: DownloadModelTaskInput,
   signal?: AbortSignal
 ) {
@@ -45,7 +44,7 @@ export async function MediaPipeTfJsLocal_Download(
  * using a MediaPipe TFJS model.
  */
 export async function MediaPipeTfJsLocal_Embedding(
-  task: TextEmbeddingTask,
+  job: AiProviderJob,
   runInputData: TextEmbeddingTaskInput,
   signal?: AbortSignal
 ) {
