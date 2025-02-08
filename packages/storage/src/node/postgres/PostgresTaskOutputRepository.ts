@@ -12,6 +12,7 @@ import {
   TaskOutputRepository,
 } from "ellmers-core";
 import { PostgresKVRepository } from "./base/PostgresKVRepository";
+import { Sql } from "postgres";
 
 /**
  * PostgreSQL implementation of a task output repository.
@@ -24,12 +25,12 @@ export class PostgresTaskOutputRepository extends TaskOutputRepository {
     typeof TaskOutputPrimaryKeySchema
   >;
   public type = "PostgresTaskOutputRepository" as const;
-  constructor(connectionString: string) {
+  constructor(sql: Sql) {
     super();
     this.kvRepository = new PostgresKVRepository<
       TaskOutputPrimaryKey,
       DefaultValueType,
       typeof TaskOutputPrimaryKeySchema
-    >(connectionString, "task_outputs", TaskOutputPrimaryKeySchema);
+    >(sql, "task_outputs", TaskOutputPrimaryKeySchema);
   }
 }

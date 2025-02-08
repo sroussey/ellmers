@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Pool } from "pg";
+import { Sql } from "postgres";
 import {
   BaseValueSchema,
   BasePrimaryKeySchema,
@@ -45,49 +45,50 @@ export class PostgresKVRepository<
   ValueSchema extends BaseValueSchema = typeof DefaultValueSchema,
   Combined extends Record<string, any> = Key & Value,
 > extends BaseSqlKVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
-  private pool: Pool;
+  private sql: Sql;
 
   /**
    * Creates a new PostgresKVRepository instance.
    *
-   * @param connectionString - PostgreSQL connection string
+   * @param sql - PostgreSQL connection instance
    * @param table - Name of the table to store key-value pairs (defaults to "kv_store")
    * @param primaryKeySchema - Schema definition for primary key columns
    * @param valueSchema - Schema definition for value columns
    * @param searchable - Array of columns to make searchable
    */
   constructor(
-    connectionString: string,
+    sql: Sql,
     public table: string = "kv_store",
     primaryKeySchema: PrimaryKeySchema = DefaultPrimaryKeySchema as PrimaryKeySchema,
     valueSchema: ValueSchema = DefaultValueSchema as ValueSchema,
     searchable: Array<keyof Combined> = []
   ) {
     super(table, primaryKeySchema, valueSchema, searchable);
-    this.pool = new Pool({ connectionString });
-    this.setupDatabase();
+    this.sql = sql;
   }
 
   /**
    * Initializes the database table with the required schema.
    * Creates the table if it doesn't exist with primary key and value columns.
    */
-  private async setupDatabase(): Promise<void> {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS \`${this.table}\` (
+  public async setupDatabase(): Promise<void> {
+    await this.sql`
+      CREATE TABLE IF NOT EXISTS ${this.sql(this.table)} (
         ${this.constructPrimaryKeyColumns()},
         ${this.constructValueColumns()},
-        PRIMARY KEY (${this.primaryKeyColumnList()}) 
+        PRIMARY KEY (${this.primaryKeyColumnList()})
       )
-    `);
+    `;
+
     for (const column of this.searchable) {
       if (column !== this.primaryKeyColumns()[0]) {
+        const indexName = `${this.table}_${String(column)}`;
         /* Makes other columns searchable, but excludes the first column 
          of a primary key (which would be redundant) */
-        await this.pool.query(
-          `CREATE INDEX IF NOT EXISTS \`${this.table}_${column as string}\` 
-             ON \`${this.table}\` (\`${column as string}\`)`
-        );
+        await this.sql`
+          CREATE INDEX IF NOT EXISTS ${this.sql(indexName)}
+          ON ${this.sql(this.table)} (${this.sql(column as string)})
+        `;
       }
     }
   }
@@ -104,8 +105,9 @@ export class PostgresKVRepository<
       case "string":
         return "TEXT";
       case "boolean":
+        return "BOOLEAN";
       case "number":
-        return "INTEGER";
+        return "NUMERIC";
       default:
         return "TEXT";
     }
@@ -120,23 +122,25 @@ export class PostgresKVRepository<
    * @emits "put" event with the key when successful
    */
   async putKeyValue(key: Key, value: Value): Promise<void> {
-    const sql = `
-    INSERT INTO \`${this.table}\` (
-      ${this.primaryKeyColumnList()},
-      ${this.valueColumnList()}
-    )
-    VALUES (
-      ${this.primaryKeyColumns().map((i) => "?")}
-    )
-    ON CONFLICT (${this.primaryKeyColumnList()}) DO UPDATE
-    SET 
-    ${(this.valueColumns() as string[]).map((col) => `\`${col}\` = EXCLUDED.\`${col}\``).join(", ")}
-    `;
-
     const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
     const valueParams = this.getValueAsOrderedArray(value);
-    const params = [...primaryKeyParams, ...valueParams];
-    await this.pool.query(sql, params);
+    const params = [...primaryKeyParams, ...valueParams].map((param) =>
+      typeof param === "bigint" ? param.toString() : param
+    );
+
+    const columnNames = [...this.primaryKeyColumns(), ...this.valueColumns()] as string[];
+
+    const updateSet = this.valueColumns()
+      .map((col) => `${this.sql(col as string)} = EXCLUDED.${this.sql(col as string)}`)
+      .join(", ");
+
+    await this.sql`
+      INSERT INTO ${this.sql(this.table)} (${this.sql(columnNames)})
+      VALUES (${this.sql(params)})
+      ON CONFLICT (${this.sql(this.primaryKeyColumns() as string[])})
+      DO UPDATE SET ${this.sql.unsafe(updateSet)}
+    `;
+
     this.emit("put", key);
   }
 
@@ -148,20 +152,26 @@ export class PostgresKVRepository<
    * @emits "get" event with the key when successful
    */
   async getKeyValue(key: Key): Promise<Value | undefined> {
-    const whereClauses = (this.primaryKeyColumns() as string[])
-      .map((discriminatorKey, i) => `\`${discriminatorKey}\` = $${i + 1}`)
+    const params = Object.entries(key).map(([col, param]) => [
+      col,
+      typeof param === "bigint" ? param.toString() : param,
+    ]);
+
+    const pkey = Object.fromEntries(params);
+
+    const whereConditions = this.primaryKeyColumns()
+      .map((col) => `${this.sql(col as string)} = ${pkey[col as string]}`)
       .join(" AND ");
 
-    const params = this.getPrimaryKeyAsOrderedArray(key);
+    const result = await this.sql`
+      SELECT ${this.sql(this.valueColumns() as string[])}
+      FROM ${this.sql(this.table)}
+      WHERE ${this.sql.unsafe(whereConditions)}
+    `;
 
-    const result = await this.pool.query(
-      `SELECT ${this.valueColumnList()} FROM \`${this.table}\` WHERE ${whereClauses}`,
-      params
-    );
-
-    if (result.rows.length > 0) {
+    if (result.length > 0) {
       this.emit("get", key);
-      return result.rows[0] as Value;
+      return result[0] as unknown as Value;
     } else {
       return undefined;
     }
@@ -181,14 +191,17 @@ export class PostgresKVRepository<
       throw new Error("Search must be a single key");
     }
 
-    const sql = `
-      SELECT * FROM \`${this.table}\` 
-      WHERE \`${search[0]}\` = ?
+    const param = key[search[0]];
+    const paramValue = typeof param === "bigint" ? param.toString() : param;
+
+    const result = await this.sql`
+      SELECT * FROM ${this.sql(this.table)}
+      WHERE "${this.sql(search[0] as string)}" = ${paramValue}
     `;
-    const result = await this.pool.query<Combined, any[]>(sql, [key[search[0]]]);
-    if (result.rows.length > 0) {
+
+    if (result.length > 0) {
       this.emit("search");
-      return result.rows;
+      return result as unknown as Combined[];
     } else {
       return undefined;
     }
@@ -201,13 +214,21 @@ export class PostgresKVRepository<
    * @emits "delete" event with the key when successful
    */
   async deleteKeyValue(key: Key): Promise<void> {
-    const whereClauses = (this.primaryKeyColumns() as string[])
-      .map((key, i) => `\`${key}\` = $${i + 1}`)
+    const params = Object.entries(key).map(([col, param]) => [
+      col,
+      typeof param === "bigint" ? param.toString() : param,
+    ]);
+
+    const pkey = Object.fromEntries(params);
+
+    const whereConditions = this.primaryKeyColumns()
+      .map((col) => this.sql`${this.sql(col as string)} = ${pkey[col as string]}`)
       .join(" AND ");
 
-    const params = this.getPrimaryKeyAsOrderedArray(key);
-    await this.pool.query(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`, params);
-    this.emit("delete", key);
+    await this.sql`
+      DELETE FROM ${this.sql(this.table)}
+      WHERE ${whereConditions}
+    `;
   }
 
   /**
@@ -215,9 +236,8 @@ export class PostgresKVRepository<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(): Promise<Combined[] | undefined> {
-    const sql = `SELECT * FROM \`${this.table}\``;
-    const result = await this.pool.query<Combined, []>(sql);
-    return result.rows.length ? result.rows : undefined;
+    const result = await this.sql.unsafe(`SELECT * FROM ${this.sql(this.table)}`);
+    return result.length ? (result as unknown as Combined[]) : undefined;
   }
 
   /**
@@ -225,7 +245,7 @@ export class PostgresKVRepository<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
-    await this.pool.query(`DELETE FROM \`${this.table}\``);
+    await this.sql.unsafe(`DELETE FROM ${this.sql(this.table)}`);
     this.emit("clearall");
   }
 
@@ -235,7 +255,7 @@ export class PostgresKVRepository<
    * @returns Promise resolving to the count of stored items
    */
   async size(): Promise<number> {
-    const result = await this.pool.query(`SELECT COUNT(*) FROM \`${this.table}\``);
-    return parseInt(result.rows[0].count, 10);
+    const result = await this.sql.unsafe(`SELECT COUNT(*) FROM ${this.sql(this.table)}`);
+    return parseInt(result[0].count, 10);
   }
 }

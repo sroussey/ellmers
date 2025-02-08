@@ -7,6 +7,7 @@
 
 import { TaskGraphRepository } from "ellmers-core";
 import { PostgresKVRepository } from "./base/PostgresKVRepository";
+import { Sql } from "postgres";
 
 /**
  * PostgreSQL implementation of a task graph repository.
@@ -15,8 +16,8 @@ import { PostgresKVRepository } from "./base/PostgresKVRepository";
 export class PostgresTaskGraphRepository extends TaskGraphRepository {
   kvRepository: PostgresKVRepository;
   public type = "PostgresTaskGraphRepository" as const;
-  constructor(connectionString: string) {
+  constructor(sql: Sql) {
     super();
-    this.kvRepository = new PostgresKVRepository(connectionString, "task_graphs");
+    this.kvRepository = new PostgresKVRepository(sql, "task_graphs");
   }
 }
