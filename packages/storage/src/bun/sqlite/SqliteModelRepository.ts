@@ -34,18 +34,22 @@ export class SqliteModelRepository extends ModelRepository {
     typeof Task2ModelPrimaryKeySchema,
     typeof Task2ModelDetailSchema
   >;
-  constructor(dbOrPath: string) {
+  constructor(
+    dbOrPath: string,
+    tableModels: string = "aimodel",
+    tableTask2Models: string = "aitask2aimodel"
+  ) {
     super();
     this.modelKvRepository = new SqliteKVRepository<
       ModelPrimaryKey,
       DefaultValueType,
       typeof ModelPrimaryKeySchema
-    >(dbOrPath, "aimodel", ModelPrimaryKeySchema);
+    >(dbOrPath, tableModels, ModelPrimaryKeySchema);
     this.task2ModelKvRepository = new SqliteKVRepository<
       Task2ModelPrimaryKey,
       Task2ModelDetail,
       typeof Task2ModelPrimaryKeySchema,
       typeof Task2ModelDetailSchema
-    >(dbOrPath, "aitask2aimodel", Task2ModelPrimaryKeySchema, Task2ModelDetailSchema);
+    >(dbOrPath, tableTask2Models, Task2ModelPrimaryKeySchema, Task2ModelDetailSchema);
   }
 }

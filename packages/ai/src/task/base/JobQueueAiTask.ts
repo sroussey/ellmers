@@ -53,7 +53,7 @@ export class JobQueueAiTask extends JobQueueTask {
       if (!model) {
         throw new Error(`JobQueueTaskTask: No model ${modelname} found`);
       }
-      const runFn = ProviderRegistry.jobAsTaskRunFn(runtype, model.provider);
+      const runFn = ProviderRegistry.toTaskRunFn(runtype, model.provider);
       if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
       results = await runFn(this, this.runInputData);
     } catch (err) {

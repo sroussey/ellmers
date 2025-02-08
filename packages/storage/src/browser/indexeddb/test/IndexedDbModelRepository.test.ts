@@ -5,10 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { InMemoryModelRepository } from "../InMemoryModelRepository";
+import { IndexedDbModelRepository } from "../IndexedDbModelRepository";
 import { runGenericModelRepositoryTests } from "../../../test/genericModelRepositoryTests";
+import "fake-indexeddb/auto";
+import { nanoid } from "nanoid";
 
-runGenericModelRepositoryTests(
-  "InMemoryModelRepository",
-  async () => new InMemoryModelRepository()
-);
+// TODO: fix this test, it requires search on KVRepository, which is not implemented yet
+
+// runGenericModelRepositoryTests(
+//   "IndexedDbModelRepository",
+//   async () =>
+//     new IndexedDbModelRepository(`idx_model_test_${nanoid()}`, `idx_task2model_test_${nanoid()}`)
+// );

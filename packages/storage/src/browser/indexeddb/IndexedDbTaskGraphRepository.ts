@@ -15,8 +15,8 @@ import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 export class IndexedDbTaskGraphRepository extends TaskGraphRepository {
   kvRepository: IndexedDbKVRepository;
   public type = "IndexedDbTaskGraphRepository" as const;
-  constructor() {
+  constructor(table: string = "task_graphs") {
     super();
-    this.kvRepository = new IndexedDbKVRepository("task_graphs");
+    this.kvRepository = new IndexedDbKVRepository(table);
   }
 }

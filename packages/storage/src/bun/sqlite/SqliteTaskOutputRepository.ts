@@ -24,12 +24,12 @@ export class SqliteTaskOutputRepository extends TaskOutputRepository {
     typeof TaskOutputPrimaryKeySchema
   >;
   public type = "SqliteTaskOutputRepository" as const;
-  constructor(dbOrPath: string) {
+  constructor(dbOrPath: string, table: string = "task_outputs") {
     super();
     this.kvRepository = new SqliteKVRepository<
       TaskOutputPrimaryKey,
       DefaultValueType,
       typeof TaskOutputPrimaryKeySchema
-    >(dbOrPath, "task_outputs", TaskOutputPrimaryKeySchema);
+    >(dbOrPath, table, TaskOutputPrimaryKeySchema);
   }
 }

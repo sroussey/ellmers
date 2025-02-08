@@ -5,38 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it, beforeEach } from "bun:test";
 import { SqliteTaskOutputRepository } from "../SqliteTaskOutputRepository";
-import { TaskInput, TaskOutput } from "ellmers-core";
+import { runGenericTaskOutputRepositoryTests } from "../../../test/genericTaskOutputRepositoryTests";
+import { nanoid } from "nanoid";
 
-describe("SqliteTaskOutputRepository", () => {
-  let repository: SqliteTaskOutputRepository;
-
-  beforeEach(() => {
-    repository = new SqliteTaskOutputRepository(":memory:");
-  });
-
-  it("should initialize the kvRepository", () => {
-    expect(repository.kvRepository).toBeDefined();
-  });
-
-  it("should store and retrieve task outputs", async () => {
-    const input: TaskInput = { id: "task1" };
-    const output: TaskOutput = { result: "success" };
-    const taskType: string = "taskType1";
-
-    await repository.saveOutput(taskType, input, output);
-    const retrievedOutput = await repository.getOutput(taskType, input);
-
-    expect(retrievedOutput).toEqual(output);
-  });
-
-  it("should return undefined for non-existent task outputs", async () => {
-    const input: TaskInput = { id: "task2" };
-    const taskType: string = "taskType1";
-
-    const retrievedOutput = await repository.getOutput(taskType, input);
-
-    expect(retrievedOutput).toBeUndefined();
-  });
-});
+runGenericTaskOutputRepositoryTests(
+  async () => new SqliteTaskOutputRepository(":memory:", `task_output_test_${nanoid()}`),
+  "SqliteTaskOutputRepository"
+);

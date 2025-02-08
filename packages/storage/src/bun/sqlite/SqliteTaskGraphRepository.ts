@@ -15,8 +15,8 @@ import { SqliteKVRepository } from "./base/SqliteKVRepository";
 export class SqliteTaskGraphRepository extends TaskGraphRepository {
   kvRepository: SqliteKVRepository;
   public type = "SqliteTaskGraphRepository" as const;
-  constructor(dbOrPath: string) {
+  constructor(dbOrPath: string, table: string = "task_graphs") {
     super();
-    this.kvRepository = new SqliteKVRepository(dbOrPath, "task_graphs");
+    this.kvRepository = new SqliteKVRepository(dbOrPath, table);
   }
 }

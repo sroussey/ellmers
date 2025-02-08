@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SqliteKVRepository } from "../base/SqliteKVRepository";
+import { IndexedDbKVRepository } from "../base/IndexedDbKVRepository";
 import { runGenericKVRepositoryTests } from "../../../test/genericKVRepositoryTests";
 import {
   PrimaryKey,
@@ -16,13 +16,12 @@ import {
 import { nanoid } from "nanoid";
 
 runGenericKVRepositoryTests(
-  async () => new SqliteKVRepository(":memory:", `sql_test_${nanoid()}`),
+  async () => new IndexedDbKVRepository(`idx_test_${nanoid()}`),
   async () =>
-    new SqliteKVRepository<PrimaryKey, Value>(
-      ":memory:",
-      `sql_test_${nanoid()}`,
+    new IndexedDbKVRepository<PrimaryKey, Value>(
+      `idx_test_${nanoid()}`,
       PrimaryKeySchema,
       ValueSchema
     ),
-  "SqliteKVRepository"
+  "IndexedDbKVRepository"
 );

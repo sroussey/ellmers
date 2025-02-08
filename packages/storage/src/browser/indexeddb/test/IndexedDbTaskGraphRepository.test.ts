@@ -5,24 +5,12 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SqliteKVRepository } from "../base/SqliteKVRepository";
-import { runGenericKVRepositoryTests } from "../../../test/genericKVRepositoryTests";
-import {
-  PrimaryKey,
-  Value,
-  PrimaryKeySchema,
-  ValueSchema,
-} from "../../../test/genericKVRepositoryTests";
+import { IndexedDbTaskGraphRepository } from "../IndexedDbTaskGraphRepository";
+import { runGenericTaskGraphRepositoryTests } from "../../../test/genericTaskGraphRepositoryTests";
+import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
 
-runGenericKVRepositoryTests(
-  async () => new SqliteKVRepository(":memory:", `sql_test_${nanoid()}`),
-  async () =>
-    new SqliteKVRepository<PrimaryKey, Value>(
-      ":memory:",
-      `sql_test_${nanoid()}`,
-      PrimaryKeySchema,
-      ValueSchema
-    ),
-  "SqliteKVRepository"
+runGenericTaskGraphRepositoryTests(
+  async () => new IndexedDbTaskGraphRepository(`idx_test_${nanoid()}`),
+  "IndexedDbTaskGraphRepository"
 );
