@@ -27,8 +27,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.3.2",
-    "@mediapipe/tasks-text": "^0.10.20",
+    "@huggingface/transformers": "^3.3.3",
+    "@mediapipe/tasks-text": "^0.10.21",
     "@sroussey/typescript-graph": "^0.3.14",
     "@types/better-sqlite3": "^7.6.12",
     "@types/pg": "^8.11.11",
@@ -51,7 +51,7 @@
     "@typescript-eslint/eslint-plugin": "^8.23.0",
     "@typescript-eslint/parser": "^8.23.0",
     "concurrently": "^8.2.2",
-    "eslint": "^9.19.0",
+    "eslint": "^9.20.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.1.0",
