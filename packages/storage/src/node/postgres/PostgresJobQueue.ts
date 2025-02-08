@@ -35,10 +35,13 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     super(queue, limiter, jobClass, waitDurationInMilliseconds);
   }
 
-  public ensureTableExists() {
-    this.sql`
+  public async ensureTableExists() {
+    await this.sql.unsafe(`
+    CREATE TYPE IF NOT EXISTS job_status AS ENUM ('NEW', 'PROCESSING', 'COMPLETED', 'FAILED', 'ABORTING');
+    `);
+    await this.sql.unsafe(`
     CREATE TABLE IF NOT EXISTS job_queue (
-      id bigint SERIAL NOT NULL,
+      id bigint SERIAL NOT NULL PRIMARY KEY,
       fingerprint text NOT NULL,
       queue text NOT NULL,
       jobRunId text NOT NULL,
@@ -53,15 +56,16 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       deadlineAt timestamp with time zone,
       error text,
       errorCode text,
-      progress real DEFAULT 0,
+      progress integer DEFAULT 0,
       progressMessage text DEFAULT '',
       progressDetails jsonb
-    );
-    
-    CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
-    CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
-    CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
-    `;
+    )`);
+
+    await this.sql`CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter)`;
+    await this
+      .sql`CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter)`;
+    await this
+      .sql`CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED')`;
     return this;
   }
 

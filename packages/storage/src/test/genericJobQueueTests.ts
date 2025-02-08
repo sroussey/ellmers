@@ -65,14 +65,14 @@ export class TestJob extends Job<TaskInput, TaskOutput> {
 }
 
 export function runGenericJobQueueTests(
-  createJobQueue: () => JobQueue<TaskInput, TaskOutput>,
+  createJobQueue: () => Promise<JobQueue<TaskInput, TaskOutput>>,
   queueName: string
 ) {
   describe(`JobQueue Tests - ${queueName}`, () => {
     let jobQueue: JobQueue<TaskInput, TaskOutput>;
 
     beforeEach(async () => {
-      jobQueue = createJobQueue();
+      jobQueue = await createJobQueue();
     });
 
     afterEach(async () => {

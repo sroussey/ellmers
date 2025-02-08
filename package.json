@@ -41,6 +41,8 @@
     "listr2": "^8.2.5",
     "nanoid": "^5.0.9",
     "pg": "^8.13.1",
+    "pg-mem": "^3.0.4",
+    "pg-server": "^0.1.8",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
