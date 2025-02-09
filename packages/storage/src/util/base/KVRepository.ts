@@ -194,11 +194,19 @@ export abstract class KVRepository<
   }
 
   protected primaryKeyColumns(): Array<keyof Key> {
-    return Object.keys(this.primaryKeySchema);
+    const columns: Array<keyof Key> = [];
+    for (const [k, type] of Object.entries(this.primaryKeySchema)) {
+      columns.push(k as keyof Key);
+    }
+    return columns;
   }
 
   protected valueColumns(): Array<keyof Value> {
-    return Object.keys(this.valueSchema);
+    const columns: Array<keyof Value> = [];
+    for (const [k, type] of Object.entries(this.valueSchema)) {
+      columns.push(k as keyof Value);
+    }
+    return columns;
   }
 
   /**
@@ -242,5 +250,24 @@ export abstract class KVRepository<
       key = key[this.primaryKeyIndex];
     }
     return await makeFingerprint(key);
+  }
+
+  /**
+   * Converts a primary key object into an ordered array based on the primaryKeySchema
+   * This ensures consistent parameter ordering for SQL queries
+   * @param key - The primary key object to convert
+   * @returns Array of key values ordered according to the schema
+   * @throws Error if a required primary key field is missing
+   */
+  protected getPrimaryKeyAsOrderedArray(key: Key): BasicKeyType[] {
+    const orderedParams: BasicKeyType[] = [];
+    for (const [k, type] of Object.entries(this.primaryKeySchema)) {
+      if (k in key) {
+        orderedParams.push(key[k]);
+      } else {
+        throw new Error(`Missing required primary key field: ${k}`);
+      }
+    }
+    return orderedParams;
   }
 }
