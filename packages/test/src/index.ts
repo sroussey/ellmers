@@ -12,7 +12,7 @@ import {
 import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
-} from "../../ai-provider/dist/tf-mediapipe";
+} from "ellmers-ai-provider/tf-mediapipe";
 import { ConcurrencyLimiter, TaskInput, TaskOutput, getTaskQueueRegistry } from "ellmers-core";
 import { InMemoryJobQueue } from "ellmers-storage/inmemory";
 import { AiProviderJob } from "ellmers-ai";
