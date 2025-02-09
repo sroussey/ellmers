@@ -41,7 +41,6 @@ import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
 import { AiProviderJob } from "ellmers-ai";
 env.backends.onnx.wasm.proxy = true;
-env.allowLocalModels = true;
 
 const queueRegistry = getTaskQueueRegistry();
 
