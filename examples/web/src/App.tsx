@@ -49,6 +49,7 @@ const queueRegistry = getTaskQueueRegistry();
 registerHuggingfaceLocalTasks();
 queueRegistry.registerQueue(
   new IndexedDbJobQueue<TaskInput, TaskOutput>(
+    "jobs",
     LOCAL_ONNX_TRANSFORMERJS,
     new ConcurrencyLimiter(1, 10),
     AiProviderJob<TaskInput, TaskOutput>

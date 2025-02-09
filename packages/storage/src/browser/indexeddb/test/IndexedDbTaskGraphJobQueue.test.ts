@@ -13,14 +13,17 @@ import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
 import { describe } from "bun:test";
 
-describe("IndexedDbTaskGraphJobQueue", () => {});
-runGenericTaskGraphJobQueueTests(
-  async () =>
-    new IndexedDbJobQueue(
-      `indexeddb_test_queue_${nanoid()}`,
+describe("IndexedDbTaskGraphJobQueue", () => {
+  runGenericTaskGraphJobQueueTests(async () => {
+    const queue = new IndexedDbJobQueue(
+      "idx_test",
+      `queue_${nanoid()}`,
       new InMemoryRateLimiter(1, 10),
       TestJob,
       10
-    ),
-  "IndexedDbTaskGraphJobQueue"
-);
+    );
+    // Wait for the database to be initialized
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return queue;
+  }, "IndexedDbTaskGraphJobQueue");
+});

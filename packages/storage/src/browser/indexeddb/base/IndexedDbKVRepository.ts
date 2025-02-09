@@ -14,13 +14,11 @@ import {
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
 } from "ellmers-core";
-import { ensureIndexedDbTable } from "./IndexedDbTable";
-import { makeFingerprint } from "../../../util/Misc";
+import { ensureIndexedDbTable, ExpectedIndexDefinition } from "./IndexedDbTable";
 import { KVRepository } from "../../../util/base/KVRepository";
+
 /**
  * A key-value repository implementation using IndexedDB for browser-based storage.
- * This class provides a simple persistent storage solution for web applications
- * without requiring a server component.
  *
  * @template Key - The type of the primary key object
  * @template Value - The type of the value object to be stored
@@ -39,11 +37,11 @@ export class IndexedDbKVRepository<
   private dbPromise: Promise<IDBDatabase>;
 
   /**
-   * Creates a new IndexedDB-based key-value repository
-   * @param table - Name of the IndexedDB store to use
-   * @param primaryKeySchema - Schema defining the structure of primary keys
-   * @param valueSchema - Schema defining the structure of values
-   * @param searchable - Array of properties that can be searched (Note: search not implemented)
+   * Creates a new IndexedDB-based key-value repository.
+   * @param table - Name of the IndexedDB store to use.
+   * @param primaryKeySchema - Schema defining the structure of primary keys.
+   * @param valueSchema - Schema defining the structure of values.
+   * @param searchable - Array of properties that can be searched.
    */
   constructor(
     public table: string = "kv_store",
@@ -52,122 +50,155 @@ export class IndexedDbKVRepository<
     protected searchable: Array<keyof Combined> = []
   ) {
     super(primaryKeySchema, valueSchema, searchable);
-    this.dbPromise = ensureIndexedDbTable(this.table, (db) => {
-      db.createObjectStore(table, { keyPath: "id" });
-    });
+
+    const pkColumns = super.primaryKeyColumns() as string[];
+
+    const expectedIndexes: ExpectedIndexDefinition[] = this.searchable
+      .filter((field) => !pkColumns.includes(String(field)))
+      .map((field) => ({
+        name: String(field),
+        keyPath: `value.${String(field)}`,
+        options: { unique: false },
+      }));
+
+    const primaryKey = pkColumns.length === 1 ? pkColumns[0] : pkColumns;
+
+    // Ensure that our table is created/upgraded only if the structure (indexes) has changed.
+    this.dbPromise = ensureIndexedDbTable(this.table, primaryKey, expectedIndexes);
   }
 
   /**
-   * Stores a key-value pair in the repository
-   * @param key - The key object
-   * @param value - The value object to store
+   * Stores a key-value pair in the repository.
+   * @param key - The key object.
+   * @param value - The value object to store.
    * @emits put - Emitted when the value is successfully stored
    */
   async putKeyValue(key: Key, value: Value): Promise<void> {
-    const id = await makeFingerprint(key);
     const db = await this.dbPromise;
-
+    const record = { ...key, ...value };
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readwrite");
       const store = transaction.objectStore(this.table);
-      const request = store.put({ id, value });
-
+      const request = store.put(record);
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.emit("put", id);
+        this.emit("put", key);
         resolve();
       };
     });
   }
 
+  protected getPrimaryKeyAsOrderedArray(key: Key) {
+    return super
+      .getPrimaryKeyAsOrderedArray(key)
+      .map((value) => (typeof value === "bigint" ? value.toString() : value));
+  }
   /**
-   * Retrieves a value by its key
-   * @param key - The key object to look up
-   * @returns The stored value or undefined if not found
-   * @emits get - Emitted when a value is retrieved
+   * Retrieves a value from the repository by its key.
+   * @param key - The key object.
+   * @returns The value object or undefined if not found.
+   * @emits get - Emitted when the value is successfully retrieved
    */
   async getKeyValue(key: Key): Promise<Value | undefined> {
-    const id = await makeFingerprint(key);
     const db = await this.dbPromise;
-
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readonly");
       const store = transaction.objectStore(this.table);
-      const request = store.get(id);
-
+      const request = store.get(this.getPrimaryKeyAsOrderedArray(key));
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.emit("get", id);
-        if (request.result) {
-          resolve(request.result.value);
-        } else {
-          resolve(undefined);
-        }
+        this.emit("get", key);
+        resolve(request.result ? request.result.value : undefined);
       };
     });
   }
 
   /**
-   * Returns an array of all entries in the repository
-   * @returns Array of all entries in the repository
+   * Returns an array of all entries in the repository.
+   * @returns Array of all entries in the repository.
    */
   async getAll(): Promise<Combined[] | undefined> {
     const db = await this.dbPromise;
     const transaction = db.transaction(this.table, "readonly");
     const store = transaction.objectStore(this.table);
     const request = store.getAll();
-
     return new Promise((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const values = request.result.map((item) => ({ ...item.value, id: item.id }));
+        const values = request.result;
         resolve(values.length > 0 ? values : undefined);
       };
     });
   }
 
   /**
-   * Search functionality is not supported in this implementation
-   * @throws Error indicating search is not supported
+   * Searches for records matching the specified partial query.
+   * It uses an appropriate index if one exists, or scans all records.
+   * @param key - Partial query object.
+   * @returns Array of matching records or undefined.
    */
   async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
-    throw new Error("Search not supported for IndexedDbKVRepository");
+    const queryKeys = Object.keys(key);
+    if (queryKeys.length === 0) return undefined;
+    const db = await this.dbPromise;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.table, "readonly");
+      const store = transaction.objectStore(this.table);
+      const searchableKey = queryKeys.find((k) => this.searchable.includes(k as keyof Combined));
+      if (searchableKey) {
+        try {
+          const index = store.index(searchableKey);
+          const request = index.getAll(key[searchableKey as keyof Combined]);
+          request.onsuccess = () => {
+            const results = request.result.filter((item) =>
+              Object.entries(key).every(([k, v]) => item[k] === v)
+            );
+            resolve(results.length > 0 ? results : undefined);
+          };
+          request.onerror = () => reject(request.error);
+          return;
+        } catch (err) {
+          // Fall back to a full scan
+        }
+      }
+      const getAllRequest = store.getAll();
+      getAllRequest.onsuccess = () => {
+        let results = getAllRequest.result;
+        results = results.filter((item) => Object.entries(key).every(([k, v]) => item[k] === v));
+        resolve(results.length > 0 ? results : undefined);
+      };
+      getAllRequest.onerror = () => reject(getAllRequest.error);
+    });
   }
 
   /**
-   * Deletes a key-value pair from the repository
-   * @param key - The key object to delete
-   * @emits delete - Emitted when a value is deleted
+   * Deletes a key-value pair from the repository.
+   * @param key - The key object to delete.
    */
   async deleteKeyValue(key: Key): Promise<void> {
-    const id = await makeFingerprint(key);
     const db = await this.dbPromise;
-
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readwrite");
       const store = transaction.objectStore(this.table);
-      const request = store.delete(id);
-
+      const request = store.delete(this.getPrimaryKeyAsOrderedArray(key));
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.emit("delete", id);
+        this.emit("delete", key);
         resolve();
       };
     });
   }
 
   /**
-   * Deletes all key-value pairs from the repository
+   * Deletes all records from the repository.
    * @emits clearall - Emitted when all values are deleted
    */
   async deleteAll(): Promise<void> {
     const db = await this.dbPromise;
-
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readwrite");
       const store = transaction.objectStore(this.table);
       const request = store.clear();
-
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.emit("clearall");
@@ -177,17 +208,15 @@ export class IndexedDbKVRepository<
   }
 
   /**
-   * Returns the total number of key-value pairs in the repository
-   * @returns The count of stored items
+   * Returns the total number of key-value pairs in the repository.
+   * @returns Count of stored items.
    */
   async size(): Promise<number> {
     const db = await this.dbPromise;
-
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readonly");
       const store = transaction.objectStore(this.table);
       const request = store.count();
-
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });

@@ -15,7 +15,8 @@ import { describe } from "bun:test";
 
 function createIndexedDbJobQueue() {
   return new IndexedDbJobQueue<TaskInput, TaskOutput>(
-    `indexeddb_test_queue_${nanoid()}`,
+    "idx_test",
+    `queue_${nanoid()}`,
     new InMemoryRateLimiter(4, 1),
     TestJob,
     1

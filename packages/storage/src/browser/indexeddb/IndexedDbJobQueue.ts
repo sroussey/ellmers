@@ -16,7 +16,7 @@ import {
   JobStatus,
 } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
-import { ensureIndexedDbTable } from "./base/IndexedDbTable";
+import { ensureIndexedDbTable, ExpectedIndexDefinition } from "./base/IndexedDbTable";
 
 /**
  * IndexedDB implementation of a job queue.
@@ -24,8 +24,9 @@ import { ensureIndexedDbTable } from "./base/IndexedDbTable";
  */
 export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
   private dbPromise: Promise<IDBDatabase>;
-
+  private tableName: string;
   constructor(
+    tableNamePrefix: string,
     queue: string,
     limiter: ILimiter,
     jobClass: typeof Job<Input, Output> = Job<Input, Output>,
@@ -33,27 +34,40 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     public version: number = 1
   ) {
     super(queue, limiter, jobClass, waitDurationInMilliseconds);
-    const tableName = `jobqueue_${queue}`;
+    this.tableName = `${tableNamePrefix}_${queue}`;
 
     // Close any existing connections first
-    const closeRequest = indexedDB.open(tableName);
+    const closeRequest = indexedDB.open(this.tableName);
     closeRequest.onsuccess = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       db.close();
     };
 
+    const expectedIndexes: ExpectedIndexDefinition[] = [
+      {
+        name: "status",
+        keyPath: `value.status`,
+        options: { unique: false },
+      },
+      {
+        name: "status_runAfter",
+        keyPath: ["status", "runAfter"],
+        options: { unique: false },
+      },
+      {
+        name: "jobRunId",
+        keyPath: `jobRunId`,
+        options: { unique: false },
+      },
+      {
+        name: "fingerprint_status",
+        keyPath: ["fingerprint", "status"],
+        options: { unique: false },
+      },
+    ];
+
     // Now initialize the database
-    this.dbPromise = ensureIndexedDbTable(tableName, (db) => {
-      if (!db.objectStoreNames.contains("jobs")) {
-        const store = db.createObjectStore("jobs", { keyPath: "id" });
-        store.createIndex("status", "status", { unique: false });
-        store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
-        store.createIndex("jobRunId", "jobRunId", { unique: false });
-        store.createIndex("fingerprint_status", ["fingerprint", "status"], {
-          unique: false,
-        });
-      }
-    });
+    this.dbPromise = ensureIndexedDbTable(this.tableName, "id", expectedIndexes);
   }
 
   async add(job: Job<Input, Output>): Promise<unknown> {
@@ -70,8 +84,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     this.createAbortController(job.id);
 
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const request = store.add({
       id: job.id,
       jobRunId: job.jobRunId,
@@ -99,8 +113,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async get(id: unknown): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const request = store.get(id as string);
     return new Promise((resolve, reject) => {
       request.onsuccess = () =>
@@ -112,8 +126,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async peek(num: number = 100): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const index = store.index("status_runAfter");
     const request = index.getAll(IDBKeyRange.only([JobStatus.PENDING]), num);
 
@@ -130,8 +144,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async processing(): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const index = store.index("status");
     const request = index.getAll(IDBKeyRange.only(JobStatus.PROCESSING));
 
@@ -148,8 +162,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async aborting(): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const index = store.index("status");
     const request = index.getAll(IDBKeyRange.only(JobStatus.ABORTING));
 
@@ -166,8 +180,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async next(): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const index = store.index("status_runAfter");
     const now = new Date();
 
@@ -219,8 +233,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   async size(): Promise<number> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const request = store.count();
 
     return new Promise((resolve, reject) => {
@@ -237,8 +251,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   async complete(id: unknown, output?: Output, error?: JobError): Promise<void> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const request = store.get(id as string);
 
     return new Promise((resolve, reject) => {
@@ -297,8 +311,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   public async abort(jobId: unknown): Promise<void> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const request = store.get(jobId as string);
 
     return new Promise((resolve, reject) => {
@@ -324,8 +338,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
 
   async getJobsByRunId(jobRunId: string): Promise<Job<Input, Output>[]> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const request = store.index("jobRunId").getAll(jobRunId);
 
     return new Promise((resolve, reject) => {
@@ -344,8 +358,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   async deleteAll(): Promise<void> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const request = store.clear();
 
     return new Promise((resolve, reject) => {
@@ -361,8 +375,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    */
   async outputForInput(input: Input): Promise<Output | null> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readonly");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readonly");
+    const store = tx.objectStore(this.tableName);
     const fingerprint = await makeFingerprint(input);
     const index = store.index("fingerprint_status");
     const request = index.get([fingerprint, JobStatus.COMPLETED]);
@@ -387,8 +401,8 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     details: Record<string, any>
   ): Promise<void> {
     const db = await this.dbPromise;
-    const tx = db.transaction("jobs", "readwrite");
-    const store = tx.objectStore("jobs");
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
     const request = store.get(jobId as string);
 
     return new Promise((resolve, reject) => {
