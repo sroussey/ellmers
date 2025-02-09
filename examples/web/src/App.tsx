@@ -39,7 +39,6 @@ import {
 import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
 import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
-import { IndexedDbJobQueue } from "ellmers-storage/browser/indexeddb";
 import { AiProviderJob } from "ellmers-ai";
 env.backends.onnx.wasm.proxy = true;
 env.allowLocalModels = true;
@@ -48,7 +47,7 @@ const queueRegistry = getTaskQueueRegistry();
 
 registerHuggingfaceLocalTasks();
 queueRegistry.registerQueue(
-  new IndexedDbJobQueue<TaskInput, TaskOutput>(
+  new InMemoryJobQueue<TaskInput, TaskOutput>(
     LOCAL_ONNX_TRANSFORMERJS,
     new ConcurrencyLimiter(1, 10),
     AiProviderJob<TaskInput, TaskOutput>
