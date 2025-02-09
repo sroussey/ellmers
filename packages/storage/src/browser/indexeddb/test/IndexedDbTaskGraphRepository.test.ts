@@ -9,8 +9,10 @@ import { IndexedDbTaskGraphRepository } from "../IndexedDbTaskGraphRepository";
 import { runGenericTaskGraphRepositoryTests } from "../../../test/genericTaskGraphRepositoryTests";
 import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericTaskGraphRepositoryTests(
-  async () => new IndexedDbTaskGraphRepository(`idx_test_${nanoid()}`),
-  "IndexedDbTaskGraphRepository"
-);
+describe("IndexedDbTaskGraphRepository", () => {
+  runGenericTaskGraphRepositoryTests(
+    async () => new IndexedDbTaskGraphRepository(`idx_test_${nanoid()}`)
+  );
+});

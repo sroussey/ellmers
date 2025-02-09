@@ -8,13 +8,15 @@
 import { SqliteModelRepository } from "../SqliteModelRepository";
 import { runGenericModelRepositoryTests } from "../../../test/genericModelRepositoryTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericModelRepositoryTests(
-  "SqliteModelRepository",
-  async () =>
-    new SqliteModelRepository(
-      ":memory:",
-      `aimodel_test_${nanoid()}`,
-      `aitask2aimodel_test_${nanoid()}`
-    )
-);
+describe("SqliteModelRepository", () => {
+  runGenericModelRepositoryTests(
+    async () =>
+      new SqliteModelRepository(
+        ":memory:",
+        `aimodel_test_${nanoid()}`,
+        `aitask2aimodel_test_${nanoid()}`
+      )
+  );
+});

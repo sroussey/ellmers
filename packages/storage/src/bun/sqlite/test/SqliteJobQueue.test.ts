@@ -10,6 +10,7 @@ import { SqliteJobQueue } from "../SqliteJobQueue";
 import { SqliteRateLimiter } from "../SqliteRateLimiter";
 import { getDatabase } from "../../../util/db_sqlite";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
 // Create an in-memory database
 const db = getDatabase(":memory:");
@@ -25,4 +26,6 @@ function createSqliteJobQueue() {
   ).ensureTableExists();
 }
 
-runGenericJobQueueTests(createSqliteJobQueue, "SqliteJobQueue");
+describe("SqliteJobQueue", () => {
+  runGenericJobQueueTests(createSqliteJobQueue);
+});

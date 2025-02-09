@@ -11,7 +11,9 @@ import { runGenericTaskGraphJobQueueTests } from "../../../test/genericTaskGraph
 import { TestJob } from "../../../test/genericTaskGraphJobQueueTests";
 import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
+describe("IndexedDbTaskGraphJobQueue", () => {});
 runGenericTaskGraphJobQueueTests(
   async () =>
     new IndexedDbJobQueue(

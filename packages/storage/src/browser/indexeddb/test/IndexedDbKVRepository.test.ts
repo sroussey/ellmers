@@ -14,14 +14,16 @@ import {
   ValueSchema,
 } from "../../../test/genericKVRepositoryTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericKVRepositoryTests(
-  async () => new IndexedDbKVRepository(`idx_test_${nanoid()}`),
-  async () =>
-    new IndexedDbKVRepository<PrimaryKey, Value>(
-      `idx_test_${nanoid()}`,
-      PrimaryKeySchema,
-      ValueSchema
-    ),
-  "IndexedDbKVRepository"
-);
+describe("IndexedDbKVRepository", () => {
+  runGenericKVRepositoryTests(
+    async () => new IndexedDbKVRepository(`idx_test_${nanoid()}`),
+    async () =>
+      new IndexedDbKVRepository<PrimaryKey, Value>(
+        `idx_test_${nanoid()}`,
+        PrimaryKeySchema,
+        ValueSchema
+      )
+  );
+});

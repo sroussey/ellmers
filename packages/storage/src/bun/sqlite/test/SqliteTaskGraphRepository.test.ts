@@ -8,8 +8,10 @@
 import { SqliteTaskGraphRepository } from "../SqliteTaskGraphRepository";
 import { runGenericTaskGraphRepositoryTests } from "../../../test/genericTaskGraphRepositoryTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericTaskGraphRepositoryTests(
-  async () => new SqliteTaskGraphRepository(":memory:", `task_graph_test_${nanoid()}`),
-  "SqliteTaskGraphRepository"
-);
+describe("SqliteTaskGraphRepository", () => {
+  runGenericTaskGraphRepositoryTests(
+    async () => new SqliteTaskGraphRepository(":memory:", `task_graph_test_${nanoid()}`)
+  );
+});

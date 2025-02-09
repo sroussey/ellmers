@@ -13,9 +13,11 @@ import {
   PrimaryKeySchema,
   ValueSchema,
 } from "../../../test/genericKVRepositoryTests";
+import { describe } from "bun:test";
 
-runGenericKVRepositoryTests(
-  async () => new InMemoryKVRepository(),
-  async () => new InMemoryKVRepository<PrimaryKey, Value>(PrimaryKeySchema, ValueSchema),
-  "InMemoryKVRepository"
-);
+describe("InMemoryKVRepository", () => {
+  runGenericKVRepositoryTests(
+    async () => new InMemoryKVRepository(),
+    async () => new InMemoryKVRepository<PrimaryKey, Value>(PrimaryKeySchema, ValueSchema)
+  );
+});

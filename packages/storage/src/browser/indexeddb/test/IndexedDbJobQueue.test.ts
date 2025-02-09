@@ -11,6 +11,7 @@ import { InMemoryRateLimiter } from "../../inmemory/InMemoryRateLimiter";
 import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueTests";
 import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
 function createIndexedDbJobQueue() {
   return new IndexedDbJobQueue<TaskInput, TaskOutput>(
@@ -21,4 +22,6 @@ function createIndexedDbJobQueue() {
   );
 }
 
-runGenericJobQueueTests(createIndexedDbJobQueue, "IndexedDbJobQueue");
+describe("IndexedDbJobQueue", () => {
+  runGenericJobQueueTests(createIndexedDbJobQueue);
+});

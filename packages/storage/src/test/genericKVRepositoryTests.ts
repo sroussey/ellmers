@@ -22,59 +22,56 @@ export const ValueSchema: BaseValueSchema = { option: "string", success: "boolea
 
 export function runGenericKVRepositoryTests(
   createRepository: () => Promise<IKVRepository>,
-  createComplexRepository: () => Promise<IKVRepository<PrimaryKey, Value>>,
-  repositoryName: string
+  createComplexRepository: () => Promise<IKVRepository<PrimaryKey, Value>>
 ) {
-  describe(`KVRepository Tests - ${repositoryName}`, () => {
-    describe("with default schemas (key and value)", () => {
-      let repository: IKVRepository;
+  describe("with default schemas (key and value)", () => {
+    let repository: IKVRepository;
 
-      beforeEach(async () => {
-        repository = await createRepository();
-      });
-
-      it("should store and retrieve values for a key", async () => {
-        const key = "key";
-        const value = "value";
-        await repository.put(key, value);
-        const output = await repository.get(key);
-
-        expect(output).toEqual(value);
-      });
-
-      it("should get undefined for a key that doesn't exist", async () => {
-        const key = "key";
-        const value = "value";
-        await repository.put(key, value);
-        const output = await repository.get("not-a-key");
-
-        expect(output == undefined).toEqual(true);
-      });
+    beforeEach(async () => {
+      repository = await createRepository();
     });
 
-    describe("with complex schemas", () => {
-      let repository: IKVRepository<PrimaryKey, Value>;
+    it("should store and retrieve values for a key", async () => {
+      const key = "key";
+      const value = "value";
+      await repository.put(key, value);
+      const output = await repository.get(key);
 
-      beforeEach(async () => {
-        repository = await createComplexRepository();
-      });
+      expect(output).toEqual(value);
+    });
 
-      it("should store and retrieve values for a key", async () => {
-        const key = { name: "key", type: "string" };
-        const value = { option: "value", success: true };
-        await repository.putKeyValue(key, value);
-        const output = await repository.getKeyValue(key);
+    it("should get undefined for a key that doesn't exist", async () => {
+      const key = "key";
+      const value = "value";
+      await repository.put(key, value);
+      const output = await repository.get("not-a-key");
 
-        expect(output?.option).toEqual("value");
-        expect(!!output?.success).toEqual(true);
-      });
+      expect(output == undefined).toEqual(true);
+    });
+  });
 
-      it("should get undefined for a key that doesn't exist", async () => {
-        const key = { name: "key", type: "string" };
-        const output = await repository.getKeyValue(key);
+  describe("with complex schemas", () => {
+    let repository: IKVRepository<PrimaryKey, Value>;
 
-        expect(output == undefined).toEqual(true);
-      });
+    beforeEach(async () => {
+      repository = await createComplexRepository();
+    });
+
+    it("should store and retrieve values for a key", async () => {
+      const key = { name: "key", type: "string" };
+      const value = { option: "value", success: true };
+      await repository.putKeyValue(key, value);
+      const output = await repository.getKeyValue(key);
+
+      expect(output?.option).toEqual("value");
+      expect(!!output?.success).toEqual(true);
+    });
+
+    it("should get undefined for a key that doesn't exist", async () => {
+      const key = { name: "key", type: "string" };
+      const output = await repository.getKeyValue(key);
+
+      expect(output == undefined).toEqual(true);
     });
   });
 }

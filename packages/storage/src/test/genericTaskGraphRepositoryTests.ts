@@ -24,51 +24,48 @@ class TestTask extends SingleTask {
 TaskRegistry.registerTask(TestTask);
 
 export function runGenericTaskGraphRepositoryTests(
-  createRepository: () => Promise<TaskGraphRepository>,
-  repositoryName: string
+  createRepository: () => Promise<TaskGraphRepository>
 ) {
-  describe(`TaskGraphRepository Tests - ${repositoryName}`, () => {
-    let repository: TaskGraphRepository;
+  let repository: TaskGraphRepository;
 
-    beforeEach(async () => {
-      repository = await createRepository();
-    });
+  beforeEach(async () => {
+    repository = await createRepository();
+  });
 
-    it("should initialize the kvRepository", () => {
-      expect(repository.kvRepository).toBeDefined();
-    });
+  it("should initialize the kvRepository", () => {
+    expect(repository.kvRepository).toBeDefined();
+  });
 
-    it("should store and retrieve task graph", async () => {
-      const id: string = "g1";
-      const graph = new TaskGraph();
-      const tasks = [
-        new TestTask({ id: "task1" }),
-        new TestTask({ id: "task2" }),
-        new TestTask({ id: "task3" }),
-      ];
-      const edges: DataFlow[] = [
-        new DataFlow("task1", "output1", "task2", "input1"),
-        new DataFlow("task2", "output2", "task3", "input2"),
-      ];
+  it("should store and retrieve task graph", async () => {
+    const id: string = "g1";
+    const graph = new TaskGraph();
+    const tasks = [
+      new TestTask({ id: "task1" }),
+      new TestTask({ id: "task2" }),
+      new TestTask({ id: "task3" }),
+    ];
+    const edges: DataFlow[] = [
+      new DataFlow("task1", "output1", "task2", "input1"),
+      new DataFlow("task2", "output2", "task3", "input2"),
+    ];
 
-      graph.addTasks(tasks);
-      graph.addDataFlows(edges);
+    graph.addTasks(tasks);
+    graph.addDataFlows(edges);
 
-      expect(graph.getDataFlow("task1.output1 -> task2.input1")).toBeDefined();
-      expect(graph.getDataFlow("task2.output2 -> task3.input2")).toBeDefined();
+    expect(graph.getDataFlow("task1.output1 -> task2.input1")).toBeDefined();
+    expect(graph.getDataFlow("task2.output2 -> task3.input2")).toBeDefined();
 
-      await repository.saveTaskGraph(id, graph);
-      const retrievedGraph = await repository.getTaskGraph(id);
+    await repository.saveTaskGraph(id, graph);
+    const retrievedGraph = await repository.getTaskGraph(id);
 
-      expect(retrievedGraph?.toJSON()).toEqual(graph?.toJSON());
-    });
+    expect(retrievedGraph?.toJSON()).toEqual(graph?.toJSON());
+  });
 
-    it("should return undefined for non-existent task graph", async () => {
-      const id: string = "g2";
+  it("should return undefined for non-existent task graph", async () => {
+    const id: string = "g2";
 
-      const retrievedGraph = await repository.getTaskGraph(id);
+    const retrievedGraph = await repository.getTaskGraph(id);
 
-      expect(retrievedGraph).toBeUndefined();
-    });
+    expect(retrievedGraph).toBeUndefined();
   });
 }

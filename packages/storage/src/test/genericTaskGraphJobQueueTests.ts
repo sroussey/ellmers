@@ -12,8 +12,7 @@ import {
   JobQueue,
   JobQueueTask,
   Job,
-  JobQueueTaskConfig,
-  sleep,
+  getTaskQueueRegistry,
 } from "ellmers-core";
 import { TaskGraphRepository } from "ellmers-core";
 
@@ -25,31 +24,6 @@ export class TestJob extends Job<TaskInput, TaskOutput> {
 
 export class TestJobTask extends JobQueueTask {
   static readonly type: string = "TestJobTask";
-  private jobQueue: JobQueue<TaskInput, TaskOutput>;
-  constructor(config: JobQueueTaskConfig & { jobQueue: JobQueue<TaskInput, TaskOutput> }) {
-    const { jobQueue, ...rest } = config;
-    super(rest);
-    this.jobQueue = jobQueue;
-  }
-  async run(): Promise<TaskOutput> {
-    if (!this.validateInputData(this.runInputData)) {
-      throw new Error("Invalid input data");
-    }
-    this.emit("start");
-    this.runOutputData = {};
-    const job = new TestJob({
-      input: this.runInputData,
-    });
-    const jobId = await this.jobQueue.add(job);
-    this.config.queue = this.jobQueue.queue;
-    this.config.currentJobRunId = job.jobRunId; // no longer undefined
-    this.config.currentJobId = jobId;
-
-    const result = await this.jobQueue.waitFor(jobId);
-    this.runOutputData = { result };
-    this.emit("complete");
-    return this.runOutputData;
-  }
 }
 
 export function runGenericTaskGraphJobQueueTests(
@@ -62,6 +36,7 @@ export function runGenericTaskGraphJobQueueTests(
 
     beforeEach(async () => {
       jobQueue = await createJobQueue();
+      getTaskQueueRegistry().registerQueue(jobQueue);
     });
 
     afterEach(async () => {
@@ -72,15 +47,15 @@ export function runGenericTaskGraphJobQueueTests(
     it("should run a task via job queue", async () => {
       await jobQueue.start();
       const task = new TestJobTask({
-        jobQueue: jobQueue,
+        queue: jobQueue.queue,
         input: { a: 1, b: 2 },
       });
       const result = await task.run();
-      expect(result).toEqual({ result: 3 });
+      expect(result).toEqual(3);
     });
     it("should not run a task via job queue if not started", async () => {
       const task = new TestJobTask({
-        jobQueue: jobQueue,
+        queue: jobQueue.queue,
         input: { a: 1, b: 2 },
       });
       const wait = (ms: number, result: any) =>

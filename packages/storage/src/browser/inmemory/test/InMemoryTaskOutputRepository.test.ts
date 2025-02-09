@@ -7,8 +7,8 @@
 
 import { InMemoryTaskOutputRepository } from "../InMemoryTaskOutputRepository";
 import { runGenericTaskOutputRepositoryTests } from "../../../test/genericTaskOutputRepositoryTests";
+import { describe } from "bun:test";
 
-runGenericTaskOutputRepositoryTests(
-  async () => new InMemoryTaskOutputRepository(),
-  "InMemoryTaskOutputRepository"
-);
+describe("InMemoryTaskOutputRepository", () => {
+  runGenericTaskOutputRepositoryTests(async () => new InMemoryTaskOutputRepository());
+});

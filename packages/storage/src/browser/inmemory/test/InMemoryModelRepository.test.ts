@@ -7,8 +7,8 @@
 
 import { InMemoryModelRepository } from "../InMemoryModelRepository";
 import { runGenericModelRepositoryTests } from "../../../test/genericModelRepositoryTests";
+import { describe } from "bun:test";
 
-runGenericModelRepositoryTests(
-  "InMemoryModelRepository",
-  async () => new InMemoryModelRepository()
-);
+describe("InMemoryModelRepository", () => {
+  runGenericModelRepositoryTests(async () => new InMemoryModelRepository());
+});

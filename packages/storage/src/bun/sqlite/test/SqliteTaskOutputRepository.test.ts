@@ -8,8 +8,10 @@
 import { SqliteTaskOutputRepository } from "../SqliteTaskOutputRepository";
 import { runGenericTaskOutputRepositoryTests } from "../../../test/genericTaskOutputRepositoryTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericTaskOutputRepositoryTests(
-  async () => new SqliteTaskOutputRepository(":memory:", `task_output_test_${nanoid()}`),
-  "SqliteTaskOutputRepository"
-);
+describe("SqliteTaskOutputRepository", () => {
+  runGenericTaskOutputRepositoryTests(
+    async () => new SqliteTaskOutputRepository(":memory:", `task_output_test_${nanoid()}`)
+  );
+});

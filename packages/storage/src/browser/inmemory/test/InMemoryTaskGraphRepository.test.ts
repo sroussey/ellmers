@@ -7,8 +7,8 @@
 
 import { InMemoryTaskGraphRepository } from "../InMemoryTaskGraphRepository";
 import { runGenericTaskGraphRepositoryTests } from "../../../test/genericTaskGraphRepositoryTests";
+import { describe } from "bun:test";
 
-runGenericTaskGraphRepositoryTests(
-  async () => new InMemoryTaskGraphRepository(),
-  "InMemoryTaskGraphRepository"
-);
+describe("InMemoryTaskGraphRepository", () => {
+  runGenericTaskGraphRepositoryTests(async () => new InMemoryTaskGraphRepository());
+});

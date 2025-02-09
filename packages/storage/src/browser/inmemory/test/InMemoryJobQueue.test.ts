@@ -9,6 +9,7 @@ import { InMemoryJobQueue } from "../InMemoryJobQueue";
 import { InMemoryRateLimiter } from "../InMemoryRateLimiter";
 import { runGenericJobQueueTests, TestJob } from "../../../test/genericJobQueueTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
 function createInMemoryJobQueue() {
   return new InMemoryJobQueue(
@@ -19,4 +20,6 @@ function createInMemoryJobQueue() {
   );
 }
 
-runGenericJobQueueTests(createInMemoryJobQueue, "InMemoryJobQueue");
+describe("InMemoryJobQueue", () => {
+  runGenericJobQueueTests(createInMemoryJobQueue);
+});

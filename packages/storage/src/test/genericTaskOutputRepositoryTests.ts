@@ -9,38 +9,35 @@ import { describe, expect, it, beforeEach } from "bun:test";
 import { TaskInput, TaskOutput, TaskOutputRepository } from "ellmers-core";
 
 export function runGenericTaskOutputRepositoryTests(
-  createRepository: () => Promise<TaskOutputRepository>,
-  repositoryName: string
+  createRepository: () => Promise<TaskOutputRepository>
 ) {
-  describe(`TaskOutputRepository Tests - ${repositoryName}`, () => {
-    let repository: TaskOutputRepository;
+  let repository: TaskOutputRepository;
 
-    beforeEach(async () => {
-      repository = await createRepository();
-    });
+  beforeEach(async () => {
+    repository = await createRepository();
+  });
 
-    it("should initialize the kvRepository", () => {
-      expect(repository.kvRepository).toBeDefined();
-    });
+  it("should initialize the kvRepository", () => {
+    expect(repository.kvRepository).toBeDefined();
+  });
 
-    it("should store and retrieve task outputs", async () => {
-      const input: TaskInput = { id: "task1" };
-      const output: TaskOutput = { result: "success" };
-      const taskType: string = "taskType1";
+  it("should store and retrieve task outputs", async () => {
+    const input: TaskInput = { id: "task1" };
+    const output: TaskOutput = { result: "success" };
+    const taskType: string = "taskType1";
 
-      await repository.saveOutput(taskType, input, output);
-      const retrievedOutput = await repository.getOutput(taskType, input);
+    await repository.saveOutput(taskType, input, output);
+    const retrievedOutput = await repository.getOutput(taskType, input);
 
-      expect(retrievedOutput).toEqual(output);
-    });
+    expect(retrievedOutput).toEqual(output);
+  });
 
-    it("should return undefined for non-existent task outputs", async () => {
-      const input: TaskInput = { id: "task2" };
-      const taskType: string = "taskType1";
+  it("should return undefined for non-existent task outputs", async () => {
+    const input: TaskInput = { id: "task2" };
+    const taskType: string = "taskType1";
 
-      const retrievedOutput = await repository.getOutput(taskType, input);
+    const retrievedOutput = await repository.getOutput(taskType, input);
 
-      expect(retrievedOutput).toBeUndefined();
-    });
+    expect(retrievedOutput).toBeUndefined();
   });
 }

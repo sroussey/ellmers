@@ -14,15 +14,17 @@ import {
   ValueSchema,
 } from "../../../test/genericKVRepositoryTests";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericKVRepositoryTests(
-  async () => new SqliteKVRepository(":memory:", `sql_test_${nanoid()}`),
-  async () =>
-    new SqliteKVRepository<PrimaryKey, Value>(
-      ":memory:",
-      `sql_test_${nanoid()}`,
-      PrimaryKeySchema,
-      ValueSchema
-    ),
-  "SqliteKVRepository"
-);
+describe("SqliteKVRepository", () => {
+  runGenericKVRepositoryTests(
+    async () => new SqliteKVRepository(":memory:", `sql_test_${nanoid()}`),
+    async () =>
+      new SqliteKVRepository<PrimaryKey, Value>(
+        ":memory:",
+        `sql_test_${nanoid()}`,
+        PrimaryKeySchema,
+        ValueSchema
+      )
+  );
+});

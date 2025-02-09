@@ -38,9 +38,13 @@ export class AiProviderJob<
   Output extends TaskOutput = TaskOutput,
 > extends Job<AiProviderInput<Input>, Output> {
   execute(signal?: AbortSignal): Promise<Output> {
-    console.log("AiProviderJob.execute", this.input);
     const fn =
       getAiProviderRegistry().runFnRegistry[this.input.taskType]?.[this.input.modelProvider];
+    if (!fn) {
+      throw new Error(
+        `No run function found for task type ${this.input.taskType} and model provider ${this.input.modelProvider}`
+      );
+    }
     return fn(
       this as unknown as AiProviderJob<Input, Output>,
       this.input.taskInput,
@@ -67,33 +71,6 @@ export class AiProviderRegistry {
   registerRunFn(taskType: string, modelProvider: string, runFn: any) {
     if (!this.runFnRegistry[taskType]) this.runFnRegistry[taskType] = {};
     this.runFnRegistry[taskType][modelProvider] = runFn;
-  }
-
-  /**
-   * Creates a job wrapper around a task execution function
-   * This allows the task to be queued and executed asynchronously
-   */
-  toTaskRunFn(taskType: string, modelProvider: string) {
-    const fn = this.runFnRegistry[taskType]?.[modelProvider];
-    return async (task: JobQueueTask, input: TaskInput, signal?: AbortSignal) => {
-      const queue = getTaskQueueRegistry().getQueue(modelProvider)!;
-      const job = new AiProviderJob({
-        queueName: queue.queue,
-        jobRunId: task.config.currentJobRunId, // could be undefined
-        input: {
-          taskType: taskType,
-          modelProvider: modelProvider,
-          taskInput: input,
-        },
-      });
-      const jobId = await queue.add(job);
-      task.config.queue = queue.queue;
-      task.config.currentJobRunId = job.jobRunId; // no longer undefined
-      task.config.currentJobId = jobId;
-
-      const result = queue.waitFor(jobId);
-      return result;
-    };
   }
 
   /**
