@@ -156,6 +156,9 @@ export function runGenericJobQueueTests(
       await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+      await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
       const last = await jobQueue.add(
         new TestJob({ input: { taskType: "task2", data: "input2" } })
       );
