@@ -153,12 +153,18 @@ export function runGenericJobQueueTests(createJobQueue: () => JobQueue<TaskInput
     await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
     await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
     await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
+    await jobQueue.add(new TestJob({ input: { taskType: "task1", data: "input1" } }));
     const last = await jobQueue.add(new TestJob({ input: { taskType: "task2", data: "input2" } }));
     await jobQueue.start();
     await sleep(10);
     await jobQueue.stop();
-    const job4 = await jobQueue.get(last);
-    expect(job4?.status).toBe(JobStatus.PENDING);
+    const lastid = await jobQueue.get(last);
+    expect(lastid?.status).toBe(JobStatus.PENDING);
   });
 
   it("should abort a long-running job and trigger the abort event", async () => {
