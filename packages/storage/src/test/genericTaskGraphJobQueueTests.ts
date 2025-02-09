@@ -18,7 +18,7 @@ import { TaskGraphRepository } from "ellmers-core";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
   async execute(signal: AbortSignal): Promise<TaskOutput> {
-    return this.input.a + this.input.b;
+    return { result: this.input.a + this.input.b };
   }
 }
 
@@ -51,7 +51,7 @@ export function runGenericTaskGraphJobQueueTests(
         input: { a: 1, b: 2 },
       });
       const result = await task.run();
-      expect(result).toEqual(3);
+      expect(result).toEqual({ result: 3 });
     });
     it("should not run a task via job queue if not started", async () => {
       const task = new TestJobTask({

@@ -39,10 +39,10 @@ import {
 import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
 import { registerHuggingfaceLocalModels } from "ellmers-test";
 import { env } from "@huggingface/transformers";
-import { IndexedDbJobQueue } from "ellmers-storage/browser/indexeddb";
 import { AiProviderJob } from "ellmers-ai";
+import { IndexedDbJobQueue } from "ellmers-storage/browser/indexeddb";
+
 env.backends.onnx.wasm.proxy = true;
-env.allowLocalModels = true;
 
 const queueRegistry = getTaskQueueRegistry();
 

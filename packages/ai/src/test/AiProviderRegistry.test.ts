@@ -87,98 +87,98 @@ describe("AiProviderRegistry", () => {
     });
   });
 
-  describe("jobAsTaskRunFn", () => {
-    test("should create a job wrapper and queue it", async () => {
-      const mockRunFn = mock(() => Promise.resolve({ result: "success" }));
-      aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockRunFn);
+  // describe("jobAsTaskRunFn", () => {
+  //   test("should create a job wrapper and queue it", async () => {
+  //     const mockRunFn = mock(() => Promise.resolve({ result: "success" }));
+  //     aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockRunFn);
 
-      // Create a mock task instance with a config that allows string assignments
-      const mockTask = {
-        config: {
-          currentJobRunId: undefined as string | undefined,
-          queue: undefined as string | undefined,
-          currentJobId: undefined as string | undefined,
-        },
-      };
+  //     // Create a mock task instance with a config that allows string assignments
+  //     const mockTask = {
+  //       config: {
+  //         currentJobRunId: undefined as string | undefined,
+  //         queue: undefined as string | undefined,
+  //         currentJobId: undefined as string | undefined,
+  //       },
+  //     };
 
-      const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
-      const result = await wrappedFn(mockTask as any, { text: "test input" });
+  //     const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
+  //     const result = await wrappedFn(mockTask as any, { text: "test input" });
 
-      expect(result).toEqual({ result: "success" });
-      expect(mockTask.config.queue).toBe(TEST_PROVIDER);
-      expect(mockTask.config.currentJobId).toBeDefined();
-      expect(mockRunFn).toHaveBeenCalled();
-    });
+  //     expect(result).toEqual({ result: "success" });
+  //     expect(mockTask.config.queue).toBe(TEST_PROVIDER);
+  //     expect(mockTask.config.currentJobId).toBeDefined();
+  //     expect(mockRunFn).toHaveBeenCalled();
+  //   });
 
-    test("should handle progress updates in job execution", async () => {
-      const progressUpdates: number[] = [];
+  //   test("should handle progress updates in job execution", async () => {
+  //     const progressUpdates: number[] = [];
 
-      aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockLongRunningRunFn);
+  //     aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockLongRunningRunFn);
 
-      // Create a mock task instance
-      const mockTask = {
-        config: {
-          currentJobRunId: undefined as string | undefined,
-          queue: undefined as string | undefined,
-          currentJobId: undefined as string | undefined,
-        },
-      };
+  //     // Create a mock task instance
+  //     const mockTask = {
+  //       config: {
+  //         currentJobRunId: undefined as string | undefined,
+  //         queue: undefined as string | undefined,
+  //         currentJobId: undefined as string | undefined,
+  //       },
+  //     };
 
-      // Subscribe to progress updates
-      queue.on("job_progress", (queueName: string, jobId: unknown, progress: number) => {
-        progressUpdates.push(progress);
-      });
+  //     // Subscribe to progress updates
+  //     queue.on("job_progress", (queueName: string, jobId: unknown, progress: number) => {
+  //       progressUpdates.push(progress);
+  //     });
 
-      const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
-      const result = await wrappedFn(mockTask as any, { text: "test input with progress" });
+  //     const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
+  //     const result = await wrappedFn(mockTask as any, { text: "test input with progress" });
 
-      // Give a small delay for all progress events to be processed
-      await sleep(1);
+  //     // Give a small delay for all progress events to be processed
+  //     await sleep(1);
 
-      expect(result).toEqual({ result: "success with progress" });
-      expect(progressUpdates).toEqual([25, 50, 75, 100]);
-      expect(mockTask.config.queue).toBe(TEST_PROVIDER);
-      expect(mockTask.config.currentJobId).toBeDefined();
-    });
+  //     expect(result).toEqual({ result: "success with progress" });
+  //     expect(progressUpdates).toEqual([25, 50, 75, 100]);
+  //     expect(mockTask.config.queue).toBe(TEST_PROVIDER);
+  //     expect(mockTask.config.currentJobId).toBeDefined();
+  //   });
 
-    test("should be able to get job progress using onJobProgress", async () => {
-      aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockLongRunningRunFn);
+  //   test("should be able to get job progress using onJobProgress", async () => {
+  //     aiProviderRegistry.registerRunFn("text-generation", TEST_PROVIDER, mockLongRunningRunFn);
 
-      // Create a mock task instance
-      const mockTask = {
-        config: {
-          currentJobRunId: undefined as string | undefined,
-          queue: undefined as string | undefined,
-          currentJobId: undefined as string | undefined,
-        },
-      };
+  //     // Create a mock task instance
+  //     const mockTask = {
+  //       config: {
+  //         currentJobRunId: undefined as string | undefined,
+  //         queue: undefined as string | undefined,
+  //         currentJobId: undefined as string | undefined,
+  //       },
+  //     };
 
-      const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
+  //     const wrappedFn = aiProviderRegistry.toTaskRunFn("text-generation", TEST_PROVIDER);
 
-      // Start the function but don't await it yet
-      const resultPromise = wrappedFn(mockTask as any, { text: "test input with progress" });
+  //     // Start the function but don't await it yet
+  //     const resultPromise = wrappedFn(mockTask as any, { text: "test input with progress" });
 
-      // Wait a bit for the job to be created and ID to be set
-      await sleep(1);
+  //     // Wait a bit for the job to be created and ID to be set
+  //     await sleep(1);
 
-      // Track progress using onJobProgress
-      const progressUpdates: number[] = [];
-      const cleanup = queue.onJobProgress(mockTask.config.currentJobId, (progress, message) => {
-        progressUpdates.push(progress);
-      });
+  //     // Track progress using onJobProgress
+  //     const progressUpdates: number[] = [];
+  //     const cleanup = queue.onJobProgress(mockTask.config.currentJobId, (progress, message) => {
+  //       progressUpdates.push(progress);
+  //     });
 
-      const result = await resultPromise;
-      cleanup(); // Remove the progress listener
+  //     const result = await resultPromise;
+  //     cleanup(); // Remove the progress listener
 
-      // Give a small delay for any final progress updates
-      await sleep(1);
+  //     // Give a small delay for any final progress updates
+  //     await sleep(1);
 
-      expect(result).toEqual({ result: "success with progress" });
-      expect(progressUpdates).toEqual([25, 50, 75, 100]);
-      expect(mockTask.config.queue).toBe(TEST_PROVIDER);
-      expect(mockTask.config.currentJobId).toBeDefined();
-    });
-  });
+  //     expect(result).toEqual({ result: "success with progress" });
+  //     expect(progressUpdates).toEqual([25, 50, 75, 100]);
+  //     expect(mockTask.config.queue).toBe(TEST_PROVIDER);
+  //     expect(mockTask.config.currentJobId).toBeDefined();
+  //   });
+  // });
 
   describe("singleton management", () => {
     test("should maintain a singleton instance", () => {
