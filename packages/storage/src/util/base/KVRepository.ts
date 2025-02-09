@@ -25,11 +25,11 @@ export type BaseValueSchema = Record<string, "string" | "number" | "boolean" | "
 /**
  * Default schema types for simple string key-value pairs
  */
-export type DefaultPrimaryKeyType = { "kv-key": string };
-export const DefaultPrimaryKeySchema: BasePrimaryKeySchema = { "kv-key": "string" } as const;
+export type DefaultPrimaryKeyType = { key: string };
+export const DefaultPrimaryKeySchema: BasePrimaryKeySchema = { key: "string" } as const;
 
-export type DefaultValueType = { "kv-value": string };
-export const DefaultValueSchema: BaseValueSchema = { "kv-value": "string" } as const;
+export type DefaultValueType = { value: string };
+export const DefaultValueSchema: BaseValueSchema = { value: "string" } as const;
 
 /**
  * Abstract base class for key-value storage repositories.

@@ -104,7 +104,7 @@ export abstract class ModelRepository {
   async addModel(model: Model) {
     await this.modelKvRepository.putKeyValue(
       { name: model.name },
-      { "kv-value": JSON.stringify(model) }
+      { value: JSON.stringify(model) }
     );
     this.emit("model_added", model);
   }
@@ -121,7 +121,7 @@ export abstract class ModelRepository {
     const models = [];
     for (const junction of junctions) {
       const model = await this.modelKvRepository.getKeyValue({ name: junction.model });
-      if (model) models.push(JSON.parse(model["kv-value"]));
+      if (model) models.push(JSON.parse(model["value"]));
     }
     return models;
   }
@@ -156,7 +156,7 @@ export abstract class ModelRepository {
   async enumerateAllModels() {
     const models = await this.modelKvRepository.getAll();
     if (!models || models.length === 0) return undefined;
-    return models.map((model) => JSON.parse(model["kv-value"]));
+    return models.map((model) => JSON.parse(model["value"]));
   }
 
   /**
@@ -178,7 +178,7 @@ export abstract class ModelRepository {
     if (typeof name != "string") return undefined;
     const modelstr = await this.modelKvRepository.getKeyValue({ name });
     if (!modelstr) return undefined;
-    return JSON.parse(modelstr["kv-value"]);
+    return JSON.parse(modelstr["value"]);
   }
 
   /**
