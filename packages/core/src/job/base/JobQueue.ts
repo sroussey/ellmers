@@ -146,7 +146,7 @@ export abstract class JobQueue<Input, Output> {
   constructor(
     public readonly queue: string,
     protected limiter: ILimiter,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    public jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     protected waitDurationInMilliseconds: number
   ) {
     this.stats = {
