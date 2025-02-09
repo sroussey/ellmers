@@ -46,7 +46,7 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const expectedIndexes: ExpectedIndexDefinition[] = [
       {
         name: "status",
-        keyPath: `value.status`,
+        keyPath: `status`,
         options: { unique: false },
       },
       {
@@ -231,13 +231,14 @@ export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * Retrieves the number of jobs in the queue.
    * Returns the count of jobs in the queue.
    */
-  async size(): Promise<number> {
+  async size(status = JobStatus.PENDING): Promise<number> {
     const db = await this.dbPromise;
-    const tx = db.transaction(this.tableName, "readonly");
-    const store = tx.objectStore(this.tableName);
-    const request = store.count();
-
     return new Promise((resolve, reject) => {
+      const tx = db.transaction(this.tableName, "readonly");
+      const store = tx.objectStore(this.tableName);
+      const index = store.index("status");
+      const request = index.count(status);
+
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
       tx.onerror = () => reject(tx.error);

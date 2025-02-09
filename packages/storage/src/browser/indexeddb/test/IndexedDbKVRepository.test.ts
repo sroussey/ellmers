@@ -19,6 +19,19 @@ import { afterAll, describe } from "bun:test";
 
 describe("IndexedDbKVRepository", () => {
   const dbName = `idx_test_${nanoid()}`;
+
+  afterAll(async () => {
+    // Properly clean up the databases
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(`${dbName}_simple`);
+      resolve();
+    });
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(`${dbName}_complex`);
+      resolve();
+    });
+  });
+
   runGenericKVRepositoryTests(
     async () => new IndexedDbKVRepository(`${dbName}_simple`),
     async () =>
@@ -28,8 +41,4 @@ describe("IndexedDbKVRepository", () => {
         ValueSchema
       )
   );
-  afterAll(() => {
-    // indexedDB.deleteDatabase(`${dbName}_simple`);
-    // indexedDB.deleteDatabase(`${dbName}_complex`);
-  });
 });

@@ -32,8 +32,8 @@ export function runGenericKVRepositoryTests(
     });
 
     it("should store and retrieve values for a key", async () => {
-      const key = "key";
-      const value = "value";
+      const key = "key1";
+      const value = "value1";
       await repository.put(key, value);
       const output = await repository.get(key);
 
@@ -58,12 +58,12 @@ export function runGenericKVRepositoryTests(
     });
 
     it("should store and retrieve values for a key", async () => {
-      const key = { name: "key", type: "string" };
-      const value = { option: "value", success: true };
+      const key = { name: "key1", type: "string1" };
+      const value = { option: "value1", success: true };
       await repository.putKeyValue(key, value);
       const output = await repository.getKeyValue(key);
 
-      expect(output?.option).toEqual("value");
+      expect(output?.option).toEqual("value1");
       expect(!!output?.success).toEqual(true);
     });
 
