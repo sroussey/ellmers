@@ -14,6 +14,7 @@ import {
   JobError,
   RetryableJobError,
   PermanentJobError,
+  sleep,
 } from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 
@@ -32,10 +33,10 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   constructor(
     queue: string,
     limiter: ILimiter,
-    waitDurationInMilliseconds = 100,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    waitDurationInMilliseconds = 100
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
     this.jobQueue = [];
   }
 
@@ -62,25 +63,37 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
+    job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
+    job.queue = this;
+
+    this.createAbortController(job.id);
     this.jobQueue.push(job);
     return job.id;
   }
 
   public async get(id: unknown) {
-    return this.jobQueue.find((j) => j.id === id);
+    const result = this.jobQueue.find((j) => j.id === id);
+    return result ? this.createNewJob(result, false) : undefined;
   }
 
   public async peek(num: number) {
     num = Number(num) || 100;
-    return this.jobQueue.slice(0, num);
+    return this.jobQueue.slice(0, num).map((j) => this.createNewJob(j, false));
   }
 
   public async processing() {
-    return this.jobQueue.filter((job) => job.status === JobStatus.PROCESSING);
+    return this.jobQueue
+      .filter((job) => job.status === JobStatus.PROCESSING)
+      .map((j) => this.createNewJob(j, false));
   }
 
   public async aborting() {
-    return this.jobQueue.filter((job) => job.status === JobStatus.ABORTING);
+    return this.jobQueue
+      .filter((job) => job.status === JobStatus.ABORTING)
+      .map((j) => this.createNewJob(j, false));
   }
 
   /**
@@ -93,12 +106,31 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const job = top[0];
     if (job) {
       job.status = JobStatus.PROCESSING;
-      return job;
+      return this.createNewJob(job, false);
     }
   }
 
   public async size(status = JobStatus.PENDING): Promise<number> {
     return this.jobQueue.filter((j) => j.status === status).length;
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any> | null
+  ): Promise<void> {
+    const job = this.jobQueue.find((j) => j.id === jobId);
+    if (!job) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    job.progress = progress;
+    job.progressMessage = message;
+    job.progressDetails = details;
   }
 
   /**
@@ -108,12 +140,16 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * @param output - Result of the job execution
    * @param error - Optional error message if job failed
    */
-  public async complete(id: unknown, output: any, error?: JobError) {
+  public async complete(id: unknown, output: Output, error?: JobError) {
+    await sleep(0); // ensure does not run straight through and thus act like the others
     const job = this.jobQueue.find((j) => j.id === id);
     if (!job) {
       throw new Error(`Job ${id} not found`);
     }
-    job.completedAt = new Date();
+
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
 
     if (error) {
       job.error = error.message;
@@ -122,18 +158,25 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
         job.retries++;
         if (job.retries >= job.maxRetries) {
           job.status = JobStatus.FAILED;
+          job.completedAt = new Date();
         } else {
           job.status = JobStatus.PENDING;
           job.runAfter = error.retryDate;
+          job.progress = 0;
         }
       } else if (error instanceof PermanentJobError) {
         job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       } else {
         job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       }
     } else {
       job.status = JobStatus.COMPLETED;
+      job.completedAt = new Date();
       job.output = output;
+      job.error = null;
+      job.errorCode = null;
     }
 
     if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
@@ -150,7 +193,9 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   public async getJobsByRunId(jobRunId: string): Promise<Array<Job<Input, Output>>> {
-    return this.jobQueue.filter((job) => job.jobRunId === jobRunId);
+    return this.jobQueue
+      .filter((job) => job.jobRunId === jobRunId)
+      .map((j) => this.createNewJob(j, false));
   }
 
   public async deleteAll() {
@@ -158,19 +203,15 @@ export class InMemoryJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a given and input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     return (
-      this.jobQueue.find(
-        (j) =>
-          j.taskType === taskType &&
-          j.fingerprint === fingerprint &&
-          j.status === JobStatus.COMPLETED
-      )?.output ?? null
+      this.jobQueue.find((j) => j.fingerprint === fingerprint && j.status === JobStatus.COMPLETED)
+        ?.output ?? null
     );
   }
 }

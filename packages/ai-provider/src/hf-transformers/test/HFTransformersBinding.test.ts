@@ -5,15 +5,16 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import {
   ConcurrencyLimiter,
   getTaskQueueRegistry,
+  setTaskQueueRegistry,
   TaskGraphBuilder,
   TaskInput,
   TaskOutput,
 } from "ellmers-core";
-import { getGlobalModelRepository, setGlobalModelRepository } from "ellmers-ai";
+import { AiProviderJob, getGlobalModelRepository, setGlobalModelRepository } from "ellmers-ai";
 import { InMemoryJobQueue, InMemoryModelRepository } from "ellmers-storage/inmemory";
 import { getDatabase, SqliteJobQueue } from "ellmers-storage/bun/sqlite";
 import { registerHuggingfaceLocalTasks } from "../bindings/registerTasks";
@@ -27,6 +28,7 @@ describe("HFTransformersBinding", () => {
       const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
         LOCAL_ONNX_TRANSFORMERJS,
         new ConcurrencyLimiter(1, 10),
+        AiProviderJob<TaskInput, TaskOutput>,
         10
       );
       queueRegistry.registerQueue(jobQueue);
@@ -89,6 +91,7 @@ describe("HFTransformersBinding", () => {
         getDatabase(":memory:"),
         LOCAL_ONNX_TRANSFORMERJS,
         new ConcurrencyLimiter(1, 10),
+        AiProviderJob<TaskInput, TaskOutput>,
         10
       );
       jobQueue.ensureTableExists();
@@ -107,5 +110,10 @@ describe("HFTransformersBinding", () => {
       builder.reset();
       await queue?.clear();
     });
+  });
+
+  afterAll(async () => {
+    getTaskQueueRegistry().stopQueues().clearQueues();
+    setTaskQueueRegistry(null);
   });
 });

@@ -5,6 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import type { JobQueue } from "./JobQueue";
+
 export enum JobStatus {
   PENDING = "NEW",
   PROCESSING = "PROCESSING",
@@ -19,10 +21,10 @@ export interface JobDetails<Input, Output> {
   id?: unknown;
   jobRunId?: string;
   queueName?: string;
-  taskType: string;
   input: Input;
   output?: Output | null;
   error?: string | null;
+  errorCode?: string | null;
   fingerprint?: string;
   maxRetries?: number;
   status?: JobStatus;
@@ -31,13 +33,15 @@ export interface JobDetails<Input, Output> {
   lastRanAt?: Date | string | null;
   runAfter?: Date | string | null;
   retries?: number;
+  progress?: number;
+  progressMessage?: string;
+  progressDetails?: Record<string, any> | null;
 }
 
 export class Job<Input, Output> implements JobDetails<Input, Output> {
   public id: unknown;
   public jobRunId: string | undefined;
   public queueName: string | undefined;
-  public readonly taskType: string;
   public readonly input: Input;
   public readonly maxRetries: number;
   public readonly createdAt: Date;
@@ -52,10 +56,13 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
   public abortedAt: Date | null = null;
   public error: string | null = null;
   public errorCode: string | null = null;
+  public progress: number = 0;
+  public progressMessage: string = "";
+  public progressDetails: Record<string, any> | null = null;
+  public queue: JobQueue<Input, Output> | undefined;
 
   constructor({
     queueName,
-    taskType,
     input,
     jobRunId,
     id,
@@ -69,6 +76,9 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     retries = 0,
     lastRanAt = null,
     runAfter = null,
+    progress = 0,
+    progressMessage = "",
+    progressDetails = null,
   }: JobDetails<Input, Output>) {
     if (typeof runAfter === "string") runAfter = new Date(runAfter);
     if (typeof lastRanAt === "string") lastRanAt = new Date(lastRanAt);
@@ -78,7 +88,6 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     this.id = id;
     this.fingerprint = fingerprint;
     this.queueName = queueName;
-    this.taskType = taskType;
     this.input = input;
     this.maxRetries = maxRetries;
     this.createdAt = createdAt;
@@ -90,8 +99,21 @@ export class Job<Input, Output> implements JobDetails<Input, Output> {
     this.output = output;
     this.error = error;
     this.jobRunId = jobRunId;
+    this.progress = progress;
+    this.progressMessage = progressMessage;
+    this.progressDetails = progressDetails;
   }
   execute(signal?: AbortSignal): Promise<Output> {
     throw new Error("Method not implemented.");
+  }
+  public async updateProgress(
+    progress: number,
+    message: string = "",
+    details: Record<string, any> | null = null
+  ) {
+    this.progress = progress;
+    this.progressMessage = message;
+    this.progressDetails = details;
+    await this.queue?.updateProgress(this.id, progress, message, details);
   }
 }

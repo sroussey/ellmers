@@ -9,19 +9,24 @@
  * @description This file contains the implementation of the JobQueueTask class and its derived classes.
  */
 
-import { JobQueueTask, JobQueueTaskConfig, type TaskOutput } from "ellmers-core";
-import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
+import {
+  getTaskQueueRegistry,
+  JobQueueTask,
+  JobQueueTaskConfig,
+  type TaskOutput,
+} from "ellmers-core";
+import { AiProviderJob, getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import { getGlobalModelRepository } from "../../model/ModelRegistry";
 
 /**
  * A base class for AI related tasks that run in a job queue.
  * Extends the JobQueueTask class to provide LLM-specific functionality.
  */
-export class JobQueueLlmTask extends JobQueueTask {
-  static readonly type: string = "JobQueueLlmTask";
+export class JobQueueAiTask extends JobQueueTask {
+  static readonly type: string = "JobQueueAiTask";
 
   /**
-   * Creates a new JobQueueLlmTask instance
+   * Creates a new JobQueueAiTask instance
    * @param config - Configuration object for the task
    */
   constructor(config: JobQueueTaskConfig = {}) {
@@ -32,39 +37,33 @@ export class JobQueueLlmTask extends JobQueueTask {
   }
 
   /**
-   * Executes the LLM AI task
-   * @returns Promise<TaskOutput> - The results of the task execution
-   * @throws Error if input data is invalid or if required components are not found
+   * Creates a new Job instance for the task
+   * @returns Promise<Job> - The created job
    */
-  async run(): Promise<TaskOutput> {
-    if (!this.validateInputData(this.runInputData)) {
-      throw new Error("Invalid input data");
-    }
-    this.emit("start");
-    this.runOutputData = {};
-    let results;
+  async createJob() {
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
-    try {
-      const ProviderRegistry = getAiProviderRegistry();
-      const modelname = this.runInputData["model"];
-      if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
-      const model = await getGlobalModelRepository().findByName(modelname);
+    const modelname = this.runInputData["model"];
+    if (!modelname) throw new Error("JobQueueTaskTask: No model name found");
+    const model = await getGlobalModelRepository().findByName(modelname);
 
-      if (!model) {
-        throw new Error(`JobQueueTaskTask: No model ${modelname} found`);
-      }
-      const runFn = ProviderRegistry.jobAsRunFn(runtype, model.provider);
-      if (!runFn) throw new Error("JobQueueTaskTask: No run function found for " + runtype);
-      results = await runFn(this, this.runInputData);
-    } catch (err) {
-      this.emit("error", err instanceof Error ? err.message : String(err));
-      console.error(err);
-      throw err;
+    if (!model) {
+      throw new Error(`JobQueueTaskTask: No model ${modelname} found`);
     }
-    this.runOutputData = results ?? {};
-    this.runOutputData = await this.runReactive();
-    this.emit("complete");
-    return this.runOutputData;
+    const queue = getTaskQueueRegistry().getQueue(model.provider);
+    if (!queue) {
+      throw new Error(`JobQueueTaskTask: No queue for model ${model.provider}`);
+    }
+    this.config.queue = queue.queue;
+    const job = new AiProviderJob({
+      queueName: queue.queue,
+      jobRunId: this.config.currentJobRunId, // could be undefined
+      input: {
+        taskType: runtype,
+        modelProvider: model.provider,
+        taskInput: this.runInputData,
+      },
+    });
+    return job;
   }
 
   /**
@@ -82,7 +81,7 @@ export class JobQueueLlmTask extends JobQueueTask {
     }
     if (valueType.endsWith("_model")) {
       const tasks = await modelRepo.findTasksByModel(item);
-      return !!tasks?.includes((this.constructor as typeof JobQueueLlmTask).type);
+      return !!tasks?.includes((this.constructor as typeof JobQueueAiTask).type);
     }
 
     return super.validateItem(valueType, item);

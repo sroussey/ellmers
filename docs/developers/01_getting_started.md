@@ -187,8 +187,7 @@ aiProviderRegistry.registerRunFn(
 );
 const jobQueue = new InMemoryJobQueue<TaskInput, TaskOutput>(
   LOCAL_ONNX_TRANSFORMERJS,
-  new ConcurrencyLimiter(1, 10),
-  10
+  new ConcurrencyLimiter(1, 10)
 );
 getTaskQueueRegistry().registerQueue(jobQueue);
 jobQueue.start();

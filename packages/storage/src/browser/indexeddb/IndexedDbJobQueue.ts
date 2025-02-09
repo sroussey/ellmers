@@ -22,25 +22,37 @@ import { ensureIndexedDbTable } from "./base/IndexedDbTable";
  * IndexedDB implementation of a job queue.
  * Provides storage and retrieval for job execution states using IndexedDB.
  */
-export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
+export class IndexedDbJobQueue<Input, Output> extends JobQueue<Input, Output> {
   private dbPromise: Promise<IDBDatabase>;
 
   constructor(
     queue: string,
     limiter: ILimiter,
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     waitDurationInMilliseconds: number = 100,
     public version: number = 1
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
     const tableName = `jobqueue_${queue}`;
+
+    // Close any existing connections first
+    const closeRequest = indexedDB.open(tableName);
+    closeRequest.onsuccess = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      db.close();
+    };
+
+    // Now initialize the database
     this.dbPromise = ensureIndexedDbTable(tableName, (db) => {
-      const store = db.createObjectStore("jobs", { keyPath: "id" });
-      store.createIndex("status", "status", { unique: false });
-      store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
-      store.createIndex("jobRunId", "jobRunId", { unique: false });
-      store.createIndex("taskType_fingerprint_status", ["taskType", "fingerprint", "status"], {
-        unique: false,
-      });
+      if (!db.objectStoreNames.contains("jobs")) {
+        const store = db.createObjectStore("jobs", { keyPath: "id" });
+        store.createIndex("status", "status", { unique: false });
+        store.createIndex("status_runAfter", ["status", "runAfter"], { unique: false });
+        store.createIndex("jobRunId", "jobRunId", { unique: false });
+        store.createIndex("fingerprint_status", ["fingerprint", "status"], {
+          unique: false,
+        });
+      }
     });
   }
 
@@ -49,12 +61,38 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     job.jobRunId = job.jobRunId ?? nanoid();
     job.queueName = this.queue;
     job.fingerprint = await makeFingerprint(job.input);
+    job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
+    job.queue = this;
+
+    this.createAbortController(job.id);
 
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
-    tx.objectStore("jobs").add(job);
+    const store = tx.objectStore("jobs");
+    const request = store.add({
+      id: job.id,
+      jobRunId: job.jobRunId,
+      queueName: this.queue,
+      fingerprint: job.fingerprint,
+      input: job.input,
+      status: job.status,
+      output: job.output,
+      error: job.error,
+      errorCode: job.errorCode,
+      retries: job.retries,
+      runAfter: job.runAfter,
+      createdAt: job.createdAt,
+      progress: job.progress,
+      progressMessage: job.progressMessage,
+      progressDetails: job.progressDetails,
+    });
+
     return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve(job.id);
+      request.onsuccess = () => resolve(job.id);
+      request.onerror = () => reject(request.error);
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -62,10 +100,13 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
   async get(id: unknown): Promise<Job<Input, Output> | undefined> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readonly");
-    const request = tx.objectStore("jobs").get(id as string);
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(undefined); // Not found
+    const store = tx.objectStore("jobs");
+    const request = store.get(id as string);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () =>
+        resolve(request.result ? this.createNewJob(request.result, false) : undefined);
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -74,10 +115,16 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const index = store.index("status_runAfter");
-    const request = index.getAll(IDBKeyRange.only(JobStatus.PENDING), num);
+    const request = index.getAll(IDBKeyRange.only([JobStatus.PENDING]), num);
 
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const ret: Array<Job<Input, Output>> = [];
+        for (const job of request.result || []) ret.push(this.createNewJob(job, false));
+        resolve(ret);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -88,8 +135,14 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const index = store.index("status");
     const request = index.getAll(IDBKeyRange.only(JobStatus.PROCESSING));
 
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const ret: Array<Job<Input, Output>> = [];
+        for (const job of request.result || []) ret.push(this.createNewJob(job, false));
+        resolve(ret);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -100,8 +153,14 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const index = store.index("status");
     const request = index.getAll(IDBKeyRange.only(JobStatus.ABORTING));
 
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const ret: Array<Job<Input, Output>> = [];
+        for (const job of request.result || []) ret.push(this.createNewJob(job, false));
+        resolve(ret);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -109,22 +168,48 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
-
     const index = store.index("status_runAfter");
-    const cursorRequest = index.openCursor(IDBKeyRange.only(JobStatus.PENDING), "next");
+    const now = new Date();
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const cursorRequest = index.openCursor(
+        IDBKeyRange.bound([JobStatus.PENDING, 0], [JobStatus.PENDING, now], false, true)
+      );
+
       cursorRequest.onsuccess = (e) => {
         const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          const job = cursor.value;
-          job.status = JobStatus.PROCESSING;
-          cursor.update(job);
-          resolve(job);
-        } else {
-          resolve(undefined); // No more jobs
+        if (!cursor) {
+          resolve(undefined);
+          return;
+        }
+
+        const job = cursor.value;
+        // Verify the job is still in PENDING state
+        if (job.status !== JobStatus.PENDING) {
+          cursor.continue();
+          return;
+        }
+
+        job.status = JobStatus.PROCESSING;
+        job.processingStarted = now;
+
+        try {
+          const updateRequest = store.put(job);
+          updateRequest.onsuccess = () => {
+            return job ? resolve(this.createNewJob(job, false)) : resolve(undefined);
+          };
+          updateRequest.onerror = (err) => {
+            console.error("Failed to update job status:", err);
+            cursor.continue();
+          };
+        } catch (err) {
+          console.error("Error updating job:", err);
+          cursor.continue();
         }
       };
+
+      cursorRequest.onerror = () => reject(cursorRequest.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -138,8 +223,10 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const store = tx.objectStore("jobs");
     const request = store.count();
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -148,7 +235,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
    * Uses enhanced error handling to update the job's status.
    * If a retryable error occurred, the job's retry count is incremented and its runAfter updated.
    */
-  async complete(id: unknown, output: Output | null = null, error?: JobError): Promise<void> {
+  async complete(id: unknown, output?: Output, error?: JobError): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
@@ -161,37 +248,44 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
           reject(new Error(`Job ${id} not found`));
           return;
         }
-
         if (error) {
           job.error = error.message;
+          job.errorCode = error.name;
           job.retries = (job.retries || 0) + 1;
           if (error instanceof RetryableJobError) {
             if (job.retries >= job.maxRetries) {
               job.status = JobStatus.FAILED;
+              job.completedAt = new Date();
             } else {
               job.status = JobStatus.PENDING;
               job.runAfter = error.retryDate;
             }
           } else if (error instanceof PermanentJobError) {
             job.status = JobStatus.FAILED;
+            job.completedAt = new Date();
           } else {
             job.status = JobStatus.FAILED;
+            job.completedAt = new Date();
           }
         } else {
           job.status = JobStatus.COMPLETED;
           job.output = output;
+          job.error = null;
+          job.errorCode = null;
+          job.completedAt = new Date();
         }
 
-        store.put(job);
-
-        if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
-          this.onCompleted(job.id, job.status, output!, error);
-        }
-
-        resolve();
+        const updateRequest = store.put(job);
+        updateRequest.onsuccess = () => {
+          if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
+            this.onCompleted(job.id, job.status, output, error);
+          }
+          resolve();
+        };
+        updateRequest.onerror = () => reject(updateRequest.error);
       };
-
       request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -201,7 +295,7 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
    * the job's execute() method (if it supports an AbortSignal parameter)
    * can clean up and exit.
    */
-  async abort(jobId: unknown): Promise<void> {
+  public async abort(jobId: unknown): Promise<void> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readwrite");
     const store = tx.objectStore("jobs");
@@ -216,8 +310,6 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
         }
 
         job.status = JobStatus.ABORTING;
-
-        // Persist the updated job back to IndexedDB.
         const updateRequest = store.put(job);
         updateRequest.onsuccess = () => {
           this.abortJob(jobId);
@@ -225,8 +317,8 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
         };
         updateRequest.onerror = () => reject(updateRequest.error);
       };
-
       request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -235,8 +327,15 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
     const request = store.index("jobRunId").getAll(jobRunId);
-    return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result);
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const ret: Array<Job<Input, Output>> = [];
+        for (const job of request.result || []) ret.push(this.createNewJob(job, false));
+        resolve(ret);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -252,31 +351,64 @@ export class IndexedDbQueue<Input, Output> extends JobQueue<Input, Output> {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
   /**
-   * Retrieves the output for a job based on its task type and input.
+   * Retrieves the output for a job based input.
    * Uses a compound key to query the IndexedDB for the job's output.
    */
-  async outputForInput(taskType: string, input: Input): Promise<Output | null> {
+  async outputForInput(input: Input): Promise<Output | null> {
     const db = await this.dbPromise;
     const tx = db.transaction("jobs", "readonly");
     const store = tx.objectStore("jobs");
-
     const fingerprint = await makeFingerprint(input);
+    const index = store.index("fingerprint_status");
+    const request = index.get([fingerprint, JobStatus.COMPLETED]);
 
-    const index = store.index("taskType_fingerprint_status");
-    // We use a compound key for querying in IndexedDB
-    const queryKey = [taskType, fingerprint, JobStatus.COMPLETED];
-    const request = index.get(queryKey);
-
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         const result = request.result;
-        resolve(result ? (result.output ? (JSON.parse(result.output) as Output) : null) : null);
+        resolve(result ? result.output : null);
       };
-      request.onerror = () => resolve(null); // In case of error, resolve with null
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    const db = await this.dbPromise;
+    const tx = db.transaction("jobs", "readwrite");
+    const store = tx.objectStore("jobs");
+    const request = store.get(jobId as string);
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const job = request.result;
+        if (!job) {
+          reject(new Error(`Job ${jobId} not found`));
+          return;
+        }
+
+        job.progress = progress;
+        job.progressMessage = message;
+        job.progressDetails = details;
+
+        const updateRequest = store.put(job);
+        updateRequest.onsuccess = () => resolve();
+        updateRequest.onerror = () => reject(updateRequest.error);
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
     });
   }
 }

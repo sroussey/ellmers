@@ -183,8 +183,16 @@ function listenToTask(
   task.on("abort", (text) => {
     updateNodeData(taskId, { active: false, progress: 100, progressText: "Aborting" }, setNodes);
   });
-  task.on("progress", (progress, progressText) => {
-    updateNodeData(taskId, { active: true, progress, progressText }, setNodes);
+  task.on("progress", (progress: number, progressText: string, details: any) => {
+    updateNodeData(
+      taskId,
+      {
+        active: true,
+        progress,
+        progressText: details ? details.file || details.text || details.model : progressText,
+      },
+      setNodes
+    );
   });
 
   if (task.isCompound) {

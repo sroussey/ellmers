@@ -6,7 +6,15 @@
 //    *******************************************************************************
 
 import { Sql } from "postgres";
-import { Job, JobStatus, JobQueue, ILimiter, RetryableJobError, JobError } from "ellmers-core";
+import {
+  Job,
+  JobStatus,
+  JobQueue,
+  ILimiter,
+  RetryableJobError,
+  JobError,
+  PermanentJobError,
+} from "ellmers-core";
 import { makeFingerprint } from "../../util/Misc";
 import { nanoid } from "nanoid";
 
@@ -21,10 +29,10 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     protected readonly sql: Sql,
     queue: string,
     limiter: ILimiter,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
     waitDurationInMilliseconds = 100
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
   }
 
   public ensureTableExists() {
@@ -33,6 +41,7 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       id bigint SERIAL NOT NULL,
       fingerprint text NOT NULL,
       queue text NOT NULL,
+      jobRunId text NOT NULL,
       status job_status NOT NULL default 'NEW',
       input jsonb NOT NULL,
       output jsonb,
@@ -42,7 +51,11 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       lastRanAt timestamp with time zone,
       createdAt timestamp with time zone DEFAULT now(),
       deadlineAt timestamp with time zone,
-      error text
+      error text,
+      errorCode text,
+      progress real DEFAULT 0,
+      progressMessage text DEFAULT '',
+      progressDetails jsonb
     );
     
     CREATE INDEX IF NOT EXISTS job_fetcher_idx ON job_queue (id, status, runAfter);
@@ -50,23 +63,6 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique_idx ON job_queue (queue, fingerprint, status) WHERE NOT (status = 'COMPLETED');
     `;
     return this;
-  }
-
-  /**
-   * Creates a new job instance from the provided database results.
-   * @param results - The job data from the database
-   * @returns A new Job instance with populated properties
-   */
-  public createNewJob(results: any): Job<Input, Output> {
-    return new this.jobClass({
-      ...results,
-      input: JSON.parse(results.input) as Input,
-      output: results.output ? (JSON.parse(results.output) as Output) : undefined,
-      runAfter: results.runAfter ? new Date(results.runAfter) : undefined,
-      createdAt: results.createdAt ? new Date(results.createdAt) : undefined,
-      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt) : undefined,
-      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt) : undefined,
-    });
   }
 
   /**
@@ -78,11 +74,39 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     job.queueName = this.queue;
     job.jobRunId = job.jobRunId ?? nanoid();
     const fingerprint = await makeFingerprint(job.input);
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
+    job.queue = this;
+
     return await this.sql.begin(async (sql) => {
-      return await sql`
-        INSERT INTO job_queue(queue, fingerprint, input, runAfter, maxRetries, jobRunId)
-          VALUES (${this.queue!}, ${fingerprint}, ${job.input as any}::jsonb, ${job.createdAt.toISOString()}, ${job.maxRetries}, ${job.jobRunId!})
-          RETURNING id`;
+      const jobid = await sql`
+        INSERT INTO job_queue(
+          queue, 
+          fingerprint, 
+          input, 
+          runAfter, 
+          maxRetries, 
+          jobRunId, 
+          progress, 
+          progressMessage, 
+          progressDetails
+        )
+        VALUES (
+          ${this.queue!}, 
+          ${fingerprint}, 
+          ${job.input as any}::jsonb, 
+          ${job.createdAt.toISOString()}, 
+          ${job.maxRetries}, 
+          ${job.jobRunId!},
+          ${job.progress},
+          ${job.progressMessage},
+          ${job.progressDetails as any}::jsonb
+        )
+        RETURNING id`;
+      this.createAbortController(jobid);
+      job.id = jobid;
+      return jobid;
     });
   }
 
@@ -214,45 +238,71 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
 
-    let status: JobStatus;
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
+
     if (error) {
       job.error = error.message;
+      job.errorCode = error.name;
       job.retries = (job.retries || 0) + 1;
       if (error instanceof RetryableJobError) {
-        status = job.retries >= job.maxRetries ? JobStatus.FAILED : JobStatus.PENDING;
+        if (job.retries >= job.maxRetries) {
+          job.status = JobStatus.FAILED;
+          job.completedAt = new Date();
+        } else {
+          job.status = JobStatus.PENDING;
+          job.runAfter = error.retryDate;
+          job.progress = 0;
+        }
+      } else if (error instanceof PermanentJobError) {
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       } else {
-        status = JobStatus.FAILED;
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       }
     } else {
-      status = JobStatus.COMPLETED;
+      job.status = JobStatus.COMPLETED;
       job.output = output;
+      job.error = null;
+      job.errorCode = null;
+      job.completedAt = new Date();
     }
 
     await this.sql.begin(async (sql) => {
-      if (error && error instanceof RetryableJobError && status === JobStatus.PENDING) {
+      if (error && job.status === JobStatus.PENDING) {
         await sql`
           UPDATE job_queue 
           SET output = ${output as any}::jsonb, 
-              error = ${error.message}, 
-              status = ${status}, 
+              error = ${job.error}, 
+              errorCode = ${job.errorCode},
+              status = ${job.status}, 
               retries = retries + 1, 
-              runAfter = ${error.retryDate.toISOString()}, 
-              lastRanAt = NOW()  
+              runAfter = ${job.runAfter.toISOString()}, 
+              lastRanAt = NOW(),
+              progress = ${job.progress},
+              progressMessage = '',
+              progressDetails = NULL
           WHERE id = ${id}`;
       } else {
         await sql`
           UPDATE job_queue 
           SET output = ${output as any}::jsonb, 
-              error = ${error ? error.message : null}, 
-              status = ${status}, 
+              error = ${job.error}, 
+              errorCode = ${job.errorCode},
+              status = ${job.status}, 
               retries = retries + 1, 
-              lastRanAt = NOW()  
+              lastRanAt = NOW(),
+              progress = ${job.progress},
+              progressMessage = '',
+              progressDetails = NULL
           WHERE id = ${id}`;
       }
     });
 
-    if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(id, status, output!, error);
+    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
+      this.onCompleted(id, job.status, output, error);
     }
   }
 
@@ -268,17 +318,17 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a given input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     return await this.sql.begin(async (sql) => {
       const result = await sql`
       SELECT output
         FROM job_queue
-        WHERE taskType = ${taskType} AND fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
+        WHERE fingerprint = ${fingerprint} AND queue=${this.queue} AND status = 'COMPLETED'`;
       return result[0].rows[0].output;
     });
   }
@@ -306,6 +356,25 @@ export class PostgresJobQueue<Input, Output> extends JobQueue<Input, Output> {
       const result =
         await sql`SELECT * FROM job_queue WHERE jobRunId = ${jobRunId} AND queue = ${this.queue}`;
       return result[0].rows.map((r: any) => this.createNewJob(r));
+    });
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    await this.sql.begin(async (sql) => {
+      await sql`
+        UPDATE job_queue 
+        SET progress = ${progress},
+            progressMessage = ${message},
+            progressDetails = ${details as any}::jsonb
+        WHERE id = ${jobId as number} AND queue = ${this.queue}`;
     });
   }
 }

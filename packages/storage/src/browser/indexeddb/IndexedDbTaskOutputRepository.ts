@@ -24,12 +24,12 @@ export class IndexedDbTaskOutputRepository extends TaskOutputRepository {
     typeof TaskOutputPrimaryKeySchema
   >;
   public type = "IndexedDbTaskOutputRepository" as const;
-  constructor() {
+  constructor(table: string = "task_outputs") {
     super();
     this.kvRepository = new IndexedDbKVRepository<
       TaskOutputPrimaryKey,
       DefaultValueType,
       typeof TaskOutputPrimaryKeySchema
-    >("task_outputs", TaskOutputPrimaryKeySchema);
+    >(table, TaskOutputPrimaryKeySchema);
   }
 }

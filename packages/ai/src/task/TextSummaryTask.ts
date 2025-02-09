@@ -14,7 +14,7 @@ import {
   arrayTaskFactory,
   JobQueueTaskConfig,
 } from "ellmers-core";
-import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { summarization_model } from "./base/TaskIOTypes";
 
 export type TextSummaryTaskInput = {
@@ -29,7 +29,7 @@ export type TextSummaryTaskOutput = {
  * This summarizes a piece of text
  */
 
-export class TextSummaryTask extends JobQueueLlmTask {
+export class TextSummaryTask extends JobQueueAiTask {
   public static inputs = [
     {
       id: "text",

@@ -5,7 +5,15 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter, JobQueue, Job, JobStatus, RetryableJobError, JobError } from "ellmers-core";
+import {
+  ILimiter,
+  JobQueue,
+  Job,
+  JobStatus,
+  RetryableJobError,
+  JobError,
+  PermanentJobError,
+} from "ellmers-core";
 import { makeFingerprint, toSQLiteTimestamp } from "../../util/Misc";
 import { type Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
@@ -21,10 +29,10 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     protected db: Database,
     queue: string,
     limiter: ILimiter,
-    waitDurationInMilliseconds = 100,
-    protected jobClass: typeof Job<Input, Output> = Job<Input, Output>
+    jobClass: typeof Job<Input, Output> = Job<Input, Output>,
+    waitDurationInMilliseconds = 100
   ) {
-    super(queue, limiter, waitDurationInMilliseconds);
+    super(queue, limiter, jobClass, waitDurationInMilliseconds);
   }
 
   public ensureTableExists() {
@@ -35,7 +43,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         queue text NOT NULL,
         jobRunId text NOT NULL,
         status TEXT NOT NULL default 'NEW',
-        taskType TEXT NOT NULL,
         input TEXT NOT NULL,
         output TEXT,
         retries INTEGER default 0,
@@ -44,7 +51,11 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
         lastRanAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         deadlineAt TEXT,
-        error TEXT
+        error TEXT,
+        errorCode TEXT,
+        progress REAL DEFAULT 0,
+        progressMessage TEXT DEFAULT '',
+        progressDetails TEXT NULL
       );
       
       CREATE INDEX IF NOT EXISTS job_queue_fetcher_idx ON job_queue (queue, status, runAfter);
@@ -52,23 +63,6 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
       CREATE INDEX IF NOT EXISTS job_queue_jobRunId_idx ON job_queue (queue, jobRunId);
     `);
     return this;
-  }
-
-  /**
-   * Creates a new job instance from the provided database results.
-   * @param results - The job data from the database
-   * @returns A new Job instance with populated properties
-   */
-  public createNewJob(results: any): Job<Input, Output> {
-    return new this.jobClass({
-      ...results,
-      input: JSON.parse(results.input) as Input,
-      output: results.output ? (JSON.parse(results.output) as Output) : undefined,
-      runAfter: results.runAfter ? new Date(results.runAfter + "Z") : undefined,
-      createdAt: results.createdAt ? new Date(results.createdAt + "Z") : undefined,
-      deadlineAt: results.deadlineAt ? new Date(results.deadlineAt + "Z") : undefined,
-      lastRanAt: results.lastRanAt ? new Date(results.lastRanAt + "Z") : undefined,
-    });
   }
 
   /**
@@ -81,36 +75,48 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
     const fingerprint = await makeFingerprint(job.input);
     job.fingerprint = fingerprint;
     job.jobRunId = job.jobRunId ?? nanoid();
+    job.status = JobStatus.PENDING;
+    job.progress = 0;
+    job.progressMessage = "";
+    job.progressDetails = null;
+    job.queue = this;
+
     const AddQuery = `
-      INSERT INTO job_queue(queue, taskType, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId)
-		    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO job_queue(queue, fingerprint, input, runAfter, deadlineAt, maxRetries, jobRunId, progress, progressMessage, progressDetails)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id`;
+
     const stmt = this.db.prepare<
       { id: string },
       [
         queue: string,
-        taskType: string,
-        fingerpring: string,
+        fingerprint: string,
         input: string,
         runAfter: string | null,
         deadlineAt: string | null,
         maxRetries: number,
         jobRunId: string,
+        progress: number,
+        progressMessage: string,
+        progressDetails: string | null,
       ]
     >(AddQuery);
 
     const result = stmt.get(
       this.queue,
-      job.taskType,
       fingerprint,
       JSON.stringify(job.input),
       toSQLiteTimestamp(job.runAfter),
       toSQLiteTimestamp(job.deadlineAt),
       job.maxRetries,
-      job.jobRunId
-    );
+      job.jobRunId,
+      job.progress,
+      job.progressMessage,
+      job.progressDetails ? JSON.stringify(job.progressDetails) : null
+    ) as { id: string } | undefined;
 
     job.id = result?.id;
+    this.createAbortController(job.id);
     return result?.id;
   }
 
@@ -192,14 +198,14 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
    * the job's execute() method (if it supports an AbortSignal parameter)
    * can clean up and exit.
    */
-  public async abort(id: string) {
+  public async abort(jobId: string) {
     const AbortQuery = `
       UPDATE job_queue
         SET status = $1
         WHERE id = $2 AND queue = $3`;
     const stmt = this.db.prepare(AbortQuery);
-    stmt.run(JobStatus.ABORTING, id, this.queue);
-    this.abortJob(id);
+    stmt.run(JobStatus.ABORTING, jobId, this.queue);
+    this.abortJob(jobId);
   }
 
   /**
@@ -279,44 +285,91 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   public async complete(id: string, output: Output | null = null, error?: JobError) {
     const job = await this.get(id);
     if (!job) throw new Error(`Job ${id} not found`);
-    let status: JobStatus;
+
+    job.progress = 100;
+    job.progressMessage = "";
+    job.progressDetails = null;
+
     if (error) {
       job.error = error.message;
+      job.errorCode = error.name;
       job.retries = (job.retries || 0) + 1;
       if (error instanceof RetryableJobError) {
-        status = job.retries >= job.maxRetries ? JobStatus.FAILED : JobStatus.PENDING;
+        if (job.retries >= job.maxRetries) {
+          job.status = JobStatus.FAILED;
+          job.completedAt = new Date();
+        } else {
+          job.status = JobStatus.PENDING;
+          job.runAfter = error.retryDate;
+          job.progress = 0;
+        }
+      } else if (error instanceof PermanentJobError) {
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       } else {
-        status = JobStatus.FAILED;
+        job.status = JobStatus.FAILED;
+        job.completedAt = new Date();
       }
     } else {
-      status = JobStatus.COMPLETED;
+      job.status = JobStatus.COMPLETED;
       job.output = output;
+      job.error = null;
+      job.errorCode = null;
+      job.completedAt = new Date();
     }
+
     let updateQuery: string;
     let params: any[];
-    if (error && error instanceof RetryableJobError && status === JobStatus.PENDING) {
+    if (error && job.status === JobStatus.PENDING) {
       updateQuery = `
           UPDATE job_queue 
-            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP, runAfter = ?
+            SET 
+              error = ?, 
+              errorCode = ?, 
+              status = ?, 
+              progress = ?, 
+              runAfter = ?, 
+              progressMessage = "", 
+              progressDetails = NULL, 
+              lastRanAt = CURRENT_TIMESTAMP, 
+              retries = retries + 1 
             WHERE id = ? AND queue = ?`;
       params = [
-        JSON.stringify(output),
         error.message,
-        status,
-        error.retryDate.toISOString(),
+        error.name,
+        job.status,
+        job.progress,
+        job.runAfter.toISOString(),
         id,
         this.queue,
       ];
     } else {
       updateQuery = `
           UPDATE job_queue 
-            SET output = ?, error = ?, status = ?, retries = retries + 1, lastRanAt = CURRENT_TIMESTAMP
+            SET 
+              output = ?, 
+              error = ?, 
+              errorCode = ?, 
+              status = ?, 
+              progress = ?, 
+              retries = retries + 1, 
+              progressMessage = "", 
+              progressDetails = NULL, 
+              lastRanAt = CURRENT_TIMESTAMP
             WHERE id = ? AND queue = ?`;
-      params = [JSON.stringify(output), error ? error.message : null, status, id, this.queue];
+      params = [
+        JSON.stringify(output),
+        job.error ?? null,
+        job.errorCode ?? null,
+        job.status,
+        job.progress,
+        id,
+        this.queue,
+      ];
     }
     this.db.exec(updateQuery, params);
-    if (status === JobStatus.COMPLETED || status === JobStatus.FAILED) {
-      this.onCompleted(job.id, status, output!, error);
+    if (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) {
+      this.onCompleted(job.id, job.status, output, error);
     }
   }
 
@@ -330,22 +383,42 @@ export class SqliteJobQueue<Input, Output> extends JobQueue<Input, Output> {
   }
 
   /**
-   * Looks up cached output for a given task type and input
+   * Looks up cached output for a  input
    * Uses input fingerprinting for efficient matching
    * @returns The cached output or null if not found
    */
-  public async outputForInput(taskType: string, input: Input) {
+  public async outputForInput(input: Input) {
     const fingerprint = await makeFingerprint(input);
     const OutputQuery = `
       SELECT output
         FROM job_queue
-        WHERE queue = ? AND taskType = ? AND fingerprint = ? AND status = ?`;
+        WHERE queue = ? AND fingerprint = ? AND status = ?`;
     const stmt = this.db.prepare(OutputQuery);
-    const result = stmt.get(this.queue, taskType, fingerprint, JobStatus.COMPLETED) as
+    const result = stmt.get(this.queue, fingerprint, JobStatus.COMPLETED) as
       | {
           output: string;
         }
       | undefined;
     return result?.output ? JSON.parse(result.output) : null;
+  }
+
+  /**
+   * Implements the abstract saveProgress method from JobQueue
+   */
+  protected async saveProgress(
+    jobId: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any>
+  ): Promise<void> {
+    const UpdateProgressQuery = `
+      UPDATE job_queue
+        SET progress = ?,
+            progressMessage = ?,
+            progressDetails = ?
+        WHERE id = ? AND queue = ?`;
+
+    const stmt = this.db.prepare(UpdateProgressQuery);
+    stmt.run(progress, message, JSON.stringify(details), String(jobId), this.queue);
   }
 }

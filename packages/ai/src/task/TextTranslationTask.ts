@@ -9,7 +9,7 @@ import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from
 import { TaskRegistry } from "ellmers-core";
 import { JobQueueTaskConfig } from "ellmers-core";
 import { TaskGraphBuilder, TaskGraphBuilderHelper } from "ellmers-core";
-import { JobQueueLlmTask } from "./base/JobQueueLlmTask";
+import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { language } from "./base/TaskIOTypes";
 import { translation_model } from "./base/TaskIOTypes";
 
@@ -27,7 +27,7 @@ export type TextTranslationTaskOutput = {
 /**
  * This generates text from a prompt
  */
-export class TextTranslationTask extends JobQueueLlmTask {
+export class TextTranslationTask extends JobQueueAiTask {
   public static inputs = [
     {
       id: "text",
