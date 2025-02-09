@@ -69,7 +69,6 @@ queueRegistry.startQueues();
 
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const builder = new TaskGraphBuilder(taskOutputCache);
-await taskOutputCache.initialize();
 const run = builder.run.bind(builder);
 builder.run = async () => {
   console.log("Running task graph...");
@@ -84,7 +83,6 @@ builder.run = async () => {
 };
 
 const taskGraphRepo = new IndexedDbTaskGraphRepository();
-await taskGraphRepo.initialize();
 const graph = await taskGraphRepo.getTaskGraph("default");
 const resetGraph = () => {
   builder
