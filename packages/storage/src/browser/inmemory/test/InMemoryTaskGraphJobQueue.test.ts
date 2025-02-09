@@ -9,8 +9,10 @@ import { InMemoryJobQueue } from "../InMemoryJobQueue";
 import { ConcurrencyLimiter } from "ellmers-core";
 import { runGenericTaskGraphJobQueueTests } from "../../../test/genericTaskGraphJobQueueTests";
 import { TestJob } from "../../../test/genericTaskGraphJobQueueTests";
+import { describe } from "bun:test";
 
-runGenericTaskGraphJobQueueTests(
-  async () => new InMemoryJobQueue("inMemory", new ConcurrencyLimiter(1, 10), TestJob, 10),
-  "InMemoryTaskGraphJobQueue"
-);
+describe("InMemoryTaskGraphJobQueue", () => {
+  runGenericTaskGraphJobQueueTests(
+    async () => new InMemoryJobQueue("inMemory", new ConcurrencyLimiter(1, 10), TestJob, 10)
+  );
+});

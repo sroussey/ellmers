@@ -34,7 +34,7 @@ export class IndexedDbKVRepository<
   Combined extends Record<string, any> = Key & Value,
 > extends KVRepository<Key, Value, PrimaryKeySchema, ValueSchema, Combined> {
   /** Promise that resolves to the IndexedDB database instance */
-  private dbPromise: Promise<IDBDatabase>;
+  private dbPromise: Promise<IDBDatabase> | undefined;
 
   /**
    * Creates a new IndexedDB-based key-value repository.
@@ -50,7 +50,6 @@ export class IndexedDbKVRepository<
     protected searchable: Array<keyof Combined> = []
   ) {
     super(primaryKeySchema, valueSchema, searchable);
-
     const pkColumns = super.primaryKeyColumns() as string[];
 
     const expectedIndexes: ExpectedIndexDefinition[] = this.searchable
@@ -74,6 +73,8 @@ export class IndexedDbKVRepository<
    * @emits put - Emitted when the value is successfully stored
    */
   async putKeyValue(key: Key, value: Value): Promise<void> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     const record = { ...key, ...value };
     return new Promise((resolve, reject) => {
@@ -100,6 +101,8 @@ export class IndexedDbKVRepository<
    * @emits get - Emitted when the value is successfully retrieved
    */
   async getKeyValue(key: Key): Promise<Value | undefined> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readonly");
@@ -118,6 +121,8 @@ export class IndexedDbKVRepository<
    * @returns Array of all entries in the repository.
    */
   async getAll(): Promise<Combined[] | undefined> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     const transaction = db.transaction(this.table, "readonly");
     const store = transaction.objectStore(this.table);
@@ -138,6 +143,8 @@ export class IndexedDbKVRepository<
    * @returns Array of matching records or undefined.
    */
   async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const queryKeys = Object.keys(key);
     if (queryKeys.length === 0) return undefined;
     const db = await this.dbPromise;
@@ -176,6 +183,8 @@ export class IndexedDbKVRepository<
    * @param key - The key object to delete.
    */
   async deleteKeyValue(key: Key): Promise<void> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readwrite");
@@ -194,6 +203,8 @@ export class IndexedDbKVRepository<
    * @emits clearall - Emitted when all values are deleted
    */
   async deleteAll(): Promise<void> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readwrite");
@@ -212,6 +223,8 @@ export class IndexedDbKVRepository<
    * @returns Count of stored items.
    */
   async size(): Promise<number> {
+    if (!this.dbPromise) throw new Error("Database not initialized");
+    await this.dbPromise;
     const db = await this.dbPromise;
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readonly");

@@ -5,9 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import "fake-indexeddb/auto";
 import { IndexedDbTaskGraphRepository } from "../IndexedDbTaskGraphRepository";
 import { runGenericTaskGraphRepositoryTests } from "../../../test/genericTaskGraphRepositoryTests";
-import "fake-indexeddb/auto";
 import { nanoid } from "nanoid";
 import { describe } from "bun:test";
 
