@@ -41,7 +41,7 @@ export class AiProviderJob<
     const fn =
       getAiProviderRegistry().runFnRegistry[this.input.taskType]?.[this.input.modelProvider];
     return fn(
-      this as unknown as AiProviderJob<TaskInput, TaskOutput>,
+      this as unknown as AiProviderJob<Input, Output>,
       this.input.taskInput,
       signal
     ) as Promise<Output>;

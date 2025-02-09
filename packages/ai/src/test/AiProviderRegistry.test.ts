@@ -50,6 +50,10 @@ describe("AiProviderRegistry", () => {
     await queue.stop();
     await queue.clear();
   });
+  afterAll(async () => {
+    getTaskQueueRegistry().stopQueues().clearQueues();
+    setTaskQueueRegistry(null);
+  });
 
   describe("registerRunFn", () => {
     test("should register a run function for a task type and model provider", () => {

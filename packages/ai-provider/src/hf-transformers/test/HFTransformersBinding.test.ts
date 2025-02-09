@@ -5,11 +5,11 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import {
   ConcurrencyLimiter,
   getTaskQueueRegistry,
-  QueueMode,
+  setTaskQueueRegistry,
   TaskGraphBuilder,
   TaskInput,
   TaskOutput,
@@ -110,5 +110,10 @@ describe("HFTransformersBinding", () => {
       builder.reset();
       await queue?.clear();
     });
+  });
+
+  afterAll(async () => {
+    getTaskQueueRegistry().stopQueues().clearQueues();
+    setTaskQueueRegistry(null);
   });
 });

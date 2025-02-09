@@ -28,18 +28,21 @@ export class TaskQueueRegistry<Input, Output> {
     for (const queue of this.queues.values()) {
       queue.start();
     }
+    return this;
   }
 
   stopQueues() {
     for (const queue of this.queues.values()) {
       queue.stop();
     }
+    return this;
   }
 
   clearQueues() {
     for (const queue of this.queues.values()) {
       queue.clear();
     }
+    return this;
   }
 }
 
@@ -50,6 +53,6 @@ export function getTaskQueueRegistry() {
   return taskQueueRegistry;
 }
 
-export function setTaskQueueRegistry(registry: TaskQueueRegistry<TaskInput, TaskOutput>) {
+export function setTaskQueueRegistry(registry: TaskQueueRegistry<TaskInput, TaskOutput> | null) {
   taskQueueRegistry = registry;
 }
