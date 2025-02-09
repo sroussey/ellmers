@@ -38,6 +38,7 @@ export class AiProviderJob<
   Output extends TaskOutput = TaskOutput,
 > extends Job<AiProviderInput<Input>, Output> {
   execute(signal?: AbortSignal): Promise<Output> {
+    console.log("AiProviderJob.execute", this.input);
     const fn =
       getAiProviderRegistry().runFnRegistry[this.input.taskType]?.[this.input.modelProvider];
     return fn(

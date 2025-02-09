@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { getTaskQueueRegistry } from "../QueueRegistry";
+import { getTaskQueueRegistry } from "../TaskQueueRegistry";
 import { SingleTask, TaskConfig } from "./Task";
 
 /**

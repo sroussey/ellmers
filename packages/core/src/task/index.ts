@@ -15,4 +15,4 @@ export * from "./base/JobQueueTask";
 export * from "./LambdaTask";
 export * from "./DebugLogTask";
 export * from "./JsonTask";
-export * from "./QueueRegistry";
+export * from "./TaskQueueRegistry";
