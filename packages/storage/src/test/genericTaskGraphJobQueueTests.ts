@@ -5,16 +5,9 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import {
-  TaskInput,
-  TaskOutput,
-  JobQueue,
-  JobQueueTask,
-  Job,
-  getTaskQueueRegistry,
-} from "ellmers-core";
-import { TaskGraphRepository } from "ellmers-core";
+import { expect, it, beforeEach, afterEach } from "bun:test";
+import { TaskInput, TaskOutput, JobQueueTask, getTaskQueueRegistry } from "@ellmers/task-graph";
+import { Job, JobQueue } from "@ellmers/job-queue";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
   async execute(signal: AbortSignal): Promise<TaskOutput> {

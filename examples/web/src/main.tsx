@@ -7,7 +7,7 @@
 
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
-import { TaskGraphBuilder, TaskRegistry } from "ellmers-core";
+import { TaskGraphBuilder } from "@ellmers/task-graph";
 import "./main.css";
 import {
   TaskConsoleFormatter,
@@ -15,7 +15,6 @@ import {
   TaskGraphBuilderHelperConsoleFormatter,
   isDarkMode,
 } from "./ConsoleFormatters";
-import { getGlobalModelRepository } from "ellmers-ai";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   // <React.StrictMode>

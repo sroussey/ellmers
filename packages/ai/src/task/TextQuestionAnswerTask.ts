@@ -13,7 +13,7 @@ import {
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { question_answering_model } from "./base/TaskIOTypes";
 export type TextQuestionAnswerTaskInput = {
@@ -75,7 +75,7 @@ export const TextQuestionAnswer = (input: TextQuestionAnswerCompoundTaskInput) =
   return new TextQuestionAnswerCompoundTask({ input }).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     TextQuestionAnswer: TaskGraphBuilderHelper<TextQuestionAnswerCompoundTaskInput>;
   }

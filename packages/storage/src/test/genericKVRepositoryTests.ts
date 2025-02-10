@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { describe, expect, it, beforeEach } from "bun:test";
-import { BaseValueSchema, BasePrimaryKeySchema, IKVRepository } from "ellmers-core";
+import { BaseValueSchema, BasePrimaryKeySchema, IKVRepository } from "@ellmers/task-graph";
 
 export type PrimaryKey = {
   name: string;

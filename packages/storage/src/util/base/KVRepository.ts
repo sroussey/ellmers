@@ -7,7 +7,7 @@
 
 import EventEmitter from "eventemitter3";
 import { makeFingerprint } from "../../util/Misc";
-import { IKVRepository } from "ellmers-core";
+import { IKVRepository } from "@ellmers/task-graph";
 
 /**
  * Type definitions for key-value repository events

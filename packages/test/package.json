@@ -1,15 +1,15 @@
 {
-  "name": "ellmers-test",
+  "name": "@ellmers/test",
   "type": "module",
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @huggingface/transformers --external ellmers-core --external ellmers-ai --external ellmers-ai-provider --external ellmers-storage --outdir ./dist/ ./src/index.ts",
+    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @huggingface/transformers --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/tasks --external @ellmers/ai --external @ellmers/ai-provider --external @ellmers/storage --outdir ./dist/ ./src/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-code": "bun build --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @mediapipe/tasks-text --external @huggingface/transformers --external ellmers-core --external ellmers-ai --external ellmers-ai-provider --external ellmers-storage --outdir ./dist/ ./src/index.ts",
+    "build-code": "bun build --target=browser --sourcemap=external --external @mediapipe/tasks-text --external @mediapipe/tasks-text --external @huggingface/transformers  --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/tasks --external @ellmers/tasks --external @ellmers/ai --external @ellmers/ai-provider --external @ellmers/storage --outdir ./dist/ ./src/index.ts",
     "build-types": "tsc",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -24,9 +24,11 @@
     "dist"
   ],
   "dependencies": {
-    "ellmers-core": "workspace:packages/core",
-    "ellmers-ai": "workspace:packages/ai",
-    "ellmers-ai-provider": "workspace:packages/ai-provider",
-    "ellmers-storage": "workspace:packages/storage"
+    "@ellmers/task-graph": "workspace:packages/task-graph",
+    "@ellmers/ai": "workspace:packages/ai",
+    "@ellmers/ai-provider": "workspace:packages/ai-provider",
+    "@ellmers/storage": "workspace:packages/storage",
+    "@ellmers/job-queue": "workspace:packages/job-queue",
+    "@ellmers/tasks": "workspace:packages/tasks"
   }
 }

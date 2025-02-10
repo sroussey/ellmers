@@ -10,7 +10,7 @@ import {
   TaskInputDefinition,
   TaskOutputDefinition,
   TaskStatus,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 
 type Config = Record<string, any>;
 

@@ -8,15 +8,15 @@
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
-} from "ellmers-ai-provider/hf-transformers";
+} from "@ellmers/ai-provider/hf-transformers";
 import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
-} from "ellmers-ai-provider/tf-mediapipe";
-import { ConcurrencyLimiter, TaskInput, TaskOutput, getTaskQueueRegistry } from "ellmers-core";
-import { InMemoryJobQueue } from "ellmers-storage/inmemory";
-import { AiProviderJob } from "ellmers-ai";
-
+} from "@ellmers/ai-provider/tf-mediapipe";
+import { TaskInput, TaskOutput, getTaskQueueRegistry } from "@ellmers/task-graph";
+import { InMemoryJobQueue } from "@ellmers/storage/inmemory";
+import { AiProviderJob } from "@ellmers/ai";
+import { ConcurrencyLimiter } from "@ellmers/job-queue";
 export * from "./sample/MediaPipeModelSamples";
 export * from "./sample/ONNXModelSamples";
 

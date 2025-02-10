@@ -10,16 +10,20 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../core/src"],
-      "ellmers-ai": ["../ai/src"],
-      "ellmers-ai-provider": ["../ai-provider/src"],
-      "ellmers-storage": ["../storage/src"]
+      "@ellmers/task-graph": ["../task-graph/src"],
+      "@ellmers/ai": ["../ai/src"],
+      "@ellmers/ai-provider": ["../ai-provider/src"],
+      "@ellmers/storage": ["../storage/src"],
+      "@ellmers/job-queue": ["../job-queue/src"],
+      "@ellmers/tasks": ["../tasks/src"]
     }
   },
   "references": [
-    { "path": "../core" },
+    { "path": "../task-graph" },
     { "path": "../ai" },
     { "path": "../ai-provider" },
-    { "path": "../storage" }
+    { "path": "../storage" },
+    { "path": "../job-queue" },
+    { "path": "../tasks" }
   ]
 }

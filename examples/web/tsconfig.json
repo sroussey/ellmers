@@ -19,19 +19,19 @@
     "noFallthroughCasesInSwitch": true,
 
     "paths": {
-      "ellmers-core": ["../../packages/core/src"],
-      "ellmers-ai-provider": ["../../packages/ai-provider/src"],
-      "ellmers-storage": ["../../packages/storage/src"],
-      "ellmers-task": ["../../packages/task/src"],
-      "ellmers-test": ["../../packages/test/src"],
-      "ellmers-ai": ["../../packages/ai/src"]
+      "@ellmers/task-graph": ["../../packages/task-graph/src"],
+      "@ellmers/ai-provider": ["../../packages/ai-provider/src"],
+      "@ellmers/storage": ["../../packages/storage/src"],
+      "@ellmers/tasks": ["../../packages/tasks/src"],
+      "@ellmers/test": ["../../packages/test/src"],
+      "@ellmers/ai": ["../../packages/ai/src"]
     }
   },
   "include": ["src"],
   "exclude": ["dist"],
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/task" },
+    { "path": "../../packages/task-graph" },
+    { "path": "../../packages/tasks" },
     { "path": "../../packages/ai-provider" },
     { "path": "../../packages/storage" },
     { "path": "../../packages/test" },

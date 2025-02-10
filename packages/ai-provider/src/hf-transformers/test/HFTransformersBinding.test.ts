@@ -7,19 +7,19 @@
 
 import { afterAll, describe, expect, it } from "bun:test";
 import {
-  ConcurrencyLimiter,
   getTaskQueueRegistry,
   setTaskQueueRegistry,
   TaskGraphBuilder,
   TaskInput,
   TaskOutput,
-} from "ellmers-core";
-import { AiProviderJob, getGlobalModelRepository, setGlobalModelRepository } from "ellmers-ai";
-import { InMemoryJobQueue, InMemoryModelRepository } from "ellmers-storage/inmemory";
-import { getDatabase, SqliteJobQueue } from "ellmers-storage/bun/sqlite";
+} from "@ellmers/task-graph";
+import { AiProviderJob, getGlobalModelRepository, setGlobalModelRepository } from "@ellmers/ai";
+import { InMemoryJobQueue, InMemoryModelRepository } from "@ellmers/storage/inmemory";
+import { getDatabase, SqliteJobQueue } from "@ellmers/storage/bun/sqlite";
 import { registerHuggingfaceLocalTasks } from "../bindings/registerTasks";
 import { sleep } from "bun";
 import { LOCAL_ONNX_TRANSFORMERJS } from "../model/ONNXTransformerJsModel";
+import { ConcurrencyLimiter } from "@ellmers/job-queue";
 
 describe("HFTransformersBinding", () => {
   describe("InMemoryJobQueue", () => {

@@ -1,5 +1,5 @@
 {
-  "name": "ellmers-cli",
+  "name": "@ellmers/cli",
   "type": "module",
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
@@ -18,11 +18,11 @@
     "dist"
   ],
   "dependencies": {
-    "ellmers-core": "workspace:packages/core",
-    "ellmers-ai": "workspace:packages/ai",
-    "ellmers-storage": "workspace:packages/storage",
-    "ellmers-ai-provider": "workspace:packages/ai-provider",
-    "ellmers-task": "workspace:packages/task",
-    "ellmers-test": "workspace:packages/test"
+    "@ellmers/task-graph": "workspace:packages/task-graph",
+    "@ellmers/ai": "workspace:packages/ai",
+    "@ellmers/storage": "workspace:packages/storage",
+    "@ellmers/ai-provider": "workspace:packages/ai-provider",
+    "@ellmers/tasks": "workspace:packages/tasks",
+    "@ellmers/test": "workspace:packages/test"
   }
 }

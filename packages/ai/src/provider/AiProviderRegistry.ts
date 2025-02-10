@@ -5,8 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { Job, getTaskQueueRegistry, TaskInput, TaskOutput, JobQueueTask } from "ellmers-core";
-import { JobQueueAiTask } from "../task/base/JobQueueAiTask";
+import { Job } from "@ellmers/job-queue";
+import { TaskInput, TaskOutput } from "@ellmers/task-graph";
 
 /**
  * Input data for the AiProviderJob

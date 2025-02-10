@@ -14,9 +14,8 @@ import {
   JobError,
   RetryableJobError,
   PermanentJobError,
-  sleep,
-} from "ellmers-core";
-import { makeFingerprint } from "../../util/Misc";
+} from "@ellmers/job-queue";
+import { makeFingerprint, sleep } from "../../util/Misc";
 
 /**
  * In-memory implementation of a job queue that manages asynchronous tasks.

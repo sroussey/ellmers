@@ -12,7 +12,7 @@ import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
   sleep,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { InMemoryJobQueue } from "../../../storage/src/browser/inmemory/InMemoryJobQueue";
 import { InMemoryRateLimiter } from "../../../storage/src/browser/inmemory/InMemoryRateLimiter";
 

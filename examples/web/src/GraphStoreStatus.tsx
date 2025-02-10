@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskGraphRepository } from "ellmers-core";
+import { TaskGraphRepository } from "@ellmers/task-graph";
 import { useCallback } from "react";
 
 export function GraphStoreStatus({ repository }: { repository: TaskGraphRepository }) {

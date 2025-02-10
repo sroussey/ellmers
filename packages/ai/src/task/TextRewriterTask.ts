@@ -13,7 +13,7 @@ import {
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { rewriting_model } from "./base/TaskIOTypes";
 
@@ -80,7 +80,7 @@ export const TextRewriter = (input: TextRewriterCompoundTaskInput) => {
   }
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     TextRewriter: TaskGraphBuilderHelper<TextRewriterCompoundTaskInput>;
   }

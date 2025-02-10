@@ -14,7 +14,7 @@ import {
   RetryableJobError,
   JobError,
   PermanentJobError,
-} from "ellmers-core";
+} from "@ellmers/job-queue";
 import { makeFingerprint } from "../../util/Misc";
 import { nanoid } from "nanoid";
 

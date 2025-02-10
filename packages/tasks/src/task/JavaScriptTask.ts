@@ -13,7 +13,7 @@ import {
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
   TaskRegistry,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 
 export type JavaScriptTaskInput = {
   code: string;
@@ -73,7 +73,7 @@ export const JavaScript = (input: JavaScriptTaskInput) => {
   return JavaScriptBuilder(input).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     JavaScript: TaskGraphBuilderHelper<JavaScriptTaskInput>;
   }

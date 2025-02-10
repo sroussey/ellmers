@@ -10,7 +10,7 @@ import {
   TaskOutputPrimaryKey,
   TaskOutputPrimaryKeySchema,
   TaskOutputRepository,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 
 /**

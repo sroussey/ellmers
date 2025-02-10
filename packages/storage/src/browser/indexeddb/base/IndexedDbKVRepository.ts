@@ -13,7 +13,7 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { ensureIndexedDbTable, ExpectedIndexDefinition } from "./IndexedDbTable";
 import { KVRepository } from "../../../util/base/KVRepository";
 

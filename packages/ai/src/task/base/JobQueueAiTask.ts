@@ -14,8 +14,8 @@ import {
   JobQueueTask,
   JobQueueTaskConfig,
   type TaskOutput,
-} from "ellmers-core";
-import { AiProviderJob, getAiProviderRegistry } from "../../provider/AiProviderRegistry";
+} from "@ellmers/task-graph";
+import { AiProviderJob } from "../../provider/AiProviderRegistry";
 import { getGlobalModelRepository } from "../../model/ModelRegistry";
 
 /**

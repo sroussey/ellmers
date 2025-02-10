@@ -18,13 +18,13 @@
 - [Appendix](#appendix)
   - [Source](#source)
     - [`docs/`](#docs)
-    - [`packages/core`](#packagescore)
-    - [`packages/storage`](#packagesstorage)
-    - [`packages/ai`](#packagesai)
-    - [`packages/ai-provider`](#packagesai-provider)
-    - [`examples/cli`](#examplescli)
-    - [`examples/web`](#examplesweb)
-    - [`examples/ngraph`](#examplesngraph)
+    - [`packages/task-graph`](#packages/task-graph)
+    - [`packages/ai`](#packages/ai)
+    - [`packages/storage`](#packages/storage)
+    - [`packages/ai-provider`](#packages/ai-provider)
+    - [`examples/cli`](#examples/cli)
+    - [`examples/web`](#examples/web)
+    - [`examples/ngraph`](#examples/ngraph)
 
 # Developer Getting Started
 
@@ -50,8 +50,8 @@ After this, plese read [Architecture](02_architecture.md) before attempting to [
 ## Using TaskGraphBuilder & a config helper
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-test";
+import { TaskGraphBuilder } from "@ellmers/task-graph";
+import { registerHuggingfaceLocalTasksInMemory } from "@ellmers/test";
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
 
@@ -83,8 +83,8 @@ import {
   DataFlow,
   TaskGraph,
   TaskGraphRunner,
-} from "ellmers-core";
-import { registerHuggingfaceLocalTasksInMemory } from "ellmers-test";
+} from "@ellmers/task-graph";
+import { registerHuggingfaceLocalTasksInMemory } from "@ellmers/test";
 
 // config and start up
 registerHuggingfaceLocalTasksInMemory();
@@ -139,21 +139,21 @@ import {
   TaskInput,
   TaskOutput,
   getTaskQueueRegistry,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 
 import {
   DownloadModelTask,
   TextRewriterCompoundTask,
   getAiProviderRegistry,
   getGlobalModelRepository,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 
 import {
   HuggingFaceLocal_DownloadRun,
   HuggingFaceLocal_TextRewriterRun,
-} from "ellmers-ai-provider/hf-transformers";
+} from "@ellmers/ai-provider/hf-transformers";
 
-import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+import { InMemoryJobQueue } from "@ellmers/storage/inmemory";
 
 // config and start up
 getGlobalModelRepository(new InMemoryModelRepository());
@@ -262,7 +262,7 @@ Tasks are the smallest unit of work, therefore they take simple inputs. Most Tas
 An example is TextEmbeddingTask and TextEmbeddingCompoundTask. The first takes a single model input, the second accepts an array of model inputs. Since models can have different providers, the Compound version creates a single task version for each model input. The builder is smart enough to know that the Compound version is needed when an array is passed, and as such, you don't need to differentiate between the two:
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core";
+import { TaskGraphBuilder } from "@ellmers/task-graph";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
   model: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
@@ -274,7 +274,7 @@ await builder.run();
 OR
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core";
+import { TaskGraphBuilder } from "@ellmers/task-graph";
 const builder = new TaskGraphBuilder();
 builder.TextEmbedding({
   model: ["onnx:Xenova/LaMini-Flan-T5-783M:q8", "Universal Sentence Encoder"],
@@ -286,7 +286,7 @@ await builder.run();
 The builder will look at outputs of one task and automatically connect it to the input of the next task, if the output and input names and types match. If they don't, you can use the `rename` method to rename the output of the first task to match the input of the second task.
 
 ```ts
-import { TaskGraphBuilder } from "ellmers-core";
+import { TaskGraphBuilder } from "@ellmers/task-graph";
 const builder = new TaskGraphBuilder();
 builder
   .DownloadModel({
@@ -369,7 +369,7 @@ There is a JSONTask that can be used to build a graph. This is useful for saving
 The JSON above is a good example as it shows how to use a compound task with multiple inputs. Compound tasks export arrays, so use a compound task to consume the output of another compound task. The `dependencies` object is used to specify which output of which task is used as input for the current task. It is a shorthand for creating a data flow (an edge) in the graph.
 
 ```ts
-import { JSONTask } from "ellmers-core";
+import { JSONTask } from "@ellmers/task-graph";
 const json = require("./example.json");
 const task = new JSONTask({ input: { json } });
 await task.run();
@@ -466,7 +466,7 @@ runner.run();
 
 You are here.
 
-### `packages/core`
+### `packages/task-graph`
 
 This is the main library code.
 

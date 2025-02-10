@@ -14,7 +14,7 @@ import {
   DefaultPrimaryKeySchema,
   DefaultPrimaryKeyType,
   DefaultValueType,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { BaseSqlKVRepository } from "../../../util/base/BaseSqlKVRepository";
 
 /// ******************************************************************

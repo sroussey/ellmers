@@ -1,17 +1,17 @@
 {
-  "name": "ellmers-ai-provider",
+  "name": "@ellmers/ai-provider",
   "type": "module",
   "version": "0.0.1",
   "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-hf-transformers": "bun build --watch --no-clear-screen --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
-    "watch-tf-mediapipe": "bun build --watch --no-clear-screen --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
+    "watch-hf-transformers": "bun build --watch --no-clear-screen --sourcemap=external --external @huggingface/transformers --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
+    "watch-tf-mediapipe": "bun build --watch --no-clear-screen --sourcemap=external --external @mediapipe/tasks-text --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build": "bun run build-clean && bun run build-types && bun run build-hf-transformers && bun run build-tf-mediapipe",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-hf-transformers": "bun build --sourcemap=external --external @huggingface/transformers --external ellmers-core --external ellmers-ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
-    "build-tf-mediapipe": "bun build --sourcemap=external --external @mediapipe/tasks-text --external ellmers-core --external ellmers-ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
+    "build-hf-transformers": "bun build --sourcemap=external --external @huggingface/transformers --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/ai --outdir ./dist/hf-transformers ./src/hf-transformers/index.ts",
+    "build-tf-mediapipe": "bun build --sourcemap=external --external @mediapipe/tasks-text --external @ellmers/job-queue --external @ellmers/task-graph --external @ellmers/ai --outdir ./dist/tf-mediapipe ./src/tf-mediapipe/index.ts",
     "build-types": "tsc",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -30,7 +30,7 @@
     "dist"
   ],
   "dependencies": {
-    "ellmers-core": "workspace:packages/core",
-    "ellmers-ai": "workspace:packages/ai"
+    "@ellmers/task-graph": "workspace:packages/task-graph",
+    "@ellmers/ai": "workspace:packages/ai"
   }
 }

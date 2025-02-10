@@ -13,7 +13,7 @@ import {
   JobQueueTaskConfig,
   TaskGraphBuilder,
   TaskGraphBuilderHelper,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { AnyNumberArray, embedding_model } from "./base/TaskIOTypes";
 import { ElVector } from "./base/TaskIOTypes";
@@ -81,7 +81,7 @@ export const TextEmbedding = (input: TextEmbeddingCompoundTaskInput) => {
   return new TextEmbeddingCompoundTask({ input }).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     TextEmbedding: TaskGraphBuilderHelper<TextEmbeddingCompoundTaskInput>;
   }

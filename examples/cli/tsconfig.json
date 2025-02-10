@@ -9,19 +9,19 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../../packages/core/src"],
-      "ellmers-ai": ["../../packages/ai/src"],
-      "ellmers-storage": ["../../packages/storage/src"],
-      "ellmers-ai-provider": ["../../packages/ai-provider/src"],
-      "ellmers-task": ["../../packages/task/src"],
-      "ellmers-test": ["../../packages/test/src"]
+      "@ellmers/task-graph": ["../../packages/task-graph/src"],
+      "@ellmers/ai": ["../../packages/ai/src"],
+      "@ellmers/storage": ["../../packages/storage/src"],
+      "@ellmers/ai-provider": ["../../packages/ai-provider/src"],
+      "@ellmers/tasks": ["../../packages/tasks/src"],
+      "@ellmers/test": ["../../packages/test/src"]
     }
   },
   "references": [
-    { "path": "../../packages/core" },
+    { "path": "../../packages/task-graph" },
     { "path": "../../packages/ai" },
     { "path": "../../packages/ai-provider" },
-    { "path": "../../packages/task" },
+    { "path": "../../packages/tasks" },
     { "path": "../../packages/storage" },
     { "path": "../../packages/test" }
   ]

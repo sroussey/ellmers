@@ -8,7 +8,7 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { rmdirSync } from "fs";
 import { FileTaskGraphRepository } from "../FileTaskGraphRepository";
-import { SingleTask, TaskOutput, TaskRegistry, DataFlow, TaskGraph } from "ellmers-core";
+import { SingleTask, TaskOutput, TaskRegistry, DataFlow, TaskGraph } from "@ellmers/task-graph";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";

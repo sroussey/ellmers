@@ -13,7 +13,7 @@ import {
   ConvertSomeToOptionalArray,
   arrayTaskFactory,
   JobQueueTaskConfig,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { summarization_model } from "./base/TaskIOTypes";
 
@@ -70,7 +70,7 @@ export const TextSummary = (input: TextSummaryCompoundTaskInput) => {
   return new TextSummaryCompoundTask({ input }).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     TextSummary: TaskGraphBuilderHelper<TextSummaryCompoundTaskInput>;
   }

@@ -14,7 +14,7 @@ import {
   RetryableJobError,
   PermanentJobError,
   JobStatus,
-} from "ellmers-core";
+} from "@ellmers/job-queue";
 import { makeFingerprint } from "../../util/Misc";
 import { ensureIndexedDbTable, ExpectedIndexDefinition } from "./base/IndexedDbTable";
 

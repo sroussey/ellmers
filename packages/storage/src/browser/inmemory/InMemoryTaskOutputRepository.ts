@@ -12,7 +12,7 @@ import {
   TaskOutputPrimaryKey,
   TaskOutputPrimaryKeySchema,
   TaskOutputRepository,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 
 /**

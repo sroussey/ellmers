@@ -12,7 +12,7 @@ import {
   getGlobalModelRepository,
   ElVector,
   AiProviderJob,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 
 /**
  * This is a task that downloads and caches a MediaPipe TFJS model.

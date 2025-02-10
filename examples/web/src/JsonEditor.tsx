@@ -9,7 +9,7 @@ import React, { useState, useEffect } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import { json } from "@codemirror/lang-json";
-import { JsonTask } from "ellmers-core";
+import { JsonTask } from "@ellmers/task-graph";
 
 import "./JsonEditor.css";
 

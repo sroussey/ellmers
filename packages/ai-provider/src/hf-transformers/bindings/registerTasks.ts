@@ -7,7 +7,7 @@ import {
   TextRewriterTask,
   TextSummaryTask,
   TextTranslationTask,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 import {
   HuggingFaceLocal_DownloadRun,
   HuggingFaceLocal_EmbeddingRun,

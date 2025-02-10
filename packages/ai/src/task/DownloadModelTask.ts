@@ -14,7 +14,7 @@ import {
   arrayTaskFactory,
   TaskOutput,
   JobQueueTaskConfig,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { getGlobalModelRepository } from "../model/ModelRegistry";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import {
@@ -146,7 +146,7 @@ export const DownloadModel = (input: DownloadModelCompoundTaskInput) => {
   }
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     DownloadModel: TaskGraphBuilderHelper<DownloadModelCompoundTaskInput>;
   }

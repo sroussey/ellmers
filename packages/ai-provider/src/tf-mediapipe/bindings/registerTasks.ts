@@ -1,5 +1,5 @@
-import { getAiProviderRegistry } from "ellmers-ai";
-import { DownloadModelTask, TextEmbeddingTask } from "ellmers-ai";
+import { getAiProviderRegistry } from "@ellmers/ai";
+import { DownloadModelTask, TextEmbeddingTask } from "@ellmers/ai";
 import {
   MediaPipeTfJsLocal_Download,
   MediaPipeTfJsLocal_Embedding,

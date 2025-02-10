@@ -5,7 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { JobStatus, getTaskQueueRegistry } from "ellmers-core";
+import { JobStatus } from "@ellmers/job-queue";
+import { getTaskQueueRegistry } from "@ellmers/task-graph";
 import { useCallback, useEffect, useState } from "react";
 
 export function QueueStatus({ queueType }: { queueType: string }) {

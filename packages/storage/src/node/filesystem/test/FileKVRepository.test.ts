@@ -8,7 +8,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { rmdirSync } from "fs";
 import { FileKVRepository } from "../base/FileKVRepository";
-import { BaseValueSchema, BasePrimaryKeySchema } from "ellmers-core";
+import { BaseValueSchema, BasePrimaryKeySchema } from "@ellmers/task-graph";
 
 type PrimaryKey = {
   name: string;

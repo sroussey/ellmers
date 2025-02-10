@@ -5,8 +5,8 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it, beforeEach } from "bun:test";
-import { TaskInput, TaskOutput, TaskOutputRepository } from "ellmers-core";
+import { expect, it, beforeEach } from "bun:test";
+import { TaskInput, TaskOutput, TaskOutputRepository } from "@ellmers/task-graph";
 
 export function runGenericTaskOutputRepositoryTests(
   createRepository: () => Promise<TaskOutputRepository>

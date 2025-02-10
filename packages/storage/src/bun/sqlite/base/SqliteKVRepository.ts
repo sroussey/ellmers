@@ -14,7 +14,7 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { BaseSqlKVRepository } from "../../../util/base/BaseSqlKVRepository";
 
 // SqliteKVRepository is a key-value store that uses SQLite as the backend for

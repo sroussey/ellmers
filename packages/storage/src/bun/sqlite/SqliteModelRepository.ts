@@ -13,9 +13,9 @@ import {
   Task2ModelPrimaryKey,
   Task2ModelDetail,
   Task2ModelPrimaryKeySchema,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 import { SqliteKVRepository } from "./base/SqliteKVRepository";
-import { DefaultValueType } from "ellmers-core";
+import { DefaultValueType } from "@ellmers/task-graph";
 
 /**
  * SQLite implementation of a model repository.

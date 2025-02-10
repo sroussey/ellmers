@@ -5,7 +5,12 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { SingleTask, TaskGraphBuilder, TaskGraphBuilderHelper, TaskRegistry } from "ellmers-core";
+import {
+  SingleTask,
+  TaskGraphBuilder,
+  TaskGraphBuilderHelper,
+  TaskRegistry,
+} from "@ellmers/task-graph";
 import { Document, DocumentFragment } from "../source/Document";
 export type DocumentSplitterTaskInput = {
   parser: "txt" | "md";
@@ -74,7 +79,7 @@ export const DocumentSplitter = (input: DocumentSplitterTaskInput) => {
   return DocumentSplitterBuilder(input).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     DocumentSplitter: TaskGraphBuilderHelper<DocumentSplitterTask>;
   }

@@ -4,8 +4,8 @@
     "": {
       "name": "ellmers",
       "dependencies": {
-        "@huggingface/transformers": "^3.3.2",
-        "@mediapipe/tasks-text": "^0.10.20",
+        "@huggingface/transformers": "^3.3.3",
+        "@mediapipe/tasks-text": "^0.10.21",
         "@sroussey/typescript-graph": "^0.3.14",
         "@types/better-sqlite3": "^7.6.12",
         "@types/pg": "^8.11.11",
@@ -28,7 +28,7 @@
         "@typescript-eslint/eslint-plugin": "^8.23.0",
         "@typescript-eslint/parser": "^8.23.0",
         "concurrently": "^8.2.2",
-        "eslint": "^9.19.0",
+        "eslint": "^9.20.0",
         "eslint-plugin-jsx-a11y": "^6.10.2",
         "eslint-plugin-react": "^7.37.4",
         "eslint-plugin-react-hooks": "^5.1.0",
@@ -39,33 +39,33 @@
       },
     },
     "examples/cli": {
-      "name": "ellmers-cli",
+      "name": "@ellmers/cli",
       "version": "0.0.1",
       "bin": "./src/ellmers.js",
       "dependencies": {
-        "ellmers-ai": "workspace:packages/ai",
-        "ellmers-ai-provider": "workspace:packages/ai-provider",
-        "ellmers-core": "workspace:packages/core",
-        "ellmers-storage": "workspace:packages/storage",
-        "ellmers-task": "workspace:packages/task",
-        "ellmers-test": "workspace:packages/test",
+        "@ellmers/ai": "workspace:packages/ai",
+        "@ellmers/ai-provider": "workspace:packages/ai-provider",
+        "@ellmers/storage": "workspace:packages/storage",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
+        "@ellmers/tasks": "workspace:packages/tasks",
+        "@ellmers/test": "workspace:packages/test",
       },
     },
     "examples/web": {
-      "name": "ellmers-web",
+      "name": "@ellmers/web",
       "version": "0.0.0",
       "dependencies": {
         "@codemirror/lang-json": "^6.0.1",
+        "@ellmers/ai": "workspace:packages/ai",
+        "@ellmers/ai-provider": "workspace:packages/ai-provider",
+        "@ellmers/storage": "workspace:packages/storage",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
+        "@ellmers/test": "workspace:packages/test",
         "@radix-ui/react-icons": "^1.3.2",
         "@uiw/codemirror-theme-vscode": "^4.23.8",
         "@uiw/react-codemirror": "^4.23.8",
         "@xyflow/react": "^12.4.2",
         "clsx": "^2.1.1",
-        "ellmers-ai": "workspace:packages/ai",
-        "ellmers-ai-provider": "workspace:packages/ai-provider",
-        "ellmers-core": "workspace:packages/core",
-        "ellmers-storage": "workspace:packages/storage",
-        "ellmers-test": "workspace:packages/test",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "react-hotkeys-hook": "^4.6.1",
@@ -89,47 +89,51 @@
       },
     },
     "packages/ai": {
-      "name": "ellmers-ai",
+      "name": "@ellmers/ai",
       "version": "0.0.1",
       "dependencies": {
-        "ellmers-core": "workspace:packages/core",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
       },
     },
     "packages/ai-provider": {
-      "name": "ellmers-ai-provider",
+      "name": "@ellmers/ai-provider",
       "version": "0.0.1",
       "dependencies": {
-        "ellmers-ai": "workspace:packages/ai",
-        "ellmers-core": "workspace:packages/core",
+        "@ellmers/ai": "workspace:packages/ai",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
       },
     },
-    "packages/core": {
-      "name": "ellmers-core",
+    "packages/job-queue": {
+      "name": "@ellmers/job-queue",
       "version": "0.0.1",
     },
     "packages/storage": {
-      "name": "ellmers-storage",
+      "name": "@ellmers/storage",
       "version": "0.0.1",
       "dependencies": {
-        "ellmers-ai": "workspace:packages/ai",
-        "ellmers-core": "workspace:packages/core",
+        "@ellmers/ai": "workspace:packages/ai",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
       },
     },
-    "packages/task": {
-      "name": "ellmers-task",
+    "packages/task-graph": {
+      "name": "@ellmers/task-graph",
+      "version": "0.0.1",
+    },
+    "packages/tasks": {
+      "name": "@ellmers/tasks",
       "version": "0.0.1",
       "dependencies": {
-        "ellmers-core": "workspace:packages/core",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
       },
     },
     "packages/test": {
-      "name": "ellmers-test",
+      "name": "@ellmers/test",
       "version": "0.0.1",
       "dependencies": {
-        "ellmers-ai": "workspace:packages/ai",
-        "ellmers-ai-provider": "workspace:packages/ai-provider",
-        "ellmers-core": "workspace:packages/core",
-        "ellmers-storage": "workspace:packages/storage",
+        "@ellmers/ai": "workspace:packages/ai",
+        "@ellmers/ai-provider": "workspace:packages/ai-provider",
+        "@ellmers/storage": "workspace:packages/storage",
+        "@ellmers/task-graph": "workspace:packages/task-graph",
       },
     },
   },
@@ -200,6 +204,24 @@
     "@codemirror/theme-one-dark": ["@codemirror/theme-one-dark@6.1.2", "", { "dependencies": { "@codemirror/language": "^6.0.0", "@codemirror/state": "^6.0.0", "@codemirror/view": "^6.0.0", "@lezer/highlight": "^1.0.0" } }, "sha512-F+sH0X16j/qFLMAfbciKTxVOwkdAS336b7AXTKOZhy8BR3eH/RelsnLgLFINrpST63mmN2OuwUt0W2ndUgYwUA=="],
 
     "@codemirror/view": ["@codemirror/view@6.36.2", "", { "dependencies": { "@codemirror/state": "^6.5.0", "style-mod": "^4.1.0", "w3c-keyname": "^2.2.4" } }, "sha512-DZ6ONbs8qdJK0fdN7AB82CgI6tYXf4HWk1wSVa0+9bhVznCuuvhQtX8bFBoy3dv8rZSQqUd8GvhVAcielcidrA=="],
+
+    "@ellmers/ai": ["@ellmers/ai@workspace:packages/ai"],
+
+    "@ellmers/ai-provider": ["@ellmers/ai-provider@workspace:packages/ai-provider"],
+
+    "@ellmers/cli": ["@ellmers/cli@workspace:examples/cli"],
+
+    "@ellmers/job-queue": ["@ellmers/job-queue@workspace:packages/job-queue"],
+
+    "@ellmers/storage": ["@ellmers/storage@workspace:packages/storage"],
+
+    "@ellmers/task-graph": ["@ellmers/task-graph@workspace:packages/task-graph"],
+
+    "@ellmers/tasks": ["@ellmers/tasks@workspace:packages/tasks"],
+
+    "@ellmers/test": ["@ellmers/test@workspace:packages/test"],
+
+    "@ellmers/web": ["@ellmers/web@workspace:examples/web"],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.3.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-kEBmG8KyqtxJZv+ygbEim+KCGtIq1fC22Ms3S4ziXmYKm8uyoLX0MHONVKwp+9opg390VaKRNt4a7A9NwmpNhw=="],
 
@@ -674,22 +696,6 @@
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.90", "", {}, "sha512-C3PN4aydfW91Natdyd449Kw+BzhLmof6tzy5W1pFC5SpQxVXT+oyiyOG9AgYYSN9OdA/ik3YkCrpwqI8ug5Tug=="],
-
-    "ellmers-ai": ["ellmers-ai@workspace:packages/ai"],
-
-    "ellmers-ai-provider": ["ellmers-ai-provider@workspace:packages/ai-provider"],
-
-    "ellmers-cli": ["ellmers-cli@workspace:examples/cli"],
-
-    "ellmers-core": ["ellmers-core@workspace:packages/core"],
-
-    "ellmers-storage": ["ellmers-storage@workspace:packages/storage"],
-
-    "ellmers-task": ["ellmers-task@workspace:packages/task"],
-
-    "ellmers-test": ["ellmers-test@workspace:packages/test"],
-
-    "ellmers-web": ["ellmers-web@workspace:examples/web"],
 
     "emoji-regex": ["emoji-regex@9.2.2", "", {}, "sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg=="],
 

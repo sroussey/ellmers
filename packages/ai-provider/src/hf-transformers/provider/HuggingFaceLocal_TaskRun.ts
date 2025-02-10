@@ -20,7 +20,7 @@ import {
   type TranslationSingle,
   TextStreamer,
 } from "@huggingface/transformers";
-import { ElVector, getGlobalModelRepository, AiProviderRunFn } from "ellmers-ai";
+import { ElVector, getGlobalModelRepository } from "@ellmers/ai";
 import type {
   DownloadModelTaskInput,
   TextEmbeddingTaskInput,
@@ -37,9 +37,8 @@ import type {
   TextTranslationTaskOutput,
   Model,
   AiProviderJob,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 import { QUANTIZATION_DATA_TYPES } from "../model/ONNXTransformerJsModel";
-import { TaskStatus } from "ellmers-core";
 
 // @ts-ignore
 const IS_WEBGPU_AVAILABLE = !!globalThis.navigator?.gpu;

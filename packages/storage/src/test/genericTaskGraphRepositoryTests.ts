@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { describe, expect, it, beforeEach } from "bun:test";
+import { expect, it, beforeEach } from "bun:test";
 import {
   SingleTask,
   TaskOutput,
@@ -13,7 +13,7 @@ import {
   TaskGraph,
   TaskRegistry,
   TaskGraphRepository,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 
 class TestTask extends SingleTask {
   static readonly type = "TestTask";

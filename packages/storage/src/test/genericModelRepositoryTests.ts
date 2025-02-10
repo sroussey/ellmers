@@ -1,5 +1,12 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import { beforeEach, describe, expect, it } from "bun:test";
-import { setGlobalModelRepository, getGlobalModelRepository, ModelRepository } from "ellmers-ai";
+import { setGlobalModelRepository, getGlobalModelRepository, ModelRepository } from "@ellmers/ai";
 
 const LOCAL_ONNX_TRANSFORMERJS = "LOCAL_ONNX_TRANSFORMERJS";
 

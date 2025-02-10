@@ -6,15 +6,9 @@
 //    *******************************************************************************
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import {
-  TaskInput,
-  TaskOutput,
-  Job,
-  JobStatus,
-  AbortSignalJobError,
-  sleep,
-  JobQueue,
-} from "ellmers-core";
+import { Job, JobStatus, AbortSignalJobError, JobQueue } from "@ellmers/job-queue";
+import { TaskInput, TaskOutput } from "@ellmers/task-graph";
+import { sleep } from "../util/Misc";
 
 export class TestJob extends Job<TaskInput, TaskOutput> {
   public async execute(signal: AbortSignal): Promise<TaskOutput> {

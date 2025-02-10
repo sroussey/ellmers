@@ -9,8 +9,9 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../core/src"]
+      "@ellmers/task-graph": ["../task-graph/src"],
+      "@ellmers/job-queue": ["../job-queue/src"]
     }
   },
-  "references": [{ "path": "../core" }]
+  "references": [{ "path": "../task-graph" }, { "path": "../job-queue" }]
 }

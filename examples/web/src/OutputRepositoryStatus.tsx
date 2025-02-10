@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { TaskOutputRepository } from "ellmers-core";
+import { TaskOutputRepository } from "@ellmers/task-graph";
 import { useCallback, useEffect, useState } from "react";
 
 export function OutputRepositoryStatus({ repository }: { repository: TaskOutputRepository }) {

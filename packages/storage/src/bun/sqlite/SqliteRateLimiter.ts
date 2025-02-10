@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { type Database } from "better-sqlite3";
-import { ILimiter } from "ellmers-core";
+import { ILimiter } from "@ellmers/job-queue";
 import { toSQLiteTimestamp } from "../../util/Misc";
 
 /**

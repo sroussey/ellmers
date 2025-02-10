@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import EventEmitter from "eventemitter3";
-import { DefaultValueType, IKVRepository } from "ellmers-core";
+import { DefaultValueType, IKVRepository } from "@ellmers/task-graph";
 import { Model, ModelPrimaryKey } from "./Model";
 
 /**

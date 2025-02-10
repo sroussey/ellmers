@@ -10,14 +10,14 @@ import {
   ModelRepository,
   Task2ModelDetail,
   Task2ModelPrimaryKey,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 import { InMemoryKVRepository } from "./base/InMemoryKVRepository";
 import {
   ModelPrimaryKeySchema,
   Task2ModelPrimaryKeySchema,
   Task2ModelDetailSchema,
-} from "ellmers-ai";
-import { DefaultValueType } from "ellmers-core";
+} from "@ellmers/ai";
+import { DefaultValueType } from "@ellmers/task-graph";
 
 /**
  * In-memory implementation of a model repository.

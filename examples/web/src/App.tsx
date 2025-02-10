@@ -10,7 +10,6 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { RunGraphFlow } from "./RunGraphFlow";
 import { JsonEditor } from "./JsonEditor";
 import {
-  ConcurrencyLimiter,
   JsonTask,
   JsonTaskItem,
   TaskGraph,
@@ -18,29 +17,30 @@ import {
   TaskInput,
   TaskOutput,
   getTaskQueueRegistry,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
+import { ConcurrencyLimiter } from "@ellmers/job-queue";
 import {
   IndexedDbTaskGraphRepository,
   IndexedDbTaskOutputRepository,
-} from "ellmers-storage/browser/indexeddb";
+} from "@ellmers/storage/browser/indexeddb";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
 import { QueuesStatus } from "./QueueStatus";
 import { OutputRepositoryStatus } from "./OutputRepositoryStatus";
 import { GraphStoreStatus } from "./GraphStoreStatus";
-import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+import { InMemoryJobQueue } from "@ellmers/storage/inmemory";
 import {
   LOCAL_ONNX_TRANSFORMERJS,
   registerHuggingfaceLocalTasks,
-} from "ellmers-ai-provider/hf-transformers";
+} from "@ellmers/ai-provider/hf-transformers";
 import {
   MEDIA_PIPE_TFJS_MODEL,
   registerMediaPipeTfJsLocalTasks,
-} from "ellmers-ai-provider/tf-mediapipe";
-import { registerMediaPipeTfJsLocalModels } from "ellmers-test";
-import { registerHuggingfaceLocalModels } from "ellmers-test";
+} from "@ellmers/ai-provider/tf-mediapipe";
+import { registerMediaPipeTfJsLocalModels } from "@ellmers/test";
+import { registerHuggingfaceLocalModels } from "@ellmers/test";
 import { env } from "@huggingface/transformers";
-import { AiProviderJob } from "ellmers-ai";
-import { IndexedDbJobQueue } from "ellmers-storage/browser/indexeddb";
+import { AiProviderJob } from "@ellmers/ai";
+import { IndexedDbJobQueue } from "@ellmers/storage/browser/indexeddb";
 
 env.backends.onnx.wasm.proxy = true;
 

@@ -17,7 +17,7 @@ import {
   DefaultValueSchema,
   DefaultPrimaryKeyType,
   DefaultPrimaryKeySchema,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { KVRepository } from "../../../util/base/KVRepository";
 /**
  * A key-value repository implementation that uses the filesystem for storage.

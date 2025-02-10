@@ -1,0 +1,31 @@
+{
+  "name": "@ellmers/tasks",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Ellmers is a tool for building and running DAG pipelines of AI tasks.",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --external @ellmers/job-queue --external @ellmers/task-graph --outdir ./dist ./src/index.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build": "bun run build-clean && bun run build-types && bun run build-code",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-code": "bun build --target=browser --sourcemap=external --external @ellmers/job-queue --external @ellmers/task-graph --outdir ./dist ./src/index.ts",
+    "build-types": "tsc",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@ellmers/task-graph": "workspace:packages/task-graph"
+  }
+}

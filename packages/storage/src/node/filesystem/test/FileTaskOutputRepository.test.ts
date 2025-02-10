@@ -7,7 +7,7 @@
 
 import { describe, expect, it, beforeEach } from "bun:test";
 import { FileTaskOutputRepository } from "../FileTaskOutputRepository";
-import { TaskInput, TaskOutput } from "ellmers-core";
+import { TaskInput, TaskOutput } from "@ellmers/task-graph";
 import { rmdirSync } from "node:fs";
 
 describe("FileTaskOutputRepository", () => {

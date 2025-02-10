@@ -8,7 +8,7 @@
 import EventEmitter from "eventemitter3";
 import { ILimiter } from "./ILimiter";
 import { Job, JobStatus } from "./Job";
-import { sleep } from "../../util/Misc";
+import { sleep } from "../util/Misc";
 
 export abstract class JobError extends Error {
   public abstract retryable: boolean;
@@ -120,7 +120,7 @@ export enum QueueMode {
 
 /**
  * Base class for implementing job queues with different storage backends.
- * Provides core functionality for job management, execution, and monitoring.
+ * Provides task-graph functionality for job management, execution, and monitoring.
  */
 export abstract class JobQueue<Input, Output> {
   protected running: boolean = false;

@@ -10,7 +10,7 @@ import {
   TaskOutputRepository,
   TaskOutputPrimaryKey,
   DefaultValueType,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { SqliteKVRepository } from "./base/SqliteKVRepository";
 
 /**

@@ -13,7 +13,7 @@ import {
   RetryableJobError,
   JobError,
   PermanentJobError,
-} from "ellmers-core";
+} from "@ellmers/job-queue";
 import { makeFingerprint, toSQLiteTimestamp } from "../../util/Misc";
 import { type Database } from "bun:sqlite";
 import { nanoid } from "nanoid";

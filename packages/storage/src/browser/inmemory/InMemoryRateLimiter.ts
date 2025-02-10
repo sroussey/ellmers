@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ILimiter } from "ellmers-core";
+import { ILimiter } from "@ellmers/job-queue";
 
 /**
  * In-memory implementation of a rate limiter.

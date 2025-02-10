@@ -5,7 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { JobQueue } from "../job/base/JobQueue";
+import { JobQueue } from "@ellmers/job-queue";
 import { TaskInput, TaskOutput } from "./base/Task";
 
 let taskQueueRegistry: TaskQueueRegistry<TaskInput, TaskOutput> | null = null;

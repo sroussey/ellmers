@@ -6,7 +6,7 @@
 //    *******************************************************************************
 
 import { InMemoryJobQueue } from "../InMemoryJobQueue";
-import { ConcurrencyLimiter } from "ellmers-core";
+import { ConcurrencyLimiter } from "@ellmers/job-queue";
 import { runGenericTaskGraphJobQueueTests } from "../../../test/genericTaskGraphJobQueueTests";
 import { TestJob } from "../../../test/genericTaskGraphJobQueueTests";
 import { describe } from "bun:test";

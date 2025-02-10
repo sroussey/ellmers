@@ -12,7 +12,7 @@ import {
   SingleTask,
   TaskOutput,
   TaskConfig,
-} from "ellmers-core";
+} from "@ellmers/task-graph";
 import { AnyNumberArray, ElVector } from "./base/TaskIOTypes";
 
 // ===============================================================================
@@ -148,7 +148,7 @@ export const Similarity = (input: SimilarityTaskInput) => {
   return SimilarityBuilder(input).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     Similarity: TaskGraphBuilderHelper<SimilarityTaskInput>;
   }

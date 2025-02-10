@@ -1,16 +1,23 @@
+//    *******************************************************************************
+//    *   ELLMERS: Embedding Large Language Model Experiential Retrieval Service    *
+//    *                                                                             *
+//    *   Copyright Steven Roussey <sroussey@gmail.com>                             *
+//    *   Licensed under the Apache License, Version 2.0 (the "License");           *
+//    *******************************************************************************
+
 import {
   ModelPrimaryKey,
   ModelRepository,
   Task2ModelDetail,
   Task2ModelPrimaryKey,
-} from "ellmers-ai";
+} from "@ellmers/ai";
 import { IndexedDbKVRepository } from "./base/IndexedDbKVRepository";
 import {
   ModelPrimaryKeySchema,
   Task2ModelPrimaryKeySchema,
   Task2ModelDetailSchema,
-} from "ellmers-ai";
-import { DefaultValueType } from "ellmers-core";
+} from "@ellmers/ai";
+import { DefaultValueType } from "@ellmers/task-graph";
 
 /**
  * IndexedDB implementation of a model repository.

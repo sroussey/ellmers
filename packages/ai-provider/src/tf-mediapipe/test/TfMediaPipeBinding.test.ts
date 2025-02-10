@@ -6,12 +6,12 @@
 // //    *******************************************************************************
 
 // import { describe, expect, it } from "bun:test";
-// import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "ellmers-core";
-// import { getGlobalModelRepository, getAiProviderRegistry, Model } from "ellmers-ai";
-// import { InMemoryJobQueue } from "ellmers-storage/inmemory";
+// import { ConcurrencyLimiter, TaskGraphBuilder, TaskInput, TaskOutput } from "@ellmers/task-graph";
+// import { getGlobalModelRepository, getAiProviderRegistry, Model } from "@ellmers/ai";
+// import { InMemoryJobQueue } from "@ellmers/storage/inmemory";
 // import { SqliteJobQueue } from "../../../../storage/dist/bun/sqlite";
 // import { registerMediaPipeTfJsLocalTasks } from "../bindings/registerTasks";
-// import { sleep } from "ellmers-core";
+// import { sleep } from "@ellmers/task-graph";
 // import { MEDIA_PIPE_TFJS_MODEL } from "../model/MediaPipeModel";
 // import { getDatabase } from "../../../../storage/src/util/db_sqlite";
 

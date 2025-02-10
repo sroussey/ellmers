@@ -5,10 +5,14 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
-import { ConvertAllToArrays, ConvertSomeToOptionalArray, arrayTaskFactory } from "ellmers-core";
-import { TaskRegistry } from "ellmers-core";
-import { JobQueueTaskConfig } from "ellmers-core";
-import { TaskGraphBuilder, TaskGraphBuilderHelper } from "ellmers-core";
+import {
+  ConvertAllToArrays,
+  ConvertSomeToOptionalArray,
+  arrayTaskFactory,
+} from "@ellmers/task-graph";
+import { TaskRegistry } from "@ellmers/task-graph";
+import { JobQueueTaskConfig } from "@ellmers/task-graph";
+import { TaskGraphBuilder, TaskGraphBuilderHelper } from "@ellmers/task-graph";
 import { JobQueueAiTask } from "./base/JobQueueAiTask";
 import { language } from "./base/TaskIOTypes";
 import { translation_model } from "./base/TaskIOTypes";
@@ -91,7 +95,7 @@ export const TextTranslation = (input: TextTranslationCompoundTaskInput) => {
   return new TextTranslationCompoundTask({ input }).run();
 };
 
-declare module "ellmers-core" {
+declare module "@ellmers/task-graph" {
   interface TaskGraphBuilder {
     TextTranslation: TaskGraphBuilderHelper<TextTranslationCompoundTaskInput>;
   }

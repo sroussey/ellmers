@@ -10,9 +10,10 @@
     "rootDir": "./src",
     "paths": {
       "#/*": ["./src/*"],
-      "ellmers-core": ["../core/src"],
-      "ellmers-ai": ["../ai/src"]
+      "@ellmers/task-graph": ["../task-graph/src"],
+      "@ellmers/ai": ["../ai/src"],
+      "@ellmers/job-queue": ["../job-queue/src"]
     }
   },
-  "references": [{ "path": "../core" }, { "path": "../ai" }]
+  "references": [{ "path": "../task-graph" }, { "path": "../ai" }, { "path": "../job-queue" }]
 }
