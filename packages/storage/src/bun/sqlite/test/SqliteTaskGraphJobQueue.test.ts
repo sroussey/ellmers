@@ -6,12 +6,12 @@
 //    *******************************************************************************
 
 import { SqliteJobQueue } from "../SqliteJobQueue";
-import { ConcurrencyLimiter } from "ellmers-core";
 import { runGenericTaskGraphJobQueueTests } from "../../../test/genericTaskGraphJobQueueTests";
 import { TestJob } from "../../../test/genericTaskGraphJobQueueTests";
 import { Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
 import { describe } from "bun:test";
+import { ConcurrencyLimiter } from "@ellmers/job-queue";
 
 describe("SqliteTaskGraphJobQueue", () => {
   runGenericTaskGraphJobQueueTests(async () => {
