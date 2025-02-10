@@ -5,6 +5,7 @@
 //    *   Licensed under the Apache License, Version 2.0 (the "License");           *
 //    *******************************************************************************
 
+import "fake-indexeddb/auto";
 import { IndexedDbKVRepository } from "../base/IndexedDbKVRepository";
 import { runGenericKVRepositoryTests } from "../../../test/genericKVRepositoryTests";
 import {
@@ -14,14 +15,28 @@ import {
   ValueSchema,
 } from "../../../test/genericKVRepositoryTests";
 import { nanoid } from "nanoid";
-import { describe } from "bun:test";
+import { afterAll, describe } from "bun:test";
 
 describe("IndexedDbKVRepository", () => {
+  const dbName = `idx_test_${nanoid()}`;
+
+  afterAll(async () => {
+    // Properly clean up the databases
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(`${dbName}_simple`);
+      resolve();
+    });
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(`${dbName}_complex`);
+      resolve();
+    });
+  });
+
   runGenericKVRepositoryTests(
-    async () => new IndexedDbKVRepository(`idx_test_${nanoid()}`),
+    async () => new IndexedDbKVRepository(`${dbName}_simple`),
     async () =>
       new IndexedDbKVRepository<PrimaryKey, Value>(
-        `idx_test_${nanoid()}`,
+        `${dbName}_complex`,
         PrimaryKeySchema,
         ValueSchema
       )

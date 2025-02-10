@@ -11,16 +11,19 @@ import { runGenericTaskGraphJobQueueTests } from "../../../test/genericTaskGraph
 import { TestJob } from "../../../test/genericTaskGraphJobQueueTests";
 import { Database } from "bun:sqlite";
 import { nanoid } from "nanoid";
+import { describe } from "bun:test";
 
-runGenericTaskGraphJobQueueTests(async () => {
-  const db = new Database(":memory:");
-  const queue = new SqliteJobQueue(
-    db,
-    `sqlite_test_queue_${nanoid()}`,
-    new ConcurrencyLimiter(1, 10),
-    TestJob,
-    10
-  );
-  queue.ensureTableExists();
-  return queue;
-}, "SqliteTaskGraphJobQueue");
+describe("SqliteTaskGraphJobQueue", () => {
+  runGenericTaskGraphJobQueueTests(async () => {
+    const db = new Database(":memory:");
+    const queue = new SqliteJobQueue(
+      db,
+      `sqlite_test_queue_${nanoid()}`,
+      new ConcurrencyLimiter(1, 10),
+      TestJob,
+      10
+    );
+    queue.ensureTableExists();
+    return queue;
+  });
+});

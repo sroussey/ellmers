@@ -176,6 +176,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
     {
       pipeline: "summarization",
       url: "Falconsai/text_summarization",
+      quantization: QUANTIZATION_DATA_TYPES.fp32,
     },
     ["TextSummaryTask"]
   );

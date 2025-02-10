@@ -65,8 +65,10 @@ export class PostgresKVRepository<
   ) {
     super(table, primaryKeySchema, valueSchema, searchable);
     this.pool = new Pool({ connectionString });
-    this.setupDatabase();
+    this.dbPromise = this.setupDatabase();
   }
+
+  private dbPromise: Promise<void> | undefined;
 
   /**
    * Initializes the database table with the required schema.
@@ -120,6 +122,7 @@ export class PostgresKVRepository<
    * @emits "put" event with the key when successful
    */
   async putKeyValue(key: Key, value: Value): Promise<void> {
+    await this.dbPromise;
     const sql = `
     INSERT INTO \`${this.table}\` (
       ${this.primaryKeyColumnList()},
@@ -148,6 +151,7 @@ export class PostgresKVRepository<
    * @emits "get" event with the key when successful
    */
   async getKeyValue(key: Key): Promise<Value | undefined> {
+    await this.dbPromise;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((discriminatorKey, i) => `\`${discriminatorKey}\` = $${i + 1}`)
       .join(" AND ");
@@ -175,6 +179,7 @@ export class PostgresKVRepository<
    * @returns Promise resolving to an array of combined key-value objects or undefined if not found
    */
   public async search(key: Partial<Combined>): Promise<Combined[] | undefined> {
+    await this.dbPromise;
     const search = Object.keys(key);
     if (search.length !== 1) {
       //TODO: make this work with any prefix of primary key
@@ -201,6 +206,7 @@ export class PostgresKVRepository<
    * @emits "delete" event with the key when successful
    */
   async deleteKeyValue(key: Key): Promise<void> {
+    await this.dbPromise;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key, i) => `\`${key}\` = $${i + 1}`)
       .join(" AND ");
@@ -215,6 +221,7 @@ export class PostgresKVRepository<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(): Promise<Combined[] | undefined> {
+    await this.dbPromise;
     const sql = `SELECT * FROM \`${this.table}\``;
     const result = await this.pool.query<Combined, []>(sql);
     return result.rows.length ? result.rows : undefined;
@@ -225,6 +232,7 @@ export class PostgresKVRepository<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
+    await this.dbPromise;
     await this.pool.query(`DELETE FROM \`${this.table}\``);
     this.emit("clearall");
   }
@@ -235,6 +243,7 @@ export class PostgresKVRepository<
    * @returns Promise resolving to the count of stored items
    */
   async size(): Promise<number> {
+    await this.dbPromise;
     const result = await this.pool.query(`SELECT COUNT(*) FROM \`${this.table}\``);
     return parseInt(result.rows[0].count, 10);
   }

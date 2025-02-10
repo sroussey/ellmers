@@ -3,7 +3,6 @@
 import { program } from "commander";
 import { argv } from "process";
 import { AddBaseCommands } from "./TaskCLI";
-import { getAiProviderRegistry } from "ellmers-ai";
 import {
   registerHuggingfaceLocalModels,
   registerHuggingfaceLocalTasksInMemory,
@@ -11,6 +10,7 @@ import {
   registerMediaPipeTfJsLocalModels,
 } from "ellmers-test";
 import "@huggingface/transformers";
+import { getTaskQueueRegistry } from "ellmers-core";
 
 program.version("1.0.0").description("A CLI to run Ellmers.");
 
@@ -24,4 +24,4 @@ registerMediaPipeTfJsLocalInMemory();
 
 await program.parseAsync(argv);
 
-getAiProviderRegistry().stopQueues();
+getTaskQueueRegistry().stopQueues();

@@ -66,7 +66,7 @@ export abstract class TaskOutputRepository {
   async saveOutput(taskType: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
     const key = await makeFingerprint(inputs);
     const value = JSON.stringify(output);
-    await this.kvRepository.putKeyValue({ key, taskType }, { "kv-value": value });
+    await this.kvRepository.putKeyValue({ key, taskType }, { value: value });
     this.emit("output_saved", taskType);
   }
 
@@ -80,7 +80,7 @@ export abstract class TaskOutputRepository {
     const key = await makeFingerprint(inputs);
     const output = await this.kvRepository.getKeyValue({ key, taskType });
     this.emit("output_retrieved", taskType);
-    return output ? (JSON.parse(output["kv-value"]) as TaskOutput) : undefined;
+    return output ? (JSON.parse(output["value"]) as TaskOutput) : undefined;
   }
 
   /**

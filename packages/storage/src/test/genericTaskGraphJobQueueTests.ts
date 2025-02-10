@@ -27,41 +27,37 @@ export class TestJobTask extends JobQueueTask {
 }
 
 export function runGenericTaskGraphJobQueueTests(
-  createJobQueue: () => Promise<JobQueue<TaskInput, TaskOutput>>,
-  repositoryName: string
+  createJobQueue: () => Promise<JobQueue<TaskInput, TaskOutput>>
 ) {
-  describe(`TaskGraphJobQueue Tests - ${repositoryName}`, () => {
-    let repository: TaskGraphRepository;
-    let jobQueue: JobQueue<TaskInput, TaskOutput>;
+  let jobQueue: JobQueue<TaskInput, TaskOutput>;
 
-    beforeEach(async () => {
-      jobQueue = await createJobQueue();
-      getTaskQueueRegistry().registerQueue(jobQueue);
-    });
+  beforeEach(async () => {
+    jobQueue = await createJobQueue();
+    getTaskQueueRegistry().registerQueue(jobQueue);
+  });
 
-    afterEach(async () => {
-      await jobQueue.stop();
-      await jobQueue.clear();
-    });
+  afterEach(async () => {
+    await jobQueue.stop();
+    await jobQueue.clear();
+  });
 
-    it("should run a task via job queue", async () => {
-      await jobQueue.start();
-      const task = new TestJobTask({
-        queue: jobQueue.queue,
-        input: { a: 1, b: 2 },
-      });
-      const result = await task.run();
-      expect(result).toEqual({ result: 3 });
+  it("should run a task via job queue", async () => {
+    await jobQueue.start();
+    const task = new TestJobTask({
+      queue: jobQueue.queue,
+      input: { a: 1, b: 2 },
     });
-    it("should not run a task via job queue if not started", async () => {
-      const task = new TestJobTask({
-        queue: jobQueue.queue,
-        input: { a: 1, b: 2 },
-      });
-      const wait = (ms: number, result: any) =>
-        new Promise((resolve) => setTimeout(resolve, ms, result));
-      const result = await Promise.race([task.run(), wait(10, "STOP")]);
-      expect(result).toEqual("STOP");
+    const result = await task.run();
+    expect(result).toEqual({ result: 3 });
+  });
+  it("should not run a task via job queue if not started", async () => {
+    const task = new TestJobTask({
+      queue: jobQueue.queue,
+      input: { a: 1, b: 2 },
     });
+    const wait = (ms: number, result: any) =>
+      new Promise((resolve) => setTimeout(resolve, ms, result));
+    const result = await Promise.race([task.run(), wait(10, "STOP")]);
+    expect(result).toEqual("STOP");
   });
 }
