@@ -95,6 +95,20 @@ export class TestJob extends Job<TInput, TOutput> {
         );
       });
     }
+    if (input.taskType === "sleep") {
+      const ms = (input.sleepMs as number | undefined) ?? 200;
+      return new Promise<TOutput>((resolve, reject) => {
+        const timer = setTimeout(() => resolve({ result: "slept" }), ms);
+        context.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(new AbortSignalJobError("Aborted via signal"));
+          },
+          { once: true }
+        );
+      });
+    }
     if (input.taskType === "progress") {
       return new Promise<TOutput>(async (resolve, reject) => {
         context.signal.addEventListener(
@@ -151,6 +165,8 @@ export function runGenericJobQueueTests(
       limiter,
       pollIntervalMs: 1,
       cleanupIntervalMs: 1000,
+      // Tests expect fast teardown; don't wait for any long-running fixtures.
+      stopTimeoutMs: 0,
     });
 
     client = new JobQueueClient<TInput, TOutput>({
@@ -369,8 +385,6 @@ export function runGenericJobQueueTests(
       expect(jobcheck?.status).toBe(JobStatus.PROCESSING);
       try {
         await handle.abort();
-        const abortcheck = await client.getJob(handle.id);
-        expect(abortcheck?.status).toBe(JobStatus.ABORTING);
         await waitPromise;
       } catch (error) {
         expect(error).toBeInstanceOf(AbortSignalJobError);
@@ -568,6 +582,200 @@ export function runGenericJobQueueTests(
         await server2.stop();
         await storage1.deleteAll();
         await storage2.deleteAll();
+      }
+    });
+  });
+
+  describe("Same-process optimizations", () => {
+    it("submit wakes the worker without waiting for the poll interval", async () => {
+      // Use a long poll interval so the only way the worker can pick up the job
+      // on time is via the direct handleJobAdded notify path.
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 60_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      const handle = await client.submit({ taskType: "other", data: "input-wake" });
+      const start = Date.now();
+      // Budget: well below the 60s poll interval being contrasted against,
+      // but loose enough not to flake under heavy parallel test load (13
+      // storage backends running concurrently). The point of the test is
+      // "much faster than poll", not "extremely fast in absolute terms".
+      const result = (await Promise.race([
+        handle.waitFor(),
+        sleep(10_000).then(() => "TIMEOUT" as const),
+      ])) as TOutput | "TIMEOUT";
+
+      expect(result).not.toBe("TIMEOUT");
+      expect(Date.now() - start).toBeLessThan(10_000);
+    });
+
+    it("abort resolves quickly without waiting for an ABORTING poll", async () => {
+      // Long poll interval so the only route to abort delivery is the
+      // in-process requestAbort path (Change 3).
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 60_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      const handle = await client.submit({ taskType: "long_running", data: "to-abort" });
+
+      // Wait for the worker to pick it up — under heavy parallel load this
+      // can take a few seconds even on InMemory.
+      for (let i = 0; i < 600; i++) {
+        const job = await client.getJob(handle.id);
+        if (job?.status === JobStatus.PROCESSING) break;
+        await sleep(10);
+      }
+      const running = await client.getJob(handle.id);
+      expect(running?.status).toBe(JobStatus.PROCESSING);
+
+      const start = Date.now();
+      await handle.abort();
+      try {
+        await handle.waitFor();
+      } catch {
+        // expected — job aborted
+      }
+      // Way under the 60s poll interval — proves requestAbort is in-process.
+      expect(Date.now() - start).toBeLessThan(5000);
+    });
+
+    it("worker.stop drains in-flight jobs before returning", async () => {
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 1,
+        stopTimeoutMs: 5_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      // Submit a job that sleeps long enough that drain has work to do.
+      const sleepMs = 200;
+      const handle = await client.submit({ taskType: "sleep", sleepMs, data: "drain" });
+
+      // Wait specifically for PROCESSING (not COMPLETED) so we know the
+      // drain path is exercised, not the already-done path.
+      for (let i = 0; i < 200; i++) {
+        const job = await client.getJob(handle.id);
+        if (job?.status === JobStatus.PROCESSING) break;
+        await sleep(5);
+      }
+      const running = await client.getJob(handle.id);
+      expect(running?.status).toBe(JobStatus.PROCESSING);
+
+      const stopStart = Date.now();
+      await server.stop();
+      const stopElapsed = Date.now() - stopStart;
+
+      const finalJob = await client.getJob(handle.id);
+      // Drain succeeded — the job ran to completion, not an aborted FAILED.
+      expect(finalJob?.status).toBe(JobStatus.COMPLETED);
+      // And stop actually waited for it (not an instant return).
+      expect(stopElapsed).toBeGreaterThanOrEqual(sleepMs - 50);
+      // But also well under the 5s stopTimeoutMs.
+      expect(stopElapsed).toBeLessThan(2_000);
+    });
+
+    it("worker.stop with stopTimeoutMs:0 returns quickly without graceful drain", async () => {
+      // Verifies stop()'s Phase-1 (graceful drain) is skipped when
+      // stopTimeoutMs is 0. We don't assert on the in-flight job's final
+      // state here — that's settled asynchronously after stop returns and
+      // is timing-sensitive under heavy parallel test load. The key
+      // guarantee being tested is: stop returns promptly even when the
+      // in-flight job would never complete on its own.
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 1,
+        stopTimeoutMs: 0,
+      });
+      client.attach(server);
+      await server.start();
+
+      const handle = await client.submit({ taskType: "long_running", data: "force-abort" });
+      // Wait for PROCESSING so we know there's actually an in-flight job
+      // for stop's Phase-2 abort path to act on.
+      for (let i = 0; i < 200; i++) {
+        const job = await client.getJob(handle.id);
+        if (job?.status === JobStatus.PROCESSING) break;
+        await sleep(5);
+      }
+      expect((await client.getJob(handle.id))?.status).toBe(JobStatus.PROCESSING);
+
+      const stopStart = Date.now();
+      await server.stop();
+      const stopElapsed = Date.now() - stopStart;
+
+      // No graceful drain (stopTimeoutMs=0); only the Phase-2 1s abort
+      // ceiling. Allow some slack for parallel-load scheduler jitter.
+      expect(stopElapsed).toBeLessThan(2_500);
+    });
+
+    it("updateProgress does not write to storage mid-job", async () => {
+      let saveProgressCalls = 0;
+      const originalSaveProgress = storage.saveProgress.bind(storage);
+      storage.saveProgress = async (
+        ...args: Parameters<typeof originalSaveProgress>
+      ): Promise<void> => {
+        saveProgressCalls++;
+        return originalSaveProgress(...args);
+      };
+
+      try {
+        await server.start();
+        const handle = await client.submit({ taskType: "progress", data: "track-progress" });
+        await handle.waitFor();
+        expect(saveProgressCalls).toBe(0);
+      } finally {
+        storage.saveProgress = originalSaveProgress;
+      }
+    });
+
+    it("attached server still subscribes to storage changes", async () => {
+      let subscribeCalls = 0;
+      const originalSubscribe = storage.subscribeToChanges.bind(storage);
+      storage.subscribeToChanges = (
+        ...args: Parameters<typeof originalSubscribe>
+      ): ReturnType<typeof originalSubscribe> => {
+        subscribeCalls++;
+        return originalSubscribe(...args);
+      };
+
+      try {
+        await server.stop();
+        const limiter = await limiterFactory?.(queueName, 4, 60);
+        server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+          storage,
+          queueName,
+          limiter,
+          pollIntervalMs: 1,
+        });
+        client.attach(server);
+        await server.start();
+
+        expect(subscribeCalls).toBe(1);
+      } finally {
+        storage.subscribeToChanges = originalSubscribe;
       }
     });
   });

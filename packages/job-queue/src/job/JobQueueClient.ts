@@ -175,6 +175,11 @@ export class JobQueueClient<Input, Output> {
 
     const id = await this.storage.add(job);
 
+    // Same-process fast path: poke the worker directly so it doesn't have to
+    // wait for the poll interval (crucial for Sqlite/Postgres, whose
+    // subscribeToChanges throws).
+    this.server?.handleJobAdded(id);
+
     return this.createJobHandle(id);
   }
 
@@ -239,23 +244,17 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Wait for a job to complete
+   * Wait for a job to complete.
+   *
+   * Registers the resolver BEFORE reading storage so that a `handleJobError`
+   * / `handleJobComplete` event fired during the storage read isn't dropped
+   * on the floor. The previous order (read first, register after) had a
+   * TOCTOU window where a fast same-process abort could complete between the
+   * read and the registration, leaving `waitFor` to register against an
+   * already-finished job and hang forever.
    */
   public async waitFor(jobId: unknown): Promise<Output> {
     if (!jobId) throw new JobNotFoundError("Cannot wait for undefined job");
-
-    const job = await this.getJob(jobId);
-    if (!job) throw new JobNotFoundError(`Job ${jobId} not found`);
-
-    if (job.status === JobStatus.COMPLETED) {
-      return job.output as Output;
-    }
-    if (job.status === JobStatus.DISABLED) {
-      throw new JobDisabledError(`Job ${jobId} was disabled`);
-    }
-    if (job.status === JobStatus.FAILED) {
-      throw this.buildErrorFromJob(job);
-    }
 
     const { promise, resolve, reject } = Promise.withResolvers<Output>();
     promise.catch(() => {}); // Prevent unhandled rejection
@@ -264,15 +263,67 @@ export class JobQueueClient<Input, Output> {
     promises.push({ resolve, reject });
     this.activeJobPromises.set(jobId, promises);
 
+    // Now check storage — if the job is already terminal (raced us to it),
+    // settle the promise ourselves and clean up the registration. The
+    // handler paths (handleJobComplete/Error/Disabled) are idempotent on
+    // already-settled promises.
+    const job = await this.getJob(jobId);
+    if (!job) {
+      this.removePromise(jobId, resolve, reject);
+      throw new JobNotFoundError(`Job ${jobId} not found`);
+    }
+    if (job.status === JobStatus.COMPLETED) {
+      this.removePromise(jobId, resolve, reject);
+      return job.output as Output;
+    }
+    if (job.status === JobStatus.DISABLED) {
+      this.removePromise(jobId, resolve, reject);
+      throw new JobDisabledError(`Job ${jobId} was disabled`);
+    }
+    if (job.status === JobStatus.FAILED) {
+      this.removePromise(jobId, resolve, reject);
+      throw this.buildErrorFromJob(job);
+    }
+
     return promise;
   }
 
+  private removePromise(
+    jobId: unknown,
+    resolve: (output: Output) => void,
+    reject: (err: unknown) => void
+  ): void {
+    const list = this.activeJobPromises.get(jobId);
+    if (!list) return;
+    const idx = list.findIndex((p) => p.resolve === resolve && p.reject === reject);
+    if (idx !== -1) list.splice(idx, 1);
+    if (list.length === 0) this.activeJobPromises.delete(jobId);
+  }
+
   /**
-   * Abort a job
+   * Abort a job.
+   *
+   * Same-process path: fires the in-memory abort controller on the attached
+   * server — `handleAbort` will write FAILED directly, so we skip the
+   * `storage.abort(…)` ABORTING write. Writing both would race (last-writer-
+   * wins) and can leave the row stuck at ABORTING on async storages.
+   *
+   * Cross-process path (or job not currently running on any local worker):
+   * write ABORTING to storage so the remote worker's poll picks it up.
+   *
+   * Crash window: if the process dies after the in-memory abort fires but
+   * before `failJob` writes FAILED, the row stays PROCESSING. `fixupJobs()`
+   * resets it to PENDING on next start and the job will re-run. Make handlers
+   * idempotent (or use `uniquenessKey`) if that's not acceptable.
    */
   public async abort(jobId: unknown): Promise<void> {
     if (!jobId) throw new JobNotFoundError("Cannot abort undefined job");
-    await this.storage.abort(jobId);
+    const firedLocally = this.server?.abortJob(jobId) ?? false;
+    if (!firedLocally) {
+      // Let storage.abort throw if it fails — only emit `job_aborting`
+      // when the abort actually landed somewhere observable.
+      await this.storage.abort(jobId);
+    }
     this.events.emit("job_aborting", this.queueName, jobId);
   }
 

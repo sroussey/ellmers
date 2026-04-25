@@ -61,6 +61,11 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * Use a persistent ID if you want the worker to reclaim its own jobs after restart.
    */
   readonly workerId?: string | null;
+  /**
+   * Max time `stop()` waits for in-flight jobs to finish before forcing aborts.
+   * Defaults to 30s. Set to 0 to abort immediately.
+   */
+  readonly stopTimeoutMs?: number;
 }
 
 /**
@@ -78,9 +83,17 @@ export class JobQueueWorker<
   protected readonly jobClass: JobClass<Input, Output>;
   protected readonly limiter: ILimiter;
   protected readonly pollIntervalMs: number;
+  protected readonly stopTimeoutMs: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
 
   protected running = false;
+
+  /**
+   * Tracks in-flight job executions for drain-on-stop.
+   * Each entry's promise resolves (never rejects) when the job settles
+   * (complete / fail / retry / abort).
+   */
+  private readonly inFlight: Map<unknown, Promise<void>> = new Map();
 
   /**
    * Resolve function for the idle wait promise.
@@ -88,6 +101,27 @@ export class JobQueueWorker<
    */
   private wakeResolve: (() => void) | null = null;
   private wakeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Set when {@link notify} fires while the worker is not yet idle. The next
+   * {@link waitForWakeOrTimeout} call consumes it and returns immediately
+   * instead of sleeping. Without this flag, a notify that arrives during
+   * `processJobs`'s pre-idle awaits (e.g. while `storage.next` and
+   * `storage.peek` are in flight) would be dropped on the floor and the
+   * worker would sleep for the full poll interval despite there being work
+   * to do — observed under load on IndexedDb.
+   */
+  private wakePending = false;
+
+  /**
+   * Promise for the running `processJobs` loop. Captured in {@link start} so
+   * {@link stop} can await actual loop exit instead of returning while the
+   * loop is still suspended mid-iteration. Without this, a loop parked in
+   * `await this.next()` could resume after stop returned and claim a job
+   * that was submitted after stop — starting `processSingleJob` on a worker
+   * that's no longer running.
+   */
+  private loopPromise: Promise<void> | null = null;
 
   /**
    * Abort controllers for active jobs
@@ -106,6 +140,7 @@ export class JobQueueWorker<
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
+    this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
   }
 
   /**
@@ -117,27 +152,46 @@ export class JobQueueWorker<
     }
     this.running = true;
     this.events.emit("worker_start");
-    this.processJobs();
+    this.loopPromise = this.processJobs();
     return this;
   }
 
   /**
+   * If this worker is currently processing the given job, fire its abort controller
+   * immediately and return true. Returns false if the job isn't active on this worker.
+   * @internal
+   */
+  public requestAbort(jobId: unknown): boolean {
+    const controller = this.activeJobAbortControllers.get(jobId);
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Wake the worker from idle sleep so it checks for jobs immediately.
-   * No-op if the worker is not currently idle.
+   * If the worker is not yet idle, latches a pending-wake flag that the next
+   * {@link waitForWakeOrTimeout} call consumes — so wake notifications that
+   * race with worker startup or mid-iteration awaits are not lost.
    */
   public notify(): void {
+    this.wakePending = true;
     if (this.wakeResolve) {
       if (this.wakeTimer) {
         clearTimeout(this.wakeTimer);
         this.wakeTimer = null;
       }
-      this.wakeResolve();
+      const resolve = this.wakeResolve;
       this.wakeResolve = null;
+      resolve();
     }
   }
 
   /**
-   * Stop the worker and abort any active jobs
+   * Stop the worker, draining in-flight jobs up to {@link stopTimeoutMs}
+   * before aborting anything still running.
    */
   public async stop(): Promise<this> {
     if (!this.running) {
@@ -145,22 +199,36 @@ export class JobQueueWorker<
     }
     this.running = false;
 
-    // Wake from idle sleep so the loop can exit
+    // Wake from idle sleep so the processing loop can exit.
     this.notify();
 
-    // Wait for pending operations to settle
-    const size = await this.storage.size(JobStatus.PROCESSING);
-    const sleepTime = Math.max(100, size * 2);
-    await sleep(sleepTime);
-
-    // Abort all active jobs
-    for (const controller of this.activeJobAbortControllers.values()) {
-      if (!controller.signal.aborted) {
-        controller.abort();
-      }
+    // Wait for the processJobs loop to actually exit. Without this, a loop
+    // suspended mid-iteration (e.g. inside `await this.next()`) could resume
+    // after stop returned and claim/start a freshly-submitted job — leaving
+    // a "stopped" worker running PROCESSING jobs.
+    const loopPromise = this.loopPromise;
+    this.loopPromise = null;
+    if (loopPromise) {
+      await loopPromise;
     }
 
-    await sleep(sleepTime);
+    // Phase 1 — graceful drain.
+    if (this.stopTimeoutMs > 0 && this.inFlight.size > 0) {
+      const drain = Promise.allSettled([...this.inFlight.values()]);
+      await Promise.race([drain, sleep(this.stopTimeoutMs)]);
+    }
+
+    // Phase 2 — anything still running gets aborted.
+    if (this.inFlight.size > 0) {
+      for (const controller of this.activeJobAbortControllers.values()) {
+        if (!controller.signal.aborted) {
+          controller.abort();
+        }
+      }
+      const abortDrain = Promise.allSettled([...this.inFlight.values()]);
+      await Promise.race([abortDrain, sleep(1000)]);
+    }
+
     this.events.emit("worker_stop");
     return this;
   }
@@ -259,6 +327,15 @@ export class JobQueueWorker<
         if (canProceed) {
           const job = await this.next();
           if (job) {
+            if (!this.running) {
+              // We were stopped during one of the awaits above and `next()`
+              // claimed this job after the fact. Release it back to PENDING
+              // so it isn't stuck PROCESSING on a worker that's no longer
+              // running — `fixupJobs()` skips current-server worker IDs, so
+              // nothing else would clean it up.
+              await this.releaseClaimedJob(job);
+              return;
+            }
             // Don't await - process in background to allow concurrent jobs.
             // The loop will re-check canProceed on the next iteration; if the
             // limiter is at capacity it will wait for a notify (fired by the
@@ -290,9 +367,9 @@ export class JobQueueWorker<
   /**
    * Determine how long to sleep when idle.
    *
-   * If there are deferred jobs (status PENDING but `run_after` in the future),
-   * returns the time until the earliest one becomes ready, clamped to
-   * `pollIntervalMs`. Otherwise returns `pollIntervalMs`.
+   * Peeks at the earliest PENDING job: if it has a future `run_after`,
+   * returns the time until it becomes ready (clamped to `pollIntervalMs`);
+   * otherwise returns `pollIntervalMs`.
    */
   private async getIdleDelay(): Promise<number> {
     try {
@@ -311,26 +388,42 @@ export class JobQueueWorker<
 
   /**
    * Wait for either a {@link notify} call or the given timeout,
-   * whichever comes first.
+   * whichever comes first. Consumes any pending wake latched while the worker
+   * was not yet idle (see {@link wakePending}) — returns immediately in that
+   * case rather than sleeping.
    */
   private waitForWakeOrTimeout(timeoutMs: number): Promise<void> {
+    if (this.wakePending) {
+      this.wakePending = false;
+      return Promise.resolve();
+    }
     return new Promise<void>((resolve) => {
       this.wakeTimer = setTimeout(() => {
         this.wakeTimer = null;
         this.wakeResolve = null;
+        this.wakePending = false;
         resolve();
       }, timeoutMs);
 
       this.wakeResolve = () => {
+        this.wakePending = false;
         resolve();
       };
     });
   }
 
   /**
-   * Check for jobs that have been marked for abort and trigger their abort controllers
+   * Check for jobs that have been marked for abort and trigger their abort controllers.
+   *
+   * Only relevant for jobs running on THIS worker (we have an abort controller
+   * registered for them). When no jobs are active, the peek result is irrelevant
+   * — skip the storage round-trip entirely. Important for battery life on
+   * same-process deployments (browser/mobile) where workers spend most time idle.
    */
   protected async checkForAbortingJobs(): Promise<void> {
+    if (this.activeJobAbortControllers.size === 0) {
+      return;
+    }
     const abortingJobs = await this.storage.peek(JobStatus.ABORTING);
     for (const jobData of abortingJobs) {
       const controller = this.activeJobAbortControllers.get(jobData.id);
@@ -347,6 +440,9 @@ export class JobQueueWorker<
     if (!job || !job.id) {
       throw new JobNotFoundError("Invalid job provided for processing");
     }
+
+    const { promise: inFlightPromise, resolve: resolveInFlight } = Promise.withResolvers<void>();
+    this.inFlight.set(job.id, inFlightPromise);
 
     const startTime = Date.now();
 
@@ -408,7 +504,12 @@ export class JobQueueWorker<
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
       span?.end();
-      await this.limiter.recordJobCompletion();
+      try {
+        await this.limiter.recordJobCompletion();
+      } finally {
+        this.inFlight.delete(job.id);
+        resolveInFlight();
+      }
     }
   }
 
@@ -424,7 +525,12 @@ export class JobQueueWorker<
   }
 
   /**
-   * Update progress for a job
+   * Update progress for a job.
+   *
+   * Mid-job progress is delivered in-memory via the `job_progress` event;
+   * storage is only touched at terminal transitions (complete / fail / retry).
+   * Cross-process observers therefore see state transitions but not fine-grained
+   * progress — subscribe to an attached `JobQueueClient` for that.
    */
   protected async updateProgress(
     jobId: unknown,
@@ -432,10 +538,7 @@ export class JobQueueWorker<
     message: string = "",
     details: Record<string, unknown> | null = null
   ): Promise<void> {
-    // Validate progress value
     progress = Math.max(0, Math.min(100, progress));
-
-    await this.storage.saveProgress(jobId, progress, message, details);
     this.events.emit("job_progress", jobId, progress, message, details);
   }
 
@@ -505,6 +608,25 @@ export class JobQueueWorker<
   }
 
   /**
+   * Release a job that {@link next} just claimed but that we won't process
+   * because the worker was stopped mid-claim. Resets the row to PENDING so
+   * the next started worker can pick it up. `fixupJobs()` would otherwise
+   * skip it (it ignores rows owned by current-server worker IDs).
+   */
+  protected async releaseClaimedJob(job: Job<Input, Output>): Promise<void> {
+    try {
+      job.status = JobStatus.PENDING;
+      job.workerId = null;
+      job.progress = 0;
+      job.progressMessage = "";
+      job.progressDetails = null;
+      await this.storage.complete(this.classToStorage(job));
+    } catch (err) {
+      getLogger().error("releaseClaimedJob errored:", { error: err });
+    }
+  }
+
+  /**
    * Reschedule a job for retry
    */
   protected async rescheduleJob(job: Job<Input, Output>, retryDate?: Date): Promise<void> {
@@ -543,16 +665,39 @@ export class JobQueueWorker<
   }
 
   /**
-   * Handle job abort
+   * Handle job abort.
+   *
+   * Two callers fire the controller and reach this listener:
+   *   1. `requestAbort` — same-process abort while the job is in flight here.
+   *   2. `checkForAbortingJobs` — cross-process abort observed via storage poll.
+   *
+   * In both cases, if processSingleJob is still running this job locally,
+   * the abort signal will propagate into the user task and processSingleJob's
+   * own catch path will write the terminal state. We must not race it: doing
+   * so duplicates the `job_error` emit and, worse, can clobber a successful
+   * `completeJob` that won the race (the COMPLETED→FAILED overwrite bug).
+   *
+   * If the job is no longer in flight here, it has already settled — recheck
+   * storage and only write FAILED for non-terminal states (i.e. an ABORTING
+   * row left over from a cross-process abort that this worker never picked up).
    */
   protected async handleAbort(jobId: unknown): Promise<void> {
+    if (this.inFlight.has(jobId)) {
+      return;
+    }
     const job = await this.getJob(jobId);
     if (!job) {
       getLogger().error("handleAbort: job not found", { jobId });
       return;
     }
-    const error = new AbortSignalJobError("Job Aborted");
-    await this.failJob(job, error);
+    if (
+      job.status === JobStatus.COMPLETED ||
+      job.status === JobStatus.FAILED ||
+      job.status === JobStatus.DISABLED
+    ) {
+      return;
+    }
+    await this.failJob(job, new AbortSignalJobError("Job Aborted"));
   }
 
   /**

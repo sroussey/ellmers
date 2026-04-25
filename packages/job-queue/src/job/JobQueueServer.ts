@@ -5,7 +5,7 @@
  */
 
 import { IQueueStorage, JobStatus, JobStorageFormat, QueueChangePayload } from "@workglow/storage";
-import { EventEmitter } from "@workglow/util";
+import { EventEmitter, getLogger } from "@workglow/util";
 import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
 import { Job, JobClass } from "./Job";
@@ -62,6 +62,11 @@ export interface JobQueueServerOptions<Input, Output> {
   readonly deleteAfterFailureMs?: number;
   readonly deleteAfterDisabledMs?: number;
   readonly cleanupIntervalMs?: number;
+  /**
+   * Max time each worker's `stop()` waits for in-flight jobs before forcing aborts.
+   * Defaults to 30s. Set to 0 to abort immediately.
+   */
+  readonly stopTimeoutMs?: number;
 }
 
 /**
@@ -83,6 +88,7 @@ export class JobQueueServer<
   protected readonly deleteAfterFailureMs?: number;
   protected readonly deleteAfterDisabledMs?: number;
   protected readonly cleanupIntervalMs: number;
+  protected readonly stopTimeoutMs?: number;
 
   protected readonly events = new EventEmitter<JobQueueServerEventListeners<Input, Output>>();
   protected readonly workers: JobQueueWorker<Input, Output, QueueJob>[] = [];
@@ -113,6 +119,7 @@ export class JobQueueServer<
     this.deleteAfterFailureMs = options.deleteAfterFailureMs;
     this.deleteAfterDisabledMs = options.deleteAfterDisabledMs;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10000;
+    this.stopTimeoutMs = options.stopTimeoutMs;
 
     this.initializeWorkers();
   }
@@ -131,9 +138,10 @@ export class JobQueueServer<
     // Fix stuck jobs from previous runs
     await this.fixupJobs();
 
-    // Subscribe to storage changes to wake idle workers when new work arrives.
-    // Best-effort: some storages (e.g. SQLite) don't support subscriptions,
-    // in which case workers fall back to poll-interval-based wakeups.
+    // Subscribe to storage changes to wake workers when new work arrives,
+    // including from other processes. Attached clients call `handleJobAdded`
+    // directly as an additional fast path, but the storage subscription is
+    // still needed for cross-process inserts in mixed deployments.
     try {
       this.storageUnsubscribe = this.storage.subscribeToChanges(
         (change: QueueChangePayload<Input, Output>) => {
@@ -145,17 +153,38 @@ export class JobQueueServer<
           }
         }
       );
-    } catch {
-      // Storage doesn't support change subscriptions — workers will poll
+    } catch (err) {
+      // Storage doesn't support change subscriptions — workers will poll.
+      // Logged at debug because Sqlite/Postgres throw here by design; an
+      // unexpected throw on a storage that *should* support subscriptions
+      // (e.g. misconfigured Supabase realtime) is otherwise silent.
+      getLogger().debug("subscribeToChanges unsupported on this storage", {
+        queueName: this.queueName,
+        error: err,
+      });
     }
 
     // Start all workers
     await Promise.all(this.workers.map((worker) => worker.start()));
 
-    // Start cleanup loop
-    this.startCleanupLoop();
+    // Start cleanup loop only if at least one retention TTL is configured.
+    if (this.hasRetentionTtls()) {
+      this.startCleanupLoop();
+    }
 
     return this;
+  }
+
+  /**
+   * True if any delete-after-X TTL is set to a positive value.
+   * When false, the cleanup loop would be a pure no-op and is skipped.
+   */
+  private hasRetentionTtls(): boolean {
+    return (
+      (this.deleteAfterCompletionMs !== undefined && this.deleteAfterCompletionMs > 0) ||
+      (this.deleteAfterFailureMs !== undefined && this.deleteAfterFailureMs > 0) ||
+      (this.deleteAfterDisabledMs !== undefined && this.deleteAfterDisabledMs > 0)
+    );
   }
 
   /**
@@ -263,11 +292,35 @@ export class JobQueueServer<
 
   /**
    * Wake all idle workers so they check for new jobs immediately.
+   * @internal
    */
-  protected notifyWorkers(): void {
+  public notifyWorkers(): void {
     for (const worker of this.workers) {
       worker.notify();
     }
+  }
+
+  /**
+   * Called by an attached client immediately after a job is inserted into storage,
+   * so the worker can pick it up without waiting for the poll interval.
+   * @internal
+   */
+  public handleJobAdded(_jobId: unknown): void {
+    this.notifyWorkers();
+  }
+
+  /**
+   * Fire the abort controller for the given job on whichever worker is running it.
+   * Returns true if any worker handled the abort locally.
+   * @internal
+   */
+  public abortJob(jobId: unknown): boolean {
+    for (const worker of this.workers) {
+      if (worker.requestAbort(jobId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ========================================================================
@@ -311,6 +364,7 @@ export class JobQueueServer<
       queueName: this.queueName,
       limiter: this.limiter,
       pollIntervalMs: this.pollIntervalMs,
+      stopTimeoutMs: this.stopTimeoutMs,
     });
 
     // Forward worker events to server and clients

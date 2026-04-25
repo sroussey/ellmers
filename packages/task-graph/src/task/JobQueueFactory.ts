@@ -32,6 +32,7 @@ export interface JobQueueFactoryOptions<Input, Output> {
   readonly deleteAfterFailureMs?: number;
   readonly deleteAfterDisabledMs?: number;
   readonly cleanupIntervalMs?: number;
+  readonly stopTimeoutMs?: number;
 }
 
 export interface JobQueueFactoryParams<Input extends TaskInput, Output extends TaskOutput> {
@@ -72,6 +73,7 @@ const defaultJobQueueFactory: JobQueueFactory = async <
     deleteAfterFailureMs: options?.deleteAfterFailureMs,
     deleteAfterDisabledMs: options?.deleteAfterDisabledMs,
     cleanupIntervalMs: options?.cleanupIntervalMs,
+    stopTimeoutMs: options?.stopTimeoutMs,
   });
 
   const client = new JobQueueClient<Input, Output>({
@@ -120,6 +122,7 @@ export function createJobQueueFactoryWithOptions(
       deleteAfterFailureMs: mergedOptions.deleteAfterFailureMs,
       deleteAfterDisabledMs: mergedOptions.deleteAfterDisabledMs,
       cleanupIntervalMs: mergedOptions.cleanupIntervalMs,
+      stopTimeoutMs: mergedOptions.stopTimeoutMs,
     });
 
     const client = new JobQueueClient<Input, Output>({
