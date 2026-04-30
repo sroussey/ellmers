@@ -31,9 +31,15 @@ export interface BuiltStore {
 /**
  * Build the on-disk encrypted credential store. If `passphrase` is omitted,
  * the store stays locked and all reads return `undefined`.
+ *
+ * `secretsDir` defaults to the canonical {@link SECRETS_DIR}; tests can pass
+ * a temp directory to exercise the store in isolation.
  */
-export function buildCredentialStore(passphrase: string | undefined): BuiltStore {
-  const kv = new FsFolderJsonKvStorage(SECRETS_DIR);
+export function buildCredentialStore(
+  passphrase: string | undefined,
+  secretsDir: string = SECRETS_DIR
+): BuiltStore {
+  const kv = new FsFolderJsonKvStorage(secretsDir);
   const encrypted = new LazyEncryptedCredentialStore(kv);
   if (passphrase) encrypted.unlock(passphrase);
   return { encrypted, unlocked: encrypted.isUnlocked };
@@ -51,14 +57,19 @@ export function buildCredentialStore(passphrase: string | undefined): BuiltStore
  * The global credential store is intentionally NOT replaced — provider
  * clients use the env fallback, and overriding the registry default would
  * break unit tests that assert the default is `InMemoryCredentialStore`.
+ *
+ * `secretsDir` defaults to {@link SECRETS_DIR}; tests pass a temp directory.
  */
-export async function installAndHydrate(passphrase: string | undefined): Promise<{
+export async function installAndHydrate(
+  passphrase: string | undefined,
+  secretsDir: string = SECRETS_DIR
+): Promise<{
   readonly unlocked: boolean;
   readonly hydrated: readonly string[];
 }> {
   if (!passphrase) return { unlocked: false, hydrated: [] };
 
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = buildCredentialStore(passphrase, secretsDir);
   if (!encrypted.isUnlocked) return { unlocked: false, hydrated: [] };
 
   // Decrypt into a temporary map first; only if every existing ciphertext

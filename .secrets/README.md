@@ -9,6 +9,13 @@ The only sensitive value is the passphrase, exported as
 `WORKGLOW_SECRETS_PASSPHRASE`. Plaintext API keys never touch disk and never
 land in shell history or `.env` files.
 
+> **Threat model.** "No plaintext on disk, in argv, or in CI secret slots" —
+> not "no plaintext anywhere." Once the test process starts, decrypted values
+> live in `process.env` and the V8 heap, so they're recoverable by anything
+> with debugger / core-dump access to that process (other test code, postinstall
+> scripts, native addons, …). Treat decrypted values as you would any other
+> in-memory secret in a Node/Bun process.
+
 ## Local setup
 
 1. Pick a strong passphrase and store it in your OS keyring (macOS Keychain,
