@@ -95,6 +95,12 @@ export interface IRunConfig {
    */
   shouldAccumulate?: boolean;
 
+  /**
+   * Optional callback invoked whenever a task's progress changes during execution.
+   * @param task - The task whose progress changed.
+   * @param progress - 0..100 for measured progress, or `undefined` for indeterminate.
+   * @param message - Optional human-readable phase / status label.
+   */
   updateProgress?: (
     task: ITask,
     progress: number | undefined,
@@ -255,6 +261,7 @@ export interface ITaskState<Config extends TaskConfig = TaskConfig> {
   readonly config: Config;
   get id(): unknown;
   status: TaskStatus;
+  /** 0..100 for measured progress, or `undefined` for indeterminate (in-progress, percentage unknown). */
   progress: number | undefined;
   createdAt: Date;
   startedAt?: Date;
