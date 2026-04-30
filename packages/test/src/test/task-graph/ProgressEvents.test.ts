@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Task } from "@workglow/task-graph";
+import { Task, TaskStatus } from "@workglow/task-graph";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskAbortedError } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -100,5 +100,109 @@ describe("Progress events: terminal-100 tick", () => {
     });
     await task.runner.disable();
     expect(events).toContain(100);
+  });
+});
+
+class PhaseStreamTask extends Task<{}, { text: string }> {
+  public static override type = "ProgressEvents_PhaseStream";
+  public static override cacheable = false;
+  public static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const satisfies DataPortSchema;
+  }
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+  override async *executeStream(): AsyncIterable<StreamEvent<{ text: string }>> {
+    yield { type: "phase", message: "Loading model", progress: 30 };
+    yield { type: "phase", message: "Generating", progress: undefined };
+    yield { type: "text-delta", port: "text", textDelta: "hello" };
+    yield { type: "text-delta", port: "text", textDelta: " world" };
+    yield { type: "finish", data: { text: "" } };
+  }
+  override async execute(): Promise<{ text: string }> {
+    return { text: "hello world" };
+  }
+}
+
+describe("Progress events: streaming", () => {
+  it("does NOT emit a synthetic progress curve during streaming", async () => {
+    const task = new PhaseStreamTask({ id: "s1" });
+    const progressOnly: number[] = [];
+    task.subscribe("progress", (progress) => {
+      if (typeof progress === "number" && progress !== 100) progressOnly.push(progress);
+    });
+    await task.run();
+    // Only the phase event with progress=30 should appear, plus terminal 100
+    // (filtered above). The synthetic curve would have produced ~5,10,16,...
+    expect(progressOnly).toEqual([30]);
+  });
+
+  it("translates phase events to progress events with messages", async () => {
+    const task = new PhaseStreamTask({ id: "s2" });
+    const events: Array<{ progress: number | undefined; message?: string }> = [];
+    task.subscribe("progress", (progress, message) => {
+      events.push({ progress, message });
+    });
+    await task.run();
+    expect(events).toContainEqual({ progress: 30, message: "Loading model" });
+    expect(events).toContainEqual({ progress: undefined, message: "Generating" });
+  });
+
+  it("phase events are emitted on stream_chunk for observability", async () => {
+    const task = new PhaseStreamTask({ id: "s3" });
+    const phases: Array<{ message: string; progress: number | undefined }> = [];
+    task.subscribe("stream_chunk", (event: StreamEvent) => {
+      if (event.type === "phase") phases.push({ message: event.message, progress: event.progress });
+    });
+    await task.run();
+    expect(phases).toEqual([
+      { message: "Loading model", progress: 30 },
+      { message: "Generating", progress: undefined },
+    ]);
+  });
+
+  it("phase events do not pollute dataflow accumulation", async () => {
+    const task = new PhaseStreamTask({ id: "s4" });
+    let finishData: any;
+    task.subscribe("stream_chunk", (event: StreamEvent) => {
+      if (event.type === "finish") finishData = event.data;
+    });
+    await task.run();
+    expect(finishData).toEqual({ text: "hello world" });
+  });
+
+  it("phase events do not flip status to STREAMING", async () => {
+    class PhaseOnlyTask extends Task<{}, { text: string }> {
+      public static override type = "ProgressEvents_PhaseOnly";
+      public static override cacheable = false;
+      public static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {}, additionalProperties: false } as const satisfies DataPortSchema;
+      }
+      public static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { text: { type: "string", "x-stream": "append" } },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+      override async *executeStream(): AsyncIterable<StreamEvent<{ text: string }>> {
+        yield { type: "phase", message: "Preparing", progress: undefined };
+        yield { type: "finish", data: { text: "" } };
+      }
+      override async execute(): Promise<{ text: string }> {
+        return { text: "" };
+      }
+    }
+    const task = new PhaseOnlyTask({ id: "s5" });
+    const seenStreaming: boolean[] = [];
+    task.subscribe("status", (status) => {
+      seenStreaming.push(status === TaskStatus.STREAMING);
+    });
+    await task.run();
+    expect(seenStreaming.includes(true)).toBe(false);
   });
 });
