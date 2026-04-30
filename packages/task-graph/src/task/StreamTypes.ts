@@ -74,6 +74,29 @@ export type StreamError = {
 };
 
 /**
+ * Phase / status event yielded by a streaming source to signal a named
+ * phase transition (e.g. "Preparing", "Generating", "Tool: search").
+ *
+ * Carries an optional `progress` percentage for phases where progress
+ * is measurable (e.g. "Loading model" with fractional percent), or
+ * absent for indeterminate phases.
+ *
+ * Phase events are metadata, not data:
+ *  - They are emitted on `stream_chunk` for observability.
+ *  - They are NOT accumulated into dataflow edges.
+ *  - They are NOT included in the `finish` payload.
+ *  - The TaskRunner translates each phase event into a single
+ *    `progress` event with the phase's `progress` and `message`.
+ *  - They do NOT flip the task status to STREAMING; only data events
+ *    (`text-delta` / `object-delta` / `snapshot`) do.
+ */
+export type StreamPhase = {
+  type: "phase";
+  message: string;
+  progress?: number;
+};
+
+/**
  * Discriminated union of all stream event types.
  * Used as the element type for `AsyncIterable<StreamEvent>` streams
  * flowing through the DAG.
@@ -83,7 +106,8 @@ export type StreamEvent<Output = Record<string, any>> =
   | StreamObjectDelta
   | StreamSnapshot<Output>
   | StreamFinish<Output>
-  | StreamError;
+  | StreamError
+  | StreamPhase;
 
 // ========================================================================
 // Port-level stream helpers
