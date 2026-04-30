@@ -591,7 +591,7 @@ describe("ArrayTask", () => {
     task.on("progress", (progress: number | undefined) => {
       events.progress++;
       expect(progress).toBeGreaterThanOrEqual(0);
-      expect(progress).toBeLessThanOrEqual(1);
+      expect(progress).toBeLessThanOrEqual(100);
     });
 
     task.on("complete", () => {

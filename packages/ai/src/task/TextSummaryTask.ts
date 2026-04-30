@@ -56,6 +56,7 @@ export class TextSummaryTask extends StreamingAiTask<
   public static override type = "TextSummaryTask";
   public static override category = "AI Text";
   public static override title = "Text Summary";
+  protected static override readonly streamingPhaseLabel = "Summarizing";
   public static override description =
     "Summarizes text into a shorter form while preserving key information";
   public static override inputSchema(): DataPortSchema {

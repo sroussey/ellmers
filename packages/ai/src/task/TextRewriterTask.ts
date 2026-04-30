@@ -58,6 +58,7 @@ export class TextRewriterTask extends StreamingAiTask<
   TextRewriterTaskConfig
 > {
   public static override type = "TextRewriterTask";
+  protected static override readonly streamingPhaseLabel = "Rewriting";
   public static override category = "AI Text";
   public static override title = "Text Rewriter";
   public static override description =

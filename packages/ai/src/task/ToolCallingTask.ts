@@ -274,6 +274,7 @@ export class ToolCallingTask extends StreamingAiTask<
   ToolCallingTaskConfig
 > {
   public static override type = "ToolCallingTask";
+  protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Tool Calling";
   public static override description =

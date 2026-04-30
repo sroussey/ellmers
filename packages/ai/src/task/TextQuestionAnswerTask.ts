@@ -64,6 +64,7 @@ export class TextQuestionAnswerTask extends StreamingAiTask<
   TextQuestionAnswerTaskConfig
 > {
   public static override type = "TextQuestionAnswerTask";
+  protected static override readonly streamingPhaseLabel = "Answering";
   public static override category = "AI Text";
   public static override title = "Text Question Answer";
   public static override description =

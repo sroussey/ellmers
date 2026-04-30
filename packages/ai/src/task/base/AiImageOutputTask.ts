@@ -45,6 +45,7 @@ export class AiImageOutputTask<
   Config extends TaskConfig<Input> = TaskConfig<Input>,
 > extends StreamingAiTask<Input, AiImageOutput, Config> {
   public static override type: string = "AiImageOutputTask";
+  protected static override readonly streamingPhaseLabel = "Rendering";
 
   /** The most recent partial received from the provider stream. ImageValue
    *  lifetime is JS GC — replacing the slot lets the prior become collectable. */

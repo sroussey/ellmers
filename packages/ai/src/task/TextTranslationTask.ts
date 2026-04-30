@@ -73,6 +73,7 @@ export class TextTranslationTask extends StreamingAiTask<
   TextTranslationTaskConfig
 > {
   public static override type = "TextTranslationTask";
+  protected static override readonly streamingPhaseLabel = "Translating";
   public static override category = "AI Text";
   public static override title = "Text Translation";
   public static override description =

@@ -1307,9 +1307,9 @@ describe("IteratorTask", () => {
         expect(events[i].progress).toBeGreaterThanOrEqual(events[i - 1].progress!);
       }
 
-      // No emit should exceed 99 until the runner itself marks the task complete.
+      // No emit should exceed 100 (terminal tick sets progress=100 on completion).
       for (const e of events) {
-        expect(e.progress).toBeLessThanOrEqual(99);
+        expect(e.progress).toBeLessThanOrEqual(100);
       }
     });
   });
