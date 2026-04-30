@@ -11,6 +11,7 @@
  *   bun scripts/credentials.ts list
  *   bun scripts/credentials.ts delete <key>
  *   bun scripts/credentials.ts import-env
+ *   bun scripts/credentials.ts import-dot-env <file>
  *   bun scripts/credentials.ts rotate
  *
  * The passphrase is read from $WORKGLOW_SECRETS_PASSPHRASE; the new passphrase
@@ -26,8 +27,9 @@
  *   hf-token           → HF_TOKEN
  */
 
-import { mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { parseDotEnv } from "./lib/parse-dot-env";
 import {
   buildCredentialStore,
   CREDENTIAL_TO_ENV,
@@ -191,6 +193,55 @@ async function cmdImportEnv(): Promise<void> {
   for (const line of imported) console.log(`  ${line}`);
 }
 
+async function cmdImportDotEnv(file: string): Promise<void> {
+  const passphrase = requirePassphrase();
+  let source: string;
+  try {
+    source = readFileSync(file, "utf8");
+  } catch (err) {
+    fail(`cannot read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  let parsed: ReadonlyMap<string, string>;
+  try {
+    parsed = parseDotEnv(source);
+  } catch (err) {
+    fail(err instanceof Error ? err.message : String(err));
+  }
+
+  // Reverse map: env-var-name → credential-key. Preserves the canonical
+  // key for env vars (e.g. GOOGLE_API_KEY → google-api-key) when a file
+  // contains both `GOOGLE_API_KEY` and `GEMINI_API_KEY`.
+  const envToCred = new Map(
+    Object.entries(CREDENTIAL_TO_ENV).map(([cred, env]) => [env, cred] as const)
+  );
+
+  mkdirSync(SECRETS_DIR, { recursive: true });
+  const { encrypted } = buildCredentialStore(passphrase);
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  for (const [envVar, value] of parsed) {
+    const credKey = envToCred.get(envVar);
+    if (!credKey) {
+      skipped.push(envVar);
+      continue;
+    }
+    if (!value) continue;
+    await encrypted.put(credKey, value, { provider: providerForKey(credKey) });
+    imported.push(`${envVar} → ${credKey}`);
+  }
+  if (imported.length === 0) {
+    console.log(`(no known credential env vars found in ${file})`);
+  } else {
+    console.log("imported:");
+    for (const line of imported) console.log(`  ${line}`);
+  }
+  if (skipped.length > 0) {
+    console.log(
+      `skipped (no mapping in CREDENTIAL_TO_ENV): ${skipped.join(", ")}`
+    );
+  }
+}
+
 async function cmdRotate(): Promise<void> {
   const oldPassphrase = requirePassphrase();
   const newPassphrase = requirePassphrase(NEW_PASSPHRASE_ENV);
@@ -237,6 +288,7 @@ function usage(): never {
       "  bun scripts/credentials.ts list",
       "  bun scripts/credentials.ts delete <key>",
       "  bun scripts/credentials.ts import-env",
+      "  bun scripts/credentials.ts import-dot-env <file>  # parse a .env file",
       "  bun scripts/credentials.ts rotate              # reads new passphrase from $" +
         NEW_PASSPHRASE_ENV,
       "",
@@ -271,6 +323,10 @@ async function main(): Promise<void> {
       break;
     case "import-env":
       await cmdImportEnv();
+      break;
+    case "import-dot-env":
+      if (!args[0]) usage();
+      await cmdImportDotEnv(args[0]);
       break;
     case "rotate":
       await cmdRotate();

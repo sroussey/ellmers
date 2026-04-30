@@ -25,16 +25,25 @@ land in shell history or `.env` files.
        export WORKGLOW_SECRETS_PASSPHRASE="$(secret-tool lookup service workglow-secrets)"             # Linux
 
 2. Add credentials. You can import keys you already have exported in the
-   current shell, or set them one-by-one. The interactive prompt disables
-   terminal echo so the value isn't visible as you type; for scripted use,
-   pipe the value via stdin (the CLI rejects positional value arguments to
-   keep secrets out of shell history):
+   current shell, import them from a `.env` file, or set them one-by-one.
+   The interactive prompt disables terminal echo so the value isn't visible
+   as you type; for scripted use, pipe the value via stdin (the CLI rejects
+   positional value arguments to keep secrets out of shell history):
 
+       # bulk-import from current shell env vars:
        bun scripts/credentials.ts import-env
+       # bulk-import from a .env-format file (only known keys are imported):
+       bun scripts/credentials.ts import-dot-env path/to/.env
        # interactive (TTY, echo off):
        bun scripts/credentials.ts set anthropic-api-key
        # or piped:
        printf '%s\n' "$ANTHROPIC_API_KEY" | bun scripts/credentials.ts set anthropic-api-key
+
+   `import-dot-env` accepts the standard `.env` syntax: blank lines, `#`
+   comments, optional `export ` prefix, and unquoted / single-quoted /
+   double-quoted values (double-quoted values support `\n`, `\r`, `\t`,
+   `\\`, `\"` escapes). Env vars not in the credential map (e.g.
+   `UNKNOWN_KEY=…`) are reported as skipped, not silently dropped.
 
 3. Run tests as usual. `vitest.setup.ts` and `bunfig.toml`'s test preload will
    decrypt the store and hydrate `process.env.ANTHROPIC_API_KEY` (etc.) for the
