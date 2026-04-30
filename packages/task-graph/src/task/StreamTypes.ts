@@ -93,7 +93,7 @@ export type StreamError = {
 export type StreamPhase = {
   type: "phase";
   message: string;
-  progress?: number;
+  progress: number | undefined;
 };
 
 /**
