@@ -7,15 +7,37 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  buildCredentialStore,
-  CREDENTIAL_TO_ENV,
-  installAndHydrate,
-} from "../../../../../scripts/lib/test-credentials";
+// The module under test (`scripts/lib/test-credentials.ts`) lives outside this
+// package's `rootDir`. Loading it through a runtime-string dynamic import keeps
+// `tsc --build` from pulling it into the project graph and tripping the
+// rootDir invariant.
+interface TestCredentialsModule {
+  buildCredentialStore: (
+    passphrase: string | undefined,
+    secretsDir?: string
+  ) => { readonly encrypted: { put(k: string, v: string): Promise<void> } };
+  CREDENTIAL_TO_ENV: Readonly<Record<string, string>>;
+  installAndHydrate: (
+    passphrase: string | undefined,
+    secretsDir?: string
+  ) => Promise<{ readonly unlocked: boolean; readonly hydrated: readonly string[] }>;
+}
 
-const ENV_VARS = Object.values(CREDENTIAL_TO_ENV);
+let buildCredentialStore: TestCredentialsModule["buildCredentialStore"];
+let CREDENTIAL_TO_ENV: TestCredentialsModule["CREDENTIAL_TO_ENV"];
+let installAndHydrate: TestCredentialsModule["installAndHydrate"];
+let ENV_VARS: readonly string[];
+
+beforeAll(async () => {
+  const modulePath = "../../../../../scripts/lib/test-credentials";
+  const mod = (await import(/* @vite-ignore */ modulePath)) as TestCredentialsModule;
+  buildCredentialStore = mod.buildCredentialStore;
+  CREDENTIAL_TO_ENV = mod.CREDENTIAL_TO_ENV;
+  installAndHydrate = mod.installAndHydrate;
+  ENV_VARS = Object.values(CREDENTIAL_TO_ENV);
+});
 
 describe("installAndHydrate", () => {
   let secretsDir: string;
