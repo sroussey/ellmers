@@ -92,6 +92,7 @@ export class TextGenerationTask extends StreamingAiTask<
   TextGenerationTaskConfig
 > {
   public static override type = "TextGenerationTask";
+  protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Text Generation";
   public static override description =

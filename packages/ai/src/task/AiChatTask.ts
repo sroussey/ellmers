@@ -155,6 +155,7 @@ export interface AiChatProviderOutput {
 
 export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutput> {
   public static override type = "AiChatTask";
+  protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat";
   public static override description =
