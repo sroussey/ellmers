@@ -127,8 +127,8 @@ export function TaskRunApp({
       setStatus(newStatus);
     });
 
-    task.events.on("progress", (prog: number, msg?: string) => {
-      progressRef.current.prog = prog;
+    task.events.on("progress", (prog: number | undefined, msg?: string) => {
+      if (prog !== undefined) progressRef.current.prog = prog;
       if (msg) progressRef.current.msg = msg;
     });
 
