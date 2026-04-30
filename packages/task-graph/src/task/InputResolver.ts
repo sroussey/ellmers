@@ -204,7 +204,7 @@ export async function resolveSchemaInputs<T extends Record<string, unknown>>(
     // (including those returned by Phase 1 resolvers) still recurse so nested
     // format annotations get a chance to resolve.
     // Skip recursion when a format resolver owns the property AND Phase 1 did
-    // NOT transform the value — those plain objects are raw forms (e.g. ImageBinary
+    // NOT transform the value — those plain objects are raw forms (e.g. ImageValue
     // for format:"image") that must pass through to the task as-is; spreading them
     // loses reference identity. When Phase 1 DID transform (string → object), the
     // resulting plain object still recurses so nested format annotations resolve.

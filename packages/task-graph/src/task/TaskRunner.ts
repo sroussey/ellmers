@@ -159,13 +159,6 @@ export class TaskRunner<
   protected shouldAccumulate: boolean = true;
 
   /**
-   * Threaded down from `TaskGraphRunConfig.runWithPreviews` so subgraph
-   * runners (GraphAsTaskRunner) can forward the flag to nested
-   * `subGraph.run` calls. Read by handleStart from IRunConfig.
-   */
-  protected runWithPreviews: boolean = false;
-
-  /**
    * Active telemetry span for the current task run.
    */
   protected telemetrySpan?: ISpan;
@@ -320,6 +313,7 @@ export class TaskRunner<
     if (this.task.status === TaskStatus.PROCESSING) {
       return this.task.runOutputData as Output;
     }
+
     this.task.setInput(overrides);
 
     // Resolve config schema annotations by mutating task.config directly
@@ -362,6 +356,152 @@ export class TaskRunner<
       await this.handleErrorPreview();
     } finally {
       return this.task.runOutputData as Output;
+    }
+  }
+
+  /**
+   * Async iterator producing preview outputs as upstream tasks stream
+   * snapshots. Yields once immediately with the current preview state, then
+   * once per upstream snapshot until all relevant upstream streams complete
+   * (or the consumer breaks out of the loop).
+   *
+   * Reuses runPreview() under the hood. Errors during a single iteration
+   * are caught and skipped — the iterator never throws to the consumer
+   * mid-loop.
+   *
+   * Watches direct upstream tasks only. Indirect (grandparent) snapshots
+   * propagate through chained preview re-runs as upstream parents' values
+   * update.
+   */
+  public async *runPreviewStream(overrides: Partial<Input> = {}): AsyncIterable<Output> {
+    // 1. Identify direct upstream tasks and their connecting dataflows.
+    //    runPreviewStream calls task.runPreview() directly (not the graph
+    //    runner's runPreview), so it does not benefit from the graph-runner's
+    //    copyInputFromEdgesToNode pull. We propagate snapshot values into the
+    //    target task's runInputData ourselves, mirroring that pull but driven
+    //    by upstream stream events.
+    const graph = this.task.parentGraph;
+    type DataflowInfo = { upstream: ITask; sourcePort: string; targetPort: string };
+    const dataflowInfos: DataflowInfo[] = [];
+    if (graph) {
+      for (const df of graph.getSourceDataflows(this.task.id)) {
+        const upstream = graph.getTask(df.sourceTaskId);
+        if (upstream) {
+          dataflowInfos.push({
+            upstream,
+            sourcePort: df.sourceTaskPortId,
+            targetPort: df.targetTaskPortId,
+          });
+        }
+      }
+    }
+
+    // 2. Track upstreams that may still emit snapshots (pending, processing, or streaming).
+    //    An upstream is "done" once its stream ends or it reaches a terminal state.
+    const upstreamTasks = new Set(dataflowInfos.map((d) => d.upstream));
+    const pendingUpstreams = new Set<ITask>(
+      [...upstreamTasks].filter(
+        (u) =>
+          u.status === TaskStatus.STREAMING ||
+          u.status === TaskStatus.PENDING ||
+          u.status === TaskStatus.PROCESSING
+      )
+    );
+
+    // 3. Set up dirty/wake machinery.
+    let dirty = true;
+    let wakeResolve: (() => void) | undefined;
+    const wakeNext = (): Promise<void> =>
+      new Promise<void>((resolve) => {
+        wakeResolve = resolve;
+      });
+    const wake = () => {
+      const r = wakeResolve;
+      wakeResolve = undefined;
+      if (r) r();
+    };
+
+    // 4. Subscribe to all upstream tasks that could stream.
+    const cleanupFns: Array<() => void> = [];
+    for (const upstream of pendingUpstreams) {
+      const myDataflows = dataflowInfos.filter((d) => d.upstream === upstream);
+
+      const onChunk = (event: StreamEvent) => {
+        if (event.type !== "snapshot") return;
+        const snapshotData = (event as { data?: Record<string, unknown> }).data;
+        if (snapshotData) {
+          for (const { sourcePort, targetPort } of myDataflows) {
+            const value = sourcePort === "*" ? snapshotData : snapshotData[sourcePort];
+            if (value !== undefined) {
+              (this.task.runInputData as Record<string, unknown>)[targetPort] = value;
+            }
+          }
+        }
+        dirty = true;
+        wake();
+      };
+      const onEnd = () => {
+        pendingUpstreams.delete(upstream);
+        wake();
+      };
+      const onStatus = (status: TaskStatus) => {
+        // If upstream completes without streaming, remove it from pending.
+        if (
+          status === TaskStatus.COMPLETED ||
+          status === TaskStatus.FAILED ||
+          status === TaskStatus.DISABLED
+        ) {
+          pendingUpstreams.delete(upstream);
+          wake();
+        }
+      };
+      upstream.on("stream_chunk", onChunk);
+      upstream.on("stream_end", onEnd);
+      upstream.on("status", onStatus);
+      cleanupFns.push(() => {
+        upstream.off("stream_chunk", onChunk);
+        upstream.off("stream_end", onEnd);
+        upstream.off("status", onStatus);
+      });
+    }
+
+    // 4b. Re-check upstream status after subscribing. If any reached a terminal
+    //     state in the gap between step 2 (status read) and step 4 (listener
+    //     attach), prune them now — listeners attached in step 4 won't fire
+    //     retroactively for events that already happened. The first iteration
+    //     of the loop still yields a preview from whatever runInputData
+    //     currently holds.
+    for (const upstream of [...pendingUpstreams]) {
+      if (
+        upstream.status === TaskStatus.COMPLETED ||
+        upstream.status === TaskStatus.FAILED ||
+        upstream.status === TaskStatus.DISABLED
+      ) {
+        pendingUpstreams.delete(upstream);
+      }
+    }
+
+    // 5. Iterator loop.
+    try {
+      while (true) {
+        if (dirty) {
+          dirty = false;
+          try {
+            const out = await this.runPreview(overrides);
+            yield out;
+          } catch (err) {
+            getLogger().debug("runPreviewStream iteration failed", {
+              taskId: this.task.config?.id,
+              error: err,
+            });
+          }
+          continue;
+        }
+        if (pendingUpstreams.size === 0) return;
+        await wakeNext();
+      }
+    } finally {
+      for (const off of cleanupFns) off();
     }
   }
 
@@ -553,6 +693,20 @@ export class TaskRunner<
                 merged[port] = obj;
               }
             }
+            // For replace-mode streams, finish carries data: {} by convention.
+            // Fall back to the last snapshot (runOutputData) so the final output
+            // is not silently cleared when the finish payload is empty.
+            if (streamMode === "replace" && Object.keys(merged).length === 0) {
+              const lastSnapshot = this.task.runOutputData;
+              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
+                finalOutput = lastSnapshot as Output;
+                this.task.emit("stream_chunk", {
+                  type: "finish",
+                  data: lastSnapshot,
+                } as StreamEvent);
+                break;
+              }
+            }
             finalOutput = merged as unknown as Output;
             this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
           } else {
@@ -615,7 +769,6 @@ export class TaskRunner<
 
     // shouldAccumulate defaults to true (backward-compatible for standalone runs)
     this.shouldAccumulate = config.shouldAccumulate !== false;
-    this.runWithPreviews = config.runWithPreviews === true;
 
     if (config.updateProgress) {
       this.updateProgress = config.updateProgress;

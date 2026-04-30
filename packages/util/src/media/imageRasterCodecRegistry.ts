@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ImageBinary } from "./imageTypes";
+import type { RawPixelBuffer } from "./rawPixelBuffer";
 
 export interface ImageRasterCodec {
-  decodeDataUri(dataUri: string): Promise<ImageBinary>;
-  encodeDataUri(image: ImageBinary, mimeType: string): Promise<string>;
+  decodeDataUri(dataUri: string): Promise<RawPixelBuffer>;
+  encodeDataUri(image: RawPixelBuffer, mimeType: string): Promise<string>;
 }
 
 // Cross-bundle singleton — Vite/Rolldown can produce multiple bundle copies

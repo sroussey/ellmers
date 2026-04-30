@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface PixelateParams {
   blockSize: number;
 }
 
-function cpuPixelate(bin: ImageBinary, blockSize: number): ImageBinary {
+function cpuPixelate(bin: RawPixelBuffer, blockSize: number): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const dst = new Uint8ClampedArray(src.length);
 
@@ -46,5 +46,5 @@ function cpuPixelate(bin: ImageBinary, blockSize: number): ImageBinary {
 }
 
 registerFilterOp<PixelateParams>("cpu", "pixelate", (image, { blockSize }) => {
-  return CpuImage.fromImageBinary(cpuPixelate((image as CpuImage).getBinary(), blockSize));
+  return CpuImage.fromRaw(cpuPixelate((image as CpuImage).getBinary(), blockSize));
 });

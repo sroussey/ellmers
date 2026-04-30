@@ -20,29 +20,26 @@ function makeBinary(w: number, h: number) {
 
 describe("CpuImage", () => {
   test("backend tag is 'cpu'", () => {
-    const img = CpuImage.fromImageBinary(makeBinary(2, 2));
+    const img = CpuImage.fromRaw(makeBinary(2, 2));
     expect(img.backend).toBe("cpu");
   });
 
   test("width/height/channels expose the wrapped binary", () => {
-    const img = CpuImage.fromImageBinary(makeBinary(4, 3));
+    const img = CpuImage.fromRaw(makeBinary(4, 3));
     expect(img.width).toBe(4);
     expect(img.height).toBe(3);
     expect(img.channels).toBe(4);
   });
 
-  test("materialize returns the wrapped ImageBinary by reference (no copy)", async () => {
+  test("getBinary() returns the wrapped buffer (internal accessor)", () => {
     const bin = makeBinary(4, 4);
-    const img = CpuImage.fromImageBinary(bin);
-    const out = await img.materialize();
-    expect(out.width).toBe(4);
-    expect(out.height).toBe(4);
-    expect(out.channels).toBe(4);
-    expect(out.data).toBe(bin.data); // same reference
+    const img = CpuImage.fromRaw(bin);
+    expect(img.getBinary()).toBe(bin);
+    expect(img.getBinary().data).toBe(bin.data); // same reference
   });
 
   test("encode round-trips through the registered raster codec (PNG)", async () => {
-    const img = CpuImage.fromImageBinary(makeBinary(2, 2));
+    const img = CpuImage.fromRaw(makeBinary(2, 2));
     const png = await img.encode("png");
     expect(png).toBeInstanceOf(Uint8Array);
     // PNG magic: 89 50 4E 47 0D 0A 1A 0A
@@ -52,21 +49,19 @@ describe("CpuImage", () => {
     expect(png[3]).toBe(0x47);
   });
 
-  test("getBinary() returns the wrapped binary directly (internal accessor)", () => {
-    const bin = makeBinary(1, 1);
-    const img = CpuImage.fromImageBinary(bin);
-    expect(img.getBinary()).toBe(bin);
+  test("toImageValue produces a fresh ImageValue and disposes the source", async () => {
+    const img = CpuImage.fromRaw(makeBinary(2, 2));
+    const value = await img.toImageValue(0.5);
+    expect(value.width).toBe(2);
+    expect(value.height).toBe(2);
+    expect(value.previewScale).toBe(0.5);
+    // After toImageValue, the CpuImage is disposed and getBinary() throws.
+    expect(() => img.getBinary()).toThrow(/disposed/);
   });
 
-  test("release is a no-op (does not throw)", () => {
-    const img = CpuImage.fromImageBinary(makeBinary(1, 1));
-    expect(() => img.release()).not.toThrow();
-  });
-
-  test("retain/release are no-ops and do not throw", () => {
-    const cpu = CpuImage.fromImageBinary({
-      data: new Uint8ClampedArray(4), width: 1, height: 1, channels: 4,
-    });
-    expect(() => { cpu.retain(); cpu.release(); cpu.release(); cpu.retain(); }).not.toThrow();
+  test("dispose() makes subsequent accessors throw", () => {
+    const img = CpuImage.fromRaw(makeBinary(1, 1));
+    img.dispose();
+    expect(() => img.getBinary()).toThrow(/disposed/);
   });
 });

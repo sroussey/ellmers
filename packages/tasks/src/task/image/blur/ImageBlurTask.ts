@@ -4,14 +4,14 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { BlurParams } from "./blur.cpu";
 
 const inputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Source image" }),
+    image: ImageValueSchema({ title: "Image", description: "Source image" }),
     radius: {
       type: "number",
       title: "Radius",
@@ -27,7 +27,7 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Blurred image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Blurred image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

@@ -4,14 +4,14 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { RotateParams } from "./rotate.cpu";
 
 const inputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Source image" }),
+    image: ImageValueSchema({ title: "Image", description: "Source image" }),
     angle: {
       type: "integer",
       enum: [90, 180, 270],
@@ -30,7 +30,7 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Rotated image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Rotated image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -62,7 +62,7 @@ export class ImageToTextTask extends AiVisionTask<
   ImageToTextTaskConfig
 > {
   public static override type = "ImageToTextTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Image to Text";
   public static override description =
     "Generates text descriptions from images using vision-language models";

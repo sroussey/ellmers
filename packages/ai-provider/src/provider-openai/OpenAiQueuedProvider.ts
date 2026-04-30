@@ -26,6 +26,8 @@ export class OpenAiQueuedProvider extends AiProvider<OpenAiModelConfig> {
     "StructuredGenerationTask",
     "ToolCallingTask",
     "ModelSearchTask",
+    "ImageGenerateTask",
+    "ImageEditTask",
   ] as const;
 
   constructor(

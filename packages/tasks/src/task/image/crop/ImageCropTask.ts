@@ -4,14 +4,14 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { CropParams } from "./crop.cpu";
 
 const inputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Source image" }),
+    image: ImageValueSchema({ title: "Image", description: "Source image" }),
     left: { type: "integer", title: "Left", description: "Left offset", minimum: 0, default: 0 },
     top: { type: "integer", title: "Top", description: "Top offset", minimum: 0, default: 0 },
     width: { type: "integer", title: "Width", description: "Crop width", minimum: 1 },
@@ -23,7 +23,7 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Cropped image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Cropped image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

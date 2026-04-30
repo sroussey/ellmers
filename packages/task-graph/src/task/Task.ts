@@ -191,6 +191,13 @@ export class Task<
   // ========================================================================
 
   /**
+   * The TaskGraph that owns this task, set by {@link TaskGraph#addTask}.
+   * Used by {@link TaskRunner#runPreviewStream} to locate upstream tasks
+   * and subscribe to their streaming events.
+   */
+  public parentGraph?: TaskGraph;
+
+  /**
    * Task runner for handling the task execution
    */
   protected _runner: TaskRunner<Input, Output, Config> | undefined;
@@ -954,6 +961,11 @@ export class Task<
       return obj.map((item) => this.stripSymbols(item));
     }
     if (typeof obj === "object") {
+      const proto = Object.getPrototypeOf(obj);
+      if (proto !== Object.prototype && proto !== null) {
+        return obj;
+      }
+
       const result: Record<string, any> = {};
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {

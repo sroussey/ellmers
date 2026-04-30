@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -112,7 +112,7 @@ export class TextLanguageDetectionTask extends AiTask<
   TextLanguageDetectionTaskConfig
 > {
   public static override type = "TextLanguageDetectionTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Language Detection";
   public static override description = "Detects the language of text using language models";
   public static override inputSchema(): DataPortSchema {

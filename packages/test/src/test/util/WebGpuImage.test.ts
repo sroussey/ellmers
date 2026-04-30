@@ -6,6 +6,7 @@
 import { describe, expect, test, beforeEach } from "vitest";
 import {
   getGpuDevice,
+  imageValueFromBitmap,
   PASSTHROUGH_SHADER_SRC,
   resetGpuDeviceForTests,
   resetTexturePoolForTests,
@@ -26,7 +27,8 @@ describe("WebGpuImage (API surface)", () => {
   test.skipIf(!isBrowser)("module exports WebGpuImage class in browser", async () => {
     const WebGpuImage = await getWebGpuImage();
     expect(typeof WebGpuImage).toBe("function");
-    expect(typeof WebGpuImage.fromImageBinary).toBe("function");
+    // The new boundary entry is `from(value)`; refcount/fromImageBinary are gone.
+    expect(typeof WebGpuImage.from).toBe("function");
   });
 
   test("ApplyParams type is structurally exported (compile-time)", () => {
@@ -35,104 +37,72 @@ describe("WebGpuImage (API surface)", () => {
   });
 });
 
-describe.skipIf(typeof navigator === "undefined" || !("gpu" in navigator))("WebGpuImage (browser)", () => {
-  beforeEach(() => {
-    resetGpuDeviceForTests();
-    resetTexturePoolForTests();
-  });
+describe.skipIf(typeof navigator === "undefined" || !("gpu" in navigator))(
+  "WebGpuImage (browser)",
+  () => {
+    beforeEach(() => {
+      resetGpuDeviceForTests();
+      resetTexturePoolForTests();
+    });
 
-  test("fromImageBinary materialize round-trips pixels exactly", async () => {
-    const WebGpuImage = await getWebGpuImage();
-    const dev = await getGpuDevice();
-    if (!dev) return;
-    const data = new Uint8ClampedArray([
-      255, 0, 0, 255,   0, 255, 0, 255,
+    test("from(BrowserImageValue) yields a backed image; transferToImageBitmap drains it", async () => {
+      const WebGpuImage = await getWebGpuImage();
+      const dev = await getGpuDevice();
+      if (!dev) return;
+      // Build a 2x2 bitmap from raw pixels via OffscreenCanvas+ImageData.
+      const data = new Uint8ClampedArray([
+        255, 0, 0, 255, 0, 255, 0, 255,
         0, 0, 255, 255, 255, 255, 0, 255,
-    ]);
-    const img = await WebGpuImage.fromImageBinary({ data, width: 2, height: 2, channels: 4 });
-    expect(img.backend).toBe("webgpu");
-    const out = await img.materialize();
-    expect(Array.from(out.data)).toEqual(Array.from(data));
-    img.release();
-  });
+      ]);
+      const off = new OffscreenCanvas(2, 2);
+      const ctx = off.getContext("2d")!;
+      ctx.putImageData(new ImageData(data, 2, 2), 0, 0);
+      const bitmap = await createImageBitmap(off);
+      const value = imageValueFromBitmap(bitmap, 2, 2);
 
-  test("apply(passthrough) returns a new texture without disturbing the source", async () => {
-    const WebGpuImage = await getWebGpuImage();
-    const dev = await getGpuDevice();
-    if (!dev) return;
-    const data = new Uint8ClampedArray([10, 20, 30, 255]);
-    const img = await WebGpuImage.fromImageBinary({ data, width: 1, height: 1, channels: 4 });
-    const out = img.apply({ shader: PASSTHROUGH_SHADER_SRC, uniforms: undefined });
-    expect(out).not.toBe(img);
-    const bin = await out.materialize();
-    expect(Array.from(bin.data)).toEqual([10, 20, 30, 255]);
-    out.release();
-  });
+      const img = await WebGpuImage.from(value);
+      expect(img.backend).toBe("webgpu");
+      // transferToImageBitmap is the boundary egress for browser; it disposes the source.
+      const out = await img.transferToImageBitmap();
+      expect(out.width).toBe(2);
+      expect(out.height).toBe(2);
+    });
 
-  test("encode('png') returns PNG-magic bytes", async () => {
-    const WebGpuImage = await getWebGpuImage();
-    const dev = await getGpuDevice();
-    if (!dev) return;
-    const data = new Uint8ClampedArray(2 * 2 * 4).fill(128);
-    for (let i = 3; i < data.length; i += 4) data[i] = 255;
-    const img = await WebGpuImage.fromImageBinary({ data, width: 2, height: 2, channels: 4 });
-    const bytes = await img.encode("png");
-    expect(bytes[0]).toBe(0x89);
-    expect(bytes[1]).toBe(0x50);
-    img.release();
-  });
-
-  describe("refcount", () => {
-    test("release after retain still keeps the texture alive", async () => {
+    test("apply(passthrough) returns a new texture without disturbing the source", async () => {
       const WebGpuImage = await getWebGpuImage();
       const dev = await getGpuDevice();
       if (!dev) return;
-      const img = await WebGpuImage.fromImageBinary({
-        data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4,
-      });
-      img.retain();          // count: 2
-      img.release();         // count: 1 — texture still alive
-      const bin = await img.materialize();
-      expect(Array.from(bin.data)).toEqual([1, 2, 3, 255]);
-      img.release();         // count: 0 — pool reclaim
+      const off = new OffscreenCanvas(1, 1);
+      const ctx = off.getContext("2d")!;
+      ctx.putImageData(new ImageData(new Uint8ClampedArray([10, 20, 30, 255]), 1, 1), 0, 0);
+      const bitmap = await createImageBitmap(off);
+      const value = imageValueFromBitmap(bitmap, 1, 1);
+
+      const img = await WebGpuImage.from(value);
+      const out = img.apply({ shader: PASSTHROUGH_SHADER_SRC, uniforms: undefined });
+      expect(out).not.toBe(img);
+      // Both can still produce bitmaps because each owns its own texture.
+      const outBitmap = await out.transferToImageBitmap();
+      expect(outBitmap.width).toBe(1);
+      // The source still has its texture; dispose() to release.
+      img.dispose();
     });
 
-    test("retain(n) increments by n", async () => {
+    test("encode('png') returns PNG-magic bytes", async () => {
       const WebGpuImage = await getWebGpuImage();
       const dev = await getGpuDevice();
       if (!dev) return;
-      const img = await WebGpuImage.fromImageBinary({
-        data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4,
-      });
-      img.retain(3);         // count: 4
-      img.release();         // 3
-      img.release();         // 2
-      img.release();         // 1
-      const bin = await img.materialize();
-      expect(bin.width).toBe(1);
-      img.release();         // 0
+      const data = new Uint8ClampedArray(2 * 2 * 4).fill(128);
+      for (let i = 3; i < data.length; i += 4) data[i] = 255;
+      const off = new OffscreenCanvas(2, 2);
+      const ctx = off.getContext("2d")!;
+      ctx.putImageData(new ImageData(data, 2, 2), 0, 0);
+      const bitmap = await createImageBitmap(off);
+      const value = imageValueFromBitmap(bitmap, 2, 2);
+      const img = await WebGpuImage.from(value);
+      const bytes = await img.encode("png");
+      expect(bytes[0]).toBe(0x89);
+      expect(bytes[1]).toBe(0x50);
     });
-
-    test("double-release after count hits 0 throws", async () => {
-      const WebGpuImage = await getWebGpuImage();
-      const dev = await getGpuDevice();
-      if (!dev) return;
-      const img = await WebGpuImage.fromImageBinary({
-        data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4,
-      });
-      img.release();         // 0
-      expect(() => img.release()).toThrow(/released/);
-    });
-
-    test("retain after release-to-zero throws", async () => {
-      const WebGpuImage = await getWebGpuImage();
-      const dev = await getGpuDevice();
-      if (!dev) return;
-      const img = await WebGpuImage.fromImageBinary({
-        data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4,
-      });
-      img.release();
-      expect(() => img.retain()).toThrow(/released/);
-    });
-  });
-});
+  },
+);

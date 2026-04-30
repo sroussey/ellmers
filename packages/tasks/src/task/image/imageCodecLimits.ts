@@ -9,7 +9,7 @@
  *
  * Caps worst-case RGBA allocation at ~400 MiB (100 MP * 4 bytes/pixel). Legitimate
  * photographic content rarely exceeds ~50 MP; synthetic pipelines that need more
- * should bypass the codec and operate on ImageBinary directly.
+ * should bypass the codec and operate on RawPixelBuffer directly.
  *
  * Defends against header-declared pixel bombs where a small compressed payload
  * claims billions of pixels to force a downstream OOM.

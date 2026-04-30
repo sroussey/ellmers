@@ -5,5 +5,6 @@
  */
 
 export * from "./common/Gemini_Constants";
+export * from "./common/Gemini_ImageValidation";
 export * from "./common/Gemini_ModelSchema";
 export * from "./registerGemini";

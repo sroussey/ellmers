@@ -16,7 +16,7 @@ describe("applyFilter", () => {
   test("dispatches to the registered cpu fn for CpuImage", () => {
     const cpu = vi.fn((img: GpuImage, _params: unknown) => img);
     registerFilterOp<{ k: number }>("cpu", "__test_dispatch__", cpu);
-    const img = CpuImage.fromImageBinary({
+    const img = CpuImage.fromRaw({
       data: new Uint8ClampedArray(4),
       width: 1,
       height: 1,
@@ -30,7 +30,7 @@ describe("applyFilter", () => {
   test("returns the value produced by the registered fn", () => {
     const sentinel = {} as unknown as GpuImage;
     registerFilterOp<undefined>("cpu", "__test_return__", () => sentinel);
-    const img = CpuImage.fromImageBinary({
+    const img = CpuImage.fromRaw({
       data: new Uint8ClampedArray(4),
       width: 1,
       height: 1,
@@ -40,7 +40,7 @@ describe("applyFilter", () => {
   });
 
   test("throws when no fn registered for backend/filter combo", () => {
-    const img = CpuImage.fromImageBinary({
+    const img = CpuImage.fromRaw({
       data: new Uint8ClampedArray(4),
       width: 1,
       height: 1,

@@ -16,7 +16,7 @@ import {
   getImageRasterCodec,
   normalizeOutputMimeType,
 } from "@workglow/tasks";
-import type { ImageBinary } from "@workglow/util/media";
+import type { RawPixelBuffer } from "@workglow/util/media";
 import { describe, expect, test } from "vitest";
 
 /** Minimal valid 1×1 RGB PNG (shared with ImageTask.test.ts). */
@@ -164,7 +164,7 @@ describe("Image raster codec security", () => {
   });
 
   test("encodeDataUri rejects unsupported output types (no silent PNG fallback)", async () => {
-    const image: ImageBinary = {
+    const image: RawPixelBuffer = {
       data: new Uint8ClampedArray([255, 128, 0]),
       width: 1,
       height: 1,

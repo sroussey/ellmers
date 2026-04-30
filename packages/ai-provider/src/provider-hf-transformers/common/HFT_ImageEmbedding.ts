@@ -10,9 +10,9 @@ import type {
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { ImageBinary } from "@workglow/util/media";
-import { imageBinaryToBlob } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { getLogger, TypedArray } from "@workglow/util/worker";
+import { imageValueToBlob } from "../../common/imageOutputHelpers";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
@@ -42,7 +42,7 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
   if (Array.isArray(input.image)) {
     const vectors: TypedArray[] = [];
     for (const image of input.image) {
-      const imageArg = await imageBinaryToBlob(image as unknown as ImageBinary);
+      const imageArg = await imageValueToBlob(image as unknown as ImageValue);
       const result = await embedder(imageArg);
       vectors.push(result.data as TypedArray);
     }
@@ -50,7 +50,7 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
     return { vector: vectors } as ImageEmbeddingTaskOutput;
   }
 
-  const imageArg = await imageBinaryToBlob(input.image as unknown as ImageBinary);
+  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await embedder(imageArg);
 
   logger.timeEnd(timerLabel, { dimensions: result?.data?.length });

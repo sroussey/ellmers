@@ -113,13 +113,6 @@ export interface IRunConfig {
    * Default: false (entitlements are declarative only, not enforced by the engine).
    */
   enforceEntitlements?: boolean;
-
-  /**
-   * Threaded from `TaskGraphRunConfig.runWithPreviews` so subgraph runs
-   * (GraphAsTask, WhileTask, FallbackTask) inherit the parent's preview
-   * mode. See TaskGraphRunConfig for semantics.
-   */
-  runWithPreviews?: boolean;
 }
 
 /**
@@ -216,6 +209,7 @@ export interface ITaskIO<Input extends TaskInput> {
 
 export interface ITaskInternalGraph {
   subGraph: TaskGraph;
+  parentGraph?: TaskGraph;
   hasChildren(): boolean;
   regenerateGraph(): void;
 }

@@ -4,21 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:BackgroundRemovalTask");
-
-const processedImageSchema = {
-  type: "string",
-  contentEncoding: "base64",
-  contentMediaType: "image/png",
-  title: "Image",
-  description: "Base64-encoded PNG image with transparent background",
-} as const;
 
 export const BackgroundRemovalInputSchema = {
   type: "object",
@@ -33,7 +26,10 @@ export const BackgroundRemovalInputSchema = {
 export const BackgroundRemovalOutputSchema = {
   type: "object",
   properties: {
-    image: processedImageSchema,
+    image: ImageValueSchema({
+      title: "Image",
+      description: "Image with transparent background",
+    }),
   },
   required: ["image"],
   additionalProperties: false,
@@ -52,7 +48,7 @@ export class BackgroundRemovalTask extends AiVisionTask<
   BackgroundRemovalTaskConfig
 > {
   public static override type = "BackgroundRemovalTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Background Removal";
   public static override description =
     "Removes backgrounds from images, producing images with transparent backgrounds";

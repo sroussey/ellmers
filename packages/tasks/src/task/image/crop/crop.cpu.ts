@@ -3,7 +3,7 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface CropParams {
   left: number;
@@ -13,12 +13,12 @@ export interface CropParams {
 }
 
 function cpuCrop(
-  bin: ImageBinary,
+  bin: RawPixelBuffer,
   left: number,
   top: number,
   width: number,
   height: number
-): ImageBinary {
+): RawPixelBuffer {
   const { data: src, width: srcW, height: srcH, channels } = bin;
 
   if (srcW < 1 || srcH < 1) {
@@ -45,7 +45,7 @@ function cpuCrop(
 }
 
 registerFilterOp<CropParams>("cpu", "crop", (image, { left, top, width, height }) => {
-  return CpuImage.fromImageBinary(
+  return CpuImage.fromRaw(
     cpuCrop((image as CpuImage).getBinary(), left, top, width, height)
   );
 });

@@ -152,6 +152,15 @@ export class AiProviderRegistry {
   }
 
   /**
+   * Sets the default execution strategy used when no provider-specific resolver
+   * is registered. Useful in tests to inject a strategy without registering a
+   * full provider.
+   */
+  setDefaultStrategy(strategy: IAiExecutionStrategy): void {
+    this.defaultStrategy = strategy;
+  }
+
+  /**
    * Resolves the execution strategy for a given model config.
    * Falls back to DirectExecutionStrategy if no resolver is registered.
    */

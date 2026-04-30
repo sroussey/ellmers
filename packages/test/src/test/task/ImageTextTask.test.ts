@@ -6,23 +6,30 @@
 import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import { ImageTextTask } from "@workglow/tasks";
-import { CpuImage, getPreviewBudget, setPreviewBudget } from "@workglow/util/media";
+import {
+  getPreviewBudget,
+  imageValueFromBuffer,
+  setPreviewBudget,
+  type ImageValue,
+} from "@workglow/util/media";
+
+function rawValue(data: Uint8ClampedArray, w: number, h: number, previewScale = 1.0): ImageValue {
+  const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return imageValueFromBuffer(buf, "raw-rgba", w, h, previewScale);
+}
 
 describe("ImageTextTask preview-scale behavior", () => {
   test("with background image: scales fontSize by background.previewScale", async () => {
-    // Construct a CpuImage with previewScale=0.25 as the background.
-    const bg = CpuImage.fromImageBinary(
-      { data: new Uint8ClampedArray(4 * 100 * 100), width: 100, height: 100, channels: 4 as const },
-      0.25,
-    );
+    // Construct an ImageValue with previewScale=0.25 as the background.
+    const bg = rawValue(new Uint8ClampedArray(4 * 100 * 100), 100, 100, 0.25);
     const task = new ImageTextTask({ id: "tx1" });
     const out = await task.executePreview(
-      { text: "Hello", color: "#ffffff", fontSize: 24, image: bg as never } as never,
+      { text: "Hello", color: "#ffffff", fontSize: 24, image: bg } as never,
       {} as never,
     );
-    // Output is a CpuImage carrying the same scale as the background.
+    // Output is an ImageValue carrying the same scale as the background.
     expect(out!.image.previewScale).toBe(0.25);
-    // Sanity: dims equal background dims (text was rendered at scaled fontSize OVER the background).
+    // Sanity: dims equal background dims (text rendered at scaled fontSize OVER the bg).
     expect(out!.image.width).toBe(100);
     expect(out!.image.height).toBe(100);
   });

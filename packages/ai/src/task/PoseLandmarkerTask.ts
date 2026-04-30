@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -181,7 +181,7 @@ export class PoseLandmarkerTask extends AiVisionTask<
   PoseLandmarkerTaskConfig
 > {
   public static override type = "PoseLandmarkerTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Pose Landmarker";
   public static override description =
     "Detects pose landmarks in images. Identifies 33 body landmarks for pose estimation and optional segmentation.";

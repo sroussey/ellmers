@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ImageBinary } from "@workglow/util/media";
+import type { RawPixelBuffer } from "@workglow/util/media";
+import { decodeBufferToRaw } from "@workglow/util/media";
 
 import { MAX_DECODED_PIXELS } from "./imageCodecLimits";
 import {
@@ -68,35 +69,23 @@ function buildTextSvg(params: ImageTextRenderParams): string {
 
 export function createServerImageTextRenderer(): ImageTextRenderer {
   return {
-    async renderToRgba(params: ImageTextRenderParams): Promise<ImageBinary> {
-      let sharp: typeof import("sharp");
-      try {
-        sharp = (await import("sharp")).default;
-      } catch {
-        throw new Error(
-          "ImageTextTask: rendering text on this runtime requires the optional 'sharp' package " +
-            "(install with: bun add sharp)"
-        );
-      }
-
+    async renderToRgba(params: ImageTextRenderParams): Promise<RawPixelBuffer> {
       const svg = buildTextSvg(params);
       const buffer = Buffer.from(svg, "utf8");
-      const { data, info } = await sharp(buffer, {
+      const { data, width, height, channels } = await decodeBufferToRaw(buffer, {
         limitInputPixels: MAX_DECODED_PIXELS,
         sequentialRead: true,
-      })
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+        ensureAlpha: true,
+      });
 
-      if (info.channels !== 4) {
-        throw new Error(`ImageTextTask: expected RGBA from sharp, got ${info.channels} channels`);
+      if (channels !== 4) {
+        throw new Error(`ImageTextTask: expected RGBA from sharp, got ${channels} channels`);
       }
 
       return {
         data: new Uint8ClampedArray(data),
-        width: info.width,
-        height: info.height,
+        width,
+        height,
         channels: 4,
       };
     },

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeLanguage, TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
@@ -73,7 +73,7 @@ export class TextTranslationTask extends StreamingAiTask<
   TextTranslationTaskConfig
 > {
   public static override type = "TextTranslationTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Text Translation";
   public static override description =
     "Translates text from one language to another using language models";

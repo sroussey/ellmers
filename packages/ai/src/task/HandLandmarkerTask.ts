@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -164,7 +164,7 @@ export class HandLandmarkerTask extends AiVisionTask<
   HandLandmarkerTaskConfig
 > {
   public static override type = "HandLandmarkerTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Hand Landmarker";
   public static override description =
     "Detects hand landmarks in images. Identifies 21 hand landmarks and classifies left vs. right hands.";

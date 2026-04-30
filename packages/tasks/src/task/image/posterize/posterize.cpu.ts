@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface PosterizeParams {
   levels: number;
 }
 
-function cpuPosterize(bin: ImageBinary, levels: number): ImageBinary {
+function cpuPosterize(bin: RawPixelBuffer, levels: number): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
 
   const step = 255 / (levels - 1);
@@ -37,5 +37,5 @@ function cpuPosterize(bin: ImageBinary, levels: number): ImageBinary {
 }
 
 registerFilterOp<PosterizeParams>("cpu", "posterize", (image, { levels }) => {
-  return CpuImage.fromImageBinary(cpuPosterize((image as CpuImage).getBinary(), levels));
+  return CpuImage.fromRaw(cpuPosterize((image as CpuImage).getBinary(), levels));
 });

@@ -50,6 +50,6 @@ registerFilterOp<BlurParams>("webgpu", "blur", (image, { radius }) => {
     uniforms: makeUniforms(radius, 0, w, h),
   });
   const vert = horiz.apply({ shader: SHADER_SRC, uniforms: makeUniforms(radius, 1, w, h) });
-  horiz.release();
+  horiz.dispose();
   return vert;
 });

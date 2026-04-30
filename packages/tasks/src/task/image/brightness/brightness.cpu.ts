@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface BrightnessParams {
   amount: number;
 }
 
-function cpuBrightness(bin: ImageBinary, amount: number): ImageBinary {
+function cpuBrightness(bin: RawPixelBuffer, amount: number): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const dst = new Uint8ClampedArray(src.length);
 
@@ -30,5 +30,5 @@ function cpuBrightness(bin: ImageBinary, amount: number): ImageBinary {
 }
 
 registerFilterOp<BrightnessParams>("cpu", "brightness", (image, { amount }) => {
-  return CpuImage.fromImageBinary(cpuBrightness((image as CpuImage).getBinary(), amount));
+  return CpuImage.fromRaw(cpuBrightness((image as CpuImage).getBinary(), amount));
 });

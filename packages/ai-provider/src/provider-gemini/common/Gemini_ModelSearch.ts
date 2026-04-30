@@ -10,10 +10,16 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
+import { normalizedModelSearchQuery } from "../../common/modelSearchQuery";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 
-const GEMINI_MODELS: Array<{ label: string; value: string }> = [
+interface GeminiModelEntry {
+  readonly label: string;
+  readonly value: string;
+  readonly tasks?: readonly string[];
+}
+
+const GEMINI_MODELS: readonly GeminiModelEntry[] = [
   { label: "gemini-3.1-flash", value: "gemini-3.1-flash" },
   { label: "gemini-3.1-pro", value: "gemini-3.1-pro" },
   { label: "gemini-2.5-flash", value: "gemini-2.5-flash" },
@@ -21,14 +27,30 @@ const GEMINI_MODELS: Array<{ label: string; value: string }> = [
   { label: "gemini-2.0-flash", value: "gemini-2.0-flash" },
   { label: "gemini-1.5-pro", value: "gemini-1.5-pro" },
   { label: "gemini-1.5-flash", value: "gemini-1.5-flash" },
+  // Image-output models
+  {
+    label: "gemini-2.5-flash-image",
+    value: "gemini-2.5-flash-image",
+    tasks: ["ImageGenerateTask", "ImageEditTask"],
+  },
+  {
+    label: "imagen-4.0-generate-001",
+    value: "imagen-4.0-generate-001",
+    tasks: ["ImageGenerateTask"],
+  },
 ];
 
 export const Gemini_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
 > = async (input) => {
-  const models = filterLabeledModelsByQuery(GEMINI_MODELS, input.query);
-  const results: ModelSearchResultItem[] = models.map((m) => ({
+  const q = normalizedModelSearchQuery(input.query);
+  const filtered = q
+    ? GEMINI_MODELS.filter(
+        (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+      )
+    : GEMINI_MODELS;
+  const results: ModelSearchResultItem[] = filtered.map((m) => ({
     id: m.value,
     label: m.label,
     description: "",
@@ -37,7 +59,7 @@ export const Gemini_ModelSearch: AiProviderRunFn<
       provider: GOOGLE_GEMINI,
       title: m.value,
       description: "",
-      tasks: [],
+      tasks: m.tasks ? [...m.tasks] : [],
       provider_config: { model_name: m.value },
       metadata: {},
     },

@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
-import type { ImageBinary } from "@workglow/util/media";
+import type { RawPixelBuffer } from "@workglow/util/media";
 
 import { assertWithinPixelBudget } from "./imageCodecLimits";
 
@@ -43,7 +43,7 @@ export interface ImageTextRenderParams {
 }
 
 export interface ImageTextRenderer {
-  renderToRgba(params: ImageTextRenderParams): Promise<ImageBinary>;
+  renderToRgba(params: ImageTextRenderParams): Promise<RawPixelBuffer>;
 }
 
 export const IMAGE_TEXT_RENDERER = createServiceToken<ImageTextRenderer>(
@@ -95,7 +95,7 @@ export function getImageTextRenderer(): ImageTextRenderer {
   return globalServiceRegistry.get(IMAGE_TEXT_RENDERER);
 }
 
-export async function renderImageTextToRgba(params: ImageTextRenderParams): Promise<ImageBinary> {
+export async function renderImageTextToRgba(params: ImageTextRenderParams): Promise<RawPixelBuffer> {
   assertWithinPixelBudget(params.width, params.height);
   return getImageTextRenderer().renderToRgba(params);
 }

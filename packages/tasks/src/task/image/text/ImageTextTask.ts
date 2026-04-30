@@ -14,10 +14,10 @@ import {
 import {
   CpuImage,
   getPreviewBudget,
-  GpuImageSchema,
+  ImageValueSchema,
   resolveColor,
-  type GpuImage,
-  type RgbaImageBinary,
+  type ImageValue,
+  type RgbaPixelBuffer,
 } from "@workglow/util/media";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { FromSchema } from "@workglow/util/schema";
@@ -34,7 +34,7 @@ function toRgbaImage(image: {
   readonly width: number;
   readonly height: number;
   readonly channels: number;
-}): RgbaImageBinary {
+}): RgbaPixelBuffer {
   const { data, width, height, channels } = image;
   const rgba = new Uint8ClampedArray(width * height * 4);
   if (channels === 4) {
@@ -76,7 +76,7 @@ function compositeTextOverBackground(
     readonly height: number;
     readonly channels: number;
   }
-): RgbaImageBinary {
+): RgbaPixelBuffer {
   if (background.width !== overlay.width || background.height !== overlay.height) {
     throw new Error("ImageTextTask: background and text overlay dimensions must match");
   }
@@ -125,7 +125,7 @@ const IMAGE_TEXT_POSITION_LABELS: Record<ImageTextAnchorPosition, string> = {
   "bottom-right": "Bottom right",
 };
 
-const backgroundImageProperty = GpuImageSchema({
+const backgroundImageProperty = ImageValueSchema({
   title: "Image",
   description: "Background image to render the text onto",
 });
@@ -192,14 +192,14 @@ const inputSchema = {
 const outputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Raster image with text" }),
+    image: ImageValueSchema({ title: "Image", description: "Raster image with text" }),
   },
   required: ["image"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
 export type ImageTextTaskInput = FromSchema<typeof inputSchema>;
-export type ImageTextTaskOutput = { image: GpuImage };
+export type ImageTextTaskOutput = { image: ImageValue };
 
 interface ResolvedTextParams {
   readonly text: string;
@@ -242,10 +242,11 @@ function requireStandaloneDims(input: ImageTextTaskInput): {
 
 async function renderTextOverBackground(
   params: ResolvedTextParams,
-  backgroundImage: GpuImage,
+  backgroundImage: ImageValue,
   previewScale: number
 ): Promise<ImageTextTaskOutput> {
-  const background = await backgroundImage.materialize();
+  const cpu = await CpuImage.from(backgroundImage);
+  const background = cpu.getBinary();
   const overlay = await renderImageTextToRgba({
     text: params.text,
     font: params.font,
@@ -259,7 +260,7 @@ async function renderTextOverBackground(
   });
   const composited = compositeTextOverBackground(background, overlay);
   return {
-    image: CpuImage.fromImageBinary(composited, previewScale) as unknown as GpuImage,
+    image: await CpuImage.fromRaw(composited).toImageValue(previewScale),
   };
 }
 
@@ -281,13 +282,13 @@ async function renderTextStandalone(
     position: params.position,
   });
   return {
-    image: CpuImage.fromImageBinary(textBinary, previewScale) as unknown as GpuImage,
+    image: await CpuImage.fromRaw(textBinary).toImageValue(previewScale),
   };
 }
 
 async function runText(input: ImageTextTaskInput): Promise<ImageTextTaskOutput> {
   const params = resolveTextParams(input);
-  const backgroundImage = "image" in input ? (input.image as GpuImage | undefined) : undefined;
+  const backgroundImage = "image" in input ? (input.image as ImageValue | undefined) : undefined;
   if (backgroundImage != null) {
     return renderTextOverBackground(params, backgroundImage, 1.0);
   }
@@ -331,7 +332,7 @@ export class ImageTextTask<
     _context: IExecutePreviewContext
   ): Promise<Output | undefined> {
     const params = resolveTextParams(input);
-    const backgroundImage = "image" in input ? (input.image as GpuImage | undefined) : undefined;
+    const backgroundImage = "image" in input ? (input.image as ImageValue | undefined) : undefined;
 
     if (backgroundImage != null) {
       // Inherit scale from the background so glyph stroke widths match the

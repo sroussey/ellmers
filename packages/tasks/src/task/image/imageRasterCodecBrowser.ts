@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ImageBinary } from "@workglow/util/media";
+import type { RawPixelBuffer } from "@workglow/util/media";
 
 import {
   MAX_INPUT_BYTES_BROWSER,
@@ -27,7 +27,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(chunks.join(""));
 }
 
-function rasterToImageData(image: ImageBinary): ImageData {
+function rasterToImageData(image: RawPixelBuffer): ImageData {
   const { width, height, channels, data } = image;
   const id = new ImageData(width, height);
   if (channels === 4) {
@@ -84,7 +84,7 @@ function get2dContext(
   throw new Error("No Canvas implementation available in this environment");
 }
 
-async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
+async function decodeDataUri(dataUri: string): Promise<RawPixelBuffer> {
   // Defense in depth: without this assertion, `fetch(dataUri)` below would
   // happily reach the network for `http:`, `file:`, etc. — turning any future
   // upstream-validation removal into SSRF.
@@ -127,7 +127,7 @@ async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
   }
 }
 
-async function encodeDataUri(image: ImageBinary, mimeType: string): Promise<string> {
+async function encodeDataUri(image: RawPixelBuffer, mimeType: string): Promise<string> {
   const fmt = normalizeOutputMimeType(mimeType);
   const { canvas, ctx } = get2dContext(image.width, image.height);
   ctx.putImageData(rasterToImageData(image), 0, 0);

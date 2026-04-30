@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeCategory, TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -71,7 +71,7 @@ export class ImageClassificationTask extends AiVisionTask<
   ImageClassificationTaskConfig
 > {
   public static override type = "ImageClassificationTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Image Classification";
   public static override description =
     "Classifies images into categories using vision models. Supports zero-shot classification when categories are provided.";

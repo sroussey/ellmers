@@ -81,13 +81,17 @@ export function TypeSingleOrArray<const T extends DataPortSchemaNonBoolean>(type
 export type ImageSource = ImageBitmap | OffscreenCanvas | VideoFrame;
 
 /**
- * Image input schema — hydrated to GpuImage by the runner via the image input resolver.
+ * Image input schema — hydrated to `ImageValue` at task entry by the image
+ * input resolver. Used by vision tasks; see `ImageValueSchema()` in
+ * `@workglow/util/media` for the equivalent factory used by image-filter tasks
+ * (the factory accepts a multi-type form including `string` for raw data: URI
+ * inputs).
  */
 export const TypeImageInput = {
   type: "object",
   properties: {},
   title: "Image",
-  description: "Image as data URI, Blob, ImageBitmap, ImageBinary, or GpuImage — hydrated to GpuImage by the runner",
+  description: "Image as data: URI, Blob, ImageBitmap, or ImageValue — hydrated to ImageValue at task entry",
   format: "image",
 } as const satisfies JsonSchema;
 

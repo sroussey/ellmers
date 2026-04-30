@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
-function cpuInvert(bin: ImageBinary): ImageBinary {
+function cpuInvert(bin: RawPixelBuffer): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const dst = new Uint8ClampedArray(src.length);
 
@@ -26,5 +26,5 @@ function cpuInvert(bin: ImageBinary): ImageBinary {
 }
 
 registerFilterOp<undefined>("cpu", "invert", (image, _params) => {
-  return CpuImage.fromImageBinary(cpuInvert((image as CpuImage).getBinary()));
+  return CpuImage.fromRaw(cpuInvert((image as CpuImage).getBinary()));
 });

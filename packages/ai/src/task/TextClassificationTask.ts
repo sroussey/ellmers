@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -88,7 +88,7 @@ export class TextClassificationTask extends AiTask<
   TextClassificationTaskConfig
 > {
   public static override type = "TextClassificationTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Text Classifier";
   public static override description =
     "Classifies text into categories using language models. Supports zero-shot classification when candidate labels are provided.";

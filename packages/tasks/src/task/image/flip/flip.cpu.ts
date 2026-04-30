@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface FlipParams {
   direction: "horizontal" | "vertical";
 }
 
-function cpuFlip(bin: ImageBinary, direction: "horizontal" | "vertical"): ImageBinary {
+function cpuFlip(bin: RawPixelBuffer, direction: "horizontal" | "vertical"): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const dst = new Uint8ClampedArray(src.length);
   const rowBytes = width * channels;
@@ -36,5 +36,5 @@ function cpuFlip(bin: ImageBinary, direction: "horizontal" | "vertical"): ImageB
 }
 
 registerFilterOp<FlipParams>("cpu", "flip", (image, { direction }) => {
-  return CpuImage.fromImageBinary(cpuFlip((image as CpuImage).getBinary(), direction));
+  return CpuImage.fromRaw(cpuFlip((image as CpuImage).getBinary(), direction));
 });

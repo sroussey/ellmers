@@ -16,7 +16,8 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
-import { asRefcountable } from "../refcountable";
+import { previewSource } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ConditionalTask } from "../task/ConditionalTask";
 import type { IEntitlementEnforcer } from "../task/EntitlementEnforcer";
@@ -38,7 +39,7 @@ import {
   TaskGraphTimeoutError,
 } from "../task/TaskError";
 import { TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import { DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
+import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
 import { DependencyBasedScheduler, TopologicalScheduler } from "./TaskGraphScheduler";
@@ -98,6 +99,24 @@ export type GraphResult<
 > = GraphResultMap<Output>[Merge];
 
 /**
+ * Duck-typed predicate for an `ImageValue`-shaped output, used by the engine
+ * to decide whether to apply `previewSource` during `runPreview`. Unlike
+ * `isImageValue` from `@workglow/util/media`, this predicate does not check
+ * `instanceof ImageBitmap` / `Buffer.isBuffer`, so it remains correct across
+ * realm boundaries (e.g. bundle copies in test harnesses) where those identity
+ * checks can spuriously fail.
+ */
+function isImageValueShape(v: unknown): v is { width: number; height: number; previewScale: number } {
+  if (v === null || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.width === "number" &&
+    typeof o.height === "number" &&
+    typeof o.previewScale === "number"
+  );
+}
+
+/**
  * Class for running a task graph
  * Manages the execution of tasks in a task graph, including caching
  */
@@ -122,12 +141,6 @@ export class TaskGraphRunner {
    * output. True by default so workflow return values are complete.
    */
   protected accumulateLeafOutputs: boolean = true;
-  /**
-   * When true, refcountable task outputs keep an extra "display retain" so
-   * they remain readable on `task.runOutputData` after the run completes.
-   * See {@link TaskGraphRunConfig.runWithPreviews}.
-   */
-  protected runWithPreviews: boolean = false;
   /**
    * Service registry for this graph run
    */
@@ -553,7 +566,20 @@ export class TaskGraphRunner {
     // Sort by dataflow id for deterministic input merging regardless of insertion order
     dataflows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const dataflow of dataflows) {
-      this.addInputData(task, dataflow.getPortData());
+      // Use getCurrentValue() to pick up latestSnapshot when the edge is
+      // mid-stream (i.e. value is undefined but latestSnapshot is populated).
+      // We re-implement getPortData()'s wrapping with the live value.
+      const live = dataflow.getCurrentValue();
+      const port = dataflow.targetTaskPortId;
+      let portData: TaskOutput;
+      if (port === DATAFLOW_ALL_PORTS) {
+        portData = live as TaskOutput;
+      } else if (port === DATAFLOW_ERROR_PORT) {
+        portData = { [DATAFLOW_ERROR_PORT]: dataflow.error } as unknown as TaskOutput;
+      } else {
+        portData = { [port]: live } as TaskOutput;
+      }
+      this.addInputData(task, portData);
     }
   }
 
@@ -565,30 +591,17 @@ export class TaskGraphRunner {
   protected async pushOutputFromNodeToEdges(node: ITask, results: TaskOutput) {
     const dataflows = this.graph.getTargetDataflows(node.id);
 
-    // Fanout retain: count consumers per source port. For any refcountable
-    // value, retain enough so each downstream release() decrements correctly.
-    //
-    //   - default (runWithPreviews=false): retain(count - 1). The initial
-    //     refcount of 1 is consumed by the first consumer's release(); the
-    //     rest balance out one-for-one. Refcount hits 0 after the last
-    //     consumer (texture reclaimed).
-    //   - runWithPreviews=true: retain(count). Leaves the initial 1 intact
-    //     as a "display retain" held by `runOutputData`, so the value
-    //     survives all consumer releases. Refcount lands at 1 after the
-    //     last consumer; resetTask releases it on the next run.
-    if (Object.keys(results).length > 0) {
-      const consumerCounts = new Map<string, number>();
-      for (const dataflow of dataflows) {
-        if (dataflow.stream !== undefined) continue; // streams handle materialization separately
-        const port = dataflow.sourceTaskPortId;
-        consumerCounts.set(port, (consumerCounts.get(port) ?? 0) + 1);
-      }
-      for (const [port, count] of consumerCounts) {
-        const extra = this.runWithPreviews ? count : count - 1;
-        if (extra <= 0) continue;
-        const value = results[port];
-        const ref = asRefcountable(value);
-        if (ref) ref.retain(extra);
+    // Preview-mode chain-head downscale: apply `previewSource` to any
+    // image-shaped output before it's pushed downstream. This relocates the
+    // per-task `executePreview` invocation of `previewSource` to the engine,
+    // where it fires once per chain head and is idempotent on already-small
+    // images (returns the input unchanged when within budget).
+    if (this.previewRunning && Object.keys(results).length > 0) {
+      for (const port of Object.keys(results)) {
+        const value = (results as Record<string, unknown>)[port];
+        if (isImageValueShape(value)) {
+          (results as Record<string, unknown>)[port] = await previewSource(value as ImageValue);
+        }
       }
     }
 
@@ -897,7 +910,6 @@ export class TaskGraphRunner {
         await this.handleProgress(task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
-      runWithPreviews: this.runWithPreviews,
     });
 
     await this.pushOutputFromNodeToEdges(task, results);
@@ -987,7 +999,6 @@ export class TaskGraphRunner {
           await this.handleProgress(task, progress, message, ...args),
         registry: this.registry,
         resourceScope: this.resourceScope,
-        runWithPreviews: this.runWithPreviews,
       });
 
       await this.pushOutputFromNodeToEdges(task, results);
@@ -1017,8 +1028,15 @@ export class TaskGraphRunner {
    * to a single port. When `portId` is undefined (DATAFLOW_ALL_PORTS), all
    * events pass through. When set, only delta events matching the port plus
    * control events (finish, error, snapshot) are enqueued.
+   *
+   * Also taps snapshot events to write per-port data into each edge's
+   * `latestSnapshot` slot for downstream peek-during-streaming.
    */
-  private createStreamFromTaskEvents(task: ITask, portId?: string): ReadableStream<StreamEvent> {
+  private createStreamFromTaskEvents(
+    task: ITask,
+    portId: string | undefined,
+    edgesForGroup: ReadonlyArray<Dataflow>,
+  ): ReadableStream<StreamEvent> {
     return new ReadableStream<StreamEvent>({
       start: (controller) => {
         const onChunk = (event: StreamEvent) => {
@@ -1029,6 +1047,20 @@ export class TaskGraphRunner {
               event.port !== portId
             ) {
               return;
+            }
+            // Tap: on snapshot events, write per-port data into each edge's
+            // latestSnapshot slot.
+            if (event.type === "snapshot") {
+              const data = event.data as Record<string, unknown> | undefined;
+              if (data) {
+                for (const edge of edgesForGroup) {
+                  const portValue =
+                    edge.sourceTaskPortId === DATAFLOW_ALL_PORTS
+                      ? data
+                      : data[edge.sourceTaskPortId];
+                  edge.latestSnapshot = portValue;
+                }
+              }
             }
             controller.enqueue(event);
           } catch {
@@ -1074,7 +1106,7 @@ export class TaskGraphRunner {
 
     for (const [portKey, edges] of groups) {
       const filterPort = portKey === DATAFLOW_ALL_PORTS ? undefined : portKey;
-      const stream = this.createStreamFromTaskEvents(task, filterPort);
+      const stream = this.createStreamFromTaskEvents(task, filterPort, edges);
 
       if (edges.length === 1) {
         edges[0].setStream(stream);
@@ -1100,25 +1132,6 @@ export class TaskGraphRunner {
    * @param runId The run ID
    */
   protected resetTask(graph: TaskGraph, task: ITask, runId: string) {
-    // Release any "display retains" added by the previous run's
-    // pushOutputFromNodeToEdges when runWithPreviews was true. The runner
-    // doesn't track per-run retains separately, so we always attempt the
-    // release here — for already-released values (the runWithPreviews=false
-    // path) the throw is swallowed; for no-op refcountables (CpuImage,
-    // SharpImage) it's harmless. This balances exactly one retain per
-    // refcountable port that runWithPreviews=true added.
-    const previous = task.runOutputData;
-    if (previous) {
-      for (const port of Object.keys(previous)) {
-        const ref = asRefcountable((previous as Record<string, unknown>)[port]);
-        if (!ref) continue;
-        try {
-          ref.release();
-        } catch {
-          // already released elsewhere (runWithPreviews=false path) — fine
-        }
-      }
-    }
     task.status = TaskStatus.PENDING;
     task.resetInputData();
     task.runOutputData = {};
@@ -1165,7 +1178,6 @@ export class TaskGraphRunner {
     }
 
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
-    this.runWithPreviews = config?.runWithPreviews === true;
 
     if (config?.outputCache !== undefined) {
       if (typeof config.outputCache === "boolean") {
@@ -1305,12 +1317,6 @@ export class TaskGraphRunner {
     // Note: `timeout` is not enforced for preview runs. Preview execution is
     // event-driven with no single completion point, so a graph-level timeout
     // does not apply. Use per-task timeouts for individual task time limits.
-
-    // Preview already keeps intermediate outputs alive (filter tasks skip the
-    // input.release() they do in execute()), so the display retain that
-    // run mode needs is redundant here. Reset the flag so a prior full run
-    // with runWithPreviews=true doesn't bleed retain semantics into preview.
-    this.runWithPreviews = false;
 
     this.previewScheduler.reset();
     this.previewRunning = true;

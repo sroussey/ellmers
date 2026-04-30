@@ -8,7 +8,7 @@ import {
   registerFilterOp,
   resolveColor,
   type ColorObject,
-  type ImageBinary,
+  type RawPixelBuffer,
 } from "@workglow/util/media";
 
 export interface TintParams {
@@ -17,12 +17,12 @@ export interface TintParams {
 }
 
 function cpuTint(
-  bin: ImageBinary,
+  bin: RawPixelBuffer,
   tr: number,
   tg: number,
   tb: number,
   amount: number
-): ImageBinary {
+): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const invAmount = 1 - amount;
   const tintR = tr * amount;
@@ -57,5 +57,5 @@ function cpuTint(
 
 registerFilterOp<TintParams>("cpu", "tint", (image, { color, amount }) => {
   const { r: tr, g: tg, b: tb } = resolveColor(color);
-  return CpuImage.fromImageBinary(cpuTint((image as CpuImage).getBinary(), tr, tg, tb, amount));
+  return CpuImage.fromRaw(cpuTint((image as CpuImage).getBinary(), tr, tg, tb, amount));
 });

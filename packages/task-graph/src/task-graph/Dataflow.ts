@@ -65,10 +65,37 @@ export class Dataflow {
   public stream: ReadableStream<StreamEvent> | undefined = undefined;
 
   /**
+   * Most recent per-port snapshot data observed while `stream` was active.
+   * Populated by the runner's stream-tap on `snapshot` events; cleared on
+   * setStream / reset, or transferred to `value` on setPortData. Distinct
+   * from `value` (final materialized output) — `latestSnapshot` is the
+   * live mid-stream peek.
+   */
+  public latestSnapshot: unknown = undefined;
+
+  /**
+   * Returns the current effective value of this edge, regardless of
+   * streaming state:
+   *   1. `value` — set by setPortData / awaitStreamValue when stream finishes.
+   *   2. `latestSnapshot` — set by the runner's snapshot tap during streaming.
+   *   3. `undefined` — no data yet.
+   *
+   * Use this in any read path that wants "current edge value, regardless of
+   * streaming state." `getPortData()` retains its strict semantics
+   * (only `value`) for callers that explicitly need that.
+   */
+  public getCurrentValue(): unknown {
+    if (this.value !== undefined) return this.value;
+    return this.latestSnapshot;
+  }
+
+  /**
    * Sets the active stream on this dataflow.
    * @param stream The ReadableStream of StreamEvents from the upstream task
    */
   public setStream(stream: ReadableStream<StreamEvent>): void {
+    // New stream invalidates any prior peek.
+    this.latestSnapshot = undefined;
     this.stream = stream;
   }
 
@@ -146,6 +173,7 @@ export class Dataflow {
   }
 
   public reset() {
+    this.latestSnapshot = undefined;
     this.status = TaskStatus.PENDING;
     this.error = undefined;
     this.value = undefined;
@@ -192,6 +220,8 @@ export class Dataflow {
     } else {
       this.value = entireDataBlock[this.sourceTaskPortId];
     }
+    // The materialised value supersedes the mid-stream peek; clear the slot.
+    this.latestSnapshot = undefined;
   }
 
   getPortData(): TaskOutput {

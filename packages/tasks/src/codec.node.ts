@@ -48,10 +48,22 @@ import "./task/image/tint/tint.sharp";
 // Opt-in wiring: previewSource (in @workglow/util/media) is a no-op until
 // some consumer registers a resize callback. Registering it here, alongside
 // the filter-arm side-effects above, ensures that any context that loads
-// this codec entry gets preview-time downscale for WebGpuImage inputs that
-// exceed the budget. previewSource short-circuits non-webgpu inputs.
-import { applyFilter, registerPreviewResizeFn } from "@workglow/util/media";
+// this codec entry gets preview-time downscale for ImageValue inputs that
+// exceed the budget.
+import {
+  GpuImageFactory,
+  applyFilter,
+  registerPreviewResizeFn,
+} from "@workglow/util/media";
 
-registerPreviewResizeFn((image, width, height) =>
-  applyFilter(image, "resize", { width, height })
-);
+registerPreviewResizeFn(async (value, width, height) => {
+  const gpu = await GpuImageFactory.from(value);
+  try {
+    const out = applyFilter(gpu, "resize", { width, height });
+    gpu.dispose();
+    return await out.toImageValue(value.previewScale);
+  } catch (err) {
+    gpu.dispose();
+    throw err;
+  }
+});

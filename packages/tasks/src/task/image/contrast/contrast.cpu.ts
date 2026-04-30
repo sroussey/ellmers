@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface ContrastParams {
   amount: number;
 }
 
-function cpuContrast(bin: ImageBinary, amount: number): ImageBinary {
+function cpuContrast(bin: RawPixelBuffer, amount: number): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
 
   const factor = (259 * (amount + 255)) / (255 * (259 - amount));
@@ -37,5 +37,5 @@ function cpuContrast(bin: ImageBinary, amount: number): ImageBinary {
 }
 
 registerFilterOp<ContrastParams>("cpu", "contrast", (image, { amount }) => {
-  return CpuImage.fromImageBinary(cpuContrast((image as CpuImage).getBinary(), amount));
+  return CpuImage.fromRaw(cpuContrast((image as CpuImage).getBinary(), amount));
 });

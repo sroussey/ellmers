@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -186,7 +186,7 @@ export class FaceLandmarkerTask extends AiVisionTask<
   FaceLandmarkerTaskConfig
 > {
   public static override type = "FaceLandmarkerTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Face Landmarker";
   public static override description =
     "Detects facial landmarks and expressions in images. Identifies 478 facial landmarks, blendshapes for expressions, and transformation matrices for AR effects.";

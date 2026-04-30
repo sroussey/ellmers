@@ -10,8 +10,8 @@ import type {
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
 } from "@workglow/ai";
-import type { ImageBinary } from "@workglow/util/media";
-import { imageBinaryToBlob } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
+import { imageValueToBlob } from "../../common/imageOutputHelpers";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
@@ -24,7 +24,7 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, onProgress, signal) => {
   const segmenter: ImageSegmentationPipeline = await getPipeline(model!, onProgress, {}, signal);
-  const imageArg = await imageBinaryToBlob(input.image as unknown as ImageBinary);
+  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await segmenter(imageArg, {
     threshold: input.threshold,
     mask_threshold: input.maskThreshold,

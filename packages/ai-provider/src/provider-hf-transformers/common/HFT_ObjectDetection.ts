@@ -13,8 +13,8 @@ import type {
   ObjectDetectionTaskInput,
   ObjectDetectionTaskOutput,
 } from "@workglow/ai";
-import type { ImageBinary } from "@workglow/util/media";
-import { imageBinaryToBlob } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
+import { imageValueToBlob } from "../../common/imageOutputHelpers";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
@@ -37,7 +37,7 @@ export const HFT_ObjectDetection: AiProviderRunFn<
       {},
       signal
     );
-    const imageArg = await imageBinaryToBlob(input.image as unknown as ImageBinary);
+    const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await zeroShotDetector(imageArg, Array.from(input.labels!), {
       threshold: input.threshold,
     });
@@ -52,7 +52,7 @@ export const HFT_ObjectDetection: AiProviderRunFn<
   }
 
   const detector: ObjectDetectionPipeline = await getPipeline(model!, onProgress, {}, signal);
-  const imageArg = await imageBinaryToBlob(input.image as unknown as ImageBinary);
+  const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const detections = await detector(imageArg, {
     threshold: input.threshold,
   });

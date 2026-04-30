@@ -5,12 +5,15 @@
  */
 
 import { ImageBorderTask, ImageTextTask, ImageTintTask } from "@workglow/tasks";
-import { CpuImage, type GpuImage, type ImageBinary } from "@workglow/util/media";
+import {
+  CpuImage,
+  imageValueFromBuffer,
+  type ImageValue,
+} from "@workglow/util/media";
 import { describe, expect, it } from "vitest";
 
-function makeImage(width: number, height: number): ImageBinary {
-  const channels = 4 as const;
-  const data = new Uint8ClampedArray(width * height * channels);
+function makeRgbaImageValue(width: number, height: number): ImageValue {
+  const data = new Uint8ClampedArray(width * height * 4);
   // Opaque white everywhere.
   for (let i = 0; i < data.length; i += 4) {
     data[i] = 255;
@@ -18,12 +21,15 @@ function makeImage(width: number, height: number): ImageBinary {
     data[i + 2] = 255;
     data[i + 3] = 255;
   }
-  return { data, width, height, channels };
+  const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return imageValueFromBuffer(buf, "raw-rgba", width, height);
 }
 
-async function assertSameImage(a: GpuImage | ImageBinary, b: GpuImage | ImageBinary): Promise<void> {
-  const abin = "materialize" in a ? await (a as GpuImage).materialize() : a as ImageBinary;
-  const bbin = "materialize" in b ? await (b as GpuImage).materialize() : b as ImageBinary;
+async function assertSameImage(a: ImageValue, b: ImageValue): Promise<void> {
+  const aCpu = await CpuImage.from(a);
+  const bCpu = await CpuImage.from(b);
+  const abin = aCpu.getBinary();
+  const bbin = bCpu.getBinary();
   expect(abin.width).toBe(bbin.width);
   expect(abin.height).toBe(bbin.height);
   expect(abin.channels).toBe(bbin.channels);
@@ -32,8 +38,7 @@ async function assertSameImage(a: GpuImage | ImageBinary, b: GpuImage | ImageBin
 
 describe("ImageTintTask accepts both color wire forms", () => {
   it("produces identical pixels for hex and object color input", async () => {
-    const bin = makeImage(4, 4);
-    const image = CpuImage.fromImageBinary(bin) as unknown as GpuImage;
+    const image = makeRgbaImageValue(4, 4);
     const objTask = new ImageTintTask();
     const hexTask = new ImageTintTask();
 
@@ -48,14 +53,13 @@ describe("ImageTintTask accepts both color wire forms", () => {
       amount: 0.5,
     });
 
-    await assertSameImage(fromObject.image as unknown as GpuImage, fromHex.image as unknown as GpuImage);
+    await assertSameImage(fromObject.image as ImageValue, fromHex.image as ImageValue);
   });
 });
 
 describe("ImageBorderTask accepts both color wire forms", () => {
   it("produces identical pixels for hex and object color input", async () => {
-    const bin = makeImage(6, 6);
-    const image = CpuImage.fromImageBinary(bin) as unknown as GpuImage;
+    const image = makeRgbaImageValue(6, 6);
     const objTask = new ImageBorderTask();
     const hexTask = new ImageBorderTask();
 
@@ -70,7 +74,7 @@ describe("ImageBorderTask accepts both color wire forms", () => {
       borderWidth: 1,
     });
 
-    await assertSameImage(fromObject.image as unknown as GpuImage, fromHex.image as unknown as GpuImage);
+    await assertSameImage(fromObject.image as ImageValue, fromHex.image as ImageValue);
   });
 });
 
@@ -92,6 +96,6 @@ describe("ImageTextTask accepts both color wire forms", () => {
       height: 32,
     });
 
-    await assertSameImage(fromObject.image as unknown as ImageBinary, fromHex.image as unknown as ImageBinary);
+    await assertSameImage(fromObject.image as ImageValue, fromHex.image as ImageValue);
   });
 });

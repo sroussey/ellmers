@@ -24,6 +24,8 @@ export class HfInferenceQueuedProvider extends AiProvider<HfInferenceModelConfig
     "TextSummaryTask",
     "ToolCallingTask",
     "ModelSearchTask",
+    "ImageGenerateTask",
+    "ImageEditTask",
   ] as const;
 
   constructor(

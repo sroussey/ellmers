@@ -9,12 +9,7 @@ import "./media/imageHydrationResolver";
 
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";
-export {
-  encodeImageBinaryToPng,
-  imageBinaryToBase64Png,
-  imageBinaryToBlob,
-  imageBinaryToDataUri,
-} from "./media/encode";
+export { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "./media/encode";
 export {
   _resetFilterRegistryForTests,
   applyFilter,
@@ -34,9 +29,25 @@ export type {
   GpuImageEncodeFormat,
   GpuImageStatic,
 } from "./media/gpuImage";
-export { GpuImageSchema } from "./media/gpuImageSchema";
+export { ImageValueSchema } from "./media/imageValueSchema";
 export * from "./media/imageRasterCodecRegistry";
-export * from "./media/imageTypes";
+export type { ImageChannels } from "./media/imageTypes";
+export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
+export {
+  imageValueFromBitmap,
+  imageValueFromBuffer,
+  isBrowserImageValue,
+  isImageValue,
+  isNodeImageValue,
+  normalizeToImageValue,
+} from "./media/imageValue";
+export type {
+  BrowserImageValue,
+  ImageValue,
+  ImageValueBase,
+  NodeImageFormat,
+  NodeImageValue,
+} from "./media/imageValue";
 export * from "./media/MediaRawImage";
 export {
   getPreviewBudget,
@@ -60,40 +71,30 @@ export type { TexturePool, TexturePoolOptions } from "./media/texturePool.browse
 export { WebGpuImage } from "./media/webGpuImage.browser";
 export type { ApplyParams } from "./media/webGpuImage.browser";
 
+// Throwing stubs for server-only sharp helpers. These exist so cross-platform
+// consumers (e.g. `@workglow/ai-provider/common/imageOutputHelpers`) can
+// statically import the helpers without browser bundlers tripping on missing
+// exports. Runtime gates (`if (HAS_BUFFER)` etc.) ensure these are never
+// called on the browser path.
+export async function probeImageDimensions(): Promise<never> {
+  throw new Error("probeImageDimensions: not available in browser runtime");
+}
+export async function decodeBufferToRaw(): Promise<never> {
+  throw new Error("decodeBufferToRaw: not available in browser runtime");
+}
+export async function encodeRawPixels(): Promise<never> {
+  throw new Error("encodeRawPixels: not available in browser runtime");
+}
+
 import { CpuImage as _CpuImage } from "./media/cpuImage";
 import { getGpuDevice as _getGpuDevice } from "./media/gpuDevice.browser";
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
-import { getImageRasterCodec as _getImageRasterCodec } from "./media/imageRasterCodecRegistry";
-import type { ImageBinary as _ImageBinary } from "./media/imageTypes";
+import type { ImageValue as _ImageValue } from "./media/imageValue";
 import { WebGpuImage as _WebGpuImage } from "./media/webGpuImage.browser";
 
-async function _preferGpu(bin: _ImageBinary) {
+async function _preferGpu(value: _ImageValue) {
   const dev = await _getGpuDevice();
-  return dev ? _WebGpuImage.fromImageBinary(bin) : _CpuImage.fromImageBinary(bin);
+  return dev ? _WebGpuImage.from(value) : _CpuImage.from(value);
 }
 
-_registerGpuImageFactory("fromImageBinaryAsync", _preferGpu);
-
-_registerGpuImageFactory("fromDataUri", async (dataUri: string) => {
-  const bin = await _getImageRasterCodec().decodeDataUri(dataUri);
-  return _preferGpu(bin);
-});
-
-_registerGpuImageFactory("fromBlob", async (blob: Blob) => {
-  const bitmap = await createImageBitmap(blob);
-  const off = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const ctx = off.getContext("2d");
-  if (!ctx) throw new Error("fromBlob: could not acquire 2D context");
-  ctx.drawImage(bitmap, 0, 0);
-  const id = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-  return _preferGpu({ data: id.data, width: bitmap.width, height: bitmap.height, channels: 4 });
-});
-
-_registerGpuImageFactory("fromImageBitmap", async (bitmap: ImageBitmap) => {
-  const off = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const ctx = off.getContext("2d");
-  if (!ctx) throw new Error("fromImageBitmap: could not acquire 2D context");
-  ctx.drawImage(bitmap, 0, 0);
-  const id = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-  return _preferGpu({ data: id.data, width: bitmap.width, height: bitmap.height, channels: 4 });
-});
+_registerGpuImageFactory("from", _preferGpu);

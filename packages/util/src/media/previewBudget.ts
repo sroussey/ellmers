@@ -3,24 +3,25 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { GpuImage } from "./gpuImage";
+import type { ImageValue } from "./imageValue";
 
-/**
- * Cross-bundle singleton — the previewSource helper needs a backend-specific
- * resize op. Rather than importing from @workglow/tasks (a downstream
- * package, which would invert the dependency graph), the preview helper
- * accepts a resize-fn callback registered at startup by the consumer.
- *
- * The budget value is also held in a globalThis slot so multiple bundle
- * copies of this module (Vite/Rolldown can produce them) share a single
- * source of truth — without it, setPreviewBudget would silently no-op in
- * any bundle that didn't perform the call.
- */
+// Cross-bundle singleton — Vite/Rolldown can produce multiple bundle copies of
+// this file (one per consumer, browser/node entry, the builder web app, etc.).
+// Without sharing through `globalThis`, `setPreviewBudget` / `registerPreview-
+// ResizeFn` would silently no-op in any bundle that didn't perform the call,
+// because each bundle would hold its own module-private slot. Same pattern as
+// the codec / GpuImage factory registries (see `imageRasterCodecRegistry.ts`
+// and `gpuImage.ts`). The `Symbol.for` keys are stable across realms so every
+// bundle hits the same record.
 const GLOBAL_RESIZE_KEY = Symbol.for("@workglow/util/media/previewResizeFn");
 const GLOBAL_BUDGET_KEY = Symbol.for("@workglow/util/media/previewBudget");
 const _g = globalThis as Record<symbol, unknown>;
 
-export type PreviewResizeFn = (image: GpuImage, w: number, h: number) => GpuImage;
+export type PreviewResizeFn = (
+  image: ImageValue,
+  width: number,
+  height: number,
+) => Promise<ImageValue>;
 
 const DEFAULT_BUDGET = 512;
 
@@ -28,7 +29,7 @@ if (typeof _g[GLOBAL_BUDGET_KEY] !== "number") {
   _g[GLOBAL_BUDGET_KEY] = DEFAULT_BUDGET;
 }
 
-export function registerPreviewResizeFn(fn: PreviewResizeFn): void {
+export function registerPreviewResizeFn(fn: PreviewResizeFn | undefined): void {
   _g[GLOBAL_RESIZE_KEY] = fn;
 }
 
@@ -48,28 +49,26 @@ export function setPreviewBudget(px: number): void {
 }
 
 /**
- * Scale-then-effect entry for `executePreview`. Returns a downscaled image
- * when the input's longer edge exceeds the budget AND the backend benefits
- * (webgpu only). Otherwise returns the input unchanged — referential
- * equality is the signal to callers that no transient was created.
- *
- * Calling code that wants downscale must call `registerPreviewResizeFn` at
- * startup with a callback that performs the resize (typically routed through
- * @workglow/tasks's applyFilter). Without registration, previewSource is
- * a no-op even on webgpu inputs.
+ * Engine-applied chain-head downscale for `runPreview`. Idempotent: when
+ * the input is already within budget, returns the input unchanged
+ * (referential equality is the no-op signal). When over budget, calls the
+ * registered resize fn (typically routed through Sharp on node and an
+ * OffscreenCanvas/WebGPU resize on browser) and composes `previewScale`:
+ * `out.previewScale = in.previewScale × downscaleRatio`.
  */
-export function previewSource(image: GpuImage): GpuImage {
-  if (image.backend !== "webgpu") return image;
+export async function previewSource(image: ImageValue): Promise<ImageValue> {
   const budget = getPreviewBudget();
   const long = Math.max(image.width, image.height);
   if (long <= budget) return image;
   const ratio = budget / long;
   const resize = getPreviewResizeFn();
   if (!resize) return image;
-  const result = resize(image, Math.round(image.width * ratio), Math.round(image.height * ratio));
-  // Compose: newScale = inputScale × downscaleRatio. The resize op produces an
-  // image whose previewScale equals input's (apply() propagation rule). We
-  // override it here — previewSource is the only place that *changes* previewScale.
-  const composed = image.previewScale * ratio;
-  return (result as unknown as { _setPreviewScale(s: number): GpuImage })._setPreviewScale(composed);
+  const targetW = Math.max(1, Math.round(image.width * ratio));
+  const targetH = Math.max(1, Math.round(image.height * ratio));
+  const result = await resize(image, targetW, targetH);
+  const composedScale = image.previewScale * ratio;
+  return {
+    ...result,
+    previewScale: composedScale,
+  } as ImageValue;
 }

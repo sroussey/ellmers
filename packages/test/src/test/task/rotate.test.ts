@@ -4,17 +4,17 @@
  * All Rights Reserved
  */
 import { describe, expect, test } from "vitest";
-import { ImageRotateTask } from "@workglow/tasks";
-import { CpuImage, type GpuImage } from "@workglow/util/media";
+
+import { applyFilter } from "@workglow/tasks";
+import { CpuImage } from "@workglow/util/media";
 
 describe("ImageRotateTask (cpu)", () => {
   test("rotate 180 on 2x1 image: green is now top-left, red is now right", async () => {
     // 2x1 image: pixel[0]=(255,0,0,255) red, pixel[1]=(0,255,0,255) green
     const data = new Uint8ClampedArray([255, 0, 0, 255,  0, 255, 0, 255]);
-    const image = CpuImage.fromImageBinary({ data, width: 2, height: 1, channels: 4 }) as unknown as GpuImage;
-    const t = new ImageRotateTask();
-    const out = await t.execute({ image, angle: 180 } as never, {} as never);
-    const bin = await (out!.image as GpuImage).materialize();
+    const image = CpuImage.fromRaw({ data, width: 2, height: 1, channels: 4 });
+        const out = applyFilter(image, "rotate", { angle: 180 });
+    const bin = (out as CpuImage).getBinary();
     expect(bin.width).toBe(2);
     expect(bin.height).toBe(1);
     // After 180 rotation: top-left is now green
@@ -30,20 +30,18 @@ describe("ImageRotateTask (cpu)", () => {
   test("rotate 90 swaps width and height", async () => {
     const data = new Uint8ClampedArray(2 * 3 * 1).fill(0);
     for (let i = 0; i < 6; i++) data[i] = i * 40;
-    const image = CpuImage.fromImageBinary({ data, width: 2, height: 3, channels: 1 }) as unknown as GpuImage;
-    const t = new ImageRotateTask();
-    const out = await t.execute({ image, angle: 90 } as never, {} as never);
-    const bin = await (out!.image as GpuImage).materialize();
+    const image = CpuImage.fromRaw({ data, width: 2, height: 3, channels: 1 });
+        const out = applyFilter(image, "rotate", { angle: 90 });
+    const bin = (out as CpuImage).getBinary();
     expect(bin.width).toBe(3);
     expect(bin.height).toBe(2);
   });
 
   test("rotate 270 swaps width and height", async () => {
     const data = new Uint8ClampedArray(2 * 3 * 1).fill(0);
-    const image = CpuImage.fromImageBinary({ data, width: 2, height: 3, channels: 1 }) as unknown as GpuImage;
-    const t = new ImageRotateTask();
-    const out = await t.execute({ image, angle: 270 } as never, {} as never);
-    const bin = await (out!.image as GpuImage).materialize();
+    const image = CpuImage.fromRaw({ data, width: 2, height: 3, channels: 1 });
+        const out = applyFilter(image, "rotate", { angle: 270 });
+    const bin = (out as CpuImage).getBinary();
     expect(bin.width).toBe(3);
     expect(bin.height).toBe(2);
   });
@@ -51,10 +49,9 @@ describe("ImageRotateTask (cpu)", () => {
   test("rotate 180 preserves dimensions", async () => {
     const data = new Uint8ClampedArray(3 * 4 * 1);
     for (let i = 0; i < 12; i++) data[i] = i * 20;
-    const image = CpuImage.fromImageBinary({ data, width: 3, height: 4, channels: 1 }) as unknown as GpuImage;
-    const t = new ImageRotateTask();
-    const out = await t.execute({ image, angle: 180 } as never, {} as never);
-    const bin = await (out!.image as GpuImage).materialize();
+    const image = CpuImage.fromRaw({ data, width: 3, height: 4, channels: 1 });
+        const out = applyFilter(image, "rotate", { angle: 180 });
+    const bin = (out as CpuImage).getBinary();
     expect(bin.width).toBe(3);
     expect(bin.height).toBe(4);
     expect(bin.data[11]).toBe(0);
