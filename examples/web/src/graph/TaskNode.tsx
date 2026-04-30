@@ -21,23 +21,21 @@ export type TaskNodeData = {
 /**
  * Calculate consolidated progress from subtasks if available, otherwise use task's own progress
  */
-function calculateConsolidatedProgress(task: ITask): number | undefined {
+function calculateConsolidatedProgress(task: ITask): number {
   if (task.hasChildren()) {
     const tasks = task.subGraph.getTasks();
     if (tasks.length > 0) {
-      const determinate = tasks.filter((t) => t.progress !== undefined);
-      if (determinate.length === 0) return undefined;
-      const totalProgress = determinate.reduce((acc, t) => acc + t.progress!, 0);
-      return Math.round(totalProgress / determinate.length);
+      const totalProgress = tasks.reduce((acc, t) => acc + (t.progress ?? 0), 0);
+      return Math.round(totalProgress / tasks.length);
     }
   }
-  return task.progress;
+  return task.progress ?? 0;
 }
 
 export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
   const { data, isConnectable } = props;
   const [status, setStatus] = useState<TaskStatus>(data.task.status);
-  const [progress, setProgress] = useState<number | undefined>(calculateConsolidatedProgress(data.task));
+  const [progress, setProgress] = useState<number>(calculateConsolidatedProgress(data.task));
   const [subTasks, setSubTasks] = useState<ITask[]>([]);
   const [isExpanded, setIsExpanded] = useState(data.task instanceof ArrayTask);
   const [isExpandable, setIsExpandable] = useState(false);
@@ -201,7 +199,7 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
 }
 
 function SubTask({ subTask }: { subTask: ITask }) {
-  const [progress, setProgress] = useState<number | undefined>(subTask.progress);
+  const [progress, setProgress] = useState<number>(subTask.progress ?? 0);
   const [progressMessage, setProgressMessage] = useState<string>("");
   const [status, setStatus] = useState<TaskStatus>(subTask.status);
   const [progressDetails, setProgressDetails] = useState<Array<{ file: string; progress: number }>>(
@@ -225,7 +223,7 @@ function SubTask({ subTask }: { subTask: ITask }) {
     unsubscribes.push(
       subTask.subscribe("status", () => {
         setStatus(subTask.status);
-        setProgress(subTask.progress);
+        setProgress(subTask.progress ?? 0);
         if (subTask.status === TaskStatus.COMPLETED && subTask.runOutputData.text) {
           setProgressMessage(subTask.runOutputData.text as string);
         }
@@ -234,7 +232,7 @@ function SubTask({ subTask }: { subTask: ITask }) {
 
     unsubscribes.push(
       subTask.subscribe("progress", (progress, message, details) => {
-        setProgress(progress);
+        setProgress(progress ?? 0);
         setProgressMessage(details?.text || details?.file || message);
 
         // Track file-based progress details
