@@ -132,6 +132,6 @@ describe("LambdaTask", () => {
     if (Array.isArray(results)) {
       expect(results[0].data).toEqual({ output: "Hello, world!" });
     }
-    expect(progressCounter).toEqual(1);
+    expect(progressCounter).toEqual(2); // manual updateProgress(0.5) + terminal-100 tick
   });
 });

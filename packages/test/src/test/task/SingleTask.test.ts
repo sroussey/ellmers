@@ -125,7 +125,7 @@ describe("SingleTask", () => {
       it("should emit progress event during task execution", async () => {
         let progressValue = 0;
         task.on("progress", (progress) => {
-          progressValue = progress;
+          if (progress !== 100) progressValue = progress; // ignore terminal-100 tick
         });
 
         await task.run();
@@ -302,7 +302,7 @@ describe("SingleTask", () => {
 
         await task.run();
 
-        expect(events).toEqual(["start", "progress", "complete"]);
+        expect(events).toEqual(["start", "progress", "progress", "complete"]); // manual + terminal-100
       });
 
       it("should emit regenerate event and handle it correctly", async () => {
@@ -423,7 +423,7 @@ describe("SingleTask", () => {
         let receivedProgress = 0;
 
         task.on("progress", (progress: number) => {
-          receivedProgress = progress;
+          if (progress !== 100) receivedProgress = progress; // ignore terminal-100 tick
         });
 
         task.shouldEmitProgress = true;
@@ -464,7 +464,7 @@ describe("SingleTask", () => {
         task.shouldEmitProgress = true;
         await task.run();
 
-        expect(events).toEqual(["start", "progress", "complete"]);
+        expect(events).toEqual(["start", "progress", "progress", "complete"]); // manual + terminal-100
       });
 
       it("should emit events in the expected sequence during failed execution", async () => {
@@ -478,7 +478,7 @@ describe("SingleTask", () => {
         task.shouldThrowError = true;
         await task.run().catch(() => {});
 
-        expect(events).toEqual(["start", "progress", "error"]);
+        expect(events).toEqual(["start", "progress", "progress", "error"]); // manual + terminal-100
       });
 
       it("should emit events in the expected sequence during aborted execution", async () => {
@@ -499,7 +499,7 @@ describe("SingleTask", () => {
         task.abort();
         await runPromise.catch(() => {});
 
-        expect(events).toEqual(["start", "progress", "abort"]);
+        expect(events).toEqual(["start", "progress", "progress", "abort"]); // manual + terminal-100
       });
     });
 
