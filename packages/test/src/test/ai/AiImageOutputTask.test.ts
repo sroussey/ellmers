@@ -82,16 +82,39 @@ describe("AiImageOutputTask", () => {
     });
   });
 
-  describe("placeholder preview", () => {
-    it("returns a non-undefined ImageValue and never calls a provider", async () => {
+  describe("preview without partial or prior", () => {
+    it("returns undefined when there is nothing to preview, never calling a provider", async () => {
       const task = new TestImageTask({});
       task.runInputData = { prompt: "a sunset", model: "m" };
       const out = await task.executePreview(
         { prompt: "a sunset", model: "m" } as any,
         { own: ((x: any) => x) as any },
       );
-      expect(out?.image).toBeDefined();
-      expect((out!.image as ImageValue).width).toBeGreaterThan(0);
+      expect(out).toBeUndefined();
+    });
+
+    it("returns the latest partial when one is set", async () => {
+      const partial = fakeImageValue();
+      const task = new TestImageTask({});
+      task.runInputData = { prompt: "x", model: "m" };
+      (task as any).ingestPartial(partial);
+      const out = await task.executePreview(
+        { prompt: "x", model: "m" } as any,
+        { own: ((x: any) => x) as any },
+      );
+      expect(out?.image).toBe(partial);
+    });
+
+    it("returns the prior run's image when no partial but runOutputData has one", async () => {
+      const prior = fakeImageValue();
+      const task = new TestImageTask({});
+      task.runInputData = { prompt: "x", model: "m" };
+      task.runOutputData = { image: prior } as any;
+      const out = await task.executePreview(
+        { prompt: "x", model: "m" } as any,
+        { own: ((x: any) => x) as any },
+      );
+      expect(out?.image).toBe(prior);
     });
   });
 });

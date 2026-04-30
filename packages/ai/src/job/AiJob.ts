@@ -285,7 +285,6 @@ export class AiJob<
     }
 
     const model = input.taskInput.model;
-    let lastFinishData: Output | undefined;
 
     // Apply timeout via AbortSignal.timeout combined with the caller's signal
     const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
@@ -293,29 +292,18 @@ export class AiJob<
     const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
 
     try {
-      for await (const event of streamFn(
+      yield* streamFn(
         input.taskInput,
         model,
         combinedSignal,
         input.outputSchema,
         input.sessionId
-      )) {
-        if (event.type === "finish") {
-          lastFinishData = event.data;
-        }
-        yield event;
-      }
+      );
     } catch (err) {
       const logger = getLogger();
       logger.warn(
         `AiJob: Stream error for ${input.taskType} (${input.aiProvider}): ${err instanceof Error ? err.message : String(err)}`
       );
-
-      // Yield a finish event with whatever data we accumulated
-      if (lastFinishData === undefined) {
-        yield { type: "finish", data: {} as Output } as StreamEvent<Output>;
-      }
-
       throw classifyProviderError(err, input.taskType, input.aiProvider);
     }
   }

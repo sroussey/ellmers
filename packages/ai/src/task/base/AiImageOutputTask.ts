@@ -17,7 +17,8 @@
  *   prior partial is simply replaced and becomes garbage-collectable.
  * - Exposes the latest partial via `executePreview()` so downstream image
  *   tasks can refresh their preview chains live as the image refines.
- * - Renders a placeholder ImageValue when no partial is available (no API call).
+ * - Returns `undefined` (no output) when no partial and no prior run exist,
+ *   so the UI shows nothing rather than a synthetic placeholder.
  * - Treats the task as not cacheable when `input.seed` is undefined, since
  *   image generation without a seed is non-deterministic.
  */
@@ -29,7 +30,6 @@ import { StreamingAiTask } from "./StreamingAiTask";
 import type { AiTaskInput } from "./AiTask";
 import type { ModelConfig } from "../../model/ModelSchema";
 import { ProviderUnsupportedFeatureError } from "../../errors/ImageGenerationErrors";
-import { buildPlaceholderImageValue } from "./__placeholderPreviewRenderer";
 
 export interface AiImageOutput extends TaskOutput {
   image: ImageValue;
@@ -146,10 +146,8 @@ export class AiImageOutputTask<
    * Order of preference:
    *   1. Live partial currently in `_latestPartial`.
    *   2. Last completed run's output (`runOutputData.image`).
-   *   3. A placeholder ImageValue (cheap CPU image).
-   *
-   * Subclasses may override `renderPlaceholderPreview()` to produce a richer
-   * placeholder (e.g., showing the prompt text).
+   *   3. `undefined` — no output, so the UI shows nothing instead of a
+   *      synthetic placeholder.
    */
   override async executePreview(
     _input: Input,
@@ -162,15 +160,7 @@ export class AiImageOutputTask<
     if (prior !== undefined) {
       return { image: prior };
     }
-    return { image: await this.renderPlaceholderPreview() };
-  }
-
-  /**
-   * Builds a placeholder ImageValue for the graph editor. Default is a small
-   * dark-gray fill. Subclasses may override to render the prompt text, etc.
-   */
-  protected renderPlaceholderPreview(): Promise<ImageValue> {
-    return buildPlaceholderImageValue();
+    return undefined;
   }
 
   // --------------------------------------------------------------------
