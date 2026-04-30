@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -56,7 +56,7 @@ export class CountTokensTask extends AiTask<
   CountTokensTaskConfig
 > {
   public static override type = "CountTokensTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Count Tokens";
   public static override description =
     "Counts the number of tokens in a text string using the model's tokenizer";

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -60,7 +60,7 @@ export class ImageEmbeddingTask extends AiVisionTask<
   ImageEmbeddingTaskConfig
 > {
   public static override type = "ImageEmbeddingTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Image Embedding";
   public static override description = "Generates embeddings from images using vision models";
   public static override inputSchema(): DataPortSchema {

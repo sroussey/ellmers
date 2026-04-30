@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { compileSchema } from "@workglow/util/schema";
 import { ImageGenerateTask } from "@workglow/ai";
+import { compileSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 function validate(schema: unknown, value: unknown) {
   const compiled = compileSchema(schema as any);
@@ -16,7 +16,7 @@ function validate(schema: unknown, value: unknown) {
 describe("ImageGenerateTask schemas", () => {
   it("declares static type, category, cacheable", () => {
     expect(ImageGenerateTask.type).toBe("ImageGenerateTask");
-    expect(ImageGenerateTask.category).toBe("AI / Image");
+    expect(ImageGenerateTask.category).toBe("AI Vision");
     expect(ImageGenerateTask.cacheable).toBe(true);
   });
 

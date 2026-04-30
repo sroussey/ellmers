@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -150,7 +150,7 @@ export class FaceDetectorTask extends AiVisionTask<
   FaceDetectorTaskConfig
 > {
   public static override type = "FaceDetectorTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Face Detector";
   public static override description =
     "Detects faces in images. Locates faces and identifies facial keypoints like eyes, nose, and mouth.";

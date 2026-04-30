@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -95,7 +95,7 @@ export class ImageSegmentationTask extends AiVisionTask<
   ImageSegmentationTaskConfig
 > {
   public static override type = "ImageSegmentationTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Image Segmentation";
   public static override description =
     "Segments images into regions with labels using computer vision models";

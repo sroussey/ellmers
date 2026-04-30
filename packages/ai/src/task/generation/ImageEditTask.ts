@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
-import { TypeModel } from "../base/AiTaskSchemas";
-import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
+import { AiImageOutputTask } from "../base/AiImageOutputTask";
+import { TypeModel } from "../base/AiTaskSchemas";
 import { AiImageOptionsProperties, AiImageOutputSchema } from "./AiImageSchemas";
 
 const modelSchema = TypeModel("model:ImageEditTask");
@@ -53,12 +53,9 @@ export type ImageEditTaskInput = FromSchema<typeof ImageEditInputSchema>;
 export type ImageEditTaskOutput = AiImageOutput;
 export type ImageEditTaskConfig = TaskConfig<ImageEditTaskInput>;
 
-export class ImageEditTask extends AiImageOutputTask<
-  ImageEditTaskInput,
-  ImageEditTaskConfig
-> {
+export class ImageEditTask extends AiImageOutputTask<ImageEditTaskInput, ImageEditTaskConfig> {
   public static override type = "ImageEditTask";
-  public static override category = "AI / Image";
+  public static override category = "AI Vision";
   public static override title = "Edit Image";
   public static override description =
     "Edits an input image guided by a prompt. Optionally accepts a mask (inpaint) and/or additional reference images (composite).";
@@ -79,10 +76,8 @@ export class ImageEditTask extends AiImageOutputTask<
   }
 }
 
-export const imageEdit = (
-  input: ImageEditTaskInput,
-  config?: ImageEditTaskConfig,
-) => new ImageEditTask(config).run(input);
+export const imageEdit = (input: ImageEditTaskInput, config?: ImageEditTaskConfig) =>
+  new ImageEditTask(config).run(input);
 
 declare module "@workglow/task-graph" {
   interface Workflow {

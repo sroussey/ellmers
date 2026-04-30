@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
@@ -48,7 +48,7 @@ export class BackgroundRemovalTask extends AiVisionTask<
   BackgroundRemovalTaskConfig
 > {
   public static override type = "BackgroundRemovalTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Background Removal";
   public static override description =
     "Removes backgrounds from images, producing images with transparent backgrounds";

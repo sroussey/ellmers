@@ -7,8 +7,6 @@
 import { CreateWorkflow, getTaskConstructors, Workflow } from "@workglow/task-graph";
 
 import type { IExecuteContext, StreamEvent, TaskConfig } from "@workglow/task-graph";
-import { ChatMessageSchema } from "./ChatMessage";
-import type { ChatMessage } from "./ChatMessage";
 import { makeFingerprint, ServiceRegistry } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { AiJobInput } from "../job/AiJob";
@@ -16,6 +14,8 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
+import type { ChatMessage } from "./ChatMessage";
+import { ChatMessageSchema } from "./ChatMessage";
 import type { ToolDefinition } from "./ToolCallingUtils";
 
 // ========================================================================
@@ -274,7 +274,7 @@ export class ToolCallingTask extends StreamingAiTask<
   ToolCallingTaskConfig
 > {
   public static override type = "ToolCallingTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Tool Calling";
   public static override description =
     "Sends a prompt with tool definitions to a language model and returns text along with any tool calls the model requests";

@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
-import { TypeModel } from "../base/AiTaskSchemas";
-import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
+import { AiImageOutputTask } from "../base/AiImageOutputTask";
+import { TypeModel } from "../base/AiTaskSchemas";
 import { AiImageOptionsProperties, AiImageOutputSchema } from "./AiImageSchemas";
 
 const modelSchema = TypeModel("model:ImageGenerateTask");
@@ -41,7 +41,7 @@ export class ImageGenerateTask extends AiImageOutputTask<
   ImageGenerateTaskConfig
 > {
   public static override type = "ImageGenerateTask";
-  public static override category = "AI / Image";
+  public static override category = "AI Vision";
   public static override title = "Generate Image";
   public static override description =
     "Generates an image from a text prompt using configurable AI image-generation models.";
@@ -62,10 +62,8 @@ export class ImageGenerateTask extends AiImageOutputTask<
   }
 }
 
-export const imageGenerate = (
-  input: ImageGenerateTaskInput,
-  config?: ImageGenerateTaskConfig,
-) => new ImageGenerateTask(config).run(input);
+export const imageGenerate = (input: ImageGenerateTaskInput, config?: ImageGenerateTaskConfig) =>
+  new ImageGenerateTask(config).run(input);
 
 declare module "@workglow/task-graph" {
   interface Workflow {

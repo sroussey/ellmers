@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
@@ -54,7 +54,7 @@ export class TextSummaryTask extends StreamingAiTask<
   TextSummaryTaskConfig
 > {
   public static override type = "TextSummaryTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Text Summary";
   public static override description =
     "Summarizes text into a shorter form while preserving key information";

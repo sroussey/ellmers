@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
@@ -192,7 +192,7 @@ export class GestureRecognizerTask extends AiVisionTask<
   GestureRecognizerTaskConfig
 > {
   public static override type = "GestureRecognizerTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Gesture Recognizer";
   public static override description =
     "Recognizes hand gestures in images. Detects hand landmarks, identifies gestures (thumbs up, victory, etc.), and classifies handedness.";
