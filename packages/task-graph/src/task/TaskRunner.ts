@@ -599,7 +599,7 @@ export class TaskRunner<
     const accumulatedObjects = this.shouldAccumulate
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
-    let chunkCount = 0;
+    let streamingStarted = false;
     let finalOutput: Output | undefined;
 
     this.task.emit("stream_start");
@@ -614,30 +614,39 @@ export class TaskRunner<
     });
 
     for await (const event of stream) {
-      chunkCount++;
-
-      if (chunkCount === 1) {
-        this.task.status = TaskStatus.STREAMING;
-        this.task.emit("status", this.task.status);
-      }
-
       // For snapshot events, update runOutputData BEFORE emitting stream_chunk
-      // so listeners see the latest snapshot when they handle the event
+      // so listeners see the latest snapshot when they handle the event.
       if (event.type === "snapshot") {
         this.task.runOutputData = event.data as Output;
       }
 
       switch (event.type) {
+        case "phase": {
+          // Phase events are metadata: emit for observability, translate to a
+          // progress event with optional progress + message, do NOT mutate
+          // accumulators or runOutputData, do NOT flip status to STREAMING.
+          this.task.emit("stream_chunk", event as StreamEvent);
+          await this.handleProgress(event.progress, event.message);
+          break;
+        }
         case "text-delta": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           if (accumulated) {
             accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
           }
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "object-delta": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           if (accumulatedObjects) {
             const existing = accumulatedObjects.get(event.port);
             if (Array.isArray(event.objectDelta)) {
@@ -667,14 +676,15 @@ export class TaskRunner<
             [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
           } as Output;
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "snapshot": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "finish": {
