@@ -35,7 +35,10 @@ function calculateConsolidatedProgress(task: ITask): number {
 export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
   const { data, isConnectable } = props;
   const [status, setStatus] = useState<TaskStatus>(data.task.status);
-  const [progress, setProgress] = useState<number>(calculateConsolidatedProgress(data.task));
+  const [progress, setProgress] = useState<number | undefined>(
+    calculateConsolidatedProgress(data.task)
+  );
+  const [progressMessage, setProgressMessage] = useState<string | undefined>(undefined);
   const [subTasks, setSubTasks] = useState<ITask[]>([]);
   const [isExpanded, setIsExpanded] = useState(data.task instanceof ArrayTask);
   const [isExpandable, setIsExpandable] = useState(false);
@@ -48,6 +51,7 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
 
     setStatus(task.status);
     setProgress(calculateConsolidatedProgress(task));
+    setProgressMessage(undefined);
     if (task.hasChildren()) {
       setSubTasks(task.subGraph.getTasks());
     }
@@ -68,8 +72,15 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
     );
 
     unsubscribes.push(
-      task.subscribe("progress", () => {
-        updateConsolidatedProgress();
+      task.subscribe("progress", (newProgress, newMessage) => {
+        if (task.hasChildren()) {
+          // For tasks with subgraphs, keep using consolidated progress (always numeric).
+          setProgress(calculateConsolidatedProgress(task));
+        } else {
+          // For leaf tasks, use the reported progress directly (may be undefined = indeterminate).
+          setProgress(newProgress);
+        }
+        setProgressMessage(newMessage);
       })
     );
 
@@ -142,7 +153,7 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
           status={status}
         />
         <TaskDataButtons task={data.task} />
-        <ProgressBar progress={progress} status={status} showText={true} />
+        <ProgressBar progress={progress} status={status} showText={true} message={progressMessage} />
 
         {(isStreaming || (status === TaskStatus.STREAMING && streamingText)) && (
           <div className="mt-2 p-2 bg-[rgba(28,35,50,0.6)] rounded-sm text-xs font-mono max-h-24 overflow-y-auto">
