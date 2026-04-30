@@ -5,3 +5,4 @@
  */
 
 import "./scripts/configure-hft-test-cache";
+import "./scripts/lib/preload-credentials";

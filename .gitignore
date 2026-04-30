@@ -14,6 +14,11 @@ packages/cli-sec/
 .cache/
 .turbo
 .env.*
+# Belt-and-suspenders: never commit a plaintext passphrase file even if a
+# developer drops one here. The .secrets/credentials/*.json ciphertext IS
+# committed; the passphrase lives in the OS keychain or CI secret.
+.secrets/passphrase
+.secrets/passphrase.*
 sec-data/
 sec-db/
 .npmrc
