@@ -378,9 +378,10 @@ export class Task<
   status: TaskStatus = TaskStatus.PENDING;
 
   /**
-   * Progress of the task (0-100)
+   * Current progress, 0..100 for measured progress, `undefined` for
+   * indeterminate. Initialized to 0 (not started).
    */
-  progress: number = 0;
+  progress: number | undefined = 0;
 
   /**
    * When the task was created
