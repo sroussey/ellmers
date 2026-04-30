@@ -1429,7 +1429,7 @@ export class TaskGraphRunner {
   /**
    * Handles progress updates for the task graph by averaging `progress` across tasks whose class
    * declares its own `execute` ({@link taskPrototypeHasOwnExecute}). Other nodes are ignored.
-   * @param progress Progress value (0-100)
+   * @param progress Progress value (0-100), or `undefined` for indeterminate
    * @param message Optional message
    * @param args Additional arguments
    */
