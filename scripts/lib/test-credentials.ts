@@ -6,10 +6,6 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ChainedCredentialStore } from "../../packages/util/src/credentials/ChainedCredentialStore";
-import { EnvCredentialStore } from "../../packages/util/src/credentials/EnvCredentialStore";
-import { setGlobalCredentialStore } from "../../packages/util/src/credentials/CredentialStoreRegistry";
-import type { ICredentialStore } from "../../packages/util/src/credentials/ICredentialStore";
 import { FsFolderJsonKvStorage } from "../../packages/storage/src/kv/FsFolderJsonKvStorage";
 import { LazyEncryptedCredentialStore } from "../../packages/storage/src/credentials/LazyEncryptedCredentialStore";
 
@@ -28,54 +24,66 @@ export const CREDENTIAL_TO_ENV: Readonly<Record<string, string>> = {
 };
 
 export interface BuiltStore {
-  readonly chained: ICredentialStore;
   readonly encrypted: LazyEncryptedCredentialStore;
   readonly unlocked: boolean;
 }
 
 /**
- * Build the chained credential store backed by the on-disk encrypted KV.
- * If `passphrase` is omitted, the encrypted layer stays locked and reads
- * fall through to the env layer.
+ * Build the on-disk encrypted credential store. If `passphrase` is omitted,
+ * the store stays locked and all reads return `undefined`.
  */
 export function buildCredentialStore(passphrase: string | undefined): BuiltStore {
   const kv = new FsFolderJsonKvStorage(SECRETS_DIR);
   const encrypted = new LazyEncryptedCredentialStore(kv);
   if (passphrase) encrypted.unlock(passphrase);
-
-  const env = new EnvCredentialStore({ ...CREDENTIAL_TO_ENV });
-  const chained = new ChainedCredentialStore([encrypted, env]);
-  return { chained, encrypted, unlocked: encrypted.isUnlocked };
+  return { encrypted, unlocked: encrypted.isUnlocked };
 }
 
 /**
- * Install the chained store as the global credential store and (best-effort)
- * hydrate `process.env` for credentials we have a known env-var mapping for.
+ * Hydrate `process.env` from the encrypted store for the duration of the
+ * test process. Only keys not already present in `process.env` are written,
+ * so an explicit shell export always wins.
  *
- * Hydration only happens for keys NOT already present in `process.env`, so an
- * explicit shell export still wins. Returns the list of keys hydrated.
+ * Decryption errors (wrong passphrase / stale ciphertext) leave `process.env`
+ * untouched and produce one warning, so unit tests stay green and integration
+ * tests skip via their existing `!!process.env.*_API_KEY` guards.
+ *
+ * The global credential store is intentionally NOT replaced — provider
+ * clients use the env fallback, and overriding the registry default would
+ * break unit tests that assert the default is `InMemoryCredentialStore`.
  */
 export async function installAndHydrate(passphrase: string | undefined): Promise<{
   readonly unlocked: boolean;
   readonly hydrated: readonly string[];
 }> {
-  // No passphrase → leave the global store at its default (InMemoryCredentialStore).
-  // Integration tests skip via their existing `process.env.*_API_KEY` checks.
   if (!passphrase) return { unlocked: false, hydrated: [] };
 
-  const { chained, encrypted } = buildCredentialStore(passphrase);
-  setGlobalCredentialStore(chained);
-
+  const { encrypted } = buildCredentialStore(passphrase);
   if (!encrypted.isUnlocked) return { unlocked: false, hydrated: [] };
 
-  const hydrated: string[] = [];
+  // Decrypt into a temporary map first; only if every existing ciphertext
+  // decrypts cleanly do we write to `process.env`.
+  const pending: Array<readonly [string, string]> = [];
   for (const [credKey, envVar] of Object.entries(CREDENTIAL_TO_ENV)) {
     if (process.env[envVar]) continue;
-    const value = await encrypted.get(credKey);
-    if (value) {
-      process.env[envVar] = value;
-      hydrated.push(envVar);
+    let value: string | undefined;
+    try {
+      value = await encrypted.get(credKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[test-credentials] Failed to decrypt "${credKey}" — wrong passphrase or stale ciphertext. Fix the passphrase and run \`bun scripts/credentials.ts rotate\`, or re-import keys with \`import-env\`. Underlying error: ${msg}`
+      );
+      return { unlocked: false, hydrated: [] };
     }
+    if (value) pending.push([envVar, value] as const);
+  }
+
+  const hydrated: string[] = [];
+  for (const [envVar, value] of pending) {
+    process.env[envVar] = value;
+    hydrated.push(envVar);
   }
   return { unlocked: true, hydrated };
 }

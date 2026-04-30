@@ -18,11 +18,16 @@ land in shell history or `.env` files.
        export WORKGLOW_SECRETS_PASSPHRASE="$(secret-tool lookup service workglow-secrets)"             # Linux
 
 2. Add credentials. You can import keys you already have exported in the
-   current shell, or set them one-by-one (interactive prompt hides input):
+   current shell, or set them one-by-one. The interactive prompt disables
+   terminal echo so the value isn't visible as you type; for scripted use,
+   pipe the value via stdin (the CLI rejects positional value arguments to
+   keep secrets out of shell history):
 
        bun scripts/credentials.ts import-env
-       # or
+       # interactive (TTY, echo off):
        bun scripts/credentials.ts set anthropic-api-key
+       # or piped:
+       printf '%s\n' "$ANTHROPIC_API_KEY" | bun scripts/credentials.ts set anthropic-api-key
 
 3. Run tests as usual. `vitest.setup.ts` and `bunfig.toml`'s test preload will
    decrypt the store and hydrate `process.env.ANTHROPIC_API_KEY` (etc.) for the
@@ -60,8 +65,22 @@ To add another, edit `CREDENTIAL_TO_ENV` in `scripts/lib/test-credentials.ts`.
 
 ## Rotating the passphrase
 
-    bun scripts/credentials.ts rotate <new-passphrase>
+    WORKGLOW_NEW_SECRETS_PASSPHRASE="<new>" bun scripts/credentials.ts rotate
 
-This decrypts every credential under the old passphrase, re-encrypts under the
-new one, and writes the result back to `.secrets/credentials/`. Update the
-keychain/CI secret to the new value, commit the changed ciphertext files.
+This decrypts every credential under `$WORKGLOW_SECRETS_PASSPHRASE`, re-encrypts
+under `$WORKGLOW_NEW_SECRETS_PASSPHRASE`, and writes the result back to
+`.secrets/credentials/`. Update the keychain/CI secret to the new value and
+commit the changed ciphertext files. The new passphrase is read from an env
+var (not argv) so it doesn't end up in shell history.
+
+## Decrypt errors during tests
+
+If the test preload prints `Failed to decrypt …`, the passphrase you exported
+doesn't match the ciphertext on disk. Either:
+
+- Fix the env var (e.g. re-export from your keychain), or
+- Wipe `.secrets/credentials/*.json` and re-add keys via `import-env` / `set`.
+
+Tests will continue to run with the encrypted layer marked locked, so unit
+tests are unaffected; only integration tests that need provider keys will
+skip.

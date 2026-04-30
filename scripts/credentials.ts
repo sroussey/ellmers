@@ -6,14 +6,15 @@
  * CLI for managing the encrypted credential store at .secrets/credentials/.
  *
  * Usage:
- *   bun scripts/credentials.ts set <key> [value]
+ *   bun scripts/credentials.ts set <key>            # interactive (TTY) or via stdin pipe
  *   bun scripts/credentials.ts get <key>
  *   bun scripts/credentials.ts list
  *   bun scripts/credentials.ts delete <key>
  *   bun scripts/credentials.ts import-env
- *   bun scripts/credentials.ts rotate <new-passphrase>
+ *   bun scripts/credentials.ts rotate
  *
- * The passphrase is read from $WORKGLOW_SECRETS_PASSPHRASE. Encrypted
+ * The passphrase is read from $WORKGLOW_SECRETS_PASSPHRASE; the new passphrase
+ * for `rotate` is read from $WORKGLOW_NEW_SECRETS_PASSPHRASE. Encrypted
  * ciphertext is stored in .secrets/credentials/ as JSON files (one per key)
  * and is safe to commit. Only the passphrase is sensitive.
  *
@@ -26,47 +27,115 @@
  */
 
 import { mkdirSync, readdirSync, unlinkSync } from "node:fs";
-import { buildCredentialStore, CREDENTIAL_TO_ENV, PASSPHRASE_ENV, SECRETS_DIR } from "./lib/test-credentials";
+import { join } from "node:path";
+import {
+  buildCredentialStore,
+  CREDENTIAL_TO_ENV,
+  PASSPHRASE_ENV,
+  SECRETS_DIR,
+} from "./lib/test-credentials";
+
+const NEW_PASSPHRASE_ENV = "WORKGLOW_NEW_SECRETS_PASSPHRASE";
 
 function fail(msg: string): never {
   console.error(`error: ${msg}`);
   process.exit(1);
 }
 
-function requirePassphrase(): string {
-  const p = process.env[PASSPHRASE_ENV];
+function requirePassphrase(envVar: string = PASSPHRASE_ENV): string {
+  const p = process.env[envVar];
   if (!p) {
     fail(
-      `${PASSPHRASE_ENV} is not set. Pick a strong passphrase, store it in your OS keychain or CI secret, then export it before running this command.`
+      `${envVar} is not set. Pick a strong passphrase, store it in your OS keychain or CI secret, then export it before running this command.`
     );
   }
   return p;
 }
 
+/**
+ * Read a secret from stdin without echoing it back to the terminal. If stdin
+ * is a TTY, raw mode is enabled and characters are absorbed silently until
+ * Enter (Ctrl-C aborts). If stdin is piped (non-TTY), reads the first line
+ * and returns it — useful for `printf '%s\n' "$secret" | credentials.ts set ...`
+ * so callers can pipe from password managers without leaking via argv or echo.
+ */
 async function readSecretInteractive(prompt: string): Promise<string> {
-  process.stdout.write(prompt);
   const stdin = process.stdin;
   stdin.setEncoding("utf8");
-  return new Promise((resolveValue) => {
+  const isTty = process.stdin.isTTY === true;
+
+  return new Promise<string>((resolveValue, rejectValue) => {
     let buf = "";
-    const onData = (chunk: string) => {
-      buf += chunk;
-      const nl = buf.indexOf("\n");
-      if (nl >= 0) {
-        stdin.off("data", onData);
-        stdin.pause();
-        resolveValue(buf.slice(0, nl).trimEnd());
+    let restored = false;
+
+    const restore = (): void => {
+      if (restored) return;
+      restored = true;
+      stdin.off("data", onData);
+      stdin.pause();
+      if (isTty) {
+        try {
+          stdin.setRawMode(false);
+        } catch {
+          // Ignore: terminal already torn down.
+        }
       }
     };
+
+    const finish = (value: string): void => {
+      restore();
+      if (isTty) process.stdout.write("\n");
+      resolveValue(value);
+    };
+
+    const onData = (chunk: string): void => {
+      if (!isTty) {
+        // Piped input: read the first line, leave the rest for the caller.
+        buf += chunk;
+        const nl = buf.indexOf("\n");
+        if (nl >= 0) finish(buf.slice(0, nl).trimEnd());
+        return;
+      }
+      for (const ch of chunk) {
+        const code = ch.charCodeAt(0);
+        if (ch === "\r" || ch === "\n") {
+          finish(buf);
+          return;
+        }
+        if (code === 3) {
+          // Ctrl-C
+          restore();
+          process.stdout.write("\n");
+          rejectValue(new Error("aborted"));
+          return;
+        }
+        if (code === 127 || ch === "\b") {
+          buf = buf.slice(0, -1);
+          continue;
+        }
+        if (code < 32) continue;
+        buf += ch;
+      }
+    };
+
+    if (isTty) {
+      process.stdout.write(prompt);
+      try {
+        stdin.setRawMode(true);
+      } catch (err) {
+        rejectValue(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+    }
     stdin.resume();
     stdin.on("data", onData);
   });
 }
 
-async function cmdSet(key: string, valueArg: string | undefined): Promise<void> {
+async function cmdSet(key: string): Promise<void> {
   const passphrase = requirePassphrase();
   mkdirSync(SECRETS_DIR, { recursive: true });
-  const value = valueArg ?? (await readSecretInteractive(`Enter value for "${key}": `));
+  const value = await readSecretInteractive(`Enter value for "${key}" (input hidden): `);
   if (!value) fail("empty value");
   const { encrypted } = buildCredentialStore(passphrase);
   await encrypted.put(key, value, { provider: providerForKey(key) });
@@ -122,9 +191,9 @@ async function cmdImportEnv(): Promise<void> {
   for (const line of imported) console.log(`  ${line}`);
 }
 
-async function cmdRotate(newPassphrase: string): Promise<void> {
+async function cmdRotate(): Promise<void> {
   const oldPassphrase = requirePassphrase();
-  if (!newPassphrase) fail("usage: rotate <new-passphrase>");
+  const newPassphrase = requirePassphrase(NEW_PASSPHRASE_ENV);
   if (newPassphrase === oldPassphrase) fail("new passphrase must differ from old");
 
   const { encrypted: oldStore } = buildCredentialStore(oldPassphrase);
@@ -137,8 +206,10 @@ async function cmdRotate(newPassphrase: string): Promise<void> {
     keys.map(async (k) => [k, await oldStore.get(k)] as const)
   );
 
-  // Wipe ciphertext files, then re-encrypt under the new passphrase.
-  for (const file of readdirSync(SECRETS_DIR)) unlinkSync(`${SECRETS_DIR}/${file}`);
+  // Wipe only ciphertext (.json) files; preserve .gitkeep and any other markers.
+  for (const file of readdirSync(SECRETS_DIR)) {
+    if (file.endsWith(".json")) unlinkSync(join(SECRETS_DIR, file));
+  }
 
   const { encrypted: newStore } = buildCredentialStore(newPassphrase);
   for (const [k, v] of decrypted) {
@@ -161,12 +232,13 @@ function usage(): never {
   console.log(
     [
       "Usage:",
-      "  bun scripts/credentials.ts set <key> [value]",
+      "  bun scripts/credentials.ts set <key>           # interactive (echo off) or stdin pipe",
       "  bun scripts/credentials.ts get <key>",
       "  bun scripts/credentials.ts list",
       "  bun scripts/credentials.ts delete <key>",
       "  bun scripts/credentials.ts import-env",
-      "  bun scripts/credentials.ts rotate <new-passphrase>",
+      "  bun scripts/credentials.ts rotate              # reads new passphrase from $" +
+        NEW_PASSPHRASE_ENV,
       "",
       `Requires ${PASSPHRASE_ENV} to be set. See .secrets/README.md.`,
     ].join("\n")
@@ -179,7 +251,12 @@ async function main(): Promise<void> {
   switch (cmd) {
     case "set":
       if (!args[0]) usage();
-      await cmdSet(args[0], args[1]);
+      if (args[1] !== undefined) {
+        fail(
+          'positional value is not accepted (would leak via shell history). Type the value when prompted, or pipe via stdin: `printf "%s\\n" "$secret" | bun scripts/credentials.ts set <key>`.'
+        );
+      }
+      await cmdSet(args[0]);
       break;
     case "get":
       if (!args[0]) usage();
@@ -196,8 +273,7 @@ async function main(): Promise<void> {
       await cmdImportEnv();
       break;
     case "rotate":
-      if (!args[0]) usage();
-      await cmdRotate(args[0]);
+      await cmdRotate();
       break;
     default:
       usage();
