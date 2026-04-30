@@ -15,7 +15,7 @@ import { DataflowIdType } from "./Dataflow";
  */
 
 export type TaskGraphStatusListeners = {
-  graph_progress: (progress: number, message?: string, ...args: any[]) => void;
+  graph_progress: (progress: number | undefined, message?: string, ...args: any[]) => void;
   start: () => void;
   complete: () => void;
   error: (error: Error) => void;

@@ -56,7 +56,7 @@ export interface ITaskGraph {
   ): () => void;
   subscribeToTaskStatus(callback: (taskId: TaskIdType, status: TaskStatus) => void): () => void;
   subscribeToTaskProgress(
-    callback: (taskId: TaskIdType, progress: number, message?: string, ...args: any[]) => void
+    callback: (taskId: TaskIdType, progress: number | undefined, message?: string, ...args: any[]) => void
   ): () => void;
   subscribeToDataflowStatus(
     callback: (dataflowId: DataflowIdType, status: TaskStatus) => void

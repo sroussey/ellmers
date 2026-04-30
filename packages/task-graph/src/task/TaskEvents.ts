@@ -35,7 +35,7 @@ export type TaskEventListeners = {
   disabled: () => void;
 
   /** Fired when a task reports progress */
-  progress: (progress: number, message?: string, ...args: any[]) => void;
+  progress: (progress: number | undefined, message?: string, ...args: any[]) => void;
 
   /**
    * Iterator tasks (MapTask, ReduceTask, etc.): a per-iteration subgraph run is starting.
@@ -55,7 +55,7 @@ export type TaskEventListeners = {
   iteration_progress: (
     index: number,
     iterationCount: number,
-    progress: number,
+    progress: number | undefined,
     message?: string
   ) => void;
 

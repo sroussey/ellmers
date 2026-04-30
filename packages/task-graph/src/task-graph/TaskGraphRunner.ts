@@ -906,7 +906,7 @@ export class TaskGraphRunner {
       // Pass `false` when no cache so TaskRunner.handleStart explicitly clears
       // its own cached reference (undefined would leave the old value intact).
       outputCache: this.outputCache ?? false,
-      updateProgress: async (task: ITask, progress: number, message?: string, ...args: any[]) =>
+      updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
         await this.handleProgress(task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
@@ -995,7 +995,7 @@ export class TaskGraphRunner {
       const results = await task.runner.run(input, {
         outputCache: this.outputCache ?? false,
         shouldAccumulate,
-        updateProgress: async (task: ITask, progress: number, message?: string, ...args: any[]) =>
+        updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
           await this.handleProgress(task, progress, message, ...args),
         registry: this.registry,
         resourceScope: this.resourceScope,
@@ -1435,14 +1435,19 @@ export class TaskGraphRunner {
    */
   protected async handleProgress(
     task: ITask,
-    progress: number,
+    progress: number | undefined,
     message?: string,
     ...args: any[]
   ): Promise<void> {
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
-      const sum = contributors.reduce((acc, t) => acc + t.progress, 0);
-      progress = Math.round(sum / contributors.length);
+      const determinate = contributors.filter((t) => t.progress !== undefined);
+      if (determinate.length === 0) {
+        progress = undefined;
+      } else {
+        const sum = determinate.reduce((acc, t) => acc + t.progress!, 0);
+        progress = Math.round(sum / determinate.length);
+      }
     } else if (contributors.length === 1) {
       const [only] = contributors;
       progress = only.progress;

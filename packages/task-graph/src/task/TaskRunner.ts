@@ -823,7 +823,7 @@ export class TaskRunner<
   }
   private updateProgress = async (
     _task: ITask,
-    _progress: number,
+    _progress: number | undefined,
     _message?: string,
     ..._args: any[]
   ) => {};
@@ -968,11 +968,11 @@ export class TaskRunner<
 
   /**
    * Handles task progress update
-   * @param progress Progress value (0-100)
+   * @param progress Progress value (0-100), or `undefined` for indeterminate
    * @param args Additional arguments
    */
   protected async handleProgress(
-    progress: number,
+    progress: number | undefined,
     message?: string,
     ...args: any[]
   ): Promise<void> {

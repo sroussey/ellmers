@@ -75,7 +75,7 @@ export class DownloadModelTask extends AiTask<
    * @param details - Additional details about the progress
    */
   processProgress(
-    progress: number,
+    progress: number | undefined,
     message: string = "",
     details?: {
       file?: string;

@@ -405,7 +405,8 @@ export class WhileTask<
      * (condition can return false before hitting `effectiveMax`), mirroring the
      * boundary emit below.
      */
-    const onInnerGraphProgress = (innerProgress: number, innerMessage?: string): void => {
+    const onInnerGraphProgress = (innerProgress: number | undefined, innerMessage?: string): void => {
+      if (innerProgress === undefined) return;
       const blended = Math.min(
         Math.round(((this._currentIteration + innerProgress / 100) / effectiveMax) * 100),
         99
@@ -532,7 +533,8 @@ export class WhileTask<
       : this.maxIterations;
 
     // Blend inner subgraph progress with outer iteration count; see execute() above.
-    const onInnerGraphProgress = (innerProgress: number, innerMessage?: string): void => {
+    const onInnerGraphProgress = (innerProgress: number | undefined, innerMessage?: string): void => {
+      if (innerProgress === undefined) return;
       const blended = Math.min(
         Math.round(((this._currentIteration + innerProgress / 100) / effectiveMax) * 100),
         99
