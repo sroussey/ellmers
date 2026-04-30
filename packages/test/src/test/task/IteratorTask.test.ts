@@ -1197,8 +1197,12 @@ describe("IteratorTask", () => {
 
       const mapTask = workflow.graph.getTasks()[0] as MapTask;
 
-      const events: Array<{ progress: number; message?: string; slowDoneAtEmit: number }> = [];
-      mapTask.events.on("progress", (progress: number, message?: string) => {
+      const events: Array<{
+        progress: number | undefined;
+        message?: string;
+        slowDoneAtEmit: number;
+      }> = [];
+      mapTask.events.on("progress", (progress: number | undefined, message?: string) => {
         events.push({ progress, message, slowDoneAtEmit: slowCompletedCount });
       });
 
@@ -1276,8 +1280,8 @@ describe("IteratorTask", () => {
         .endWhile();
 
       const whileTask = workflow.graph.getTasks()[0] as WhileTask;
-      const events: Array<{ progress: number; message?: string }> = [];
-      whileTask.events.on("progress", (progress: number, message?: string) => {
+      const events: Array<{ progress: number | undefined; message?: string }> = [];
+      whileTask.events.on("progress", (progress: number | undefined, message?: string) => {
         events.push({ progress, message });
       });
 
@@ -1297,7 +1301,10 @@ describe("IteratorTask", () => {
       // Progress should be non-decreasing across the observed emits (modulo rounding of
       // the blended value, which is monotonic by construction).
       for (let i = 1; i < events.length; i++) {
-        expect(events[i].progress).toBeGreaterThanOrEqual(events[i - 1].progress);
+        if (events[i].progress === undefined || events[i - 1].progress === undefined) {
+          throw new Error("Expected progress values to be defined");
+        }
+        expect(events[i].progress).toBeGreaterThanOrEqual(events[i - 1].progress!);
       }
 
       // No emit should exceed 99 until the runner itself marks the task complete.

@@ -21,12 +21,14 @@ export type TaskNodeData = {
 /**
  * Calculate consolidated progress from subtasks if available, otherwise use task's own progress
  */
-function calculateConsolidatedProgress(task: ITask): number {
+function calculateConsolidatedProgress(task: ITask): number | undefined {
   if (task.hasChildren()) {
     const tasks = task.subGraph.getTasks();
     if (tasks.length > 0) {
-      const totalProgress = tasks.reduce((acc, t) => acc + t.progress, 0);
-      return Math.round(totalProgress / tasks.length);
+      const determinate = tasks.filter((t) => t.progress !== undefined);
+      if (determinate.length === 0) return undefined;
+      const totalProgress = determinate.reduce((acc, t) => acc + t.progress!, 0);
+      return Math.round(totalProgress / determinate.length);
     }
   }
   return task.progress;
@@ -35,7 +37,7 @@ function calculateConsolidatedProgress(task: ITask): number {
 export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
   const { data, isConnectable } = props;
   const [status, setStatus] = useState<TaskStatus>(data.task.status);
-  const [progress, setProgress] = useState<number>(calculateConsolidatedProgress(data.task));
+  const [progress, setProgress] = useState<number | undefined>(calculateConsolidatedProgress(data.task));
   const [subTasks, setSubTasks] = useState<ITask[]>([]);
   const [isExpanded, setIsExpanded] = useState(data.task instanceof ArrayTask);
   const [isExpandable, setIsExpandable] = useState(false);
@@ -199,7 +201,7 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
 }
 
 function SubTask({ subTask }: { subTask: ITask }) {
-  const [progress, setProgress] = useState<number>(subTask.progress);
+  const [progress, setProgress] = useState<number | undefined>(subTask.progress);
   const [progressMessage, setProgressMessage] = useState<string>("");
   const [status, setStatus] = useState<TaskStatus>(subTask.status);
   const [progressDetails, setProgressDetails] = useState<Array<{ file: string; progress: number }>>(

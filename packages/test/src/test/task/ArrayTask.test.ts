@@ -588,7 +588,7 @@ describe("ArrayTask", () => {
       expect(task.status).toBe(TaskStatus.PROCESSING);
     });
 
-    task.on("progress", (progress: number) => {
+    task.on("progress", (progress: number | undefined) => {
       events.progress++;
       expect(progress).toBeGreaterThanOrEqual(0);
       expect(progress).toBeLessThanOrEqual(1);

@@ -599,7 +599,7 @@ export class TaskRunner<
     const accumulatedObjects = this.shouldAccumulate
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
-    let chunkCount = 0;
+    let streamingStarted = false;
     let finalOutput: Output | undefined;
 
     this.task.emit("stream_start");
@@ -614,30 +614,39 @@ export class TaskRunner<
     });
 
     for await (const event of stream) {
-      chunkCount++;
-
-      if (chunkCount === 1) {
-        this.task.status = TaskStatus.STREAMING;
-        this.task.emit("status", this.task.status);
-      }
-
       // For snapshot events, update runOutputData BEFORE emitting stream_chunk
-      // so listeners see the latest snapshot when they handle the event
+      // so listeners see the latest snapshot when they handle the event.
       if (event.type === "snapshot") {
         this.task.runOutputData = event.data as Output;
       }
 
       switch (event.type) {
+        case "phase": {
+          // Phase events are metadata: emit for observability, translate to a
+          // progress event with optional progress + message, do NOT mutate
+          // accumulators or runOutputData, do NOT flip status to STREAMING.
+          this.task.emit("stream_chunk", event as StreamEvent);
+          await this.handleProgress(event.progress, event.message);
+          break;
+        }
         case "text-delta": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           if (accumulated) {
             accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
           }
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "object-delta": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           if (accumulatedObjects) {
             const existing = accumulatedObjects.get(event.port);
             if (Array.isArray(event.objectDelta)) {
@@ -667,14 +676,15 @@ export class TaskRunner<
             [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
           } as Output;
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "snapshot": {
+          if (!streamingStarted) {
+            streamingStarted = true;
+            this.task.status = TaskStatus.STREAMING;
+            this.task.emit("status", this.task.status);
+          }
           this.task.emit("stream_chunk", event as StreamEvent);
-          const progress = Math.min(99, Math.round(100 * (1 - Math.exp(-0.05 * chunkCount))));
-          await this.handleProgress(progress);
           break;
         }
         case "finish": {
@@ -710,7 +720,24 @@ export class TaskRunner<
             finalOutput = merged as unknown as Output;
             this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
           } else {
-            // No accumulation: emit the raw finish event and use it directly
+            // No accumulation. For replace-mode streams the provider's finish
+            // event carries `data: {}` by convention — the snapshots already
+            // delivered the value, so the finish payload is intentionally
+            // empty. Fall back to `runOutputData` (set on every snapshot above)
+            // so we don't clobber the last snapshot with an empty object. This
+            // mirrors the same fallback in the accumulation branch.
+            const finishData = (event.data ?? {}) as Record<string, unknown>;
+            if (streamMode === "replace" && Object.keys(finishData).length === 0) {
+              const lastSnapshot = this.task.runOutputData;
+              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
+                finalOutput = lastSnapshot as Output;
+                this.task.emit("stream_chunk", {
+                  type: "finish",
+                  data: lastSnapshot,
+                } as StreamEvent);
+                break;
+              }
+            }
             finalOutput = event.data as Output;
             this.task.emit("stream_chunk", event as StreamEvent);
           }
@@ -823,7 +850,7 @@ export class TaskRunner<
   }
   private updateProgress = async (
     _task: ITask,
-    _progress: number,
+    _progress: number | undefined,
     _message?: string,
     ..._args: any[]
   ) => {};
@@ -849,7 +876,7 @@ export class TaskRunner<
     if (this.task.status === TaskStatus.ABORTING) return;
     this.clearTimeoutTimer();
     this.task.status = TaskStatus.ABORTING;
-    this.task.progress = 100;
+    await this.handleProgress(100);
     // Use the pending timeout error if the abort was triggered by a timeout
     this.task.error = this.pendingTimeoutError ?? new TaskAbortedError();
     this.pendingTimeoutError = undefined;
@@ -889,9 +916,9 @@ export class TaskRunner<
     this.pendingTimeoutError = undefined;
 
     this.task.completedAt = new Date();
-    this.task.progress = 100;
     this.task.status = TaskStatus.COMPLETED;
     this.abortController = undefined;
+    await this.handleProgress(100);
 
     if (this.telemetrySpan) {
       this.telemetrySpan.setStatus(SpanStatusCode.OK);
@@ -910,7 +937,7 @@ export class TaskRunner<
   protected async handleDisable(): Promise<void> {
     if (this.task.status === TaskStatus.DISABLED) return;
     this.task.status = TaskStatus.DISABLED;
-    this.task.progress = 100;
+    await this.handleProgress(100);
     this.task.completedAt = new Date();
     this.abortController = undefined;
     this.task.emit("disabled");
@@ -935,8 +962,6 @@ export class TaskRunner<
     }
 
     this.task.completedAt = new Date();
-    this.task.progress = 100;
-    this.task.status = TaskStatus.FAILED;
     if (err instanceof TaskError) {
       this.task.error = err;
     } else {
@@ -949,7 +974,9 @@ export class TaskRunner<
       this.task.error.taskType ??= this.task.type;
       this.task.error.taskId ??= this.task.id;
     }
+    this.task.status = TaskStatus.FAILED;
     this.abortController = undefined;
+    await this.handleProgress(100);
 
     if (this.telemetrySpan) {
       this.telemetrySpan.setStatus(SpanStatusCode.ERROR, this.task.error.message);
@@ -968,11 +995,11 @@ export class TaskRunner<
 
   /**
    * Handles task progress update
-   * @param progress Progress value (0-100)
+   * @param progress Progress value (0-100), or `undefined` for indeterminate
    * @param args Additional arguments
    */
   protected async handleProgress(
-    progress: number,
+    progress: number | undefined,
     message?: string,
     ...args: any[]
   ): Promise<void> {

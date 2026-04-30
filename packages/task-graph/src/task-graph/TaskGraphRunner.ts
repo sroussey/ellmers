@@ -906,7 +906,7 @@ export class TaskGraphRunner {
       // Pass `false` when no cache so TaskRunner.handleStart explicitly clears
       // its own cached reference (undefined would leave the old value intact).
       outputCache: this.outputCache ?? false,
-      updateProgress: async (task: ITask, progress: number, message?: string, ...args: any[]) =>
+      updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
         await this.handleProgress(task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
@@ -995,7 +995,7 @@ export class TaskGraphRunner {
       const results = await task.runner.run(input, {
         outputCache: this.outputCache ?? false,
         shouldAccumulate,
-        updateProgress: async (task: ITask, progress: number, message?: string, ...args: any[]) =>
+        updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
           await this.handleProgress(task, progress, message, ...args),
         registry: this.registry,
         resourceScope: this.resourceScope,
@@ -1429,20 +1429,25 @@ export class TaskGraphRunner {
   /**
    * Handles progress updates for the task graph by averaging `progress` across tasks whose class
    * declares its own `execute` ({@link taskPrototypeHasOwnExecute}). Other nodes are ignored.
-   * @param progress Progress value (0-100)
+   * @param progress Progress value (0-100), or `undefined` for indeterminate
    * @param message Optional message
    * @param args Additional arguments
    */
   protected async handleProgress(
     task: ITask,
-    progress: number,
+    progress: number | undefined,
     message?: string,
     ...args: any[]
   ): Promise<void> {
     const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
     if (contributors.length > 1) {
-      const sum = contributors.reduce((acc, t) => acc + t.progress, 0);
-      progress = Math.round(sum / contributors.length);
+      const determinate = contributors.filter((t) => t.progress !== undefined);
+      if (determinate.length === 0) {
+        progress = undefined;
+      } else {
+        const sum = determinate.reduce((acc, t) => acc + t.progress!, 0);
+        progress = Math.round(sum / determinate.length);
+      }
     } else if (contributors.length === 1) {
       const [only] = contributors;
       progress = only.progress;
@@ -1451,8 +1456,13 @@ export class TaskGraphRunner {
     // Emit aggregate progress before awaiting output push so UIs (and task `emit("progress")` in
     // TaskRunner) are not blocked when pushOutput/narrowInput is slow or stalls mid-run.
     this.graph.emit("graph_progress", progress, message, args);
-    // Only push output when the task has produced data; progress can fire mid-run with empty runOutputData
-    if (task.runOutputData && Object.keys(task.runOutputData).length > 0) {
+    // Only push output for mid-run progress ticks while the task is actively executing.
+    // Terminal-state handlers (complete, abort, error, disable) set task.status to their
+    // terminal value before calling handleProgress(100), so the output push is skipped here —
+    // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
+    const isActive =
+      task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
+    if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
       await this.pushOutputFromNodeToEdges(task, task.runOutputData);
     }
   }

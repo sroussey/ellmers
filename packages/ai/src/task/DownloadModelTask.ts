@@ -70,12 +70,12 @@ export class DownloadModelTask extends AiTask<
 
   /**
    * Handles progress updates for the download task
-   * @param progress - The progress value (0-100)
+   * @param progress - The progress value (0-100), or `undefined` for indeterminate
    * @param message - The message to display
    * @param details - Additional details about the progress
    */
   processProgress(
-    progress: number,
+    progress: number | undefined,
     message: string = "",
     details?: {
       file?: string;

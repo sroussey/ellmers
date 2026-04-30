@@ -5,10 +5,10 @@
  */
 
 import { Task, TaskAbortedError, TaskError, TaskStatus } from "@workglow/task-graph";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EventTestTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
 import { setLogger } from "@workglow/util";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { EventTestTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
 
 const spyOn = vi.spyOn;
 
@@ -123,9 +123,9 @@ describe("SingleTask", () => {
       });
 
       it("should emit progress event during task execution", async () => {
-        let progressValue = 0;
-        task.on("progress", (progress) => {
-          progressValue = progress;
+        let progressValue: number | undefined = undefined;
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) progressValue = progress; // ignore terminal-100 tick
         });
 
         await task.run();
@@ -289,7 +289,9 @@ describe("SingleTask", () => {
         const events: string[] = [];
 
         task.on("start", () => events.push("start"));
-        task.on("progress", () => events.push("progress"));
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) events.push("progress"); // ignore terminal-100 tick
+        });
         task.on("complete", () => events.push("complete"));
 
         // Override execute to emit progress
@@ -420,10 +422,10 @@ describe("SingleTask", () => {
       });
 
       it("should pass progress value to progress event listeners", async () => {
-        let receivedProgress = 0;
+        let receivedProgress: number | undefined = undefined;
 
-        task.on("progress", (progress: number) => {
-          receivedProgress = progress;
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) receivedProgress = progress; // ignore terminal-100 tick
         });
 
         task.shouldEmitProgress = true;
@@ -458,7 +460,9 @@ describe("SingleTask", () => {
         const events: string[] = [];
 
         task.on("start", () => events.push("start"));
-        task.on("progress", () => events.push("progress"));
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) events.push("progress"); // ignore terminal-100 tick
+        });
         task.on("complete", () => events.push("complete"));
 
         task.shouldEmitProgress = true;
@@ -471,7 +475,9 @@ describe("SingleTask", () => {
         const events: string[] = [];
 
         task.on("start", () => events.push("start"));
-        task.on("progress", () => events.push("progress"));
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) events.push("progress"); // ignore terminal-100 tick
+        });
         task.on("error", () => events.push("error"));
 
         task.shouldEmitProgress = true;
@@ -485,7 +491,9 @@ describe("SingleTask", () => {
         const events: string[] = [];
 
         task.on("start", () => events.push("start"));
-        task.on("progress", () => events.push("progress"));
+        task.on("progress", (progress: number | undefined) => {
+          if (progress !== 100) events.push("progress"); // ignore terminal-100 tick
+        });
         task.on("abort", () => events.push("abort"));
 
         task.shouldEmitProgress = true;

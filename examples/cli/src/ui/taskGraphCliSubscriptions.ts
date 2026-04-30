@@ -85,7 +85,7 @@ function registerTaskListeners(
     });
   });
 
-  task.events.on("progress", (progress: number, message?: string) => {
+  task.events.on("progress", (progress: number | undefined, message?: string) => {
     setTaskInfos((prev) => {
       const next = new Map(prev);
       const info = next.get(taskId);
@@ -136,7 +136,7 @@ function registerIterationListeners(
   const onIterProgress = (
     index: number,
     iterationCount: number,
-    prog: number,
+    prog: number | undefined,
     message?: string
   ): void => {
     setIterationSlots((prev) => {
@@ -229,7 +229,7 @@ export function subscribeTaskGraphForCli(
     if (t) wire(t);
   };
 
-  const onGraphProgress = (progress: number): void => {
+  const onGraphProgress = (progress: number | undefined): void => {
     setOverallProgress(progress);
   };
 

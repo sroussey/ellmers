@@ -398,9 +398,9 @@ describe("FallbackTask", () => {
       subGraph.addTask(new MidProgressTask({ id: "template", defaults: { value: 0 } }));
       task.subGraph = subGraph;
 
-      const events: Array<{ progress: number; message?: string }> = [];
-      task.events.on("progress", (progress: number, message?: string) => {
-        events.push({ progress, message });
+      const events: Array<{ progress: number | undefined; message?: string }> = [];
+      task.events.on("progress", (progress: number | undefined, message?: string) => {
+        events.push({ progress: progress, message });
       });
 
       const result = await task.run({} as TaskInput);
@@ -417,11 +417,19 @@ describe("FallbackTask", () => {
       // Every emitted progress value must be in [0, 100] and non-decreasing so the
       // blended progress never regresses past a boundary marker.
       for (const e of events) {
+        if (e.progress === undefined) {
+          throw new Error("Expected progress event to include a numeric progress value");
+        }
         expect(e.progress).toBeGreaterThanOrEqual(0);
         expect(e.progress).toBeLessThanOrEqual(100);
       }
       for (let i = 1; i < events.length; i++) {
-        expect(events[i].progress).toBeGreaterThanOrEqual(events[i - 1].progress);
+        const currentProgress = events[i]?.progress;
+        const previousProgress = events[i - 1]?.progress;
+        if (currentProgress === undefined || previousProgress === undefined) {
+          throw new Error("Expected adjacent progress events to include numeric progress values");
+        }
+        expect(currentProgress).toBeGreaterThanOrEqual(previousProgress);
       }
 
       // Progress on successful completion must reach 100.

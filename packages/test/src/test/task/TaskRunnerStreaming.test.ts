@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
 import {
   IExecuteContext,
   IRunConfig,
@@ -12,7 +13,6 @@ import {
   getOutputStreamMode,
   isTaskStreamable,
 } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
@@ -481,15 +481,18 @@ describe("TaskRunner Streaming", () => {
     it("should report progress during streaming", async () => {
       const task = new TestStreamingAppendTask({ defaults: { prompt: "test" } });
 
-      const progressValues: number[] = [];
-      task.on("progress", (progress) => progressValues.push(progress));
+      const progressValues: Array<number | undefined> = [];
+      task.on("progress", (progress: number | undefined) => progressValues.push(progress));
 
       await task.run({ prompt: "test" });
 
       expect(progressValues.length).toBeGreaterThan(0);
       // Progress should be increasing
       for (let i = 1; i < progressValues.length; i++) {
-        expect(progressValues[i]).toBeGreaterThanOrEqual(progressValues[i - 1]);
+        if (progressValues[i] === undefined || progressValues[i - 1] === undefined) {
+          throw new Error("Expected progress values to be defined");
+        }
+        expect(progressValues[i]).toBeGreaterThanOrEqual(progressValues[i - 1]!);
       }
       // Final progress should be 100 (set by handleComplete)
       expect(task.progress).toBe(100);
