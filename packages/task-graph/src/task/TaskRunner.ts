@@ -849,7 +849,7 @@ export class TaskRunner<
     if (this.task.status === TaskStatus.ABORTING) return;
     this.clearTimeoutTimer();
     this.task.status = TaskStatus.ABORTING;
-    this.task.progress = 100;
+    await this.handleProgress(100);
     // Use the pending timeout error if the abort was triggered by a timeout
     this.task.error = this.pendingTimeoutError ?? new TaskAbortedError();
     this.pendingTimeoutError = undefined;
@@ -889,9 +889,9 @@ export class TaskRunner<
     this.pendingTimeoutError = undefined;
 
     this.task.completedAt = new Date();
-    this.task.progress = 100;
     this.task.status = TaskStatus.COMPLETED;
     this.abortController = undefined;
+    await this.handleProgress(100);
 
     if (this.telemetrySpan) {
       this.telemetrySpan.setStatus(SpanStatusCode.OK);
@@ -910,7 +910,7 @@ export class TaskRunner<
   protected async handleDisable(): Promise<void> {
     if (this.task.status === TaskStatus.DISABLED) return;
     this.task.status = TaskStatus.DISABLED;
-    this.task.progress = 100;
+    await this.handleProgress(100);
     this.task.completedAt = new Date();
     this.abortController = undefined;
     this.task.emit("disabled");
@@ -935,8 +935,6 @@ export class TaskRunner<
     }
 
     this.task.completedAt = new Date();
-    this.task.progress = 100;
-    this.task.status = TaskStatus.FAILED;
     if (err instanceof TaskError) {
       this.task.error = err;
     } else {
@@ -949,7 +947,9 @@ export class TaskRunner<
       this.task.error.taskType ??= this.task.type;
       this.task.error.taskId ??= this.task.id;
     }
+    this.task.status = TaskStatus.FAILED;
     this.abortController = undefined;
+    await this.handleProgress(100);
 
     if (this.telemetrySpan) {
       this.telemetrySpan.setStatus(SpanStatusCode.ERROR, this.task.error.message);

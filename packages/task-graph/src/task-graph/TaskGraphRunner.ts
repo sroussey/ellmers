@@ -1456,8 +1456,13 @@ export class TaskGraphRunner {
     // Emit aggregate progress before awaiting output push so UIs (and task `emit("progress")` in
     // TaskRunner) are not blocked when pushOutput/narrowInput is slow or stalls mid-run.
     this.graph.emit("graph_progress", progress, message, args);
-    // Only push output when the task has produced data; progress can fire mid-run with empty runOutputData
-    if (task.runOutputData && Object.keys(task.runOutputData).length > 0) {
+    // Only push output for mid-run progress ticks while the task is actively executing.
+    // Terminal-state handlers (complete, abort, error, disable) set task.status to their
+    // terminal value before calling handleProgress(100), so the output push is skipped here —
+    // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
+    const isActive =
+      task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
+    if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
       await this.pushOutputFromNodeToEdges(task, task.runOutputData);
     }
   }
