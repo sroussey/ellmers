@@ -19,10 +19,20 @@ function createMockStorage(): MockRateLimiterStorage {
   let oldestExecution: string | undefined = undefined;
 
   return {
+    scope: "process" as const,
     setupDatabase: vi.fn(async () => {}),
     getExecutionCount: vi.fn(async () => executionCount),
     recordExecution: vi.fn(async () => {
       executionCount++;
+    }),
+    tryReserveExecution: vi.fn(async (_q: string, max: number) => {
+      const next = nextAvailableTime ? new Date(nextAvailableTime).getTime() : 0;
+      if (executionCount >= max || next > Date.now()) return false;
+      executionCount++;
+      return true;
+    }),
+    releaseExecution: vi.fn(async () => {
+      executionCount = Math.max(0, executionCount - 1);
     }),
     getNextAvailableTime: vi.fn(async () => nextAvailableTime),
     setNextAvailableTime: vi.fn(async (_queue: string, time: string) => {
@@ -169,6 +179,71 @@ describe("RateLimiter", () => {
       const date = new Date(Date.now() + 5000);
       await limiter.setNextAvailableTime(date);
       expect(storage.setNextAvailableTime).toHaveBeenCalledWith("queue", date.toISOString());
+    });
+  });
+
+  describe("scope", () => {
+    it("should reflect storage scope", () => {
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 5,
+        windowSizeInSeconds: 60,
+      });
+      expect(limiter.scope).toBe("process");
+    });
+  });
+
+  describe("tryAcquire", () => {
+    it("should return true and reserve a slot when capacity is available", async () => {
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 5,
+        windowSizeInSeconds: 60,
+      });
+      expect(await limiter.tryAcquire()).toBe(true);
+      expect(storage.tryReserveExecution).toHaveBeenCalledWith("queue", 5, 60_000);
+    });
+
+    it("should return false when storage rejects the reservation", async () => {
+      storage._setExecutionCount(5);
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 5,
+        windowSizeInSeconds: 60,
+      });
+      expect(await limiter.tryAcquire()).toBe(false);
+    });
+
+    it("should be atomic: 100 parallel acquirers with max=10 produce exactly 10 trues", async () => {
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 10,
+        windowSizeInSeconds: 60,
+      });
+      const results = await Promise.all(
+        Array.from({ length: 100 }, () => limiter.tryAcquire())
+      );
+      const successes = results.filter((r) => r === true).length;
+      expect(successes).toBe(10);
+    });
+  });
+
+  describe("release", () => {
+    it("should delegate to storage.releaseExecution", async () => {
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 5,
+        windowSizeInSeconds: 60,
+      });
+      await limiter.tryAcquire();
+      await limiter.release();
+      expect(storage.releaseExecution).toHaveBeenCalledWith("queue");
+    });
+
+    it("should free a slot so a follow-up tryAcquire succeeds", async () => {
+      const limiter = new RateLimiter(storage, "queue", {
+        maxExecutions: 1,
+        windowSizeInSeconds: 60,
+      });
+      expect(await limiter.tryAcquire()).toBe(true);
+      expect(await limiter.tryAcquire()).toBe(false);
+      await limiter.release();
+      expect(await limiter.tryAcquire()).toBe(true);
     });
   });
 });

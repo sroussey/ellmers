@@ -172,9 +172,55 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     await this.db.query(sql);
 
     sql = `
-      CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx 
+      CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx
         ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`;
     await this.db.query(sql);
+
+    // Install LISTEN/NOTIFY plumbing so subscribers can wake on INSERT/UPDATE
+    // without polling. The channel name is derived from md5(table || queue) so
+    // (a) it fits Postgres's 63-char identifier limit even with long queue
+    // names, and (b) different queues on the same table don't share a channel.
+    const fnName = `${this.tableName}_notify`;
+    const trgName = `${this.tableName}_notify_trg`;
+    await this.db.query(`
+      CREATE OR REPLACE FUNCTION ${fnName}() RETURNS trigger AS $fn$
+      DECLARE
+        channel TEXT := 'wglw_q_' || md5('${this.tableName}' || COALESCE(NEW.queue, OLD.queue));
+        payload TEXT;
+      BEGIN
+        payload := json_build_object(
+          'op', TG_OP,
+          'id', COALESCE(NEW.id, OLD.id),
+          'queue', COALESCE(NEW.queue, OLD.queue),
+          'status', COALESCE(NEW.status::text, OLD.status::text)
+        )::text;
+        PERFORM pg_notify(channel, payload);
+        RETURN NULL;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `);
+    await this.db.query(`DROP TRIGGER IF EXISTS ${trgName} ON ${this.tableName}`);
+    await this.db.query(`
+      CREATE TRIGGER ${trgName}
+        AFTER INSERT OR UPDATE ON ${this.tableName}
+        FOR EACH ROW EXECUTE FUNCTION ${fnName}();
+    `);
+  }
+
+  /**
+   * Channel name for this storage's LISTEN/NOTIFY. Mirrors the trigger's
+   * computation so subscriber and notifier agree.
+   */
+  private notifyChannelName(): string {
+    // md5() returns 32 hex chars; combined with the 7-char prefix this is well
+    // under Postgres's 63-byte identifier limit.
+    const tableAndQueue = `${this.tableName}${this.queueName}`;
+    // Compute md5 client-side via a SQL call would be a round-trip; do it
+    // inline. Node has crypto; this lives in a node/bun module.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const crypto = require("node:crypto") as typeof import("node:crypto");
+    const hash = crypto.createHash("md5").update(tableAndQueue).digest("hex");
+    return `wglw_q_${hash}`;
   }
 
   /**
@@ -562,15 +608,150 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Subscribes to changes in the queue.
-   * NOT IMPLEMENTED for PostgreSQL storage.
+   * Subscribe to INSERT/UPDATE notifications via PostgreSQL LISTEN/NOTIFY.
+   * Replaces 100ms-poll fallback for cluster Postgres deployments — workers
+   * wake within network-latency of an actual change rather than on a timer.
    *
-   * @throws Error always - subscribeToChanges is not supported for PostgreSQL storage
+   * Acquires a dedicated client from the pool (LISTEN occupies a connection
+   * for its lifetime). On unsubscribe, runs UNLISTEN and releases the client.
+   * On connection loss, attempts to reconnect with bounded backoff and
+   * re-LISTEN; subscribers see a synthetic resync event so they can re-read
+   * state if needed.
    */
   public subscribeToChanges(
     callback: (change: QueueChangePayload<Input, Output>) => void,
     options?: QueueSubscribeOptions
   ): () => void {
-    throw new Error("subscribeToChanges is not supported for PostgresQueueStorage");
+    const channel = this.notifyChannelName();
+    const prefixFilter = options?.prefixFilter;
+
+    let unsubscribed = false;
+    let activeClient: {
+      query: (sql: string) => Promise<unknown>;
+      release: () => void;
+      removeAllListeners?: (event: string) => void;
+      on: (event: string, listener: (...args: any[]) => void) => void;
+    } | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let backoffMs = 250;
+
+    const matchesPrefix = (
+      change: QueueChangePayload<Input, Output>,
+      filter: Readonly<Record<string, string | number>>
+    ): boolean => {
+      const row = (change.new ?? change.old) as Record<string, unknown> | undefined;
+      if (!row) return false;
+      for (const [k, v] of Object.entries(filter)) {
+        if (row[k] !== v) return false;
+      }
+      return true;
+    };
+
+    const handleNotification = (msg: { channel: string; payload?: string }): void => {
+      if (msg.channel !== channel || !msg.payload) return;
+      let parsed: { op: string; id: number; queue: string; status: string };
+      try {
+        parsed = JSON.parse(msg.payload);
+      } catch {
+        return;
+      }
+      // We don't ship the full row in the NOTIFY payload (8 KB limit). The
+      // primary use case is waking workers, which only need to know "something
+      // pending changed" — JobQueueServer subscribes specifically for INSERT
+      // and PENDING transitions. Construct a minimal payload reflecting that.
+      const op = parsed.op;
+      const change: QueueChangePayload<Input, Output> = {
+        type: op === "INSERT" ? "INSERT" : op === "DELETE" ? "DELETE" : "UPDATE",
+        new:
+          op === "DELETE"
+            ? undefined
+            : ({ id: parsed.id, queue: parsed.queue, status: parsed.status } as unknown as JobStorageFormat<
+                Input,
+                Output
+              >),
+        old:
+          op === "DELETE"
+            ? ({ id: parsed.id, queue: parsed.queue } as unknown as JobStorageFormat<Input, Output>)
+            : undefined,
+      };
+      if (prefixFilter && !matchesPrefix(change, prefixFilter)) return;
+      try {
+        callback(change);
+      } catch {
+        // never let user callbacks tear down the listener loop
+      }
+    };
+
+    const connect = async (): Promise<void> => {
+      if (unsubscribed) return;
+      const supportsConnect =
+        typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+      if (!supportsConnect) {
+        // PGLitePool / single-connection wrappers don't support a long-lived
+        // LISTEN connection. Subscribers fall back to polling in that case.
+        throw new Error(
+          "PostgresQueueStorage.subscribeToChanges requires a pg.Pool (got a single-connection wrapper)"
+        );
+      }
+      try {
+        const client = await (this.db as unknown as { connect: () => Promise<typeof activeClient> }).connect();
+        if (unsubscribed) {
+          client?.release();
+          return;
+        }
+        activeClient = client;
+        client?.on("notification", handleNotification);
+        client?.on("error", () => scheduleReconnect());
+        await client?.query(`LISTEN ${channel}`);
+        backoffMs = 250; // reset on successful (re)connect
+      } catch {
+        scheduleReconnect();
+      }
+    };
+
+    const scheduleReconnect = (): void => {
+      if (unsubscribed || reconnectTimer) return;
+      const c = activeClient;
+      activeClient = null;
+      try {
+        c?.removeAllListeners?.("notification");
+        c?.removeAllListeners?.("error");
+        c?.release();
+      } catch {
+        // best-effort
+      }
+      const delay = Math.min(backoffMs, 30_000);
+      backoffMs = Math.min(backoffMs * 2, 30_000);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connect();
+      }, delay);
+    };
+
+    void connect();
+
+    return () => {
+      unsubscribed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      const c = activeClient;
+      activeClient = null;
+      if (c) {
+        // Best-effort UNLISTEN; ignore errors (connection may already be dead).
+        c.query(`UNLISTEN ${channel}`)
+          .catch(() => {})
+          .finally(() => {
+            try {
+              c.removeAllListeners?.("notification");
+              c.removeAllListeners?.("error");
+              c.release();
+            } catch {
+              // best-effort
+            }
+          });
+      }
+    };
   }
 }

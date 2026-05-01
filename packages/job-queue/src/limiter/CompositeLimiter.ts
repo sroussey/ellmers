@@ -4,13 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ILimiter } from "./ILimiter";
+import { ILimiter, LimiterScope } from "./ILimiter";
 
 export class CompositeLimiter implements ILimiter {
   private limiters: ILimiter[] = [];
 
   constructor(limiters: ILimiter[] = []) {
     this.limiters = limiters;
+  }
+
+  /**
+   * `"cluster"` only when EVERY child is cluster-scoped. A single process-scoped
+   * child means the composite as a whole can't enforce a cluster-wide limit.
+   */
+  public get scope(): LimiterScope {
+    return this.limiters.every((l) => l.scope === "cluster") && this.limiters.length > 0
+      ? "cluster"
+      : "process";
   }
 
   addLimiter(limiter: ILimiter): void {
@@ -24,6 +34,35 @@ export class CompositeLimiter implements ILimiter {
       }
     }
     return true; // All limiters agree
+  }
+
+  /**
+   * Atomic against the composite: acquires children sequentially and rolls
+   * back any successfully-acquired prefix if a later child rejects, so the
+   * "all-or-nothing" semantics hold under concurrency.
+   */
+  async tryAcquire(): Promise<boolean> {
+    const acquired: ILimiter[] = [];
+    for (const limiter of this.limiters) {
+      const ok = await limiter.tryAcquire();
+      if (!ok) {
+        // Roll back the partial acquisition.
+        for (const previous of acquired.reverse()) {
+          try {
+            await previous.release();
+          } catch {
+            // best-effort
+          }
+        }
+        return false;
+      }
+      acquired.push(limiter);
+    }
+    return true;
+  }
+
+  async release(): Promise<void> {
+    await Promise.all(this.limiters.map((l) => l.release().catch(() => {})));
   }
 
   async recordJobStart(): Promise<void> {

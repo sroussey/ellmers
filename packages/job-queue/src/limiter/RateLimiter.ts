@@ -5,7 +5,7 @@
  */
 
 import { IRateLimiterStorage } from "@workglow/storage";
-import { ILimiter, RateLimiterWithBackoffOptions } from "./ILimiter";
+import { ILimiter, LimiterScope, RateLimiterWithBackoffOptions } from "./ILimiter";
 
 /**
  * Base rate limiter implementation that uses a storage backend.
@@ -52,6 +52,68 @@ export class RateLimiter implements ILimiter {
     this.backoffMultiplier = backoffMultiplier;
     this.maxBackoffDelay = maxBackoffDelay;
     this.currentBackoffDelay = initialBackoffDelay;
+  }
+
+  /**
+   * Inherits its scope from the underlying storage. Storage-backed RateLimiter
+   * is `"cluster"` for Postgres/Supabase, `"process"` for InMemory/IndexedDb/Sqlite.
+   */
+  public get scope(): LimiterScope {
+    return this.storage.scope;
+  }
+
+  /**
+   * Atomic check-and-record. Delegates to {@link IRateLimiterStorage.tryReserveExecution}
+   * which performs the count, next-available, and insert under a single
+   * critical section per backend (advisory xact lock for Postgres, BEGIN
+   * IMMEDIATE for SQLite, per-key promise mutex for in-memory).
+   */
+  async tryAcquire(): Promise<boolean> {
+    const reserved = await this.storage.tryReserveExecution(
+      this.queueName,
+      this.maxExecutions,
+      this.windowSizeInMilliseconds
+    );
+    if (reserved) {
+      this.currentBackoffDelay = this.initialBackoffDelay;
+      // Clear any stale backoff that was set by a previous failed acquire.
+      const next = await this.storage.getNextAvailableTime(this.queueName);
+      if (next && new Date(next).getTime() > Date.now()) {
+        await this.storage.setNextAvailableTime(
+          this.queueName,
+          new Date(Date.now() - 1000).toISOString()
+        );
+      }
+      return true;
+    }
+
+    // Capacity reached — apply jittered exponential backoff so callers don't
+    // hammer the storage on every wake.
+    const backoffExpires = new Date(Date.now() + this.addJitter(this.currentBackoffDelay));
+    const existing = await this.storage.getNextAvailableTime(this.queueName);
+    if (!existing || new Date(existing).getTime() < backoffExpires.getTime()) {
+      await this.storage.setNextAvailableTime(this.queueName, backoffExpires.toISOString());
+    }
+    this.increaseBackoff();
+    return false;
+  }
+
+  /**
+   * Release the slot reserved by the most recent {@link tryAcquire}. Best-effort:
+   * removes the most recent execution row AND clears any backoff written by
+   * a previous failed acquire so a follow-up tryAcquire isn't blocked by a
+   * now-stale "next available at" sentinel.
+   */
+  async release(): Promise<void> {
+    await this.storage.releaseExecution(this.queueName);
+    const next = await this.storage.getNextAvailableTime(this.queueName);
+    if (next && new Date(next).getTime() > Date.now()) {
+      await this.storage.setNextAvailableTime(
+        this.queueName,
+        new Date(Date.now() - 1000).toISOString()
+      );
+    }
+    this.currentBackoffDelay = this.initialBackoffDelay;
   }
 
   protected addJitter(base: number): number {

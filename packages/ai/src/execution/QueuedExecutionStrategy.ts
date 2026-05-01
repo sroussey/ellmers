@@ -148,23 +148,19 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
   }
 
   /**
-   * Spin-wait on `limiter.canProceed()` until a slot is available or the
-   * abort signal fires. Yields to the microtask queue between polls; for
-   * concurrency=1 with one caller at a time this usually takes one check.
+   * Atomically acquire a limiter slot, retrying with backoff until success or
+   * abort. Uses {@link ILimiter.tryAcquire} so concurrent callers cannot both
+   * pass a check-then-record sequence and overshoot the configured limit.
    */
   private async acquireLimiterSlot(limiter: ILimiter, signal: AbortSignal): Promise<void> {
-    const poll = async (): Promise<void> => {
-      while (!(await limiter.canProceed())) {
-        if (signal.aborted) {
-          throw signal.reason ?? new AbortSignalJobError("The operation was aborted");
-        }
-        const next = await limiter.getNextAvailableTime();
-        const delay = Math.max(0, next.getTime() - Date.now());
-        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delay, 50)));
+    while (!(await limiter.tryAcquire())) {
+      if (signal.aborted) {
+        throw signal.reason ?? new AbortSignalJobError("The operation was aborted");
       }
-    };
-    await poll();
-    await limiter.recordJobStart();
+      const next = await limiter.getNextAvailableTime();
+      const delay = Math.max(0, next.getTime() - Date.now());
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delay, 50)));
+    }
   }
 
   private ensureQueue(): Promise<RegisteredQueue<AiJobInput<TaskInput>, TaskOutput>> {

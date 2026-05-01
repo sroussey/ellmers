@@ -7,7 +7,11 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceToken } from "@workglow/util";
 import type { PrefixColumn } from "../queue/IQueueStorage";
-import { IRateLimiterStorage, RateLimiterStorageOptions } from "./IRateLimiterStorage";
+import {
+  IRateLimiterStorage,
+  RateLimiterStorageOptions,
+  RateLimiterStorageScope,
+} from "./IRateLimiterStorage";
 
 export const SUPABASE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.supabase"
@@ -18,6 +22,7 @@ export const SUPABASE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStor
  * Manages execution records and next available times for rate limiting.
  */
 export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
+  public readonly scope: RateLimiterStorageScope = "cluster";
   protected readonly client: SupabaseClient;
   protected readonly prefixes: readonly PrefixColumn[];
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
@@ -137,6 +142,92 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     if (nextTableError && nextTableError.code !== "42P07") {
       throw nextTableError;
     }
+
+    // Install the atomic reserve function. The function takes the queue name,
+    // window-start cutoff, and max executions; returns true iff a row was
+    // inserted. Advisory xact lock keyed on (table, prefixes, queue) ensures
+    // concurrent acquirers serialize without contending on unrelated buckets.
+    const fnName = this.atomicReserveFunctionName();
+    const prefixSig = this.prefixes
+      .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)}`)
+      .join(", ");
+    const prefixSigPrefix = prefixSig ? prefixSig + ", " : "";
+    const prefixWhere =
+      this.prefixes.length > 0
+        ? " AND " + this.prefixes.map((p) => `${p.name} = _${p.name}`).join(" AND ")
+        : "";
+    const prefixInsertCols =
+      this.prefixes.length > 0 ? this.prefixes.map((p) => p.name).join(", ") + ", " : "";
+    const prefixInsertVals =
+      this.prefixes.length > 0 ? this.prefixes.map((p) => `_${p.name}`).join(", ") + ", " : "";
+    const lockKeyParts = [`'${this.executionTableName}'`, ...this.prefixes.map((p) => `_${p.name}::text`), `_queue_name::text`];
+    const lockKeyExpr = `hashtextextended(${lockKeyParts.join(" || '|' || ")}, 0)`;
+
+    const createFnSql = `
+      CREATE OR REPLACE FUNCTION ${fnName}(
+        ${prefixSigPrefix}_queue_name TEXT, _window_start TIMESTAMPTZ, _max_exec INT
+      ) RETURNS BOOLEAN AS $fn$
+      DECLARE
+        _count INT;
+        _next TIMESTAMPTZ;
+      BEGIN
+        PERFORM pg_advisory_xact_lock(${lockKeyExpr});
+        SELECT COUNT(*) INTO _count FROM ${this.executionTableName}
+          WHERE queue_name = _queue_name AND executed_at > _window_start${prefixWhere};
+        IF _count >= _max_exec THEN RETURN FALSE; END IF;
+        SELECT next_available_at INTO _next FROM ${this.nextAvailableTableName}
+          WHERE queue_name = _queue_name${prefixWhere};
+        IF _next IS NOT NULL AND _next > NOW() THEN RETURN FALSE; END IF;
+        INSERT INTO ${this.executionTableName} (${prefixInsertCols}queue_name)
+          VALUES (${prefixInsertVals}_queue_name);
+        RETURN TRUE;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `;
+    const { error: fnError } = await this.client.rpc("exec_sql", { query: createFnSql });
+    if (fnError) {
+      throw fnError;
+    }
+  }
+
+  /** Stable function name derived from table name (Postgres identifiers ≤63 chars). */
+  private atomicReserveFunctionName(): string {
+    return `${this.executionTableName}_try_reserve`.slice(0, 63);
+  }
+
+  public async tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<boolean> {
+    const args: Record<string, unknown> = {
+      _queue_name: queueName,
+      _window_start: new Date(Date.now() - windowMs).toISOString(),
+      _max_exec: maxExecutions,
+    };
+    for (const p of this.prefixes) {
+      args[`_${p.name}`] = this.prefixValues[p.name];
+    }
+    const { data, error } = await this.client.rpc(this.atomicReserveFunctionName(), args);
+    if (error) throw error;
+    return data === true;
+  }
+
+  public async releaseExecution(queueName: string): Promise<void> {
+    // Best-effort: delete the most recent row for this queue/prefix.
+    let select = this.client
+      .from(this.executionTableName)
+      .select("id")
+      .eq("queue_name", queueName);
+    select = this.applyPrefixFilters(select);
+    const { data, error } = await select.order("executed_at", { ascending: false }).limit(1);
+    if (error) throw error;
+    if (!data || data.length === 0) return;
+    const id = (data[0] as { id: number | string }).id;
+    let del = this.client.from(this.executionTableName).delete().eq("id", id);
+    del = this.applyPrefixFilters(del);
+    const { error: delError } = await del;
+    if (delError) throw delError;
   }
 
   public async recordExecution(queueName: string): Promise<void> {

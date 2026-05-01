@@ -135,6 +135,26 @@ export class JobQueueServer<
     this.running = true;
     this.events.emit("server_start", this.queueName);
 
+    // Warn when a process-scoped limiter is paired with what looks like a
+    // cluster-deployable queue storage. The user almost certainly meant their
+    // configured limit to be enforced cluster-wide; with a process-scoped
+    // limiter they get N× the limit (one bucket per process).
+    if (this.limiter.scope === "process" && !(this.limiter instanceof NullLimiter)) {
+      const storageName = this.storage.constructor.name;
+      const looksClusterCapable =
+        storageName.includes("Postgres") || storageName.includes("Supabase");
+      if (looksClusterCapable) {
+        getLogger().warn(
+          "Process-scoped limiter on cluster-capable storage — limit is enforced per-process, not cluster-wide. Use a cluster-scoped storage (Postgres/Supabase rate limiter storage) for global enforcement.",
+          {
+            queueName: this.queueName,
+            limiterScope: this.limiter.scope,
+            storage: storageName,
+          }
+        );
+      }
+    }
+
     // Fix stuck jobs from previous runs
     await this.fixupJobs();
 

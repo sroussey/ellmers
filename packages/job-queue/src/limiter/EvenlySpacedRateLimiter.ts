@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { ILimiter, RateLimiterOptions } from "./ILimiter";
+import { ILimiter, LimiterScope, RateLimiterOptions } from "./ILimiter";
 
 export const EVENLY_SPACED_JOB_RATE_LIMITER = createServiceToken<ILimiter>(
   "jobqueue.limiter.rate.evenlyspaced"
@@ -17,12 +17,16 @@ export const EVENLY_SPACED_JOB_RATE_LIMITER = createServiceToken<ILimiter>(
  * this limiter spaces out the requests evenly across the window.
  */
 export class EvenlySpacedRateLimiter implements ILimiter {
+  /** In-memory per-instance state — not shared across processes. */
+  public readonly scope: LimiterScope = "process";
   private readonly maxExecutions: number;
   private readonly windowSizeMs: number;
   private readonly idealInterval: number;
   private nextAvailableTime: number = Date.now();
   private lastStartTime: number = 0;
   private durations: number[] = [];
+  /** Promise chain used to serialize concurrent {@link tryAcquire} callers. */
+  private acquireChain: Promise<unknown> = Promise.resolve();
 
   constructor({ maxExecutions, windowSizeInSeconds }: RateLimiterOptions) {
     if (maxExecutions <= 0) {
@@ -41,6 +45,49 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   async canProceed(): Promise<boolean> {
     const now = Date.now();
     return now >= this.nextAvailableTime;
+  }
+
+  /**
+   * Atomic acquire: serialized by an internal promise chain so two concurrent
+   * acquirers cannot both observe `now >= nextAvailableTime` and both proceed.
+   */
+  async tryAcquire(): Promise<boolean> {
+    const previous = this.acquireChain;
+    let release!: (v: unknown) => void;
+    const next = new Promise((r) => {
+      release = r;
+    });
+    this.acquireChain = next;
+    try {
+      await previous;
+      const now = Date.now();
+      if (now < this.nextAvailableTime) {
+        return false;
+      }
+      // Reserve the slot by advancing nextAvailableTime now (recordJobStart-style)
+      // so a follow-up tryAcquire from another caller in the same tick blocks.
+      this.lastStartTime = now;
+      if (this.durations.length === 0) {
+        this.nextAvailableTime = now + this.idealInterval;
+      } else {
+        const sum = this.durations.reduce((a, b) => a + b, 0);
+        const avgDuration = sum / this.durations.length;
+        const waitMs = Math.max(0, this.idealInterval - avgDuration);
+        this.nextAvailableTime = now + waitMs;
+      }
+      return true;
+    } finally {
+      release(undefined);
+    }
+  }
+
+  /**
+   * Roll back a previously acquired slot. Best-effort: resets
+   * `nextAvailableTime` to the lastStartTime so a subsequent tryAcquire can
+   * proceed immediately.
+   */
+  async release(): Promise<void> {
+    this.nextAvailableTime = this.lastStartTime;
   }
 
   /** Record that a job is starting now. */
