@@ -24,16 +24,20 @@ export function registerHfImageValidator(): void {
         throw new ProviderUnsupportedFeatureError(
           "additionalImages",
           modelId,
-          "HF Inference image-to-image only supports a single input image",
+          "HF Inference image-to-image only supports a single input image"
         );
       }
-      if (input["mask"] !== undefined && input["mask"] !== null && !isHfInpaintingModel(modelName)) {
+      if (
+        input["mask"] !== undefined &&
+        input["mask"] !== null &&
+        !isHfInpaintingModel(modelName)
+      ) {
         throw new ProviderUnsupportedFeatureError(
           "mask",
           modelId,
-          "Mask is only supported on HF inpainting models (e.g., FLUX.1-Kontext-dev)",
+          "Mask is only supported on HF inpainting models (e.g., FLUX.1-Kontext-dev)"
         );
       }
-    },
+    }
   );
 }

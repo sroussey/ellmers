@@ -21,16 +21,28 @@ type Sharp = {
   threshold(threshold: number, options?: { grayscale?: boolean }): Sharp;
   tint(rgb: { r: number; g: number; b: number }): Sharp;
   ensureAlpha(alpha?: number): Sharp;
-  extend(options: { top?: number; bottom?: number; left?: number; right?: number; background?: unknown }): Sharp;
+  extend(options: {
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+    background?: unknown;
+  }): Sharp;
   extract(region: { left: number; top: number; width: number; height: number }): Sharp;
   rotate(angle?: number, options?: { background?: unknown }): Sharp;
-  resize(width?: number | null, height?: number | null, options?: { kernel?: string; fit?: string; background?: unknown }): Sharp;
+  resize(
+    width?: number | null,
+    height?: number | null,
+    options?: { kernel?: string; fit?: string; background?: unknown }
+  ): Sharp;
   raw(): Sharp;
   png(opts?: unknown): Sharp;
   jpeg(opts?: unknown): Sharp;
   webp(opts?: unknown): Sharp;
   metadata(): Promise<{ width?: number; height?: number; channels?: number }>;
-  toBuffer(opts?: unknown): Promise<Buffer | { data: Buffer; info: { width: number; height: number; channels: number } }>;
+  toBuffer(
+    opts?: unknown
+  ): Promise<Buffer | { data: Buffer; info: { width: number; height: number; channels: number } }>;
 };
 
 type SharpModule = (
@@ -39,7 +51,7 @@ type SharpModule = (
     raw?: { width: number; height: number; channels: 1 | 2 | 3 | 4 };
     limitInputPixels?: number;
     sequentialRead?: boolean;
-  },
+  }
 ) => Sharp;
 
 let cachedSharp: SharpModule | null = null;
@@ -65,7 +77,7 @@ export class SharpImage implements IGpuImage {
     private pipeline: Sharp | null,
     readonly width: number,
     readonly height: number,
-    readonly channels: ImageChannels,
+    readonly channels: ImageChannels
   ) {}
 
   static async from(value: ImageValue): Promise<SharpImage> {
@@ -88,14 +100,17 @@ export class SharpImage implements IGpuImage {
     return new SharpImage(pipeline, value.width, value.height, channels);
   }
 
-  apply(op: (p: Sharp) => Sharp, outSize?: { width: number; height: number; channels?: ImageChannels }): SharpImage {
+  apply(
+    op: (p: Sharp) => Sharp,
+    outSize?: { width: number; height: number; channels?: ImageChannels }
+  ): SharpImage {
     if (!this.pipeline) throw new Error("SharpImage.apply on a disposed image");
     const next = op(this.pipeline.clone());
     return new SharpImage(
       next,
       outSize?.width ?? this.width,
       outSize?.height ?? this.height,
-      outSize?.channels ?? this.channels,
+      outSize?.channels ?? this.channels
     );
   }
 
@@ -104,7 +119,8 @@ export class SharpImage implements IGpuImage {
     const p = this.pipeline.clone();
     if (format === "raw-rgba") {
       const result = await p.raw().toBuffer({ resolveWithObject: true });
-      if (!isObjectResult(result)) throw new Error("SharpImage.toBuffer: expected resolveWithObject result");
+      if (!isObjectResult(result))
+        throw new Error("SharpImage.toBuffer: expected resolveWithObject result");
       return result.data;
     }
     if (format === "png") return (await p.png().toBuffer()) as Buffer;
@@ -143,7 +159,9 @@ export class SharpImage implements IGpuImage {
   }
 }
 
-function isObjectResult(r: unknown): r is { data: Buffer; info: { width: number; height: number; channels: number } } {
+function isObjectResult(
+  r: unknown
+): r is { data: Buffer; info: { width: number; height: number; channels: number } } {
   return !!r && typeof r === "object" && "data" in r && "info" in r;
 }
 
@@ -182,12 +200,14 @@ export async function decodeBufferToRaw(
 ): Promise<{ data: Buffer; width: number; height: number; channels: number }> {
   const sharp = await loadSharp();
   const sharpOpts: { limitInputPixels?: number; sequentialRead?: boolean } = {};
-  if (options?.limitInputPixels !== undefined) sharpOpts.limitInputPixels = options.limitInputPixels;
+  if (options?.limitInputPixels !== undefined)
+    sharpOpts.limitInputPixels = options.limitInputPixels;
   if (options?.sequentialRead !== undefined) sharpOpts.sequentialRead = options.sequentialRead;
   let pipeline = sharp(buffer, sharpOpts);
   if (options?.ensureAlpha) pipeline = pipeline.ensureAlpha();
   const result = await pipeline.raw().toBuffer({ resolveWithObject: true });
-  if (!isObjectResult(result)) throw new Error("decodeBufferToRaw: expected resolveWithObject result");
+  if (!isObjectResult(result))
+    throw new Error("decodeBufferToRaw: expected resolveWithObject result");
   return {
     data: result.data,
     width: result.info.width,

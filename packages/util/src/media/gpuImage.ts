@@ -48,13 +48,13 @@ const factory = _g[GLOBAL_FACTORY_KEY] as Record<string, unknown>;
 
 export function registerGpuImageFactory<K extends keyof GpuImageStatic>(
   key: K,
-  fn: GpuImageStatic[K],
+  fn: GpuImageStatic[K]
 ): void {
   factory[key] = fn;
 }
 
 export function getGpuImageFactory<K extends keyof GpuImageStatic>(
-  key: K,
+  key: K
 ): GpuImageStatic[K] | undefined {
   const fn = factory[key];
   return typeof fn === "function" ? (fn as GpuImageStatic[K]) : undefined;

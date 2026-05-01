@@ -16,7 +16,9 @@ import type { GpuImage } from "@workglow/util/media";
 class SpyRepo extends TaskOutputRepository {
   private readonly map = new Map<string, unknown>();
   readonly saved: unknown[] = [];
-  constructor() { super({ outputCompression: false }); }
+  constructor() {
+    super({ outputCompression: false });
+  }
   async saveOutput(_t: string, inputs: TaskInput, output: TaskOutput): Promise<void> {
     this.saved.push(output);
     this.map.set(JSON.stringify(inputs), output);
@@ -24,8 +26,12 @@ class SpyRepo extends TaskOutputRepository {
   async getOutput(_t: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
     return this.map.get(JSON.stringify(inputs)) as TaskOutput | undefined;
   }
-  async clear(): Promise<void> { this.map.clear(); }
-  async size(): Promise<number> { return this.map.size; }
+  async clear(): Promise<void> {
+    this.map.clear();
+  }
+  async size(): Promise<number> {
+    return this.map.size;
+  }
   async clearOlderThan(_ms: number): Promise<void> {}
 }
 
@@ -39,7 +45,10 @@ describe("TaskRunner cache port serialization", () => {
     const deserialize = vi.fn(async (v: unknown) => (v as { wire: unknown }).wire);
     registerPortCodec("test-port", { serialize, deserialize });
 
-    class MyTask extends Task<Record<string, unknown>, { thing: { live: number } } & Record<string, unknown>> {
+    class MyTask extends Task<
+      Record<string, unknown>,
+      { thing: { live: number } } & Record<string, unknown>
+    > {
       static override readonly type = "MyTask";
       static override outputSchema() {
         return {
@@ -66,7 +75,10 @@ describe("TaskRunner cache port serialization", () => {
     });
 
     let executeCount = 0;
-    class MyTask2 extends Task<Record<string, unknown>, { thing: { live: number } } & Record<string, unknown>> {
+    class MyTask2 extends Task<
+      Record<string, unknown>,
+      { thing: { live: number } } & Record<string, unknown>
+    > {
       static override readonly type = "MyTask2";
       static override outputSchema() {
         return {
@@ -111,7 +123,10 @@ describe("TaskRunner cache port serialization", () => {
     expect(a).not.toBe(b);
 
     let calls = 0;
-    class T2 extends Task<{ thing: Opaque } & Record<string, unknown>, { x: number } & Record<string, unknown>> {
+    class T2 extends Task<
+      { thing: Opaque } & Record<string, unknown>,
+      { x: number } & Record<string, unknown>
+    > {
       static override readonly type = "T2";
       static override inputSchema() {
         return {
@@ -137,13 +152,24 @@ describe("TaskRunner cache key determinism — image codec", () => {
     const { CpuImage } = await import("@workglow/util/media");
 
     const repo = new SpyRepo();
-    const bin = { data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4 as const };
+    const bin = {
+      data: new Uint8ClampedArray([1, 2, 3, 255]),
+      width: 1,
+      height: 1,
+      channels: 4 as const,
+    };
     const a = CpuImage.fromRaw(bin) as unknown as GpuImage;
-    const b = CpuImage.fromRaw({ ...bin, data: new Uint8ClampedArray([1, 2, 3, 255]) }) as unknown as GpuImage;
+    const b = CpuImage.fromRaw({
+      ...bin,
+      data: new Uint8ClampedArray([1, 2, 3, 255]),
+    }) as unknown as GpuImage;
     expect(a).not.toBe(b);
 
     let calls = 0;
-    class ImgKeyTask extends Task<{ image: GpuImage } & Record<string, unknown>, { x: number } & Record<string, unknown>> {
+    class ImgKeyTask extends Task<
+      { image: GpuImage } & Record<string, unknown>,
+      { x: number } & Record<string, unknown>
+    > {
       static override readonly type = "ImgKeyTask";
       static override inputSchema() {
         return {

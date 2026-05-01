@@ -20,7 +20,9 @@ function makeFakeDevice(onCreate?: (t: FakeTexture) => void): GPUDevice {
         w: size[0],
         h: size[1],
         destroyed: false,
-        destroy() { this.destroyed = true; },
+        destroy() {
+          this.destroyed = true;
+        },
       };
       onCreate?.(t);
       return t;
@@ -31,7 +33,10 @@ function makeFakeDevice(onCreate?: (t: FakeTexture) => void): GPUDevice {
 describe("TexturePool", () => {
   test("releasing then re-acquiring the same size class returns the same texture", () => {
     const created: FakeTexture[] = [];
-    const pool = createTexturePool(makeFakeDevice((t) => created.push(t)), { capacityPerSize: 8 });
+    const pool = createTexturePool(
+      makeFakeDevice((t) => created.push(t)),
+      { capacityPerSize: 8 }
+    );
     const a = pool.acquire(64, 64, "rgba8unorm") as unknown as FakeTexture;
     pool.release(a as unknown as GPUTexture);
     const b = pool.acquire(64, 64, "rgba8unorm") as unknown as FakeTexture;
@@ -41,7 +46,10 @@ describe("TexturePool", () => {
 
   test("size-class miss creates a new texture", () => {
     const created: FakeTexture[] = [];
-    const pool = createTexturePool(makeFakeDevice((t) => created.push(t)), { capacityPerSize: 8 });
+    const pool = createTexturePool(
+      makeFakeDevice((t) => created.push(t)),
+      { capacityPerSize: 8 }
+    );
     const a = pool.acquire(64, 64, "rgba8unorm") as unknown as FakeTexture;
     pool.release(a as unknown as GPUTexture);
     pool.acquire(128, 128, "rgba8unorm");
@@ -55,8 +63,13 @@ describe("TexturePool", () => {
     const fakeDevice = {
       createTexture: () => {
         const t: FakeTexture = {
-          w: 8, h: 8, destroyed: false,
-          destroy() { this.destroyed = true; destroyed.push(this); },
+          w: 8,
+          h: 8,
+          destroyed: false,
+          destroy() {
+            this.destroyed = true;
+            destroyed.push(this);
+          },
         };
         return t;
       },
@@ -76,8 +89,13 @@ describe("TexturePool", () => {
     const fakeDevice = {
       createTexture: () => {
         const t: FakeTexture = {
-          w: 8, h: 8, destroyed: false,
-          destroy() { this.destroyed = true; destroyed.push(this); },
+          w: 8,
+          h: 8,
+          destroyed: false,
+          destroy() {
+            this.destroyed = true;
+            destroyed.push(this);
+          },
         };
         return t;
       },
@@ -102,8 +120,13 @@ describe("TexturePool", () => {
     const fakeDevice = {
       createTexture: () => {
         const t: FakeTexture = {
-          w: 8, h: 8, destroyed: false,
-          destroy() { this.destroyed = true; destroyed.push(this); },
+          w: 8,
+          h: 8,
+          destroyed: false,
+          destroy() {
+            this.destroyed = true;
+            destroyed.push(this);
+          },
         };
         return t;
       },
@@ -123,8 +146,13 @@ describe("TexturePool", () => {
     const fakeDevice = {
       createTexture: () => {
         const t: FakeTexture = {
-          w: 8, h: 8, destroyed: false,
-          destroy() { this.destroyed = true; destroyed.push(this); },
+          w: 8,
+          h: 8,
+          destroyed: false,
+          destroy() {
+            this.destroyed = true;
+            destroyed.push(this);
+          },
         };
         return t;
       },
@@ -148,8 +176,13 @@ describe("TexturePool", () => {
     const fakeDevice = {
       createTexture: () => {
         const t: FakeTexture = {
-          w: 8, h: 8, destroyed: false,
-          destroy() { this.destroyed = true; destroyed.push(this); },
+          w: 8,
+          h: 8,
+          destroyed: false,
+          destroy() {
+            this.destroyed = true;
+            destroyed.push(this);
+          },
         };
         return t;
       },

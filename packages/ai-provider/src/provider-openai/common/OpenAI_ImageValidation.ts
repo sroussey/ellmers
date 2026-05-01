@@ -25,17 +25,13 @@ export function registerOpenAiImageValidator(): void {
       const modelName =
         (model.provider_config as { model_name?: string } | undefined)?.model_name ?? "";
       const additional = input["additionalImages"] as unknown[] | undefined;
-      if (
-        modelName.startsWith("dall-e-2") &&
-        Array.isArray(additional) &&
-        additional.length > 0
-      ) {
+      if (modelName.startsWith("dall-e-2") && Array.isArray(additional) && additional.length > 0) {
         throw new ProviderUnsupportedFeatureError(
           "additionalImages",
           model.model_id ?? modelName,
-          "DALL-E 2 only supports single-image edits",
+          "DALL-E 2 only supports single-image edits"
         );
       }
-    },
+    }
   );
 }

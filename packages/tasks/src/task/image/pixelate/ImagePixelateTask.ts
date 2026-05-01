@@ -37,30 +37,40 @@ export interface ImagePixelateTaskInput extends ImageFilterInput {
 }
 export type ImagePixelateTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImagePixelateTask extends ImageFilterTask<PixelateParams, ImagePixelateTaskInput & Record<string, unknown>, ImagePixelateTaskOutput> {
+export class ImagePixelateTask extends ImageFilterTask<
+  PixelateParams,
+  ImagePixelateTaskInput & Record<string, unknown>,
+  ImagePixelateTaskOutput
+> {
   static override readonly type = "ImagePixelateTask";
   static override readonly category = "Image";
   public static override title = "Pixelate Image";
   public static override description = "Pixelates an image by averaging blocks of pixels";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "pixelate";
   protected opParams(input: ImagePixelateTaskInput & Record<string, unknown>): PixelateParams {
     return { blockSize: (input.blockSize as number | undefined) ?? 4 };
   }
 
-  protected override scalePreviewParams(
-    { blockSize }: PixelateParams, s: number,
-  ): PixelateParams {
+  protected override scalePreviewParams({ blockSize }: PixelateParams, s: number): PixelateParams {
     return { blockSize: Math.max(1, Math.round(blockSize * s)) };
   }
 }
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imagePixelate: CreateWorkflow<ImagePixelateTaskInput & Record<string, unknown>, ImagePixelateTaskOutput, TaskConfig>;
+    imagePixelate: CreateWorkflow<
+      ImagePixelateTaskInput & Record<string, unknown>,
+      ImagePixelateTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

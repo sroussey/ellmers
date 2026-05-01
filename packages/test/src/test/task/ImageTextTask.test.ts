@@ -25,7 +25,7 @@ describe("ImageTextTask preview-scale behavior", () => {
     const task = new ImageTextTask({ id: "tx1" });
     const out = await task.executePreview(
       { text: "Hello", color: "#ffffff", fontSize: 24, image: bg } as never,
-      {} as never,
+      {} as never
     );
     // Output is an ImageValue carrying the same scale as the background.
     expect(out!.image.previewScale).toBe(0.25);
@@ -41,7 +41,7 @@ describe("ImageTextTask preview-scale behavior", () => {
       const task = new ImageTextTask({ id: "tx2" });
       const out = await task.executePreview(
         { text: "Hi", color: "#000000", fontSize: 24, width: 200, height: 100 } as never,
-        {} as never,
+        {} as never
       );
       expect(out!.image.previewScale).toBe(1.0);
       expect(out!.image.width).toBe(200);
@@ -58,7 +58,7 @@ describe("ImageTextTask preview-scale behavior", () => {
       const task = new ImageTextTask({ id: "tx3" });
       const out = await task.executePreview(
         { text: "Hi", color: "#000000", fontSize: 40, width: 500, height: 250 } as never,
-        {} as never,
+        {} as never
       );
       // Long edge is 500; scale = 100/500 = 0.2.
       // Output dims are scaled: 500*0.2=100, 250*0.2=50.

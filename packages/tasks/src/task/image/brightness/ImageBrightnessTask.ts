@@ -27,7 +27,9 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: ImageValueSchema({ title: "Image", description: "Brightness-adjusted image" }) },
+  properties: {
+    image: ImageValueSchema({ title: "Image", description: "Brightness-adjusted image" }),
+  },
   required: ["image"],
   additionalProperties: false,
 } as const;
@@ -37,14 +39,22 @@ export interface ImageBrightnessTaskInput extends ImageFilterInput {
 }
 export type ImageBrightnessTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageBrightnessTask extends ImageFilterTask<BrightnessParams, ImageBrightnessTaskInput & Record<string, unknown>, ImageBrightnessTaskOutput> {
+export class ImageBrightnessTask extends ImageFilterTask<
+  BrightnessParams,
+  ImageBrightnessTaskInput & Record<string, unknown>,
+  ImageBrightnessTaskOutput
+> {
   static override readonly type = "ImageBrightnessTask";
   static override readonly category = "Image";
   public static override title = "Adjust Brightness";
   public static override description = "Adjusts the brightness of an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "brightness";
   protected opParams(input: ImageBrightnessTaskInput & Record<string, unknown>): BrightnessParams {
@@ -54,7 +64,11 @@ export class ImageBrightnessTask extends ImageFilterTask<BrightnessParams, Image
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageBrightness: CreateWorkflow<ImageBrightnessTaskInput & Record<string, unknown>, ImageBrightnessTaskOutput, TaskConfig>;
+    imageBrightness: CreateWorkflow<
+      ImageBrightnessTaskInput & Record<string, unknown>,
+      ImageBrightnessTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

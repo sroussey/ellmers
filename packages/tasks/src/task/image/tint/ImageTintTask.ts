@@ -40,14 +40,22 @@ export interface ImageTintTaskInput extends ImageFilterInput {
 }
 export type ImageTintTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageTintTask extends ImageFilterTask<TintParams, ImageTintTaskInput & Record<string, unknown>, ImageTintTaskOutput> {
+export class ImageTintTask extends ImageFilterTask<
+  TintParams,
+  ImageTintTaskInput & Record<string, unknown>,
+  ImageTintTaskOutput
+> {
   static override readonly type = "ImageTintTask";
   static override readonly category = "Image";
   public static override title = "Tint Image";
   public static override description = "Applies a color tint to an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "tint";
   protected opParams(input: ImageTintTaskInput & Record<string, unknown>): TintParams {
@@ -60,7 +68,11 @@ export class ImageTintTask extends ImageFilterTask<TintParams, ImageTintTaskInpu
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageTint: CreateWorkflow<ImageTintTaskInput & Record<string, unknown>, ImageTintTaskOutput, TaskConfig>;
+    imageTint: CreateWorkflow<
+      ImageTintTaskInput & Record<string, unknown>,
+      ImageTintTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

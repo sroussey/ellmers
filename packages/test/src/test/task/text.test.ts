@@ -33,7 +33,7 @@ describe("ImageTextTask (cpu)", () => {
         color: "#ffffff",
         position: "middle-center",
       } as never,
-      {} as never,
+      {} as never
     );
     expect(out).toBeDefined();
     expect(out!.image.width).toBe(32);
@@ -70,7 +70,7 @@ describe("ImageTextTask (cpu)", () => {
         color: "#ffffff",
         position: "middle-center",
       } as never,
-      {} as never,
+      {} as never
     );
     expect(out).toBeDefined();
     expect(out!.image.width).toBe(32);

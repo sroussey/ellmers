@@ -4,21 +4,23 @@
  * All Rights Reserved
  */
 import { Task } from "@workglow/task-graph";
-import type {
-  IExecuteContext,
-  IExecutePreviewContext,
-  TaskConfig,
-} from "@workglow/task-graph";
+import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
 import { applyFilter, CpuImage, GpuImageFactory, hasFilterOp } from "@workglow/util/media";
 import type { GpuImage, ImageValue } from "@workglow/util/media";
 
-export interface ImageFilterInput { image: ImageValue; }
-export interface ImageFilterOutput { image: ImageValue; }
+export interface ImageFilterInput {
+  image: ImageValue;
+}
+export interface ImageFilterOutput {
+  image: ImageValue;
+}
 
 export abstract class ImageFilterTask<
   P,
-  Input extends ImageFilterInput & Record<string, unknown> = ImageFilterInput & Record<string, unknown>,
-  Output extends ImageFilterOutput & Record<string, unknown> = ImageFilterOutput & Record<string, unknown>,
+  Input extends ImageFilterInput & Record<string, unknown> = ImageFilterInput &
+    Record<string, unknown>,
+  Output extends ImageFilterOutput & Record<string, unknown> = ImageFilterOutput &
+    Record<string, unknown>,
   Config extends TaskConfig = TaskConfig,
 > extends Task<Input, Output, Config> {
   protected abstract readonly filterName: string;
@@ -69,7 +71,7 @@ export abstract class ImageFilterTask<
 
   override async executePreview(
     input: Input,
-    _ctx: IExecutePreviewContext,
+    _ctx: IExecutePreviewContext
   ): Promise<Output | undefined> {
     return this.runFilter(input);
   }

@@ -30,7 +30,7 @@ export function buildImageEditInpaintSampleGraph(): TaskGraph {
 
 /** Idempotent installer — never overwrites an existing workflow with the same id. */
 export async function ensureImageEditInpaintSample(
-  repo: TaskGraphTabularRepository,
+  repo: TaskGraphTabularRepository
 ): Promise<void> {
   const existing = await repo.tabularRepository.get({ key: IMAGE_EDIT_INPAINT_SAMPLE_ID });
   if (existing) return;

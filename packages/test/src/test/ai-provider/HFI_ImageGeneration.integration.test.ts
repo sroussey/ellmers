@@ -33,7 +33,8 @@ describe.skipIf(!RUN)("HuggingFace Inference image generation (live)", () => {
       },
     }).run();
     expect(result.image.width).toBeGreaterThan(0);
-    expect(result.image.height).toBeGreaterThan(0);  }, 120_000);
+    expect(result.image.height).toBeGreaterThan(0);
+  }, 120_000);
 
   it("edits an image with FLUX.1-Kontext-dev (inpaint-capable)", async () => {
     const base = await new ImageGenerateTask({
@@ -68,5 +69,6 @@ describe.skipIf(!RUN)("HuggingFace Inference image generation (live)", () => {
         aspectRatio: "1:1",
       },
     }).run();
-    expect(edited.image.width).toBeGreaterThan(0);  }, 180_000);
+    expect(edited.image.width).toBeGreaterThan(0);
+  }, 180_000);
 });

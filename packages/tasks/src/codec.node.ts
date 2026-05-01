@@ -50,11 +50,7 @@ import "./task/image/tint/tint.sharp";
 // the filter-arm side-effects above, ensures that any context that loads
 // this codec entry gets preview-time downscale for ImageValue inputs that
 // exceed the budget.
-import {
-  GpuImageFactory,
-  applyFilter,
-  registerPreviewResizeFn,
-} from "@workglow/util/media";
+import { GpuImageFactory, applyFilter, registerPreviewResizeFn } from "@workglow/util/media";
 
 registerPreviewResizeFn(async (value, width, height) => {
   const gpu = await GpuImageFactory.from(value);

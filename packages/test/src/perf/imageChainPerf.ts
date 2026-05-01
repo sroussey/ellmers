@@ -35,11 +35,11 @@ async function runChain(start: ImageValue): Promise<ImageValue> {
       color: "#ffffff",
       position: "middle-center",
     } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageFlipTask().executePreview(
     { image: img, direction: "horizontal" } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageSepiaTask().executePreview({ image: img } as never, {} as never))!
     .image as ImageValue;
@@ -47,15 +47,15 @@ async function runChain(start: ImageValue): Promise<ImageValue> {
     .image as ImageValue;
   img = (await new ImagePosterizeTask().executePreview(
     { image: img, levels: 4 } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageBorderTask().executePreview(
     { image: img, borderWidth: 4, color: "#000000" } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImagePixelateTask().executePreview(
     { image: img, blockSize: 2 } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   // Force a materialization round-trip so the timer covers the full preview chain.
   await CpuImage.from(img);
@@ -76,9 +76,9 @@ async function bench(name: string, w: number, h: number, ITERS = 5): Promise<voi
 }
 
 console.log(
-  "imageChainPerf — 7-stage chain (Text → Flip → Sepia → Blur → Posterize → Border → Pixelate)",
+  "imageChainPerf — 7-stage chain (Text → Flip → Sepia → Blur → Posterize → Border → Pixelate)"
 );
 console.log(
-  "Backend: cpu (default in node). Targets: 720p sharp ≤100ms, 720p webgpu ≤33ms, 720p cpu fallback ≤1500ms.\n",
+  "Backend: cpu (default in node). Targets: 720p sharp ≤100ms, 720p webgpu ≤33ms, 720p cpu fallback ≤1500ms.\n"
 );
 for (const s of SIZES) await bench(s.name, s.w, s.h);

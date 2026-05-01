@@ -105,8 +105,14 @@ describe("StreamingAiTask default phase emissions", () => {
 
     const idxPreparing = messages.indexOf("Preparing");
     const idxLabel = messages.indexOf("Summarizing");
-    expect(idxPreparing, `expected 'Preparing' in messages ${JSON.stringify(messages)}`).toBeGreaterThanOrEqual(0);
-    expect(idxLabel, `expected 'Summarizing' after 'Preparing' in messages ${JSON.stringify(messages)}`).toBeGreaterThan(idxPreparing);
+    expect(
+      idxPreparing,
+      `expected 'Preparing' in messages ${JSON.stringify(messages)}`
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      idxLabel,
+      `expected 'Summarizing' after 'Preparing' in messages ${JSON.stringify(messages)}`
+    ).toBeGreaterThan(idxPreparing);
   });
 
   it("uses the subclass's streamingPhaseLabel on first data event", async () => {
@@ -142,8 +148,17 @@ describe("StreamingAiTask default phase emissions", () => {
     const idxPreparing = messages.indexOf("Preparing");
     const idxCalling = messages.indexOf("Calling Anthropic");
     const idxLabel = messages.indexOf("Summarizing");
-    expect(idxPreparing, `expected 'Preparing' in messages ${JSON.stringify(messages)}`).toBeGreaterThanOrEqual(0);
-    expect(idxCalling, `expected 'Calling Anthropic' after 'Preparing' in messages ${JSON.stringify(messages)}`).toBeGreaterThan(idxPreparing);
-    expect(idxLabel, `expected 'Summarizing' after 'Calling Anthropic' in messages ${JSON.stringify(messages)}`).toBeGreaterThan(idxCalling);
+    expect(
+      idxPreparing,
+      `expected 'Preparing' in messages ${JSON.stringify(messages)}`
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      idxCalling,
+      `expected 'Calling Anthropic' after 'Preparing' in messages ${JSON.stringify(messages)}`
+    ).toBeGreaterThan(idxPreparing);
+    expect(
+      idxLabel,
+      `expected 'Summarizing' after 'Calling Anthropic' in messages ${JSON.stringify(messages)}`
+    ).toBeGreaterThan(idxCalling);
   });
 });

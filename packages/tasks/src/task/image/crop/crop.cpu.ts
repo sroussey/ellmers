@@ -45,7 +45,5 @@ function cpuCrop(
 }
 
 registerFilterOp<CropParams>("cpu", "crop", (image, { left, top, width, height }) => {
-  return CpuImage.fromRaw(
-    cpuCrop((image as CpuImage).getBinary(), left, top, width, height)
-  );
+  return CpuImage.fromRaw(cpuCrop((image as CpuImage).getBinary(), left, top, width, height));
 });

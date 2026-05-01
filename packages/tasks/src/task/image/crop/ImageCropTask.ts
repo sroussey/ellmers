@@ -36,14 +36,22 @@ export interface ImageCropTaskInput extends ImageFilterInput {
 }
 export type ImageCropTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageCropTask extends ImageFilterTask<CropParams, ImageCropTaskInput & Record<string, unknown>, ImageCropTaskOutput> {
+export class ImageCropTask extends ImageFilterTask<
+  CropParams,
+  ImageCropTaskInput & Record<string, unknown>,
+  ImageCropTaskOutput
+> {
   static override readonly type = "ImageCropTask";
   static override readonly category = "Image";
   public static override title = "Crop Image";
   public static override description = "Crops an image to a rectangular region";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "crop";
   protected opParams(input: ImageCropTaskInput & Record<string, unknown>): CropParams {
@@ -56,7 +64,8 @@ export class ImageCropTask extends ImageFilterTask<CropParams, ImageCropTaskInpu
   }
 
   protected override scalePreviewParams(
-    { left, top, width, height }: CropParams, s: number,
+    { left, top, width, height }: CropParams,
+    s: number
   ): CropParams {
     return {
       left: Math.round(left * s),
@@ -69,7 +78,11 @@ export class ImageCropTask extends ImageFilterTask<CropParams, ImageCropTaskInpu
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageCrop: CreateWorkflow<ImageCropTaskInput & Record<string, unknown>, ImageCropTaskOutput, TaskConfig>;
+    imageCrop: CreateWorkflow<
+      ImageCropTaskInput & Record<string, unknown>,
+      ImageCropTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

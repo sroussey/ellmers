@@ -4,10 +4,7 @@
  * All Rights Reserved
  */
 import type { ImageChannels } from "./imageTypes";
-import type {
-  GpuImage as IGpuImage,
-  GpuImageEncodeFormat,
-} from "./gpuImage";
+import type { GpuImage as IGpuImage, GpuImageEncodeFormat } from "./gpuImage";
 import type { ImageValue, NodeImageValue } from "./imageValue";
 import { isBrowserImageValue, isNodeImageValue } from "./imageValue";
 import { getImageRasterCodec } from "./imageRasterCodecRegistry";
@@ -78,9 +75,13 @@ export class CpuImage implements IGpuImage {
       if (!ctx) throw new Error("CpuImage.toImageValue could not acquire a 2D context");
       const rgba = expandToRgba(this.bin);
       ctx.putImageData(
-        new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.byteLength), this.bin.width, this.bin.height),
+        new ImageData(
+          new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.byteLength),
+          this.bin.width,
+          this.bin.height
+        ),
         0,
-        0,
+        0
       );
       const bitmap = await createImageBitmap(off);
       const out: ImageValue = {
@@ -152,7 +153,11 @@ function dataUriToBytes(dataUri: string): Uint8Array {
 
 async function decodeNodeImageValue(value: NodeImageValue): Promise<RawPixelBuffer> {
   if (value.format === "raw-rgba") {
-    const data = new Uint8ClampedArray(value.buffer.buffer, value.buffer.byteOffset, value.buffer.byteLength);
+    const data = new Uint8ClampedArray(
+      value.buffer.buffer,
+      value.buffer.byteOffset,
+      value.buffer.byteLength
+    );
     return { data, width: value.width, height: value.height, channels: 4 };
   }
   const codec = getImageRasterCodec();

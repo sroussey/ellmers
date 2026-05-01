@@ -5,12 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  Dataflow,
-  Task,
-  Workflow,
-  type StreamEvent,
-} from "@workglow/task-graph";
+import { Dataflow, Task, Workflow, type StreamEvent } from "@workglow/task-graph";
 
 class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }> {
   public static override type = "SyntheticStreamSource";

@@ -25,9 +25,9 @@ export function registerGeminiImageValidator(): void {
         throw new ProviderUnsupportedFeatureError(
           "mask",
           model.model_id ?? "gemini",
-          "Gemini does not support mask-based inpainting; remove the mask or use OpenAI gpt-image-2",
+          "Gemini does not support mask-based inpainting; remove the mask or use OpenAI gpt-image-2"
         );
       }
-    },
+    }
   );
 }

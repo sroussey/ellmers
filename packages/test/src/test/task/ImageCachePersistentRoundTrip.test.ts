@@ -45,7 +45,7 @@ describe("image cache — persistent round-trip via TaskOutputTabularRepository"
     const cpu1 = await CpuImage.from(out1);
     const cpu2 = await CpuImage.from(out2);
     expect(Array.from(cpu1.getBinary().data).slice(0, 32)).toEqual(
-      Array.from(cpu2.getBinary().data).slice(0, 32),
+      Array.from(cpu2.getBinary().data).slice(0, 32)
     );
   });
 

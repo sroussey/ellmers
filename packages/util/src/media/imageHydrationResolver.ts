@@ -15,7 +15,7 @@ import type { ServiceRegistry } from "../di/ServiceRegistry";
 async function resolveImage(
   id: unknown,
   _format: string,
-  _registry: ServiceRegistry,
+  _registry: ServiceRegistry
 ): Promise<unknown> {
   const normalized = await normalizeToImageValue(id);
   if (normalized !== undefined) return normalized;
@@ -23,7 +23,7 @@ async function resolveImage(
     const preview = id.length > 32 ? `${id.slice(0, 32)}...` : id;
     throw new Error(
       `format:"image" resolver received an unsupported string "${preview}". ` +
-        `Only data: URIs are handled. Register a sub-resolver for other schemes.`,
+        `Only data: URIs are handled. Register a sub-resolver for other schemes.`
     );
   }
   return id;

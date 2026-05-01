@@ -36,11 +36,7 @@ export interface IExecuteContext {
    *   `undefined` as an indeterminate bar.
    * @param message - Optional human-readable phase / status label.
    */
-  updateProgress: (
-    progress: number | undefined,
-    message?: string,
-    ...args: any[]
-  ) => Promise<void>;
+  updateProgress: (progress: number | undefined, message?: string, ...args: any[]) => Promise<void>;
   own: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => T;
   registry: ServiceRegistry;
   /**

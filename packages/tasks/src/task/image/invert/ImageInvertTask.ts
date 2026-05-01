@@ -24,17 +24,27 @@ const outputSchema = {
 export type ImageInvertTaskInput = ImageFilterInput & Record<string, unknown>;
 export type ImageInvertTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageInvertTask extends ImageFilterTask<undefined, ImageInvertTaskInput, ImageInvertTaskOutput> {
+export class ImageInvertTask extends ImageFilterTask<
+  undefined,
+  ImageInvertTaskInput,
+  ImageInvertTaskOutput
+> {
   static override readonly type = "ImageInvertTask";
   static override readonly category = "Image";
   public static override title = "Invert Colors";
   public static override description = "Inverts the colors of an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "invert";
-  protected opParams(_input: ImageInvertTaskInput): undefined { return undefined; }
+  protected opParams(_input: ImageInvertTaskInput): undefined {
+    return undefined;
+  }
 }
 
 declare module "@workglow/task-graph" {

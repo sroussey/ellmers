@@ -56,25 +56,34 @@ export interface ImageBorderTaskInput extends ImageFilterInput {
 }
 export type ImageBorderTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageBorderTask extends ImageFilterTask<BorderParams, ImageBorderTaskInput & Record<string, unknown>, ImageBorderTaskOutput> {
+export class ImageBorderTask extends ImageFilterTask<
+  BorderParams,
+  ImageBorderTaskInput & Record<string, unknown>,
+  ImageBorderTaskOutput
+> {
   static override readonly type = "ImageBorderTask";
   static override readonly category = "Image";
   public static override title = "Add Border";
   public static override description = "Adds a colored border around an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "border";
   protected opParams(input: ImageBorderTaskInput & Record<string, unknown>): BorderParams {
     return {
       borderWidth: (input.borderWidth as number | undefined) ?? 10,
-      color: (input.color as string | { r: number; g: number; b: number; a?: number }),
+      color: input.color as string | { r: number; g: number; b: number; a?: number },
     };
   }
 
   protected override scalePreviewParams(
-    { borderWidth, color }: BorderParams, s: number,
+    { borderWidth, color }: BorderParams,
+    s: number
   ): BorderParams {
     return { borderWidth: Math.max(1, Math.round(borderWidth * s)), color };
   }
@@ -82,7 +91,11 @@ export class ImageBorderTask extends ImageFilterTask<BorderParams, ImageBorderTa
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageBorder: CreateWorkflow<ImageBorderTaskInput & Record<string, unknown>, ImageBorderTaskOutput, TaskConfig>;
+    imageBorder: CreateWorkflow<
+      ImageBorderTaskInput & Record<string, unknown>,
+      ImageBorderTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

@@ -153,7 +153,12 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
           status={status}
         />
         <TaskDataButtons task={data.task} />
-        <ProgressBar progress={progress} status={status} showText={true} message={progressMessage} />
+        <ProgressBar
+          progress={progress}
+          status={status}
+          showText={true}
+          message={progressMessage}
+        />
 
         {(isStreaming || (status === TaskStatus.STREAMING && streamingText)) && (
           <div className="mt-2 p-2 bg-[rgba(28,35,50,0.6)] rounded-sm text-xs font-mono max-h-24 overflow-y-auto">

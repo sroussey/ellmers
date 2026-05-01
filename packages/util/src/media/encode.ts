@@ -17,14 +17,14 @@ async function rawPixelBufferToBytes(bin: RawPixelBuffer, mimeType: string): Pro
 
 export async function rawPixelBufferToDataUri(
   bin: RawPixelBuffer,
-  mimeType = "image/png",
+  mimeType = "image/png"
 ): Promise<string> {
   return getImageRasterCodec().encodeDataUri(bin, mimeType);
 }
 
 export async function rawPixelBufferToBlob(
   bin: RawPixelBuffer,
-  mimeType = "image/png",
+  mimeType = "image/png"
 ): Promise<Blob> {
   const bytes = await rawPixelBufferToBytes(bin, mimeType);
   return new Blob([bytes.buffer as ArrayBuffer], { type: mimeType });

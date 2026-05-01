@@ -17,7 +17,12 @@ async function blobMagic(blob: Blob, n: number): Promise<number[]> {
 }
 
 describe("rawPixelBufferToBlob", () => {
-  const bin = { data: new Uint8ClampedArray([10, 20, 30, 255]), width: 1, height: 1, channels: 4 as const };
+  const bin = {
+    data: new Uint8ClampedArray([10, 20, 30, 255]),
+    width: 1,
+    height: 1,
+    channels: 4 as const,
+  };
 
   test("default mime emits PNG bytes with PNG type", async () => {
     const blob = await rawPixelBufferToBlob(bin);

@@ -35,7 +35,7 @@ describe("Gemini image validator", () => {
       },
     });
     await expect(task.validateInput(task.runInputData as any)).rejects.toBeInstanceOf(
-      ProviderUnsupportedFeatureError,
+      ProviderUnsupportedFeatureError
     );
   });
 

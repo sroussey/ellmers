@@ -12,7 +12,7 @@ describe("ImageSepiaTask (cpu)", () => {
   test("applies sepia coefficients to RGBA pixel", async () => {
     const data = new Uint8ClampedArray([100, 150, 200, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "sepia", undefined);
+    const out = applyFilter(image, "sepia", undefined);
     const bin = (out as CpuImage).getBinary();
     // r = (100*402 + 150*787 + 200*194) >> 10 = (40200 + 118050 + 38800) >> 10 = 197050 >> 10 = 192
     // g = (100*357 + 150*702 + 200*172) >> 10 = (35700 + 105300 + 34400) >> 10 = 175400 >> 10 = 171

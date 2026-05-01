@@ -8,11 +8,7 @@ import "@workglow/util/media";
 import "@workglow/tasks";
 import { ImageBlurTask } from "@workglow/tasks";
 import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
-import {
-  TaskOutputRepository,
-  type TaskInput,
-  type TaskOutput,
-} from "@workglow/task-graph";
+import { TaskOutputRepository, type TaskInput, type TaskOutput } from "@workglow/task-graph";
 
 class MapRepo extends TaskOutputRepository {
   store = new Map<string, TaskOutput>();

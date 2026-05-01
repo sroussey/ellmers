@@ -35,7 +35,8 @@ describe.skipIf(!RUN)("Google Gemini image generation (live)", () => {
       },
     }).run();
     expect(result.image.width).toBeGreaterThan(0);
-    expect(result.image.height).toBeGreaterThan(0);  }, 60_000);
+    expect(result.image.height).toBeGreaterThan(0);
+  }, 60_000);
 
   it("edits an image with prompt-only changes (no mask)", async () => {
     const base = await new ImageGenerateTask({
@@ -69,5 +70,6 @@ describe.skipIf(!RUN)("Google Gemini image generation (live)", () => {
         aspectRatio: "1:1",
       },
     }).run({ image: base.image });
-    expect(edited.image.width).toBeGreaterThan(0);  }, 120_000);
+    expect(edited.image.width).toBeGreaterThan(0);
+  }, 120_000);
 });

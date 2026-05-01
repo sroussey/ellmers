@@ -30,7 +30,7 @@ export function buildImageEditComposeSampleGraph(): TaskGraph {
 
 /** Idempotent installer — never overwrites an existing workflow with the same id. */
 export async function ensureImageEditComposeSample(
-  repo: TaskGraphTabularRepository,
+  repo: TaskGraphTabularRepository
 ): Promise<void> {
   const existing = await repo.tabularRepository.get({ key: IMAGE_EDIT_COMPOSE_SAMPLE_ID });
   if (existing) return;

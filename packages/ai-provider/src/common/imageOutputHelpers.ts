@@ -48,7 +48,7 @@ function detectFormatFromMime(mime: string): NodeImageFormat {
  */
 export async function pngBytesToImageValue(
   bytes: Uint8Array,
-  format: NodeImageFormat = "png",
+  format: NodeImageFormat = "png"
 ): Promise<ImageValue> {
   // `imageValueFromBuffer` requires a Buffer; copy the typed-array view
   // into a fresh Buffer so we don't accidentally retain SharedArrayBuffer
@@ -82,7 +82,7 @@ export async function dataUriToImageValue(dataUri: string): Promise<ImageValue> 
     const buffer = Buffer.from(base64, "base64");
     return pngBytesToImageValue(
       new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
-      detectFormatFromMime(mime),
+      detectFormatFromMime(mime)
     );
   }
 
@@ -120,9 +120,7 @@ export async function blobToImageValue(blob: Blob): Promise<ImageValue> {
  * Always returns PNG bytes. Callers wrap the result in whatever transport
  * shape the SDK expects (Blob, File, OpenAI.toFile, inlineData Part).
  */
-export async function imageValueToPngBytes(
-  image: unknown,
-): Promise<Uint8Array> {
+export async function imageValueToPngBytes(image: unknown): Promise<Uint8Array> {
   if (typeof image === "string") {
     // Legacy data URI from prior materialization. Decode base64.
     const match = /^data:[^;,]+;base64,(.+)$/.exec(image);
@@ -142,7 +140,12 @@ export async function imageValueToPngBytes(
 
   if (image && typeof image === "object") {
     // NodeImageValue path — has a `buffer` and `format`.
-    const node = image as { buffer?: Buffer; format?: NodeImageFormat; width?: number; height?: number };
+    const node = image as {
+      buffer?: Buffer;
+      format?: NodeImageFormat;
+      width?: number;
+      height?: number;
+    };
     if (
       typeof Buffer !== "undefined" &&
       Buffer.isBuffer(node.buffer) &&
@@ -159,7 +162,7 @@ export async function imageValueToPngBytes(
       ) {
         const out = await encodeRawPixels(
           { data: node.buffer, width: node.width, height: node.height, channels: 4 },
-          { format: "png" },
+          { format: "png" }
         );
         return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
       }
@@ -196,7 +199,7 @@ export async function imageValueToBlob(image: unknown): Promise<Blob> {
 async function encodeBitmapToPngBytes(
   bitmap: ImageBitmap,
   width: number,
-  height: number,
+  height: number
 ): Promise<Uint8Array> {
   if (typeof OffscreenCanvas !== "undefined") {
     const canvas = new OffscreenCanvas(width, height);

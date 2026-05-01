@@ -6,11 +6,7 @@
 import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import type { GpuImage, GpuImageBackend } from "@workglow/util/media";
-import {
-  GpuImageFactory,
-  imageValueFromBuffer,
-  ImageValueSchema,
-} from "@workglow/util/media";
+import { GpuImageFactory, imageValueFromBuffer, ImageValueSchema } from "@workglow/util/media";
 
 describe("GpuImage interface", () => {
   test("backend tag is one of the three allowed strings", () => {
@@ -49,7 +45,7 @@ describe("GpuImageFactory Proxy guards", () => {
 
   test("unregistered string key throws with a helpful message", () => {
     expect(() => (GpuImageFactory as any).somethingBogus()).toThrow(
-      /somethingBogus is not registered/,
+      /somethingBogus is not registered/
     );
   });
 });

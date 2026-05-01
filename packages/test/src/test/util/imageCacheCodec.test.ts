@@ -5,11 +5,7 @@
  */
 import { describe, expect, test } from "vitest";
 import "@workglow/util/media";
-import {
-  imageValueFromBuffer,
-  isNodeImageValue,
-  type ImageValue,
-} from "@workglow/util/media";
+import { imageValueFromBuffer, isNodeImageValue, type ImageValue } from "@workglow/util/media";
 import { getPortCodec } from "@workglow/task-graph";
 
 const codec = getPortCodec("image");
@@ -32,7 +28,13 @@ describe("image port codec", () => {
   });
 
   test("deserialize reconstructs a NodeImageValue with bytes intact", async () => {
-    const original = imageValueFromBuffer(Buffer.from(new Uint8Array([10, 20, 30, 255])), "raw-rgba", 1, 1, 0.25);
+    const original = imageValueFromBuffer(
+      Buffer.from(new Uint8Array([10, 20, 30, 255])),
+      "raw-rgba",
+      1,
+      1,
+      0.25
+    );
     const wire = await codec!.serialize(original);
     const json = JSON.parse(JSON.stringify(wire));
     const out = (await codec!.deserialize(json)) as ImageValue;

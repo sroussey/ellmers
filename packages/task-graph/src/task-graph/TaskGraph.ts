@@ -493,7 +493,12 @@ export class TaskGraph implements ITaskGraph {
    * @returns a function to unsubscribe from all task progress events
    */
   public subscribeToTaskProgress(
-    callback: (taskId: TaskIdType, progress: number | undefined, message?: string, ...args: any[]) => void
+    callback: (
+      taskId: TaskIdType,
+      progress: number | undefined,
+      message?: string,
+      ...args: any[]
+    ) => void
   ): () => void {
     const unsubscribes: (() => void)[] = [];
 

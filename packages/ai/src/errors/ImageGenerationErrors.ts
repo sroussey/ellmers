@@ -14,7 +14,7 @@ export class ProviderUnsupportedFeatureError extends Error {
   constructor(
     public readonly field: string,
     public readonly modelId: string,
-    detail: string,
+    detail: string
   ) {
     super(`Model "${modelId}" does not support input field "${field}": ${detail}`);
     this.name = "ProviderUnsupportedFeatureError";
@@ -29,7 +29,7 @@ export class ImageGenerationContentPolicyError extends Error {
   public readonly retryable = false;
   constructor(
     public readonly modelId: string,
-    public readonly providerReason: string,
+    public readonly providerReason: string
   ) {
     super(`Image generation refused by ${modelId}: ${providerReason}`);
     this.name = "ImageGenerationContentPolicyError";
@@ -45,7 +45,7 @@ export class ImageGenerationProviderError extends Error {
   constructor(
     public readonly modelId: string,
     message: string,
-    options?: ErrorOptions,
+    options?: ErrorOptions
   ) {
     super(`${modelId}: ${message}`, options);
     this.name = "ImageGenerationProviderError";

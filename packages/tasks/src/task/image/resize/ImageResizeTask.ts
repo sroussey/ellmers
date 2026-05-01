@@ -13,7 +13,12 @@ const inputSchema = {
   properties: {
     image: ImageValueSchema({ title: "Image", description: "Source image" }),
     width: { type: "integer", title: "Width", description: "Target width in pixels", minimum: 1 },
-    height: { type: "integer", title: "Height", description: "Target height in pixels", minimum: 1 },
+    height: {
+      type: "integer",
+      title: "Height",
+      description: "Target height in pixels",
+      minimum: 1,
+    },
     fit: {
       type: "string",
       enum: ["cover", "contain", "fill", "inside", "outside"],
@@ -46,14 +51,22 @@ export interface ImageResizeTaskInput extends ImageFilterInput {
 }
 export type ImageResizeTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageResizeTask extends ImageFilterTask<ResizeParams, ImageResizeTaskInput & Record<string, unknown>, ImageResizeTaskOutput> {
+export class ImageResizeTask extends ImageFilterTask<
+  ResizeParams,
+  ImageResizeTaskInput & Record<string, unknown>,
+  ImageResizeTaskOutput
+> {
   static override readonly type = "ImageResizeTask";
   static override readonly category = "Image";
   public static override title = "Resize Image";
   public static override description = "Resizes an image using nearest-neighbor sampling";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "resize";
   protected opParams(input: ImageResizeTaskInput & Record<string, unknown>): ResizeParams {
@@ -66,7 +79,8 @@ export class ImageResizeTask extends ImageFilterTask<ResizeParams, ImageResizeTa
   }
 
   protected override scalePreviewParams(
-    { width, height, fit, kernel }: ResizeParams, s: number,
+    { width, height, fit, kernel }: ResizeParams,
+    s: number
   ): ResizeParams {
     return {
       width: Math.max(1, Math.round(width * s)),
@@ -79,7 +93,11 @@ export class ImageResizeTask extends ImageFilterTask<ResizeParams, ImageResizeTa
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageResize: CreateWorkflow<ImageResizeTaskInput & Record<string, unknown>, ImageResizeTaskOutput, TaskConfig>;
+    imageResize: CreateWorkflow<
+      ImageResizeTaskInput & Record<string, unknown>,
+      ImageResizeTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

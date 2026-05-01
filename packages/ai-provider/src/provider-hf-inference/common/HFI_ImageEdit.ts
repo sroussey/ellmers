@@ -81,7 +81,7 @@ export const HFI_ImageEdit: AiProviderRunFn<
         inputs: inputBlob,
         parameters: params,
       },
-      { signal },
+      { signal }
     );
     const image = await blobToImageValue(blob);
     update_progress(100, "Completed HF image edit");

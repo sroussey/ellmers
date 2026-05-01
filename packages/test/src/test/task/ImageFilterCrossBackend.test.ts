@@ -15,7 +15,8 @@ import {
 } from "@workglow/util/media";
 import { applyFilter } from "@workglow/tasks";
 
-const W = 32, H = 32;
+const W = 32,
+  H = 32;
 
 function mkBinary(): RawPixelBuffer {
   const data = new Uint8ClampedArray(W * H * 4);
@@ -87,12 +88,7 @@ const KNOWN_SHARP_GAPS = new Set([
 ]);
 
 // Filters whose webgpu arms produce results outside ≤2/255 per channel vs cpu.
-const KNOWN_GPU_GAPS = new Set([
-  "resize",
-  "pixelate",
-  "tint",
-  "threshold",
-]);
+const KNOWN_GPU_GAPS = new Set(["resize", "pixelate", "tint", "threshold"]);
 
 async function readBinary(image: GpuImage): Promise<RawPixelBuffer> {
   if (image.backend === "cpu") {
@@ -127,9 +123,11 @@ for (const c of cases) {
       // Skip: known algorithm gap between cpu and webgpu implementations.
       test.skip("cpu vs webgpu ≤ 2/255 per channel (known gpu gap)", async () => {
         const media = await import("@workglow/util/media");
-        const WebGpuImage = (media as unknown as {
-          WebGpuImage: typeof import("@workglow/util/media").WebGpuImage;
-        }).WebGpuImage;
+        const WebGpuImage = (
+          media as unknown as {
+            WebGpuImage: typeof import("@workglow/util/media").WebGpuImage;
+          }
+        ).WebGpuImage;
         const dev = await media.getGpuDevice();
         if (!dev) return;
         const cpu = applyFilter(CpuImage.fromRaw(mkBinary()), c.name, c.params);
@@ -143,9 +141,11 @@ for (const c of cases) {
         "cpu vs webgpu ≤ 2/255 per channel",
         async () => {
           const media = await import("@workglow/util/media");
-          const WebGpuImage = (media as unknown as {
-            WebGpuImage: typeof import("@workglow/util/media").WebGpuImage;
-          }).WebGpuImage;
+          const WebGpuImage = (
+            media as unknown as {
+              WebGpuImage: typeof import("@workglow/util/media").WebGpuImage;
+            }
+          ).WebGpuImage;
           const dev = await media.getGpuDevice();
           if (!dev) return;
           const cpu = applyFilter(CpuImage.fromRaw(mkBinary()), c.name, c.params);
@@ -153,7 +153,7 @@ for (const c of cases) {
           const a = await readBinary(cpu);
           const b = await readBinary(gpu);
           expect(maxAbsDiff(a, b)).toBeLessThanOrEqual(2);
-        },
+        }
       );
     }
   });

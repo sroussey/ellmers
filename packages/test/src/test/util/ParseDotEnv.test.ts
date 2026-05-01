@@ -27,7 +27,9 @@ describe("parseDotEnv", () => {
   });
 
   it("ignores blank lines and full-line comments", () => {
-    const result = parseDotEnv(["", "# header", "  # indented", "FOO=bar", "", "  ", "BAZ=qux"].join("\n"));
+    const result = parseDotEnv(
+      ["", "# header", "  # indented", "FOO=bar", "", "  ", "BAZ=qux"].join("\n")
+    );
     expect(Object.fromEntries(result)).toEqual({ FOO: "bar", BAZ: "qux" });
   });
 

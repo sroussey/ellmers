@@ -77,9 +77,7 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     return new PermanentJobError(err.message);
   }
   if (err instanceof ImageGenerationProviderError) {
-    return err.retryable
-      ? new RetryableJobError(err.message)
-      : new PermanentJobError(err.message);
+    return err.retryable ? new RetryableJobError(err.message) : new PermanentJobError(err.message);
   }
 
   const message = err instanceof Error ? err.message : String(err);
@@ -292,13 +290,7 @@ export class AiJob<
     const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
 
     try {
-      yield* streamFn(
-        input.taskInput,
-        model,
-        combinedSignal,
-        input.outputSchema,
-        input.sessionId
-      );
+      yield* streamFn(input.taskInput, model, combinedSignal, input.outputSchema, input.sessionId);
     } catch (err) {
       const logger = getLogger();
       logger.warn(

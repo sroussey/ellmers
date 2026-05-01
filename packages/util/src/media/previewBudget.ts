@@ -20,7 +20,7 @@ const _g = globalThis as Record<symbol, unknown>;
 export type PreviewResizeFn = (
   image: ImageValue,
   width: number,
-  height: number,
+  height: number
 ) => Promise<ImageValue>;
 
 const DEFAULT_BUDGET = 512;

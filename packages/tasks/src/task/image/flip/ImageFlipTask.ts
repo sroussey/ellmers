@@ -36,14 +36,22 @@ export interface ImageFlipTaskInput extends ImageFilterInput {
 }
 export type ImageFlipTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageFlipTask extends ImageFilterTask<FlipParams, ImageFlipTaskInput & Record<string, unknown>, ImageFlipTaskOutput> {
+export class ImageFlipTask extends ImageFilterTask<
+  FlipParams,
+  ImageFlipTaskInput & Record<string, unknown>,
+  ImageFlipTaskOutput
+> {
   static override readonly type = "ImageFlipTask";
   static override readonly category = "Image";
   public static override title = "Flip Image";
   public static override description = "Flips an image horizontally or vertically";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "flip";
   protected opParams(input: ImageFlipTaskInput & Record<string, unknown>): FlipParams {
@@ -53,7 +61,11 @@ export class ImageFlipTask extends ImageFilterTask<FlipParams, ImageFlipTaskInpu
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageFlip: CreateWorkflow<ImageFlipTaskInput & Record<string, unknown>, ImageFlipTaskOutput, TaskConfig>;
+    imageFlip: CreateWorkflow<
+      ImageFlipTaskInput & Record<string, unknown>,
+      ImageFlipTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

@@ -37,14 +37,22 @@ export interface ImageThresholdTaskInput extends ImageFilterInput {
 }
 export type ImageThresholdTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageThresholdTask extends ImageFilterTask<ThresholdParams, ImageThresholdTaskInput & Record<string, unknown>, ImageThresholdTaskOutput> {
+export class ImageThresholdTask extends ImageFilterTask<
+  ThresholdParams,
+  ImageThresholdTaskInput & Record<string, unknown>,
+  ImageThresholdTaskOutput
+> {
   static override readonly type = "ImageThresholdTask";
   static override readonly category = "Image";
   public static override title = "Threshold";
   public static override description = "Applies a binary threshold per channel";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "threshold";
   protected opParams(input: ImageThresholdTaskInput & Record<string, unknown>): ThresholdParams {
@@ -54,7 +62,11 @@ export class ImageThresholdTask extends ImageFilterTask<ThresholdParams, ImageTh
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageThreshold: CreateWorkflow<ImageThresholdTaskInput & Record<string, unknown>, ImageThresholdTaskOutput, TaskConfig>;
+    imageThreshold: CreateWorkflow<
+      ImageThresholdTaskInput & Record<string, unknown>,
+      ImageThresholdTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

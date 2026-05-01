@@ -12,7 +12,7 @@ describe("ImageTintTask (cpu)", () => {
   test("amount 0 is identity", async () => {
     const data = new Uint8ClampedArray([100, 150, 200, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "tint", { color: "#ff0000", amount: 0 });
+    const out = applyFilter(image, "tint", { color: "#ff0000", amount: 0 });
     const bin = (out as CpuImage).getBinary();
     expect(bin.data[0]).toBe(100);
     expect(bin.data[1]).toBe(150);
@@ -27,7 +27,7 @@ describe("ImageTintTask (cpu)", () => {
     // b = 255*0.5 + 0*0.5 = 127.5 → 128
     const data = new Uint8ClampedArray([255, 255, 255, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "tint", { color: "#00ff00", amount: 0.5 });
+    const out = applyFilter(image, "tint", { color: "#00ff00", amount: 0.5 });
     const bin = (out as CpuImage).getBinary();
     // Uint8ClampedArray rounds 127.5 to 128
     expect(bin.data[0]).toBe(128);
@@ -39,7 +39,7 @@ describe("ImageTintTask (cpu)", () => {
   test("amount 1 produces tint color", async () => {
     const data = new Uint8ClampedArray([100, 150, 200, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "tint", { color: "#ff0000", amount: 1 });
+    const out = applyFilter(image, "tint", { color: "#ff0000", amount: 1 });
     const bin = (out as CpuImage).getBinary();
     expect(bin.data[0]).toBe(255);
     expect(bin.data[1]).toBe(0);

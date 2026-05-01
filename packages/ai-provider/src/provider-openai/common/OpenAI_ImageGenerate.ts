@@ -22,7 +22,7 @@ import { getClient, getModelName } from "./OpenAI_Client";
 
 /** Maps the normalized aspect ratio to gpt-image-2 / DALL-E supported sizes. */
 function aspectRatioToSize(
-  aspectRatio: string | undefined,
+  aspectRatio: string | undefined
 ): "1024x1024" | "1024x1536" | "1536x1024" {
   switch (aspectRatio) {
     case "16:9":
@@ -42,7 +42,11 @@ async function decodeB64Png(b64: string): Promise<ImageValue> {
 }
 
 function modelIdOf(model: ModelConfig | undefined): string {
-  return model?.model_id ?? (model?.provider_config as { model_name?: string } | undefined)?.model_name ?? "openai";
+  return (
+    model?.model_id ??
+    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
+    "openai"
+  );
 }
 
 /** Non-streaming path. Used for DALL-E or when streaming is not requested. */
@@ -66,12 +70,19 @@ export const OpenAI_ImageGenerate: AiProviderRunFn<
         model: modelName,
         prompt: input.prompt,
         size,
-        quality: input.quality as "standard" | "hd" | "low" | "medium" | "high" | "auto" | undefined,
+        quality: input.quality as
+          | "standard"
+          | "hd"
+          | "low"
+          | "medium"
+          | "high"
+          | "auto"
+          | undefined,
         n: 1,
         response_format: "b64_json",
         ...(input.providerOptions ?? {}),
       } as Parameters<typeof client.images.generate>[0],
-      { signal },
+      { signal }
     );
 
     const b64 = resp.data?.[0]?.b64_json;
@@ -125,7 +136,7 @@ export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
           response_format: "b64_json",
           ...(input.providerOptions ?? {}),
         },
-        { signal },
+        { signal }
       );
       const b64 = resp.data?.[0]?.b64_json;
       if (!b64) {
@@ -163,7 +174,7 @@ export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
         partial_images: 3,
         ...(input.providerOptions ?? {}),
       },
-      { signal },
+      { signal }
     );
 
     for await (const event of stream) {

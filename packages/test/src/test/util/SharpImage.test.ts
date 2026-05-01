@@ -29,8 +29,7 @@ describe.skipIf(isBrowser)("SharpImage", () => {
 
   test("from(NodeImageValue) -> toImageValue round-trips dimensions", async () => {
     const data = new Uint8ClampedArray([
-      255, 0, 0, 255, 0, 255, 0, 255,
-      0, 0, 255, 255, 128, 128, 128, 255,
+      255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 128, 128, 128, 255,
     ]);
     const img = await SharpImage.from(rawValue(data, 2, 2));
     const out = await img.toImageValue(1.0);
@@ -64,9 +63,7 @@ describe.skipIf(isBrowser)("SharpImage", () => {
   });
 
   test("dispose() does not throw and clears the pipeline", async () => {
-    const img = await SharpImage.from(
-      rawValue(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1),
-    );
+    const img = await SharpImage.from(rawValue(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1));
     expect(() => img.dispose()).not.toThrow();
     // Subsequent ops on the disposed instance fail loudly.
     await expect(img.encode("png")).rejects.toThrow(/disposed/);

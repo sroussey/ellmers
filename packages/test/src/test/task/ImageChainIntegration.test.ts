@@ -32,11 +32,11 @@ async function runChain(start: ImageValue): Promise<ImageValue> {
       color: "#ffffff",
       position: "middle-center",
     } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageFlipTask().executePreview(
     { image: img, direction: "horizontal" } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageSepiaTask().executePreview({ image: img } as never, {} as never))!
     .image as ImageValue;
@@ -44,15 +44,15 @@ async function runChain(start: ImageValue): Promise<ImageValue> {
     .image as ImageValue;
   img = (await new ImagePosterizeTask().executePreview(
     { image: img, levels: 4 } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImageBorderTask().executePreview(
     { image: img, borderWidth: 2, color: "#000000" } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   img = (await new ImagePixelateTask().executePreview(
     { image: img, blockSize: 2 } as never,
-    {} as never,
+    {} as never
   ))!.image as ImageValue;
   return img;
 }

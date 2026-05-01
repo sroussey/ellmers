@@ -18,7 +18,9 @@ export interface ImageRasterCodec {
 const GLOBAL_CODEC_KEY = Symbol.for("@workglow/util/media/imageRasterCodec");
 const _g = globalThis as Record<symbol, unknown>;
 
-interface CodecSlot { value: ImageRasterCodec | null; }
+interface CodecSlot {
+  value: ImageRasterCodec | null;
+}
 if (!_g[GLOBAL_CODEC_KEY]) {
   _g[GLOBAL_CODEC_KEY] = { value: null } satisfies CodecSlot;
 }

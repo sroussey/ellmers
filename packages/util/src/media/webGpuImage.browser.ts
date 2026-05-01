@@ -28,7 +28,7 @@ export class WebGpuImage implements IGpuImage {
     private device: GPUDevice,
     private texture: GPUTexture | null,
     readonly width: number,
-    readonly height: number,
+    readonly height: number
   ) {}
 
   static async from(value: ImageValue): Promise<WebGpuImage> {
@@ -42,11 +42,11 @@ export class WebGpuImage implements IGpuImage {
     }
     // Now we know value is BrowserImageValue.
     const tex = getTexturePool(dev).acquire(value.width, value.height, TEX_FORMAT);
-    dev.queue.copyExternalImageToTexture(
-      { source: value.bitmap },
-      { texture: tex },
-      [value.width, value.height, 1],
-    );
+    dev.queue.copyExternalImageToTexture({ source: value.bitmap }, { texture: tex }, [
+      value.width,
+      value.height,
+      1,
+    ]);
     return new WebGpuImage(dev, tex, value.width, value.height);
   }
 
@@ -81,12 +81,14 @@ export class WebGpuImage implements IGpuImage {
     });
     const enc = this.device.createCommandEncoder();
     const pass = enc.beginRenderPass({
-      colorAttachments: [{
-        view: out.createView(),
-        loadOp: "clear",
-        storeOp: "store",
-        clearValue: [0, 0, 0, 0],
-      }],
+      colorAttachments: [
+        {
+          view: out.createView(),
+          loadOp: "clear",
+          storeOp: "store",
+          clearValue: [0, 0, 0, 0],
+        },
+      ],
     });
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
@@ -115,7 +117,11 @@ export class WebGpuImage implements IGpuImage {
     const pipeline = this.device.createRenderPipeline({
       layout: "auto",
       vertex: { module: shaderModule, entryPoint: "vs" },
-      fragment: { module: shaderModule, entryPoint: "fs", targets: [{ format: presentationFormat }] },
+      fragment: {
+        module: shaderModule,
+        entryPoint: "fs",
+        targets: [{ format: presentationFormat }],
+      },
       primitive: { topology: "triangle-list" },
     });
     const sampler = this.device.createSampler({ magFilter: "linear", minFilter: "linear" });

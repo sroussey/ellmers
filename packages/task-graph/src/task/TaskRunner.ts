@@ -39,7 +39,7 @@ interface SchemaProperties {
 
 async function serializeOutputPorts(
   output: Record<string, unknown>,
-  schema: SchemaProperties,
+  schema: SchemaProperties
 ): Promise<Record<string, unknown>> {
   if (!schema?.properties) return output;
   const out: Record<string, unknown> = { ...output };
@@ -54,7 +54,7 @@ async function serializeOutputPorts(
 
 async function deserializeOutputPorts(
   output: Record<string, unknown>,
-  schema: SchemaProperties,
+  schema: SchemaProperties
 ): Promise<Record<string, unknown>> {
   if (!schema?.properties) return output;
   const out: Record<string, unknown> = { ...output };
@@ -69,7 +69,7 @@ async function deserializeOutputPorts(
 
 async function normalizeInputsForCacheKey(
   inputs: Record<string, unknown>,
-  schema: SchemaProperties,
+  schema: SchemaProperties
 ): Promise<Record<string, unknown>> {
   if (!schema?.properties) return inputs;
   const out: Record<string, unknown> = { ...inputs };
@@ -255,7 +255,7 @@ export class TaskRunner<
       const inputsForKey = this.outputCache
         ? await normalizeInputsForCacheKey(
             inputs as Record<string, unknown>,
-            inputSchema as unknown as SchemaProperties,
+            inputSchema as unknown as SchemaProperties
           )
         : inputs;
 
@@ -264,7 +264,7 @@ export class TaskRunner<
         if (cached !== undefined) {
           outputs = (await deserializeOutputPorts(
             cached as Record<string, unknown>,
-            outputSchema as unknown as SchemaProperties,
+            outputSchema as unknown as SchemaProperties
           )) as Output;
           this.telemetrySpan?.addEvent("workglow.task.cache_hit");
           if (isStreamable) {
@@ -286,7 +286,7 @@ export class TaskRunner<
         if (this.task.cacheable && outputs !== undefined) {
           const wireOutputs = await serializeOutputPorts(
             outputs as Record<string, unknown>,
-            outputSchema as unknown as SchemaProperties,
+            outputSchema as unknown as SchemaProperties
           );
           await this.outputCache?.saveOutput(this.task.type, inputsForKey, wireOutputs as Output);
         }

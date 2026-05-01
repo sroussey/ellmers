@@ -95,7 +95,9 @@ export function getImageTextRenderer(): ImageTextRenderer {
   return globalServiceRegistry.get(IMAGE_TEXT_RENDERER);
 }
 
-export async function renderImageTextToRgba(params: ImageTextRenderParams): Promise<RawPixelBuffer> {
+export async function renderImageTextToRgba(
+  params: ImageTextRenderParams
+): Promise<RawPixelBuffer> {
   assertWithinPixelBudget(params.width, params.height);
   return getImageTextRenderer().renderToRgba(params);
 }

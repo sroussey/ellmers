@@ -106,7 +106,9 @@ export type GraphResult<
  * realm boundaries (e.g. bundle copies in test harnesses) where those identity
  * checks can spuriously fail.
  */
-function isImageValueShape(v: unknown): v is { width: number; height: number; previewScale: number } {
+function isImageValueShape(
+  v: unknown
+): v is { width: number; height: number; previewScale: number } {
   if (v === null || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
@@ -906,8 +908,12 @@ export class TaskGraphRunner {
       // Pass `false` when no cache so TaskRunner.handleStart explicitly clears
       // its own cached reference (undefined would leave the old value intact).
       outputCache: this.outputCache ?? false,
-      updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
-        await this.handleProgress(task, progress, message, ...args),
+      updateProgress: async (
+        task: ITask,
+        progress: number | undefined,
+        message?: string,
+        ...args: any[]
+      ) => await this.handleProgress(task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
     });
@@ -995,8 +1001,12 @@ export class TaskGraphRunner {
       const results = await task.runner.run(input, {
         outputCache: this.outputCache ?? false,
         shouldAccumulate,
-        updateProgress: async (task: ITask, progress: number | undefined, message?: string, ...args: any[]) =>
-          await this.handleProgress(task, progress, message, ...args),
+        updateProgress: async (
+          task: ITask,
+          progress: number | undefined,
+          message?: string,
+          ...args: any[]
+        ) => await this.handleProgress(task, progress, message, ...args),
         registry: this.registry,
         resourceScope: this.resourceScope,
       });
@@ -1035,7 +1045,7 @@ export class TaskGraphRunner {
   private createStreamFromTaskEvents(
     task: ITask,
     portId: string | undefined,
-    edgesForGroup: ReadonlyArray<Dataflow>,
+    edgesForGroup: ReadonlyArray<Dataflow>
   ): ReadableStream<StreamEvent> {
     return new ReadableStream<StreamEvent>({
       start: (controller) => {
@@ -1460,8 +1470,7 @@ export class TaskGraphRunner {
     // Terminal-state handlers (complete, abort, error, disable) set task.status to their
     // terminal value before calling handleProgress(100), so the output push is skipped here —
     // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
-    const isActive =
-      task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
+    const isActive = task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
     if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
       await this.pushOutputFromNodeToEdges(task, task.runOutputData);
     }

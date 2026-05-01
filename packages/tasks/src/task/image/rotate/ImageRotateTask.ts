@@ -41,14 +41,22 @@ export interface ImageRotateTaskInput extends ImageFilterInput {
 }
 export type ImageRotateTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageRotateTask extends ImageFilterTask<RotateParams, ImageRotateTaskInput & Record<string, unknown>, ImageRotateTaskOutput> {
+export class ImageRotateTask extends ImageFilterTask<
+  RotateParams,
+  ImageRotateTaskInput & Record<string, unknown>,
+  ImageRotateTaskOutput
+> {
   static override readonly type = "ImageRotateTask";
   static override readonly category = "Image";
   public static override title = "Rotate Image";
   public static override description = "Rotates an image by 90, 180, or 270 degrees clockwise";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "rotate";
   protected opParams(input: ImageRotateTaskInput & Record<string, unknown>): RotateParams {
@@ -61,7 +69,11 @@ export class ImageRotateTask extends ImageFilterTask<RotateParams, ImageRotateTa
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageRotate: CreateWorkflow<ImageRotateTaskInput & Record<string, unknown>, ImageRotateTaskOutput, TaskConfig>;
+    imageRotate: CreateWorkflow<
+      ImageRotateTaskInput & Record<string, unknown>,
+      ImageRotateTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

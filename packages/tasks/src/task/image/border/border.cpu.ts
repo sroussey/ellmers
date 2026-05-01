@@ -3,7 +3,12 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, resolveColor, type RawPixelBuffer } from "@workglow/util/media";
+import {
+  CpuImage,
+  registerFilterOp,
+  resolveColor,
+  type RawPixelBuffer,
+} from "@workglow/util/media";
 
 export interface BorderParams {
   borderWidth: number;

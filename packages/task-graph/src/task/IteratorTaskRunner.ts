@@ -265,7 +265,11 @@ export class IteratorTaskRunner<
      */
     const onGraphProgress = (p: number | undefined, message?: string): void => {
       this.task.emit("iteration_progress", index, iterationCount, p, message);
-      if (p !== undefined && this.aggregatingParentMapProgress && this.mapPartialIterationCount > 0) {
+      if (
+        p !== undefined &&
+        this.aggregatingParentMapProgress &&
+        this.mapPartialIterationCount > 0
+      ) {
         this.mapPartialProgress[index] = Math.max(this.mapPartialProgress[index] ?? 0, p);
         this.emitMapParentProgressFromPartials(message);
       }

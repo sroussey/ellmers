@@ -27,7 +27,9 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: ImageValueSchema({ title: "Image", description: "Contrast-adjusted image" }) },
+  properties: {
+    image: ImageValueSchema({ title: "Image", description: "Contrast-adjusted image" }),
+  },
   required: ["image"],
   additionalProperties: false,
 } as const;
@@ -37,14 +39,22 @@ export interface ImageContrastTaskInput extends ImageFilterInput {
 }
 export type ImageContrastTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageContrastTask extends ImageFilterTask<ContrastParams, ImageContrastTaskInput & Record<string, unknown>, ImageContrastTaskOutput> {
+export class ImageContrastTask extends ImageFilterTask<
+  ContrastParams,
+  ImageContrastTaskInput & Record<string, unknown>,
+  ImageContrastTaskOutput
+> {
   static override readonly type = "ImageContrastTask";
   static override readonly category = "Image";
   public static override title = "Adjust Contrast";
   public static override description = "Adjusts the contrast of an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "contrast";
   protected opParams(input: ImageContrastTaskInput & Record<string, unknown>): ContrastParams {
@@ -54,7 +64,11 @@ export class ImageContrastTask extends ImageFilterTask<ContrastParams, ImageCont
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageContrast: CreateWorkflow<ImageContrastTaskInput & Record<string, unknown>, ImageContrastTaskOutput, TaskConfig>;
+    imageContrast: CreateWorkflow<
+      ImageContrastTaskInput & Record<string, unknown>,
+      ImageContrastTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

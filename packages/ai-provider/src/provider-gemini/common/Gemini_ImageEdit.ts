@@ -80,17 +80,12 @@ export const Gemini_ImageEdit: AiProviderRunFn<
   // image/additionalImages may be data URI strings if the input crossed
   // an earlier worker boundary in legacy form; otherwise they are ImageValue
   // POJOs from the standard image hydration resolver.
-  const primaryPart = await gpuImageToInlinePart(
-    input.image as unknown as ImageValue | string
-  );
+  const primaryPart = await gpuImageToInlinePart(input.image as unknown as ImageValue | string);
 
   const additionalParts: Array<{ inlineData: { mimeType: string; data: string } }> =
-    input.additionalImages &&
-    (input.additionalImages as Array<ImageValue | string>).length > 0
+    input.additionalImages && (input.additionalImages as Array<ImageValue | string>).length > 0
       ? await Promise.all(
-          (input.additionalImages as Array<ImageValue | string>).map((g) =>
-            gpuImageToInlinePart(g)
-          )
+          (input.additionalImages as Array<ImageValue | string>).map((g) => gpuImageToInlinePart(g))
         )
       : [];
 

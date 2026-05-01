@@ -73,7 +73,12 @@ async function decodeDataUri(dataUri: string): Promise<RawPixelBuffer> {
 
   // `limitInputPixels` rejects header-declared pixel bombs before decompression.
   // `sequentialRead` lowers peak memory for large inputs.
-  const { data, width, height, channels: ch } = await decodeBufferToRaw(buffer, {
+  const {
+    data,
+    width,
+    height,
+    channels: ch,
+  } = await decodeBufferToRaw(buffer, {
     limitInputPixels: MAX_DECODED_PIXELS,
     sequentialRead: true,
   });
@@ -119,10 +124,7 @@ async function encodeDataUri(image: RawPixelBuffer, mimeType: string): Promise<s
           { format: "jpeg", quality: 92, mozjpeg: true }
         )
       : fmt === "image/webp"
-        ? await encodeRawPixels(
-            { data, width, height, channels },
-            { format: "webp", quality: 92 }
-          )
+        ? await encodeRawPixels({ data, width, height, channels }, { format: "webp", quality: 92 })
         : await encodeRawPixels(
             { data, width, height, channels },
             { format: "png", compressionLevel: 6 }

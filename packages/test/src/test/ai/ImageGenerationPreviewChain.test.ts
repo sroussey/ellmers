@@ -13,11 +13,7 @@ import {
   DirectExecutionStrategy,
 } from "@workglow/ai";
 import type { AiProviderStreamFn, ModelConfig } from "@workglow/ai";
-import {
-  CpuImage,
-  imageValueFromBuffer,
-  type ImageValue,
-} from "@workglow/util/media";
+import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
 import { Dataflow, Workflow } from "@workglow/task-graph";
 import { ImageGrayscaleTask } from "@workglow/tasks";
 

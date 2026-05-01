@@ -27,7 +27,9 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: ImageValueSchema({ title: "Image", description: "Image with adjusted transparency" }) },
+  properties: {
+    image: ImageValueSchema({ title: "Image", description: "Image with adjusted transparency" }),
+  },
   required: ["image"],
   additionalProperties: false,
 } as const;
@@ -37,24 +39,38 @@ export interface ImageTransparencyTaskInput extends ImageFilterInput {
 }
 export type ImageTransparencyTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageTransparencyTask extends ImageFilterTask<TransparencyParams, ImageTransparencyTaskInput & Record<string, unknown>, ImageTransparencyTaskOutput> {
+export class ImageTransparencyTask extends ImageFilterTask<
+  TransparencyParams,
+  ImageTransparencyTaskInput & Record<string, unknown>,
+  ImageTransparencyTaskOutput
+> {
   static override readonly type = "ImageTransparencyTask";
   static override readonly category = "Image";
   public static override title = "Set Transparency";
   public static override description = "Adjusts the opacity of an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "transparency";
-  protected opParams(input: ImageTransparencyTaskInput & Record<string, unknown>): TransparencyParams {
+  protected opParams(
+    input: ImageTransparencyTaskInput & Record<string, unknown>
+  ): TransparencyParams {
     return { amount: (input.amount as number | undefined) ?? 1 };
   }
 }
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imageTransparency: CreateWorkflow<ImageTransparencyTaskInput & Record<string, unknown>, ImageTransparencyTaskOutput, TaskConfig>;
+    imageTransparency: CreateWorkflow<
+      ImageTransparencyTaskInput & Record<string, unknown>,
+      ImageTransparencyTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

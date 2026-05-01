@@ -9,7 +9,9 @@ import { createShaderCache } from "@workglow/util/media";
 describe("ShaderRegistry", () => {
   test("compiles a shader once per source string (cached by source)", () => {
     const compile = vi.fn((src: string) => ({ src }));
-    const fakeDevice = { createShaderModule: ({ code }: { code: string }) => compile(code) } as unknown as GPUDevice;
+    const fakeDevice = {
+      createShaderModule: ({ code }: { code: string }) => compile(code),
+    } as unknown as GPUDevice;
     const cache = createShaderCache(fakeDevice);
     const a = cache.get("@@SRC@@");
     const b = cache.get("@@SRC@@");
@@ -19,7 +21,9 @@ describe("ShaderRegistry", () => {
 
   test("different sources compile separately", () => {
     const compile = vi.fn((src: string) => ({ src }));
-    const fakeDevice = { createShaderModule: ({ code }: { code: string }) => compile(code) } as unknown as GPUDevice;
+    const fakeDevice = {
+      createShaderModule: ({ code }: { code: string }) => compile(code),
+    } as unknown as GPUDevice;
     const cache = createShaderCache(fakeDevice);
     cache.get("A");
     cache.get("B");

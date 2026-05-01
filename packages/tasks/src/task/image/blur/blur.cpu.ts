@@ -55,7 +55,5 @@ function cpuBoxBlur(bin: RawPixelBuffer, radius: number): RawPixelBuffer {
 }
 
 registerFilterOp<BlurParams>("cpu", "blur", (image, { radius }) => {
-  return CpuImage.fromRaw(
-    cpuBoxBlur((image as CpuImage).getBinary(), Math.max(1, radius | 0))
-  );
+  return CpuImage.fromRaw(cpuBoxBlur((image as CpuImage).getBinary(), Math.max(1, radius | 0)));
 });

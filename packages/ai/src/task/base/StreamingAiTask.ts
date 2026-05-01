@@ -114,7 +114,11 @@ export class StreamingAiTask<
         (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")
       ) {
         firstDataSeen = true;
-        yield { type: "phase", message: streamingLabel, progress: undefined } as StreamEvent<Output>;
+        yield {
+          type: "phase",
+          message: streamingLabel,
+          progress: undefined,
+        } as StreamEvent<Output>;
       }
 
       if (event.type === "text-delta") {

@@ -18,7 +18,9 @@ import { getPipeline } from "./HFT_Pipeline";
 function rawImageToBase64Png(image: RawImage): string {
   const fn = (image as unknown as { toBase64?: () => string }).toBase64;
   if (typeof fn !== "function") {
-    throw new Error("HFT_BackgroundRemoval: RawImage.toBase64 unavailable in this transformers version");
+    throw new Error(
+      "HFT_BackgroundRemoval: RawImage.toBase64 unavailable in this transformers version"
+    );
   }
   return fn.call(image);
 }

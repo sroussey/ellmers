@@ -52,10 +52,9 @@ export const Gemini_ImageGenerate: AiProviderRunFn<
   const parts: Array<{ text: string }> = [{ text: input.prompt }];
 
   try {
-    const result = await genModel.generateContent(
-      { contents: [{ role: "user", parts }] },
-      { signal } as any,
-    );
+    const result = await genModel.generateContent({ contents: [{ role: "user", parts }] }, {
+      signal,
+    } as any);
 
     const response = result.response;
 
@@ -72,13 +71,13 @@ export const Gemini_ImageGenerate: AiProviderRunFn<
     // Find the inline image part
     const candidateParts = response.candidates[0]?.content?.parts ?? [];
     const imagePart = candidateParts.find(
-      (p: any) => p.inlineData && p.inlineData.mimeType && p.inlineData.data,
+      (p: any) => p.inlineData && p.inlineData.mimeType && p.inlineData.data
     ) as { inlineData: { mimeType: string; data: string } } | undefined;
 
     if (!imagePart) {
       throw new ImageGenerationProviderError(
         modelIdOf(model),
-        "No image part in response (Gemini did not return an inline image)",
+        "No image part in response (Gemini did not return an inline image)"
       );
     }
 

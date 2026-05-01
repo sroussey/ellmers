@@ -24,17 +24,27 @@ const outputSchema = {
 export type ImageSepiaTaskInput = ImageFilterInput & Record<string, unknown>;
 export type ImageSepiaTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageSepiaTask extends ImageFilterTask<undefined, ImageSepiaTaskInput, ImageSepiaTaskOutput> {
+export class ImageSepiaTask extends ImageFilterTask<
+  undefined,
+  ImageSepiaTaskInput,
+  ImageSepiaTaskOutput
+> {
   static override readonly type = "ImageSepiaTask";
   static override readonly category = "Image";
   public static override title = "Sepia Tone";
   public static override description = "Applies a sepia tone filter to an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "sepia";
-  protected opParams(_input: ImageSepiaTaskInput): undefined { return undefined; }
+  protected opParams(_input: ImageSepiaTaskInput): undefined {
+    return undefined;
+  }
 }
 
 declare module "@workglow/task-graph" {

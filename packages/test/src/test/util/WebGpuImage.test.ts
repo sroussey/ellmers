@@ -51,8 +51,7 @@ describe.skipIf(typeof navigator === "undefined" || !("gpu" in navigator))(
       if (!dev) return;
       // Build a 2x2 bitmap from raw pixels via OffscreenCanvas+ImageData.
       const data = new Uint8ClampedArray([
-        255, 0, 0, 255, 0, 255, 0, 255,
-        0, 0, 255, 255, 255, 255, 0, 255,
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
       ]);
       const off = new OffscreenCanvas(2, 2);
       const ctx = off.getContext("2d")!;
@@ -104,5 +103,5 @@ describe.skipIf(typeof navigator === "undefined" || !("gpu" in navigator))(
       expect(bytes[0]).toBe(0x89);
       expect(bytes[1]).toBe(0x50);
     });
-  },
+  }
 );

@@ -12,7 +12,7 @@ describe("ImageGrayscaleTask (cpu)", () => {
   test("converts RGBA pixel to 4-channel grayscale with replicated luma", async () => {
     const data = new Uint8ClampedArray([200, 100, 50, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "grayscale", undefined);
+    const out = applyFilter(image, "grayscale", undefined);
     const bin = (out as CpuImage).getBinary();
     // BT.601-style: (200*77 + 100*150 + 50*29) >> 8 = (15400 + 15000 + 1450) >> 8 = 31850 >> 8 = 124
     expect(bin.channels).toBe(4);

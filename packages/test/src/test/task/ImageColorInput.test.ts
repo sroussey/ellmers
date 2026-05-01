@@ -5,11 +5,7 @@
  */
 
 import { ImageBorderTask, ImageTextTask, ImageTintTask } from "@workglow/tasks";
-import {
-  CpuImage,
-  imageValueFromBuffer,
-  type ImageValue,
-} from "@workglow/util/media";
+import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
 import { describe, expect, it } from "vitest";
 
 function makeRgbaImageValue(width: number, height: number): ImageValue {

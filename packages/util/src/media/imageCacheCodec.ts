@@ -89,7 +89,7 @@ async function wireToBrowserImageValue(wire: ImageValueWire): Promise<BrowserIma
     const data = new Uint8ClampedArray(
       bytes.buffer,
       bytes.byteOffset,
-      bytes.byteLength,
+      bytes.byteLength
     ) as unknown as Uint8ClampedArray<ArrayBuffer>;
     const imageData = new ImageData(data, wire.width, wire.height);
     const bitmap = await createImageBitmap(imageData);
@@ -146,7 +146,7 @@ registerPortCodec<ImageValue | string, ImageValueWire | string>("image", {
         wire.format,
         wire.width,
         wire.height,
-        wire.previewScale,
+        wire.previewScale
       );
     }
     return wireToBrowserImageValue(wire);

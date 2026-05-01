@@ -23,7 +23,13 @@
  *   image generation without a seed is non-deterministic.
  */
 
-import type { TaskConfig, IExecutePreviewContext, IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
+import type {
+  TaskConfig,
+  IExecutePreviewContext,
+  IExecuteContext,
+  StreamEvent,
+  TaskOutput,
+} from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 
 import { StreamingAiTask } from "./StreamingAiTask";
@@ -112,7 +118,7 @@ export class AiImageOutputTask<
    */
   override async *executeStream(
     input: Input,
-    context: IExecuteContext,
+    context: IExecuteContext
   ): AsyncIterable<StreamEvent<AiImageOutput>> {
     try {
       for await (const event of super.executeStream(input, context)) {
@@ -152,7 +158,7 @@ export class AiImageOutputTask<
    */
   override async executePreview(
     _input: Input,
-    _context: IExecutePreviewContext,
+    _context: IExecutePreviewContext
   ): Promise<AiImageOutput | undefined> {
     if (this._latestPartial !== undefined) {
       return { image: this._latestPartial };
@@ -213,8 +219,8 @@ export class AiImageOutputTask<
     validator: (
       taskType: string,
       input: Record<string, unknown>,
-      model: ModelConfig,
-    ) => Promise<void> | void,
+      model: ModelConfig
+    ) => Promise<void> | void
   ): void {
     AiImageOutputTask._providerValidators.set(providerName, validator);
   }

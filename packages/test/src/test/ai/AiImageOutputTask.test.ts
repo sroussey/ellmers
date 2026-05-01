@@ -86,10 +86,9 @@ describe("AiImageOutputTask", () => {
     it("returns undefined when there is nothing to preview, never calling a provider", async () => {
       const task = new TestImageTask({});
       task.runInputData = { prompt: "a sunset", model: "m" };
-      const out = await task.executePreview(
-        { prompt: "a sunset", model: "m" } as any,
-        { own: ((x: any) => x) as any },
-      );
+      const out = await task.executePreview({ prompt: "a sunset", model: "m" } as any, {
+        own: ((x: any) => x) as any,
+      });
       expect(out).toBeUndefined();
     });
 
@@ -98,10 +97,9 @@ describe("AiImageOutputTask", () => {
       const task = new TestImageTask({});
       task.runInputData = { prompt: "x", model: "m" };
       (task as any).ingestPartial(partial);
-      const out = await task.executePreview(
-        { prompt: "x", model: "m" } as any,
-        { own: ((x: any) => x) as any },
-      );
+      const out = await task.executePreview({ prompt: "x", model: "m" } as any, {
+        own: ((x: any) => x) as any,
+      });
       expect(out?.image).toBe(partial);
     });
 
@@ -110,10 +108,9 @@ describe("AiImageOutputTask", () => {
       const task = new TestImageTask({});
       task.runInputData = { prompt: "x", model: "m" };
       task.runOutputData = { image: prior } as any;
-      const out = await task.executePreview(
-        { prompt: "x", model: "m" } as any,
-        { own: ((x: any) => x) as any },
-      );
+      const out = await task.executePreview({ prompt: "x", model: "m" } as any, {
+        own: ((x: any) => x) as any,
+      });
       expect(out?.image).toBe(prior);
     });
   });

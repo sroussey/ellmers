@@ -39,11 +39,7 @@ export const HFT_ImageClassification: AiProviderRunFn<
       signal
     );
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
-    const result = await zeroShotClassifier(
-      imageArg,
-      input.categories! as string[],
-      {}
-    );
+    const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
 
     const results = Array.isArray(result) ? result : [result];
 

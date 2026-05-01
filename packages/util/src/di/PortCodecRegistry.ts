@@ -24,7 +24,7 @@ const codecs = _g[GLOBAL_CODECS_KEY] as Map<string, PortCodec>;
 
 export function registerPortCodec<Live = unknown, Wire = unknown>(
   formatPrefix: string,
-  codec: PortCodec<Live, Wire>,
+  codec: PortCodec<Live, Wire>
 ): void {
   codecs.set(formatPrefix, codec as PortCodec);
 }

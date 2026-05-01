@@ -12,7 +12,7 @@ describe("ImageContrastTask (cpu)", () => {
   test("zero amount is identity", async () => {
     const data = new Uint8ClampedArray([100, 150, 200, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "contrast", { amount: 0 });
+    const out = applyFilter(image, "contrast", { amount: 0 });
     const bin = (out as CpuImage).getBinary();
     expect(bin.data[0]).toBe(100);
     expect(bin.data[1]).toBe(150);
@@ -26,7 +26,7 @@ describe("ImageContrastTask (cpu)", () => {
     // lut[150] = 1.0809*(150-128)+128 ≈ 151.78 → 151
     const data = new Uint8ClampedArray([100, 150, 128, 255]);
     const image = CpuImage.fromRaw({ data, width: 1, height: 1, channels: 4 });
-        const out = applyFilter(image, "contrast", { amount: 10 });
+    const out = applyFilter(image, "contrast", { amount: 10 });
     const bin = (out as CpuImage).getBinary();
     expect(bin.data[0]).toBeLessThan(100);
     expect(bin.data[1]).toBeGreaterThan(150);

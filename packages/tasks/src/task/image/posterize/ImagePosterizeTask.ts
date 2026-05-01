@@ -37,14 +37,22 @@ export interface ImagePosterizeTaskInput extends ImageFilterInput {
 }
 export type ImagePosterizeTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImagePosterizeTask extends ImageFilterTask<PosterizeParams, ImagePosterizeTaskInput & Record<string, unknown>, ImagePosterizeTaskOutput> {
+export class ImagePosterizeTask extends ImageFilterTask<
+  PosterizeParams,
+  ImagePosterizeTaskInput & Record<string, unknown>,
+  ImagePosterizeTaskOutput
+> {
   static override readonly type = "ImagePosterizeTask";
   static override readonly category = "Image";
   public static override title = "Posterize";
   public static override description = "Reduces the number of color levels in an image";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "posterize";
   protected opParams(input: ImagePosterizeTaskInput & Record<string, unknown>): PosterizeParams {
@@ -54,7 +62,11 @@ export class ImagePosterizeTask extends ImageFilterTask<PosterizeParams, ImagePo
 
 declare module "@workglow/task-graph" {
   interface Workflow {
-    imagePosterize: CreateWorkflow<ImagePosterizeTaskInput & Record<string, unknown>, ImagePosterizeTaskOutput, TaskConfig>;
+    imagePosterize: CreateWorkflow<
+      ImagePosterizeTaskInput & Record<string, unknown>,
+      ImagePosterizeTaskOutput,
+      TaskConfig
+    >;
   }
 }
 

@@ -47,7 +47,7 @@ describe("applyFilter", () => {
       channels: 4,
     }) as unknown as GpuImage;
     expect(() => applyFilter(img, "__nonexistent__", undefined)).toThrow(
-      /applyFilter\("__nonexistent__"\) on backend "cpu": no implementation registered/,
+      /applyFilter\("__nonexistent__"\) on backend "cpu": no implementation registered/
     );
   });
 });

@@ -24,17 +24,27 @@ const outputSchema = {
 export type ImageGrayscaleTaskInput = ImageFilterInput & Record<string, unknown>;
 export type ImageGrayscaleTaskOutput = ImageFilterOutput & Record<string, unknown>;
 
-export class ImageGrayscaleTask extends ImageFilterTask<undefined, ImageGrayscaleTaskInput, ImageGrayscaleTaskOutput> {
+export class ImageGrayscaleTask extends ImageFilterTask<
+  undefined,
+  ImageGrayscaleTaskInput,
+  ImageGrayscaleTaskOutput
+> {
   static override readonly type = "ImageGrayscaleTask";
   static override readonly category = "Image";
   public static override title = "Grayscale";
   public static override description = "Converts an image to grayscale using luminance";
 
-  static override inputSchema() { return inputSchema as never; }
-  static override outputSchema() { return outputSchema as never; }
+  static override inputSchema() {
+    return inputSchema as never;
+  }
+  static override outputSchema() {
+    return outputSchema as never;
+  }
 
   protected readonly filterName = "grayscale";
-  protected opParams(_input: ImageGrayscaleTaskInput): undefined { return undefined; }
+  protected opParams(_input: ImageGrayscaleTaskInput): undefined {
+    return undefined;
+  }
 }
 
 declare module "@workglow/task-graph" {
