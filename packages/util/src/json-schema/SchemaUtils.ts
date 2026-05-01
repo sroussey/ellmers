@@ -44,6 +44,7 @@
  */
 
 import type { JsonSchema } from "./JsonSchema";
+import { FORMAT_PATTERN } from "./SchemaValidation";
 
 /**
  * Checks if two format strings are compatible.
@@ -56,9 +57,7 @@ function areFormatStringsCompatible(
   sourceFormat: string,
   targetFormat: string
 ): "static" | "runtime" | "incompatible" {
-  // Allow letters (must start), numbers, underscore, and dash; e.g., my-type:another_type
-  const formatPattern = /^[a-zA-Z][a-zA-Z0-9_-]*(?::[a-zA-Z][a-zA-Z0-9_-]*)?$/;
-  if (!formatPattern.test(sourceFormat) || !formatPattern.test(targetFormat)) {
+  if (!FORMAT_PATTERN.test(sourceFormat) || !FORMAT_PATTERN.test(targetFormat)) {
     return "incompatible";
   }
 
