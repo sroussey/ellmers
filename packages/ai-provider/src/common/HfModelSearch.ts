@@ -78,7 +78,8 @@ export async function searchHfModels(
   query: string,
   extraParams?: Record<string, string>,
   expandFields?: string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  credentialKey?: string
 ): Promise<HfModelEntry[]> {
   const params = new URLSearchParams({
     search: query,
@@ -93,7 +94,10 @@ export async function searchHfModels(
       params.append("expand[]", field);
     }
   }
-  const res = await fetch(`${HF_API_BASE}/models?${params}`, { signal });
+  const res = await fetch(`${HF_API_BASE}/models?${params}`, {
+    signal,
+    headers: credentialKey ? { Authorization: `Bearer ${credentialKey}` } : undefined,
+  });
   if (!res.ok) throw new Error(`HuggingFace API returned ${res.status}`);
   return res.json();
 }

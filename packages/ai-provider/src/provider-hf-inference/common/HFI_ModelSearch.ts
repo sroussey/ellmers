@@ -10,7 +10,7 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { searchHfModels, mapHfModelResult } from "../../common/HfModelSearch";
+import { mapHfModelResult, searchHfModels } from "../../common/HfModelSearch";
 import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
 import { HF_INFERENCE } from "./HFI_Constants";
 
@@ -45,25 +45,24 @@ export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
   signal
 ) => {
   const query = input.query?.trim() ?? "";
-  try {
-    const entries = await searchHfModels(query, undefined, undefined, signal);
-    const results = entries.map((entry) => {
-      const imageEntry = HFI_IMAGE_MODELS.find((m) => m.id === entry.id);
-      const mapped = mapHfModelResult(entry, HF_INFERENCE);
-      if (imageEntry) {
-        // Merge explicit task list into the mapped record.
-        (mapped.record as Record<string, unknown>).tasks = imageEntry.tasks;
-      }
-      return mapped;
-    });
-    return { results };
-  } catch {
-    // Network unavailable — return the curated image model fallback filtered by query.
+  if (!input.credential_key) {
     const fallback = buildFallbackResults();
     const labeled = fallback.map((r) => ({ label: r.label, value: r.id }));
-    const filtered = filterLabeledModelsByQuery(labeled, query).map((m) =>
-      fallback.find((r) => r.id === m.value)!,
+    const filtered = filterLabeledModelsByQuery(labeled, query).map(
+      (m) => fallback.find((r) => r.id === m.value)!
     );
     return { results: filtered };
   }
+
+  const entries = await searchHfModels(query, undefined, undefined, signal, input.credential_key);
+  const results = entries.map((entry) => {
+    const imageEntry = HFI_IMAGE_MODELS.find((m) => m.id === entry.id);
+    const mapped = mapHfModelResult(entry, HF_INFERENCE);
+    if (imageEntry) {
+      // Merge explicit task list into the mapped record.
+      mapped.record.tasks = imageEntry.tasks;
+    }
+    return mapped;
+  });
+  return { results };
 };

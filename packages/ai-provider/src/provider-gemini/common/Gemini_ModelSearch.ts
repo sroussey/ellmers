@@ -54,11 +54,73 @@ const GEMINI_MODELS: readonly GeminiModelEntry[] = [
   },
 ];
 
+interface GeminiApiModel {
+  readonly name: string;
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly supportedGenerationMethods?: readonly string[];
+}
+
+function tasksForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
+  const staticEntry = GEMINI_MODELS.find((m) => m.value === id);
+  if (staticEntry?.tasks) return [...staticEntry.tasks];
+
+  const methods = model.supportedGenerationMethods ?? [];
+  if (methods.some((method) => method.toLowerCase().includes("embed"))) {
+    return ["TextEmbeddingTask"];
+  }
+  return [];
+}
+
+function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
+  const id = model.name.startsWith("models/") ? model.name.slice("models/".length) : model.name;
+  const title = model.displayName || id;
+  return {
+    id,
+    label: model.displayName ? `${id}  ${model.displayName}` : id,
+    description: model.description ?? "",
+    record: {
+      model_id: id,
+      provider: GOOGLE_GEMINI,
+      title,
+      description: model.description ?? "",
+      tasks: tasksForGeminiApiModel(model, id),
+      provider_config: { model_name: id },
+      metadata: {},
+    },
+    raw: model,
+  };
+}
+
+async function listGeminiModels(
+  credentialKey: string,
+  signal?: AbortSignal
+): Promise<ModelSearchResultItem[]> {
+  const params = new URLSearchParams({ key: credentialKey });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?${params}`,
+    {
+      signal,
+    }
+  );
+  if (!response.ok) throw new Error(`Gemini API returned ${response.status}`);
+  const body = (await response.json()) as { models?: GeminiApiModel[] };
+  return (body.models ?? []).map(mapGeminiModel);
+}
+
 export const Gemini_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async (input, _model, _onProgress, signal) => {
   const q = normalizedModelSearchQuery(input.query);
+  if (input.credential_key) {
+    const models = await listGeminiModels(input.credential_key, signal);
+    const results = q
+      ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
+      : models;
+    return { results };
+  }
+
   const filtered = q
     ? GEMINI_MODELS.filter(
         (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)

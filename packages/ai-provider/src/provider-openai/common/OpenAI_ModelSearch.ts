@@ -35,8 +35,13 @@ const OPENAI_IMAGE_MODELS: Array<{ value: string; tasks: string[] }> = [
   { value: "dall-e-3", tasks: ["ImageGenerateTask"] },
 ];
 
-async function listOpenAiModels(): Promise<Array<{ label: string; value: string }>> {
-  const client = await getClient(undefined);
+async function listOpenAiModels(
+  credentialKey: string
+): Promise<Array<{ label: string; value: string }>> {
+  const client = await getClient({
+    provider: OPENAI,
+    provider_config: { model_name: "", credential_key: credentialKey },
+  });
   const models: Array<{ label: string; value: string }> = [];
   for await (const m of client.models.list()) {
     models.push({ label: `${m.id}  ${m.owned_by}`, value: m.id });
@@ -76,10 +81,10 @@ export const OpenAI_ModelSearch: AiProviderRunFn<
   ModelSearchTaskOutput
 > = async (input) => {
   let models: Array<{ label: string; value: string }>;
-  try {
-    models = await listOpenAiModels();
-  } catch {
+  if (!input.credential_key) {
     models = OPENAI_FALLBACK;
+  } else {
+    models = await listOpenAiModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
   return { results: mapModelList(models) };

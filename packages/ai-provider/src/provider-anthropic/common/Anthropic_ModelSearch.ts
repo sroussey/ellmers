@@ -11,7 +11,7 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
-import { loadAnthropicSDK } from "./Anthropic_Client";
+import { getClient } from "./Anthropic_Client";
 import { ANTHROPIC } from "./Anthropic_Constants";
 
 const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
@@ -24,9 +24,13 @@ const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "claude-3-5-haiku-20241022", value: "claude-3-5-haiku-20241022" },
 ];
 
-async function listAnthropicModels(): Promise<Array<{ label: string; value: string }>> {
-  const Anthropic = await loadAnthropicSDK();
-  const client = new Anthropic();
+async function listAnthropicModels(
+  credentialKey: string
+): Promise<Array<{ label: string; value: string }>> {
+  const client = await getClient({
+    provider: ANTHROPIC,
+    provider_config: { model_name: "", credential_key: credentialKey },
+  });
   const models: Array<{ label: string; value: string }> = [];
   for await (const m of client.beta.models.list()) {
     models.push({ label: `${m.id}  ${m.display_name}`, value: m.id });
@@ -57,10 +61,10 @@ export const Anthropic_ModelSearch: AiProviderRunFn<
   ModelSearchTaskOutput
 > = async (input) => {
   let models: Array<{ label: string; value: string }>;
-  try {
-    models = await listAnthropicModels();
-  } catch {
+  if (!input.credential_key) {
     models = ANTHROPIC_FALLBACK;
+  } else {
+    models = await listAnthropicModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
   return { results: mapModelList(models) };

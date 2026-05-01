@@ -8,8 +8,8 @@ import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-
 
 import type { TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import type { ModelRecord } from "../model/ModelSchema";
+import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 
 /**
@@ -39,6 +39,14 @@ const ModelSearchInputSchema = {
       description:
         "Optional search string. When omitted or empty, returns all models (provider-specific listing).",
     },
+    credential_key: {
+      type: "string",
+      title: "Credential",
+      description:
+        "Optional credential-store key used to list provider models. When omitted, providers may return a curated fallback list.",
+      format: "credential",
+      "x-ui-hidden": true,
+    },
   },
   required: ["provider"],
   additionalProperties: false,
@@ -52,7 +60,7 @@ function buildModelSearchInputSchemaDynamic(): DataPortSchema {
     enumLabels[id] = registry.getProvider(id)?.displayName ?? id;
   }
   const providerProp: Record<string, unknown> = {
-    ...(ModelSearchInputSchema.properties as { provider: Record<string, unknown> }).provider,
+    ...ModelSearchInputSchema.properties.provider,
   };
   if (ids.length > 0) {
     providerProp.enum = ids;
@@ -62,7 +70,8 @@ function buildModelSearchInputSchemaDynamic(): DataPortSchema {
     type: "object",
     properties: {
       provider: providerProp,
-      query: (ModelSearchInputSchema.properties as { query: unknown }).query,
+      query: ModelSearchInputSchema.properties.query,
+      credential_key: ModelSearchInputSchema.properties.credential_key,
     },
     required: [...ModelSearchInputSchema.required],
     additionalProperties: ModelSearchInputSchema.additionalProperties,
