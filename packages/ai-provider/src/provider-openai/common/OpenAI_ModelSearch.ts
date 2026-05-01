@@ -11,13 +11,15 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
-import { OPENAI } from "./OpenAI_Constants";
 import { getClient } from "./OpenAI_Client";
+import { OPENAI } from "./OpenAI_Constants";
 
 const OPENAI_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "gpt-image-2", value: "gpt-image-2" },
   { label: "dall-e-3", value: "dall-e-3" },
-  { label: "gpt-5.4", value: "gpt-5.4" },
+  { label: "gpt-5.5", value: "gpt-5.5" },
+  { label: "gpt-5.4-mini", value: "gpt-5.4-mini" },
+  { label: "gpt-5.4-nano", value: "gpt-5.4-nano" },
   { label: "gpt-5", value: "gpt-5" },
   { label: "gpt-5-mini", value: "gpt-5-mini" },
   { label: "gpt-4o-mini", value: "gpt-4o-mini" },

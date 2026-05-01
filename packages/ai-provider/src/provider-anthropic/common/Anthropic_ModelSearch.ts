@@ -11,13 +11,15 @@ import type {
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
-import { ANTHROPIC } from "./Anthropic_Constants";
 import { loadAnthropicSDK } from "./Anthropic_Client";
+import { ANTHROPIC } from "./Anthropic_Constants";
 
 const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
-  { label: "claude-opus-4-20250514", value: "claude-opus-4-20250514" },
-  { label: "claude-sonnet-4-20250514", value: "claude-sonnet-4-20250514" },
+  { label: "claude-opus-4-7", value: "claude-opus-4-7" },
+  { label: "claude-sonnet-4-6", value: "claude-sonnet-4-6" },
   { label: "claude-haiku-4-5-20251001", value: "claude-haiku-4-5-20251001" },
+  { label: "claude-opus-4-6", value: "claude-opus-4-6" },
+  { label: "claude-sonnet-4-5-20250929", value: "claude-sonnet-4-5-20250929" },
   { label: "claude-3-5-sonnet-20241022", value: "claude-3-5-sonnet-20241022" },
   { label: "claude-3-5-haiku-20241022", value: "claude-3-5-haiku-20241022" },
 ];

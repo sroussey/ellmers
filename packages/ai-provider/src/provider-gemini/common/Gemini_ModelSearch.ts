@@ -20,17 +20,31 @@ interface GeminiModelEntry {
 }
 
 const GEMINI_MODELS: readonly GeminiModelEntry[] = [
-  { label: "gemini-3.1-flash", value: "gemini-3.1-flash" },
-  { label: "gemini-3.1-pro", value: "gemini-3.1-pro" },
+  { label: "gemini-3.1-pro-preview", value: "gemini-3.1-pro-preview" },
+  { label: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
+  { label: "gemini-3.1-flash-lite-preview", value: "gemini-3.1-flash-lite-preview" },
   { label: "gemini-2.5-flash", value: "gemini-2.5-flash" },
   { label: "gemini-2.5-pro", value: "gemini-2.5-pro" },
-  { label: "gemini-2.0-flash", value: "gemini-2.0-flash" },
-  { label: "gemini-1.5-pro", value: "gemini-1.5-pro" },
-  { label: "gemini-1.5-flash", value: "gemini-1.5-flash" },
+  // Embedding models
+  {
+    label: "gemini-embedding-2",
+    value: "gemini-embedding-2",
+    tasks: ["TextEmbeddingTask"],
+  },
+  {
+    label: "gemini-embedding-001",
+    value: "gemini-embedding-001",
+    tasks: ["TextEmbeddingTask"],
+  },
   // Image-output models
   {
-    label: "gemini-2.5-flash-image",
-    value: "gemini-2.5-flash-image",
+    label: "gemini-3.1-flash-image-preview",
+    value: "gemini-3.1-flash-image-preview",
+    tasks: ["ImageGenerateTask", "ImageEditTask"],
+  },
+  {
+    label: "gemini-3-pro-image-preview",
+    value: "gemini-3-pro-image-preview",
     tasks: ["ImageGenerateTask", "ImageEditTask"],
   },
   {
