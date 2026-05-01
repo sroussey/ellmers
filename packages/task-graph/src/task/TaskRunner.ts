@@ -720,7 +720,24 @@ export class TaskRunner<
             finalOutput = merged as unknown as Output;
             this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
           } else {
-            // No accumulation: emit the raw finish event and use it directly
+            // No accumulation. For replace-mode streams the provider's finish
+            // event carries `data: {}` by convention — the snapshots already
+            // delivered the value, so the finish payload is intentionally
+            // empty. Fall back to `runOutputData` (set on every snapshot above)
+            // so we don't clobber the last snapshot with an empty object. This
+            // mirrors the same fallback in the accumulation branch.
+            const finishData = (event.data ?? {}) as Record<string, unknown>;
+            if (streamMode === "replace" && Object.keys(finishData).length === 0) {
+              const lastSnapshot = this.task.runOutputData;
+              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
+                finalOutput = lastSnapshot as Output;
+                this.task.emit("stream_chunk", {
+                  type: "finish",
+                  data: lastSnapshot,
+                } as StreamEvent);
+                break;
+              }
+            }
             finalOutput = event.data as Output;
             this.task.emit("stream_chunk", event as StreamEvent);
           }
