@@ -1,5 +1,7 @@
 # @workglow/storage
 
+## 0.2.21
+
 ## 0.2.20
 
 ### Chores

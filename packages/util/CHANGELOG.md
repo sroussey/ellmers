@@ -1,5 +1,14 @@
 # @workglow/util
 
+## 0.2.21
+
+### Features
+
+#### ai
+
+- introduce TypeLandmark schema and update related tasks
+- image generation pipeline with ImageValue boundary
+
 ## 0.2.20
 
 ### Chores

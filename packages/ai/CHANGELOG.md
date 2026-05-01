@@ -1,5 +1,19 @@
 # @workglow/ai
 
+## 0.2.21
+
+### Features
+
+#### ai
+
+- introduce TypeLandmark schema and update related tasks
+- default phase emission and per-subclass phase labels
+- image generation pipeline with ImageValue boundary
+
+#### task-graph
+
+- indeterminate progress and StreamPhase events
+
 ## 0.2.20
 
 ## 0.2.19

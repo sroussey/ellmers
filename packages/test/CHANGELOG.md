@@ -1,5 +1,18 @@
 # @workglow/test
 
+## 0.2.21
+
+### Features
+
+#### ai
+
+- default phase emission and per-subclass phase labels
+- image generation pipeline with ImageValue boundary
+
+#### task-graph
+
+- indeterminate progress and StreamPhase events
+
 ## 0.2.20
 
 ### Chores
