@@ -1,5 +1,17 @@
 # @workglow/ai-provider
 
+## 0.2.23
+
+### Features
+
+#### model-search
+
+- add credential_key support for model searches
+
+#### tests
+
+- add model search tests for OpenAI, Anthropic, and Gemini providers
+
 ## 0.2.22
 
 ## 0.2.21

@@ -1,5 +1,13 @@
 # @workglow/test
 
+## 0.2.23
+
+### Bug Fixes
+
+#### test
+
+- enhance preview output handling in TaskRunner
+
 ## 0.2.22
 
 ## 0.2.21

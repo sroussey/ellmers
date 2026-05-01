@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.2.23
+
+### Features
+
+#### model-search
+
+- add credential_key support for model searches
+
 ## 0.2.22
 
 ## 0.2.21
