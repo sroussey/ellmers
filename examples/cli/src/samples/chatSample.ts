@@ -9,6 +9,10 @@ import type { HfTransformersOnnxModelConfig } from "@workglow/ai-provider/hf-tra
 import { TaskGraph } from "@workglow/task-graph";
 import type { TaskGraphTabularRepository } from "@workglow/task-graph";
 
+import { ensureImageGenerateSample } from "./generate-image";
+import { ensureImageEditInpaintSample } from "./edit-image-inpaint";
+import { ensureImageEditComposeSample } from "./edit-image-compose";
+
 export const CHAT_SAMPLE_ID = "chat";
 
 const BONSAI_MODEL = {
@@ -45,11 +49,14 @@ export async function ensureChatSample(repo: TaskGraphTabularRepository): Promis
 }
 
 /**
- * Startup-time seed guard: installs the chat sample only if the workflow repo
- * is completely empty. Preserves user deletions of the sample.
+ * Startup-time seed guard: installs all bundled samples only if the workflow
+ * repo is completely empty. Preserves user deletions of any sample.
  */
 export async function seedSamplesIfRepoEmpty(repo: TaskGraphTabularRepository): Promise<void> {
   const all = await repo.tabularRepository.getAll();
   if (all && all.length > 0) return;
   await ensureChatSample(repo);
+  await ensureImageGenerateSample(repo);
+  await ensureImageEditInpaintSample(repo);
+  await ensureImageEditComposeSample(repo);
 }

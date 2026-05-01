@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface TransparencyParams {
   amount: number;
 }
 
-function cpuTransparency(bin: ImageBinary, amount: number): ImageBinary {
+function cpuTransparency(bin: RawPixelBuffer, amount: number): RawPixelBuffer {
   const { data: src, width, height, channels: srcCh } = bin;
   const pixelCount = width * height;
   const dst = new Uint8ClampedArray(pixelCount * 4);
@@ -29,5 +29,5 @@ function cpuTransparency(bin: ImageBinary, amount: number): ImageBinary {
 }
 
 registerFilterOp<TransparencyParams>("cpu", "transparency", (image, { amount }) => {
-  return CpuImage.fromImageBinary(cpuTransparency((image as CpuImage).getBinary(), amount));
+  return CpuImage.fromRaw(cpuTransparency((image as CpuImage).getBinary(), amount));
 });

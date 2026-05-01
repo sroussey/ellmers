@@ -26,6 +26,8 @@ export class GoogleGeminiQueuedProvider extends AiProvider<GeminiModelConfig> {
     "StructuredGenerationTask",
     "ToolCallingTask",
     "ModelSearchTask",
+    "ImageGenerateTask",
+    "ImageEditTask",
   ] as const;
 
   constructor(

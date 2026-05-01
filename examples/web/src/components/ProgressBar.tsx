@@ -10,32 +10,37 @@ import { getStatusColorBg } from "../graph/util";
 
 // A standard progress bar for all node types
 export const ProgressBar: React.FC<{
-  progress: number;
+  progress: number | undefined;
   status: TaskStatus;
   showText: boolean;
-}> = ({ progress, status, showText }) => {
-  const isStreaming = status === TaskStatus.STREAMING;
+  message?: string;
+}> = ({ progress, status, showText, message }) => {
+  const isProcessing = status === TaskStatus.PROCESSING || status === TaskStatus.STREAMING;
+  const isIndeterminate = progress === undefined && isProcessing;
 
   return (
     <>
       <div className="w-full bg-[rgba(28,35,50,0.6)] rounded-full overflow-hidden h-2 my-2">
         <div
           className={`h-full rounded-full transition-[width] duration-300 ease-in-out ${
-            isStreaming
-              ? "bg-blue-500 animate-streaming-pulse"
-              : status === TaskStatus.PROCESSING
+            isIndeterminate
+              ? "bg-gradient-to-r from-[#2a8af6] via-[#a853ba] to-[#2a8af6] bg-[length:200%_100%] animate-progress"
+              : status === TaskStatus.PROCESSING || status === TaskStatus.STREAMING
                 ? "bg-gradient-to-r from-[#2a8af6] via-[#a853ba] to-[#2a8af6] bg-[length:200%_100%] animate-progress"
                 : getStatusColorBg(status)
           }`}
           style={{
-            width: isStreaming ? "100%" : `${Math.round(progress)}%`,
+            width: isIndeterminate ? "100%" : `${Math.round(progress ?? 0)}%`,
           }}
         />
       </div>
-      {showText && !isStreaming && (
-        <div className="text-xs text-gray-500">Progress: {Math.round(progress)}%</div>
+      {showText && (
+        <div className="text-xs text-gray-500">
+          {isIndeterminate
+            ? (message ?? "…")
+            : `${Math.round(progress ?? 0)}%${message ? ` — ${message}` : ""}`}
+        </div>
       )}
-      {showText && isStreaming && <div className="text-xs text-blue-400">Streaming...</div>}
     </>
   );
 };

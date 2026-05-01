@@ -17,6 +17,8 @@ export * from "./model/ModelRegistry";
 export * from "./model/ModelRepository";
 export * from "./model/ModelSchema";
 
+export * from "./errors/ImageGenerationErrors";
+
 export * from "./provider/AiProvider";
 export * from "./provider/AiProviderRegistry";
 export * from "./provider/QueuedAiProvider";

@@ -9,12 +9,7 @@ import "./media/imageHydrationResolver";
 
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";
-export {
-  encodeImageBinaryToPng,
-  imageBinaryToBase64Png,
-  imageBinaryToBlob,
-  imageBinaryToDataUri,
-} from "./media/encode";
+export { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "./media/encode";
 export {
   _resetFilterRegistryForTests,
   applyFilter,
@@ -33,9 +28,25 @@ export type {
   GpuImageEncodeFormat,
   GpuImageStatic,
 } from "./media/gpuImage";
-export { GpuImageSchema } from "./media/gpuImageSchema";
+export { ImageValueSchema } from "./media/imageValueSchema";
 export * from "./media/imageRasterCodecRegistry";
-export * from "./media/imageTypes";
+export type { ImageChannels } from "./media/imageTypes";
+export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
+export {
+  imageValueFromBitmap,
+  imageValueFromBuffer,
+  isBrowserImageValue,
+  isImageValue,
+  isNodeImageValue,
+  normalizeToImageValue,
+} from "./media/imageValue";
+export type {
+  BrowserImageValue,
+  ImageValue,
+  ImageValueBase,
+  NodeImageFormat,
+  NodeImageValue,
+} from "./media/imageValue";
 export * from "./media/MediaRawImage";
 export {
   getPreviewBudget,
@@ -62,26 +73,21 @@ export {
 export type { TexturePool, TexturePoolOptions } from "./media/texturePool.browser";
 // WebGpuImage is browser-only at runtime; type-only re-export lets
 // browser-targeted filter files (*.webgpu.ts) type-check under node tsc.
-export { SharpImage } from "./media/sharpImage.node";
+export {
+  SharpImage,
+  decodeBufferToRaw,
+  encodeRawPixels,
+  probeImageDimensions,
+} from "./media/sharpImage.server";
+export type {
+  DecodeBufferToRawOptions,
+  EncodeRawPixelsOptions,
+  RawPixelInput,
+} from "./media/sharpImage.server";
 export type { ApplyParams, WebGpuImage } from "./media/webGpuImage.browser";
 
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
-import "./media/imageCacheCodec";
-import "./media/imageHydrationResolver";
-import { getImageRasterCodec as _getImageRasterCodec } from "./media/imageRasterCodecRegistry";
-import { SharpImage as _SharpImage } from "./media/sharpImage.node";
+import type { ImageValue as _ImageValue } from "./media/imageValue";
+import { SharpImage as _SharpImage } from "./media/sharpImage.server";
 
-_registerGpuImageFactory("fromImageBinaryAsync", (bin) => _SharpImage.fromImageBinary(bin));
-
-_registerGpuImageFactory("fromDataUri", async (dataUri: string) => {
-  const bin = await _getImageRasterCodec().decodeDataUri(dataUri);
-  return _SharpImage.fromImageBinary(bin);
-});
-
-_registerGpuImageFactory("fromBlob", async (blob: Blob) => {
-  const buf = Buffer.from(await blob.arrayBuffer());
-  return _SharpImage.fromBuffer(buf);
-});
-
-// fromImageBitmap is intentionally not registered in node — ImageBitmap doesn't
-// exist there. The Proxy throws if a caller attempts it (the third test asserts this).
+_registerGpuImageFactory("from", (value: _ImageValue) => _SharpImage.from(value));

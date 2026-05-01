@@ -65,7 +65,7 @@ export const ColorValueSchema = (annotations: Record<string, unknown> = {}) =>
     ...annotations,
   }) as const;
 
-// Type-only sentinel for FromSchema deserialize patterns, mirroring ImageBinaryType.
+// Type-only sentinel for FromSchema deserialize patterns, mirroring RawPixelBufferType.
 const ColorObjectType = null as any as ColorObject;
 
 export const ColorFromSchemaOptions = {

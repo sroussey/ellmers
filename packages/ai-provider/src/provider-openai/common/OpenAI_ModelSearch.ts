@@ -15,6 +15,8 @@ import { OPENAI } from "./OpenAI_Constants";
 import { getClient } from "./OpenAI_Client";
 
 const OPENAI_FALLBACK: Array<{ label: string; value: string }> = [
+  { label: "gpt-image-2", value: "gpt-image-2" },
+  { label: "dall-e-3", value: "dall-e-3" },
   { label: "gpt-5.4", value: "gpt-5.4" },
   { label: "gpt-5", value: "gpt-5" },
   { label: "gpt-5-mini", value: "gpt-5-mini" },
@@ -24,6 +26,11 @@ const OPENAI_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "o3-mini", value: "o3-mini" },
   { label: "o1", value: "o1" },
   { label: "o1-mini", value: "o1-mini" },
+];
+
+const OPENAI_IMAGE_MODELS: Array<{ value: string; tasks: string[] }> = [
+  { value: "gpt-image-2", tasks: ["ImageGenerateTask", "ImageEditTask"] },
+  { value: "dall-e-3", tasks: ["ImageGenerateTask"] },
 ];
 
 async function listOpenAiModels(): Promise<Array<{ label: string; value: string }>> {
@@ -42,21 +49,24 @@ async function listOpenAiModels(): Promise<Array<{ label: string; value: string 
 }
 
 function mapModelList(models: Array<{ label: string; value: string }>): ModelSearchResultItem[] {
-  return models.map((m) => ({
-    id: m.value,
-    label: m.label,
-    description: "",
-    record: {
-      model_id: m.value,
-      provider: OPENAI,
-      title: m.value,
+  return models.map((m) => {
+    const imageEntry = OPENAI_IMAGE_MODELS.find((i) => i.value === m.value);
+    return {
+      id: m.value,
+      label: m.label,
       description: "",
-      tasks: [],
-      provider_config: { model_name: m.value },
-      metadata: {},
-    },
-    raw: m,
-  }));
+      record: {
+        model_id: m.value,
+        provider: OPENAI,
+        title: m.value,
+        description: "",
+        tasks: imageEntry?.tasks ?? [],
+        provider_config: { model_name: m.value },
+        metadata: {},
+      },
+      raw: m,
+    };
+  });
 }
 
 export const OpenAI_ModelSearch: AiProviderRunFn<

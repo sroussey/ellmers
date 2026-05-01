@@ -3,7 +3,7 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, resolveColor, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, resolveColor, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface BorderParams {
   borderWidth: number;
@@ -11,10 +11,10 @@ export interface BorderParams {
 }
 
 function cpuBorder(
-  bin: ImageBinary,
+  bin: RawPixelBuffer,
   borderWidth: number,
   color: string | { r: number; g: number; b: number; a?: number }
-): ImageBinary {
+): RawPixelBuffer {
   const { data: src, width: srcW, height: srcH, channels: srcCh } = bin;
   const bw = borderWidth;
   const resolved = resolveColor(color);
@@ -50,5 +50,5 @@ function cpuBorder(
 }
 
 registerFilterOp<BorderParams>("cpu", "border", (image, { borderWidth, color }) => {
-  return CpuImage.fromImageBinary(cpuBorder((image as CpuImage).getBinary(), borderWidth, color));
+  return CpuImage.fromRaw(cpuBorder((image as CpuImage).getBinary(), borderWidth, color));
 });

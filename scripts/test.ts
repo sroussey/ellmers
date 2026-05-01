@@ -85,7 +85,7 @@ const SECTION_DIRS: Record<Section, string[]> = {
   ],
   queue: [join(TEST_BASE, "job-queue")],
   util: [join(TEST_BASE, "util"), join(TEST_BASE, "human")],
-  ai: [join(TEST_BASE, "ai-model")],
+  ai: [join(TEST_BASE, "ai"), join(TEST_BASE, "ai-model")],
   provider: [join(TEST_BASE, "ai-provider")],
   "provider-hft": [join(TEST_BASE, "ai-provider")],
   "provider-llamacpp": [join(TEST_BASE, "ai-provider")],

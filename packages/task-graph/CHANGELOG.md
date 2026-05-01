@@ -1,5 +1,19 @@
 # @workglow/task-graph
 
+## 0.2.22
+
+## 0.2.21
+
+### Features
+
+#### task-graph
+
+- indeterminate progress and StreamPhase events
+
+#### ai
+
+- image generation pipeline with ImageValue boundary
+
 ## 0.2.20
 
 ## 0.2.19

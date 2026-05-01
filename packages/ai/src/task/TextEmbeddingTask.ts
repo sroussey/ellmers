@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -68,7 +68,7 @@ export class TextEmbeddingTask extends AiTask<
   TextEmbeddingTaskConfig
 > {
   public static override type = "TextEmbeddingTask";
-  public static override category = "AI Text Model";
+  public static override category = "AI Text";
   public static override title = "Text Embedding";
   public static override description =
     "Generates vector embeddings for text to capture semantic meaning";

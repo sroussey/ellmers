@@ -7,10 +7,7 @@ import { describe, expect, test } from "vitest";
 import "@workglow/util/media";
 import "@workglow/tasks";
 import { ImageBlurTask } from "@workglow/tasks";
-import {
-  CpuImage,
-  type GpuImage,
-} from "@workglow/util/media";
+import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
 import {
   TaskOutputRepository,
   type TaskInput,
@@ -43,24 +40,33 @@ class MapRepo extends TaskOutputRepository {
   async clearOlderThan(_olderThanInMs: number): Promise<void> {}
 }
 
+function makeImageValue(bytes: number[]): ImageValue {
+  const data = new Uint8ClampedArray(bytes);
+  const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return imageValueFromBuffer(buf, "raw-rgba", 8, 8);
+}
+
 describe("image cache round-trip", () => {
-  test("two equivalent GpuImages hit the same cache entry", async () => {
+  test("two equivalent ImageValues hit the same cache entry", async () => {
     const repo = new MapRepo();
-    const bin = { data: new Uint8ClampedArray(8 * 8 * 4).fill(128), width: 8, height: 8, channels: 4 as const };
-    const a = CpuImage.fromImageBinary(bin) as unknown as GpuImage;
-    const b = CpuImage.fromImageBinary({ ...bin, data: new Uint8ClampedArray(bin.data) }) as unknown as GpuImage;
+    const bytes = new Array<number>(8 * 8 * 4).fill(128);
+    const a = makeImageValue(bytes);
+    const b = makeImageValue(bytes);
     expect(a).not.toBe(b);
 
     const t = new ImageBlurTask();
     const r1 = await t.run({ image: a, radius: 1 } as never, { outputCache: repo });
     const r2 = await t.run({ image: b, radius: 1 } as never, { outputCache: repo });
 
-    // Same materialize result.
-    const ab = await ((r1 as { image: GpuImage }).image).materialize();
-    const bb = await ((r2 as { image: GpuImage }).image).materialize();
+    // Same pixel result on both runs (decode the ImageValue back through CpuImage).
+    const aCpu = await CpuImage.from((r1 as { image: ImageValue }).image);
+    const bCpu = await CpuImage.from((r2 as { image: ImageValue }).image);
+    const ab = aCpu.getBinary();
+    const bb = bCpu.getBinary();
     expect(Array.from(ab.data).slice(0, 32)).toEqual(Array.from(bb.data).slice(0, 32));
 
-    // Single cache entry — Task 4.5's input normalization at work.
+    // Single cache entry — input normalization should make equivalent
+    // ImageValues produce the same cache key.
     expect(repo.store.size).toBe(1);
   });
 });

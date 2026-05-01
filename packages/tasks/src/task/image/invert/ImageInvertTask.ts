@@ -4,19 +4,19 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 
 const inputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Source image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Source image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Inverted image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Inverted image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

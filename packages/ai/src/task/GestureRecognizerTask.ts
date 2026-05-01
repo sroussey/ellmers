@@ -4,39 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:GestureRecognizerTask");
-
-/**
- * A landmark point with x, y, z coordinates.
- */
-const TypeLandmark = {
-  type: "object",
-  properties: {
-    x: {
-      type: "number",
-      title: "X Coordinate",
-      description: "X coordinate normalized to [0.0, 1.0]",
-    },
-    y: {
-      type: "number",
-      title: "Y Coordinate",
-      description: "Y coordinate normalized to [0.0, 1.0]",
-    },
-    z: {
-      type: "number",
-      title: "Z Coordinate",
-      description: "Z coordinate (depth)",
-    },
-  },
-  required: ["x", "y", "z"],
-  additionalProperties: false,
-} as const;
 
 /**
  * A recognized gesture with label and confidence score.
@@ -103,12 +77,14 @@ const TypeHandGestureDetection = {
       items: TypeLandmark,
       title: "Landmarks",
       description: "21 hand landmarks in image coordinates",
+      format: "points:3d:relative",
     },
     worldLandmarks: {
       type: "array",
       items: TypeLandmark,
       title: "World Landmarks",
       description: "21 hand landmarks in 3D world coordinates (meters)",
+      format: "points:3d:meters",
     },
   },
   required: ["gestures", "handedness", "landmarks", "worldLandmarks"],
@@ -192,7 +168,7 @@ export class GestureRecognizerTask extends AiVisionTask<
   GestureRecognizerTaskConfig
 > {
   public static override type = "GestureRecognizerTask";
-  public static override category = "AI Vision Model";
+  public static override category = "AI Vision";
   public static override title = "Gesture Recognizer";
   public static override description =
     "Recognizes hand gestures in images. Detects hand landmarks, identifies gestures (thumbs up, victory, etc.), and classifies handedness.";

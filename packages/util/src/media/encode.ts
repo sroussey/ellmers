@@ -3,10 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { ImageBinary } from "./imageTypes";
+import type { RawPixelBuffer } from "./rawPixelBuffer";
 import { getImageRasterCodec } from "./imageRasterCodecRegistry";
 
-async function encodeImageBinaryBytes(bin: ImageBinary, mimeType: string): Promise<Uint8Array> {
+async function rawPixelBufferToBytes(bin: RawPixelBuffer, mimeType: string): Promise<Uint8Array> {
   const dataUri = await getImageRasterCodec().encodeDataUri(bin, mimeType);
   const b64 = dataUri.slice(dataUri.indexOf(",") + 1);
   const decoded = atob(b64);
@@ -15,20 +15,17 @@ async function encodeImageBinaryBytes(bin: ImageBinary, mimeType: string): Promi
   return bytes;
 }
 
-export async function encodeImageBinaryToPng(bin: ImageBinary): Promise<Uint8Array> {
-  return encodeImageBinaryBytes(bin, "image/png");
-}
-
-export async function imageBinaryToBase64Png(bin: ImageBinary): Promise<string> {
-  const dataUri = await getImageRasterCodec().encodeDataUri(bin, "image/png");
-  return dataUri.slice(dataUri.indexOf(",") + 1);
-}
-
-export async function imageBinaryToDataUri(bin: ImageBinary, mimeType = "image/png"): Promise<string> {
+export async function rawPixelBufferToDataUri(
+  bin: RawPixelBuffer,
+  mimeType = "image/png",
+): Promise<string> {
   return getImageRasterCodec().encodeDataUri(bin, mimeType);
 }
 
-export async function imageBinaryToBlob(bin: ImageBinary, mimeType = "image/png"): Promise<Blob> {
-  const bytes = await encodeImageBinaryBytes(bin, mimeType);
+export async function rawPixelBufferToBlob(
+  bin: RawPixelBuffer,
+  mimeType = "image/png",
+): Promise<Blob> {
+  const bytes = await rawPixelBufferToBytes(bin, mimeType);
   return new Blob([bytes.buffer as ArrayBuffer], { type: mimeType });
 }

@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
-function cpuGrayscale(bin: ImageBinary): ImageBinary {
+function cpuGrayscale(bin: RawPixelBuffer): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const pixelCount = width * height;
   const dst = new Uint8ClampedArray(pixelCount * 4);
@@ -30,5 +30,5 @@ function cpuGrayscale(bin: ImageBinary): ImageBinary {
 }
 
 registerFilterOp<undefined>("cpu", "grayscale", (image, _params) => {
-  return CpuImage.fromImageBinary(cpuGrayscale((image as CpuImage).getBinary()));
+  return CpuImage.fromRaw(cpuGrayscale((image as CpuImage).getBinary()));
 });

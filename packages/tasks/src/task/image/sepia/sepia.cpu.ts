@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
-function cpuSepia(bin: ImageBinary): ImageBinary {
+function cpuSepia(bin: RawPixelBuffer): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const dst = new Uint8ClampedArray(src.length);
   const pixelCount = width * height;
@@ -34,5 +34,5 @@ function cpuSepia(bin: ImageBinary): ImageBinary {
 }
 
 registerFilterOp<undefined>("cpu", "sepia", (image, _params) => {
-  return CpuImage.fromImageBinary(cpuSepia((image as CpuImage).getBinary()));
+  return CpuImage.fromRaw(cpuSepia((image as CpuImage).getBinary()));
 });

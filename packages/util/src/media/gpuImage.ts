@@ -3,50 +3,42 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { ImageBinary, ImageChannels } from "./imageTypes";
+import type { ImageChannels } from "./imageTypes";
+import type { ImageValue } from "./imageValue";
 
 export type GpuImageBackend = "webgpu" | "sharp" | "cpu";
 export type GpuImageEncodeFormat = "png" | "jpeg" | "webp";
 
+/**
+ * `GpuImage` is a private implementation detail of image tasks: it never
+ * crosses a task/engine/worker boundary. Lives only inside an
+ * `ImageFilterTask.execute` method body. Cross-boundary currency is
+ * `ImageValue`. Use `GpuImage.from(value)` at task entry and
+ * `imageValueFromGpu(out, scale)` (or `transferToImageBitmap()` /
+ * `toBuffer()` directly) at task exit.
+ */
 export interface GpuImage {
   readonly width: number;
   readonly height: number;
   readonly channels: ImageChannels;
   readonly backend: GpuImageBackend;
-  /** Ratio of current dims to user's intended (pre-preview-downscale) dims.
-   *  1.0 in run mode and any image not derived from a previewSource downscale.
-   *  < 1.0 after previewSource has fired. Pixel-space task params are
-   *  multiplied by this before dispatch in preview mode (no-op at 1.0). */
-  readonly previewScale: number;
-  materialize(): Promise<ImageBinary>;
-  toCanvas(canvas: HTMLCanvasElement | OffscreenCanvas): Promise<void>;
+  /** Materialize back into a wire-form `ImageValue`. Always returns a fresh
+   *  ImageValue; the caller is the new owner. */
+  toImageValue(previewScale: number): Promise<ImageValue>;
+  /** Encode to a compressed image format (png/jpeg/webp). Implementations MAY
+   *  consume the underlying resource — treat as single-use. */
   encode(format: GpuImageEncodeFormat, quality?: number): Promise<Uint8Array>;
-  /**
-   * Increment the refcount by `n` (default 1). Returns `this` for chaining.
-   * No-op for backends without external resource lifetime (CpuImage, SharpImage).
-   * Throws if the resource has already been reclaimed (count was already 0).
-   */
-  retain(n?: number): this;
-  /**
-   * Decrement the refcount by 1. When it hits 0, reclaim the underlying resource
-   * (e.g., return the GPU texture to the pool). Throws on release-after-reclaim.
-   * No-op for backends without external resource lifetime.
-   */
-  release(): void;
+  /** Early cleanup on error paths only. Required because GPU/native resources
+   *  are not held by GC. The happy path uses `toImageValue()` which transfers
+   *  ownership; this is the abort/error case. */
+  dispose(): void;
 }
 
 export interface GpuImageStatic {
-  fromImageBinary(bin: ImageBinary): GpuImage;
-  fromImageBinaryAsync?(bin: ImageBinary): Promise<GpuImage>;
-  fromDataUri(dataUri: string): Promise<GpuImage>;
-  fromBlob(blob: Blob): Promise<GpuImage>;
-  fromImageBitmap?(bitmap: ImageBitmap): Promise<GpuImage>;
+  /** Bridge from the cross-boundary `ImageValue` to a backend-private GpuImage. */
+  from(value: ImageValue): Promise<GpuImage>;
 }
 
-// Cross-bundle singleton — Vite/Rolldown can produce multiple bundle copies
-// of this file. Without sharing through globalThis, registrations from
-// media-browser.ts could land in one copy while the codec / hydrator query
-// another and throw "GpuImage.fromDataUri is not registered".
 const GLOBAL_FACTORY_KEY = Symbol.for("@workglow/util/media/gpuImageFactory");
 const _g = globalThis as Record<symbol, unknown>;
 if (!_g[GLOBAL_FACTORY_KEY]) {
@@ -61,11 +53,6 @@ export function registerGpuImageFactory<K extends keyof GpuImageStatic>(
   factory[key] = fn;
 }
 
-/**
- * Returns the registered factory function for `key`, or `undefined` if it
- * has not been registered. Prefer this over accessing `GpuImage[key]` directly
- * when the factory is optional — the Proxy throws on missing registrations.
- */
 export function getGpuImageFactory<K extends keyof GpuImageStatic>(
   key: K,
 ): GpuImageStatic[K] | undefined {

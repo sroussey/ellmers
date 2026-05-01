@@ -29,7 +29,7 @@ export class GraphAsTaskRunner<
     // used by FallbackTaskRunner, IteratorTaskRunner, and WhileTask.
     const unsubscribe = this.task.subGraph!.subscribe(
       "graph_progress",
-      (progress: number, message?: string, ...args: any[]) => {
+      (progress: number | undefined, message?: string, ...args: any[]) => {
         void this.handleProgress(progress, message, ...args);
       }
     );
@@ -38,7 +38,6 @@ export class GraphAsTaskRunner<
       outputCache: this.outputCache,
       registry: this.registry,
       resourceScope: this.resourceScope,
-      runWithPreviews: this.runWithPreviews,
     });
     unsubscribe();
     return results;

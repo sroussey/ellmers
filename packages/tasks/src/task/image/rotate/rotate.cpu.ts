@@ -3,14 +3,14 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface RotateParams {
   angle: 90 | 180 | 270;
   background?: string;
 }
 
-function cpuRotate(bin: ImageBinary, angle: 90 | 180 | 270): ImageBinary {
+function cpuRotate(bin: RawPixelBuffer, angle: 90 | 180 | 270): RawPixelBuffer {
   const { data: src, width: srcW, height: srcH, channels } = bin;
 
   const swap = angle === 90 || angle === 270;
@@ -43,5 +43,5 @@ function cpuRotate(bin: ImageBinary, angle: 90 | 180 | 270): ImageBinary {
 }
 
 registerFilterOp<RotateParams>("cpu", "rotate", (image, { angle }) => {
-  return CpuImage.fromImageBinary(cpuRotate((image as CpuImage).getBinary(), angle));
+  return CpuImage.fromRaw(cpuRotate((image as CpuImage).getBinary(), angle));
 });

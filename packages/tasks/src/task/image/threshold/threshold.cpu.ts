@@ -3,13 +3,13 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface ThresholdParams {
   value: number;
 }
 
-function cpuThreshold(bin: ImageBinary, value: number): ImageBinary {
+function cpuThreshold(bin: RawPixelBuffer, value: number): RawPixelBuffer {
   const { data: src, width, height, channels } = bin;
   const pixelCount = width * height;
   const dst = new Uint8ClampedArray(pixelCount * channels);
@@ -32,5 +32,5 @@ function cpuThreshold(bin: ImageBinary, value: number): ImageBinary {
 }
 
 registerFilterOp<ThresholdParams>("cpu", "threshold", (image, { value }) => {
-  return CpuImage.fromImageBinary(cpuThreshold((image as CpuImage).getBinary(), value));
+  return CpuImage.fromRaw(cpuThreshold((image as CpuImage).getBinary(), value));
 });

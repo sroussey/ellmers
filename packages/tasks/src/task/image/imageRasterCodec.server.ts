@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ImageBinary, ImageChannels } from "@workglow/util/media";
-import { parseDataUri } from "@workglow/util/media";
+import type { RawPixelBuffer, ImageChannels } from "@workglow/util/media";
+import { decodeBufferToRaw, encodeRawPixels } from "@workglow/util/media";
 
 import {
   MAX_DECODED_PIXELS,
@@ -18,6 +18,18 @@ import {
   normalizeOutputMimeType,
 } from "./imageCodecLimits";
 import type { ImageRasterCodec } from "@workglow/util/media";
+
+/** Local copy of the deleted `@workglow/util/media#parseDataUri` helper. Kept
+ *  inline so the codec doesn't depend on a util export that was removed when
+ *  the boundary refactor migrated callers to `imageValueFromBuffer` / Buffer-
+ *  based plumbing. The base64 capture group is used to estimate decoded bytes
+ *  before allocation; the mime is read separately via `extractDataUriMimeType`
+ *  since it's enforced against an allowlist. */
+function parseDataUri(dataUri: string): { mimeType: string; base64: string } {
+  const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error("Invalid base64 data URI");
+  return { mimeType: match[1]!, base64: match[2]! };
+}
 
 function expandGrayAlphaToRgba(src: Buffer, width: number, height: number): Uint8ClampedArray {
   const n = width * height;
@@ -33,23 +45,7 @@ function expandGrayAlphaToRgba(src: Buffer, width: number, height: number): Uint
   return dst;
 }
 
-let _sharp: typeof import("sharp") | undefined;
-
-async function getSharp() {
-  if (!_sharp) {
-    try {
-      _sharp = (await import("sharp")).default;
-    } catch {
-      throw new Error(
-        "The Node/Bun image raster codec requires the optional 'sharp' package. " +
-          "Install it with: npm install sharp  (or bun add sharp)"
-      );
-    }
-  }
-  return _sharp;
-}
-
-async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
+async function decodeDataUri(dataUri: string): Promise<RawPixelBuffer> {
   // Defense in depth: the codec must not trust its caller. An accidental
   // `fetch`/`Buffer.from` path is not reachable here today, but refusing
   // anything that is not a data URI keeps that door shut.
@@ -64,7 +60,6 @@ async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
     );
   }
 
-  const sharp = await getSharp();
   const { base64 } = parseDataUri(dataUri);
 
   // Estimate decoded byte count from the base64 string length *before*
@@ -78,15 +73,10 @@ async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
 
   // `limitInputPixels` rejects header-declared pixel bombs before decompression.
   // `sequentialRead` lowers peak memory for large inputs.
-  const { data, info } = await sharp(buffer, {
+  const { data, width, height, channels: ch } = await decodeBufferToRaw(buffer, {
     limitInputPixels: MAX_DECODED_PIXELS,
     sequentialRead: true,
-  })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const width = info.width;
-  const height = info.height;
-  const ch = info.channels;
+  });
 
   // Belt-and-suspenders: sharp should have rejected already, but assert on the
   // post-decode dimensions too so any future sharp option change cannot
@@ -118,18 +108,25 @@ async function decodeDataUri(dataUri: string): Promise<ImageBinary> {
   throw new Error(`Unsupported decoded channel count: ${ch}`);
 }
 
-async function encodeDataUri(image: ImageBinary, mimeType: string): Promise<string> {
-  const sharp = await getSharp();
+async function encodeDataUri(image: RawPixelBuffer, mimeType: string): Promise<string> {
   const { data, width, height, channels } = image;
   const fmt = normalizeOutputMimeType(mimeType);
-  const base = sharp(Buffer.from(data), { raw: { width, height, channels } });
 
   const out =
     fmt === "image/jpeg"
-      ? await base.jpeg({ quality: 92, mozjpeg: true }).toBuffer()
+      ? await encodeRawPixels(
+          { data, width, height, channels },
+          { format: "jpeg", quality: 92, mozjpeg: true }
+        )
       : fmt === "image/webp"
-        ? await base.webp({ quality: 92 }).toBuffer()
-        : await base.png({ compressionLevel: 6 }).toBuffer();
+        ? await encodeRawPixels(
+            { data, width, height, channels },
+            { format: "webp", quality: 92 }
+          )
+        : await encodeRawPixels(
+            { data, width, height, channels },
+            { format: "png", compressionLevel: 6 }
+          );
 
   return `data:${fmt};base64,${out.toString("base64")}`;
 }

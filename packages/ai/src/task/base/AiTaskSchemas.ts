@@ -78,16 +78,68 @@ export function TypeSingleOrArray<const T extends DataPortSchemaNonBoolean>(type
   } as const satisfies JsonSchema;
 }
 
+/**
+ * A landmark point with x, y, z coordinates.
+ */
+export const TypeLandmark = {
+  type: "object",
+  properties: {
+    x: {
+      type: "number",
+      title: "X Coordinate",
+      description: "X coordinate normalized to [0.0, 1.0]",
+    },
+    y: {
+      type: "number",
+      title: "Y Coordinate",
+      description: "Y coordinate normalized to [0.0, 1.0]",
+    },
+    z: {
+      type: "number",
+      title: "Z Coordinate",
+      description: "Z coordinate (depth)",
+    },
+  },
+  required: ["x", "y", "z"],
+  format: "point:3d:relative",
+  additionalProperties: false,
+} as const satisfies JsonSchema;
+
+/**
+ * A landmark point with x, y, z coordinates and visibility/presence scores.
+ */
+export const TypePoseLandmark = {
+  ...TypeLandmark,
+  properties: {
+    ...TypeLandmark.properties,
+    visibility: {
+      type: "number",
+      title: "Visibility",
+      description: "Likelihood of the landmark being visible within the image",
+    },
+    presence: {
+      type: "number",
+      title: "Presence",
+      description: "Likelihood of the landmark being present in the image",
+    },
+  },
+} as const satisfies JsonSchema;
+
 export type ImageSource = ImageBitmap | OffscreenCanvas | VideoFrame;
 
 /**
- * Image input schema — hydrated to GpuImage by the runner via the image input resolver.
+ * Image input schema — hydrated to `ImageValue` at task entry by the image
+ * input resolver. Used by vision tasks; see `ImageValueSchema()` in
+ * `@workglow/util/media` for the equivalent factory used by image-filter tasks
+ * (the factory accepts a multi-type form including `string` for raw data: URI
+ * inputs).
  */
 export const TypeImageInput = {
   type: "object",
   properties: {},
   title: "Image",
-  description: "Image as data URI, Blob, ImageBitmap, ImageBinary, or GpuImage — hydrated to GpuImage by the runner",
+  description:
+    "Image as data: URI, Blob, ImageBitmap, or ImageValue — hydrated to ImageValue at task entry",
   format: "image",
 } as const satisfies JsonSchema;
 

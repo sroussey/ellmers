@@ -6,7 +6,11 @@
 import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import type { GpuImage, GpuImageBackend } from "@workglow/util/media";
-import { GpuImageFactory } from "@workglow/util/media";
+import {
+  GpuImageFactory,
+  imageValueFromBuffer,
+  ImageValueSchema,
+} from "@workglow/util/media";
 
 describe("GpuImage interface", () => {
   test("backend tag is one of the three allowed strings", () => {
@@ -15,8 +19,18 @@ describe("GpuImage interface", () => {
   });
 
   test("interface shape exists at type level", () => {
+    // GpuImage is now a private internal — its public methods are
+    // toImageValue, encode, dispose, plus width/height/channels/backend.
     const _stub = (img: GpuImage) =>
-      [img.width, img.height, img.channels, img.backend, img.materialize, img.toCanvas, img.encode, img.release] as const;
+      [
+        img.width,
+        img.height,
+        img.channels,
+        img.backend,
+        img.toImageValue,
+        img.encode,
+        img.dispose,
+      ] as const;
     expect(typeof _stub).toBe("function");
   });
 });
@@ -34,61 +48,45 @@ describe("GpuImageFactory Proxy guards", () => {
   });
 
   test("unregistered string key throws with a helpful message", () => {
-    expect(() => (GpuImageFactory as any).somethingBogus()).toThrow(/somethingBogus is not registered/);
+    expect(() => (GpuImageFactory as any).somethingBogus()).toThrow(
+      /somethingBogus is not registered/,
+    );
   });
 });
 
-import { GpuImageSchema } from "@workglow/util/media";
-
-describe("GpuImageSchema", () => {
+describe("ImageValueSchema", () => {
   test("declares format:'image' so the input resolver hydrates it", () => {
-    const schema = GpuImageSchema({ title: "Image" }) as Record<string, unknown>;
+    const schema = ImageValueSchema({ title: "Image" }) as Record<string, unknown>;
     expect(schema.format).toBe("image");
     expect(schema.title).toBe("Image");
   });
 
   test("accepts annotation overrides", () => {
-    const schema = GpuImageSchema({ title: "Source", description: "Input image" }) as Record<string, unknown>;
+    const schema = ImageValueSchema({
+      title: "Source",
+      description: "Input image",
+    }) as Record<string, unknown>;
     expect(schema.title).toBe("Source");
     expect(schema.description).toBe("Input image");
   });
 
   test("works with no annotations (defaults)", () => {
-    const schema = GpuImageSchema() as Record<string, unknown>;
+    const schema = ImageValueSchema() as Record<string, unknown>;
     expect(schema.format).toBe("image");
     expect(schema.title).toBe("Image");
-    expect(schema.description).toBe("Image (hydrated to GpuImage by the runner)");
+    expect(schema.description).toBe("Image (hydrated to ImageValue at task entry)");
   });
 });
 
-describe("GpuImageFactory async factories", () => {
-  test("fromDataUri produces a backed image (1x1 PNG)", async () => {
-    const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIW2NgYGD4DwABBAEAAFGI6QAAAABJRU5ErkJggg==";
-    const img = await GpuImageFactory.fromDataUri(tinyPng);
+describe("GpuImageFactory.from", () => {
+  test("from(NodeImageValue raw-rgba) yields a backed image", async () => {
+    // 1x1 red pixel as a raw-rgba NodeImageValue.
+    const raw = new Uint8ClampedArray([255, 0, 0, 255]);
+    const buf = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
+    const value = imageValueFromBuffer(buf, "raw-rgba", 1, 1);
+    const img = await GpuImageFactory.from(value);
     expect(img.width).toBe(1);
     expect(img.height).toBe(1);
     expect(["webgpu", "sharp", "cpu"]).toContain(img.backend);
-  });
-
-  test("fromBlob produces a backed image (PNG bytes)", async () => {
-    const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIW2NgYGD4DwABBAEAAFGI6QAAAABJRU5ErkJggg==";
-    const b64 = tinyPng.slice(tinyPng.indexOf(",") + 1);
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "image/png" });
-    const img = await GpuImageFactory.fromBlob(blob);
-    expect(img.width).toBe(1);
-    expect(img.height).toBe(1);
-    expect(["webgpu", "sharp", "cpu"]).toContain(img.backend);
-  });
-
-  test("fromImageBitmap throws in node (factory unavailable)", async () => {
-    if (typeof ImageBitmap !== "undefined") return; // skip in browser env
-    expect(() => (GpuImageFactory as unknown as { fromImageBitmap: () => unknown }).fromImageBitmap()).toThrow(
-      /not registered/,
-    );
   });
 });

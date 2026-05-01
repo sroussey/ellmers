@@ -67,7 +67,7 @@ describe("TextEmbeddingTask with real models", () => {
       const download = new DownloadModelTask({
         defaults: { model: "onnx:Xenova/gte-small:q8" },
       });
-      let lastProgress = -1;
+      let lastProgress: number | undefined = -1;
       download.on("progress", (progress, message, details) => {
         if (progress !== lastProgress) {
           logger.info(

@@ -6,6 +6,6 @@
 
 import { registerImageRasterCodec } from "@workglow/util/media";
 
-import { createNodeImageRasterCodec } from "./imageRasterCodecNode";
+import { createNodeImageRasterCodec } from "./imageRasterCodec.server";
 
 registerImageRasterCodec(createNodeImageRasterCodec());

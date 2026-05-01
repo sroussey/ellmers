@@ -51,6 +51,22 @@ export class StreamingAiTask<
   public static override type: string = "StreamingAiTask";
 
   /**
+   * Phase label emitted before the underlying provider stream begins
+   * producing data events. Override in subclasses for task-specific
+   * pre-stream phases (e.g. "Uploading" for tasks that prepare large
+   * inputs).
+   */
+  protected static readonly preparingPhaseLabel: string = "Preparing";
+
+  /**
+   * Phase label emitted on the first data event from the underlying
+   * provider stream (text-delta / object-delta / snapshot). Override in
+   * subclasses to reflect what the task is producing — "Generating",
+   * "Summarizing", "Translating", "Rendering", etc.
+   */
+  protected static readonly streamingPhaseLabel: string = "Streaming";
+
+  /**
    * Streaming execution: resolves the provider strategy and yields StreamEvents from it.
    * Routes through the same strategy as execute() (queued vs direct) so GPU
    * serialization is respected even for streaming tasks.
@@ -83,7 +99,24 @@ export class StreamingAiTask<
       }
     }
 
+    const ctor = this.constructor as typeof StreamingAiTask;
+    const preparingLabel = ctor.preparingPhaseLabel;
+    const streamingLabel = ctor.streamingPhaseLabel;
+
+    // Default pre-stream phase: covers strategy resolution, queueing,
+    // GPU acquisition, provider API connect time.
+    yield { type: "phase", message: preparingLabel, progress: undefined } as StreamEvent<Output>;
+
+    let firstDataSeen = false;
     for await (const event of strategy.executeStream(jobInput, context, this.runConfig.runnerId)) {
+      if (
+        !firstDataSeen &&
+        (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")
+      ) {
+        firstDataSeen = true;
+        yield { type: "phase", message: streamingLabel, progress: undefined } as StreamEvent<Output>;
+      }
+
       if (event.type === "text-delta") {
         yield { ...event, port: event.port ?? defaultPort } as StreamEvent<Output>;
       } else if (event.type === "object-delta") {

@@ -1,7 +1,7 @@
 {
   "name": "@workglow/tasks",
   "type": "module",
-  "version": "0.2.20",
+  "version": "0.2.22",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
@@ -94,7 +94,6 @@
   },
   "optionalDependencies": {
     "papaparse": "^5.5.3",
-    "sharp": "^0.34.5",
     "playwright": "catalog:"
   }
 }

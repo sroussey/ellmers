@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ImageBinary } from "@workglow/util/media";
+import type { RawPixelBuffer } from "@workglow/util/media";
 
 import {
   IMAGE_TEXT_RENDER_LINE_HEIGHT_FACTOR,
@@ -45,7 +45,7 @@ function getCanvas2dContext(
 
 export function createBrowserImageTextRenderer(): ImageTextRenderer {
   return {
-    async renderToRgba(params: ImageTextRenderParams): Promise<ImageBinary> {
+    async renderToRgba(params: ImageTextRenderParams): Promise<RawPixelBuffer> {
       const { width, height, text, font, fontSize, bold, italic, color, position } = params;
       const { ctx } = getCanvas2dContext(width, height);
       ctx.clearRect(0, 0, width, height);

@@ -2,7 +2,7 @@
   "name": "@workglow/job-queue",
   "type": "module",
   "sideEffects": false,
-  "version": "0.2.20",
+  "version": "0.2.22",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",

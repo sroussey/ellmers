@@ -671,8 +671,8 @@ describe("GraphAsTask Dynamic Schema", () => {
       const outerGraph = new TaskGraph();
       outerGraph.addTask(graphAsTask);
 
-      const outerEvents: Array<{ progress: number; message?: string }> = [];
-      outerGraph.subscribe("graph_progress", (progress: number, message?: string) => {
+      const outerEvents: Array<{ progress: number | undefined; message?: string }> = [];
+      outerGraph.subscribe("graph_progress", (progress: number | undefined, message?: string) => {
         outerEvents.push({ progress, message });
       });
 
@@ -797,8 +797,8 @@ describe("GraphAsTask Dynamic Schema", () => {
       outerGraph.addTask(embedTask);
       outerGraph.addTask(outputNode);
 
-      const outerEvents: Array<{ progress: number; message?: string; at: number }> = [];
-      outerGraph.subscribe("graph_progress", (progress: number, message?: string) => {
+      const outerEvents: Array<{ progress: number | undefined; message?: string; at: number }> = [];
+      outerGraph.subscribe("graph_progress", (progress: number | undefined, message?: string) => {
         outerEvents.push({ progress, message, at: outerEvents.length });
       });
 

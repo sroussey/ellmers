@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
@@ -58,7 +58,8 @@ export class TextRewriterTask extends StreamingAiTask<
   TextRewriterTaskConfig
 > {
   public static override type = "TextRewriterTask";
-  public static override category = "AI Text Model";
+  protected static override readonly streamingPhaseLabel = "Rewriting";
+  public static override category = "AI Text";
   public static override title = "Text Rewriter";
   public static override description =
     "Rewrites text according to a given prompt using language models";

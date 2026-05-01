@@ -460,7 +460,13 @@ export class WorkerManager {
           queue.push({ kind: "done" });
           notify();
         } else if (type === "error") {
-          queue.push({ kind: "error", error: new Error(data) });
+          const err =
+            typeof data === "object" && data !== null
+              ? Object.assign(new Error(data.message ?? String(data)), {
+                  name: data.name ?? "Error",
+                })
+              : new Error(String(data));
+          queue.push({ kind: "error", error: err });
           notify();
         }
       };

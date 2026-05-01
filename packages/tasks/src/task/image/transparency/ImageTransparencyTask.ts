@@ -4,14 +4,14 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { TransparencyParams } from "./transparency.cpu";
 
 const inputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Source image" }),
+    image: ImageValueSchema({ title: "Image", description: "Source image" }),
     amount: {
       type: "number",
       title: "Amount",
@@ -27,7 +27,7 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Image with adjusted transparency" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Image with adjusted transparency" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

@@ -263,9 +263,9 @@ export class IteratorTaskRunner<
      * below bumps the partial to 100 to guarantee completion for degenerate (all-passthrough)
      * subgraphs where `contributors.length === 0`.
      */
-    const onGraphProgress = (p: number, message?: string): void => {
+    const onGraphProgress = (p: number | undefined, message?: string): void => {
       this.task.emit("iteration_progress", index, iterationCount, p, message);
-      if (this.aggregatingParentMapProgress && this.mapPartialIterationCount > 0) {
+      if (p !== undefined && this.aggregatingParentMapProgress && this.mapPartialIterationCount > 0) {
         this.mapPartialProgress[index] = Math.max(this.mapPartialProgress[index] ?? 0, p);
         this.emitMapParentProgressFromPartials(message);
       }

@@ -1,5 +1,31 @@
 # @workglow/cli
 
+## 0.2.22
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@napi-rs/keyring`: ^1.3.0
+
+## 0.2.21
+
+### Features
+
+#### examples
+
+- render indeterminate progress and phase labels
+
+#### task-graph
+
+- indeterminate progress and StreamPhase events
+
+#### ai
+
+- image generation pipeline with ImageValue boundary
+
 ## 0.2.20
 
 ## 0.2.19

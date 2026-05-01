@@ -5,16 +5,17 @@
  */
 
 import type { TaskConfig, TaskOutput } from "@workglow/task-graph";
-import type { GpuImage } from "@workglow/util/media";
 
-import { AiJobInput } from "../../job/AiJob";
-import type { ModelConfig } from "../../model/ModelSchema";
 import { AiTask, AiTaskInput } from "./AiTask";
 
 /**
  * A base class for AI vision tasks.
- * Materializes GpuImage to raw pixels/bitmap at the worker boundary so the
- * worker (which doesn't import GPU code) receives transferable binary data.
+ *
+ * In the ImageValue boundary model, `input.image` is hydrated to `ImageValue`
+ * (a plain POJO wrapping `ImageBitmap` on browser or `Buffer` on node) by the
+ * `format: "image"` input resolver before the task runs. `ImageValue` is
+ * structured-clone-safe, so it traverses the worker boundary without any
+ * additional materialization. Provider workers normalize at their entry point.
  */
 export class AiVisionTask<
   Input extends AiTaskInput = AiTaskInput,
@@ -22,33 +23,4 @@ export class AiVisionTask<
   Config extends TaskConfig<Input> = TaskConfig<Input>,
 > extends AiTask<Input, Output, Config> {
   public static override type: string = "AiVisionTask";
-
-  protected override async getJobInput(input: Input): Promise<AiJobInput<Input>> {
-    const jobInput = await super.getJobInput(input);
-    if (!input.image) return jobInput;
-
-    const provider = (input.model as ModelConfig).provider as string | undefined;
-    const wantsBitmap =
-      typeof provider === "string" &&
-      provider.startsWith("TENSORFLOW_MEDIAPIPE") &&
-      typeof ImageBitmap !== "undefined";
-
-    const materializeOne = async (img: GpuImage): Promise<unknown> => {
-      if (wantsBitmap) {
-        const bin = await img.materialize();
-        const id = new ImageData(bin.data as unknown as Uint8ClampedArray<ArrayBuffer>, bin.width, bin.height);
-        return createImageBitmap(id);
-      }
-      return img.materialize();
-    };
-
-    const value = input.image as GpuImage | GpuImage[];
-    const materialized = Array.isArray(value)
-      ? await Promise.all(value.map(materializeOne))
-      : await materializeOne(value);
-
-    // @ts-expect-error narrowing across the worker boundary
-    jobInput.taskInput.image = materialized;
-    return jobInput;
-  }
 }

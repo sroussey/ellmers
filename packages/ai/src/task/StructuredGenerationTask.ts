@@ -133,7 +133,8 @@ export class StructuredGenerationTask extends StreamingAiTask<
   StructuredGenerationTaskConfig
 > {
   public static override type = "StructuredGenerationTask";
-  public static override category = "AI Text Model";
+  protected static override readonly streamingPhaseLabel = "Generating";
+  public static override category = "AI Text";
   public static override title = "Structured Generation";
   public static override description =
     "Generates structured JSON output conforming to a provided schema using language models, with automatic validation and retry on mismatch";

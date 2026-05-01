@@ -191,6 +191,13 @@ export class Task<
   // ========================================================================
 
   /**
+   * The TaskGraph that owns this task, set by {@link TaskGraph#addTask}.
+   * Used by {@link TaskRunner#runPreviewStream} to locate upstream tasks
+   * and subscribe to their streaming events.
+   */
+  public parentGraph?: TaskGraph;
+
+  /**
    * Task runner for handling the task execution
    */
   protected _runner: TaskRunner<Input, Output, Config> | undefined;
@@ -371,9 +378,10 @@ export class Task<
   status: TaskStatus = TaskStatus.PENDING;
 
   /**
-   * Progress of the task (0-100)
+   * Current progress, 0..100 for measured progress, `undefined` for
+   * indeterminate. Initialized to 0 (not started).
    */
-  progress: number = 0;
+  progress: number | undefined = 0;
 
   /**
    * When the task was created
@@ -954,6 +962,11 @@ export class Task<
       return obj.map((item) => this.stripSymbols(item));
     }
     if (typeof obj === "object") {
+      const proto = Object.getPrototypeOf(obj);
+      if (proto !== Object.prototype && proto !== null) {
+        return obj;
+      }
+
       const result: Record<string, any> = {};
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {

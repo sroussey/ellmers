@@ -4,7 +4,7 @@
  * All Rights Reserved
  */
 import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
-import { GpuImageSchema, type ColorObject } from "@workglow/util/media";
+import { ImageValueSchema, type ColorObject } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { TintParams } from "./tint.cpu";
 import { ColorValueSchema } from "../ImageSchemas";
@@ -12,7 +12,7 @@ import { ColorValueSchema } from "../ImageSchemas";
 const inputSchema = {
   type: "object",
   properties: {
-    image: GpuImageSchema({ title: "Image", description: "Source image" }),
+    image: ImageValueSchema({ title: "Image", description: "Source image" }),
     color: ColorValueSchema({ title: "Color", description: "Tint color" }),
     amount: {
       type: "number",
@@ -29,7 +29,7 @@ const inputSchema = {
 
 const outputSchema = {
   type: "object",
-  properties: { image: GpuImageSchema({ title: "Image", description: "Tinted image" }) },
+  properties: { image: ImageValueSchema({ title: "Image", description: "Tinted image" }) },
   required: ["image"],
   additionalProperties: false,
 } as const;

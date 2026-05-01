@@ -3,7 +3,7 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CpuImage, registerFilterOp, type ImageBinary } from "@workglow/util/media";
+import { CpuImage, registerFilterOp, type RawPixelBuffer } from "@workglow/util/media";
 
 export interface ResizeParams {
   width: number;
@@ -12,7 +12,7 @@ export interface ResizeParams {
   kernel?: string;
 }
 
-function cpuResize(bin: ImageBinary, dstW: number, dstH: number): ImageBinary {
+function cpuResize(bin: RawPixelBuffer, dstW: number, dstH: number): RawPixelBuffer {
   const { data: src, width: srcW, height: srcH, channels } = bin;
   const dst = new Uint8ClampedArray(dstW * dstH * channels);
 
@@ -32,5 +32,5 @@ function cpuResize(bin: ImageBinary, dstW: number, dstH: number): ImageBinary {
 }
 
 registerFilterOp<ResizeParams>("cpu", "resize", (image, { width, height }) => {
-  return CpuImage.fromImageBinary(cpuResize((image as CpuImage).getBinary(), width, height));
+  return CpuImage.fromRaw(cpuResize((image as CpuImage).getBinary(), width, height));
 });

@@ -29,7 +29,18 @@ import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes"
  */
 export interface IExecuteContext {
   signal: AbortSignal;
-  updateProgress: (progress: number, message?: string, ...args: any[]) => Promise<void>;
+  /**
+   * Update the task's progress.
+   * @param progress - 0..100 for measured progress, or `undefined` for
+   *   indeterminate (in progress, percentage unknown). UIs render
+   *   `undefined` as an indeterminate bar.
+   * @param message - Optional human-readable phase / status label.
+   */
+  updateProgress: (
+    progress: number | undefined,
+    message?: string,
+    ...args: any[]
+  ) => Promise<void>;
   own: <T extends ITask | ITaskGraph | IWorkflow>(i: T) => T;
   registry: ServiceRegistry;
   /**
@@ -84,9 +95,15 @@ export interface IRunConfig {
    */
   shouldAccumulate?: boolean;
 
+  /**
+   * Optional callback invoked whenever a task's progress changes during execution.
+   * @param task - The task whose progress changed.
+   * @param progress - 0..100 for measured progress, or `undefined` for indeterminate.
+   * @param message - Optional human-readable phase / status label.
+   */
   updateProgress?: (
     task: ITask,
-    progress: number,
+    progress: number | undefined,
     message?: string,
     ...args: any[]
   ) => Promise<void>;
@@ -113,13 +130,6 @@ export interface IRunConfig {
    * Default: false (entitlements are declarative only, not enforced by the engine).
    */
   enforceEntitlements?: boolean;
-
-  /**
-   * Threaded from `TaskGraphRunConfig.runWithPreviews` so subgraph runs
-   * (GraphAsTask, WhileTask, FallbackTask) inherit the parent's preview
-   * mode. See TaskGraphRunConfig for semantics.
-   */
-  runWithPreviews?: boolean;
 }
 
 /**
@@ -216,6 +226,7 @@ export interface ITaskIO<Input extends TaskInput> {
 
 export interface ITaskInternalGraph {
   subGraph: TaskGraph;
+  parentGraph?: TaskGraph;
   hasChildren(): boolean;
   regenerateGraph(): void;
 }
@@ -250,7 +261,8 @@ export interface ITaskState<Config extends TaskConfig = TaskConfig> {
   readonly config: Config;
   get id(): unknown;
   status: TaskStatus;
-  progress: number;
+  /** 0..100 for measured progress, or `undefined` for indeterminate (in-progress, percentage unknown). */
+  progress: number | undefined;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;

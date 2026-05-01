@@ -253,6 +253,17 @@ const result = await task.run();
 // Output: { answer: "About 2.1 million" }
 ```
 
+## Image Generation
+
+Two AI tasks produce an `ImageValue` from a text prompt:
+
+- **`ImageGenerateTask`** — text-to-image.
+- **`ImageEditTask`** — prompt-guided edit of an input image, with optional mask (inpaint) and optional `additionalImages` (multi-image compositing).
+
+Both extend a shared `AiImageOutputTask` base (which extends `StreamingAiTask`) and follow the standard streaming convention: providers yield `snapshot` events as the image refines (each event carries a complete partial that replaces the prior one — providers do **not** accumulate), then a `finish` event with empty data. The base class stores the latest partial in `_latestPartial` via plain assignment (lifetime is JS GC; there is no refcount system) and exposes it through `executePreview()`, so downstream image tasks (`ImageGrayscaleTask`, `ImageResizeTask`, etc.) refresh live as the image refines. `cacheable` is seed-aware: without a seed, generation is non-deterministic, so the task is treated as not cacheable.
+
+V1 supports OpenAI (`gpt-image-2`, `dall-e-3`), Google Gemini (`imagen-4`, `gemini-2.5-flash-image`), and HuggingFace Inference (Flux, FLUX.1-Kontext-dev for inpaint). Per-provider validators reject unsupported combinations (Gemini + mask, HF + multiple images) before any worker dispatch, surfacing as a `ProviderUnsupportedFeatureError` in the graph editor.
+
 ### Analysis Tasks
 
 #### VectorSimilarityTask

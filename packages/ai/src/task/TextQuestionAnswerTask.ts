@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
@@ -64,7 +64,8 @@ export class TextQuestionAnswerTask extends StreamingAiTask<
   TextQuestionAnswerTaskConfig
 > {
   public static override type = "TextQuestionAnswerTask";
-  public static override category = "AI Text Model";
+  protected static override readonly streamingPhaseLabel = "Answering";
+  public static override category = "AI Text";
   public static override title = "Text Question Answer";
   public static override description =
     "Answers questions based on provided context using language models";

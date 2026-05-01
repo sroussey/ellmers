@@ -138,8 +138,8 @@ describe("TaskRunner cache key determinism — image codec", () => {
 
     const repo = new SpyRepo();
     const bin = { data: new Uint8ClampedArray([1, 2, 3, 255]), width: 1, height: 1, channels: 4 as const };
-    const a = CpuImage.fromImageBinary(bin) as unknown as GpuImage;
-    const b = CpuImage.fromImageBinary({ ...bin, data: new Uint8ClampedArray([1, 2, 3, 255]) }) as unknown as GpuImage;
+    const a = CpuImage.fromRaw(bin) as unknown as GpuImage;
+    const b = CpuImage.fromRaw({ ...bin, data: new Uint8ClampedArray([1, 2, 3, 255]) }) as unknown as GpuImage;
     expect(a).not.toBe(b);
 
     let calls = 0;

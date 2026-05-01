@@ -6,8 +6,8 @@
 
 import { TaskGraph, Workflow } from "@workglow/task-graph";
 import { lambda, LambdaTask } from "@workglow/tasks";
-import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("LambdaTask", () => {
@@ -117,14 +117,14 @@ describe("LambdaTask", () => {
   test("with updateProgress", async () => {
     const graph = new TaskGraph();
     const task = new LambdaTask({
-      execute: async (input, { updateProgress }) => {
+      execute: async (_, { updateProgress }) => {
         updateProgress(0.5, "Halfway there");
         return { output: "Hello, world!" };
       },
     });
     graph.addTask(task);
     let progressCounter = 0;
-    task.on("progress", (progress: number) => {
+    task.on("progress", (progress: number | undefined) => {
       progressCounter++;
     });
     const results = await graph.run();
@@ -132,6 +132,6 @@ describe("LambdaTask", () => {
     if (Array.isArray(results)) {
       expect(results[0].data).toEqual({ output: "Hello, world!" });
     }
-    expect(progressCounter).toEqual(1);
+    expect(progressCounter).toEqual(2); // manual updateProgress(0.5) + terminal-100 tick
   });
 });

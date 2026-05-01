@@ -125,7 +125,8 @@ export class FallbackTaskRunner<
      * as `currentAttemptIndex` advances.
      */
     let currentAttemptIndex = 0;
-    const onSubgraphProgress = (innerProgress: number, message?: string): void => {
+    const onSubgraphProgress = (innerProgress: number | undefined, message?: string): void => {
+      if (innerProgress === undefined) return;
       const blended = Math.round(
         ((currentAttemptIndex + innerProgress / 100) / totalAttempts) * 100
       );
