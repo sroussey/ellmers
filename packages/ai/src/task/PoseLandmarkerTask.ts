@@ -7,46 +7,10 @@
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeImageInput, TypeModel, TypePoseLandmark } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:PoseLandmarkerTask");
-
-/**
- * A landmark point with x, y, z coordinates and visibility/presence scores.
- */
-const TypePoseLandmark = {
-  type: "object",
-  properties: {
-    x: {
-      type: "number",
-      title: "X Coordinate",
-      description: "X coordinate normalized to [0.0, 1.0]",
-    },
-    y: {
-      type: "number",
-      title: "Y Coordinate",
-      description: "Y coordinate normalized to [0.0, 1.0]",
-    },
-    z: {
-      type: "number",
-      title: "Z Coordinate",
-      description: "Z coordinate (depth)",
-    },
-    visibility: {
-      type: "number",
-      title: "Visibility",
-      description: "Likelihood of the landmark being visible within the image",
-    },
-    presence: {
-      type: "number",
-      title: "Presence",
-      description: "Likelihood of the landmark being present in the image",
-    },
-  },
-  required: ["x", "y", "z"],
-  additionalProperties: false,
-} as const;
 
 /**
  * A segmentation mask for the detected person.

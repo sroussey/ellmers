@@ -7,36 +7,10 @@
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:FaceLandmarkerTask");
-
-/**
- * A landmark point with x, y, z coordinates.
- */
-const TypeLandmark = {
-  type: "object",
-  properties: {
-    x: {
-      type: "number",
-      title: "X Coordinate",
-      description: "X coordinate normalized to [0.0, 1.0]",
-    },
-    y: {
-      type: "number",
-      title: "Y Coordinate",
-      description: "Y coordinate normalized to [0.0, 1.0]",
-    },
-    z: {
-      type: "number",
-      title: "Z Coordinate",
-      description: "Z coordinate (depth)",
-    },
-  },
-  required: ["x", "y", "z"],
-  additionalProperties: false,
-} as const;
 
 /**
  * A blendshape coefficient representing facial expression.
@@ -82,6 +56,7 @@ const TypeFaceLandmarkerDetection = {
       items: TypeLandmark,
       title: "Landmarks",
       description: "478 facial landmarks in image coordinates",
+      format: "points:3d:relative",
     },
     blendshapes: {
       type: "array",
