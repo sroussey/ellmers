@@ -93,7 +93,7 @@
     "eslint-plugin-regexp": "^3.1.0",
     "globals": "^17.5.0",
     "nyc": "^18.0.0",
-    "pkg-pr-new": "^0.0.68",
+    "pkg-pr-new": "^0.0.69",
     "prettier": "^3.8.3",
     "turbo": "^2.9.5",
     "typescript": "6.0.3",
