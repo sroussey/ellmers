@@ -48,9 +48,20 @@ describe("Image generation preview chain", () => {
       syntheticImage(8, 8, 250),
     ];
 
+    const grayPreviewSamples: number[] = [];
+
+    // The downstream preview runner is single-buffered: when multiple snapshots
+    // arrive while it's awaiting a runPreview() iteration, only the last value
+    // wins (intentional backpressure — UIs show latest, not stale frames). To
+    // verify intermediate snapshots flow through, the producer must pace itself
+    // to the consumer. Each yield waits until the consumer has actually
+    // observed it before emitting the next.
     const stream: AiProviderStreamFn = async function* () {
-      for (const img of partials) {
-        yield { type: "snapshot", data: { image: img } } as any;
+      for (let i = 0; i < partials.length; i++) {
+        yield { type: "snapshot", data: { image: partials[i] } } as any;
+        while (grayPreviewSamples.length <= i) {
+          await new Promise((r) => setTimeout(r, 1));
+        }
       }
       yield { type: "finish", data: {} } as any;
     };
@@ -72,7 +83,6 @@ describe("Image generation preview chain", () => {
     wf.graph.addTasks([gen, gray]);
     wf.graph.addDataflow(new Dataflow(gen.id, "image", gray.id, "image"));
 
-    const grayPreviewSamples: number[] = [];
     const collector = (async () => {
       for await (const out of gray.runner.runPreviewStream()) {
         if (out?.image) {

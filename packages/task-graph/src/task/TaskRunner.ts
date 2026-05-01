@@ -362,8 +362,16 @@ export class TaskRunner<
   /**
    * Async iterator producing preview outputs as upstream tasks stream
    * snapshots. Yields once immediately with the current preview state, then
-   * once per upstream snapshot until all relevant upstream streams complete
-   * (or the consumer breaks out of the loop).
+   * yields again whenever upstream snapshots have arrived since the last
+   * yield, until all relevant upstream streams complete (or the consumer
+   * breaks out of the loop).
+   *
+   * Backpressure is single-buffered and last-write-wins: snapshots arriving
+   * while a runPreview() iteration is in flight all overwrite runInputData,
+   * and the next iteration sees only the latest value. Consumers that need
+   * to observe every intermediate snapshot must pace the producer (e.g.,
+   * wait for each yield to be processed before emitting the next). This
+   * matches live-preview UI semantics — show the latest, drop stale frames.
    *
    * Reuses runPreview() under the hood. Errors during a single iteration
    * are caught and skipped — the iterator never throws to the consumer
