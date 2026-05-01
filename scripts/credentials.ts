@@ -1,3 +1,5 @@
+#!/usr/bin/env bun
+
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
@@ -236,9 +238,7 @@ async function cmdImportDotEnv(file: string): Promise<void> {
     for (const line of imported) console.log(`  ${line}`);
   }
   if (skipped.length > 0) {
-    console.log(
-      `skipped (no mapping in CREDENTIAL_TO_ENV): ${skipped.join(", ")}`
-    );
+    console.log(`skipped (no mapping in CREDENTIAL_TO_ENV): ${skipped.join(", ")}`);
   }
 }
 
@@ -253,9 +253,7 @@ async function cmdRotate(): Promise<void> {
     console.log("(no credentials stored — nothing to rotate)");
     return;
   }
-  const decrypted = await Promise.all(
-    keys.map(async (k) => [k, await oldStore.get(k)] as const)
-  );
+  const decrypted = await Promise.all(keys.map(async (k) => [k, await oldStore.get(k)] as const));
 
   // Wipe only ciphertext (.json) files; preserve .gitkeep and any other markers.
   for (const file of readdirSync(SECRETS_DIR)) {
