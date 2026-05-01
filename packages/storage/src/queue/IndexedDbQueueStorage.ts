@@ -300,7 +300,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, ""],
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, now],
             false,
-            true
+            false
           )
         );
 
