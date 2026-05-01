@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { createHash } from "node:crypto";
 import type { Pool } from "@workglow/storage/postgres";
 import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
 import {
@@ -180,31 +181,41 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     // without polling. The channel name is derived from md5(table || queue) so
     // (a) it fits Postgres's 63-char identifier limit even with long queue
     // names, and (b) different queues on the same table don't share a channel.
+    //
+    // Best-effort: in-process Postgres-compatible engines like PGLite may not
+    // implement pg_notify or plpgsql. Skip trigger installation in that case
+    // — subscribeToChanges will throw synchronously for those engines anyway,
+    // so callers fall back to polling.
     const fnName = `${this.tableName}_notify`;
     const trgName = `${this.tableName}_notify_trg`;
-    await this.db.query(`
-      CREATE OR REPLACE FUNCTION ${fnName}() RETURNS trigger AS $fn$
-      DECLARE
-        channel TEXT := 'wglw_q_' || md5('${this.tableName}' || COALESCE(NEW.queue, OLD.queue));
-        payload TEXT;
-      BEGIN
-        payload := json_build_object(
-          'op', TG_OP,
-          'id', COALESCE(NEW.id, OLD.id),
-          'queue', COALESCE(NEW.queue, OLD.queue),
-          'status', COALESCE(NEW.status::text, OLD.status::text)
-        )::text;
-        PERFORM pg_notify(channel, payload);
-        RETURN NULL;
-      END;
-      $fn$ LANGUAGE plpgsql;
-    `);
-    await this.db.query(`DROP TRIGGER IF EXISTS ${trgName} ON ${this.tableName}`);
-    await this.db.query(`
-      CREATE TRIGGER ${trgName}
-        AFTER INSERT OR UPDATE ON ${this.tableName}
-        FOR EACH ROW EXECUTE FUNCTION ${fnName}();
-    `);
+    try {
+      await this.db.query(`
+        CREATE OR REPLACE FUNCTION ${fnName}() RETURNS trigger AS $fn$
+        DECLARE
+          channel TEXT := 'wglw_q_' || md5('${this.tableName}' || COALESCE(NEW.queue, OLD.queue));
+          payload TEXT;
+        BEGIN
+          payload := json_build_object(
+            'op', TG_OP,
+            'id', COALESCE(NEW.id, OLD.id),
+            'queue', COALESCE(NEW.queue, OLD.queue),
+            'status', COALESCE(NEW.status::text, OLD.status::text)
+          )::text;
+          PERFORM pg_notify(channel, payload);
+          RETURN NULL;
+        END;
+        $fn$ LANGUAGE plpgsql;
+      `);
+      await this.db.query(`DROP TRIGGER IF EXISTS ${trgName} ON ${this.tableName}`);
+      await this.db.query(`
+        CREATE TRIGGER ${trgName}
+          AFTER INSERT OR UPDATE ON ${this.tableName}
+          FOR EACH ROW EXECUTE FUNCTION ${fnName}();
+      `);
+    } catch {
+      // best-effort — the engine doesn't support LISTEN/NOTIFY; subscribers
+      // will get a synchronous throw and fall back to polling.
+    }
   }
 
   /**
@@ -215,11 +226,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     // md5() returns 32 hex chars; combined with the 7-char prefix this is well
     // under Postgres's 63-byte identifier limit.
     const tableAndQueue = `${this.tableName}${this.queueName}`;
-    // Compute md5 client-side via a SQL call would be a round-trip; do it
-    // inline. Node has crypto; this lives in a node/bun module.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const crypto = require("node:crypto") as typeof import("node:crypto");
-    const hash = crypto.createHash("md5").update(tableAndQueue).digest("hex");
+    const hash = createHash("md5").update(tableAndQueue).digest("hex");
     return `wglw_q_${hash}`;
   }
 
@@ -615,15 +622,43 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Acquires a dedicated client from the pool (LISTEN occupies a connection
    * for its lifetime). On unsubscribe, runs UNLISTEN and releases the client.
    * On connection loss, attempts to reconnect with bounded backoff and
-   * re-LISTEN; subscribers see a synthetic resync event so they can re-read
-   * state if needed.
+   * re-LISTEN. This method does NOT emit a synthetic resync event — callers
+   * that care about missed events between disconnect and reconnect must
+   * re-read state via their own recovery strategy.
+   *
+   * Throws synchronously when the underlying pool lacks `connect()`
+   * (single-connection wrappers like PGLite) so the caller's try/catch can
+   * fall back to polling. JobQueueServer.start does this and logs at debug.
+   *
+   * `options.prefixFilter` follows {@link QueueSubscribeOptions.prefixFilter}:
+   * `undefined` means "use the storage instance's configured prefixValues",
+   * `{}` means "receive all changes regardless of prefix".
    */
   public subscribeToChanges(
     callback: (change: QueueChangePayload<Input, Output>) => void,
     options?: QueueSubscribeOptions
   ): () => void {
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (!supportsConnect) {
+      // Detect synchronously so callers can catch and fall back to polling
+      // without leaving a dangling unhandled promise rejection behind.
+      throw new Error(
+        "PostgresQueueStorage.subscribeToChanges requires a pg.Pool (got a single-connection wrapper)"
+      );
+    }
+
     const channel = this.notifyChannelName();
-    const prefixFilter = options?.prefixFilter;
+    // undefined -> default to instance prefixValues; {} -> no filtering;
+    // partial -> filter by the provided subset (matches QueueSubscribeOptions docs).
+    const effectivePrefixFilter: Readonly<Record<string, string | number>> | null =
+      options?.prefixFilter === undefined
+        ? this.prefixes.length > 0
+          ? this.prefixValues
+          : null
+        : Object.keys(options.prefixFilter).length === 0
+          ? null
+          : options.prefixFilter;
 
     let unsubscribed = false;
     let activeClient: {
@@ -647,6 +682,21 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       return true;
     };
 
+    // Hydrate the row referenced by a notification. Postgres NOTIFY is capped
+    // at 8 KB so we ship only {id, queue, status} in the payload and fetch the
+    // full row here — keeps subscriber payloads consistent with other backends
+    // (e.g. Supabase realtime, IndexedDb) and lets prefixFilter inspect the
+    // prefix columns the row actually has.
+    const hydrate = async (
+      id: unknown
+    ): Promise<JobStorageFormat<Input, Output> | undefined> => {
+      try {
+        return await this.get(id);
+      } catch {
+        return undefined;
+      }
+    };
+
     const handleNotification = (msg: { channel: string; payload?: string }): void => {
       if (msg.channel !== channel || !msg.payload) return;
       let parsed: { op: string; id: number; queue: string; status: string };
@@ -655,44 +705,30 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       } catch {
         return;
       }
-      // We don't ship the full row in the NOTIFY payload (8 KB limit). The
-      // primary use case is waking workers, which only need to know "something
-      // pending changed" — JobQueueServer subscribes specifically for INSERT
-      // and PENDING transitions. Construct a minimal payload reflecting that.
-      const op = parsed.op;
-      const change: QueueChangePayload<Input, Output> = {
-        type: op === "INSERT" ? "INSERT" : op === "DELETE" ? "DELETE" : "UPDATE",
-        new:
-          op === "DELETE"
-            ? undefined
-            : ({ id: parsed.id, queue: parsed.queue, status: parsed.status } as unknown as JobStorageFormat<
-                Input,
-                Output
-              >),
-        old:
-          op === "DELETE"
-            ? ({ id: parsed.id, queue: parsed.queue } as unknown as JobStorageFormat<Input, Output>)
-            : undefined,
-      };
-      if (prefixFilter && !matchesPrefix(change, prefixFilter)) return;
-      try {
-        callback(change);
-      } catch {
-        // never let user callbacks tear down the listener loop
-      }
+      void (async () => {
+        const op = parsed.op;
+        const fallback = {
+          id: parsed.id,
+          queue: parsed.queue,
+          status: parsed.status,
+        } as unknown as JobStorageFormat<Input, Output>;
+        const fullRow = op === "DELETE" ? undefined : await hydrate(parsed.id);
+        const change: QueueChangePayload<Input, Output> = {
+          type: op === "INSERT" ? "INSERT" : op === "DELETE" ? "DELETE" : "UPDATE",
+          new: op === "DELETE" ? undefined : (fullRow ?? fallback),
+          old: op === "DELETE" ? fallback : undefined,
+        };
+        if (effectivePrefixFilter && !matchesPrefix(change, effectivePrefixFilter)) return;
+        try {
+          callback(change);
+        } catch {
+          // never let user callbacks tear down the listener loop
+        }
+      })();
     };
 
     const connect = async (): Promise<void> => {
       if (unsubscribed) return;
-      const supportsConnect =
-        typeof (this.db as unknown as { connect?: unknown }).connect === "function";
-      if (!supportsConnect) {
-        // PGLitePool / single-connection wrappers don't support a long-lived
-        // LISTEN connection. Subscribers fall back to polling in that case.
-        throw new Error(
-          "PostgresQueueStorage.subscribeToChanges requires a pg.Pool (got a single-connection wrapper)"
-        );
-      }
       try {
         const client = await (this.db as unknown as { connect: () => Promise<typeof activeClient> }).connect();
         if (unsubscribed) {

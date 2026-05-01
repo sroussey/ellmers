@@ -160,28 +160,41 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     );
   }
 
+  /**
+   * Atomically reserves an execution slot in IndexedDB.
+   *
+   * Atomicity caveat: this implementation only serializes the `count + insert`
+   * pair (under a single `readwrite` IDB transaction over the executions
+   * store). The `next_available_at` lookup is a soft pre-check performed
+   * BEFORE the tx, because the executions and next-available object stores
+   * live in separate `IDBDatabase` instances by design (one
+   * `ensureIndexedDbTable` call each) and IDB transaction scope cannot cross
+   * databases. This is acceptable for IndexedDB's `"process"` scope: rate-
+   * limit overshoot from a stale next-available read is bounded by single-
+   * tab serial execution, and the stricter count check is what protects the
+   * primary maxExecutions invariant.
+   */
   public async tryReserveExecution(
     queueName: string,
     maxExecutions: number,
     windowMs: number
   ): Promise<boolean> {
-    // IndexedDB serializes operations on overlapping object stores within the
-    // same scope. Open a readwrite transaction across BOTH the execution and
-    // next-available stores so the count + insert + nextAvailable check happen
-    // atomically against any other tx that touches either store.
+    // Soft pre-check against external backoff. Done before opening the tx
+    // because next-available lives in a separate IDBDatabase.
+    const nextIso = await this.getNextAvailableTime(queueName);
+    if (nextIso && new Date(nextIso).getTime() > Date.now()) {
+      return false;
+    }
+
     const execDb = await this.getExecutionDb();
-    const nextDb = await this.getNextAvailableDb();
     const prefixKeyValues = this.getPrefixKeyValues();
     const windowStartIso = new Date(Date.now() - windowMs).toISOString();
-
-    // We may need both DBs; if they're the same connection (typical), use one tx
-    // spanning both stores. If not, fall back to sequential — IndexedDB tx scope
-    // can't cross databases. The check is best-effort under that case.
     const execTx = execDb.transaction(this.executionTableName, "readwrite");
     const execStore = execTx.objectStore(this.executionTableName);
 
     return new Promise<boolean>((resolve, reject) => {
       let liveCount = 0;
+      let inserted = false;
       const liveRange = IDBKeyRange.bound(
         [...prefixKeyValues, queueName, windowStartIso],
         [...prefixKeyValues, queueName, "￿"],
@@ -203,49 +216,33 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
 
         if (liveCount >= maxExecutions) {
           execTx.abort();
-          resolve(false);
           return;
         }
 
-        // Best-effort next-available check (separate tx, may race; the count
-        // check is the primary atomic guarantee).
-        this.getNextAvailableTime(queueName)
-          .then((nextIso) => {
-            if (nextIso && new Date(nextIso).getTime() > Date.now()) {
-              execTx.abort();
-              resolve(false);
-              return;
-            }
-            const record: ExecutionRecord = {
-              id: crypto.randomUUID(),
-              queue_name: queueName,
-              executed_at: new Date().toISOString(),
-            };
-            for (const [k, v] of Object.entries(this.prefixValues)) {
-              (record as Record<string, unknown>)[k] = v;
-            }
-            const addReq = execStore.add(record);
-            addReq.onerror = () => {
-              try {
-                execTx.abort();
-              } catch {
-                // already aborted
-              }
-              reject(addReq.error);
-            };
-          })
-          .catch(reject);
+        const record: ExecutionRecord = {
+          id: crypto.randomUUID(),
+          queue_name: queueName,
+          executed_at: new Date().toISOString(),
+        };
+        for (const [k, v] of Object.entries(this.prefixValues)) {
+          (record as Record<string, unknown>)[k] = v;
+        }
+        const addReq = execStore.add(record);
+        inserted = true;
+        addReq.onerror = () => {
+          try {
+            execTx.abort();
+          } catch {
+            // already aborted
+          }
+          reject(addReq.error);
+        };
       };
 
       cursorReq.onerror = () => reject(cursorReq.error);
-      execTx.oncomplete = () => resolve(true);
+      execTx.oncomplete = () => resolve(inserted);
       execTx.onerror = () => reject(execTx.error);
-      execTx.onabort = () => {
-        // resolve(false) was called above on capacity-hit; ignore here.
-      };
-
-      // Keep nextDb in scope so it isn't GC'd before the promise settles.
-      void nextDb;
+      execTx.onabort = () => resolve(false);
     });
   }
 

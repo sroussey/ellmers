@@ -357,6 +357,19 @@ export class JobQueueWorker<
           continue;
         }
 
+        if (!this.running) {
+          // Stop fired while tryAcquire was in flight. Undo both the limiter
+          // reservation and the job claim so we don't start processing on a
+          // worker that's about to exit.
+          try {
+            await this.limiter.release();
+          } catch {
+            // best-effort
+          }
+          await this.releaseClaimedJob(job);
+          return;
+        }
+
         // Don't await - process in background to allow concurrent jobs.
         // The loop will claim+acquire on the next iteration.
         this.processSingleJob(job);
@@ -481,6 +494,11 @@ export class JobQueueWorker<
         })
       : undefined;
 
+    // Set when validateJobState fails and we release() the limiter slot
+    // ourselves — the finally block then skips recordJobCompletion to avoid
+    // double-decrementing limiters where release() and recordJobCompletion()
+    // both decrement (e.g. ConcurrencyLimiter).
+    let slotReleased = false;
     try {
       // The limiter slot was already atomically reserved by tryAcquire() in
       // the main loop (or processNext), so we no longer call recordJobStart
@@ -492,6 +510,7 @@ export class JobQueueWorker<
         // we reserved so it doesn't count toward the rate limit.
         try {
           await this.limiter.release();
+          slotReleased = true;
         } catch {
           // best-effort
         }
@@ -539,7 +558,9 @@ export class JobQueueWorker<
     } finally {
       span?.end();
       try {
-        await this.limiter.recordJobCompletion();
+        if (!slotReleased) {
+          await this.limiter.recordJobCompletion();
+        }
       } finally {
         this.inFlight.delete(job.id);
         resolveInFlight();
