@@ -8,11 +8,7 @@ import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
-import {
-  edgeNeedsAccumulation,
-  getOutputStreamMode,
-  getStreamingPorts,
-} from "../task/StreamTypes";
+import { edgeNeedsAccumulation, getOutputStreamMode, getStreamingPorts } from "../task/StreamTypes";
 import type { TaskInput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
