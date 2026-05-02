@@ -19,13 +19,21 @@ export interface PendingLoopConnect {
 /**
  * Runs deferred auto-connect for a loop iterator task on the parent
  * workflow's graph. Extracted as a free function so it can be invoked
- * from both {@link LoopBuilderContext.autoConnectLoopTask} and from
+ * from both {@link LoopBuilderContext.consumePendingConnect} and from
  * the parent {@link Workflow}'s public delegate method (the parent is
  * not itself in loop-builder mode and has no context of its own).
+ *
+ * Returns the error message if auto-connect failed, otherwise undefined.
+ * On failure the iterator task is removed from the parent graph; the
+ * caller is responsible for surfacing the error onto the parent
+ * workflow's `.error` (matches the non-loop auto-connect path).
  */
-export function runLoopAutoConnect(parentGraph: TaskGraph, pending: PendingLoopConnect): void {
+export function runLoopAutoConnect(
+  parentGraph: TaskGraph,
+  pending: PendingLoopConnect
+): string | undefined {
   const { parent, iteratorTask } = pending;
-  if (parentGraph.getTargetDataflows(parent.id).length !== 0) return;
+  if (parentGraph.getTargetDataflows(parent.id).length !== 0) return undefined;
 
   const nodes = parentGraph.getTasks();
   const parentIndex = nodes.findIndex((n) => n.id === parent.id);
@@ -36,9 +44,12 @@ export function runLoopAutoConnect(parentGraph: TaskGraph, pending: PendingLoopC
 
   const result = autoConnect(parentGraph, parent, iteratorTask, { earlierTasks });
   if (result.error) {
-    getLogger().error(result.error + " Task not added.");
+    const message = result.error + " Task not added.";
+    getLogger().error(message);
     parentGraph.removeTask(iteratorTask.id);
+    return message;
   }
+  return undefined;
 }
 
 /**
@@ -66,18 +77,28 @@ export class LoopBuilderContext {
     this.iteratorTask.validateAcyclic();
   }
 
-  /** Runs auto-connect for the pending loop connect (if any), then clears it. */
-  public consumePendingConnect(): void {
+  /**
+   * Runs auto-connect for the pending loop connect (if any), then clears it.
+   * Returns the error message if auto-connect failed, otherwise undefined,
+   * so the caller can propagate the failure to the parent workflow's `.error`.
+   */
+  public consumePendingConnect(): string | undefined {
     const pending = this.pendingLoopConnect;
-    if (!pending) return;
-    runLoopAutoConnect(this.parent.graph, pending);
+    if (!pending) return undefined;
+    const error = runLoopAutoConnect(this.parent.graph, pending);
     this.pendingLoopConnect = undefined;
+    return error;
   }
 
-  /** Finalizes the template and returns the parent workflow. */
+  /**
+   * Finalizes the template and returns the parent workflow. Any deferred
+   * auto-connect error is surfaced onto the parent's `.error` to match the
+   * non-loop auto-connect path.
+   */
   public finalizeAndReturn(childGraph: TaskGraph): Workflow {
     this.finalizeTemplate(childGraph);
-    this.consumePendingConnect();
+    const error = this.consumePendingConnect();
+    if (error) this.parent.builder.setError(error);
     return this.parent;
   }
 }

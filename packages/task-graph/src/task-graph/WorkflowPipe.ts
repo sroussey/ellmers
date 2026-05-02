@@ -9,7 +9,7 @@ import type { ITask } from "../task/ITask";
 import type { DataPorts } from "../task/TaskTypes";
 import type { PipeFunction, Taskish } from "./Conversions";
 import { ensureTask } from "./Conversions";
-import { Dataflow } from "./Dataflow";
+import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { ITaskGraph } from "./ITaskGraph";
 import type { IWorkflow } from "./IWorkflow";
 import type { CompoundMergeStrategy } from "./TaskGraphRunner";
@@ -31,7 +31,9 @@ export function connect(
   target: ITask<any, any, any>,
   workflow: IWorkflow<any, any>
 ): void {
-  workflow.graph.addDataflow(new Dataflow(source.id, "*", target.id, "*"));
+  workflow.graph.addDataflow(
+    new Dataflow(source.id, DATAFLOW_ALL_PORTS, target.id, DATAFLOW_ALL_PORTS)
+  );
 }
 
 export function pipe<A extends DataPorts, B extends DataPorts>(
