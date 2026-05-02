@@ -19,8 +19,9 @@ import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
-import type { StreamEvent, StreamMode } from "./StreamTypes";
-import { getOutputStreamMode, getStreamingPorts, isTaskStreamable } from "./StreamTypes";
+import type { StreamEvent } from "./StreamTypes";
+import { getOutputStreamMode, isTaskStreamable } from "./StreamTypes";
+import { StreamProcessor } from "./StreamProcessor";
 import { Task } from "./Task";
 import {
   TaskAbortedError,
@@ -79,6 +80,11 @@ export class TaskRunner<
   protected readonly cacheCoordinator: CacheCoordinator<Input, Output>;
 
   /**
+   * Stream processor for the task (handles executeStream() event loop).
+   */
+  protected readonly streamProcessor: StreamProcessor<Input, Output>;
+
+  /**
    * The service registry for the task
    */
   protected registry: ServiceRegistry = globalServiceRegistry;
@@ -104,6 +110,7 @@ export class TaskRunner<
     this.own = this.own.bind(this);
     this.handleProgress = this.handleProgress.bind(this);
     this.cacheCoordinator = new CacheCoordinator(task);
+    this.streamProcessor = new StreamProcessor(task);
   }
 
   // ========================================================================
@@ -172,7 +179,13 @@ export class TaskRunner<
 
       if (outputs === undefined) {
         outputs = isStreamable
-          ? await this.executeStreamingTask(inputs)
+          ? await this.streamProcessor.run(inputs, ctx, {
+              registry: this.registry,
+              resourceScope: this.resourceScope,
+              inputStreams: this.inputStreams,
+              onProgress: this.handleProgress.bind(this),
+              own: this.own,
+            })
           : await this.executeTask(inputs, ctx);
 
         await this.cacheCoordinator.save(keyInputs, outputs as Output, this.outputCache);
@@ -440,209 +453,6 @@ export class TaskRunner<
     _ctx: TaskRunContext
   ): Promise<Output | undefined> {
     return this.task.executePreview?.(input, { own: this.own });
-  }
-
-  /**
-   * Executes a streaming task by consuming its executeStream() async iterable.
-   *
-   * When `shouldAccumulate` is true (default, set by graph runner when any downstream
-   * edge needs materialized data, or when caching is on):
-   *   - text-delta chunks are accumulated per-port into a Map
-   *   - the raw finish event is NOT emitted; instead an enriched finish event is
-   *     emitted with the accumulated text merged in, so downstream dataflows can
-   *     materialize values without re-accumulating on their own
-   *
-   * When `shouldAccumulate` is false (set by graph runner when all downstream edges
-   * are also streaming and no cache is needed):
-   *   - all events including the raw finish are emitted as-is (pure pass-through)
-   *   - no accumulation Map is maintained
-   */
-  protected async executeStreamingTask(input: Input): Promise<Output | undefined> {
-    const streamMode: StreamMode = getOutputStreamMode(this.task.outputSchema());
-    if (streamMode === "append") {
-      const ports = getStreamingPorts(this.task.outputSchema());
-      if (ports.length === 0) {
-        throw new TaskError(
-          `Task ${this.task.type} declares append streaming but no output port has x-stream: "append"`
-        );
-      }
-    }
-    if (streamMode === "object") {
-      const ports = getStreamingPorts(this.task.outputSchema());
-      if (ports.length === 0) {
-        throw new TaskError(
-          `Task ${this.task.type} declares object streaming but no output port has x-stream: "object"`
-        );
-      }
-    }
-
-    const ctx = this.currentCtx!;
-    const accumulated = ctx.shouldAccumulate ? new Map<string, string>() : undefined;
-    const accumulatedObjects = ctx.shouldAccumulate
-      ? new Map<string, Record<string, unknown> | unknown[]>()
-      : undefined;
-    let streamingStarted = false;
-    let finalOutput: Output | undefined;
-
-    this.task.emit("stream_start");
-
-    const stream = this.task.executeStream!(input, {
-      signal: ctx.abortController.signal,
-      updateProgress: this.handleProgress.bind(this),
-      own: this.own,
-      registry: this.registry,
-      resourceScope: this.resourceScope,
-      inputStreams: this.inputStreams,
-    });
-
-    for await (const event of stream) {
-      // For snapshot events, update runOutputData BEFORE emitting stream_chunk
-      // so listeners see the latest snapshot when they handle the event.
-      if (event.type === "snapshot") {
-        this.task.runOutputData = event.data as Output;
-      }
-
-      switch (event.type) {
-        case "phase": {
-          // Phase events are metadata: emit for observability, translate to a
-          // progress event with optional progress + message, do NOT mutate
-          // accumulators or runOutputData, do NOT flip status to STREAMING.
-          this.task.emit("stream_chunk", event as StreamEvent);
-          await this.handleProgress(event.progress, event.message);
-          break;
-        }
-        case "text-delta": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          if (accumulated) {
-            accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
-          }
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "object-delta": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          if (accumulatedObjects) {
-            const existing = accumulatedObjects.get(event.port);
-            if (Array.isArray(event.objectDelta)) {
-              // Array delta: upsert items by `id` into accumulated array
-              const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
-              for (const item of event.objectDelta) {
-                const itemObj = item as Record<string, unknown>;
-                if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
-                  const idx = arr.findIndex(
-                    (e) => (e as Record<string, unknown>).id === itemObj.id
-                  );
-                  if (idx >= 0) arr[idx] = item;
-                  else arr.push(item);
-                } else {
-                  arr.push(item);
-                }
-              }
-              accumulatedObjects.set(event.port, arr);
-            } else {
-              // Non-array (e.g. structured generation): replace semantics
-              accumulatedObjects.set(event.port, event.objectDelta);
-            }
-          }
-          // Update runOutputData with accumulated state so listeners see growing state
-          this.task.runOutputData = {
-            ...this.task.runOutputData,
-            [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
-          } as Output;
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "snapshot": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "finish": {
-          if (accumulated || accumulatedObjects) {
-            // Emit an enriched finish event: merge accumulated deltas into
-            // the finish payload so downstream dataflows get complete port data
-            // without needing to re-accumulate themselves.
-            const merged: Record<string, unknown> = { ...(event.data || {}) };
-            if (accumulated) {
-              for (const [port, text] of accumulated) {
-                if (text.length > 0) merged[port] = text;
-              }
-            }
-            if (accumulatedObjects) {
-              for (const [port, obj] of accumulatedObjects) {
-                merged[port] = obj;
-              }
-            }
-            // For replace-mode streams, finish carries data: {} by convention.
-            // Fall back to the last snapshot (runOutputData) so the final output
-            // is not silently cleared when the finish payload is empty.
-            if (streamMode === "replace" && Object.keys(merged).length === 0) {
-              const lastSnapshot = this.task.runOutputData;
-              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
-                finalOutput = lastSnapshot as Output;
-                this.task.emit("stream_chunk", {
-                  type: "finish",
-                  data: lastSnapshot,
-                } as StreamEvent);
-                break;
-              }
-            }
-            finalOutput = merged as unknown as Output;
-            this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
-          } else {
-            // No accumulation. For replace-mode streams the provider's finish
-            // event carries `data: {}` by convention — the snapshots already
-            // delivered the value, so the finish payload is intentionally
-            // empty. Fall back to `runOutputData` (set on every snapshot above)
-            // so we don't clobber the last snapshot with an empty object. This
-            // mirrors the same fallback in the accumulation branch.
-            const finishData = (event.data ?? {}) as Record<string, unknown>;
-            if (streamMode === "replace" && Object.keys(finishData).length === 0) {
-              const lastSnapshot = this.task.runOutputData;
-              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
-                finalOutput = lastSnapshot as Output;
-                this.task.emit("stream_chunk", {
-                  type: "finish",
-                  data: lastSnapshot,
-                } as StreamEvent);
-                break;
-              }
-            }
-            finalOutput = event.data as Output;
-            this.task.emit("stream_chunk", event as StreamEvent);
-          }
-          break;
-        }
-        case "error": {
-          throw event.error;
-        }
-      }
-    }
-
-    // Check if the task was aborted during streaming
-    if (ctx.abortController.signal.aborted) {
-      throw new TaskAbortedError("Task aborted during streaming");
-    }
-
-    if (finalOutput !== undefined) {
-      this.task.runOutputData = finalOutput;
-    }
-
-    this.task.emit("stream_end", this.task.runOutputData as Output);
-
-    return this.task.runOutputData as Output;
   }
 
   // ========================================================================

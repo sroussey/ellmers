@@ -110,7 +110,7 @@ export class Dataflow {
    * Consumes the active stream to completion and materializes the value.
    *
    * Accumulation of text-delta chunks is the responsibility of the **source
-   * task** (via TaskRunner.executeStreamingTask when shouldAccumulate=true).
+   * task** (via StreamProcessor when shouldAccumulate=true).
    * When accumulation is needed the source task emits an enriched finish event
    * that carries the fully-assembled port data. All downstream edges share that
    * enriched event through tee'd ReadableStreams, so no edge needs to
