@@ -29,7 +29,15 @@
  *   hf-token           → HF_TOKEN
  */
 
-import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { parseDotEnv } from "./lib/parse-dot-env";
 import {
@@ -247,26 +255,113 @@ async function cmdRotate(): Promise<void> {
   const newPassphrase = requirePassphrase(NEW_PASSPHRASE_ENV);
   if (newPassphrase === oldPassphrase) fail("new passphrase must differ from old");
 
+  const stagingDir = `${SECRETS_DIR}.rotating`;
+  const oldDir = `${SECRETS_DIR}.old`;
+
+  // Always purge a stray staging dir from a crashed run; it is never the
+  // authoritative copy of any credential.
+  if (existsSync(stagingDir)) rmSync(stagingDir, { recursive: true, force: true });
+
+  // Recover from a previously crashed rotate. The two-step swap below leaves
+  // the original ciphertext under `oldDir` until the new ciphertext is
+  // committed, so on every crash path at least one of (SECRETS_DIR, oldDir)
+  // contains a complete, decryptable store.
+  if (!existsSync(SECRETS_DIR) && existsSync(oldDir)) {
+    // Crashed between the two renames: SECRETS_DIR was moved to oldDir but
+    // staging never landed. Restore the original.
+    renameSync(oldDir, SECRETS_DIR);
+  } else if (existsSync(SECRETS_DIR) && existsSync(oldDir)) {
+    // Crashed after both renames but before the final cleanup. SECRETS_DIR
+    // already holds the post-rotation ciphertext; oldDir is the pre-rotation
+    // copy. Probe SECRETS_DIR with $PASSPHRASE_ENV to figure out which side
+    // is "live" before deleting anything.
+    if (await canDecryptStore(SECRETS_DIR, oldPassphrase)) {
+      // Already decrypts under the old passphrase, so SECRETS_DIR is
+      // pre-rotation and oldDir is leftover from an even earlier crash.
+      // Safe to drop.
+      rmSync(oldDir, { recursive: true, force: true });
+    } else if (await canDecryptStore(SECRETS_DIR, newPassphrase)) {
+      // The previous rotation succeeded; only the final cleanup was missed.
+      // Finish that cleanup and exit — re-rotating would now require the
+      // user's "old" passphrase to be the new one and a fresh "new" value.
+      rmSync(oldDir, { recursive: true, force: true });
+      console.log(
+        `previous rotation already completed under $${NEW_PASSPHRASE_ENV}; cleaned up leftover ${oldDir} and exiting. Update $${PASSPHRASE_ENV} to the new passphrase.`
+      );
+      return;
+    } else {
+      fail(
+        `inconsistent rotation state: ${SECRETS_DIR} decrypts with neither $${PASSPHRASE_ENV} nor $${NEW_PASSPHRASE_ENV}, and ${oldDir} also exists. Inspect manually before proceeding.`
+      );
+    }
+  }
+
   const { encrypted: oldStore } = buildCredentialStore(oldPassphrase);
   const keys = await oldStore.keys();
   if (keys.length === 0) {
     console.log("(no credentials stored — nothing to rotate)");
     return;
   }
-  const decrypted = await Promise.all(keys.map(async (k) => [k, await oldStore.get(k)] as const));
+  const decrypted: Array<readonly [string, string]> = [];
+  for (const k of keys) {
+    let v: string | undefined;
+    try {
+      v = await oldStore.get(k);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      fail(
+        `failed to decrypt "${k}" with $${PASSPHRASE_ENV}: ${reason} — refusing to rotate (would destroy credentials).`
+      );
+    }
+    if (v === undefined) {
+      fail(
+        `failed to decrypt "${k}" with $${PASSPHRASE_ENV} — refusing to rotate (would destroy credentials).`
+      );
+    }
+    decrypted.push([k, v] as const);
+  }
 
-  // Wipe only ciphertext (.json) files; preserve .gitkeep and any other markers.
+  // Stage the new ciphertext in a sibling directory; the live SECRETS_DIR is
+  // untouched until every credential is written.
+  mkdirSync(stagingDir, { recursive: true });
   for (const file of readdirSync(SECRETS_DIR)) {
-    if (file.endsWith(".json")) unlinkSync(join(SECRETS_DIR, file));
+    if (!file.endsWith(".json")) {
+      copyFileSync(join(SECRETS_DIR, file), join(stagingDir, file));
+    }
+  }
+  const { encrypted: newStore } = buildCredentialStore(newPassphrase, stagingDir);
+  for (const [k, v] of decrypted) {
+    await newStore.put(k, v, { provider: providerForKey(k) });
   }
 
-  const { encrypted: newStore } = buildCredentialStore(newPassphrase);
-  for (const [k, v] of decrypted) {
-    if (v !== undefined) await newStore.put(k, v, { provider: providerForKey(k) });
-  }
+  // Two-step swap. A crash between these renames is recovered by the block
+  // at the top of cmdRotate on the next run.
+  renameSync(SECRETS_DIR, oldDir);
+  renameSync(stagingDir, SECRETS_DIR);
+  rmSync(oldDir, { recursive: true, force: true });
+
   console.log(
     `rotated ${keys.length} credential(s). Update ${PASSPHRASE_ENV} in your keychain / CI secret to the new value.`
   );
+}
+
+/**
+ * True if every credential in `dir` decrypts cleanly under `passphrase`.
+ * Returns false if any decryption fails or the store is empty.
+ */
+async function canDecryptStore(dir: string, passphrase: string): Promise<boolean> {
+  const { encrypted } = buildCredentialStore(passphrase, dir);
+  const keys = await encrypted.keys();
+  if (keys.length === 0) return false;
+  for (const k of keys) {
+    try {
+      const v = await encrypted.get(k);
+      if (v === undefined) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function providerForKey(key: string): string | undefined {
