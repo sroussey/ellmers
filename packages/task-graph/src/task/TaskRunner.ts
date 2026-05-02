@@ -179,27 +179,7 @@ export class TaskRunner<
     try {
       this.task.setInput(overrides);
 
-      // Resolve config schema annotations (e.g. mcp-server references) by mutating task.config.
-      // Always resolve from originalConfig so re-runs use the original string IDs, not
-      // previously resolved objects. The original config is preserved for serialization.
-      const configSchema = (this.task.constructor as typeof Task).configSchema();
-      if (schemaHasFormatAnnotations(configSchema)) {
-        const source = (this.task as unknown as Task).originalConfig ?? this.task.config;
-        const resolved = await resolveSchemaInputs(
-          { ...source } as Record<string, unknown>,
-          configSchema,
-          { registry: this.registry }
-        );
-        Object.assign(this.task.config, resolved);
-      }
-
-      // Resolve schema-annotated inputs (models, repositories) before validation
-      const schema = (this.task.constructor as typeof Task).inputSchema();
-      this.task.runInputData = (await resolveSchemaInputs(
-        this.task.runInputData as Record<string, unknown>,
-        schema,
-        { registry: this.registry }
-      )) as Input;
+      await this.resolveSchemas();
 
       const inputs: Input = this.task.runInputData as Input;
       const isValid = await this.task.validateInput(inputs);
@@ -293,25 +273,7 @@ export class TaskRunner<
 
     this.task.setInput(overrides);
 
-    // Resolve config schema annotations by mutating task.config directly
-    const configSchema = (this.task.constructor as typeof Task).configSchema();
-    if (schemaHasFormatAnnotations(configSchema)) {
-      const source = (this.task as unknown as Task).originalConfig ?? this.task.config;
-      const resolved = await resolveSchemaInputs(
-        { ...source } as Record<string, unknown>,
-        configSchema,
-        { registry: this.registry }
-      );
-      Object.assign(this.task.config, resolved);
-    }
-
-    // Resolve schema-annotated inputs (models, repositories) before validation
-    const schema = (this.task.constructor as typeof Task).inputSchema();
-    this.task.runInputData = (await resolveSchemaInputs(
-      this.task.runInputData as Record<string, unknown>,
-      schema,
-      { registry: this.registry }
-    )) as Input;
+    await this.resolveSchemas();
 
     await this.handleStartPreview();
 
@@ -757,6 +719,33 @@ export class TaskRunner<
   // ========================================================================
   // Protected Handlers
   // ========================================================================
+
+  /**
+   * Resolves config and input schema annotations (e.g. mcp-server references)
+   * by mutating task.config and task.runInputData. Always resolves config from
+   * originalConfig so re-runs use the original string IDs, not previously resolved
+   * objects. Shared between run() and runPreview() to avoid duplication.
+   */
+  private async resolveSchemas(): Promise<void> {
+    const configSchema = (this.task.constructor as typeof Task).configSchema();
+    if (schemaHasFormatAnnotations(configSchema)) {
+      const source = (this.task as unknown as Task).originalConfig ?? this.task.config;
+      const resolved = await resolveSchemaInputs(
+        { ...source } as Record<string, unknown>,
+        configSchema,
+        { registry: this.registry }
+      );
+      Object.assign(this.task.config, resolved);
+    }
+
+    // Resolve schema-annotated inputs (models, repositories) before validation
+    const schema = (this.task.constructor as typeof Task).inputSchema();
+    this.task.runInputData = (await resolveSchemaInputs(
+      this.task.runInputData as Record<string, unknown>,
+      schema,
+      { registry: this.registry }
+    )) as Input;
+  }
 
   /**
    * Handles task start
