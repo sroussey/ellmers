@@ -31,6 +31,10 @@ export class RunContext {
   pendingGraphTimeoutError?: TaskGraphTimeoutError;
   activeEnforcer?: IEntitlementEnforcer;
 
+  // Removes the parentSignal abort listener, if one was registered. Set in the
+  // constructor when parentSignal is provided; called from dispose().
+  private parentSignalCleanup?: () => void;
+
   constructor(parentSignal?: AbortSignal) {
     this.runId = uuid4();
     this.abortController = new AbortController();
@@ -40,10 +44,24 @@ export class RunContext {
       // Pattern preserved from commit 4e50c99e.
       const onParentAbort = () => this.abortController.abort();
       parentSignal.addEventListener("abort", onParentAbort, { once: true });
-      if (parentSignal.aborted) {
+      this.parentSignalCleanup = () =>
         parentSignal.removeEventListener("abort", onParentAbort);
+      if (parentSignal.aborted) {
+        this.parentSignalCleanup();
+        this.parentSignalCleanup = undefined;
         this.abortController.abort();
       }
     }
+  }
+
+  /**
+   * Releases external listeners (parentSignal abort handler). Idempotent.
+   * Called by terminal handlers (handleComplete/Error/Abort) so a parent abort
+   * fired after this run completes does not re-trigger our abort path and emit
+   * a duplicate terminal event.
+   */
+  dispose(): void {
+    this.parentSignalCleanup?.();
+    this.parentSignalCleanup = undefined;
   }
 }
