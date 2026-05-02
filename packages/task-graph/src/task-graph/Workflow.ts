@@ -33,6 +33,7 @@ import type { ITransformStep } from "./TransformTypes";
 import type { CreateWorkflow } from "./WorkflowFactories";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { getLastTask, parallel, pipe } from "./WorkflowPipe";
+import { WorkflowTask } from "./WorkflowTask";
 
 /** Options accepted by {@link Workflow.rename}. */
 export interface RenameOptions {
@@ -66,11 +67,6 @@ export type WorkflowEventParameters<Event extends WorkflowEvents> = EventParamet
   WorkflowEventListeners,
   Event
 >;
-
-class WorkflowTask<I extends DataPorts, O extends DataPorts> extends GraphAsTask<I, O> {
-  public static override readonly type = "Workflow";
-  public static override readonly compoundMerge = PROPERTY_ARRAY as CompoundMergeStrategy;
-}
 
 /**
  * Class for building and managing a task graph
