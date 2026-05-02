@@ -752,10 +752,7 @@ export class SupabaseTabularStorage<
   ): Promise<Entity[] | undefined> {
     this.validateQueryParams(criteria, options);
 
-    let query = this.applyCriteriaToFilter(
-      this.client.from(this.table).select("*"),
-      criteria
-    );
+    let query = this.applyCriteriaToFilter(this.client.from(this.table).select("*"), criteria);
 
     if (options?.orderBy) {
       for (const { column, direction } of options.orderBy) {

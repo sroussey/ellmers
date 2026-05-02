@@ -850,9 +850,7 @@ export class IndexedDbTabularStorage<
       const satisfiesOrder =
         normalizedOrderBy.length === 0 ||
         (normalizedOrderBy.length <= remainingColumns.length &&
-          normalizedOrderBy.every(
-            (order, index) => order.column === remainingColumns[index]
-          ) &&
+          normalizedOrderBy.every((order, index) => order.column === remainingColumns[index]) &&
           orderBy.every((order) => order.direction === orderBy[0]?.direction));
 
       if (!satisfiesOrder && best) continue;

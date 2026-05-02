@@ -1172,9 +1172,7 @@ export function runGenericTabularStorageTests(
 
       it("should count with equality on a compound index prefix (covered)", async () => {
         await seed();
-        expect(
-          await repository.count({ category: "electronics", subcategory: "phones" })
-        ).toBe(2);
+        expect(await repository.count({ category: "electronics", subcategory: "phones" })).toBe(2);
       });
 
       it("should count when criteria mixes indexed and non-indexed columns", async () => {
@@ -1182,12 +1180,8 @@ export function runGenericTabularStorageTests(
         // so this exercises the partial-index narrowing path: narrow on
         // `category`, filter `kind` in JS.
         await seed();
-        expect(
-          await repository.count({ category: "electronics", kind: "premium" })
-        ).toBe(2);
-        expect(
-          await repository.count({ category: "electronics", kind: "budget" })
-        ).toBe(1);
+        expect(await repository.count({ category: "electronics", kind: "premium" })).toBe(2);
+        expect(await repository.count({ category: "electronics", kind: "budget" })).toBe(1);
       });
 
       it("should count with comparison operators", async () => {
