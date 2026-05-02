@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { EventParameters } from "@workglow/util";
+import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 
 // Generic type for possible value types in the repository
 export type ValueOptionType = string | number | bigint | boolean | null | Uint8Array;
@@ -174,6 +174,14 @@ export interface ITabularStorage<
   getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined>;
   deleteAll(): Promise<void>;
   size(): Promise<number>;
+  /**
+   * Counts rows matching the specified search criteria without requiring
+   * callers to load the matching entities.
+   *
+   * @param criteria - Optional object with column names as keys and values or SearchConditions
+   * @returns Count of matching rows
+   */
+  count(criteria?: SearchCriteria<Entity>): Promise<number>;
   /**
    * Deletes all entries matching the specified search criteria.
    * Supports multiple columns with optional comparison operators.

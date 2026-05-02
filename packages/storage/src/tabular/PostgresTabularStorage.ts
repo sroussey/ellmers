@@ -797,6 +797,24 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Counts rows matching the specified search criteria.
+   */
+  override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return await this.size();
+    }
+
+    this.validateQueryParams(criteria);
+    const db = this.db;
+    const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
+    const result = await db.query<{ count: string }, ValueOptionType[]>(
+      `SELECT COUNT(*) FROM "${this.table}" WHERE ${whereClause}`,
+      params
+    );
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  /**
    * Fetches a page of records from the repository.
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
