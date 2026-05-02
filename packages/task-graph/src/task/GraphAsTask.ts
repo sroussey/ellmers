@@ -12,7 +12,7 @@ import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "../task-graph/TaskGraphRunner";
-import type { CreateLoopWorkflow } from "../task-graph/Workflow";
+import type { CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
 import type { IExecuteContext, IRunConfig } from "./ITask";
 import type { StreamEvent, StreamFinish } from "./StreamTypes";
