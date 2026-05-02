@@ -34,6 +34,7 @@ import type { CreateWorkflow } from "./WorkflowFactories";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { getLastTask, parallel, pipe } from "./WorkflowPipe";
 import { WorkflowCacheAdapter } from "./WorkflowCacheAdapter";
+import { WorkflowEventBridge } from "./WorkflowEventBridge";
 import { WorkflowTask } from "./WorkflowTask";
 
 /** Options accepted by {@link Workflow.rename}. */
@@ -102,8 +103,8 @@ export class Workflow<
     this._graph = new TaskGraph({ outputCache: this._cache.outputCache() });
 
     if (!parent) {
-      this._onChanged = this._onChanged.bind(this);
-      this.setupEvents();
+      this._bridge = new WorkflowEventBridge(this.events);
+      this._bridge.attach(this._graph);
     }
   }
 
@@ -113,7 +114,7 @@ export class Workflow<
   private _error: string = "";
   private _cache: WorkflowCacheAdapter;
   private _registry?: ServiceRegistry;
-  private _entitlementUnsub?: () => void;
+  private _bridge?: WorkflowEventBridge;
 
   // Abort controller for cancelling task execution
   private _abortController?: AbortController;
@@ -264,9 +265,9 @@ export class Workflow<
   public set graph(value: TaskGraph) {
     this._dataFlows = [];
     this._error = "";
-    this.clearEvents();
+    this._bridge?.detach();
     this._graph = value;
-    this.setupEvents();
+    this._bridge?.attach(this._graph);
     this.events.emit("reset");
   }
 
@@ -326,11 +327,7 @@ export class Workflow<
     this._abortController = new AbortController();
 
     // Subscribe to graph-level streaming events and forward to workflow events
-    const unsubStreaming = this.graph.subscribeToTaskStreaming({
-      onStreamStart: (taskId) => this.events.emit("stream_start", taskId),
-      onStreamChunk: (taskId, event) => this.events.emit("stream_chunk", taskId, event),
-      onStreamEnd: (taskId, output) => this.events.emit("stream_end", taskId, output),
-    });
+    this._bridge?.beginRun();
 
     try {
       const output = await this.graph.run<Output>(input, {
@@ -349,7 +346,7 @@ export class Workflow<
       this.events.emit("error", String(error));
       throw error;
     } finally {
-      unsubStreaming();
+      this._bridge?.endRun();
       this._abortController = undefined;
     }
   }
@@ -633,52 +630,16 @@ export class Workflow<
       throw new WorkflowError("Cannot reset a loop workflow. Call reset() on the parent workflow.");
     }
 
-    this.clearEvents();
+    this._bridge?.detach();
     this._graph = new TaskGraph({
       outputCache: this._cache.outputCache(),
     });
     this._dataFlows = [];
     this._error = "";
-    this.setupEvents();
+    this._bridge?.attach(this._graph);
     this.events.emit("changed", undefined);
     this.events.emit("reset");
     return this;
-  }
-
-  /**
-   * Sets up event listeners for the task graph
-   */
-  private setupEvents(): void {
-    this._graph.on("task_added", this._onChanged);
-    this._graph.on("task_replaced", this._onChanged);
-    this._graph.on("task_removed", this._onChanged);
-    this._graph.on("dataflow_added", this._onChanged);
-    this._graph.on("dataflow_replaced", this._onChanged);
-    this._graph.on("dataflow_removed", this._onChanged);
-    this._entitlementUnsub = this._graph.subscribeToTaskEntitlements((entitlements) =>
-      this.events.emit("entitlementChange", entitlements)
-    );
-  }
-
-  /**
-   * Clears event listeners for the task graph
-   */
-  private clearEvents(): void {
-    this._graph.off("task_added", this._onChanged);
-    this._graph.off("task_replaced", this._onChanged);
-    this._graph.off("task_removed", this._onChanged);
-    this._graph.off("dataflow_added", this._onChanged);
-    this._graph.off("dataflow_replaced", this._onChanged);
-    this._graph.off("dataflow_removed", this._onChanged);
-    this._entitlementUnsub?.();
-    this._entitlementUnsub = undefined;
-  }
-
-  /**
-   * Handles changes to the task graph
-   */
-  private _onChanged(id: unknown): void {
-    this.events.emit("changed", id);
   }
 
   /**
