@@ -37,6 +37,7 @@ export * from "./task-graph/transforms";
 export * from "./task-graph/autoConnect";
 
 export * from "./task/CacheCoordinator";
+export * from "./task/StreamProcessor";
 export * from "./task/TaskRunContext";
 export * from "./task";
 
