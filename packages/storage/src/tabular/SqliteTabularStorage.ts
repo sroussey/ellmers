@@ -774,6 +774,23 @@ export class SqliteTabularStorage<
   }
 
   /**
+   * Counts rows matching the specified search criteria.
+   */
+  override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return await this.size();
+    }
+
+    this.validateQueryParams(criteria);
+    const db = this.db;
+    const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
+    const stmt = db.prepare<ValueOptionType[], { count: number }>(`
+      SELECT COUNT(*) AS count FROM \`${this.table}\` WHERE ${whereClause}
+    `);
+    return stmt.get(...params)?.count || 0;
+  }
+
+  /**
    * Fetches a page of records from the repository.
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return

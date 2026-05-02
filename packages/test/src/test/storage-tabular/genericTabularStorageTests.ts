@@ -1099,6 +1099,115 @@ export function runGenericTabularStorageTests(
       });
     });
 
+    describe(`count tests`, () => {
+      let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
+
+      const seed = async () => {
+        const now = new Date().toISOString();
+        await repository.putBulk([
+          {
+            id: "1",
+            category: "electronics",
+            subcategory: "phones",
+            kind: "premium",
+            value: 100,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "2",
+            category: "electronics",
+            subcategory: "phones",
+            kind: "budget",
+            value: 200,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "3",
+            category: "electronics",
+            subcategory: "laptops",
+            kind: "premium",
+            value: 300,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "4",
+            category: "books",
+            subcategory: "fiction",
+            kind: "premium",
+            value: 400,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]);
+      };
+
+      beforeEach(async () => {
+        repository = await createSearchableRepository();
+        await repository.setupDatabase?.();
+      });
+
+      afterEach(async () => {
+        await repository.deleteAll();
+        repository.destroy();
+      });
+
+      it("should return total count with no criteria", async () => {
+        await seed();
+        expect(await repository.count()).toBe(4);
+      });
+
+      it("should match size() with no criteria", async () => {
+        await seed();
+        expect(await repository.count()).toBe(await repository.size());
+      });
+
+      it("should count with equality on single indexed column", async () => {
+        await seed();
+        expect(await repository.count({ category: "electronics" })).toBe(3);
+        expect(await repository.count({ category: "books" })).toBe(1);
+      });
+
+      it("should count with equality on a compound index prefix (covered)", async () => {
+        await seed();
+        expect(
+          await repository.count({ category: "electronics", subcategory: "phones" })
+        ).toBe(2);
+      });
+
+      it("should count when criteria mixes indexed and non-indexed columns", async () => {
+        // `kind` is not in the indexes configured by the IndexedDb test setup,
+        // so this exercises the partial-index narrowing path: narrow on
+        // `category`, filter `kind` in JS.
+        await seed();
+        expect(
+          await repository.count({ category: "electronics", kind: "premium" })
+        ).toBe(2);
+        expect(
+          await repository.count({ category: "electronics", kind: "budget" })
+        ).toBe(1);
+      });
+
+      it("should count with comparison operators", async () => {
+        await seed();
+        expect(await repository.count({ value: { value: 200, operator: "<" } })).toBe(1);
+        expect(await repository.count({ value: { value: 200, operator: "<=" } })).toBe(2);
+        expect(await repository.count({ value: { value: 200, operator: ">" } })).toBe(2);
+        expect(await repository.count({ value: { value: 200, operator: ">=" } })).toBe(3);
+      });
+
+      it("should return 0 when no rows match", async () => {
+        await seed();
+        expect(await repository.count({ category: "nonexistent" })).toBe(0);
+      });
+
+      it("should return 0 on empty repository", async () => {
+        expect(await repository.count({ category: "electronics" })).toBe(0);
+      });
+    });
+
     describe("return value tests with timestamps", () => {
       let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
 
