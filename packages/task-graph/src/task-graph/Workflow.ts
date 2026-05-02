@@ -6,7 +6,7 @@
 
 import type { EventParameters } from "@workglow/util";
 import { EventEmitter, ServiceRegistry } from "@workglow/util";
-import { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ConditionFn } from "../task/ConditionalTask";
 import { GraphAsTask } from "../task/GraphAsTask";
 import type { ITask, ITaskConstructor } from "../task/ITask";
@@ -243,7 +243,8 @@ export class Workflow<
     const loopContext = this._builder.loopContext;
     if (loopContext) {
       loopContext.finalizeTemplate(this._graph);
-      loopContext.consumePendingConnect();
+      const error = loopContext.consumePendingConnect();
+      if (error) loopContext.parent.builder.setError(error);
       return loopContext.parent.run(input as any, config) as Promise<
         PropertyArrayGraphResult<Output>
       >;
@@ -588,7 +589,8 @@ export class Workflow<
    */
   public autoConnectLoopTask(pending?: { parent: ITask; iteratorTask: ITask }): void {
     if (!pending) return;
-    runLoopAutoConnect(this._graph, pending);
+    const error = runLoopAutoConnect(this._graph, pending);
+    if (error) this._builder.setError(error);
   }
 
   /**
