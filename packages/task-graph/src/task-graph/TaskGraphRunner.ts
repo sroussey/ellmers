@@ -20,7 +20,6 @@ import { previewSource } from "@workglow/util/media";
 import type { ImageValue } from "@workglow/util/media";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ConditionalTask } from "../task/ConditionalTask";
-import type { IEntitlementEnforcer } from "../task/EntitlementEnforcer";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
@@ -41,6 +40,7 @@ import {
 import { TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
 import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
+import { RunContext } from "./RunContext";
 import { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
 import { DependencyBasedScheduler, TopologicalScheduler } from "./TaskGraphScheduler";
 
@@ -151,39 +151,13 @@ export class TaskGraphRunner {
    * Resource scope for this graph run
    */
   protected resourceScope?: ResourceScope;
-  /**
-   * AbortController for cancelling graph execution
-   */
-  protected abortController: AbortController | undefined;
 
   /**
-   * Maps to track task execution state
+   * Per-run state. Set by handleStart, cleared by handleComplete/Error/Abort.
+   * The only mutable per-run state on the facade — exists so the public abort()
+   * and disable() methods (which take no arguments) have something to act on.
    */
-  protected inProgressTasks: Map<unknown, Promise<TaskOutput>> = new Map();
-  protected inProgressFunctions: Map<unknown, Promise<void>> = new Map();
-  protected failedTaskErrors: Map<unknown, TaskError> = new Map();
-
-  /**
-   * Active telemetry span for the current graph run.
-   */
-  protected telemetrySpan?: ISpan;
-
-  /**
-   * Timer handle for graph-level timeout. Cleared on completion, error, or abort.
-   */
-  protected graphTimeoutTimer?: ReturnType<typeof setTimeout>;
-
-  /**
-   * When a graph-level timeout fires, this stores the error so handleAbort()
-   * can surface the correct error type.
-   */
-  protected pendingGraphTimeoutError?: TaskGraphTimeoutError;
-
-  /**
-   * The entitlement enforcer for the current run, if enforcement is enabled.
-   * Set during handleStart and cleared after the run completes.
-   */
-  protected activeEnforcer?: IEntitlementEnforcer;
+  protected currentCtx?: RunContext;
 
   /**
    * Constructor for TaskGraphRunner
@@ -203,11 +177,6 @@ export class TaskGraphRunner {
     this.handleProgress = this.handleProgress.bind(this);
   }
 
-  /**
-   * Unique ID for the current run, used for timing labels.
-   */
-  protected runId: string = "";
-
   // ========================================================================
   // Public methods
   // ========================================================================
@@ -218,6 +187,12 @@ export class TaskGraphRunner {
   ): Promise<GraphResultArray<ExecuteOutput>> {
     await this.handleStart(config);
 
+    // Capture ctx locally — terminal handlers (handleAbort/Error/Complete)
+    // clear this.currentCtx, but the abort signal listener may invoke
+    // handleAbort while runGraph's loop or epilogue is still running.
+    // The local reference keeps per-run state readable until runGraph returns.
+    const ctx = this.currentCtx!;
+
     const results: GraphResultArray<ExecuteOutput> = [];
     let error: TaskError | undefined;
 
@@ -225,11 +200,11 @@ export class TaskGraphRunner {
       // TODO: A different graph runner may chunk tasks that are in parallel
       // rather them all currently available
       for await (const task of this.processScheduler.tasks()) {
-        if (this.abortController?.signal.aborted) {
+        if (ctx.abortController.signal.aborted) {
           break;
         }
 
-        if (this.failedTaskErrors.size > 0) {
+        if (ctx.failedTaskErrors.size > 0) {
           break;
         }
 
@@ -249,7 +224,7 @@ export class TaskGraphRunner {
                 : {};
 
             const taskPromise = this.runTask(task, taskInput);
-            this.inProgressTasks!.set(task.id, taskPromise);
+            ctx.inProgressTasks.set(task.id, taskPromise);
             const taskResult = await taskPromise;
 
             if (this.graph.getTargetDataflows(task.id).length === 0) {
@@ -264,7 +239,7 @@ export class TaskGraphRunner {
               errorRouted = true;
               this.pushErrorOutputToEdges(task);
             } else {
-              this.failedTaskErrors.set(task.id, error as TaskError);
+              ctx.failedTaskErrors.set(task.id, error as TaskError);
             }
           } finally {
             // IMPORTANT: Push status to edges BEFORE notifying scheduler
@@ -283,30 +258,32 @@ export class TaskGraphRunner {
         // so we can have many tasks running in parallel
         // but keep track of them to make sure they get awaited
         // otherwise, things will finish after this promise is resolved
-        this.inProgressFunctions.set(Symbol(task.id as string), runAsync());
+        ctx.inProgressFunctions.set(Symbol(task.id as string), runAsync());
       }
     } catch (err) {
       error = err as Error;
       getLogger().error("Error running graph", { error });
     }
     // Wait for all tasks to complete since we did not await runAsync()/this.runTaskWithProvenance()
-    await Promise.allSettled(Array.from(this.inProgressTasks.values()));
+    await Promise.allSettled(Array.from(ctx.inProgressTasks.values()));
     // Clean up stragglers to avoid unhandled promise rejections
-    await Promise.allSettled(Array.from(this.inProgressFunctions.values()));
+    await Promise.allSettled(Array.from(ctx.inProgressFunctions.values()));
 
     // Check graph-level timeout first — it is the root cause when tasks fail due
     // to the graph abort signal, and should take precedence over any task-level
     // TaskAbortedError that was placed in failedTaskErrors as a consequence.
-    if (this.pendingGraphTimeoutError) {
+    // Capture pendingGraphTimeoutError BEFORE calling handleAbort, which clears currentCtx.
+    const pendingTimeout = ctx.pendingGraphTimeoutError;
+    if (pendingTimeout) {
       await this.handleAbort();
-      throw this.pendingGraphTimeoutError;
+      throw pendingTimeout;
     }
-    if (this.failedTaskErrors.size > 0) {
-      const latestError = this.failedTaskErrors.values().next().value!;
+    if (ctx.failedTaskErrors.size > 0) {
+      const latestError = ctx.failedTaskErrors.values().next().value!;
       this.handleError(latestError);
       throw latestError;
     }
-    if (this.abortController?.signal.aborted) {
+    if (ctx.abortController.signal.aborted) {
       await this.handleAbort();
       throw new TaskAbortedError();
     }
@@ -461,7 +438,7 @@ export class TaskGraphRunner {
    * Aborts the task graph execution
    */
   public abort(): void {
-    this.abortController?.abort();
+    this.currentCtx?.abortController.abort();
   }
 
   /**
@@ -891,8 +868,11 @@ export class TaskGraphRunner {
     this.copyInputFromEdgesToNode(task);
 
     // Runtime entitlement enforcement for tasks with dynamic entitlements
-    if (this.activeEnforcer && (task.constructor as typeof Task).hasDynamicEntitlements) {
-      const denied = await this.activeEnforcer.checkTask(task);
+    if (
+      this.currentCtx?.activeEnforcer &&
+      (task.constructor as typeof Task).hasDynamicEntitlements
+    ) {
+      const denied = await this.currentCtx.activeEnforcer.checkTask(task);
       if (denied.length > 0) {
         throw new TaskEntitlementError(
           `Task ${(task.constructor as typeof Task).type} denied entitlements: ${denied.map(formatEntitlementDenial).join(", ")}`
@@ -1176,11 +1156,10 @@ export class TaskGraphRunner {
    * @param parentSignal Optional abort signal from parent
    */
   protected async handleStart(config?: TaskGraphRunConfig): Promise<void> {
-    // Setup registry - create child from global if not provided
+    // Setup registry — create child from global if not provided
     if (config?.registry !== undefined) {
       this.registry = config.registry;
     } else if (this.registry === undefined) {
-      // Create a child container that inherits from global but allows overrides
       this.registry = new ServiceRegistry(globalServiceRegistry.container.createChildContainer());
     }
     if (config?.resourceScope !== undefined) {
@@ -1208,46 +1187,33 @@ export class TaskGraphRunner {
     }
 
     this.running = true;
-    this.abortController = new AbortController();
-    this.abortController.signal.addEventListener("abort", () => {
+
+    // Build per-run context (handles abortController + parentSignal wiring)
+    const ctx = new RunContext(config?.parentSignal);
+    this.currentCtx = ctx;
+
+    ctx.abortController.signal.addEventListener("abort", () => {
       this.handleAbort();
     });
 
     // Set up graph-level timeout if configured
     if (config?.timeout !== undefined && config.timeout > 0) {
-      this.pendingGraphTimeoutError = undefined;
-      this.graphTimeoutTimer = setTimeout(() => {
-        this.pendingGraphTimeoutError = new TaskGraphTimeoutError(config.timeout);
-        this.abortController?.abort();
+      ctx.pendingGraphTimeoutError = undefined;
+      ctx.graphTimeoutTimer = setTimeout(() => {
+        ctx.pendingGraphTimeoutError = new TaskGraphTimeoutError(config.timeout!);
+        ctx.abortController.abort();
       }, config.timeout);
     }
 
-    // Listen first, then check — addEventListener on an already-aborted signal
-    // does not fire, so checking .aborted after ensures we never miss an abort.
-    if (config?.parentSignal) {
-      const onParentAbort = () => {
-        this.abortController?.abort();
-      };
-      config.parentSignal.addEventListener("abort", onParentAbort, { once: true });
-      if (config.parentSignal.aborted) {
-        config.parentSignal.removeEventListener("abort", onParentAbort);
-        this.abortController.abort();
-        return;
-      }
-    }
+    // Early-out if parent signal was already aborted (RunContext constructor
+    // already aborted ctx.abortController in that case)
+    if (ctx.abortController.signal.aborted) return;
 
-    this.runId = uuid4();
-    this.resetGraph(this.graph, this.runId); // Reset graph and regenerate sub-graphs, changes task count / entitlements
+    this.resetGraph(this.graph, ctx.runId);
     this.processScheduler.reset();
-    this.inProgressTasks.clear();
-    this.inProgressFunctions.clear();
-    this.failedTaskErrors.clear();
+    // (in-progress maps + failedTaskErrors start empty on a fresh RunContext)
 
-    // Validate and enforce after resetGraph (which regenerates sub-graphs and may
-    // change task count / entitlements). On failure, clean up running state so the
-    // runner remains reusable.
     try {
-      // Validate graph size limits
       if (config?.maxTasks !== undefined && config.maxTasks > 0) {
         const taskCount = this.graph.getTasks().length;
         if (taskCount > config.maxTasks) {
@@ -1257,7 +1223,6 @@ export class TaskGraphRunner {
         }
       }
 
-      // Opt-in entitlement enforcement (preflight)
       if (config?.enforceEntitlements) {
         if (!this.registry.has(ENTITLEMENT_ENFORCER)) {
           throw new TaskConfigurationError(
@@ -1272,28 +1237,23 @@ export class TaskGraphRunner {
             `Denied entitlements: ${denied.map(formatEntitlementDenial).join(", ")}`
           );
         }
-        this.activeEnforcer = enforcer;
-      } else {
-        this.activeEnforcer = undefined;
+        ctx.activeEnforcer = enforcer;
       }
     } catch (err) {
-      // Reset running state so the runner is reusable after validation failures
-      if (this.graphTimeoutTimer !== undefined) {
-        clearTimeout(this.graphTimeoutTimer);
-        this.graphTimeoutTimer = undefined;
+      if (ctx.graphTimeoutTimer !== undefined) {
+        clearTimeout(ctx.graphTimeoutTimer);
+        ctx.graphTimeoutTimer = undefined;
       }
-      this.abortController = undefined;
-      this.activeEnforcer = undefined;
+      this.currentCtx = undefined;
       this.running = false;
       throw err;
     }
 
-    // Start telemetry span for the graph run
     const telemetry = getTelemetryProvider();
     if (telemetry.isEnabled) {
-      this.telemetrySpan = telemetry.startSpan("workglow.graph.run", {
+      ctx.telemetrySpan = telemetry.startSpan("workglow.graph.run", {
         attributes: {
-          "workglow.graph.run_id": this.runId,
+          "workglow.graph.run_id": ctx.runId,
           "workglow.graph.task_count": this.graph.getTasks().length,
           "workglow.graph.dataflow_count": this.graph.getDataflows().length,
         },
@@ -1339,22 +1299,23 @@ export class TaskGraphRunner {
    * Clears the graph-level timeout timer if active.
    */
   protected clearGraphTimeout(): void {
-    if (this.graphTimeoutTimer !== undefined) {
-      clearTimeout(this.graphTimeoutTimer);
-      this.graphTimeoutTimer = undefined;
+    const ctx = this.currentCtx;
+    if (ctx?.graphTimeoutTimer !== undefined) {
+      clearTimeout(ctx.graphTimeoutTimer);
+      ctx.graphTimeoutTimer = undefined;
     }
   }
 
   protected async handleComplete(): Promise<void> {
     this.clearGraphTimeout();
+    const ctx = this.currentCtx;
     this.running = false;
-    this.activeEnforcer = undefined;
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.OK);
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.OK);
+      ctx.telemetrySpan.end();
     }
+    this.currentCtx = undefined;
 
     this.graph.emit("complete");
   }
@@ -1375,15 +1336,15 @@ export class TaskGraphRunner {
         }
       })
     );
+    const ctx = this.currentCtx;
     this.running = false;
-    this.activeEnforcer = undefined;
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.ERROR, error.message);
-      this.telemetrySpan.setAttributes({ "workglow.graph.error": error.message });
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, error.message);
+      ctx.telemetrySpan.setAttributes({ "workglow.graph.error": error.message });
+      ctx.telemetrySpan.end();
     }
+    this.currentCtx = undefined;
 
     this.graph.emit("error", error);
   }
@@ -1404,15 +1365,15 @@ export class TaskGraphRunner {
         }
       })
     );
+    const ctx = this.currentCtx;
     this.running = false;
-    this.activeEnforcer = undefined;
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");
-      this.telemetrySpan.addEvent("workglow.graph.aborted");
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");
+      ctx.telemetrySpan.addEvent("workglow.graph.aborted");
+      ctx.telemetrySpan.end();
     }
+    this.currentCtx = undefined;
 
     this.graph.emit("abort");
   }
