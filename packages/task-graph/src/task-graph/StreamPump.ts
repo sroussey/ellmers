@@ -135,6 +135,11 @@ export class StreamPump {
     ctx: RunContext,
     options: StreamingRunOptions
   ): Promise<GraphSingleTaskResult<T>> {
+    if (!this.runScheduler) {
+      throw new Error(
+        "StreamPump.runStreamingTask called before setRunScheduler — facade construction is incomplete."
+      );
+    }
     const streamMode = getOutputStreamMode(task.outputSchema());
     const shouldAccumulate = this.taskNeedsAccumulation(
       task,
