@@ -8,6 +8,7 @@ import type { FallbackTask, FallbackTaskConfig } from "./FallbackTask";
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
 import type { ITask } from "./ITask";
 import { TaskAbortedError, TaskFailedError, TaskTimeoutError } from "./TaskError";
+import type { TaskRunContext } from "./TaskRunContext";
 import { TaskStatus } from "./TaskTypes";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 
@@ -27,7 +28,10 @@ export class FallbackTaskRunner<
   /**
    * Override executeTask to implement sequential fallback logic.
    */
-  protected override async executeTask(input: Input): Promise<Output | undefined> {
+  protected override async executeTask(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     if (this.task.fallbackMode === "data") {
       return this.executeDataFallback(input);
     }
@@ -38,7 +42,10 @@ export class FallbackTaskRunner<
    * For FallbackTask, preview runs use the task's preview hook only,
    * bypassing GraphAsTaskRunner's child-merging logic.
    */
-  public override async executeTaskPreview(input: Input): Promise<Output | undefined> {
+  public override async executeTaskPreview(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     return this.task.executePreview?.(input, { own: this.own });
   }
 
@@ -60,7 +67,7 @@ export class FallbackTaskRunner<
     const totalAttempts = tasks.length;
 
     for (let i = 0; i < tasks.length; i++) {
-      if (this.abortController?.signal.aborted) {
+      if (this.currentCtx?.abortController.signal.aborted) {
         throw new TaskAbortedError("Fallback aborted");
       }
 
@@ -142,7 +149,7 @@ export class FallbackTaskRunner<
 
     try {
       for (let i = 0; i < alternatives.length; i++) {
-        if (this.abortController?.signal.aborted) {
+        if (this.currentCtx?.abortController.signal.aborted) {
           throw new TaskAbortedError("Fallback aborted");
         }
 
@@ -164,7 +171,7 @@ export class FallbackTaskRunner<
 
           // Run the subgraph with merged input
           const results = await this.task.subGraph.run<Output>(mergedInput, {
-            parentSignal: this.abortController?.signal,
+            parentSignal: this.currentCtx?.abortController.signal,
             outputCache: this.outputCache,
             registry: this.registry,
           });

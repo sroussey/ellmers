@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ISpan } from "@workglow/util";
 import {
   getLogger,
   getTelemetryProvider,
@@ -31,6 +30,7 @@ import {
   TaskInvalidInputError,
   TaskTimeoutError,
 } from "./TaskError";
+import { TaskRunContext } from "./TaskRunContext";
 import { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 interface SchemaProperties {
@@ -110,9 +110,12 @@ export class TaskRunner<
   public readonly task: ITask<Input, Output, Config>;
 
   /**
-   * AbortController for cancelling task execution
+   * Per-run state. Set by handleStart, cleared by handleComplete / handleError /
+   * handleAbort. The only mutable per-run state on the facade — exists so the
+   * public abort() and disable() methods (which take no arguments) have something
+   * to act on.
    */
-  protected abortController?: AbortController;
+  protected currentCtx?: TaskRunContext;
 
   /**
    * The output cache for the task
@@ -137,33 +140,6 @@ export class TaskRunner<
   public inputStreams?: Map<string, ReadableStream<StreamEvent>>;
 
   /**
-   * Timer handle for task-level timeout. Set when `IRunConfig.timeout` is
-   * provided and cleared on completion, error, or abort.
-   */
-  protected timeoutTimer?: ReturnType<typeof setTimeout>;
-
-  /**
-   * When a timeout triggers the abort, this holds the TaskTimeoutError so
-   * handleAbort() can surface the correct error type instead of a generic
-   * TaskAbortedError.
-   */
-  protected pendingTimeoutError?: TaskTimeoutError;
-
-  /**
-   * Whether the streaming task runner should accumulate text-delta chunks and
-   * emit an enriched finish event. Set from IRunConfig.shouldAccumulate.
-   * Defaults to true so standalone task execution is backward-compatible.
-   * The graph runner sets this to false when no downstream edge needs
-   * materialized data (no cache, all downstream tasks are also streaming).
-   */
-  protected shouldAccumulate: boolean = true;
-
-  /**
-   * Active telemetry span for the current task run.
-   */
-  protected telemetrySpan?: ISpan;
-
-  /**
    * Constructor for TaskRunner
    * @param task The task to run
    */
@@ -185,6 +161,7 @@ export class TaskRunner<
    */
   async run(overrides: Partial<Input> = {}, config: IRunConfig = {}): Promise<Output> {
     await this.handleStart(config);
+    const ctx = this.currentCtx!;
 
     const proto = Object.getPrototypeOf(this.task);
     if (
@@ -230,7 +207,7 @@ export class TaskRunner<
         throw new TaskInvalidInputError("Invalid input data");
       }
 
-      if (this.abortController?.signal.aborted) {
+      if (ctx.abortController.signal.aborted) {
         await this.handleAbort();
         throw new TaskAbortedError("Promise for task created and aborted before run");
       }
@@ -266,7 +243,7 @@ export class TaskRunner<
             cached as Record<string, unknown>,
             outputSchema as unknown as SchemaProperties
           )) as Output;
-          this.telemetrySpan?.addEvent("workglow.task.cache_hit");
+          ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
           if (isStreamable) {
             this.task.runOutputData = outputs;
             this.task.emit("stream_start");
@@ -281,7 +258,7 @@ export class TaskRunner<
         if (isStreamable) {
           outputs = await this.executeStreamingTask(inputs);
         } else {
-          outputs = await this.executeTask(inputs);
+          outputs = await this.executeTask(inputs, ctx);
         }
         if (this.task.cacheable && outputs !== undefined) {
           const wireOutputs = await serializeOutputPorts(
@@ -338,6 +315,10 @@ export class TaskRunner<
 
     await this.handleStartPreview();
 
+    // Build a transient context for preview overrides — preview doesn't share the
+    // full lifecycle but executeTaskPreview's signature requires a ctx.
+    const ctx = new TaskRunContext();
+
     try {
       const inputs: Input = this.task.runInputData as Input;
       const isValid = await this.task.validateInput(inputs);
@@ -345,7 +326,7 @@ export class TaskRunner<
         throw new TaskInvalidInputError("Invalid input data");
       }
 
-      const resultPreview = await this.executeTaskPreview(inputs);
+      const resultPreview = await this.executeTaskPreview(inputs, ctx);
       if (resultPreview !== undefined) {
         this.task.runOutputData = resultPreview;
       }
@@ -355,6 +336,7 @@ export class TaskRunner<
       getLogger().debug("runPreview failed", { taskId: this.task.config?.id, error: err });
       await this.handleErrorPreview();
     } finally {
+      ctx.dispose();
       return this.task.runOutputData as Output;
     }
   }
@@ -517,10 +499,7 @@ export class TaskRunner<
    * Aborts task execution
    */
   public abort(): void {
-    if (this.task.hasChildren()) {
-      this.task.subGraph.abort();
-    }
-    this.abortController?.abort();
+    this.currentCtx?.abortController.abort();
   }
 
   // ========================================================================
@@ -535,7 +514,7 @@ export class TaskRunner<
     if (hasRunConfig(i)) {
       Object.assign(i.runConfig, {
         registry: this.registry,
-        signal: this.abortController?.signal,
+        signal: this.currentCtx?.abortController.signal,
         resourceScope: this.resourceScope,
       });
     }
@@ -551,9 +530,9 @@ export class TaskRunner<
   /**
    * Protected method to execute a task by delegating back to the task itself.
    */
-  protected async executeTask(input: Input): Promise<Output | undefined> {
+  protected async executeTask(input: Input, ctx: TaskRunContext): Promise<Output | undefined> {
     const result = await this.task.execute(input, {
-      signal: this.abortController!.signal,
+      signal: ctx.abortController.signal,
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
       registry: this.registry,
@@ -565,7 +544,10 @@ export class TaskRunner<
   /**
    * Protected method for preview execution delegation
    */
-  protected async executeTaskPreview(input: Input): Promise<Output | undefined> {
+  protected async executeTaskPreview(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     return this.task.executePreview?.(input, { own: this.own });
   }
 
@@ -603,8 +585,9 @@ export class TaskRunner<
       }
     }
 
-    const accumulated = this.shouldAccumulate ? new Map<string, string>() : undefined;
-    const accumulatedObjects = this.shouldAccumulate
+    const ctx = this.currentCtx!;
+    const accumulated = ctx.shouldAccumulate ? new Map<string, string>() : undefined;
+    const accumulatedObjects = ctx.shouldAccumulate
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
     let streamingStarted = false;
@@ -613,7 +596,7 @@ export class TaskRunner<
     this.task.emit("stream_start");
 
     const stream = this.task.executeStream!(input, {
-      signal: this.abortController!.signal,
+      signal: ctx.abortController.signal,
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
       registry: this.registry,
@@ -758,7 +741,7 @@ export class TaskRunner<
     }
 
     // Check if the task was aborted during streaming
-    if (this.abortController?.signal.aborted) {
+    if (ctx.abortController.signal.aborted) {
       throw new TaskAbortedError("Task aborted during streaming");
     }
 
@@ -787,8 +770,11 @@ export class TaskRunner<
     this.task.progress = 0;
     this.task.status = TaskStatus.PROCESSING;
 
-    this.abortController = new AbortController();
-    this.abortController.signal.addEventListener("abort", () => {
+    // Build per-run context (handles abortController + parentSignal wiring)
+    const ctx = new TaskRunContext(config.signal);
+    this.currentCtx = ctx;
+
+    ctx.abortController.signal.addEventListener("abort", () => {
       this.handleAbort();
     });
 
@@ -803,7 +789,7 @@ export class TaskRunner<
     }
 
     // shouldAccumulate defaults to true (backward-compatible for standalone runs)
-    this.shouldAccumulate = config.shouldAccumulate !== false;
+    ctx.shouldAccumulate = config.shouldAccumulate !== false;
 
     if (config.updateProgress) {
       this.updateProgress = config.updateProgress;
@@ -817,25 +803,15 @@ export class TaskRunner<
       this.resourceScope = config.resourceScope;
     }
 
-    // If a parent signal is provided (e.g. set by context.own()), link it so
-    // that aborting the parent also aborts this task.
-    // Listen first, then check — addEventListener on an already-aborted signal
-    // does not fire, so checking .aborted after ensures we never miss an abort.
-    if (config.signal) {
-      const onAbort = () => this.abortController!.abort();
-      config.signal.addEventListener("abort", onAbort, { once: true });
-      if (config.signal.aborted) {
-        config.signal.removeEventListener("abort", onAbort);
-        this.abortController.abort();
-        return;
-      }
-    }
+    // Early-out if parent signal was already aborted (TaskRunContext constructor
+    // already aborted ctx.abortController in that case)
+    if (ctx.abortController.signal.aborted) return;
 
     // Start timeout timer if configured (timeout is a design-time config property)
     const timeout = (this.task.config as Record<string, unknown>).timeout as number | undefined;
     if (timeout !== undefined && timeout > 0) {
-      this.pendingTimeoutError = new TaskTimeoutError(timeout);
-      this.timeoutTimer = setTimeout(() => {
+      ctx.pendingTimeoutError = new TaskTimeoutError(timeout);
+      ctx.timeoutTimer = setTimeout(() => {
         this.abort();
       }, timeout);
     }
@@ -843,7 +819,7 @@ export class TaskRunner<
     // Start telemetry span
     const telemetry = getTelemetryProvider();
     if (telemetry.isEnabled) {
-      this.telemetrySpan = telemetry.startSpan("workglow.task.run", {
+      ctx.telemetrySpan = telemetry.startSpan("workglow.task.run", {
         attributes: {
           "workglow.task.type": this.task.type,
           "workglow.task.id": String(this.task.config.id),
@@ -871,9 +847,10 @@ export class TaskRunner<
    * Clears the timeout timer if one is active.
    */
   protected clearTimeoutTimer(): void {
-    if (this.timeoutTimer !== undefined) {
-      clearTimeout(this.timeoutTimer);
-      this.timeoutTimer = undefined;
+    const ctx = this.currentCtx;
+    if (ctx?.timeoutTimer !== undefined) {
+      clearTimeout(ctx.timeoutTimer);
+      ctx.timeoutTimer = undefined;
     }
   }
 
@@ -883,19 +860,18 @@ export class TaskRunner<
   protected async handleAbort(): Promise<void> {
     if (this.task.status === TaskStatus.ABORTING) return;
     this.clearTimeoutTimer();
+    const ctx = this.currentCtx;
     this.task.status = TaskStatus.ABORTING;
     await this.handleProgress(100);
     // Use the pending timeout error if the abort was triggered by a timeout
-    this.task.error = this.pendingTimeoutError ?? new TaskAbortedError();
-    this.pendingTimeoutError = undefined;
+    this.task.error = ctx?.pendingTimeoutError ?? new TaskAbortedError();
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");
-      this.telemetrySpan.addEvent("workglow.task.aborted", {
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");
+      ctx.telemetrySpan.addEvent("workglow.task.aborted", {
         "workglow.task.error": this.task.error.message,
       });
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+      ctx.telemetrySpan.end();
     }
 
     // Call optional cleanup method for resource release
@@ -906,6 +882,9 @@ export class TaskRunner<
         // Cleanup errors are swallowed — abort must not throw from cleanup
       }
     }
+
+    ctx?.dispose();
+    this.currentCtx = undefined;
 
     this.task.emit("abort", this.task.error);
     this.task.emit("status", this.task.status);
@@ -921,18 +900,19 @@ export class TaskRunner<
   protected async handleComplete(): Promise<void> {
     if (this.task.status === TaskStatus.COMPLETED) return;
     this.clearTimeoutTimer();
-    this.pendingTimeoutError = undefined;
+    const ctx = this.currentCtx;
 
     this.task.completedAt = new Date();
     this.task.status = TaskStatus.COMPLETED;
-    this.abortController = undefined;
     await this.handleProgress(100);
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.OK);
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.OK);
+      ctx.telemetrySpan.end();
     }
+
+    ctx?.dispose();
+    this.currentCtx = undefined;
 
     this.task.emit("complete");
     this.task.emit("status", this.task.status);
@@ -942,18 +922,19 @@ export class TaskRunner<
     this.previewRunning = false;
   }
 
-  protected async handleDisable(): Promise<void> {
+  protected async handleDisable(ctx: TaskRunContext | undefined): Promise<void> {
     if (this.task.status === TaskStatus.DISABLED) return;
     this.task.status = TaskStatus.DISABLED;
     await this.handleProgress(100);
     this.task.completedAt = new Date();
-    this.abortController = undefined;
+    ctx?.dispose();
+    if (this.currentCtx === ctx) this.currentCtx = undefined;
     this.task.emit("disabled");
     this.task.emit("status", this.task.status);
   }
 
   public async disable(): Promise<void> {
-    await this.handleDisable();
+    await this.handleDisable(this.currentCtx);
   }
 
   /**
@@ -964,7 +945,7 @@ export class TaskRunner<
     if (err instanceof TaskAbortedError) return this.handleAbort();
     if (this.task.status === TaskStatus.FAILED) return;
     this.clearTimeoutTimer();
-    this.pendingTimeoutError = undefined;
+    const ctx = this.currentCtx;
     if (this.task.hasChildren()) {
       this.task.subGraph!.abort();
     }
@@ -983,15 +964,16 @@ export class TaskRunner<
       this.task.error.taskId ??= this.task.id;
     }
     this.task.status = TaskStatus.FAILED;
-    this.abortController = undefined;
     await this.handleProgress(100);
 
-    if (this.telemetrySpan) {
-      this.telemetrySpan.setStatus(SpanStatusCode.ERROR, this.task.error.message);
-      this.telemetrySpan.setAttributes({ "workglow.task.error": this.task.error.message });
-      this.telemetrySpan.end();
-      this.telemetrySpan = undefined;
+    if (ctx?.telemetrySpan) {
+      ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, this.task.error.message);
+      ctx.telemetrySpan.setAttributes({ "workglow.task.error": this.task.error.message });
+      ctx.telemetrySpan.end();
     }
+
+    ctx?.dispose();
+    this.currentCtx = undefined;
 
     this.task.emit("error", this.task.error);
     this.task.emit("status", this.task.status);
