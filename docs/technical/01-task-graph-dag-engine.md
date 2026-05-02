@@ -270,6 +270,63 @@ graph.resetGraph();  // Reset all tasks to PENDING
 
 ---
 
+## Runtime Architecture
+
+`TaskGraphRunner` is a thin facade that owns three internal collaborator classes plus a per-run state object. Each collaborator has one responsibility; the facade orchestrates them.
+
+```
+TaskGraphRunner (facade)
+  long-lived: graph, outputCache, processScheduler, previewScheduler,
+              registry, resourceScope, accumulateLeafOutputs
+  per-run anchor: currentCtx?: RunContext
+
+  owns instances of:
+    ├── RunScheduler       — run-loop, abort/timeout, disabled cascade, progress
+    ├── EdgeMaterializer   — edge read/write, transforms, error routing
+    └── StreamPump         — streaming inputs, tee fan-out, accumulation
+                              │
+                              ▼
+                          RunContext  ── per-run, built by handleStart,
+                                          discarded by terminal handlers
+```
+
+| Class | Responsibility | Lifetime |
+|---|---|---|
+| `TaskGraphRunner` | Public API, lifecycle handlers, per-task orchestration in `runTask`, `runGraphPreview` body | Whole runner |
+| `RunScheduler` | For-await run loop, `pushStatusFromNodeToEdges`, disabled cascade, progress aggregation, timeout arm/clear | Whole runner |
+| `EdgeMaterializer` | `copyInputFromEdgesToNode`, `pushOutputFromNodeToEdges`, error-port routing, `resetTask` | Whole runner |
+| `StreamPump` | `prepareStreamingInputs` (tee), `runStreamingTask`, accumulation policy, stream fan-out | Whole runner |
+| `RunContext` | One run's mutable state — abort controller, in-progress maps, error map, telemetry span, timeout timer, entitlement enforcer | Single `runGraph()` call |
+
+All four collaborator classes are marked `@internal` and re-exported from `@workglow/task-graph` so unit tests can construct them directly.
+
+### `TaskGraphRunConfig` vs `RunContext`
+
+These are easy to confuse — both relate to a single run, but they live on opposite sides of the start of execution.
+
+| | `TaskGraphRunConfig` | `RunContext` |
+|---|---|---|
+| **Direction** | Caller → runner (input) | Runner-internal (state) |
+| **Lifetime** | Provided once before the run starts | Created at run start, destroyed at run end |
+| **Mutability** | Caller-built; runner reads it | Runner-mutated throughout the run |
+| **Visibility** | Public (part of `runGraph` API) | `@internal` collaborator state |
+| **Purpose** | Wishes/policy for the run | Bookkeeping while the run is in flight |
+
+`handleStart` translates the caller's wishes into runtime state:
+
+```
+config.parentSignal     → ctx.abortController (wired listener)
+config.timeout          → ctx.graphTimeoutTimer + ctx.pendingGraphTimeoutError on fire
+config.enforceEntitlements + registry → ctx.activeEnforcer
+(no config equivalent)  → ctx.runId, ctx.inProgressTasks, ctx.failedTaskErrors, ctx.telemetrySpan
+```
+
+Long-lived state from `config` (`registry`, `outputCache`, `resourceScope`, `accumulateLeafOutputs`) goes onto the facade — not into `RunContext`. Only state that exists *only while a run is in flight* belongs in `RunContext`.
+
+**Mnemonic:** `TaskGraphRunConfig` is what the caller asks for; `RunContext` is what the runner is doing right now.
+
+---
+
 ## Execution Flow
 
 ### Graph-Level Execution (run)
@@ -279,12 +336,17 @@ TaskGraph.run(input, config)
   |
   v
 TaskGraphRunner.runGraph(input, config)
-  |
-  v
-For each task in topological order:
-  1. copyInputFromEdgesToNode(task)  -- Pull data from incoming dataflows
-  2. runTask(task, input)            -- Execute via TaskRunner.run()
-  3. pushOutputFromNodeToEdges(task) -- Push output to outgoing dataflows
+  1. handleStart(config)                  -- Build RunContext, arm timeout, start telemetry
+  2. runScheduler.runLoop(input, config, ctx, edgeMat)
+       For each task from processScheduler.tasks():
+         a. streamPump.prepareStreamingInputs(task)        -- Tee streaming inputs
+         b. streamPump.awaitStreamInputs(task, registry)   -- Materialize pending streams
+         c. edgeMaterializer.copyInputFromEdgesToNode(task) -- Pull edge values
+         d. ctx.activeEnforcer?.checkTask(task)            -- Runtime entitlement
+         e. Streaming branch: streamPump.runStreamingTask(...)
+            Non-streaming:    task.runner.run(...) → edgeMaterializer.pushOutputFromNodeToEdges
+         f. runScheduler.pushStatusFromNodeToEdges + processScheduler.onTaskCompleted
+  3. Terminal precedence: timeout > task error > abort > complete
   |
   v
 Collect results from ending nodes (no outgoing dataflows)

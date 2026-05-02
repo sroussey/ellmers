@@ -93,15 +93,23 @@ Return runOutputData (locked)
 ```
 TaskGraph.run(input)
     ↓
-TaskGraphRunner.runGraph(input)
+TaskGraphRunner.runGraph(input)        # facade: lifecycle + terminal precedence
     ↓
-For each task (in topological order):
-    1. copyInputFromEdgesToNode()  # Pull data from incoming dataflows
-    2. runTask(task, input)        # Execute the task
-    3. pushOutputFromNodeToEdges() # Push output to outgoing dataflows
+RunScheduler.runLoop(...)              # owns the for-await loop
+    ↓
+For each task (from processScheduler.tasks()):
+    1. StreamPump.prepareStreamingInputs(task)          # Tee streaming inputs
+    2. StreamPump.awaitStreamInputs(task, registry)     # Materialize pending streams
+    3. EdgeMaterializer.copyInputFromEdgesToNode(task)  # Pull data from incoming dataflows
+    4. ctx.activeEnforcer?.checkTask(task)              # Runtime entitlement
+    5. Streaming:     StreamPump.runStreamingTask(...)
+       Non-streaming: task.runner.run(...) → EdgeMaterializer.pushOutputFromNodeToEdges()
+    6. RunScheduler.pushStatusFromNodeToEdges + processScheduler.onTaskCompleted
     ↓
 Return results from ending nodes (no outgoing dataflows)
 ```
+
+`TaskGraphRunner` is a thin facade. The for-await loop lives in `RunScheduler`; per-task choreography lives in the facade's `runTask`; per-run mutable state (abort controller, in-progress maps, timeout timer, telemetry span, entitlement enforcer) lives in a `RunContext` value object built by `handleStart` and discarded by terminal handlers. See `docs/technical/01-task-graph-dag-engine.md` for the full architecture and the `TaskGraphRunConfig` vs `RunContext` distinction.
 
 ### Runtime guard
 
