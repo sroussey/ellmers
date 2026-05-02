@@ -36,6 +36,7 @@ export * from "./task-graph/TransformTypes";
 export * from "./task-graph/transforms";
 export * from "./task-graph/autoConnect";
 
+export * from "./task/TaskRunContext";
 export * from "./task";
 
 export * from "./storage/TaskGraphRepository";
