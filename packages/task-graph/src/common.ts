@@ -22,9 +22,14 @@ export * from "./task-graph/TaskGraphRunner";
 export * from "./task-graph/Conversions";
 export * from "./task-graph/GraphToWorkflowCode";
 export * from "./task-graph/IWorkflow";
+export * from "./task-graph/LoopBuilderContext";
 export * from "./task-graph/Workflow";
+export * from "./task-graph/WorkflowBuilder";
+export * from "./task-graph/WorkflowCacheAdapter";
+export * from "./task-graph/WorkflowEventBridge";
 export * from "./task-graph/WorkflowFactories";
 export * from "./task-graph/WorkflowPipe";
+export * from "./task-graph/WorkflowRunContext";
 
 export * from "./task-graph/TransformRegistry";
 export * from "./task-graph/TransformTypes";
