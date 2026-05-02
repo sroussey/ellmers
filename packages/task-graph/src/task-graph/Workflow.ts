@@ -26,6 +26,7 @@ import type { GraphEntitlementOptions } from "./GraphEntitlementUtils";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { updateBoundaryTaskSchemas } from "./GraphSchemaUtils";
 import type { IWorkflow, WorkflowRunConfig } from "./IWorkflow";
+import { LoopBuilderContext, runLoopAutoConnect } from "./LoopBuilderContext";
 import { TaskGraph } from "./TaskGraph";
 import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
@@ -97,8 +98,8 @@ export class Workflow<
     registry?: ServiceRegistry
   ) {
     this._cache = new WorkflowCacheAdapter(cache);
-    this._parentWorkflow = parent;
-    this._iteratorTask = iteratorTask;
+    this._loopContext =
+      parent && iteratorTask ? new LoopBuilderContext(parent, iteratorTask) : undefined;
     this._registry = registry ?? parent?._registry;
     this._graph = new TaskGraph({ outputCache: this._cache.outputCache() });
 
@@ -119,13 +120,8 @@ export class Workflow<
   // Abort controller for cancelling task execution
   private _abortController?: AbortController;
 
-  // Loop builder properties
-  private readonly _parentWorkflow?: Workflow;
-  private readonly _iteratorTask?: GraphAsTask;
-  private _pendingLoopConnect?: {
-    parent: ITask;
-    iteratorTask: ITask;
-  };
+  // Loop builder state (encapsulates parent workflow + iterator task + deferred auto-connect)
+  private readonly _loopContext?: LoopBuilderContext;
 
   public outputCache(): TaskOutputRepository | undefined {
     return this._cache.outputCache();
@@ -136,7 +132,7 @@ export class Workflow<
    * When true, tasks are added to the template graph for an iterator task.
    */
   public get isLoopBuilder(): boolean {
-    return this._parentWorkflow !== undefined;
+    return this._loopContext !== undefined;
   }
 
   /**
@@ -311,14 +307,10 @@ export class Workflow<
     config?: WorkflowRunConfig
   ): Promise<PropertyArrayGraphResult<Output>> {
     // In loop builder mode, finalize template and delegate to parent
-    if (this.isLoopBuilder) {
-      this.finalizeTemplate();
-      // Run deferred auto-connect now that template graph is populated
-      if (this._pendingLoopConnect) {
-        this._parentWorkflow!.autoConnectLoopTask(this._pendingLoopConnect);
-        this._pendingLoopConnect = undefined;
-      }
-      return this._parentWorkflow!.run(input as any, config) as Promise<
+    if (this._loopContext) {
+      this._loopContext.finalizeTemplate(this._graph);
+      this._loopContext.consumePendingConnect();
+      return this._loopContext.parent.run(input as any, config) as Promise<
         PropertyArrayGraphResult<Output>
       >;
     }
@@ -356,8 +348,8 @@ export class Workflow<
    */
   public async abort(): Promise<void> {
     // In loop builder mode, delegate to parent
-    if (this._parentWorkflow) {
-      return this._parentWorkflow.abort();
+    if (this._loopContext) {
+      return this._loopContext.parent.abort();
     }
     this._abortController?.abort();
   }
@@ -626,7 +618,7 @@ export class Workflow<
    */
   public reset(): Workflow {
     // In loop builder mode, reset is not supported
-    if (this._parentWorkflow) {
+    if (this._loopContext) {
       throw new WorkflowError("Cannot reset a loop workflow. Call reset() on the parent workflow.");
     }
 
@@ -790,7 +782,9 @@ export class Workflow<
       this._registry
     ) as unknown as Workflow<I, O>;
     if (parent) {
-      loopBuilder._pendingLoopConnect = { parent, iteratorTask: task };
+      // Same-class private access: child was constructed with parent + iteratorTask,
+      // so its ctor created a LoopBuilderContext.
+      loopBuilder._loopContext!.pendingLoopConnect = { parent, iteratorTask: task };
     }
     return loopBuilder;
   }
@@ -820,26 +814,7 @@ export class Workflow<
    */
   public autoConnectLoopTask(pending?: { parent: ITask; iteratorTask: ITask }): void {
     if (!pending) return;
-    const { parent, iteratorTask } = pending;
-
-    if (this.graph.getTargetDataflows(parent.id).length === 0) {
-      const nodes = this._graph.getTasks();
-      const parentIndex = nodes.findIndex((n) => n.id === parent.id);
-      const earlierTasks: ITask[] = [];
-      for (let i = parentIndex - 1; i >= 0; i--) {
-        earlierTasks.push(nodes[i]);
-      }
-
-      const result = Workflow.autoConnect(this.graph, parent, iteratorTask, {
-        earlierTasks,
-      });
-
-      if (result.error) {
-        this._error = result.error + " Task not added.";
-        getLogger().error(this._error);
-        this.graph.removeTask(iteratorTask.id);
-      }
-    }
+    runLoopAutoConnect(this._graph, pending);
   }
 
   /**
@@ -885,12 +860,8 @@ export class Workflow<
    * Only applicable in loop builder mode.
    */
   public finalizeTemplate(): void {
-    if (!this._iteratorTask || this.graph.getTasks().length === 0) {
-      return;
-    }
-
-    this._iteratorTask.subGraph = this.graph;
-    this._iteratorTask.validateAcyclic();
+    if (!this._loopContext) return;
+    this._loopContext.finalizeTemplate(this._graph);
   }
 
   /**
@@ -901,17 +872,10 @@ export class Workflow<
    * @throws WorkflowError if not in loop builder mode
    */
   public finalizeAndReturn(): Workflow {
-    if (!this._parentWorkflow) {
+    if (!this._loopContext) {
       throw new WorkflowError("finalizeAndReturn() can only be called on loop workflows");
     }
-    this.finalizeTemplate();
-    // Now that the iterator task has its template graph, its dynamic inputSchema()
-    // is available. Run deferred auto-connect on the parent workflow's graph.
-    if (this._pendingLoopConnect) {
-      this._parentWorkflow.autoConnectLoopTask(this._pendingLoopConnect);
-      this._pendingLoopConnect = undefined;
-    }
-    return this._parentWorkflow;
+    return this._loopContext.finalizeAndReturn(this._graph);
   }
 }
 
