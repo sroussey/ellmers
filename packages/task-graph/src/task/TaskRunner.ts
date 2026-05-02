@@ -13,9 +13,9 @@ import {
   SpanStatusCode,
 } from "@workglow/util";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
-import { getPortCodec } from "@workglow/util";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
+import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
@@ -32,55 +32,6 @@ import {
 } from "./TaskError";
 import { TaskRunContext } from "./TaskRunContext";
 import { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
-
-interface SchemaProperties {
-  properties?: Record<string, { format?: string }>;
-}
-
-async function serializeOutputPorts(
-  output: Record<string, unknown>,
-  schema: SchemaProperties
-): Promise<Record<string, unknown>> {
-  if (!schema?.properties) return output;
-  const out: Record<string, unknown> = { ...output };
-  for (const [key, prop] of Object.entries(schema.properties)) {
-    const codec = prop.format ? getPortCodec(prop.format) : undefined;
-    if (codec && out[key] !== undefined) {
-      out[key] = await codec.serialize(out[key]);
-    }
-  }
-  return out;
-}
-
-async function deserializeOutputPorts(
-  output: Record<string, unknown>,
-  schema: SchemaProperties
-): Promise<Record<string, unknown>> {
-  if (!schema?.properties) return output;
-  const out: Record<string, unknown> = { ...output };
-  for (const [key, prop] of Object.entries(schema.properties)) {
-    const codec = prop.format ? getPortCodec(prop.format) : undefined;
-    if (codec && out[key] !== undefined) {
-      out[key] = await codec.deserialize(out[key]);
-    }
-  }
-  return out;
-}
-
-async function normalizeInputsForCacheKey(
-  inputs: Record<string, unknown>,
-  schema: SchemaProperties
-): Promise<Record<string, unknown>> {
-  if (!schema?.properties) return inputs;
-  const out: Record<string, unknown> = { ...inputs };
-  for (const [key, prop] of Object.entries(schema.properties)) {
-    const codec = prop.format ? getPortCodec(prop.format) : undefined;
-    if (codec && out[key] !== undefined) {
-      out[key] = await codec.serialize(out[key]);
-    }
-  }
-  return out;
-}
 
 /**
  * Type guard that checks whether a value is an ITask-like object with a mutable `runConfig`.
@@ -123,6 +74,11 @@ export class TaskRunner<
   protected outputCache?: TaskOutputRepository;
 
   /**
+   * Cache coordinator for the task (key normalization, lookup, save).
+   */
+  protected readonly cacheCoordinator: CacheCoordinator<Input, Output>;
+
+  /**
    * The service registry for the task
    */
   protected registry: ServiceRegistry = globalServiceRegistry;
@@ -147,6 +103,7 @@ export class TaskRunner<
     this.task = task;
     this.own = this.own.bind(this);
     this.handleProgress = this.handleProgress.bind(this);
+    this.cacheCoordinator = new CacheCoordinator(task);
   }
 
   // ========================================================================
@@ -192,8 +149,6 @@ export class TaskRunner<
         throw new TaskAbortedError("Promise for task created and aborted before run");
       }
 
-      let outputs: Output | undefined;
-
       const isStreamable = isTaskStreamable(this.task);
 
       // Warn if schema declares streaming but executeStream is not implemented
@@ -207,46 +162,20 @@ export class TaskRunner<
         }
       }
 
-      const inputSchema = (this.task.constructor as typeof Task).inputSchema();
-      const outputSchema = (this.task.constructor as typeof Task).outputSchema();
-      const inputsForKey = this.outputCache
-        ? await normalizeInputsForCacheKey(
-            inputs as Record<string, unknown>,
-            inputSchema as unknown as SchemaProperties
-          )
-        : inputs;
+      const keyInputs = await this.cacheCoordinator.buildKey(inputs, this.outputCache);
+      let outputs = await this.cacheCoordinator.lookup(
+        keyInputs,
+        this.outputCache,
+        isStreamable,
+        ctx
+      );
 
-      if (this.task.cacheable) {
-        const cached = await this.outputCache?.getOutput(this.task.type, inputsForKey);
-        if (cached !== undefined) {
-          outputs = (await deserializeOutputPorts(
-            cached as Record<string, unknown>,
-            outputSchema as unknown as SchemaProperties
-          )) as Output;
-          ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
-          if (isStreamable) {
-            this.task.runOutputData = outputs;
-            this.task.emit("stream_start");
-            this.task.emit("stream_chunk", { type: "finish", data: outputs } as StreamEvent);
-            this.task.emit("stream_end", outputs);
-          } else {
-            this.task.runOutputData = outputs;
-          }
-        }
-      }
-      if (!outputs) {
-        if (isStreamable) {
-          outputs = await this.executeStreamingTask(inputs);
-        } else {
-          outputs = await this.executeTask(inputs, ctx);
-        }
-        if (this.task.cacheable && outputs !== undefined) {
-          const wireOutputs = await serializeOutputPorts(
-            outputs as Record<string, unknown>,
-            outputSchema as unknown as SchemaProperties
-          );
-          await this.outputCache?.saveOutput(this.task.type, inputsForKey, wireOutputs as Output);
-        }
+      if (outputs === undefined) {
+        outputs = isStreamable
+          ? await this.executeStreamingTask(inputs)
+          : await this.executeTask(inputs, ctx);
+
+        await this.cacheCoordinator.save(keyInputs, outputs as Output, this.outputCache);
         this.task.runOutputData = outputs ?? ({} as Output);
       }
 
