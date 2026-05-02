@@ -300,7 +300,7 @@ export class StreamPump {
    * unfiltered streams for DATAFLOW_ALL_PORTS edges. Within each port group,
    * uses tee() for fan-out to multiple consumers.
    */
-  pushStreamToEdges(task: ITask, _streamMode: StreamMode): void {
+  private pushStreamToEdges(task: ITask, _streamMode: StreamMode): void {
     const targetDataflows = this.graph.getTargetDataflows(task.id);
     if (targetDataflows.length === 0) return;
 
