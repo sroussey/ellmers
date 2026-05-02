@@ -31,8 +31,10 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   constructor(private readonly task: ITask<Input, Output, any>) {}
 
   /**
-   * Strips x-cache-key:false fields and returns key-shaped inputs. No-op when
-   * no cache is configured (returns inputs unchanged).
+   * Serializes format-annotated input properties (via their port codecs) so the
+   * resulting object is a stable, serialization-equivalent representation
+   * suitable for use as a cache key. Properties without a format annotation are
+   * passed through unchanged. No-op when no cache is configured.
    */
   async buildKey(
     inputs: Input,
