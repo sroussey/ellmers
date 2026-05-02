@@ -838,10 +838,21 @@ export class IndexedDbTabularStorage<
       if (prefixValues.length === 0) continue;
 
       const remainingColumns = indexColumns.slice(prefixValues.length);
+      let redundantOrderPrefixLength = 0;
+      while (
+        redundantOrderPrefixLength < orderBy.length &&
+        redundantOrderPrefixLength < prefixValues.length &&
+        orderBy[redundantOrderPrefixLength]?.column === indexColumns[redundantOrderPrefixLength]
+      ) {
+        redundantOrderPrefixLength++;
+      }
+      const normalizedOrderBy = orderBy.slice(redundantOrderPrefixLength);
       const satisfiesOrder =
-        orderBy.length === 0 ||
-        (orderBy.length <= remainingColumns.length &&
-          orderBy.every((order, index) => order.column === remainingColumns[index]) &&
+        normalizedOrderBy.length === 0 ||
+        (normalizedOrderBy.length <= remainingColumns.length &&
+          normalizedOrderBy.every(
+            (order, index) => order.column === remainingColumns[index]
+          ) &&
           orderBy.every((order) => order.direction === orderBy[0]?.direction));
 
       if (!satisfiesOrder && best) continue;
