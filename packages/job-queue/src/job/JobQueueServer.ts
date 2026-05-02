@@ -138,10 +138,16 @@ export class JobQueueServer<
     // Fix stuck jobs from previous runs
     await this.fixupJobs();
 
-    // Subscribe to storage changes to wake workers when new work arrives,
-    // including from other processes. Attached clients call `handleJobAdded`
-    // directly as an additional fast path, but the storage subscription is
-    // still needed for cross-process inserts in mixed deployments.
+    // Subscribe to storage changes to wake workers when new work arrives.
+    // - Cross-process deployments rely on this for wake-up.
+    // - Same-process attached clients are also primarily woken by the direct
+    //   `handleJobAdded` path on submit, but we keep the subscription as a
+    //   correctness backstop: some async backends (e.g. fake-indexeddb under
+    //   bun) have read-after-write visibility lag where a just-committed job
+    //   isn't yet returned by `storage.next()`. The subscription fires only
+    //   after the write is visible to readers, providing a guaranteed wake.
+    // - Sqlite/Postgres throw here; the try/catch falls through and direct
+    //   notify is the sole wake path on those backends.
     try {
       this.storageUnsubscribe = this.storage.subscribeToChanges(
         (change: QueueChangePayload<Input, Output>) => {

@@ -320,9 +320,12 @@ export class JobQueueClient<Input, Output> {
     if (!jobId) throw new JobNotFoundError("Cannot abort undefined job");
     const firedLocally = this.server?.abortJob(jobId) ?? false;
     if (!firedLocally) {
-      // Let storage.abort throw if it fails — only emit `job_aborting`
-      // when the abort actually landed somewhere observable.
-      await this.storage.abort(jobId);
+      try {
+        await this.storage.abort(jobId);
+      } finally {
+        this.events.emit("job_aborting", this.queueName, jobId);
+      }
+      return;
     }
     this.events.emit("job_aborting", this.queueName, jobId);
   }

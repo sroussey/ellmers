@@ -612,15 +612,13 @@ export class JobQueueWorker<
    * because the worker was stopped mid-claim. Resets the row to PENDING so
    * the next started worker can pick it up. `fixupJobs()` would otherwise
    * skip it (it ignores rows owned by current-server worker IDs).
+   *
+   * Uses `storage.release()` rather than `storage.complete()` so the retry
+   * budget isn't burned: the worker never actually attempted execution.
    */
   protected async releaseClaimedJob(job: Job<Input, Output>): Promise<void> {
     try {
-      job.status = JobStatus.PENDING;
-      job.workerId = null;
-      job.progress = 0;
-      job.progressMessage = "";
-      job.progressDetails = null;
-      await this.storage.complete(this.classToStorage(job));
+      await this.storage.release(job.id);
     } catch (err) {
       getLogger().error("releaseClaimedJob errored:", { error: err });
     }
@@ -649,10 +647,24 @@ export class JobQueueWorker<
   }
 
   /**
-   * Create an abort controller for a job
+   * Create an abort controller for a job.
+   *
+   * The job MUST already be registered in {@link inFlight} — this enforces
+   * the invariant that `activeJobAbortControllers ⊆ inFlight`, which
+   * {@link handleAbort} relies on to decide whether `processSingleJob` is
+   * still on the hook for the terminal write. Calling this from any path
+   * other than `processSingleJob` (which registers `inFlight` first) is a
+   * programming error.
    */
   protected createAbortController(jobId: unknown): AbortController {
     if (!jobId) throw new JobNotFoundError("Cannot create abort controller for undefined job");
+
+    if (!this.inFlight.has(jobId)) {
+      throw new Error(
+        `createAbortController invariant violated: jobId ${String(jobId)} is not in inFlight. ` +
+          `Abort controllers must only be created from within processSingleJob.`
+      );
+    }
 
     if (this.activeJobAbortControllers.has(jobId)) {
       return this.activeJobAbortControllers.get(jobId)!;

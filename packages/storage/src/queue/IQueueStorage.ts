@@ -138,6 +138,16 @@ export interface IQueueStorage<Input, Output> {
   next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined>;
 
   /**
+   * Releases a job that was just claimed by {@link next} but won't be
+   * processed (e.g. the worker was stopped mid-claim). Resets status to
+   * PENDING and clears worker_id WITHOUT incrementing run_attempts —
+   * the worker never actually attempted execution, so the retry budget
+   * must be preserved.
+   * @param id - The id of the claimed job to release.
+   */
+  release(id: unknown): Promise<void>;
+
+  /**
    * Peeks at the next job(s) from the queue storage without removing them
    * @param status - The status of the jobs to peek at
    * @param num - The number of jobs to peek at
