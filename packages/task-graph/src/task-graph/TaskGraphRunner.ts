@@ -731,9 +731,16 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Handles task graph abortion
+   * Handles task graph abortion.
+   *
+   * Single-fire: invoked from both the abort-signal listener installed in
+   * `handleStart` and the `runGraph` epilogue when `signal.aborted`. Without
+   * a guard, observers see two `"abort"` events for one logical abort. We
+   * latch on `this.running` synchronously so the second caller is a no-op.
    */
   protected async handleAbort(): Promise<void> {
+    if (!this.running) return;
+    this.running = false;
     this.clearGraphTimeout();
     await Promise.allSettled(
       this.graph.getTasks().map(async (task: ITask) => {
@@ -743,7 +750,6 @@ export class TaskGraphRunner {
       })
     );
     const ctx = this.currentCtx;
-    this.running = false;
 
     if (ctx?.telemetrySpan) {
       ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");

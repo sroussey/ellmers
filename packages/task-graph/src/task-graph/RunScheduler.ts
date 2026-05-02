@@ -108,6 +108,11 @@ export class RunScheduler {
    * tasks can be disabled.
    *
    * This is used by ConditionalTask to disable downstream tasks on inactive branches.
+   *
+   * `_ctx` is accepted for symmetry with other RunScheduler methods (which thread
+   * per-run state through the RunContext) and to leave room for future per-run
+   * scheduling state without a signature change. Currently unused — the cascade
+   * operates on graph-level task status alone.
    */
   propagateDisabledStatus(_ctx: RunContext | undefined, graph: TaskGraph = this.graph): void {
     let changed = true;
