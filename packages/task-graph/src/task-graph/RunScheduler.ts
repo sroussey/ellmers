@@ -189,6 +189,7 @@ export class RunScheduler {
     // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
     const isActive = task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
     if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
+      // Bracket access keeps `edgeMaterializer` protected on the facade — only `runScheduler` was widened to public.
       await this.facade["edgeMaterializer"].pushOutputFromNodeToEdges(task, task.runOutputData);
     }
   }
@@ -196,6 +197,10 @@ export class RunScheduler {
   /**
    * Arms the graph-level timeout. The timer fires `pendingGraphTimeoutError`
    * and aborts the run when elapsed. No-op when `timeoutMs <= 0`.
+   *
+   * @remarks Treats `timeoutMs <= 0` as "no timeout" (silent no-op), not as
+   * "fire immediately". Callers that want immediate cancellation should call
+   * `ctx.abortController.abort()` directly.
    */
   armGraphTimeout(timeoutMs: number, ctx: RunContext): void {
     if (timeoutMs <= 0) return;
@@ -257,6 +262,7 @@ export class RunScheduler {
                 ? edgeMat.filterInputForTask(task, input)
                 : {};
 
+            // Bracket access — runTask stays protected on purpose; this is the back-ref entry point.
             const taskPromise = this.facade["runTask"](task, taskInput);
             ctx.inProgressTasks.set(task.id, taskPromise);
             const taskResult = await taskPromise;
