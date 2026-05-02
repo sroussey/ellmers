@@ -30,7 +30,20 @@ import { getLastTask } from "./WorkflowPipe";
  * delegates the implementation here. This split keeps the run/abort/event
  * surface separate from the chainable graph-construction surface.
  */
-export class WorkflowBuilder {
+
+/**
+ * Narrowed handle returned by `Workflow.builder`. Exposes only the two
+ * members other in-package code legitimately needs to reach across instances
+ * (loop-builder wiring + error propagation), keeping `_dataFlows`,
+ * `_registry`, and other builder internals out of reach via the facade.
+ * @internal
+ */
+export interface IWorkflowBuilderHandle {
+  readonly loopContext: LoopBuilderContext | undefined;
+  setError(message: string): void;
+}
+
+export class WorkflowBuilder implements IWorkflowBuilderHandle {
   private readonly _facade: Workflow<any, any>;
   private _dataFlows: Dataflow[] = [];
   private _error: string = "";

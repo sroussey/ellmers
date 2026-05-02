@@ -28,8 +28,10 @@ import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
 import type { ITransformStep } from "./TransformTypes";
 import { WorkflowBuilder } from "./WorkflowBuilder";
+import type { IWorkflowBuilderHandle } from "./WorkflowBuilder";
 import { WorkflowCacheAdapter } from "./WorkflowCacheAdapter";
 import { WorkflowEventBridge } from "./WorkflowEventBridge";
+import { WorkflowRunContext } from "./WorkflowRunContext";
 import type { CreateWorkflow } from "./WorkflowFactories";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { parallel, pipe } from "./WorkflowPipe";
@@ -118,16 +120,24 @@ export class Workflow<
   private _bridge?: WorkflowEventBridge;
   private _builder: WorkflowBuilder;
 
-  // Abort controller for cancelling task execution
-  private _abortController?: AbortController;
+  // Per-run state. Single field — concurrent run() calls overwrite (last-run-
+  // wins for abort), matching pre-refactor behavior of `_abortController`.
+  // Mirrors RunContext on the TaskGraphRunner side.
+  private _currentRun?: WorkflowRunContext;
 
   /** @internal — exposes the parent's registry so a child loop-builder can inherit it */
   private get builderRegistry(): ServiceRegistry | undefined {
     return this._builder.registry;
   }
 
-  /** @internal — exposes the builder for cross-instance loop-builder wiring */
-  public get builder(): WorkflowBuilder {
+  /**
+   * Internal cross-instance handle for loop-builder wiring and error
+   * propagation. Returns a NARROWED interface — only the two members the
+   * package actually needs externally — so consumers cannot reach
+   * `_dataFlows`, `_registry`, or other builder internals through `wf.builder`.
+   * @internal
+   */
+  public get builder(): IWorkflowBuilderHandle {
     return this._builder;
   }
 
@@ -251,16 +261,15 @@ export class Workflow<
     }
 
     this.events.emit("start");
-    this._abortController = new AbortController();
-
-    // Subscribe to graph-level streaming events and forward to workflow events.
-    // The unsub token is held LOCAL to this run so concurrent run() calls don't
-    // clobber each other's streaming subscriptions.
-    const unsubStreaming = this._bridge?.beginRun();
+    const ctx = new WorkflowRunContext();
+    this._currentRun = ctx;
+    // Streaming unsub lives on the context (not the bridge) so concurrent
+    // run() calls don't clobber each other's subscriptions.
+    ctx.unsubStreaming = this._bridge?.beginRun();
 
     try {
       const output = await this.graph.run<Output>(input, {
-        parentSignal: this._abortController.signal,
+        parentSignal: ctx.abortController.signal,
         outputCache: this._cache.outputCache(),
         registry: config?.registry ?? this._builder.registry,
         resourceScope: config?.resourceScope,
@@ -275,8 +284,10 @@ export class Workflow<
       this.events.emit("error", String(error));
       throw error;
     } finally {
-      unsubStreaming?.();
-      this._abortController = undefined;
+      ctx.dispose();
+      // Only clear the field if THIS run's context is still the current one.
+      // Concurrent run() may have reseated it; clobbering would orphan that run.
+      if (this._currentRun === ctx) this._currentRun = undefined;
     }
   }
 
@@ -289,7 +300,7 @@ export class Workflow<
     if (loopContext) {
       return loopContext.parent.abort();
     }
-    this._abortController?.abort();
+    this._currentRun?.abortController.abort();
   }
 
   /**
