@@ -5,8 +5,7 @@
  */
 
 import type { EventParameters } from "@workglow/util";
-import { EventEmitter, getLogger, ServiceRegistry, uuid4 } from "@workglow/util";
-import type { DataPortSchema } from "@workglow/util/schema";
+import { EventEmitter, ServiceRegistry } from "@workglow/util";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ConditionFn } from "../task/ConditionalTask";
 import { GraphAsTask } from "../task/GraphAsTask";
@@ -18,24 +17,22 @@ import { WorkflowError } from "../task/TaskError";
 import type { JsonTaskItem, TaskGraphJson, TaskGraphJsonOptions } from "../task/TaskJSON";
 import type { DataPorts, TaskConfig, TaskIdType, TaskInput } from "../task/TaskTypes";
 import { autoConnect } from "./autoConnect";
-import { ConditionalBuilder } from "./ConditionalBuilder";
+import type { ConditionalBuilder } from "./ConditionalBuilder";
 import type { PipeFunction, Taskish } from "./Conversions";
-import { ensureTask } from "./Conversions";
-import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import type { GraphEntitlementOptions } from "./GraphEntitlementUtils";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
-import { updateBoundaryTaskSchemas } from "./GraphSchemaUtils";
 import type { IWorkflow, WorkflowRunConfig } from "./IWorkflow";
 import { LoopBuilderContext, runLoopAutoConnect } from "./LoopBuilderContext";
 import { TaskGraph } from "./TaskGraph";
 import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
 import type { ITransformStep } from "./TransformTypes";
-import type { CreateWorkflow } from "./WorkflowFactories";
-import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
-import { getLastTask, parallel, pipe } from "./WorkflowPipe";
+import { WorkflowBuilder } from "./WorkflowBuilder";
 import { WorkflowCacheAdapter } from "./WorkflowCacheAdapter";
 import { WorkflowEventBridge } from "./WorkflowEventBridge";
+import type { CreateWorkflow } from "./WorkflowFactories";
+import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
+import { parallel, pipe } from "./WorkflowPipe";
 import { WorkflowTask } from "./WorkflowTask";
 
 /** Options accepted by {@link Workflow.rename}. */
@@ -98,10 +95,16 @@ export class Workflow<
     registry?: ServiceRegistry
   ) {
     this._cache = new WorkflowCacheAdapter(cache);
-    this._loopContext =
-      parent && iteratorTask ? new LoopBuilderContext(parent, iteratorTask) : undefined;
-    this._registry = registry ?? parent?._registry;
     this._graph = new TaskGraph({ outputCache: this._cache.outputCache() });
+
+    const loopContext =
+      parent && iteratorTask ? new LoopBuilderContext(parent, iteratorTask) : undefined;
+
+    this._builder = new WorkflowBuilder(
+      this,
+      registry ?? parent?.builderRegistry,
+      loopContext
+    );
 
     if (!parent) {
       this._bridge = new WorkflowEventBridge(this.events);
@@ -111,17 +114,22 @@ export class Workflow<
 
   // Private properties
   private _graph: TaskGraph;
-  private _dataFlows: Dataflow[] = [];
-  private _error: string = "";
   private _cache: WorkflowCacheAdapter;
-  private _registry?: ServiceRegistry;
   private _bridge?: WorkflowEventBridge;
+  private _builder: WorkflowBuilder;
 
   // Abort controller for cancelling task execution
   private _abortController?: AbortController;
 
-  // Loop builder state (encapsulates parent workflow + iterator task + deferred auto-connect)
-  private readonly _loopContext?: LoopBuilderContext;
+  /** @internal — exposes the parent's registry so a child loop-builder can inherit it */
+  private get builderRegistry(): ServiceRegistry | undefined {
+    return this._builder.registry;
+  }
+
+  /** @internal — exposes the builder for cross-instance loop-builder wiring */
+  public get builder(): WorkflowBuilder {
+    return this._builder;
+  }
 
   public outputCache(): TaskOutputRepository | undefined {
     return this._cache.outputCache();
@@ -132,7 +140,7 @@ export class Workflow<
    * When true, tasks are added to the template graph for an iterator task.
    */
   public get isLoopBuilder(): boolean {
-    return this._loopContext !== undefined;
+    return this._builder.loopContext !== undefined;
   }
 
   /**
@@ -156,81 +164,7 @@ export class Workflow<
       input: Partial<I> = {},
       config: Partial<C> = {}
     ) {
-      this._error = "";
-
-      const parent = getLastTask(this);
-
-      const task = this.addTaskToGraph<I, O, C>(taskClass, {
-        id: uuid4(),
-        ...config,
-        defaults: input,
-      } as C);
-
-      // Process any pending data flows
-      if (this._dataFlows.length > 0) {
-        this._dataFlows.forEach((dataflow) => {
-          const taskSchema = task.inputSchema();
-          if (
-            (typeof taskSchema !== "boolean" &&
-              taskSchema.properties?.[dataflow.targetTaskPortId] === undefined &&
-              taskSchema.additionalProperties !== true) ||
-            (taskSchema === true && dataflow.targetTaskPortId !== DATAFLOW_ALL_PORTS)
-          ) {
-            this._error = `Input ${dataflow.targetTaskPortId} not found on task ${task.id}`;
-            getLogger().error(this._error);
-            return;
-          }
-
-          dataflow.targetTaskId = task.id;
-          this.graph.addDataflow(dataflow);
-        });
-
-        this._dataFlows = [];
-      }
-
-      // Auto-connect to parent if needed
-      if (parent) {
-        // Build the list of earlier tasks (in reverse chronological order)
-        const nodes = this._graph.getTasks();
-        const parentIndex = nodes.findIndex((n) => n.id === parent.id);
-        const earlierTasks: ITask[] = [];
-        for (let i = parentIndex - 1; i >= 0; i--) {
-          earlierTasks.push(nodes[i]);
-        }
-
-        const providedInputKeys = new Set(Object.keys(input || {}));
-
-        // Ports already connected via pending dataflows (e.g., from .rename())
-        // must not be re-matched by auto-connect Strategies 1/2/3.
-        const connectedInputKeys = new Set(
-          this.graph.getSourceDataflows(task.id).map((df) => df.targetTaskPortId)
-        );
-
-        const result = Workflow.autoConnect(this.graph, parent, task, {
-          providedInputKeys,
-          connectedInputKeys,
-          earlierTasks,
-        });
-
-        if (result.error) {
-          // In loop builder mode, don't remove the task - allow manual connection
-          // In normal mode, remove the task since auto-connect is required
-          if (this.isLoopBuilder) {
-            this._error = result.error;
-            getLogger().warn(this._error);
-          } else {
-            this._error = result.error + " Task not added.";
-            getLogger().error(this._error);
-            this.graph.removeTask(task.id);
-          }
-        }
-      }
-
-      // Update InputTask/OutputTask schemas based on connected dataflows
-      if (!this._error) {
-        updateBoundaryTaskSchemas(this._graph);
-      }
-
+      this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config);
       // Preserve input type from the start of the chain
       // If this is the first task, set both input and output types
       // Otherwise, only update the output type (input type is preserved from 'this')
@@ -259,8 +193,7 @@ export class Workflow<
    * Sets a new task graph
    */
   public set graph(value: TaskGraph) {
-    this._dataFlows = [];
-    this._error = "";
+    this._builder.resetState();
     this._bridge?.detach();
     this._graph = value;
     this._bridge?.attach(this._graph);
@@ -271,7 +204,7 @@ export class Workflow<
    * Gets the current error message
    */
   public get error(): string {
-    return this._error;
+    return this._builder.error;
   }
 
   /**
@@ -307,10 +240,11 @@ export class Workflow<
     config?: WorkflowRunConfig
   ): Promise<PropertyArrayGraphResult<Output>> {
     // In loop builder mode, finalize template and delegate to parent
-    if (this._loopContext) {
-      this._loopContext.finalizeTemplate(this._graph);
-      this._loopContext.consumePendingConnect();
-      return this._loopContext.parent.run(input as any, config) as Promise<
+    const loopContext = this._builder.loopContext;
+    if (loopContext) {
+      loopContext.finalizeTemplate(this._graph);
+      loopContext.consumePendingConnect();
+      return loopContext.parent.run(input as any, config) as Promise<
         PropertyArrayGraphResult<Output>
       >;
     }
@@ -325,7 +259,7 @@ export class Workflow<
       const output = await this.graph.run<Output>(input, {
         parentSignal: this._abortController.signal,
         outputCache: this._cache.outputCache(),
-        registry: config?.registry ?? this._registry,
+        registry: config?.registry ?? this._builder.registry,
         resourceScope: config?.resourceScope,
       });
       const results = this.graph.mergeExecuteOutputsToRunOutput<Output, typeof PROPERTY_ARRAY>(
@@ -348,8 +282,9 @@ export class Workflow<
    */
   public async abort(): Promise<void> {
     // In loop builder mode, delegate to parent
-    if (this._loopContext) {
-      return this._loopContext.parent.abort();
+    const loopContext = this._builder.loopContext;
+    if (loopContext) {
+      return loopContext.parent.abort();
     }
     this._abortController?.abort();
   }
@@ -360,17 +295,7 @@ export class Workflow<
    * @returns The current task graph workflow
    */
   public pop(): Workflow {
-    this._error = "";
-    const nodes = this._graph.getTasks();
-
-    if (nodes.length === 0) {
-      this._error = "No tasks to remove";
-      getLogger().error(this._error);
-      return this;
-    }
-
-    const lastNode = nodes[nodes.length - 1];
-    this._graph.removeTask(lastNode.id);
+    this._builder.pop();
     return this;
   }
 
@@ -525,42 +450,7 @@ export class Workflow<
     target: string,
     indexOrOptions: number | RenameOptions = -1
   ): Workflow {
-    this._error = "";
-
-    const index =
-      typeof indexOrOptions === "number" ? indexOrOptions : (indexOrOptions.index ?? -1);
-    const transforms = typeof indexOrOptions === "number" ? undefined : indexOrOptions.transforms;
-
-    const nodes = this._graph.getTasks();
-    if (-index > nodes.length) {
-      const errorMsg = `Back index greater than number of tasks`;
-      this._error = errorMsg;
-      getLogger().error(this._error);
-      throw new WorkflowError(errorMsg);
-    }
-
-    const lastNode = nodes[nodes.length + index];
-    const outputSchema = lastNode.outputSchema();
-
-    // Handle boolean schemas
-    if (typeof outputSchema === "boolean") {
-      if (outputSchema === false && source !== DATAFLOW_ALL_PORTS) {
-        const errorMsg = `Task ${lastNode.id} has schema 'false' and outputs nothing`;
-        this._error = errorMsg;
-        getLogger().error(this._error);
-        throw new WorkflowError(errorMsg);
-      }
-      // If outputSchema is true, we skip validation as it outputs everything
-    } else if (!(outputSchema.properties as any)?.[source] && source !== DATAFLOW_ALL_PORTS) {
-      const errorMsg = `Output ${source} not found on task ${lastNode.id}`;
-      this._error = errorMsg;
-      getLogger().error(this._error);
-      throw new WorkflowError(errorMsg);
-    }
-
-    const df = new Dataflow(lastNode.id, source, undefined, target);
-    if (transforms && transforms.length > 0) df.setTransforms(transforms);
-    this._dataFlows.push(df);
+    this._builder.rename(source, target, indexOrOptions);
     return this;
   }
 
@@ -576,28 +466,7 @@ export class Workflow<
    * @returns The current workflow for chaining
    */
   public onError(handler: Taskish): Workflow {
-    this._error = "";
-
-    const parent = getLastTask(this);
-    if (!parent) {
-      this._error = "onError() requires a preceding task in the workflow";
-      getLogger().error(this._error);
-      throw new WorkflowError(this._error);
-    }
-
-    const handlerTask = ensureTask(handler);
-    this.graph.addTask(handlerTask);
-
-    // Connect the previous task's error output port to the handler's all-ports input
-    const dataflow = new Dataflow(
-      parent.id,
-      DATAFLOW_ERROR_PORT,
-      handlerTask.id,
-      DATAFLOW_ALL_PORTS
-    );
-    this.graph.addDataflow(dataflow);
-    this.events.emit("changed", handlerTask.id);
-
+    this._builder.onError(handler);
     return this;
   }
 
@@ -618,7 +487,7 @@ export class Workflow<
    */
   public reset(): Workflow {
     // In loop builder mode, reset is not supported
-    if (this._loopContext) {
+    if (this._builder.loopContext) {
       throw new WorkflowError("Cannot reset a loop workflow. Call reset() on the parent workflow.");
     }
 
@@ -626,8 +495,7 @@ export class Workflow<
     this._graph = new TaskGraph({
       outputCache: this._cache.outputCache(),
     });
-    this._dataFlows = [];
-    this._error = "";
+    this._builder.resetState();
     this._bridge?.attach(this._graph);
     this.events.emit("changed", undefined);
     this.events.emit("reset");
@@ -643,41 +511,7 @@ export class Workflow<
     targetTaskId: unknown,
     targetTaskPortId: string
   ): Workflow {
-    const sourceTask = this.graph.getTask(sourceTaskId);
-    const targetTask = this.graph.getTask(targetTaskId);
-
-    if (!sourceTask || !targetTask) {
-      throw new WorkflowError("Source or target task not found");
-    }
-
-    const sourceSchema = sourceTask.outputSchema();
-    const targetSchema = targetTask.inputSchema();
-
-    // Handle boolean schemas
-    if (typeof sourceSchema === "boolean") {
-      if (sourceSchema === false) {
-        throw new WorkflowError(`Source task has schema 'false' and outputs nothing`);
-      }
-      // If sourceSchema is true, we skip validation as it accepts everything
-    } else if (!sourceSchema.properties?.[sourceTaskPortId]) {
-      throw new WorkflowError(`Output ${sourceTaskPortId} not found on source task`);
-    }
-
-    if (typeof targetSchema === "boolean") {
-      if (targetSchema === false) {
-        throw new WorkflowError(`Target task has schema 'false' and accepts no inputs`);
-      }
-      if (targetSchema === true) {
-        // do nothing, we allow additional properties
-      }
-    } else if (targetSchema.additionalProperties === true) {
-      // do nothing, we allow additional properties
-    } else if (!targetSchema.properties?.[targetTaskPortId]) {
-      throw new WorkflowError(`Input ${targetTaskPortId} not found on target task`);
-    }
-
-    const dataflow = new Dataflow(sourceTaskId, sourceTaskPortId, targetTaskId, targetTaskPortId);
-    this.graph.addDataflow(dataflow);
+    this._builder.connect(sourceTaskId, sourceTaskPortId, targetTaskId, targetTaskPortId);
     return this;
   }
 
@@ -686,10 +520,7 @@ export class Workflow<
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
   >(taskClass: ITaskConstructor<I, O, C>, config: C): ITask<I, O, C> {
-    const task = new taskClass(config, this._registry ? { registry: this._registry } : undefined);
-    const id = this.graph.addTask(task);
-    this.events.emit("changed", id);
-    return task;
+    return this._builder.addTaskInstance<I, O, C>(taskClass, config);
   }
 
   /**
@@ -706,8 +537,10 @@ export class Workflow<
     input?: Partial<I>,
     config?: Partial<C>
   ): Workflow<Input, Output> {
-    const helper = Workflow.createWorkflow<I, O, C>(taskClass);
-    return helper.call(this, input, config) as Workflow<Input, Output>;
+    return this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config) as Workflow<
+      Input,
+      Output
+    >;
   }
 
   // ========================================================================
@@ -727,66 +560,7 @@ export class Workflow<
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
   >(taskClass: ITaskConstructor<I, O, C>, config: Partial<C> = {}): Workflow<I, O> {
-    this._error = "";
-
-    const parent = getLastTask(this);
-
-    // Default maxIterations to "unbounded" for loop tasks whose config schema
-    // marks it as required (MapTask, WhileTask, ReduceTask, ForEachTask). The
-    // raw task constructors still require an explicit value; this default is a
-    // convenience only for the fluent Workflow builder API.
-    const schema = (
-      taskClass as unknown as { configSchema?: () => DataPortSchema }
-    ).configSchema?.();
-    const required =
-      typeof schema === "object" && schema !== null
-        ? (schema as { required?: readonly string[] }).required
-        : undefined;
-    const needsMaxIterations = Array.isArray(required) && required.includes("maxIterations");
-    const resolvedConfig =
-      needsMaxIterations && (config as { maxIterations?: unknown }).maxIterations === undefined
-        ? ({ ...config, maxIterations: "unbounded" } as Partial<C>)
-        : config;
-
-    const task = this.addTaskToGraph<I, O, C>(taskClass, { id: uuid4(), ...resolvedConfig } as C);
-
-    // Process any pending data flows (same as createWorkflow)
-    if (this._dataFlows.length > 0) {
-      this._dataFlows.forEach((dataflow) => {
-        const taskSchema = task.inputSchema();
-        if (
-          (typeof taskSchema !== "boolean" &&
-            taskSchema.properties?.[dataflow.targetTaskPortId] === undefined &&
-            taskSchema.additionalProperties !== true) ||
-          (taskSchema === true && dataflow.targetTaskPortId !== DATAFLOW_ALL_PORTS)
-        ) {
-          this._error = `Input ${dataflow.targetTaskPortId} not found on task ${task.id}`;
-          getLogger().error(this._error);
-          return;
-        }
-
-        dataflow.targetTaskId = task.id;
-        this.graph.addDataflow(dataflow);
-      });
-
-      this._dataFlows = [];
-    }
-
-    // Defer auto-connect until endMap/endReduce/endWhile, when the iterator task
-    // has its template graph populated and its dynamic inputSchema is available.
-    // Store the pending context on the loop builder workflow.
-    const loopBuilder = new Workflow(
-      this.outputCache(),
-      this,
-      task as unknown as GraphAsTask,
-      this._registry
-    ) as unknown as Workflow<I, O>;
-    if (parent) {
-      // Same-class private access: child was constructed with parent + iteratorTask,
-      // so its ctor created a LoopBuilderContext.
-      loopBuilder._loopContext!.pendingLoopConnect = { parent, iteratorTask: task };
-    }
-    return loopBuilder;
+    return this._builder.addLoopTask<I, O, C>(taskClass, config);
   }
 
   /**
@@ -804,7 +578,7 @@ export class Workflow<
    * ```
    */
   public if(condition: ConditionFn<TaskInput>): ConditionalBuilder {
-    return new ConditionalBuilder(this, condition);
+    return this._builder.createConditional(condition);
   }
 
   /**
@@ -860,8 +634,9 @@ export class Workflow<
    * Only applicable in loop builder mode.
    */
   public finalizeTemplate(): void {
-    if (!this._loopContext) return;
-    this._loopContext.finalizeTemplate(this._graph);
+    const ctx = this._builder.loopContext;
+    if (!ctx) return;
+    ctx.finalizeTemplate(this._graph);
   }
 
   /**
@@ -872,10 +647,11 @@ export class Workflow<
    * @throws WorkflowError if not in loop builder mode
    */
   public finalizeAndReturn(): Workflow {
-    if (!this._loopContext) {
+    const ctx = this._builder.loopContext;
+    if (!ctx) {
       throw new WorkflowError("finalizeAndReturn() can only be called on loop workflows");
     }
-    return this._loopContext.finalizeAndReturn(this._graph);
+    return ctx.finalizeAndReturn(this._graph);
   }
 }
 
