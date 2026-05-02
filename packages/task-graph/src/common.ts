@@ -15,6 +15,7 @@ export * from "./task-graph/TaskGraph";
 export * from "./task-graph/TaskGraphEvents";
 export * from "./task-graph/EdgeMaterializer";
 export * from "./task-graph/RunContext";
+export * from "./task-graph/RunScheduler";
 export * from "./task-graph/StreamPump";
 export * from "./task-graph/TaskGraphRunner";
 
