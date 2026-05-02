@@ -24,16 +24,14 @@ import { ensureTask } from "./Conversions";
 import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
 import type { GraphEntitlementOptions } from "./GraphEntitlementUtils";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
-import {
-  hasVectorLikeInput,
-  hasVectorOutput,
-  updateBoundaryTaskSchemas,
-} from "./GraphSchemaUtils";
+import { updateBoundaryTaskSchemas } from "./GraphSchemaUtils";
 import type { IWorkflow, WorkflowRunConfig } from "./IWorkflow";
 import { TaskGraph } from "./TaskGraph";
 import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
 import type { ITransformStep } from "./TransformTypes";
+import type { CreateWorkflow } from "./WorkflowFactories";
+import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { getLastTask, parallel, pipe } from "./WorkflowPipe";
 
 /** Options accepted by {@link Workflow.rename}. */
@@ -42,124 +40,6 @@ export interface RenameOptions {
   readonly index?: number;
   /** Transform chain applied to the dataflow edge this rename creates. */
   readonly transforms?: ReadonlyArray<ITransformStep>;
-}
-
-// Type definitions for the workflow
-export type CreateWorkflow<I extends DataPorts, O extends DataPorts, C extends TaskConfig<I>> = (
-  input?: Partial<I>,
-  config?: Partial<C>
-) => Workflow<I, O>;
-
-export function CreateWorkflow<
-  I extends DataPorts,
-  O extends DataPorts,
-  C extends TaskConfig<I> = TaskConfig<I>,
->(taskClass: ITaskConstructor<I, O, C>): CreateWorkflow<I, O, C> {
-  return Workflow.createWorkflow<I, O, C>(taskClass);
-}
-
-/**
- * Type for loop workflow methods (map, while, reduce).
- * Represents the method signature with proper `this` context.
- * Loop methods take only a config parameter - input is not used for loop tasks.
- */
-export type CreateLoopWorkflow<
-  I extends DataPorts,
-  O extends DataPorts,
-  C extends TaskConfig<I> = TaskConfig<I>,
-> = (this: Workflow<I, O>, config?: Partial<C>) => Workflow<I, O>;
-
-/**
- * Factory function that creates a loop workflow method for a given task class.
- * Returns a method that can be assigned to Workflow.prototype.
- *
- * @param taskClass - The iterator task class (MapTask, ReduceTask, etc.)
- * @returns A method that creates the task and returns a loop builder workflow
- */
-export function CreateLoopWorkflow<
-  I extends DataPorts,
-  O extends DataPorts,
-  C extends TaskConfig<I> = TaskConfig<I>,
->(taskClass: ITaskConstructor<I, O, C>): CreateLoopWorkflow<I, O, C> {
-  return function (this: Workflow<I, O>, config: Partial<C> = {}): Workflow<I, O> {
-    return this.addLoopTask(taskClass, config);
-  };
-}
-
-/**
- * Type for end loop workflow methods (endMap, endBatch, etc.).
- */
-export type EndLoopWorkflow = (this: Workflow) => Workflow;
-
-/**
- * Factory function that creates an end loop workflow method.
- *
- * @param methodName - The name of the method (for error messages)
- * @returns A method that finalizes the loop and returns to the parent workflow
- */
-export function CreateEndLoopWorkflow(methodName: string): EndLoopWorkflow {
-  return function (this: Workflow): Workflow {
-    if (!this.isLoopBuilder) {
-      throw new Error(`${methodName}() can only be called on loop workflows`);
-    }
-    return this.finalizeAndReturn();
-  };
-}
-
-/**
- * Type for adaptive workflow methods that dispatch to scalar or vector variant
- * based on the previous task's output schema.
- */
-export type CreateAdaptiveWorkflow<
-  IS extends DataPorts,
-  _OS extends DataPorts,
-  IV extends DataPorts,
-  _OV extends DataPorts,
-  CS extends TaskConfig<IS> = TaskConfig<IS>,
-  CV extends TaskConfig<IV> = TaskConfig<IV>,
-> = (
-  this: Workflow,
-  input?: Partial<IS> & Partial<IV>,
-  config?: Partial<CS> & Partial<CV>
-) => Workflow;
-
-/**
- * Factory that creates an adaptive workflow method: when called, inspects the
- * output schema of the last task in the chain and delegates to the vector
- * variant if it has TypedArray output, otherwise to the scalar variant.
- * If there is no previous task, defaults to the scalar variant.
- *
- * @param scalarClass - Task class for scalar path (e.g. ScalarAddTask)
- * @param vectorClass - Task class for vector path (e.g. VectorSumTask)
- * @returns A method suitable for Workflow.prototype
- */
-export function CreateAdaptiveWorkflow<
-  IS extends DataPorts,
-  OS extends DataPorts,
-  IV extends DataPorts,
-  OV extends DataPorts,
-  CS extends TaskConfig<IS> = TaskConfig<IS>,
-  CV extends TaskConfig<IV> = TaskConfig<IV>,
->(
-  scalarClass: ITaskConstructor<IS, OS, CS>,
-  vectorClass: ITaskConstructor<IV, OV, CV>
-): CreateAdaptiveWorkflow<IS, OS, IV, OV, CS, CV> {
-  const scalarHelper = Workflow.createWorkflow<IS, OS, CS>(scalarClass);
-  const vectorHelper = Workflow.createWorkflow<IV, OV, CV>(vectorClass);
-
-  return function (
-    this: Workflow<any, any>,
-    input: (Partial<IS> & Partial<IV>) | undefined = {},
-    config: (Partial<CS> & Partial<CV>) | undefined = {}
-  ): Workflow {
-    const parent = getLastTask(this);
-    const useVector =
-      (parent !== undefined && hasVectorOutput(parent)) || hasVectorLikeInput(input);
-    if (useVector) {
-      return vectorHelper.call(this, input, config) as Workflow;
-    }
-    return scalarHelper.call(this, input, config) as Workflow;
-  };
 }
 
 // Event types
@@ -1077,8 +957,10 @@ export class Workflow<
   }
 }
 
-// Module augmentation prototype assignments — placed here (not in GraphAsTask.ts)
-// so that Workflow is fully defined before assignment. GraphAsTask is already
-// imported at the top of this file, so it's safe to reference here.
+// Module augmentation prototype assignments — placed here (not in WorkflowFactories.ts)
+// so they run after the Workflow class declaration. Static imports in ESM are
+// hoisted and evaluated depth-first, so a side-effect tail import would run
+// before the class binding initializes. Inline assignments here are safe because
+// the class is already fully initialized by this point.
 Workflow.prototype.group = CreateLoopWorkflow(GraphAsTask);
 Workflow.prototype.endGroup = CreateEndLoopWorkflow("endGroup");

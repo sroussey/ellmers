@@ -5,7 +5,8 @@
  */
 
 import type { DataPortSchema } from "@workglow/util/schema";
-import { CreateEndLoopWorkflow, CreateLoopWorkflow, Workflow } from "../task-graph/Workflow";
+import { Workflow } from "../task-graph/Workflow";
+import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "../task-graph/WorkflowFactories";
 import type { IRunConfig } from "./ITask";
 import {
   IterationAnalysisResult,
