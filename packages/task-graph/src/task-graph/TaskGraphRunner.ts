@@ -506,7 +506,8 @@ export class TaskGraphRunner {
         progress: number | undefined,
         message?: string,
         ...args: any[]
-      ) => await this.runScheduler.handleProgress(this.currentCtx!, task, progress, message, ...args),
+      ) =>
+        await this.runScheduler.handleProgress(this.currentCtx!, task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
     });
@@ -672,9 +673,6 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Handles the completion of task graph execution
-   */
-  /**
    * Clears the graph-level timeout timer if active.
    */
   protected clearGraphTimeout(): void {
@@ -773,5 +771,4 @@ export class TaskGraphRunner {
     this.running = false;
     this.graph.emit("disabled");
   }
-
 }

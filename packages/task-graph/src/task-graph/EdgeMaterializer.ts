@@ -194,6 +194,7 @@ export class EdgeMaterializer {
     }
 
     // Cascade disabled status to downstream tasks whose ALL inputs are now disabled
+    // Bracket access — currentCtx stays protected on the facade.
     this.runner.runScheduler.propagateDisabledStatus(this.runner["currentCtx"]);
   }
 
@@ -213,6 +214,7 @@ export class EdgeMaterializer {
     task.error = undefined;
     task.progress = 0;
     task.runConfig = { ...task.runConfig, runnerId: runId };
+    // Bracket access — currentCtx stays protected on the facade.
     this.runner.runScheduler.pushStatusFromNodeToEdges(
       task,
       this.runner["currentCtx"],
