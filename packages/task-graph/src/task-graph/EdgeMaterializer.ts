@@ -24,10 +24,8 @@ import type { TaskGraphRunner } from "./TaskGraphRunner";
  * any errors that bubble out of these methods into ctx.failedTaskErrors.
  *
  * Holds a back-reference to the facade so it can read facade-owned long-lived
- * state (`registry`, `previewRunning`) and call facade-side helpers
- * (`propagateDisabledStatus`, `pushStatusFromNodeToEdges`) that have not yet
- * been migrated to dedicated collaborators. This back-ref will be slimmed in
- * later refactor tasks as those helpers move to `RunScheduler`.
+ * state (`registry`, `previewRunning`) and route through the facade's
+ * `runScheduler` for status push and disabled cascade.
  */
 export class EdgeMaterializer {
   constructor(
@@ -196,7 +194,7 @@ export class EdgeMaterializer {
     }
 
     // Cascade disabled status to downstream tasks whose ALL inputs are now disabled
-    this.runner.propagateDisabledStatus(this.graph);
+    this.runner.runScheduler.propagateDisabledStatus(this.runner["currentCtx"]);
   }
 
   /**
@@ -215,7 +213,12 @@ export class EdgeMaterializer {
     task.error = undefined;
     task.progress = 0;
     task.runConfig = { ...task.runConfig, runnerId: runId };
-    this.runner.pushStatusFromNodeToEdges(graph, task);
+    this.runner.runScheduler.pushStatusFromNodeToEdges(
+      task,
+      this.runner["currentCtx"],
+      undefined,
+      graph
+    );
     // Inline the error-edge reset using the per-call graph (this.pushErrorFromNodeToEdges
     // would use this.graph, which is wrong for recursive subgraph resets).
     if (task?.config?.id) {
