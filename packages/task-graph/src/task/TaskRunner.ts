@@ -111,9 +111,9 @@ export class TaskRunner<
 
   /**
    * Per-run state. Set by handleStart, cleared by handleComplete / handleError /
-   * handleAbort. The only mutable per-run state on the facade — exists so the
-   * public abort() and disable() methods (which take no arguments) have something
-   * to act on.
+   * handleAbort / handleDisable. The only mutable per-run state on the facade —
+   * exists so the public abort() and disable() methods (which take no arguments)
+   * have something to act on.
    */
   protected currentCtx?: TaskRunContext;
 
@@ -928,6 +928,7 @@ export class TaskRunner<
     await this.handleProgress(100);
     this.task.completedAt = new Date();
     ctx?.dispose();
+    // Don't clobber a newer run's ctx if disable() was queued from a stale state.
     if (this.currentCtx === ctx) this.currentCtx = undefined;
     this.task.emit("disabled");
     this.task.emit("status", this.task.status);
