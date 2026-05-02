@@ -5,7 +5,9 @@
  */
 
 import { uuid4 } from "@workglow/util";
-import type { DataPortSchema } from "@workglow/util/schema";
+import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
+import type { ITask } from "../task/ITask";
+import { Task } from "../task/Task";
 import type {
   DataflowJson,
   JsonTaskItem,
@@ -499,4 +501,186 @@ export function addBoundaryNodesToDependencyJson(
   }
 
   return [...prependItems, ...items, ...appendItems];
+}
+
+const TYPED_ARRAY_FORMAT_PREFIX = "TypedArray";
+
+/**
+ * Returns true if the given JSON schema (or any nested schema) has a format
+ * string starting with "TypedArray" (e.g. "TypedArray" or "TypedArray:Float32Array").
+ * Walks oneOf/anyOf wrappers and array items.
+ */
+function schemaHasTypedArrayFormat(schema: JsonSchema): boolean {
+  if (typeof schema === "boolean") return false;
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return false;
+
+  const s = schema as Record<string, unknown>;
+  if (typeof s.format === "string" && s.format.startsWith(TYPED_ARRAY_FORMAT_PREFIX)) {
+    return true;
+  }
+
+  const checkUnion = (schemas: unknown): boolean => {
+    if (!Array.isArray(schemas)) return false;
+    return schemas.some((sub) => schemaHasTypedArrayFormat(sub as JsonSchema));
+  };
+  if (checkUnion(s.oneOf) || checkUnion(s.anyOf)) return true;
+
+  const items = s.items;
+  if (items && typeof items === "object" && !Array.isArray(items)) {
+    if (schemaHasTypedArrayFormat(items as JsonSchema)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Returns true if the task's output schema has any port with TypedArray format.
+ * Used by adaptive workflow methods to choose scalar vs vector task variant.
+ */
+export function hasVectorOutput(task: ITask): boolean {
+  const outputSchema = task.outputSchema();
+  if (typeof outputSchema === "boolean" || !outputSchema?.properties) return false;
+  return Object.values(outputSchema.properties).some((prop) =>
+    schemaHasTypedArrayFormat(prop as JsonSchema)
+  );
+}
+
+/**
+ * Returns true if the input object looks like vector task input: has a "vectors"
+ * property that is an array with at least one TypedArray element. Used by
+ * adaptive workflow methods so that e.g. sum({ vectors: [new Float32Array(...)] })
+ * chooses the vector variant even with no previous task.
+ */
+export function hasVectorLikeInput(input: unknown): boolean {
+  if (!input || typeof input !== "object") return false;
+  const v = (input as Record<string, unknown>).vectors;
+  return (
+    Array.isArray(v) &&
+    v.length > 0 &&
+    typeof v[0] === "object" &&
+    v[0] !== null &&
+    ArrayBuffer.isView(v[0])
+  );
+}
+
+/**
+ * Updates InputTask/OutputTask config schemas based on their connected dataflows.
+ * InputTask schema reflects its outgoing dataflow targets' input schemas.
+ * OutputTask schema reflects its incoming dataflow sources' output schemas.
+ */
+export function updateBoundaryTaskSchemas(graph: TaskGraph): void {
+  const tasks = graph.getTasks();
+
+  for (const task of tasks) {
+    if (task.type === "InputTask") {
+      // If the schema is marked as fully manual (x-ui-manual at schema level),
+      // skip edge-based regeneration — the user explicitly defined this schema.
+      const existingConfig = (task as ITask).config;
+      const existingSchema = existingConfig?.inputSchema ?? existingConfig?.outputSchema;
+      if (
+        existingSchema &&
+        typeof existingSchema === "object" &&
+        (existingSchema as Record<string, unknown>)["x-ui-manual"] === true
+      ) {
+        continue;
+      }
+
+      const outgoing = graph.getTargetDataflows(task.id);
+      if (outgoing.length === 0) continue;
+
+      const properties: Record<string, any> = {};
+      const required: string[] = [];
+
+      for (const df of outgoing) {
+        const targetTask = graph.getTask(df.targetTaskId);
+        if (!targetTask) continue;
+        const targetSchema = targetTask.inputSchema();
+        if (typeof targetSchema === "boolean") continue;
+        const prop = (targetSchema.properties as any)?.[df.targetTaskPortId];
+        if (prop && typeof prop !== "boolean") {
+          properties[df.sourceTaskPortId] = prop;
+          if (targetSchema.required?.includes(df.targetTaskPortId)) {
+            if (!required.includes(df.sourceTaskPortId)) {
+              required.push(df.sourceTaskPortId);
+            }
+          }
+        }
+      }
+
+      const schema = {
+        type: "object",
+        properties,
+        ...(required.length > 0 ? { required } : {}),
+        additionalProperties: false,
+      } as DataPortSchema;
+
+      // @ts-expect-error - config is readonly
+      task.config = {
+        ...task.config,
+        inputSchema: schema,
+        outputSchema: schema,
+      };
+    }
+
+    if (task.type === "OutputTask") {
+      const incoming = graph.getSourceDataflows(task.id);
+      if (incoming.length === 0) continue;
+
+      const properties: Record<string, any> = {};
+      const required: string[] = [];
+
+      for (const df of incoming) {
+        const sourceTask = graph.getTask(df.sourceTaskId);
+        if (!sourceTask) continue;
+        const sourceSchema = sourceTask.outputSchema();
+        if (typeof sourceSchema === "boolean") continue;
+        let prop = (sourceSchema.properties as any)?.[df.sourceTaskPortId];
+        let propRequired = sourceSchema.required?.includes(df.sourceTaskPortId) ?? false;
+
+        // For passthrough tasks with additionalProperties (e.g. DebugLogTask),
+        // the port won't appear in the static output schema. Trace back through
+        // the passthrough task's own incoming dataflows to find the actual schema.
+        if (
+          !prop &&
+          sourceSchema.additionalProperties === true &&
+          (sourceTask.constructor as typeof Task).passthroughInputsToOutputs === true
+        ) {
+          const upstreamDfs = graph.getSourceDataflows(sourceTask.id);
+          for (const udf of upstreamDfs) {
+            if (udf.targetTaskPortId !== df.sourceTaskPortId) continue;
+            const upstreamTask = graph.getTask(udf.sourceTaskId);
+            if (!upstreamTask) continue;
+            const upstreamSchema = upstreamTask.outputSchema();
+            if (typeof upstreamSchema === "boolean") continue;
+            prop = (upstreamSchema.properties as any)?.[udf.sourceTaskPortId];
+            if (prop) {
+              propRequired = upstreamSchema.required?.includes(udf.sourceTaskPortId) ?? false;
+              break;
+            }
+          }
+        }
+
+        if (prop && typeof prop !== "boolean") {
+          properties[df.targetTaskPortId] = prop;
+          if (propRequired && !required.includes(df.targetTaskPortId)) {
+            required.push(df.targetTaskPortId);
+          }
+        }
+      }
+
+      const schema = {
+        type: "object",
+        properties,
+        ...(required.length > 0 ? { required } : {}),
+        additionalProperties: false,
+      } as DataPortSchema;
+
+      // @ts-expect-error - config is readonly
+      task.config = {
+        ...task.config,
+        inputSchema: schema,
+        outputSchema: schema,
+      };
+    }
+  }
 }
