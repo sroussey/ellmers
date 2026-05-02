@@ -16,8 +16,6 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
-import { previewSource } from "@workglow/util/media";
-import type { ImageValue } from "@workglow/util/media";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ConditionalTask } from "../task/ConditionalTask";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
@@ -38,7 +36,8 @@ import {
   TaskGraphTimeoutError,
 } from "../task/TaskError";
 import { TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import { Dataflow, DATAFLOW_ALL_PORTS, DATAFLOW_ERROR_PORT } from "./Dataflow";
+import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
+import { EdgeMaterializer } from "./EdgeMaterializer";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { RunContext } from "./RunContext";
 import { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
@@ -99,26 +98,6 @@ export type GraphResult<
 > = GraphResultMap<Output>[Merge];
 
 /**
- * Duck-typed predicate for an `ImageValue`-shaped output, used by the engine
- * to decide whether to apply `previewSource` during `runPreview`. Unlike
- * `isImageValue` from `@workglow/util/media`, this predicate does not check
- * `instanceof ImageBitmap` / `Buffer.isBuffer`, so it remains correct across
- * realm boundaries (e.g. bundle copies in test harnesses) where those identity
- * checks can spuriously fail.
- */
-function isImageValueShape(
-  v: unknown
-): v is { width: number; height: number; previewScale: number } {
-  if (v === null || typeof v !== "object") return false;
-  const o = v as Record<string, unknown>;
-  return (
-    typeof o.width === "number" &&
-    typeof o.height === "number" &&
-    typeof o.previewScale === "number"
-  );
-}
-
-/**
  * Class for running a task graph
  * Manages the execution of tasks in a task graph, including caching
  */
@@ -127,7 +106,7 @@ export class TaskGraphRunner {
    * Whether the task graph is currently running
    */
   protected running = false;
-  protected previewRunning = false;
+  public previewRunning = false;
 
   /**
    * The task graph to run
@@ -146,7 +125,7 @@ export class TaskGraphRunner {
   /**
    * Service registry for this graph run
    */
-  protected registry: ServiceRegistry = globalServiceRegistry;
+  public registry: ServiceRegistry = globalServiceRegistry;
   /**
    * Resource scope for this graph run
    */
@@ -158,6 +137,11 @@ export class TaskGraphRunner {
    * and disable() methods (which take no arguments) have something to act on.
    */
   protected currentCtx?: RunContext;
+
+  /**
+   * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
+   */
+  protected readonly edgeMaterializer: EdgeMaterializer;
 
   /**
    * Constructor for TaskGraphRunner
@@ -175,6 +159,7 @@ export class TaskGraphRunner {
     this.graph = graph;
     graph.outputCache = outputCache;
     this.handleProgress = this.handleProgress.bind(this);
+    this.edgeMaterializer = new EdgeMaterializer(graph, this);
   }
 
   // ========================================================================
@@ -220,7 +205,7 @@ export class TaskGraphRunner {
             const taskInput = isRootTask
               ? input
               : config?.matchAllEmptyInputs
-                ? this.filterInputForTask(task, input)
+                ? this.edgeMaterializer.filterInputForTask(task, input)
                 : {};
 
             const taskPromise = this.runTask(task, taskInput);
@@ -232,12 +217,12 @@ export class TaskGraphRunner {
               results.push(taskResult as GraphSingleTaskResult<ExecuteOutput>);
             }
           } catch (error) {
-            if (this.hasErrorOutputEdges(task)) {
+            if (this.edgeMaterializer.hasErrorOutputEdges(task)) {
               // Route the error through error-port dataflows instead of failing the graph.
               // pushErrorOutputToEdges sets edge statuses directly (COMPLETED for error
               // edges, DISABLED for normal edges), so we skip the normal status push.
               errorRouted = true;
-              this.pushErrorOutputToEdges(task);
+              this.edgeMaterializer.pushErrorOutputToEdges(task);
             } else {
               ctx.failedTaskErrors.set(task.id, error as TaskError);
             }
@@ -248,7 +233,7 @@ export class TaskGraphRunner {
             // Skip normal status push when error routing already set edge statuses.
             if (!errorRouted) {
               this.pushStatusFromNodeToEdges(this.graph, task);
-              this.pushErrorFromNodeToEdges(this.graph, task);
+              this.edgeMaterializer.pushErrorFromNodeToEdges(task);
             }
             this.processScheduler.onTaskCompleted(task.id);
           }
@@ -342,7 +327,7 @@ export class TaskGraphRunner {
 
         if (task.status === TaskStatus.PENDING) {
           task.resetInputData();
-          this.copyInputFromEdgesToNode(task);
+          this.edgeMaterializer.copyInputFromEdgesToNode(task);
           // TODO: cacheable here??
           // if (task.cacheable) {
           //   const results = await this.outputCache?.getOutput(
@@ -368,7 +353,7 @@ export class TaskGraphRunner {
           const taskResult = await task.runPreview(taskInput);
           const runPreviewMs = performance.now() - tPreview;
           const tPush = performance.now();
-          await this.pushOutputFromNodeToEdges(task, taskResult);
+          await this.edgeMaterializer.pushOutputFromNodeToEdges(task, taskResult);
           const pushOutputMs = performance.now() - tPush;
           taskTimings.push({ id: task.id, type: taskType, runPreviewMs, pushOutputMs });
 
@@ -381,7 +366,7 @@ export class TaskGraphRunner {
           }
         } else {
           const taskResult = await task.runPreview(taskInput);
-          await this.pushOutputFromNodeToEdges(task, taskResult);
+          await this.edgeMaterializer.pushOutputFromNodeToEdges(task, taskResult);
 
           if (this.graph.getTargetDataflows(task.id).length === 0) {
             results.push({
@@ -449,32 +434,6 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Filters graph-level input to only include properties that are not connected via dataflows for a given task
-   * @param task The task to filter input for
-   * @param input The graph-level input
-   * @returns Filtered input containing only unconnected properties
-   */
-  protected filterInputForTask(task: ITask, input: TaskInput): TaskInput {
-    // Get all inputs that are connected to this task via dataflows
-    const sourceDataflows = this.graph.getSourceDataflows(task.id);
-    const connectedInputs = new Set(sourceDataflows.map((df) => df.targetTaskPortId));
-
-    // If DATAFLOW_ALL_PORTS ("*") is in the set, all inputs are connected
-    const allPortsConnected = connectedInputs.has(DATAFLOW_ALL_PORTS);
-
-    // Filter out connected inputs from the graph input
-    const filteredInput: TaskInput = {};
-    for (const [key, value] of Object.entries(input)) {
-      // Skip this input if it's explicitly connected OR if all ports are connected
-      if (!connectedInputs.has(key) && !allPortsConnected) {
-        filteredInput[key] = value;
-      }
-    }
-
-    return filteredInput;
-  }
-
-  /**
    * Adds input data to a task.
    * Delegates to {@link Task.addInput} for the actual merging logic.
    *
@@ -537,85 +496,6 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Copies input data from edges to a task
-   * @param task The task to copy input data to
-   */
-  protected copyInputFromEdgesToNode(task: ITask) {
-    const dataflows = this.graph.getSourceDataflows(task.id);
-    // Sort by dataflow id for deterministic input merging regardless of insertion order
-    dataflows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    for (const dataflow of dataflows) {
-      // Use getCurrentValue() to pick up latestSnapshot when the edge is
-      // mid-stream (i.e. value is undefined but latestSnapshot is populated).
-      // We re-implement getPortData()'s wrapping with the live value.
-      const live = dataflow.getCurrentValue();
-      const port = dataflow.targetTaskPortId;
-      let portData: TaskOutput;
-      if (port === DATAFLOW_ALL_PORTS) {
-        portData = live as TaskOutput;
-      } else if (port === DATAFLOW_ERROR_PORT) {
-        portData = { [DATAFLOW_ERROR_PORT]: dataflow.error } as unknown as TaskOutput;
-      } else {
-        portData = { [port]: live } as TaskOutput;
-      }
-      this.addInputData(task, portData);
-    }
-  }
-
-  /**
-   * Pushes the output of a task to its target tasks
-   * @param node The task that produced the output
-   * @param results The output of the task
-   */
-  protected async pushOutputFromNodeToEdges(node: ITask, results: TaskOutput) {
-    const dataflows = this.graph.getTargetDataflows(node.id);
-
-    // Preview-mode chain-head downscale: apply `previewSource` to any
-    // image-shaped output before it's pushed downstream. This relocates the
-    // per-task `executePreview` invocation of `previewSource` to the engine,
-    // where it fires once per chain head and is idempotent on already-small
-    // images (returns the input unchanged when within budget).
-    if (this.previewRunning && Object.keys(results).length > 0) {
-      for (const port of Object.keys(results)) {
-        const value = (results as Record<string, unknown>)[port];
-        if (isImageValueShape(value)) {
-          (results as Record<string, unknown>)[port] = await previewSource(value as ImageValue);
-        }
-      }
-    }
-
-    for (const dataflow of dataflows) {
-      // Edges with an active stream have their final value materialised by the
-      // downstream task's awaitStreamInputs (which uses Dataflow.awaitStreamValue
-      // to read the raw snapshot/finish data and then applies transforms).
-      // Setting port data here would be overwritten by the finish event, and
-      // applying transforms again on this path would double-apply
-      // non-idempotent transforms, so skip the whole post-materialisation step.
-      if (dataflow.stream !== undefined) continue;
-      const compatibility = dataflow.semanticallyCompatible(this.graph, dataflow, this.registry);
-      if (compatibility === "static") {
-        dataflow.setPortData(results);
-        await dataflow.applyTransforms(this.registry);
-      } else if (compatibility === "runtime") {
-        const task = this.graph.getTask(dataflow.targetTaskId)!;
-        const narrowed = await task.narrowInput({ ...results }, this.registry);
-        dataflow.setPortData(narrowed);
-        await dataflow.applyTransforms(this.registry);
-      } else {
-        // Warn only when we had data to push; empty results (e.g. progress mid-run) are expected
-        const resultsKeys = Object.keys(results);
-        if (resultsKeys.length > 0) {
-          getLogger().warn("pushOutputFromNodeToEdge not compatible, not setting port data", {
-            dataflowId: dataflow.id,
-            compatibility,
-            resultsKeys,
-          });
-        }
-      }
-    }
-  }
-
-  /**
    * Pushes the status of a task to its target edges
    * @param node The task that produced the status
    *
@@ -623,7 +503,7 @@ export class TaskGraphRunner {
    * - Active branch dataflows get COMPLETED status
    * - Inactive branch dataflows get DISABLED status
    */
-  protected pushStatusFromNodeToEdges(graph: TaskGraph, node: ITask, status?: TaskStatus): void {
+  public pushStatusFromNodeToEdges(graph: TaskGraph, node: ITask, status?: TaskStatus): void {
     if (!node?.config?.id) return;
 
     const dataflows = graph.getTargetDataflows(node.id);
@@ -675,61 +555,6 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Pushes the error of a task to its target edges
-   * @param node The task that produced the error
-   */
-  protected pushErrorFromNodeToEdges(graph: TaskGraph, node: ITask): void {
-    if (!node?.config?.id) return;
-    graph.getTargetDataflows(node.id).forEach((dataflow) => {
-      dataflow.error = node.error;
-    });
-  }
-
-  /**
-   * Returns true if the task has any outgoing dataflow edges that use the
-   * error output port (`[error]`). These edges indicate that the task's
-   * errors should be routed to downstream handler tasks instead of failing
-   * the entire graph.
-   */
-  protected hasErrorOutputEdges(task: ITask): boolean {
-    const dataflows = this.graph.getTargetDataflows(task.id);
-    return dataflows.some((df) => df.sourceTaskPortId === DATAFLOW_ERROR_PORT);
-  }
-
-  /**
-   * Routes a failed task's error through its error-port dataflow edges.
-   *
-   * For each outgoing dataflow:
-   * - Error-port edges (`[error]`) receive the error data and get COMPLETED status
-   * - Non-error-port edges get DISABLED status (the task didn't produce normal output)
-   *
-   * After setting edge statuses, propagateDisabledStatus() cascades DISABLED
-   * through any downstream tasks that only had non-error inputs from this task.
-   */
-  protected pushErrorOutputToEdges(task: ITask): void {
-    const taskError = task.error;
-    const errorData = {
-      error: taskError?.message ?? "Unknown error",
-      errorType: (taskError?.constructor as { type?: string })?.type ?? "TaskError",
-    };
-
-    const dataflows = this.graph.getTargetDataflows(task.id);
-    for (const df of dataflows) {
-      if (df.sourceTaskPortId === DATAFLOW_ERROR_PORT) {
-        // Route error data to the error-port edge
-        df.value = errorData;
-        df.setStatus(TaskStatus.COMPLETED);
-      } else {
-        // Normal output edges are disabled — this task didn't produce output
-        df.setStatus(TaskStatus.DISABLED);
-      }
-    }
-
-    // Cascade disabled status to downstream tasks whose ALL inputs are now disabled
-    this.propagateDisabledStatus(this.graph);
-  }
-
-  /**
    * Propagates DISABLED status through the graph.
    *
    * When a task's ALL incoming dataflows are DISABLED, that task becomes unreachable
@@ -740,7 +565,7 @@ export class TaskGraphRunner {
    *
    * @param graph The task graph to propagate disabled status through
    */
-  protected propagateDisabledStatus(graph: TaskGraph): void {
+  public propagateDisabledStatus(graph: TaskGraph): void {
     let changed = true;
 
     // Keep iterating until no more changes (fixed-point iteration)
@@ -865,7 +690,7 @@ export class TaskGraphRunner {
     // input data waits for upstream completion.
     await this.awaitStreamInputs(task);
 
-    this.copyInputFromEdgesToNode(task);
+    this.edgeMaterializer.copyInputFromEdgesToNode(task);
 
     // Runtime entitlement enforcement for tasks with dynamic entitlements
     if (
@@ -898,7 +723,7 @@ export class TaskGraphRunner {
       resourceScope: this.resourceScope,
     });
 
-    await this.pushOutputFromNodeToEdges(task, results);
+    await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
 
     return {
       id: task.id,
@@ -991,7 +816,7 @@ export class TaskGraphRunner {
         resourceScope: this.resourceScope,
       });
 
-      await this.pushOutputFromNodeToEdges(task, results);
+      await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
 
       return {
         id: task.id,
@@ -1116,31 +941,12 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Resets a task
-   * @param graph The task graph to reset
-   * @param task The task to reset
-   * @param runId The run ID
-   */
-  protected resetTask(graph: TaskGraph, task: ITask, runId: string) {
-    task.status = TaskStatus.PENDING;
-    task.resetInputData();
-    task.runOutputData = {};
-    task.error = undefined;
-    task.progress = 0;
-    task.runConfig = { ...task.runConfig, runnerId: runId };
-    this.pushStatusFromNodeToEdges(graph, task);
-    this.pushErrorFromNodeToEdges(graph, task);
-    task.emit("reset");
-    task.emit("status", task.status);
-  }
-
-  /**
    * Resets the task graph, recursively
    * @param graph The task graph to reset
    */
   public resetGraph(graph: TaskGraph, runnerId: string) {
     graph.getTasks().forEach((node) => {
-      this.resetTask(graph, node, runnerId);
+      this.edgeMaterializer.resetTask(graph, node, runnerId);
       node.regenerateGraph();
       if (node.hasChildren()) {
         this.resetGraph(node.subGraph, runnerId);
@@ -1433,7 +1239,7 @@ export class TaskGraphRunner {
     // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
     const isActive = task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
     if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
-      await this.pushOutputFromNodeToEdges(task, task.runOutputData);
+      await this.edgeMaterializer.pushOutputFromNodeToEdges(task, task.runOutputData);
     }
   }
 }
