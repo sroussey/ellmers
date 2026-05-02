@@ -1194,7 +1194,7 @@ describe("Workflow — refactor regression net", () => {
     it("onError adds a handler task wired to the error port", () => {
       const w = new Workflow();
       w.addTask(NumberTask, { input: 1 });
-      w.onError(NumberTask);
+      w.onError(new NumberTask({}));
       expect(w.graph.getTasks()).toHaveLength(2);
       const errorEdges = w.graph
         .getDataflows()
@@ -1258,7 +1258,7 @@ describe("Workflow — refactor regression net", () => {
       class SlowAbortTask extends Task<{ input: number }, { output: number }, TaskConfig> {
         static override type = "SlowAbortTask";
         static override category = "Test";
-        async execute(
+        override async execute(
           input: { input: number },
           _config?: unknown,
           signal?: AbortSignal
