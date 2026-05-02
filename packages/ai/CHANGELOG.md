@@ -1,5 +1,7 @@
 # @workglow/ai
 
+## 0.2.24
+
 ## 0.2.23
 
 ### Features
