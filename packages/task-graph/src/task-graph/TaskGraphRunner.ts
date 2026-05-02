@@ -20,13 +20,7 @@ import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOut
 import { ConditionalTask } from "../task/ConditionalTask";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
-import type { StreamEvent, StreamMode } from "../task/StreamTypes";
-import {
-  edgeNeedsAccumulation,
-  getOutputStreamMode,
-  getStreamingPorts,
-  isTaskStreamable,
-} from "../task/StreamTypes";
+import { isTaskStreamable } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import {
   TaskAbortedError,
@@ -36,10 +30,10 @@ import {
   TaskGraphTimeoutError,
 } from "../task/TaskError";
 import { TaskInput, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import { EdgeMaterializer } from "./EdgeMaterializer";
 import { computeGraphEntitlements } from "./GraphEntitlementUtils";
 import { RunContext } from "./RunContext";
+import { StreamPump } from "./StreamPump";
 import { TaskGraph, TaskGraphRunConfig, TaskGraphRunPreviewConfig } from "./TaskGraph";
 import { DependencyBasedScheduler, TopologicalScheduler } from "./TaskGraphScheduler";
 
@@ -153,6 +147,12 @@ export class TaskGraphRunner {
   protected readonly edgeMaterializer: EdgeMaterializer;
 
   /**
+   * Stream pump — owns streaming-input handoff, streaming task execution, and
+   * stream tee/fan-out to outgoing dataflow edges.
+   */
+  protected readonly streamPump: StreamPump;
+
+  /**
    * Constructor for TaskGraphRunner
    * @param graph The task graph to run
    * @param outputCache The task output repository to use for caching task outputs
@@ -169,6 +169,7 @@ export class TaskGraphRunner {
     graph.outputCache = outputCache;
     this.handleProgress = this.handleProgress.bind(this);
     this.edgeMaterializer = new EdgeMaterializer(graph, this);
+    this.streamPump = new StreamPump(graph, this.processScheduler, this.edgeMaterializer);
   }
 
   // ========================================================================
@@ -627,48 +628,6 @@ export class TaskGraphRunner {
   }
 
   /**
-   * Determines whether a streaming task needs to accumulate its text-delta
-   * chunks into an enriched finish event. Accumulation is needed when:
-   *
-   * 1. Output caching is active (the cached value must be fully materialised).
-   * 2. Any outgoing dataflow edge connects a streaming output port to an input
-   *    port that is not streaming with the same mode (i.e. the downstream task
-   *    cannot consume a raw stream and needs a completed value).
-   *
-   * When accumulation is required the source task runs with shouldAccumulate=true,
-   * emitting an enriched finish event that carries all accumulated port text.
-   * All downstream dataflow edges share that event via tee'd streams so no
-   * edge needs to re-accumulate independently.
-   */
-  protected taskNeedsAccumulation(task: ITask): boolean {
-    if (this.outputCache) return true;
-
-    const outEdges = this.graph.getTargetDataflows(task.id);
-    if (outEdges.length === 0) return this.accumulateLeafOutputs;
-
-    const outSchema = task.outputSchema();
-
-    for (const df of outEdges) {
-      if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) {
-        // Conservative: if any streaming output port exists, accumulate.
-        // This covers the case where all-ports edges fan into non-streaming tasks.
-        if (getStreamingPorts(outSchema).length > 0) return true;
-        continue;
-      }
-
-      const targetTask = this.graph.getTask(df.targetTaskId);
-      if (!targetTask) continue;
-      const inSchema = targetTask.inputSchema();
-
-      if (edgeNeedsAccumulation(outSchema, df.sourceTaskPortId, inSchema, df.targetTaskPortId)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
    * Runs a task
    * @param task The task to run
    * @param input The input for the task
@@ -682,18 +641,7 @@ export class TaskGraphRunner {
     // the task's executeStream() (via inputStreams) while the other stays
     // on the edge for materialization by awaitStreamInputs.
     if (isStreamable) {
-      const dataflows = this.graph.getSourceDataflows(task.id);
-      const streamingEdges = dataflows.filter((df) => df.stream !== undefined);
-      if (streamingEdges.length > 0) {
-        const inputStreams = new Map<string, ReadableStream<StreamEvent>>();
-        for (const df of streamingEdges) {
-          const stream = df.stream!;
-          const [forwardCopy, materializeCopy] = stream.tee();
-          inputStreams.set(df.targetTaskPortId, forwardCopy);
-          df.setStream(materializeCopy);
-        }
-        task.runner.inputStreams = inputStreams;
-      }
+      this.streamPump.prepareStreamingInputs(task);
     }
 
     // Await any active streams on input dataflow edges so their values
@@ -703,7 +651,7 @@ export class TaskGraphRunner {
     // Streaming downstream tasks are still unblocked early by the scheduler
     // (they can start setup while upstream is streaming), but their actual
     // input data waits for upstream completion.
-    await this.awaitStreamInputs(task);
+    await this.streamPump.awaitStreamInputs(task, this.registry);
 
     this.edgeMaterializer.copyInputFromEdgesToNode(task);
 
@@ -721,7 +669,19 @@ export class TaskGraphRunner {
     }
 
     if (isStreamable) {
-      return this.runStreamingTask<T>(task, input);
+      return this.streamPump.runStreamingTask<T>(
+        task,
+        input,
+        this.currentCtx!,
+        {
+          registry: this.registry,
+          outputCache: this.outputCache,
+          resourceScope: this.resourceScope,
+          accumulateLeafOutputs: this.accumulateLeafOutputs,
+          updateProgress: this.handleProgress,
+        },
+        (t) => this.pushStatusFromNodeToEdges(this.graph, t, TaskStatus.STREAMING)
+      );
     }
 
     const results = await task.runner.run(input, {
@@ -745,214 +705,6 @@ export class TaskGraphRunner {
       type: (task.constructor as any).runtype || (task.constructor as any).type,
       data: results as T,
     };
-  }
-
-  /**
-   * For non-streaming downstream tasks, awaits completion of any active
-   * streams on input dataflow edges, materializing their values.
-   *
-   * Streaming upstream tasks set a ReadableStream on outgoing edges.
-   * Non-streaming downstream tasks cannot consume streams directly, so
-   * this method reads each stream to completion and accumulates the
-   * value (via Dataflow.awaitStreamValue) before the task reads its
-   * inputs through the normal getPortData() path.
-   */
-  protected async awaitStreamInputs(task: ITask): Promise<void> {
-    const dataflows = this.graph.getSourceDataflows(task.id);
-    const streamingDataflows = dataflows.filter((df) => df.stream !== undefined);
-    if (streamingDataflows.length === 0) return;
-    await Promise.all(
-      streamingDataflows.map(async (df) => {
-        await df.awaitStreamValue();
-        // awaitStreamValue sets port data from the raw finish/snapshot event.
-        // Apply the edge's transform chain over the materialised value so the
-        // downstream task receives the transformed result. This is the sole
-        // transform application for streaming edges (pushOutputFromNodeToEdges
-        // deliberately skips them to avoid double-apply).
-        await df.applyTransforms(this.registry);
-      })
-    );
-  }
-
-  /**
-   * Runs a streaming task within the DAG.
-   * Listens for stream events to:
-   * - Notify the scheduler when streaming begins (unblocking downstream streamable tasks)
-   * - Push stream data to outgoing dataflow edges
-   * - Have the source task accumulate and emit enriched finish events for
-   *   non-streaming downstream tasks (when taskNeedsAccumulation() is true)
-   */
-  protected async runStreamingTask<T>(
-    task: ITask,
-    input: TaskInput
-  ): Promise<GraphSingleTaskResult<T>> {
-    const streamMode = getOutputStreamMode(task.outputSchema());
-    const shouldAccumulate = this.taskNeedsAccumulation(task);
-
-    let streamingNotified = false;
-
-    const onStatus = (status: TaskStatus) => {
-      if (status === TaskStatus.STREAMING && !streamingNotified) {
-        streamingNotified = true;
-        this.pushStatusFromNodeToEdges(this.graph, task, TaskStatus.STREAMING);
-        this.pushStreamToEdges(task, streamMode);
-        this.processScheduler.onTaskStreaming(task.id);
-      }
-    };
-
-    const onStreamStart = () => {
-      this.graph.emit("task_stream_start", task.id);
-    };
-
-    const onStreamChunk = (event: StreamEvent) => {
-      this.graph.emit("task_stream_chunk", task.id, event);
-    };
-
-    const onStreamEnd = (output: Record<string, any>) => {
-      this.graph.emit("task_stream_end", task.id, output);
-    };
-
-    task.on("status", onStatus);
-    task.on("stream_start", onStreamStart);
-    task.on("stream_chunk", onStreamChunk);
-    task.on("stream_end", onStreamEnd);
-
-    try {
-      const results = await task.runner.run(input, {
-        outputCache: this.outputCache ?? false,
-        shouldAccumulate,
-        updateProgress: async (
-          task: ITask,
-          progress: number | undefined,
-          message?: string,
-          ...args: any[]
-        ) => await this.handleProgress(task, progress, message, ...args),
-        registry: this.registry,
-        resourceScope: this.resourceScope,
-      });
-
-      await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
-
-      return {
-        id: task.id,
-        type: (task.constructor as any).runtype || (task.constructor as any).type,
-        data: results as T,
-      };
-    } finally {
-      task.off("status", onStatus);
-      task.off("stream_start", onStreamStart);
-      task.off("stream_chunk", onStreamChunk);
-      task.off("stream_end", onStreamEnd);
-    }
-  }
-
-  /**
-   * Returns true if an event carries a port-specific delta (text-delta or object-delta).
-   */
-  private static isPortDelta(event: StreamEvent): event is StreamEvent & { port: string } {
-    return event.type === "text-delta" || event.type === "object-delta";
-  }
-
-  /**
-   * Creates a ReadableStream from task streaming events, optionally filtered
-   * to a single port. When `portId` is undefined (DATAFLOW_ALL_PORTS), all
-   * events pass through. When set, only delta events matching the port plus
-   * control events (finish, error, snapshot) are enqueued.
-   *
-   * Also taps snapshot events to write per-port data into each edge's
-   * `latestSnapshot` slot for downstream peek-during-streaming.
-   */
-  private createStreamFromTaskEvents(
-    task: ITask,
-    portId: string | undefined,
-    edgesForGroup: ReadonlyArray<Dataflow>
-  ): ReadableStream<StreamEvent> {
-    return new ReadableStream<StreamEvent>({
-      start: (controller) => {
-        const onChunk = (event: StreamEvent) => {
-          try {
-            if (
-              portId !== undefined &&
-              TaskGraphRunner.isPortDelta(event) &&
-              event.port !== portId
-            ) {
-              return;
-            }
-            // Tap: on snapshot events, write per-port data into each edge's
-            // latestSnapshot slot.
-            if (event.type === "snapshot") {
-              const data = event.data as Record<string, unknown> | undefined;
-              if (data) {
-                for (const edge of edgesForGroup) {
-                  const portValue =
-                    edge.sourceTaskPortId === DATAFLOW_ALL_PORTS
-                      ? data
-                      : data[edge.sourceTaskPortId];
-                  edge.latestSnapshot = portValue;
-                }
-              }
-            }
-            controller.enqueue(event);
-          } catch {
-            // Stream may be closed
-          }
-        };
-        const onEnd = () => {
-          try {
-            controller.close();
-          } catch {
-            // Stream may already be closed
-          }
-          task.off("stream_chunk", onChunk);
-          task.off("stream_end", onEnd);
-        };
-        task.on("stream_chunk", onChunk);
-        task.on("stream_end", onEnd);
-      },
-    });
-  }
-
-  /**
-   * Pushes stream events from a streaming task to its outgoing dataflow edges.
-   * Creates per-port filtered ReadableStreams for specific-port edges and
-   * unfiltered streams for DATAFLOW_ALL_PORTS edges. Within each port group,
-   * uses tee() for fan-out to multiple consumers.
-   */
-  protected pushStreamToEdges(task: ITask, _streamMode: StreamMode): void {
-    const targetDataflows = this.graph.getTargetDataflows(task.id);
-    if (targetDataflows.length === 0) return;
-
-    // Group edges by their source port
-    const groups = new Map<string, typeof targetDataflows>();
-    for (const df of targetDataflows) {
-      const key = df.sourceTaskPortId;
-      let group = groups.get(key);
-      if (!group) {
-        group = [];
-        groups.set(key, group);
-      }
-      group.push(df);
-    }
-
-    for (const [portKey, edges] of groups) {
-      const filterPort = portKey === DATAFLOW_ALL_PORTS ? undefined : portKey;
-      const stream = this.createStreamFromTaskEvents(task, filterPort, edges);
-
-      if (edges.length === 1) {
-        edges[0].setStream(stream);
-      } else {
-        let currentStream = stream;
-        for (let i = 0; i < edges.length; i++) {
-          if (i === edges.length - 1) {
-            edges[i].setStream(currentStream);
-          } else {
-            const [s1, s2] = currentStream.tee();
-            edges[i].setStream(s1);
-            currentStream = s2;
-          }
-        }
-      }
-    }
   }
 
   /**
