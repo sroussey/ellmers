@@ -1,0 +1,308 @@
+/**
+ * @license
+ * Copyright 2025 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { getLogger } from "@workglow/util";
+import { ConditionalTask } from "../task/ConditionalTask";
+import type { ITask } from "../task/ITask";
+import { TaskError, TaskGraphTimeoutError } from "../task/TaskError";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import { TaskStatus } from "../task/TaskTypes";
+import type { EdgeMaterializer } from "./EdgeMaterializer";
+import type { RunContext } from "./RunContext";
+import type { TaskGraph, TaskGraphRunConfig } from "./TaskGraph";
+import type { GraphResultArray, GraphSingleTaskResult, TaskGraphRunner } from "./TaskGraphRunner";
+import { taskPrototypeHasOwnExecute } from "./TaskGraphRunner";
+import type { ITaskGraphScheduler } from "./TaskGraphScheduler";
+
+/**
+ * @internal
+ * Run-loop coordinator. Drives task selection via processScheduler,
+ * arms graph-level timeout, propagates disabled cascade, aggregates progress,
+ * and pushes status to outgoing edges.
+ *
+ * Stateless across runs — all per-run state arrives via `ctx`.
+ *
+ * Holds a back-reference to the facade so runLoop can call facade.runTask().
+ * This keeps runTask as the single per-task choreography point that wires
+ * EdgeMaterializer + StreamPump + the integration with TaskRunner.
+ */
+export class RunScheduler {
+  constructor(
+    private readonly graph: TaskGraph,
+    private readonly processScheduler: ITaskGraphScheduler,
+    private readonly facade: TaskGraphRunner
+  ) {}
+
+  /**
+   * Pushes the status of a task to its target edges
+   * @param node The task that produced the status
+   *
+   * For ConditionalTask, this method handles selective dataflow status:
+   * - Active branch dataflows get COMPLETED status
+   * - Inactive branch dataflows get DISABLED status
+   */
+  pushStatusFromNodeToEdges(
+    node: ITask,
+    ctx: RunContext | undefined,
+    status?: TaskStatus,
+    graph: TaskGraph = this.graph
+  ): void {
+    if (!node?.config?.id) return;
+
+    const dataflows = graph.getTargetDataflows(node.id);
+    const effectiveStatus = status ?? node.status;
+
+    // Check if this is a ConditionalTask with selective branching
+    if (node instanceof ConditionalTask && effectiveStatus === TaskStatus.COMPLETED) {
+      // Build a map of output port -> branch ID for lookup
+      const branches = node.config.branches ?? [];
+      const portToBranch = new Map<string, string>();
+      for (const branch of branches) {
+        portToBranch.set(branch.outputPort, branch.id);
+      }
+
+      const activeBranches = node.getActiveBranches();
+
+      for (const dataflow of dataflows) {
+        // Preserve FAILED edges (e.g. transform chain failure) rather than
+        // overwriting with the source task's completion status.
+        if (dataflow.status === TaskStatus.FAILED) continue;
+        const branchId = portToBranch.get(dataflow.sourceTaskPortId);
+        if (branchId !== undefined) {
+          // This dataflow is from a branch port
+          if (activeBranches.has(branchId)) {
+            // Branch is active - dataflow gets completed status
+            dataflow.setStatus(TaskStatus.COMPLETED);
+          } else {
+            // Branch is inactive - dataflow gets disabled status
+            dataflow.setStatus(TaskStatus.DISABLED);
+          }
+        } else {
+          // Not a branch port (e.g., _activeBranches metadata) - use normal status
+          dataflow.setStatus(effectiveStatus);
+        }
+      }
+
+      // Cascade disabled status to downstream tasks
+      this.propagateDisabledStatus(ctx, graph);
+      return;
+    }
+
+    // Default behavior for non-conditional tasks
+    dataflows.forEach((dataflow) => {
+      // Preserve FAILED edges (e.g. transform chain failure) rather than
+      // overwriting with the source task's completion status.
+      if (dataflow.status === TaskStatus.FAILED) return;
+      dataflow.setStatus(effectiveStatus);
+    });
+  }
+
+  /**
+   * Propagates DISABLED status through the graph.
+   *
+   * When a task's ALL incoming dataflows are DISABLED, that task becomes unreachable
+   * and should also be disabled. This cascades through the graph until no more
+   * tasks can be disabled.
+   *
+   * This is used by ConditionalTask to disable downstream tasks on inactive branches.
+   */
+  propagateDisabledStatus(_ctx: RunContext | undefined, graph: TaskGraph = this.graph): void {
+    let changed = true;
+
+    // Keep iterating until no more changes (fixed-point iteration)
+    while (changed) {
+      changed = false;
+
+      for (const task of graph.getTasks()) {
+        // Only consider tasks that are still pending
+        if (task.status !== TaskStatus.PENDING) {
+          continue;
+        }
+
+        const incomingDataflows = graph.getSourceDataflows(task.id);
+
+        // Skip tasks with no incoming dataflows (root tasks)
+        if (incomingDataflows.length === 0) {
+          continue;
+        }
+
+        // Check if ALL incoming dataflows are DISABLED
+        const allDisabled = incomingDataflows.every((df) => df.status === TaskStatus.DISABLED);
+
+        if (allDisabled) {
+          // This task is unreachable - disable it synchronously
+          // Set status directly to avoid async issues
+          task.status = TaskStatus.DISABLED;
+          task.progress = 100;
+          task.completedAt = new Date();
+          task.emit("disabled");
+          task.emit("status", task.status);
+
+          // Propagate disabled status to its outgoing dataflows
+          graph.getTargetDataflows(task.id).forEach((dataflow) => {
+            dataflow.setStatus(TaskStatus.DISABLED);
+          });
+
+          // Mark as completed in scheduler so it doesn't wait for this task
+          this.processScheduler.onTaskCompleted(task.id);
+
+          changed = true;
+        }
+      }
+    }
+  }
+
+  /**
+   * Handles progress updates for the task graph by averaging `progress` across tasks whose class
+   * declares its own `execute` (see {@link taskPrototypeHasOwnExecute}). Other nodes are ignored.
+   */
+  async handleProgress(
+    ctx: RunContext,
+    task: ITask,
+    progress: number | undefined,
+    message?: string,
+    ...args: any[]
+  ): Promise<void> {
+    const contributors = this.graph.getTasks().filter(taskPrototypeHasOwnExecute);
+    if (contributors.length > 1) {
+      const determinate = contributors.filter((t) => t.progress !== undefined);
+      if (determinate.length === 0) {
+        progress = undefined;
+      } else {
+        const sum = determinate.reduce((acc, t) => acc + t.progress!, 0);
+        progress = Math.round(sum / determinate.length);
+      }
+    } else if (contributors.length === 1) {
+      const [only] = contributors;
+      progress = only.progress;
+    }
+    this.pushStatusFromNodeToEdges(task, ctx);
+    // Emit aggregate progress before awaiting output push so UIs (and task `emit("progress")` in
+    // TaskRunner) are not blocked when pushOutput/narrowInput is slow or stalls mid-run.
+    this.graph.emit("graph_progress", progress, message, args);
+    // Only push output for mid-run progress ticks while the task is actively executing.
+    // Terminal-state handlers (complete, abort, error, disable) set task.status to their
+    // terminal value before calling handleProgress(100), so the output push is skipped here —
+    // the graph runner's own post-run pushOutputFromNodeToEdges handles the completed case.
+    const isActive = task.status === TaskStatus.PROCESSING || task.status === TaskStatus.STREAMING;
+    if (isActive && task.runOutputData && Object.keys(task.runOutputData).length > 0) {
+      await this.facade["edgeMaterializer"].pushOutputFromNodeToEdges(task, task.runOutputData);
+    }
+  }
+
+  /**
+   * Arms the graph-level timeout. The timer fires `pendingGraphTimeoutError`
+   * and aborts the run when elapsed. No-op when `timeoutMs <= 0`.
+   */
+  armGraphTimeout(timeoutMs: number, ctx: RunContext): void {
+    if (timeoutMs <= 0) return;
+    ctx.pendingGraphTimeoutError = undefined;
+    ctx.graphTimeoutTimer = setTimeout(() => {
+      ctx.pendingGraphTimeoutError = new TaskGraphTimeoutError(timeoutMs);
+      ctx.abortController.abort();
+    }, timeoutMs);
+  }
+
+  /**
+   * Clears the graph-level timeout timer if active.
+   */
+  clearGraphTimeout(ctx: RunContext): void {
+    if (ctx.graphTimeoutTimer !== undefined) {
+      clearTimeout(ctx.graphTimeoutTimer);
+      ctx.graphTimeoutTimer = undefined;
+    }
+  }
+
+  /**
+   * Inner for-await loop body of {@link TaskGraphRunner.runGraph}. Drives the
+   * processScheduler, dispatches tasks via `facade.runTask`, routes errors,
+   * and pushes status/error to outgoing edges. Returns the per-leaf results
+   * (terminal-state precedence is the facade's responsibility).
+   */
+  async runLoop<O extends TaskOutput>(
+    input: TaskInput,
+    config: TaskGraphRunConfig | undefined,
+    ctx: RunContext,
+    edgeMat: EdgeMaterializer
+  ): Promise<GraphResultArray<O>> {
+    const results: GraphResultArray<O> = [];
+
+    try {
+      // TODO: A different graph runner may chunk tasks that are in parallel
+      // rather them all currently available
+      for await (const task of this.processScheduler.tasks()) {
+        if (ctx.abortController.signal.aborted) {
+          break;
+        }
+
+        if (ctx.failedTaskErrors.size > 0) {
+          break;
+        }
+
+        const isRootTask = this.graph.getSourceDataflows(task.id).length === 0;
+
+        const runAsync = async () => {
+          let errorRouted = false;
+          try {
+            // Root tasks (no incoming dataflows) receive the graph run input so e.g.
+            // InputTask can seed the graph. Downstream tasks rely only on dataflow
+            // edges plus task defaults — unless matchAllEmptyInputs is true, in which case
+            // we filter the input to only include properties that are not connected via dataflows.
+            const taskInput = isRootTask
+              ? input
+              : config?.matchAllEmptyInputs
+                ? edgeMat.filterInputForTask(task, input)
+                : {};
+
+            const taskPromise = this.facade["runTask"](task, taskInput);
+            ctx.inProgressTasks.set(task.id, taskPromise);
+            const taskResult = await taskPromise;
+
+            if (this.graph.getTargetDataflows(task.id).length === 0) {
+              // we save the results of all the leaves
+              results.push(taskResult as GraphSingleTaskResult<O>);
+            }
+          } catch (error) {
+            if (edgeMat.hasErrorOutputEdges(task)) {
+              // Route the error through error-port dataflows instead of failing the graph.
+              // pushErrorOutputToEdges sets edge statuses directly (COMPLETED for error
+              // edges, DISABLED for normal edges), so we skip the normal status push.
+              errorRouted = true;
+              edgeMat.pushErrorOutputToEdges(task);
+            } else {
+              ctx.failedTaskErrors.set(task.id, error as TaskError);
+            }
+          } finally {
+            // IMPORTANT: Push status to edges BEFORE notifying scheduler
+            // This ensures dataflow statuses (including DISABLED) are set
+            // before the scheduler checks which tasks are ready.
+            // Skip normal status push when error routing already set edge statuses.
+            if (!errorRouted) {
+              this.pushStatusFromNodeToEdges(task, ctx);
+              edgeMat.pushErrorFromNodeToEdges(task);
+            }
+            this.processScheduler.onTaskCompleted(task.id);
+          }
+        };
+
+        // Start task execution without awaiting
+        // so we can have many tasks running in parallel
+        // but keep track of them to make sure they get awaited
+        // otherwise, things will finish after this promise is resolved
+        ctx.inProgressFunctions.set(Symbol(task.id as string), runAsync());
+      }
+    } catch (err) {
+      getLogger().error("Error running graph", { error: err });
+    }
+
+    // Wait for all tasks to complete since we did not await runAsync()/this.runTaskWithProvenance()
+    await Promise.allSettled(Array.from(ctx.inProgressTasks.values()));
+    // Clean up stragglers to avoid unhandled promise rejections
+    await Promise.allSettled(Array.from(ctx.inProgressFunctions.values()));
+
+    return results;
+  }
+}

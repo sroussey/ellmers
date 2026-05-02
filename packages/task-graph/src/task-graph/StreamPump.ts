@@ -18,6 +18,7 @@ import { TaskStatus } from "../task/TaskTypes";
 import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { EdgeMaterializer } from "./EdgeMaterializer";
 import type { RunContext } from "./RunContext";
+import type { RunScheduler } from "./RunScheduler";
 import type { TaskGraph } from "./TaskGraph";
 import type { GraphSingleTaskResult } from "./TaskGraphRunner";
 import type { ITaskGraphScheduler } from "./TaskGraphScheduler";
@@ -55,16 +56,28 @@ export interface StreamingRunOptions {
  * is mutable and may be reassigned between runs. Method-arg injection lets the
  * facade pass the current values at call time.
  *
- * `runStreamingTask` takes an `onStreamingStatus` callback for the
- * `STREAMING`-status edge push. This is a temporary bridge so this class can
- * land before `pushStatusFromNodeToEdges` itself moves to `RunScheduler`.
+ * The {@link RunScheduler} back-reference is wired post-construction via
+ * {@link setRunScheduler} to break the StreamPump <-> RunScheduler import
+ * cycle (StreamPump calls RunScheduler for status pushes; RunScheduler
+ * dispatches into StreamPump indirectly via facade.runTask).
  */
 export class StreamPump {
+  // Set after construction (mutual reference) — see setRunScheduler.
+  private runScheduler!: RunScheduler;
+
   constructor(
     private readonly graph: TaskGraph,
     private readonly processScheduler: ITaskGraphScheduler,
     private readonly edgeMaterializer: EdgeMaterializer
   ) {}
+
+  /**
+   * Wires the {@link RunScheduler} back-reference. Must be called once after
+   * construction, before any call to {@link runStreamingTask}.
+   */
+  setRunScheduler(rs: RunScheduler): void {
+    this.runScheduler = rs;
+  }
 
   /**
    * Tees streaming inputs for a streamable task — one copy goes to the task's
@@ -123,9 +136,8 @@ export class StreamPump {
   async runStreamingTask<T>(
     task: ITask,
     input: TaskInput,
-    _ctx: RunContext,
-    options: StreamingRunOptions,
-    onStreamingStatus: (task: ITask) => void
+    ctx: RunContext,
+    options: StreamingRunOptions
   ): Promise<GraphSingleTaskResult<T>> {
     const streamMode = getOutputStreamMode(task.outputSchema());
     const shouldAccumulate = this.taskNeedsAccumulation(
@@ -139,7 +151,7 @@ export class StreamPump {
     const onStatus = (status: TaskStatus) => {
       if (status === TaskStatus.STREAMING && !streamingNotified) {
         streamingNotified = true;
-        onStreamingStatus(task);
+        this.runScheduler.pushStatusFromNodeToEdges(task, ctx, TaskStatus.STREAMING);
         this.pushStreamToEdges(task, streamMode);
         this.processScheduler.onTaskStreaming(task.id);
       }
