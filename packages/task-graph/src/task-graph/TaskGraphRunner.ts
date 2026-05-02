@@ -100,12 +100,10 @@ export class TaskGraphRunner {
    */
   protected running = false;
   /**
-   * @internal Exposed for `EdgeMaterializer` back-reference. May be re-tightened
-   * once preview-mode signaling is moved off the facade.
-   *
    * Whether the task graph is currently running in preview mode.
+   * Read by EdgeMaterializer via bracket access (`runner["previewRunning"]`).
    */
-  public previewRunning = false;
+  protected previewRunning = false;
 
   /**
    * The task graph to run
@@ -122,12 +120,10 @@ export class TaskGraphRunner {
    */
   protected accumulateLeafOutputs: boolean = true;
   /**
-   * @internal Exposed for `EdgeMaterializer` back-reference. May be re-tightened
-   * once dataflow transforms no longer require the registry through the facade.
-   *
    * Service registry for this graph run.
+   * Read by EdgeMaterializer via bracket access (`runner["registry"]`).
    */
-  public registry: ServiceRegistry = globalServiceRegistry;
+  protected registry: ServiceRegistry = globalServiceRegistry;
   /**
    * Resource scope for this graph run
    */
@@ -152,13 +148,11 @@ export class TaskGraphRunner {
   protected readonly streamPump: StreamPump;
 
   /**
-   * @internal Exposed for `EdgeMaterializer` back-reference. EdgeMaterializer
-   * calls `runner.runScheduler.{pushStatusFromNodeToEdges,propagateDisabledStatus}`.
-   *
    * Run-loop coordinator — owns the for-await loop body, status push, disabled
    * cascade, progress aggregation, and graph-level timeout arm/clear.
+   * Read by EdgeMaterializer via bracket access (`runner["runScheduler"]`).
    */
-  public readonly runScheduler: RunScheduler;
+  protected readonly runScheduler: RunScheduler;
 
   /**
    * Constructor for TaskGraphRunner
@@ -174,6 +168,11 @@ export class TaskGraphRunner {
     protected previewScheduler = new TopologicalScheduler(graph)
   ) {
     this.graph = graph;
+    // Wire the constructor cache into both the runner (used by runTask) and the
+    // graph. Without `this.outputCache = outputCache`, a runner constructed as
+    // `new TaskGraphRunner(graph, cache).runGraph()` would silently never cache
+    // because runTask reads `this.outputCache`, not `graph.outputCache`.
+    this.outputCache = outputCache;
     graph.outputCache = outputCache;
     this.edgeMaterializer = new EdgeMaterializer(graph, this);
     this.streamPump = new StreamPump(graph, this.processScheduler, this.edgeMaterializer);
@@ -624,6 +623,7 @@ export class TaskGraphRunner {
       }
     } catch (err) {
       this.runScheduler.clearGraphTimeout(ctx);
+      ctx.dispose();
       this.currentCtx = undefined;
       this.running = false;
       throw err;
@@ -690,6 +690,7 @@ export class TaskGraphRunner {
       ctx.telemetrySpan.setStatus(SpanStatusCode.OK);
       ctx.telemetrySpan.end();
     }
+    ctx?.dispose();
     this.currentCtx = undefined;
 
     this.graph.emit("complete");
@@ -719,6 +720,7 @@ export class TaskGraphRunner {
       ctx.telemetrySpan.setAttributes({ "workglow.graph.error": error.message });
       ctx.telemetrySpan.end();
     }
+    ctx?.dispose();
     this.currentCtx = undefined;
 
     this.graph.emit("error", error);
@@ -748,6 +750,7 @@ export class TaskGraphRunner {
       ctx.telemetrySpan.addEvent("workglow.graph.aborted");
       ctx.telemetrySpan.end();
     }
+    ctx?.dispose();
     this.currentCtx = undefined;
 
     this.graph.emit("abort");
