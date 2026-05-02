@@ -97,19 +97,12 @@ export class ScopedTabularStorage<
     this.events.emit("clearall");
   }
 
-  // O(n) — ITabularStorage has no count() method. Uses pagination to limit peak memory.
   async size(): Promise<number> {
-    let count = 0;
-    const pageSize = 1000;
-    let offset = 0;
-    while (true) {
-      const page = await this.inner.query({ kb_id: this.kbId } as any, { offset, limit: pageSize });
-      if (!page || page.length === 0) break;
-      count += page.length;
-      if (page.length < pageSize) break;
-      offset += pageSize;
-    }
-    return count;
+    return await this.count();
+  }
+
+  async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    return await this.inner.count({ ...(criteria as any), kb_id: this.kbId });
   }
 
   async query(

@@ -302,6 +302,19 @@ export abstract class BaseTabularStorage<
   abstract getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined>;
   abstract deleteAll(): Promise<void>;
   abstract size(): Promise<number>;
+
+  /**
+   * Counts entries matching the specified search criteria.
+   * Concrete storage implementations can override this with native count APIs.
+   */
+  async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return await this.size();
+    }
+    const entities = await this.query(criteria);
+    return entities?.length ?? 0;
+  }
+
   /**
    * Deletes all entries matching the specified search criteria.
    * Supports multiple columns with optional comparison operators.
