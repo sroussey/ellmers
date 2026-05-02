@@ -249,6 +249,24 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * @param id - The id of the claimed job to release.
+   */
+  public async release(id: unknown): Promise<void> {
+    await sleep(0);
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    if (job) {
+      const oldJob = { ...job };
+      job.status = JobStatus.PENDING;
+      job.worker_id = null;
+      job.progress = 0;
+      job.progress_message = "";
+      job.progress_details = null;
+      this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+    }
+  }
+
+  /**
    * Aborts a job
    * @param id - The id of the job to abort.
    */

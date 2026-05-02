@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { CpuImage as _CpuImage } from "./media/cpuImage";
+import { getGpuDevice as _getGpuDevice } from "./media/gpuDevice.browser";
+import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
 import "./media/imageCacheCodec";
 import "./media/imageHydrationResolver";
+import type { ImageValue as _ImageValue } from "./media/imageValue";
+import type { EncodeRawPixelsOptions } from "./media/sharpImage.server";
+import { WebGpuImage as _WebGpuImage } from "./media/webGpuImage.browser";
 
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";
@@ -29,10 +35,8 @@ export type {
   GpuImageEncodeFormat,
   GpuImageStatic,
 } from "./media/gpuImage";
-export { ImageValueSchema } from "./media/imageValueSchema";
 export * from "./media/imageRasterCodecRegistry";
 export type { ImageChannels } from "./media/imageTypes";
-export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
 export {
   imageValueFromBitmap,
   imageValueFromBuffer,
@@ -48,6 +52,7 @@ export type {
   NodeImageFormat,
   NodeImageValue,
 } from "./media/imageValue";
+export { ImageValueSchema } from "./media/imageValueSchema";
 export * from "./media/MediaRawImage";
 export {
   getPreviewBudget,
@@ -55,6 +60,7 @@ export {
   registerPreviewResizeFn,
   setPreviewBudget,
 } from "./media/previewBudget";
+export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
 export {
   createShaderCache,
   getShaderCache,
@@ -74,23 +80,16 @@ export type { ApplyParams } from "./media/webGpuImage.browser";
 // Throwing stubs for server-only sharp helpers. These exist so cross-platform
 // consumers (e.g. `@workglow/ai-provider/common/imageOutputHelpers`) can
 // statically import the helpers without browser bundlers tripping on missing
-// exports. Runtime gates (`if (HAS_BUFFER)` etc.) ensure these are never
-// called on the browser path.
-export async function probeImageDimensions(): Promise<never> {
+// exports.
+export async function probeImageDimensions(_: any): Promise<any> {
   throw new Error("probeImageDimensions: not available in browser runtime");
 }
-export async function decodeBufferToRaw(): Promise<never> {
+export async function decodeBufferToRaw(_: any): Promise<any> {
   throw new Error("decodeBufferToRaw: not available in browser runtime");
 }
-export async function encodeRawPixels(): Promise<never> {
+export async function encodeRawPixels(_: any, _options: EncodeRawPixelsOptions): Promise<any> {
   throw new Error("encodeRawPixels: not available in browser runtime");
 }
-
-import { CpuImage as _CpuImage } from "./media/cpuImage";
-import { getGpuDevice as _getGpuDevice } from "./media/gpuDevice.browser";
-import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
-import type { ImageValue as _ImageValue } from "./media/imageValue";
-import { WebGpuImage as _WebGpuImage } from "./media/webGpuImage.browser";
 
 async function _preferGpu(value: _ImageValue) {
   const dev = await _getGpuDevice();

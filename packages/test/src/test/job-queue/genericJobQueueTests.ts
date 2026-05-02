@@ -95,6 +95,20 @@ export class TestJob extends Job<TInput, TOutput> {
         );
       });
     }
+    if (input.taskType === "sleep") {
+      const ms = (input.sleepMs as number | undefined) ?? 200;
+      return new Promise<TOutput>((resolve, reject) => {
+        const timer = setTimeout(() => resolve({ result: "slept" }), ms);
+        context.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(new AbortSignalJobError("Aborted via signal"));
+          },
+          { once: true }
+        );
+      });
+    }
     if (input.taskType === "progress") {
       return new Promise<TOutput>(async (resolve, reject) => {
         context.signal.addEventListener(
@@ -125,14 +139,26 @@ export class TestJob extends Job<TInput, TOutput> {
   }
 }
 
+export interface GenericJobQueueTestOptions {
+  /**
+   * Skip the same-process wake-timing tests. Set to true on async backends
+   * with read-after-write visibility lag (e.g. fake-indexeddb under bun)
+   * where `storage.next()` may not see a just-committed job within the test
+   * window — a backend issue, not a worker issue.
+   */
+  readonly skipFastWakeTests?: boolean;
+}
+
 export function runGenericJobQueueTests(
   storageFactory: (queueName: string) => IQueueStorage<TInput, TOutput>,
   limiterFactory?: (
     queueName: string,
     maxExecutions: number,
     windowSizeInSeconds: number
-  ) => ILimiter | Promise<ILimiter>
+  ) => ILimiter | Promise<ILimiter>,
+  testOptions: GenericJobQueueTestOptions = {}
 ): void {
+  const skipFastWakeTests = testOptions?.skipFastWakeTests ?? false;
   let server: JobQueueServer<TInput, TOutput, TestJob>;
   let client: JobQueueClient<TInput, TOutput>;
   let storage: IQueueStorage<TInput, TOutput>;
@@ -151,6 +177,8 @@ export function runGenericJobQueueTests(
       limiter,
       pollIntervalMs: 1,
       cleanupIntervalMs: 1000,
+      // Tests expect fast teardown; don't wait for any long-running fixtures.
+      stopTimeoutMs: 0,
     });
 
     client = new JobQueueClient<TInput, TOutput>({
@@ -369,8 +397,6 @@ export function runGenericJobQueueTests(
       expect(jobcheck?.status).toBe(JobStatus.PROCESSING);
       try {
         await handle.abort();
-        const abortcheck = await client.getJob(handle.id);
-        expect(abortcheck?.status).toBe(JobStatus.ABORTING);
         await waitPromise;
       } catch (error) {
         expect(error).toBeInstanceOf(AbortSignalJobError);
@@ -568,6 +594,152 @@ export function runGenericJobQueueTests(
         await server2.stop();
         await storage1.deleteAll();
         await storage2.deleteAll();
+      }
+    });
+  });
+
+  describe("Same-process optimizations", () => {
+    const itFastWake = skipFastWakeTests ? it.skip : it;
+
+    itFastWake("submit wakes the worker without waiting for the poll interval", async () => {
+      // Use a long poll interval so the only way the worker can pick up the job
+      // on time is via the direct handleJobAdded notify path.
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 60_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      const handle = await client.submit({ taskType: "other", data: "input-wake" });
+      const start = Date.now();
+      const result = (await Promise.race([
+        handle.waitFor(),
+        sleep(5000).then(() => "TIMEOUT" as const),
+      ])) as TOutput | "TIMEOUT";
+
+      expect(result).not.toBe("TIMEOUT");
+      // Way under the 60s poll interval — proves the direct-notify path works.
+      expect(Date.now() - start).toBeLessThan(5000);
+    });
+
+    itFastWake("deferred submit wakes before the poll interval elapses", async () => {
+      // pollIntervalMs is 60s — without notify() flipping hasDeferredJobs, the
+      // worker would sleep through the full 60s and miss the runAfter deadline.
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 60_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      const runAfter = new Date(Date.now() + 200);
+      const handle = await client.submit(
+        { taskType: "other", data: "deferred-wake" },
+        { runAfter }
+      );
+
+      const start = Date.now();
+      const result = (await Promise.race([
+        handle.waitFor(),
+        sleep(5_000).then(() => "TIMEOUT" as const),
+      ])) as TOutput | "TIMEOUT";
+
+      expect(result).not.toBe("TIMEOUT");
+      // Way under the 60s poll interval — proves the deferred-aware wake works.
+      expect(Date.now() - start).toBeLessThan(5_000);
+    });
+
+    itFastWake("abort resolves quickly without waiting for an ABORTING poll", async () => {
+      // Long poll interval so the only route to abort delivery is the
+      // in-process requestAbort path (Change 3).
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 60_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      const handle = await client.submit({ taskType: "long_running", data: "to-abort" });
+
+      // Wait for the worker to pick it up (accommodate slower async storages).
+      for (let i = 0; i < 300; i++) {
+        const job = await client.getJob(handle.id);
+        if (job?.status === JobStatus.PROCESSING) break;
+        await sleep(10);
+      }
+      const running = await client.getJob(handle.id);
+      expect(running?.status).toBe(JobStatus.PROCESSING);
+
+      const start = Date.now();
+      await handle.abort();
+      try {
+        await handle.waitFor();
+      } catch {
+        // expected — job aborted
+      }
+      // Way under the 60s poll interval — proves requestAbort is in-process.
+      expect(Date.now() - start).toBeLessThan(5000);
+    });
+
+    it("worker.stop drains in-flight jobs before returning", async () => {
+      await server.stop();
+      const limiter = await limiterFactory?.(queueName, 4, 60);
+      server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
+        storage,
+        queueName,
+        limiter,
+        pollIntervalMs: 1,
+        stopTimeoutMs: 5_000,
+      });
+      client.attach(server);
+      await server.start();
+
+      // Submit a job that sleeps briefly, then completes.
+      const handle = await client.submit({ taskType: "other", data: "drain" });
+
+      // Wait until PROCESSING, then stop — the drain should wait for it to finish.
+      for (let i = 0; i < 50; i++) {
+        const job = await client.getJob(handle.id);
+        if (job?.status === JobStatus.PROCESSING || job?.status === JobStatus.COMPLETED) break;
+        await sleep(5);
+      }
+
+      await server.stop();
+
+      const finalJob = await client.getJob(handle.id);
+      expect(finalJob?.status).not.toBe(JobStatus.PROCESSING);
+    });
+
+    it("updateProgress does not write to storage mid-job", async () => {
+      let saveProgressCalls = 0;
+      const originalSaveProgress = storage.saveProgress.bind(storage);
+      storage.saveProgress = async (
+        ...args: Parameters<typeof originalSaveProgress>
+      ): Promise<void> => {
+        saveProgressCalls++;
+        return originalSaveProgress(...args);
+      };
+
+      try {
+        await server.start();
+        const handle = await client.submit({ taskType: "progress", data: "track-progress" });
+        await handle.waitFor();
+        expect(saveProgressCalls).toBe(0);
+      } finally {
+        storage.saveProgress = originalSaveProgress;
       }
     });
   });

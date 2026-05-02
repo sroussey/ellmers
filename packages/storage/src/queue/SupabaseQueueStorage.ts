@@ -524,6 +524,27 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Releases a claimed job without consuming a retry attempt.
+   */
+  public async release(jobId: unknown): Promise<void> {
+    let query = this.client
+      .from(this.tableName)
+      .update({
+        status: JobStatus.PENDING,
+        worker_id: null,
+        progress: 0,
+        progress_message: "",
+        progress_details: null,
+      })
+      .eq("id", jobId)
+      .eq("queue", this.queueName);
+
+    query = this.applyPrefixFilters(query);
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  /**
    * Clears all jobs from the queue.
    */
   public async deleteAll(): Promise<void> {

@@ -296,6 +296,26 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
+   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * @param jobId - The id of the claimed job to release.
+   */
+  public async release(jobId: unknown): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+
+    const ReleaseQuery = `
+      UPDATE ${this.tableName}
+        SET status = ?,
+            worker_id = NULL,
+            progress = 0,
+            progress_message = '',
+            progress_details = NULL
+        WHERE id = ? AND queue = ?${prefixConditions}`;
+    const stmt = this.db.prepare(ReleaseQuery);
+    stmt.run(JobStatus.PENDING, String(jobId), this.queueName, ...prefixParams);
+  }
+
+  /**
    * Retrieves all jobs for a given job run ID.
    * @param job_run_id - The ID of the job run to retrieve
    * @returns An array of jobs

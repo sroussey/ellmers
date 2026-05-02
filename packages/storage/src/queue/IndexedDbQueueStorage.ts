@@ -300,7 +300,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, ""],
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, now],
             false,
-            true
+            false
           )
         );
 
@@ -461,6 +461,22 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       };
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  /**
+   * Releases a claimed job without consuming a retry attempt.
+   */
+  public async release(id: unknown): Promise<void> {
+    const job = await this.get(id);
+    if (!job) return;
+
+    job.status = JobStatus.PENDING;
+    job.worker_id = null;
+    job.progress = 0;
+    job.progress_message = "";
+    job.progress_details = null;
+
+    await this.put(job);
   }
 
   /**

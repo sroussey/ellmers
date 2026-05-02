@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
 import type { Pool } from "@workglow/storage/postgres";
+import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
 import {
   IQueueStorage,
   JobStatus,
@@ -465,6 +465,25 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       UPDATE ${this.tableName} 
       SET status = 'ABORTING' 
       WHERE id = $1 AND queue = $2${prefixConditions}`,
+      [jobId, this.queueName, ...prefixParams]
+    );
+  }
+
+  /**
+   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * @param jobId - The id of the claimed job to release.
+   */
+  public async release(jobId: unknown): Promise<void> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    await this.db.query(
+      `
+      UPDATE ${this.tableName}
+        SET status = 'PENDING',
+            worker_id = NULL,
+            progress = 0,
+            progress_message = '',
+            progress_details = NULL
+        WHERE id = $1 AND queue = $2${prefixConditions}`,
       [jobId, this.queueName, ...prefixParams]
     );
   }
