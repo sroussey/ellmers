@@ -13,6 +13,7 @@ export * from "./task-graph/GraphSchemaUtils";
 export * from "./task-graph/ITaskGraph";
 export * from "./task-graph/TaskGraph";
 export * from "./task-graph/TaskGraphEvents";
+export * from "./task-graph/EdgeMaterializer";
 export * from "./task-graph/RunContext";
 export * from "./task-graph/TaskGraphRunner";
 
