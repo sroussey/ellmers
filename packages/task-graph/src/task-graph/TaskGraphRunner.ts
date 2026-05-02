@@ -106,6 +106,12 @@ export class TaskGraphRunner {
    * Whether the task graph is currently running
    */
   protected running = false;
+  /**
+   * @internal Exposed for `EdgeMaterializer` back-reference. May be re-tightened
+   * once preview-mode signaling is moved off the facade.
+   *
+   * Whether the task graph is currently running in preview mode.
+   */
   public previewRunning = false;
 
   /**
@@ -123,7 +129,10 @@ export class TaskGraphRunner {
    */
   protected accumulateLeafOutputs: boolean = true;
   /**
-   * Service registry for this graph run
+   * @internal Exposed for `EdgeMaterializer` back-reference. May be re-tightened
+   * once dataflow transforms no longer require the registry through the facade.
+   *
+   * Service registry for this graph run.
    */
   public registry: ServiceRegistry = globalServiceRegistry;
   /**
@@ -496,6 +505,9 @@ export class TaskGraphRunner {
   }
 
   /**
+   * @internal Exposed for `EdgeMaterializer` back-reference. Will move to
+   * `RunScheduler` in a later refactor task.
+   *
    * Pushes the status of a task to its target edges
    * @param node The task that produced the status
    *
@@ -555,6 +567,9 @@ export class TaskGraphRunner {
   }
 
   /**
+   * @internal Exposed for `EdgeMaterializer` back-reference. Will move to
+   * `RunScheduler` in a later refactor task.
+   *
    * Propagates DISABLED status through the graph.
    *
    * When a task's ALL incoming dataflows are DISABLED, that task becomes unreachable
