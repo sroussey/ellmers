@@ -89,6 +89,7 @@ describe("HFTransformersBinding", () => {
           queueName: HF_TRANSFORMERS_ONNX_CPU,
           limiter: new ConcurrencyLimiter(1),
           pollIntervalMs: 1,
+          stopTimeoutMs: 0,
         }
       );
 
@@ -160,6 +161,7 @@ describe("HFTransformersBinding", () => {
           queueName: HF_TRANSFORMERS_ONNX_CPU,
           limiter,
           pollIntervalMs: 1,
+          stopTimeoutMs: 0,
         }
       );
 
