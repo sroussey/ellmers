@@ -8,10 +8,12 @@ import {
   computeGraphInputSchema,
   CreateWorkflow,
   hasVectorOutput,
+  MapTask,
   PROPERTY_ARRAY,
   Task,
   TaskConfig,
   TaskError,
+  TaskGraph,
   Workflow,
   WorkflowError,
 } from "@workglow/task-graph";
@@ -1178,6 +1180,170 @@ describe("Workflow", () => {
         const result = await workflow.run({ input: "hello" }, { registry });
         expect(result).toEqual({ output: "processed-hello" });
       });
+    });
+  });
+});
+
+// ============================================================================
+// Refactor regression net — gap coverage for the Workflow decomposition.
+// Pairs with: builder/docs/superpowers/specs/2026-05-02-decompose-workflow-design.md
+// ============================================================================
+
+describe("Workflow — refactor regression net", () => {
+  describe("onError handler wiring (spec #2)", () => {
+    it("onError adds a handler task wired to the error port", () => {
+      const w = new Workflow();
+      w.addTask(NumberTask, { input: 1 });
+      w.onError(NumberTask);
+      expect(w.graph.getTasks()).toHaveLength(2);
+      const errorEdges = w.graph
+        .getDataflows()
+        .filter((df) => df.sourceTaskPortId === "[error]");
+      expect(errorEdges.length).toBe(1);
+    });
+  });
+
+  describe("loop-builder lifecycle (spec #3)", () => {
+    it("addLoopTask returns a child workflow that adds the iterator to the parent graph", () => {
+      const w = new Workflow();
+      const inner = w.addLoopTask(MapTask, {});
+      expect(inner).not.toBe(w);
+      expect(w.graph.getTasks()).toHaveLength(1);
+      expect(w.graph.getTasks()[0].type).toBe("MapTask");
+    });
+
+    it("child reset throws WorkflowError", () => {
+      const w = new Workflow();
+      const inner = w.addLoopTask(MapTask, {});
+      expect(() => inner.reset()).toThrow(WorkflowError);
+    });
+
+    it("finalizeAndReturn promotes the child template into the iterator subGraph and returns parent", () => {
+      const w = new Workflow();
+      const inner = w.addLoopTask(MapTask, {});
+      inner.addTask(NumberTask, { input: 1 });
+      const back = inner.finalizeAndReturn();
+      expect(back).toBe(w);
+      const iter = w.graph.getTasks()[0] as { subGraph?: unknown };
+      expect(iter.subGraph).toBeDefined();
+    });
+  });
+
+  describe("conditional smoke (spec #4)", () => {
+    it("if/then/else/endIf adds a ConditionalTask plus two branch tasks", () => {
+      const w = new Workflow();
+      w.addTask(NumberTask, { input: 1 });
+      w.if((input: { output?: number }) => (input.output ?? 0) > 0)
+        .then(NumberToStringTask)
+        .else(NumberToStringTask)
+        .endIf();
+      const types = w.graph.getTasks().map((t) => t.type);
+      expect(types).toContain("ConditionalTask");
+      expect(types.filter((t) => t === "NumberToStringTask")).toHaveLength(2);
+    });
+  });
+
+  describe("run & abort event ordering (spec #5)", () => {
+    it("run() emits start then complete in order", async () => {
+      const w = new Workflow();
+      w.addTask(NumberTask, { input: 1 });
+      const events: string[] = [];
+      w.on("start", () => events.push("start"));
+      w.on("complete", () => events.push("complete"));
+      await w.run();
+      expect(events).toEqual(["start", "complete"]);
+    });
+
+    it("abort() during run causes run to reject and emits error", async () => {
+      class SlowAbortTask extends Task<{ input: number }, { output: number }, TaskConfig> {
+        static override type = "SlowAbortTask";
+        static override category = "Test";
+        async execute(
+          input: { input: number },
+          _config?: unknown,
+          signal?: AbortSignal
+        ): Promise<{ output: number }> {
+          await new Promise((_resolve, reject) => {
+            if (signal) {
+              signal.addEventListener("abort", () => reject(new Error("aborted")));
+            }
+          });
+          return { output: input.input };
+        }
+      }
+
+      const w = new Workflow();
+      w.addTask(SlowAbortTask, { input: 1 });
+      const errors: string[] = [];
+      w.on("error", (msg) => errors.push(msg));
+
+      const runPromise = w.run();
+      setTimeout(() => void w.abort(), 10);
+      await expect(runPromise).rejects.toBeDefined();
+      expect(errors.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe("event lifecycle on graph swap (spec #6)", () => {
+    it("setting workflow.graph emits reset; subsequent addTask emits changed", () => {
+      const w = new Workflow();
+      const events: string[] = [];
+      w.on("reset", () => events.push("reset"));
+      w.on("changed", () => events.push("changed"));
+
+      w.graph = new TaskGraph();
+      expect(events).toContain("reset");
+
+      const beforeChangedCount = events.filter((e) => e === "changed").length;
+      w.addTask(NumberTask, { input: 1 });
+      const afterChangedCount = events.filter((e) => e === "changed").length;
+      expect(afterChangedCount).toBeGreaterThan(beforeChangedCount);
+    });
+  });
+
+  describe("entitlement bridge (spec #8)", () => {
+    it("workflow.events exposes entitlementChange listener slot", () => {
+      const w = new Workflow();
+      let listenerError: unknown;
+      try {
+        w.on("entitlementChange", () => {
+          /* listener body is irrelevant — we only test that subscription succeeds */
+        });
+      } catch (e) {
+        listenerError = e;
+      }
+      expect(listenerError).toBeUndefined();
+      // Trigger any graph mutation; subscription must not throw.
+      w.addTask(NumberTask, { input: 1 });
+      expect(w.error).toBe("");
+    });
+  });
+
+  describe("external-consumer invariants (spec #11)", () => {
+    it("Workflow remains a class with a mutable prototype", () => {
+      // The augmentation pattern used by builder JoinTask/SplitTask depends on
+      // Workflow.prototype being mutable. The existing file already exercises
+      // this via Workflow.prototype.testSimple = CreateWorkflow(...). Here we
+      // assert the contract explicitly so a future change that breaks the
+      // pattern (e.g. converting Workflow to a type alias) trips this test.
+      const helper = CreateWorkflow(NumberTask);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (Workflow.prototype as any).PrototypeAugmentTest = helper;
+      const w = new Workflow();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (w as any).PrototypeAugmentTest({ input: 1 });
+      expect(w.graph.getTasks()).toHaveLength(1);
+      expect(w.graph.getTasks()[0].type).toBe("NumberTask");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (Workflow.prototype as any).PrototypeAugmentTest;
+    });
+
+    it("workflow.events identity is stable across the lifetime of the instance", () => {
+      const w = new Workflow();
+      const e1 = w.events;
+      w.addTask(NumberTask, { input: 1 });
+      const e2 = w.events;
+      expect(e1).toBe(e2);
     });
   });
 });
