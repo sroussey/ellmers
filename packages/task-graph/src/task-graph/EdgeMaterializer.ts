@@ -98,7 +98,8 @@ export class EdgeMaterializer {
     // per-task `executePreview` invocation of `previewSource` to the engine,
     // where it fires once per chain head and is idempotent on already-small
     // images (returns the input unchanged when within budget).
-    if (this.runner.previewRunning && Object.keys(results).length > 0) {
+    // Bracket access — previewRunning stays protected on the facade.
+    if (this.runner["previewRunning"] && Object.keys(results).length > 0) {
       for (const port of Object.keys(results)) {
         const value = (results as Record<string, unknown>)[port];
         if (EdgeMaterializer.isImageValueShape(value)) {
@@ -115,19 +116,17 @@ export class EdgeMaterializer {
       // applying transforms again on this path would double-apply
       // non-idempotent transforms, so skip the whole post-materialisation step.
       if (dataflow.stream !== undefined) continue;
-      const compatibility = dataflow.semanticallyCompatible(
-        this.graph,
-        dataflow,
-        this.runner.registry
-      );
+      // Bracket access — registry stays protected on the facade.
+      const registry = this.runner["registry"];
+      const compatibility = dataflow.semanticallyCompatible(this.graph, dataflow, registry);
       if (compatibility === "static") {
         dataflow.setPortData(results);
-        await dataflow.applyTransforms(this.runner.registry);
+        await dataflow.applyTransforms(registry);
       } else if (compatibility === "runtime") {
         const task = this.graph.getTask(dataflow.targetTaskId)!;
-        const narrowed = await task.narrowInput({ ...results }, this.runner.registry);
+        const narrowed = await task.narrowInput({ ...results }, registry);
         dataflow.setPortData(narrowed);
-        await dataflow.applyTransforms(this.runner.registry);
+        await dataflow.applyTransforms(registry);
       } else {
         // Warn only when we had data to push; empty results (e.g. progress mid-run) are expected
         const resultsKeys = Object.keys(results);
@@ -193,9 +192,9 @@ export class EdgeMaterializer {
       }
     }
 
-    // Cascade disabled status to downstream tasks whose ALL inputs are now disabled
-    // Bracket access — currentCtx stays protected on the facade.
-    this.runner.runScheduler.propagateDisabledStatus(this.runner["currentCtx"]);
+    // Cascade disabled status to downstream tasks whose ALL inputs are now disabled.
+    // Bracket access — runScheduler and currentCtx stay protected on the facade.
+    this.runner["runScheduler"].propagateDisabledStatus(this.runner["currentCtx"]);
   }
 
   /**
@@ -214,8 +213,8 @@ export class EdgeMaterializer {
     task.error = undefined;
     task.progress = 0;
     task.runConfig = { ...task.runConfig, runnerId: runId };
-    // Bracket access — currentCtx stays protected on the facade.
-    this.runner.runScheduler.pushStatusFromNodeToEdges(
+    // Bracket access — runScheduler and currentCtx stay protected on the facade.
+    this.runner["runScheduler"].pushStatusFromNodeToEdges(
       task,
       this.runner["currentCtx"],
       undefined,
