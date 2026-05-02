@@ -627,6 +627,64 @@ export class SupabaseTabularStorage<
   }
 
   /**
+   * Applies criteria to a Supabase filter builder. Typed as `any` because the
+   * `PostgrestFilterBuilder` generics are deep enough to trip TS2589.
+   */
+  private applyCriteriaToFilter<Q>(query: Q, criteria: SearchCriteria<Entity>): Q {
+    let q = query as any;
+    for (const column of Object.keys(criteria) as Array<keyof Entity>) {
+      const criterion = criteria[column];
+      let operator: SearchOperator = "=";
+      let value: Entity[keyof Entity];
+
+      if (isSearchCondition(criterion)) {
+        operator = criterion.operator;
+        value = criterion.value as Entity[keyof Entity];
+      } else {
+        value = criterion as Entity[keyof Entity];
+      }
+
+      switch (operator) {
+        case "=":
+          q = q.eq(String(column), value);
+          break;
+        case "<":
+          q = q.lt(String(column), value);
+          break;
+        case "<=":
+          q = q.lte(String(column), value);
+          break;
+        case ">":
+          q = q.gt(String(column), value);
+          break;
+        case ">=":
+          q = q.gte(String(column), value);
+          break;
+      }
+    }
+    return q as Q;
+  }
+
+  /**
+   * Counts rows matching the specified search criteria.
+   */
+  override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return await this.size();
+    }
+
+    this.validateQueryParams(criteria);
+    const query = this.applyCriteriaToFilter(
+      this.client.from(this.table).select("*", { count: "exact", head: true }),
+      criteria
+    );
+
+    const { count, error } = await query;
+    if (error) throw error;
+    return count ?? 0;
+  }
+
+  /**
    * Deletes all entries matching the specified search criteria.
    * Supports multiple columns with optional comparison operators.
    *
@@ -693,40 +751,8 @@ export class SupabaseTabularStorage<
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
     this.validateQueryParams(criteria, options);
-    const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
 
-    let query = this.client.from(this.table).select("*");
-
-    for (const column of criteriaKeys) {
-      const criterion = criteria[column];
-      let operator: SearchOperator = "=";
-      let value: Entity[keyof Entity];
-
-      if (isSearchCondition(criterion)) {
-        operator = criterion.operator;
-        value = criterion.value as Entity[keyof Entity];
-      } else {
-        value = criterion as Entity[keyof Entity];
-      }
-
-      switch (operator) {
-        case "=":
-          query = query.eq(String(column), value);
-          break;
-        case "<":
-          query = query.lt(String(column), value);
-          break;
-        case "<=":
-          query = query.lte(String(column), value);
-          break;
-        case ">":
-          query = query.gt(String(column), value);
-          break;
-        case ">=":
-          query = query.gte(String(column), value);
-          break;
-      }
-    }
+    let query = this.applyCriteriaToFilter(this.client.from(this.table).select("*"), criteria);
 
     if (options?.orderBy) {
       for (const { column, direction } of options.orderBy) {

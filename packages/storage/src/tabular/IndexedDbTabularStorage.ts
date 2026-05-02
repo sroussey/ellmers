@@ -94,6 +94,14 @@ export class IndexedDbTabularStorage<
     readonly useBroadcastChannel: boolean;
     readonly backupPollingIntervalMs: number;
   };
+  /**
+   * Indexes safe for cursor-based narrowing. An IDB index excludes records
+   * whose keyPath has any undefined component, so iterating an index can miss
+   * records when an indexed column is optional in the schema. Native
+   * `count(range)` and cursor scans are only correct over indexes whose every
+   * column is required. Computed lazily on first use.
+   */
+  private cursorSafeIndexes: Array<Array<keyof Entity>> | undefined;
 
   /**
    * Creates a new IndexedDB-based tabular repository.
@@ -462,6 +470,143 @@ export class IndexedDbTabularStorage<
   }
 
   /**
+   * Returns the subset of configured indexes safe to use for cursor-based
+   * narrowing — those whose every column is required by the schema. IDB
+   * excludes records with undefined keyPath components from indexes, so
+   * iterating an index would silently miss records when any indexed column
+   * is optional.
+   */
+  private getCursorSafeIndexes(): Array<Array<keyof Entity>> {
+    if (this.cursorSafeIndexes) return this.cursorSafeIndexes;
+    const required = new Set(this.schema.required ?? []);
+    this.cursorSafeIndexes = this.indexes.filter((columns) =>
+      columns.every((column) => required.has(String(column)))
+    );
+    return this.cursorSafeIndexes;
+  }
+
+  /**
+   * Picks the best index to narrow a criteria-based scan, preferring indexes
+   * whose prefix covers every criteria column (so callers can use the native
+   * `count()` API) and falling back to the longest equality-prefix match.
+   *
+   * Upper bound uses `[]` as a sentinel that compares greater than any
+   * primitive value at the next index position (per IndexedDB key ordering:
+   * array > binary > string > date > number). Assumes subsequent indexed
+   * columns hold primitive values — array-valued columns would compare
+   * greater than `[]` and slip outside the range.
+   */
+  private createIndexedRange(
+    store: IDBObjectStore,
+    criteria: SearchCriteria<Entity>
+  ):
+    | {
+        source: IDBObjectStore | IDBIndex;
+        range: IDBKeyRange | undefined;
+        coversCriteria: boolean;
+      }
+    | undefined {
+    const criteriaColumns = Object.keys(criteria) as Array<keyof Entity>;
+    if (criteriaColumns.length === 0) return undefined;
+
+    let best:
+      | {
+          indexName: string;
+          prefixValues: unknown[];
+          fullMatch: boolean;
+          coversCriteria: boolean;
+        }
+      | undefined;
+
+    for (const indexColumns of this.getCursorSafeIndexes()) {
+      const prefixValues: unknown[] = [];
+      for (const column of indexColumns) {
+        const value = this.getEqualityCriterionValue(criteria, column);
+        if (value === undefined) break;
+        prefixValues.push(value);
+      }
+
+      if (prefixValues.length === 0) continue;
+
+      const indexedPrefix = indexColumns.slice(0, prefixValues.length);
+      const coversCriteria = criteriaColumns.every((column) => indexedPrefix.includes(column));
+
+      const better =
+        !best ||
+        (coversCriteria && !best.coversCriteria) ||
+        (coversCriteria === best.coversCriteria && prefixValues.length > best.prefixValues.length);
+
+      if (better) {
+        best = {
+          indexName: indexColumns.map((column) => String(column)).join("_"),
+          prefixValues,
+          fullMatch: prefixValues.length === indexColumns.length,
+          coversCriteria,
+        };
+      }
+    }
+
+    if (!best) return undefined;
+
+    const range = best.fullMatch
+      ? IDBKeyRange.only(best.prefixValues.length === 1 ? best.prefixValues[0] : best.prefixValues)
+      : IDBKeyRange.bound(best.prefixValues, [...best.prefixValues, []]);
+
+    return {
+      source: store.index(best.indexName),
+      range,
+      coversCriteria: best.coversCriteria,
+    };
+  }
+
+  /**
+   * Counts rows matching the specified search criteria.
+   *
+   * Uses the native `count()` API when an index prefix covers every criteria
+   * column. Otherwise narrows via the longest matching index prefix and
+   * filters the remaining columns during cursor iteration. Falls back to a
+   * full store scan only when no index applies.
+   */
+  override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!criteria || Object.keys(criteria).length === 0) {
+      return await this.size();
+    }
+
+    this.validateQueryParams(criteria);
+    const db = await this.getDb();
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.table, "readonly");
+      const store = transaction.objectStore(this.table);
+      const plan = this.createIndexedRange(store, criteria);
+
+      if (plan?.coversCriteria) {
+        const request = plan.source.count(plan.range);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        return;
+      }
+
+      const source = plan?.source ?? store;
+      const range = plan?.range;
+      let count = 0;
+      const request = source.openCursor(range);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(count);
+          return;
+        }
+        if (this.matchesCriteria(cursor.value as Entity, criteria)) {
+          count += 1;
+        }
+        cursor.continue();
+      };
+    });
+  }
+
+  /**
    * Fetches a page of records from the repository.
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
@@ -632,6 +777,131 @@ export class IndexedDbTabularStorage<
     });
   }
 
+  private getEqualityCriterionValue(
+    criteria: SearchCriteria<Entity>,
+    column: keyof Entity
+  ): Entity[keyof Entity] | undefined {
+    const criterion = criteria[column];
+    if (criterion === undefined) return undefined;
+    if (isSearchCondition(criterion)) {
+      return criterion.operator === "=" ? (criterion.value as Entity[keyof Entity]) : undefined;
+    }
+    return criterion as Entity[keyof Entity];
+  }
+
+  private compareByOrder(a: Entity, b: Entity, options?: QueryOptions<Entity>): number {
+    if (!options?.orderBy) return 0;
+    for (const { column, direction } of options.orderBy) {
+      const aVal = a[column] as string | number | null | undefined;
+      const bVal = b[column] as string | number | null | undefined;
+      if (aVal == null && bVal == null) continue;
+      if (aVal == null) return direction === "ASC" ? -1 : 1;
+      if (bVal == null) return direction === "ASC" ? 1 : -1;
+      if (aVal < bVal) return direction === "ASC" ? -1 : 1;
+      if (aVal > bVal) return direction === "ASC" ? 1 : -1;
+    }
+    return 0;
+  }
+
+  private createIndexedQuery(
+    store: IDBObjectStore,
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
+  ): {
+    source: IDBObjectStore | IDBIndex;
+    range: IDBKeyRange | undefined;
+    direction: IDBCursorDirection;
+    satisfiesOrder: boolean;
+    appliedLimit: boolean;
+    appliedOffset: boolean;
+    skipRemaining: number;
+  } {
+    const orderBy = options?.orderBy ?? [];
+    let best:
+      | {
+          indexName: string;
+          prefixValues: unknown[];
+          fullMatch: boolean;
+          satisfiesOrder: boolean;
+          direction: IDBCursorDirection;
+        }
+      | undefined;
+
+    for (const indexColumns of this.getCursorSafeIndexes()) {
+      const prefixValues: unknown[] = [];
+      for (const column of indexColumns) {
+        const value = this.getEqualityCriterionValue(criteria, column);
+        if (value === undefined) break;
+        prefixValues.push(value);
+      }
+
+      if (prefixValues.length === 0) continue;
+
+      const remainingColumns = indexColumns.slice(prefixValues.length);
+      let redundantOrderPrefixLength = 0;
+      while (
+        redundantOrderPrefixLength < orderBy.length &&
+        redundantOrderPrefixLength < prefixValues.length &&
+        orderBy[redundantOrderPrefixLength]?.column === indexColumns[redundantOrderPrefixLength]
+      ) {
+        redundantOrderPrefixLength++;
+      }
+      const normalizedOrderBy = orderBy.slice(redundantOrderPrefixLength);
+      const satisfiesOrder =
+        normalizedOrderBy.length === 0 ||
+        (normalizedOrderBy.length <= remainingColumns.length &&
+          normalizedOrderBy.every((order, index) => order.column === remainingColumns[index]) &&
+          orderBy.every((order) => order.direction === orderBy[0]?.direction));
+
+      if (!satisfiesOrder && best) continue;
+
+      if (
+        !best ||
+        (satisfiesOrder && !best.satisfiesOrder) ||
+        prefixValues.length > best.prefixValues.length
+      ) {
+        best = {
+          indexName: indexColumns.map((column) => String(column)).join("_"),
+          prefixValues,
+          fullMatch: prefixValues.length === indexColumns.length,
+          satisfiesOrder,
+          direction: orderBy[0]?.direction === "DESC" ? "prev" : "next",
+        };
+      }
+    }
+
+    const appliedLimit = Boolean(best?.satisfiesOrder && options?.limit !== undefined);
+    const appliedOffset = Boolean(best?.satisfiesOrder && options?.offset !== undefined);
+
+    if (!best) {
+      return {
+        source: store,
+        range: undefined,
+        direction: orderBy[0]?.direction === "DESC" ? "prev" : "next",
+        satisfiesOrder: false,
+        appliedLimit: false,
+        appliedOffset: false,
+        skipRemaining: 0,
+      };
+    }
+
+    const source = store.index(best.indexName);
+    // See createIndexedRange for the `[]` upper-bound sentinel rationale.
+    const keyRange = best.fullMatch
+      ? IDBKeyRange.only(best.prefixValues.length === 1 ? best.prefixValues[0] : best.prefixValues)
+      : IDBKeyRange.bound(best.prefixValues, [...best.prefixValues, []]);
+
+    return {
+      source,
+      range: keyRange,
+      direction: best.direction,
+      satisfiesOrder: best.satisfiesOrder,
+      appliedLimit,
+      appliedOffset,
+      skipRemaining: appliedOffset ? (options?.offset ?? 0) : 0,
+    };
+  }
+
   /**
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    *
@@ -649,46 +919,52 @@ export class IndexedDbTabularStorage<
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(this.table, "readonly");
       const store = transaction.objectStore(this.table);
-      const getAllRequest = store.getAll();
+      const indexedQuery = this.createIndexedQuery(store, criteria, options);
+      const results: Entity[] = [];
+      const request = indexedQuery.source.openCursor(indexedQuery.range, indexedQuery.direction);
 
-      getAllRequest.onsuccess = () => {
-        const allRecords: Entity[] = getAllRequest.result;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          let finalResults = results;
 
-        let results: Entity[] = allRecords.filter((record) =>
-          this.matchesCriteria(record, criteria)
-        );
+          if (!indexedQuery.satisfiesOrder && options?.orderBy && options.orderBy.length > 0) {
+            finalResults = [...finalResults].sort((a, b) => this.compareByOrder(a, b, options));
+          }
 
-        if (options?.orderBy && options.orderBy.length > 0) {
-          results.sort((a, b) => {
-            for (const { column, direction } of options.orderBy!) {
-              const aVal = a[column] as string | number | null | undefined;
-              const bVal = b[column] as string | number | null | undefined;
-              if (aVal == null && bVal == null) continue;
-              if (aVal == null) return direction === "ASC" ? -1 : 1;
-              if (bVal == null) return direction === "ASC" ? 1 : -1;
-              if (aVal < bVal) return direction === "ASC" ? -1 : 1;
-              if (aVal > bVal) return direction === "ASC" ? 1 : -1;
+          if (!indexedQuery.appliedOffset && options?.offset !== undefined) {
+            finalResults = finalResults.slice(options.offset);
+          }
+
+          if (!indexedQuery.appliedLimit && options?.limit !== undefined) {
+            finalResults = finalResults.slice(0, options.limit);
+          }
+
+          const result = finalResults.length > 0 ? finalResults : undefined;
+          this.events.emit("query", criteria as Partial<Entity>, result);
+          resolve(result);
+          return;
+        }
+
+        const record = cursor.value as Entity;
+        if (this.matchesCriteria(record, criteria)) {
+          if (indexedQuery.skipRemaining > 0) {
+            indexedQuery.skipRemaining -= 1;
+          } else {
+            results.push(record);
+            if (indexedQuery.appliedLimit && results.length === options?.limit) {
+              const result = results.length > 0 ? results : undefined;
+              this.events.emit("query", criteria as Partial<Entity>, result);
+              resolve(result);
+              return;
             }
-            return 0;
-          });
+          }
         }
 
-        if (options?.offset !== undefined) {
-          results = results.slice(options.offset);
-        }
-
-        if (options?.limit !== undefined) {
-          results = results.slice(0, options.limit);
-        }
-
-        const result = results.length > 0 ? results : undefined;
-        this.events.emit("query", criteria as Partial<Entity>, result);
-        resolve(result);
+        cursor.continue();
       };
 
-      getAllRequest.onerror = () => {
-        reject(getAllRequest.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 

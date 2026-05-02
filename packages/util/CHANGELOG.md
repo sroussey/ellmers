@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.2.24
+
+### Refactors
+
+#### job-queue
+
+- same-process hot-path optimization + correctness fixes (#426)
+
 ## 0.2.23
 
 ## 0.2.22

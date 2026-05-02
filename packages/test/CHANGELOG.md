@@ -1,5 +1,23 @@
 # @workglow/test
 
+## 0.2.24
+
+### Features
+
+#### storage
+
+- implement count method across storage backends
+
+### Refactors
+
+#### job-queue
+
+- same-process hot-path optimization + correctness fixes (#426)
+
+### Chores
+
+- format
+
 ## 0.2.23
 
 ### Bug Fixes
