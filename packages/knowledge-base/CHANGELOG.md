@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.2.24
+
+### Features
+
+#### storage
+
+- implement count method across storage backends
+
 ## 0.2.23
 
 ## 0.2.22
