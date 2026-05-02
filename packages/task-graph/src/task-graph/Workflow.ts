@@ -33,6 +33,7 @@ import type { ITransformStep } from "./TransformTypes";
 import type { CreateWorkflow } from "./WorkflowFactories";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { getLastTask, parallel, pipe } from "./WorkflowPipe";
+import { WorkflowCacheAdapter } from "./WorkflowCacheAdapter";
 import { WorkflowTask } from "./WorkflowTask";
 
 /** Options accepted by {@link Workflow.rename}. */
@@ -94,11 +95,11 @@ export class Workflow<
     iteratorTask?: GraphAsTask,
     registry?: ServiceRegistry
   ) {
-    this._outputCache = cache;
+    this._cache = new WorkflowCacheAdapter(cache);
     this._parentWorkflow = parent;
     this._iteratorTask = iteratorTask;
     this._registry = registry ?? parent?._registry;
-    this._graph = new TaskGraph({ outputCache: this._outputCache });
+    this._graph = new TaskGraph({ outputCache: this._cache.outputCache() });
 
     if (!parent) {
       this._onChanged = this._onChanged.bind(this);
@@ -110,7 +111,7 @@ export class Workflow<
   private _graph: TaskGraph;
   private _dataFlows: Dataflow[] = [];
   private _error: string = "";
-  private _outputCache?: TaskOutputRepository;
+  private _cache: WorkflowCacheAdapter;
   private _registry?: ServiceRegistry;
   private _entitlementUnsub?: () => void;
 
@@ -126,7 +127,7 @@ export class Workflow<
   };
 
   public outputCache(): TaskOutputRepository | undefined {
-    return this._outputCache;
+    return this._cache.outputCache();
   }
 
   /**
@@ -334,7 +335,7 @@ export class Workflow<
     try {
       const output = await this.graph.run<Output>(input, {
         parentSignal: this._abortController.signal,
-        outputCache: this._outputCache,
+        outputCache: this._cache.outputCache(),
         registry: config?.registry ?? this._registry,
         resourceScope: config?.resourceScope,
       });
@@ -634,7 +635,7 @@ export class Workflow<
 
     this.clearEvents();
     this._graph = new TaskGraph({
-      outputCache: this._outputCache,
+      outputCache: this._cache.outputCache(),
     });
     this._dataFlows = [];
     this._error = "";
