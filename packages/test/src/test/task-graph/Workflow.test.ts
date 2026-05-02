@@ -34,6 +34,7 @@ import {
 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  LongRunningTask,
   NumberTask,
   NumberToStringTask,
   StringTask,
@@ -1224,22 +1225,31 @@ describe("Workflow — refactor regression net", () => {
       inner.addTask(NumberTask, { input: 1 });
       const back = inner.finalizeAndReturn();
       expect(back).toBe(w);
-      const iter = w.graph.getTasks()[0] as { subGraph?: unknown };
+      const iter = w.graph.getTasks()[0] as { subGraph?: TaskGraph };
       expect(iter.subGraph).toBeDefined();
+      // Pin contents so an empty-graph regression in finalizeTemplate trips here.
+      expect(iter.subGraph!.getTasks()).toHaveLength(1);
     });
   });
 
   describe("conditional smoke (spec #4)", () => {
-    it("if/then/else/endIf adds a ConditionalTask plus two branch tasks", () => {
+    it("if/then/else/endIf adds a ConditionalTask plus two branch tasks with both branches wired", () => {
       const w = new Workflow();
       w.addTask(NumberTask, { input: 1 });
       w.if((input: { output?: number }) => (input.output ?? 0) > 0)
         .then(NumberToStringTask)
         .else(NumberToStringTask)
         .endIf();
-      const types = w.graph.getTasks().map((t) => t.type);
+      const tasks = w.graph.getTasks();
+      const types = tasks.map((t) => t.type);
       expect(types).toContain("ConditionalTask");
       expect(types.filter((t) => t === "NumberToStringTask")).toHaveLength(2);
+
+      const conditional = tasks.find((t) => t.type === "ConditionalTask")!;
+      const branchEdges = w.graph
+        .getDataflows()
+        .filter((df) => df.sourceTaskId === conditional.id);
+      expect(branchEdges.map((df) => df.sourceTaskPortId).sort()).toEqual(["else", "then"]);
     });
   });
 
@@ -1254,33 +1264,16 @@ describe("Workflow — refactor regression net", () => {
       expect(events).toEqual(["start", "complete"]);
     });
 
-    it("abort() during run causes run to reject and emits error", async () => {
-      class SlowAbortTask extends Task<{ input: number }, { output: number }, TaskConfig> {
-        static override type = "SlowAbortTask";
-        static override category = "Test";
-        override async execute(
-          input: { input: number },
-          _config?: unknown,
-          signal?: AbortSignal
-        ): Promise<{ output: number }> {
-          await new Promise((_resolve, reject) => {
-            if (signal) {
-              signal.addEventListener("abort", () => reject(new Error("aborted")));
-            }
-          });
-          return { output: input.input };
-        }
-      }
-
+    it("abort() during run causes run to reject and emits error exactly once", async () => {
       const w = new Workflow();
-      w.addTask(SlowAbortTask, { input: 1 });
+      w.addTask(LongRunningTask, {});
       const errors: string[] = [];
       w.on("error", (msg) => errors.push(msg));
 
       const runPromise = w.run();
       setTimeout(() => void w.abort(), 10);
       await expect(runPromise).rejects.toBeDefined();
-      expect(errors.length).toBeGreaterThanOrEqual(1);
+      expect(errors).toHaveLength(1);
     });
   });
 
@@ -1297,25 +1290,32 @@ describe("Workflow — refactor regression net", () => {
       const beforeChangedCount = events.filter((e) => e === "changed").length;
       w.addTask(NumberTask, { input: 1 });
       const afterChangedCount = events.filter((e) => e === "changed").length;
-      expect(afterChangedCount).toBeGreaterThan(beforeChangedCount);
+      // addTask emits "changed" multiple times today (once directly on the
+      // facade, once via the bridge's task_added subscription). The exact
+      // count is implementation-defined; we pin lower and upper bounds. A
+      // bridge double-subscription regression after the WorkflowEventBridge
+      // extraction (migration step 7) would push the delta past 4.
+      const delta = afterChangedCount - beforeChangedCount;
+      expect(delta).toBeGreaterThanOrEqual(1);
+      expect(delta).toBeLessThanOrEqual(4);
     });
   });
 
-  describe("entitlement bridge (spec #8)", () => {
-    it("workflow.events exposes entitlementChange listener slot", () => {
+  describe("entitlement bridge (spec #8 — listener slot only)", () => {
+    // NOTE: this only verifies the subscription wiring does not throw. Actual
+    // propagation from graph→workflow is NOT yet asserted here — that gap will
+    // be filled when WorkflowEventBridge lands (migration step 7). Until then
+    // a regression that drops the entitlement subscription entirely would not
+    // be caught by this test alone.
+    it("workflow.events accepts entitlementChange subscription without throwing", () => {
       const w = new Workflow();
-      let listenerError: unknown;
-      try {
+      expect(() =>
         w.on("entitlementChange", () => {
-          /* listener body is irrelevant — we only test that subscription succeeds */
-        });
-      } catch (e) {
-        listenerError = e;
-      }
-      expect(listenerError).toBeUndefined();
-      // Trigger any graph mutation; subscription must not throw.
-      w.addTask(NumberTask, { input: 1 });
-      expect(w.error).toBe("");
+          /* no-op */
+        })
+      ).not.toThrow();
+      // Mutating the graph after subscribing must not throw either.
+      expect(() => w.addTask(NumberTask, { input: 1 })).not.toThrow();
     });
   });
 
