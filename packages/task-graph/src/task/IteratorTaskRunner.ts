@@ -15,6 +15,7 @@ import {
   type IteratorTask,
   type IteratorTaskConfig,
 } from "./IteratorTask";
+import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 
 /**
@@ -39,7 +40,10 @@ export class IteratorTaskRunner<
    * it does not iterate the subgraph.
    */
 
-  protected override async executeTask(input: Input): Promise<Output | undefined> {
+  protected override async executeTask(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     let analysis = this.task.analyzeIterationInput(input);
 
     // Enforce maxIterations cap. Config is required (construction-time guard),
@@ -64,7 +68,10 @@ export class IteratorTaskRunner<
   /**
    * Iterator tasks should only run the task's preview hook here.
    */
-  public override async executeTaskPreview(input: Input): Promise<Output | undefined> {
+  public override async executeTaskPreview(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     return this.task.executePreview?.(input, { own: this.own });
   }
 
@@ -91,7 +98,7 @@ export class IteratorTaskRunner<
 
     try {
       for (let batchStart = 0; batchStart < iterationCount; batchStart += batchSize) {
-        if (this.abortController?.signal.aborted) {
+        if (this.currentCtx?.abortController.signal.aborted) {
           break;
         }
 
@@ -149,7 +156,7 @@ export class IteratorTaskRunner<
     let accumulator = this.task.getInitialAccumulator();
 
     for (let index = 0; index < iterationCount; index++) {
-      if (this.abortController?.signal.aborted) {
+      if (this.currentCtx?.abortController.signal.aborted) {
         break;
       }
 
@@ -185,7 +192,7 @@ export class IteratorTaskRunner<
 
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
-        if (this.abortController?.signal.aborted) {
+        if (this.currentCtx?.abortController.signal.aborted) {
           return;
         }
 
@@ -245,7 +252,7 @@ export class IteratorTaskRunner<
     index: number,
     iterationCount: number
   ): Promise<TaskOutput | undefined> {
-    if (this.abortController?.signal.aborted) {
+    if (this.currentCtx?.abortController.signal.aborted) {
       return undefined;
     }
 
@@ -278,7 +285,7 @@ export class IteratorTaskRunner<
 
     try {
       const results = await graphClone.run<TaskOutput>(input as TaskInput, {
-        parentSignal: this.abortController?.signal,
+        parentSignal: this.currentCtx?.abortController.signal,
         outputCache: this.outputCache,
         registry: this.registry,
         resourceScope: this.resourceScope,

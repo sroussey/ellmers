@@ -7,6 +7,7 @@
 import { GraphResultArray } from "../task-graph/TaskGraphRunner";
 import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask } from "./GraphAsTask";
+import type { TaskRunContext } from "./TaskRunContext";
 import { TaskRunner } from "./TaskRunner";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 
@@ -34,7 +35,7 @@ export class GraphAsTaskRunner<
       }
     );
     const results = await this.task.subGraph!.run<Output>(input, {
-      parentSignal: this.abortController?.signal,
+      parentSignal: this.currentCtx?.abortController.signal,
       outputCache: this.outputCache,
       registry: this.registry,
       resourceScope: this.resourceScope,
@@ -56,11 +57,11 @@ export class GraphAsTaskRunner<
     });
   }
 
-  protected override async handleDisable(): Promise<void> {
+  protected override async handleDisable(ctx: TaskRunContext | undefined): Promise<void> {
     if (this.task.hasChildren()) {
       await this.task.subGraph!.disable();
     }
-    super.handleDisable();
+    await super.handleDisable(ctx);
   }
 
   // ========================================================================
@@ -70,7 +71,10 @@ export class GraphAsTaskRunner<
   /**
    * Execute the task
    */
-  protected override async executeTask(input: Input): Promise<Output | undefined> {
+  protected override async executeTask(
+    input: Input,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     if (this.task.hasChildren()) {
       const runExecuteOutputData = await this.executeTaskChildren(input);
       this.task.runOutputData = this.task.subGraph.mergeExecuteOutputsToRunOutput(
@@ -78,7 +82,7 @@ export class GraphAsTaskRunner<
         this.task.compoundMerge
       );
     } else {
-      const result = await super.executeTask(input);
+      const result = await super.executeTask(input, ctx);
       this.task.runOutputData = result ?? ({} as Output);
     }
     return this.task.runOutputData as Output;
@@ -87,7 +91,10 @@ export class GraphAsTaskRunner<
   /**
    * Execute the task in preview mode
    */
-  public override async executeTaskPreview(input: Input): Promise<Output | undefined> {
+  public override async executeTaskPreview(
+    input: Input,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     if (this.task.hasChildren()) {
       const previewResults = await this.executeTaskChildrenPreview();
       this.task.runOutputData = this.task.subGraph.mergeExecuteOutputsToRunOutput(
@@ -96,7 +103,7 @@ export class GraphAsTaskRunner<
       );
       return this.task.runOutputData as Output;
     } else {
-      const previewResult = await super.executeTaskPreview(input);
+      const previewResult = await super.executeTaskPreview(input, ctx);
       if (previewResult !== undefined) {
         this.task.runOutputData = previewResult;
       }

@@ -20,6 +20,7 @@ import {
   TaskInput,
   TaskOutput,
 } from "@workglow/task-graph";
+import type { TaskRunContext } from "@workglow/task-graph";
 
 export function TypeReplicateArray<const T extends DataPortSchemaNonBoolean>(
   type: T,
@@ -274,15 +275,18 @@ class ArrayTaskRunner<
     return this.task.subGraph!.runPreview<Output>({});
   }
 
-  public override async executeTaskPreview(input: Input): Promise<Output | undefined> {
-    await super.executeTaskPreview(input);
+  public override async executeTaskPreview(
+    input: Input,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
+    await super.executeTaskPreview(input, ctx);
     if (this.task.hasChildren()) {
       this.task.runOutputData = this.task.executeMerge(input, this.task.runOutputData as Output);
     }
     return this.task.runOutputData as Output;
   }
-  public override async executeTask(input: Input): Promise<Output> {
-    await super.executeTask(input);
+  public override async executeTask(input: Input, ctx: TaskRunContext): Promise<Output> {
+    await super.executeTask(input, ctx);
     if (this.task.hasChildren()) {
       this.task.runOutputData = this.task.executeMerge(input, this.task.runOutputData as Output);
     }

@@ -5,6 +5,7 @@
  */
 
 import { GraphAsTaskRunner } from "./GraphAsTaskRunner";
+import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 import type { WhileTask, WhileTaskConfig } from "./WhileTask";
 
@@ -27,9 +28,12 @@ export class WhileTaskRunner<
    * contains the while-loop logic, rather than the default
    * GraphAsTaskRunner behavior of running the subgraph once.
    */
-  protected override async executeTask(input: Input): Promise<Output | undefined> {
+  protected override async executeTask(
+    input: Input,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     const result = await this.task.execute(input, {
-      signal: this.abortController!.signal,
+      signal: ctx.abortController.signal,
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
       registry: this.registry,
@@ -41,7 +45,10 @@ export class WhileTaskRunner<
   /**
    * For WhileTask, preview runs use the task's preview hook only.
    */
-  public override async executeTaskPreview(input: Input): Promise<Output | undefined> {
+  public override async executeTaskPreview(
+    input: Input,
+    _ctx: TaskRunContext
+  ): Promise<Output | undefined> {
     return this.task.executePreview?.(input, { own: this.own });
   }
 }
