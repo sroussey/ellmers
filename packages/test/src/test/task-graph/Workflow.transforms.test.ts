@@ -19,11 +19,11 @@ describe("Workflow .rename accepts { transforms }", () => {
       transforms: [{ id: "uppercase" }],
     });
 
-    // rename pushes a pending Dataflow onto Workflow._dataFlows (no target
-    // yet). Inspect it via the private field through a cast — this is a
-    // behavioural test only.
+    // rename pushes a pending Dataflow onto WorkflowBuilder._dataFlows (no
+    // target yet). Inspect it via the private field through a cast — this is
+    // a behavioural test only.
     const pendingDataflows = (
-      w as unknown as { _dataFlows: { getTransforms(): readonly { id: string }[] }[] }
+      w.builder as unknown as { _dataFlows: { getTransforms(): readonly { id: string }[] }[] }
     )._dataFlows;
     expect(pendingDataflows).toHaveLength(1);
     expect(pendingDataflows[0].getTransforms().map((t) => t.id)).toEqual(["uppercase"]);
@@ -32,8 +32,9 @@ describe("Workflow .rename accepts { transforms }", () => {
   it(".rename(source, target, index) (numeric) still works without options", () => {
     const w = new Workflow();
     w.addTask(TestSimpleTask).rename("output", "input", -1);
-    const pending = (w as unknown as { _dataFlows: { getTransforms(): readonly unknown[] }[] })
-      ._dataFlows;
+    const pending = (
+      w.builder as unknown as { _dataFlows: { getTransforms(): readonly unknown[] }[] }
+    )._dataFlows;
     expect(pending).toHaveLength(1);
     expect(pending[0].getTransforms()).toHaveLength(0);
   });
@@ -45,7 +46,7 @@ describe("Workflow .rename accepts { transforms }", () => {
       transforms: [{ id: "uppercase" }, { id: "lowercase" }],
     });
     const pending = (
-      w as unknown as { _dataFlows: { getTransforms(): readonly { id: string }[] }[] }
+      w.builder as unknown as { _dataFlows: { getTransforms(): readonly { id: string }[] }[] }
     )._dataFlows;
     expect(pending[0].getTransforms().map((t) => t.id)).toEqual(["uppercase", "lowercase"]);
   });
