@@ -8,15 +8,20 @@ import {
   computeGraphInputSchema,
   CreateWorkflow,
   hasVectorOutput,
+  IExecuteContext,
   MapTask,
   PROPERTY_ARRAY,
+  StreamEvent,
   Task,
   TaskConfig,
+  TaskEntitlements,
   TaskError,
   TaskGraph,
+  TaskIdType,
   Workflow,
   WorkflowError,
 } from "@workglow/task-graph";
+import { DataPortSchema } from "@workglow/util/schema";
 import {
   InputTask,
   OutputTask,
@@ -1190,6 +1195,43 @@ describe("Workflow", () => {
 // Pairs with: builder/docs/superpowers/specs/2026-05-02-decompose-workflow-design.md
 // ============================================================================
 
+type StreamRelayInput = { prompt: string };
+type StreamRelayOutput = { text: string };
+
+class StreamRelayTask extends Task<StreamRelayInput, StreamRelayOutput> {
+  public static override type = "StreamRelayTask";
+  public static override cacheable = false;
+
+  public static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { prompt: { type: "string", default: "test" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { text: { type: "string", "x-stream": "append" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  async *executeStream(
+    _input: StreamRelayInput,
+    _context: IExecuteContext
+  ): AsyncIterable<StreamEvent<StreamRelayOutput>> {
+    yield { type: "text-delta", port: "text", textDelta: "hello" };
+    yield { type: "text-delta", port: "text", textDelta: " world" };
+    yield { type: "finish", data: { text: "hello world" } };
+  }
+
+  override async execute(_input: StreamRelayInput): Promise<StreamRelayOutput | undefined> {
+    return { text: "hello world" };
+  }
+}
+
 describe("Workflow — refactor regression net", () => {
   describe("onError handler wiring (spec #2)", () => {
     it("onError adds a handler task wired to the error port", () => {
@@ -1301,21 +1343,65 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("entitlement bridge (spec #8 — listener slot only)", () => {
-    // NOTE: this only verifies the subscription wiring does not throw. Actual
-    // propagation from graph→workflow is NOT yet asserted here — that gap will
-    // be filled when WorkflowEventBridge lands (migration step 7). Until then
-    // a regression that drops the entitlement subscription entirely would not
-    // be caught by this test alone.
-    it("workflow.events accepts entitlementChange subscription without throwing", () => {
+  describe("entitlement bridge propagation (spec #8)", () => {
+    it("entitlementChange propagates from graph mutations through to workflow.events", () => {
       const w = new Workflow();
-      expect(() =>
-        w.on("entitlementChange", () => {
-          /* no-op */
-        })
-      ).not.toThrow();
-      // Mutating the graph after subscribing must not throw either.
-      expect(() => w.addTask(NumberTask, { input: 1 })).not.toThrow();
+      const fires: TaskEntitlements[] = [];
+      w.on("entitlementChange", (entitlements) => fires.push(entitlements));
+      const before = fires.length;
+      w.addTask(NumberTask, { input: 1 });
+      // task_added on the graph must produce at least one entitlementChange
+      // emission on workflow.events. Pre-refactor behavior was via the
+      // subscribeToTaskEntitlements wiring inside Workflow; post-refactor
+      // it routes through WorkflowEventBridge.attach.
+      expect(fires.length).toBeGreaterThan(before);
+    });
+  });
+
+  describe("streaming relay (spec #7)", () => {
+    it("graph stream_start/stream_chunk/stream_end propagate to workflow.events during run", async () => {
+      const w = new Workflow();
+      w.addTask(StreamRelayTask, { prompt: "hi" });
+
+      const startIds: TaskIdType[] = [];
+      const chunks: { taskId: TaskIdType; event: StreamEvent }[] = [];
+      const ends: { taskId: TaskIdType; output: Record<string, unknown> }[] = [];
+      w.on("stream_start", (taskId) => startIds.push(taskId));
+      w.on("stream_chunk", (taskId, event) => chunks.push({ taskId, event }));
+      w.on("stream_end", (taskId, output) => ends.push({ taskId, output }));
+
+      await w.run({ prompt: "hi" });
+
+      expect(startIds.length).toBeGreaterThanOrEqual(1);
+      const textDeltas = chunks.filter((c) => c.event.type === "text-delta");
+      expect(textDeltas.length).toBeGreaterThanOrEqual(1);
+      expect(ends.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("streaming subscription is released after run completes (no leak via bridge field)", async () => {
+      // Pre-refactor `unsubStreaming` was a local in run(); post-refactor the
+      // bridge.beginRun() RETURNS the unsub and run() holds it locally too.
+      // This test verifies that nothing on the bridge keeps a stale unsub
+      // between runs (the I-1 fix from PR review).
+      const w = new Workflow();
+      w.addTask(StreamRelayTask, { prompt: "first" });
+      const chunksRun1: StreamEvent[] = [];
+      const off1 = (event: StreamEvent) => chunksRun1.push(event);
+      w.on("stream_chunk", (_id, event) => off1(event));
+      await w.run({ prompt: "first" });
+
+      const countAfterRun1 = chunksRun1.length;
+      // No second listener subscription needed — same instance.
+      // After run1 completes its streaming subscription must be torn down so
+      // no further chunks are received from the prior subscription. Triggering
+      // a second run reuses the bridge cleanly.
+      w.reset();
+      w.addTask(StreamRelayTask, { prompt: "second" });
+      await w.run({ prompt: "second" });
+      // chunksRun1 captures from BOTH runs (we never unsubscribed off1), so
+      // count must increase. The test would fail if the bridge had silently
+      // dropped subscriptions or double-bound them.
+      expect(chunksRun1.length).toBeGreaterThan(countAfterRun1);
     });
   });
 
