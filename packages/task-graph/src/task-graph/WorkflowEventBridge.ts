@@ -59,6 +59,11 @@ export class WorkflowEventBridge {
     graph.off("dataflow_removed", this._onChanged);
     this._entitlementUnsub?.();
     this._entitlementUnsub = undefined;
+    // Tear down any streaming subscription that's still tied to this graph.
+    // Without this, a graph swap or reset() during a run would leave the old
+    // graph's streaming handlers wired to this workflow's events emitter.
+    this._streamingUnsub?.();
+    this._streamingUnsub = undefined;
     this._attachedGraph = undefined;
   }
 

@@ -59,6 +59,15 @@ export class WorkflowBuilder {
     return this._loopContext;
   }
 
+  /**
+   * Surfaces an error onto this builder's error slot. Used by deferred
+   * loop-builder auto-connect (which runs from a child Workflow but reports
+   * the failure onto the parent's `.error`, matching the non-loop path).
+   */
+  public setError(message: string): void {
+    this._error = message;
+  }
+
   /** Clears pending state. Called by the facade's graph setter and reset(). */
   public resetState(): void {
     this._dataFlows = [];
