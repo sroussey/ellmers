@@ -253,8 +253,10 @@ export class Workflow<
     this.events.emit("start");
     this._abortController = new AbortController();
 
-    // Subscribe to graph-level streaming events and forward to workflow events
-    this._bridge?.beginRun();
+    // Subscribe to graph-level streaming events and forward to workflow events.
+    // The unsub token is held LOCAL to this run so concurrent run() calls don't
+    // clobber each other's streaming subscriptions.
+    const unsubStreaming = this._bridge?.beginRun();
 
     try {
       const output = await this.graph.run<Output>(input, {
@@ -273,7 +275,7 @@ export class Workflow<
       this.events.emit("error", String(error));
       throw error;
     } finally {
-      this._bridge?.endRun();
+      unsubStreaming?.();
       this._abortController = undefined;
     }
   }
