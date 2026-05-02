@@ -26,7 +26,6 @@ export class WorkflowEventBridge {
   private readonly _events: EventEmitter<WorkflowEventListeners>;
   private _attachedGraph?: TaskGraph;
   private _entitlementUnsub?: () => void;
-  private _streamingUnsub?: () => void;
   private readonly _onChanged: (id: unknown) => void;
 
   constructor(events: EventEmitter<WorkflowEventListeners>) {
@@ -59,26 +58,23 @@ export class WorkflowEventBridge {
     graph.off("dataflow_removed", this._onChanged);
     this._entitlementUnsub?.();
     this._entitlementUnsub = undefined;
-    // Tear down any streaming subscription that's still tied to this graph.
-    // Without this, a graph swap or reset() during a run would leave the old
-    // graph's streaming handlers wired to this workflow's events emitter.
-    this._streamingUnsub?.();
-    this._streamingUnsub = undefined;
     this._attachedGraph = undefined;
   }
 
-  public beginRun(): void {
+  /**
+   * Subscribes to streaming events on the attached graph for the duration of
+   * one run. Returns an unsubscribe token that the caller MUST hold locally
+   * and invoke when the run ends. Returning the token (rather than storing
+   * it on the bridge) keeps concurrent runs from clobbering each other's
+   * subscriptions — pre-refactor behavior.
+   */
+  public beginRun(): (() => void) | undefined {
     const graph = this._attachedGraph;
-    if (!graph) return;
-    this._streamingUnsub = graph.subscribeToTaskStreaming({
+    if (!graph) return undefined;
+    return graph.subscribeToTaskStreaming({
       onStreamStart: (taskId) => this._events.emit("stream_start", taskId),
       onStreamChunk: (taskId, event) => this._events.emit("stream_chunk", taskId, event),
       onStreamEnd: (taskId, output) => this._events.emit("stream_end", taskId, output),
     });
-  }
-
-  public endRun(): void {
-    this._streamingUnsub?.();
-    this._streamingUnsub = undefined;
   }
 }
