@@ -982,6 +982,7 @@ export class IndexedDbTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
+    this.validateSelect(options);
     this.validateQueryParams(criteria, options);
 
     const registered = this.indexes.map((cols) => {
@@ -1007,14 +1008,19 @@ export class IndexedDbTabularStorage<
       const store = tx.objectStore(this.table);
       const idx = store.index(picked.name);
 
-      // Build the equality prefix key range from criteria values
+      // Build the equality prefix key range from criteria values.
+      // Only push columns whose criterion is a direct equality value (plain value or operator "=").
+      // Any non-equality operator (>, <, etc.) breaks the prefix; the existing in-cursor
+      // compareWithOperator filter below handles those columns.
       const prefix: unknown[] = [];
       for (const col of picked.keyPath) {
-        if (col in (criteria as Record<string, unknown>)) {
-          const v = (criteria as Record<string, unknown>)[col];
-          prefix.push(isSearchCondition(v) ? v.value : v);
+        const c = (criteria as Record<string, unknown>)[col];
+        if (c === undefined && !(col in (criteria as Record<string, unknown>))) break;
+        if (isSearchCondition(c)) {
+          if (c.operator !== "=") break;
+          prefix.push(c.value);
         } else {
-          break;
+          prefix.push(c);
         }
       }
       // Use IDBKeyRange.bound with [] upper sentinel for prefix scans on compound keys.
@@ -1032,6 +1038,14 @@ export class IndexedDbTabularStorage<
       const out: Pick<Entity, K>[] = [];
       let toSkip = options.offset ?? 0;
 
+      // Precompute lookup maps for the cursor loop (O(keyPath) once, not per-row)
+      const keyPathPositions = new Map<string, number>();
+      picked.keyPath.forEach((col, i) => keyPathPositions.set(col, i));
+
+      const pkCols = this.primaryKeyColumns().map(String);
+      const pkPositions = new Map<string, number>();
+      pkCols.forEach((col, i) => pkPositions.set(col, i));
+
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) {
@@ -1045,18 +1059,17 @@ export class IndexedDbTabularStorage<
         const row = {} as Record<string, unknown>;
         for (const col of options.select) {
           const colStr = String(col);
-          const pos = picked.keyPath.indexOf(colStr);
-          if (pos >= 0) {
+          const pos = keyPathPositions.get(colStr);
+          if (pos !== undefined) {
             // Column is in the index key path — extract from key array
             row[colStr] = Array.isArray(key) ? key[pos] : key;
           } else {
             // Column must be a primary key column — use cursor.primaryKey
-            const pkCols = this.primaryKeyColumns().map(String);
             if (pkCols.length === 1 && colStr === pkCols[0]) {
               row[colStr] = cursor.primaryKey;
             } else {
-              const pkPos = pkCols.indexOf(colStr);
-              if (pkPos >= 0) {
+              const pkPos = pkPositions.get(colStr);
+              if (pkPos !== undefined) {
                 row[colStr] = Array.isArray(cursor.primaryKey)
                   ? (cursor.primaryKey as unknown[])[pkPos]
                   : cursor.primaryKey;
@@ -1069,8 +1082,8 @@ export class IndexedDbTabularStorage<
         let matches = true;
         for (const [col, crit] of Object.entries(criteria as Record<string, unknown>)) {
           if (!isSearchCondition(crit)) continue; // equality already handled by range
-          const pos = picked.keyPath.indexOf(col);
-          if (pos < 0) continue;
+          const pos = keyPathPositions.get(col);
+          if (pos === undefined) continue;
           const valFromKey = Array.isArray(key) ? (key as unknown[])[pos] : key;
           if (!compareWithOperator(valFromKey, crit.operator, crit.value)) {
             matches = false;
@@ -1179,16 +1192,18 @@ export class IndexedDbTabularStorage<
  * non-equality criteria that cannot be expressed as an IDBKeyRange prefix.
  */
 function compareWithOperator(a: unknown, op: SearchOperator, b: unknown): boolean {
+  const av = a as string | number | null | undefined;
+  const bv = b as string | number;
   switch (op) {
     case "=":
-      return a === b;
+      return av === bv;
     case "<":
-      return (a as number) < (b as number);
+      return av !== null && av !== undefined && av < bv;
     case "<=":
-      return (a as number) <= (b as number);
+      return av !== null && av !== undefined && av <= bv;
     case ">":
-      return (a as number) > (b as number);
+      return av !== null && av !== undefined && av > bv;
     case ">=":
-      return (a as number) >= (b as number);
+      return av !== null && av !== undefined && av >= bv;
   }
 }

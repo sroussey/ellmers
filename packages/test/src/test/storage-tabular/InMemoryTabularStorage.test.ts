@@ -119,4 +119,26 @@ describe("InMemoryTabularStorage.queryIndex", () => {
     );
     expect(rows).toEqual([]);
   });
+
+  it("throws StorageValidationError on empty select array", async () => {
+    const storage = new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      [["category"]]
+    );
+    await expect(
+      storage.queryIndex({ category: "a" }, { select: [] as any })
+    ).rejects.toThrow(/non-empty select/);
+  });
+
+  it("throws StorageValidationError when select contains a column not in schema", async () => {
+    const storage = new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      [["category"]]
+    );
+    await expect(
+      storage.queryIndex({ category: "a" }, { select: ["nonexistentCol"] as any })
+    ).rejects.toThrow(/not in schema/);
+  });
 });

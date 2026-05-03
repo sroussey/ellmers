@@ -438,5 +438,74 @@ describe("IndexedDbTabularStorage", () => {
         )
       ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
     });
+
+    it("queryIndex honors > operator on a column beyond the equality prefix", async () => {
+      // Index: [user_id, created_at, status]
+      // criteria: { user_id: "u", created_at: { operator: ">", value: "0003" } }
+      // The equality prefix covers only user_id (created_at is non-equality → breaks prefix).
+      // The in-cursor filter must then reject rows where created_at <= "0003".
+      const ActivitySchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          user_id: { type: "string" },
+          created_at: { type: "string" },
+          status: { type: "string" },
+        },
+        required: ["id", "user_id", "created_at", "status"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const ActivityPK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof ActivitySchema, typeof ActivityPK>(
+        "gt_test_" + Date.now(),
+        ActivitySchema,
+        ActivityPK,
+        [["user_id", "created_at", "status"]]
+      );
+      await storage.setupDatabase();
+
+      await storage.put({ id: "1", user_id: "u", created_at: "0001", status: "done" });
+      await storage.put({ id: "2", user_id: "u", created_at: "0005", status: "done" });
+      await storage.put({ id: "3", user_id: "u", created_at: "0010", status: "done" });
+
+      const rows = await storage.queryIndex(
+        { user_id: "u", created_at: { value: "0003", operator: ">" } },
+        {
+          select: ["id", "user_id", "created_at", "status"],
+        }
+      );
+
+      // Should return rows with created_at > "0003", i.e. "0005" and "0010"
+      expect(rows).toHaveLength(2);
+      const sorted = rows.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+      expect(sorted[0].created_at).toBe("0005");
+      expect(sorted[1].created_at).toBe("0010");
+    });
+
+    it("queryIndex throws StorageValidationError on empty select", async () => {
+      const SimpleSchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          user_id: { type: "string" },
+        },
+        required: ["id", "user_id"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const SimplePK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof SimpleSchema, typeof SimplePK>(
+        "empty_select_test_" + Date.now(),
+        SimpleSchema,
+        SimplePK,
+        [["user_id"]]
+      );
+      await storage.setupDatabase();
+
+      await expect(
+        storage.queryIndex({ user_id: "u" }, { select: [] as any })
+      ).rejects.toThrow(/non-empty select/);
+    });
   });
 });

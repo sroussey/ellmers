@@ -31,6 +31,7 @@ import {
   ValueOptionType,
 } from "./ITabularStorage";
 import { pickCoveringIndex } from "./coveringIndexPicker";
+import { StorageValidationError } from "./StorageError";
 
 export const SUPABASE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.supabase"
@@ -795,6 +796,7 @@ export class SupabaseTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
+    this.validateSelect(options);
     this.validateQueryParams(criteria, options);
 
     const registered = this.indexes.map((cols, i) => {
@@ -825,12 +827,15 @@ export class SupabaseTabularStorage<
         q = q.order(String(column), { ascending: direction === "ASC" });
       }
     }
+    if (options.offset !== undefined && options.limit === undefined) {
+      throw new StorageValidationError(
+        "queryIndex with offset requires limit (no implicit cap)"
+      );
+    }
     if (options.offset !== undefined || options.limit !== undefined) {
       const start = options.offset ?? 0;
       if (options.limit !== undefined) {
         q = q.range(start, start + options.limit - 1);
-      } else {
-        q = q.range(start, start + 999_999);
       }
     }
 
