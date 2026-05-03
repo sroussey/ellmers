@@ -21,7 +21,7 @@ export interface BrowserTaskDeps {
 }
 
 export const BROWSER_CONTROL_TASK_DEPS =
-  createServiceToken<BrowserTaskDeps>("@workglow/tasks/browser");
+  createServiceToken<BrowserTaskDeps>("@workglow/browser-control");
 
 export function registerBrowserDeps(deps: BrowserTaskDeps): void {
   globalServiceRegistry.registerInstance(BROWSER_CONTROL_TASK_DEPS, deps);
@@ -30,7 +30,7 @@ export function registerBrowserDeps(deps: BrowserTaskDeps): void {
 export function getBrowserDeps(): BrowserTaskDeps {
   if (!globalServiceRegistry.has(BROWSER_CONTROL_TASK_DEPS)) {
     throw new Error(
-      "Browser task dependencies not registered. Import @workglow/tasks from a platform entry (browser, node, or bun) before using browser tasks."
+      "Browser task dependencies not registered. Import @workglow/browser-control/task-server (Node/Bun) or @workglow/browser-control/task-electron before using browser-control tasks."
     );
   }
   return globalServiceRegistry.get(BROWSER_CONTROL_TASK_DEPS);

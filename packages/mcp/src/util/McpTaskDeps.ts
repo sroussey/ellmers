@@ -43,7 +43,7 @@ export interface McpTaskDeps {
   readonly createStdioTransport: (config: McpServerConfig) => Promise<Transport>;
 }
 
-export const MCP_TASK_DEPS = createServiceToken<McpTaskDeps>("@workglow/tasks/mcp");
+export const MCP_TASK_DEPS = createServiceToken<McpTaskDeps>("@workglow/mcp");
 
 export function registerMcpTaskDeps(deps: McpTaskDeps): void {
   globalServiceRegistry.registerInstance(MCP_TASK_DEPS, deps);
@@ -52,7 +52,7 @@ export function registerMcpTaskDeps(deps: McpTaskDeps): void {
 export function getMcpTaskDeps(): McpTaskDeps {
   if (!globalServiceRegistry.has(MCP_TASK_DEPS)) {
     throw new Error(
-      "MCP task dependencies not registered. Import @workglow/tasks from a platform entry (browser, node, or bun) before using MCP tasks."
+      "MCP task dependencies not registered. Import @workglow/mcp/tasks from a platform entry (browser, node, or bun) before using MCP tasks."
     );
   }
   return globalServiceRegistry.get(MCP_TASK_DEPS);

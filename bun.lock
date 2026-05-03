@@ -603,7 +603,6 @@
       "version": "0.2.27",
       "dependencies": {
         "@workglow/ai": "workspace:*",
-        "@workglow/ai-provider": "workspace:*",
         "@workglow/anthropic": "workspace:*",
         "@workglow/browser-control": "workspace:*",
         "@workglow/chrome": "workspace:*",

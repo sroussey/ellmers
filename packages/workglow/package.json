@@ -151,7 +151,6 @@
   },
   "dependencies": {
     "@workglow/ai": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/openai": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
