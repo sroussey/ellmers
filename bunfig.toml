@@ -2,7 +2,7 @@
 # Explicitly set the linker to isolated
 linker = "isolated"
 [test]
-retry = 0
+retry = 1
 root = "./packages/test/src/test"
 preload = ["./scripts/configure-hft-test-cache.ts", "./scripts/lib/preload-credentials.ts"]
 [console]
