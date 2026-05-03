@@ -3,14 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, vi } from "vitest";
-import {
-  registerFilterOp,
-  applyFilter,
-  hasFilterOp,
-  _resetFilterRegistryForTests,
-} from "@workglow/tasks";
+import { applyFilter, hasFilterOp, registerFilterOp } from "@workglow/tasks";
 import { CpuImage, type GpuImage } from "@workglow/util/media";
+import { describe, expect, test, vi } from "vitest";
 
 describe("applyFilter", () => {
   test("dispatches to the registered cpu fn for CpuImage", () => {
@@ -54,14 +49,16 @@ describe("applyFilter", () => {
 
 describe("hasFilterOp", () => {
   test("returns false when no op registered for (backend, filter)", () => {
-    _resetFilterRegistryForTests();
     expect(hasFilterOp("webgpu", "__nope__")).toBe(false);
   });
 
   test("returns true after registerFilterOp for that key", () => {
-    _resetFilterRegistryForTests();
     registerFilterOp<undefined>("webgpu", "__yes__", (img) => img);
     expect(hasFilterOp("webgpu", "__yes__")).toBe(true);
     expect(hasFilterOp("cpu", "__yes__")).toBe(false);
+  });
+
+  test("keeps built-in task filter registrations available", () => {
+    expect(hasFilterOp("cpu", "sepia")).toBe(true);
   });
 });
