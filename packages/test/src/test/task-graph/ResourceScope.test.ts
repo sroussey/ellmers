@@ -323,3 +323,39 @@ describe("TaskRunner.run auto-ownership", () => {
     expect(disposed).toEqual(["bare"]);
   });
 });
+
+describe("ResourceScope `await using` integration", () => {
+  it("runner does not dispose; block-scoped `await using` does", async () => {
+    const disposed: string[] = [];
+
+    class UsingScopeTask extends Task<{}, {}> {
+      static override readonly type = "UsingScopeTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("using:t1", async () => {
+          disposed.push("t1");
+        });
+        return {};
+      }
+    }
+
+    {
+      await using scope = new ResourceScope();
+      const graph = new TaskGraph();
+      graph.addTask(new UsingScopeTask({ id: "t1" }));
+      await graph.run({}, { resourceScope: scope });
+
+      // Inside the block: runner did NOT dispose. Scope still holds the disposer.
+      expect(scope.size).toBeGreaterThan(0);
+      expect(disposed).toEqual([]);
+    }
+
+    // Block exits → `await using` invokes [Symbol.asyncDispose] → disposeAll runs.
+    expect(disposed).toEqual(["t1"]);
+  });
+});
