@@ -885,7 +885,7 @@ describe("IteratorTask", () => {
         }
 
         override async execute(input: { item: number }): Promise<{ item: number }> {
-          await new Promise((resolve) => setTimeout(resolve, (4 - input.item) * 5));
+          await sleep((4 - input.item) * 5);
           return { item: input.item };
         }
       }
