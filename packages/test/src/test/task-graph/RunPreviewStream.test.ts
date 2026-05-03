@@ -8,8 +8,6 @@ import { Dataflow, Task, Workflow, type StreamEvent } from "@workglow/task-graph
 import { sleep } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
 class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }> {
   public static override type = "SyntheticStreamSource";
   public static override outputSchema() {
@@ -67,17 +65,6 @@ function createDoubleTask(): DoubleTask {
 }
 
 describe("TaskRunner.runPreviewStream", () => {
-  let savedLogger: ILogger;
-
-  beforeEach(() => {
-    savedLogger = getLogger();
-    setLogger(new NullLogger());
-  });
-
-  afterEach(() => {
-    setLogger(savedLogger);
-  });
-
   it("yields once immediately even when no upstream is streaming", async () => {
     const wf = new Workflow();
     const src = new SyntheticStreamSource();
