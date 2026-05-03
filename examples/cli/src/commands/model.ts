@@ -13,7 +13,7 @@ import {
   HfTransformersOnnxModelRecordSchema,
   parseOnnxQuantizations,
 } from "@workglow/huggingface-transformers/ai-provider";
-import { LlamaCppModelRecordSchema } from "@workglow/ai-provider/llamacpp";
+import { LlamaCppModelRecordSchema } from "@workglow/node-llama-cpp/ai-provider";
 import { OllamaModelRecordSchema } from "@workglow/ai-provider/ollama";
 import { OpenAiModelRecordSchema } from "@workglow/ai-provider/openai";
 import type { DataPortSchemaObject } from "@workglow/util/schema";

@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import {
   LLAMACPP_PREVIEW_TASKS,
   LLAMACPP_STREAM_TASKS,

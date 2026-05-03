@@ -16,7 +16,7 @@ import type {
 import { filterValidToolCalls } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
-import { extractMessageText, toolChoiceForcesToolCall } from "../../common/ToolCallParsers";
+import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai-provider/common";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getLlamaCppSdk,

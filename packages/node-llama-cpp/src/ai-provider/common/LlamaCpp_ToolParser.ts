@@ -11,7 +11,7 @@ import {
   parseLiquid,
   parseLlama,
   parseQwen35Xml,
-} from "../../common/ToolCallParsers";
+} from "@workglow/ai-provider/common";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 
 // ============================================================================

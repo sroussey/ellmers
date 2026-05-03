@@ -11,13 +11,13 @@
   "description": "AI provider integrations for Workglow, supporting OpenAI, Hugging Face Transformers, MediaPipe, and GGML models.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-llamacpp/index.ts ./src/provider-llamacpp/runtime.ts ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
+    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-tf-mediapipe/index.ts ./src/provider-tf-mediapipe/runtime.ts ./src/provider-chrome/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,browser,types' 'bun run build-code' 'bun run build-browser' 'bun run build-types'",
     "build-js": "concurrently -c 'auto' -n 'code,browser' 'bun run build-code' 'bun run build-browser'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-llamacpp/index.ts ./src/provider-llamacpp/runtime.ts ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
+    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-tf-mediapipe/index.ts ./src/provider-tf-mediapipe/runtime.ts ./src/provider-chrome/index.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -31,14 +31,6 @@
     "./common": {
       "types": "./dist/common.d.ts",
       "import": "./dist/common.js"
-    },
-    "./llamacpp": {
-      "types": "./dist/provider-llamacpp/index.d.ts",
-      "import": "./dist/provider-llamacpp/index.js"
-    },
-    "./llamacpp/runtime": {
-      "types": "./dist/provider-llamacpp/runtime.d.ts",
-      "import": "./dist/provider-llamacpp/runtime.js"
     },
     "./tf-mediapipe": {
       "types": "./dist/provider-tf-mediapipe/index.d.ts",
@@ -73,8 +65,7 @@
     "@mediapipe/tasks-text": "catalog:",
     "@mediapipe/tasks-vision": "catalog:",
     "@mediapipe/tasks-audio": "catalog:",
-    "@mediapipe/tasks-genai": "catalog:",
-    "node-llama-cpp": "catalog:"
+    "@mediapipe/tasks-genai": "catalog:"
   },
   "peerDependenciesMeta": {
     "@workglow/ai": {
@@ -91,9 +82,6 @@
     },
     "@workglow/util": {
       "optional": false
-    },
-    "node-llama-cpp": {
-      "optional": true
     },
     "@mediapipe/tasks-text": {
       "optional": true
@@ -117,7 +105,6 @@
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "node-llama-cpp": "catalog:"
+    "@workglow/util": "workspace:*"
   }
 }

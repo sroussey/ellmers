@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerProviderWorker } from "../common/registerProvider";
+import { registerProviderWorker } from "@workglow/ai-provider/common";
 import {
   LLAMACPP_PREVIEW_TASKS,
   LLAMACPP_STREAM_TASKS,
