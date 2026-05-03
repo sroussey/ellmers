@@ -17,7 +17,7 @@ import {
   RetryableJobError,
 } from "@workglow/job-queue";
 import type { JobHandle } from "@workglow/job-queue";
-import { IQueueStorage } from "@workglow/storage";
+import type { IQueueStorage } from "@workglow/job-queue";
 import type { ISpan, ITelemetryProvider } from "@workglow/util";
 import {
   BaseError,

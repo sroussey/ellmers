@@ -45,19 +45,14 @@
     }
   },
   "peerDependencies": {
-    "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@workglow/storage": {
-      "optional": false
-    },
     "@workglow/util": {
       "optional": false
     }
   },
   "devDependencies": {
-    "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "files": [

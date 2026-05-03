@@ -11,7 +11,7 @@ import {
   RateLimiter,
   RetryableJobError,
 } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
   JobTaskFailedError,

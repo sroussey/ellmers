@@ -5,7 +5,7 @@
  */
 
 import { JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { IQueueStorage } from "@workglow/storage";
+import type { IQueueStorage } from "@workglow/job-queue";
 import { EventEmitter } from "@workglow/util";
 
 /**

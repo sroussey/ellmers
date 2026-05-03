@@ -5,7 +5,7 @@
  */
 
 import { RateLimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
 import { describe } from "vitest";
 import { runGenericJobQueueTests } from "./genericJobQueueTests";
 import { setLogger } from "@workglow/util";

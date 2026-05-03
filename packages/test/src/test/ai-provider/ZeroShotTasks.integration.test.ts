@@ -27,7 +27,7 @@ import {
 } from "@workglow/ai-provider/hf-transformers/runtime";
 import type { HfTransformersOnnxModelRecord } from "@workglow/ai-provider/hf-transformers/runtime";
 import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage } from "@workglow/job-queue";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InMemoryQueueStorage, TelemetryQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, TelemetryQueueStorage } from "@workglow/job-queue";
 import {
   ConsoleTelemetryProvider,
   NoopTelemetryProvider,

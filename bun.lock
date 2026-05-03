@@ -184,11 +184,9 @@
       "name": "@workglow/job-queue",
       "version": "0.2.27",
       "devDependencies": {
-        "@workglow/storage": "workspace:*",
         "@workglow/util": "workspace:*",
       },
       "peerDependencies": {
-        "@workglow/storage": "workspace:*",
         "@workglow/util": "workspace:*",
       },
     },

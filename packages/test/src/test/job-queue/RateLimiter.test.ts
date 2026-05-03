@@ -5,7 +5,7 @@
  */
 
 import { RateLimiter } from "@workglow/job-queue";
-import type { IRateLimiterStorage } from "@workglow/storage";
+import type { IRateLimiterStorage } from "@workglow/job-queue";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 interface MockRateLimiterStorage extends IRateLimiterStorage {

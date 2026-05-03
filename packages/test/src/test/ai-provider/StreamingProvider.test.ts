@@ -13,8 +13,8 @@ import {
   setAiProviderRegistry,
 } from "@workglow/ai";
 import { JobQueueClient, JobQueueServer, RateLimiter } from "@workglow/job-queue";
-import type { IQueueStorage } from "@workglow/storage";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
+import type { IQueueStorage } from "@workglow/job-queue";
 import type { StreamEvent } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
