@@ -5,8 +5,8 @@
  */
 
 import { Dataflow, Task, Workflow, type StreamEvent } from "@workglow/task-graph";
-import { sleep } from "@workglow/util";
-import { describe, expect, it } from "vitest";
+import { type ILogger, getLogger, NullLogger, setLogger, sleep } from "@workglow/util";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }> {
   public static override type = "SyntheticStreamSource";
@@ -60,11 +60,26 @@ class DoubleTask extends Task<{ value: number }, { doubled: number }> {
   }
 }
 
+function createDoubleTask(): DoubleTask {
+  return new DoubleTask({ defaults: { value: 0 } });
+}
+
 describe("TaskRunner.runPreviewStream", () => {
+  let savedLogger: ILogger;
+
+  beforeEach(() => {
+    savedLogger = getLogger();
+    setLogger(new NullLogger());
+  });
+
+  afterEach(() => {
+    setLogger(savedLogger);
+  });
+
   it("yields once immediately even when no upstream is streaming", async () => {
     const wf = new Workflow();
     const src = new SyntheticStreamSource();
-    const dst = new DoubleTask();
+    const dst = createDoubleTask();
     wf.graph.addTasks([src, dst]);
     wf.graph.addDataflow(new Dataflow(src.id, "value", dst.id, "value"));
 
@@ -75,12 +90,13 @@ describe("TaskRunner.runPreviewStream", () => {
       break;
     }
     expect(yields.length).toBe(1);
+    expect(yields[0]).toEqual({ doubled: 0 });
   });
 
   it("yields per upstream snapshot during a streaming run", async () => {
     const wf = new Workflow();
     const src = new SyntheticStreamSource();
-    const dst = new DoubleTask();
+    const dst = createDoubleTask();
     wf.graph.addTasks([src, dst]);
     wf.graph.addDataflow(new Dataflow(src.id, "value", dst.id, "value"));
 
@@ -102,7 +118,7 @@ describe("TaskRunner.runPreviewStream", () => {
   it("terminates when the consumer breaks out", async () => {
     const wf = new Workflow();
     const src = new SyntheticStreamSource();
-    const dst = new DoubleTask();
+    const dst = createDoubleTask();
     wf.graph.addTasks([src, dst]);
     wf.graph.addDataflow(new Dataflow(src.id, "value", dst.id, "value"));
 
@@ -117,7 +133,7 @@ describe("TaskRunner.runPreviewStream", () => {
   it("swallows errors from runPreview — iterator never throws to consumer", async () => {
     const wf = new Workflow();
     const src = new SyntheticStreamSource();
-    const dst = new DoubleTask();
+    const dst = createDoubleTask();
     wf.graph.addTasks([src, dst]);
     wf.graph.addDataflow(new Dataflow(src.id, "value", dst.id, "value"));
 
