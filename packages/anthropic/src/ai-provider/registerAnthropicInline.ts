@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";
 import {
   ANTHROPIC_PREVIEW_TASKS,

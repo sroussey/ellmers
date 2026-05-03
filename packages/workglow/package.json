@@ -152,6 +152,7 @@
   "dependencies": {
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
+    "@workglow/anthropic": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/postgres": "workspace:*",

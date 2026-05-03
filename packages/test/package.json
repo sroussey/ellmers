@@ -31,6 +31,7 @@
     "@types/pg": "^8.18.0",
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
+    "@workglow/anthropic": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/job-queue": "workspace:*",
