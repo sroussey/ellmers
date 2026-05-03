@@ -16,7 +16,7 @@ import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
-import { dataUriToImageValue } from "../../common/imageOutputHelpers";
+import { dataUriToImageValue } from "@workglow/ai-provider/common";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 

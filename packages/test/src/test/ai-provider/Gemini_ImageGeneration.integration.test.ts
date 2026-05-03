@@ -5,7 +5,7 @@
  */
 
 import { ImageEditTask, ImageGenerateTask } from "@workglow/ai";
-import { registerGeminiInline } from "@workglow/ai-provider/gemini/runtime";
+import { registerGeminiInline } from "@workglow/google-gemini/ai-provider-runtime";
 import "@workglow/tasks";
 import { beforeAll, describe, expect, it } from "vitest";
 

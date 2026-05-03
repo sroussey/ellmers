@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import { GEMINI_PREVIEW_TASKS, GEMINI_STREAM_TASKS, GEMINI_TASKS } from "./common/Gemini_JobRunFns";
 import { GoogleGeminiQueuedProvider } from "./GoogleGeminiQueuedProvider";
 import { registerGeminiImageValidator } from "./common/Gemini_ImageValidation";

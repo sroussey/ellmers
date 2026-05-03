@@ -10,7 +10,7 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { normalizedModelSearchQuery } from "../../common/modelSearchQuery";
+import { normalizedModelSearchQuery } from "@workglow/ai-provider/common";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 
 interface GeminiModelEntry {
