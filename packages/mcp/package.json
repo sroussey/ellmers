@@ -31,14 +31,14 @@
     "./tasks": {
       "browser": {
         "types": "./dist/tasks/browser.d.ts",
-        "import": "./dist/tasks/browser.js"
+        "import": "./dist/browser.js"
       },
       "bun": {
         "types": "./dist/tasks/bun.d.ts",
-        "import": "./dist/tasks/bun.js"
+        "import": "./dist/bun.js"
       },
       "types": "./dist/tasks/node.d.ts",
-      "import": "./dist/tasks/node.js"
+      "import": "./dist/node.js"
     },
     "./util": {
       "types": "./dist/util.d.ts",

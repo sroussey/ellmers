@@ -15,10 +15,7 @@ export * from "./task/FileLoaderTask.server";
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
-import { registerMcpTaskDepsServer } from "./server";
 import { FileLoaderTask } from "./task/FileLoaderTask.server";
-
-registerMcpTaskDepsServer();
 
 export const registerCommonTasks = () => {
   const tasks = registerCommonTasksFn();

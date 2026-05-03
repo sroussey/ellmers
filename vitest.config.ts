@@ -12,6 +12,11 @@ export default defineConfig({
         __dirname,
         "packages/ai-provider/src/provider-ollama/index.browser.ts"
       ),
+      // Resolve mcp subpaths from source so that module identity is preserved across entries.
+      // Without this, the bundled dist/node.js and dist/util.js each inline a separate copy of
+      // McpClientUtil, breaking mock patterns that mutate the exported mcpClientFactory object.
+      "@workglow/mcp/tasks": path.resolve(__dirname, "packages/mcp/src/tasks/node.ts"),
+      "@workglow/mcp/util": path.resolve(__dirname, "packages/mcp/src/util.ts"),
     },
   },
   envDir: __dirname,

@@ -9,17 +9,6 @@ import "./task/image/registerImageTextRenderer.browser";
 
 export * from "./common";
 export * from "./task/FileLoaderTask";
-import { mcpClientFactory, mcpServerConfigSchema, registerMcpTaskDeps } from "@workglow/mcp/util";
-
-registerMcpTaskDeps({
-  mcpClientFactory,
-  mcpServerConfigSchema,
-  createStdioTransport: () => {
-    throw new Error(
-      "stdio transport is not available in the browser. Use streamable-http or sse instead."
-    );
-  },
-});
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
