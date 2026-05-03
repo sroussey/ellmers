@@ -231,6 +231,36 @@ describe("TaskGraphRunner.runGraph auto-ownership", () => {
   });
 });
 
+describe("TaskGraphRunner terminal-event ordering", () => {
+  it("emits 'error' event before auto-disposal fires", async () => {
+    const events: string[] = [];
+
+    class FailingResourceTask extends Task<{}, {}> {
+      static override readonly type = "FailingResourceTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("order:failing", async () => {
+          events.push("disposed");
+        });
+        throw new Error("intentional failure");
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new FailingResourceTask({ id: "t1" }));
+    graph.on("error", () => events.push("error-event"));
+
+    await expect(graph.run()).rejects.toThrow("intentional failure");
+
+    expect(events).toEqual(["error-event", "disposed"]);
+  });
+});
+
 describe("TaskRunner.run auto-ownership", () => {
   it("auto-creates and disposes a ResourceScope when none is passed", async () => {
     const disposed: string[] = [];
