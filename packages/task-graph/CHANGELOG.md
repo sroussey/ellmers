@@ -1,5 +1,7 @@
 # @workglow/task-graph
 
+## 0.2.26
+
 ## 0.2.25
 
 ### Features

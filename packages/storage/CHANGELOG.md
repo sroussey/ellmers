@@ -1,5 +1,36 @@
 # @workglow/storage
 
+## 0.2.26
+
+### Features
+
+#### storage
+
+- Supabase + FsFolder queryIndex
+- Sqlite + Postgres queryIndex with column projection
+- IndexedDbTabularStorage.queryIndex via openKeyCursor
+- InMemoryTabularStorage.queryIndex
+- add queryIndex method to ITabularStorage interface
+- pickCoveringIndex pure helper for queryIndex
+- CoveringIndexMissingError for queryIndex
+
+### Bug Fixes
+
+#### storage
+
+- address review on queryIndex (#453)
+- CachedTabularStorage delegates queryIndex to cache
+
+### Style
+
+#### storage
+
+- align CoveringIndexMissingError license header
+
+### Chores
+
+- format
+
 ## 0.2.25
 
 ## 0.2.24

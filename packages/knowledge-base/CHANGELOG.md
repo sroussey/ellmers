@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.2.26
+
+### Features
+
+#### storage
+
+- IndexedDbTabularStorage.queryIndex via openKeyCursor
+
 ## 0.2.25
 
 ## 0.2.24

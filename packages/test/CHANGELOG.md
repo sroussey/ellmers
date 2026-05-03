@@ -1,5 +1,45 @@
 # @workglow/test
 
+## 0.2.26
+
+### Features
+
+#### storage
+
+- Sqlite + Postgres queryIndex with column projection
+- IndexedDbTabularStorage.queryIndex via openKeyCursor
+- InMemoryTabularStorage.queryIndex
+- pickCoveringIndex pure helper for queryIndex
+- CoveringIndexMissingError for queryIndex
+
+### Bug Fixes
+
+#### storage
+
+- address review on queryIndex (#453)
+
+### Style
+
+#### storage
+
+- align CoveringIndexMissingError license header
+
+### Tests
+
+- fix
+
+#### storage
+
+- conformance cases for queryIndex across all backends
+
+#### task-graph
+
+- enhance RunPreviewStream tests with setup and utility functions
+
+### Chores
+
+- format
+
 ## 0.2.25
 
 ### Features
