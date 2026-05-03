@@ -8,7 +8,7 @@ import type { ModelRecord, ModelSearchResultItem } from "@workglow/ai";
 import { ModelRecordSchema, modelSearch } from "@workglow/ai";
 import { AnthropicModelRecordSchema } from "@workglow/ai-provider/anthropic";
 import { GeminiModelRecordSchema } from "@workglow/ai-provider/gemini";
-import { HfInferenceModelRecordSchema } from "@workglow/ai-provider/hf-inference";
+import { HfInferenceModelRecordSchema } from "@workglow/huggingface-inference/ai-provider";
 import {
   HfTransformersOnnxModelRecordSchema,
   parseOnnxQuantizations,

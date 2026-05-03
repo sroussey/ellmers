@@ -10,8 +10,8 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { mapHfModelResult, searchHfModels } from "../../common/HfModelSearch";
-import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
+import { mapHfModelResult, searchHfModels } from "@workglow/ai-provider/common";
+import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { HF_INFERENCE } from "./HFI_Constants";
 
 /** Models with explicit task overrides (HF pipeline tags don't cover ImageGenerateTask/ImageEditTask). */

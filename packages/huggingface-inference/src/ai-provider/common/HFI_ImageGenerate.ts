@@ -15,7 +15,7 @@ import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from 
 import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 
-import { blobToImageValue } from "../../common/imageOutputHelpers";
+import { blobToImageValue } from "@workglow/ai-provider/common";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName } from "./HFI_Client";
 import { resolveHfImageDims } from "./HFI_AspectRatio";

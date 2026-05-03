@@ -38,6 +38,7 @@
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
+    "@workglow/huggingface-inference": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/tasks": "workspace:*",

@@ -36,6 +36,7 @@
     "@workglow/google-gemini": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
+    "@workglow/huggingface-inference": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/job-queue": "workspace:*",

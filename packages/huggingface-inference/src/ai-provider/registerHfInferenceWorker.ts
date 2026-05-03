@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerProviderWorker } from "../common/registerProvider";
+import { registerProviderWorker } from "@workglow/ai-provider/common";
 import { HFI_STREAM_TASKS, HFI_TASKS } from "./common/HFI_JobRunFns";
 import { HfInferenceProvider } from "./HfInferenceProvider";
 

@@ -5,17 +5,18 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
-import { HFI_STREAM_TASKS, HFI_TASKS } from "./common/HFI_JobRunFns";
+import { registerProviderWithWorker } from "@workglow/ai-provider/common";
 import { HfInferenceQueuedProvider } from "./HfInferenceQueuedProvider";
 import { registerHfImageValidator } from "./common/HFI_ImageValidation";
 
-export async function registerHfInferenceInline(
-  options?: AiProviderRegisterOptions
+export async function registerHfInference(
+  options: AiProviderRegisterOptions & {
+    worker: Worker | (() => Worker);
+  }
 ): Promise<void> {
   registerHfImageValidator();
-  await registerProviderInline(
-    new HfInferenceQueuedProvider(HFI_TASKS, HFI_STREAM_TASKS),
+  await registerProviderWithWorker(
+    new HfInferenceQueuedProvider(),
     "Hugging Face Inference",
     options
   );

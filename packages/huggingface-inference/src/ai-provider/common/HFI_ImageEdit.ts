@@ -16,7 +16,7 @@ import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
-import { blobToImageValue, imageValueToPngBytes } from "../../common/imageOutputHelpers";
+import { blobToImageValue, imageValueToPngBytes } from "@workglow/ai-provider/common";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName } from "./HFI_Client";
 import { resolveHfImageDims } from "./HFI_AspectRatio";
