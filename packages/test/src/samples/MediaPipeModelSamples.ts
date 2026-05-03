@@ -1,6 +1,6 @@
 import { getGlobalModelRepository } from "@workglow/ai";
-import { TENSORFLOW_MEDIAPIPE } from "@workglow/ai-provider/tf-mediapipe";
-import type { TFMPModelRecord } from "@workglow/ai-provider/tf-mediapipe";
+import { TENSORFLOW_MEDIAPIPE } from "@workglow/tf-mediapipe/ai-provider";
+import type { TFMPModelRecord } from "@workglow/tf-mediapipe/ai-provider";
 
 export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
   const models: TFMPModelRecord[] = [

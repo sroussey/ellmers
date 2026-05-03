@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/ai-provider/tf-mediapipe";
+export * from "@workglow/tf-mediapipe/ai-provider";

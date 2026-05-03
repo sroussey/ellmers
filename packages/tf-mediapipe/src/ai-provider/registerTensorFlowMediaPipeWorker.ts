@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerProviderWorker } from "../common/registerProvider";
+import { registerProviderWorker } from "@workglow/ai-provider/common";
 import { TFMP_TASKS } from "./common/TFMP_JobRunFns";
 import { TensorFlowMediaPipeProvider } from "./TensorFlowMediaPipeProvider";
 

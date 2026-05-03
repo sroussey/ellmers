@@ -17,7 +17,7 @@ import {
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-provider-runtime";
-// import { TFMP_TASKS } from "@workglow/ai-provider/tf-mediapipe";
+// import { TFMP_TASKS } from "@workglow/tf-mediapipe/ai-provider";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";

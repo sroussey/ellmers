@@ -10,7 +10,7 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
+import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { TENSORFLOW_MEDIAPIPE } from "./TFMP_Constants";
 
 const TFMP_MODELS: Array<{ label: string; value: string }> = [

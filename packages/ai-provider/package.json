@@ -12,13 +12,13 @@
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
-    "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-tf-mediapipe/index.ts ./src/provider-tf-mediapipe/runtime.ts ./src/provider-chrome/index.ts",
+    "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-chrome/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,browser,types' 'bun run build-code' 'bun run build-browser' 'bun run build-types'",
     "build-js": "concurrently -c 'auto' -n 'code,browser' 'bun run build-code' 'bun run build-browser'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/provider-chrome/index.ts ./src/provider-chrome/runtime.ts ./src/test.ts ./src/common.ts",
-    "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-tf-mediapipe/index.ts ./src/provider-tf-mediapipe/runtime.ts ./src/provider-chrome/index.ts",
+    "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/provider-chrome/index.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -31,14 +31,6 @@
     "./common": {
       "types": "./dist/common.d.ts",
       "import": "./dist/common.js"
-    },
-    "./tf-mediapipe": {
-      "types": "./dist/provider-tf-mediapipe/index.d.ts",
-      "import": "./dist/provider-tf-mediapipe/index.js"
-    },
-    "./tf-mediapipe/runtime": {
-      "types": "./dist/provider-tf-mediapipe/runtime.d.ts",
-      "import": "./dist/provider-tf-mediapipe/runtime.js"
     },
     "./chrome": {
       "types": "./dist/provider-chrome/index.d.ts",
@@ -61,11 +53,7 @@
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "@mediapipe/tasks-text": "catalog:",
-    "@mediapipe/tasks-vision": "catalog:",
-    "@mediapipe/tasks-audio": "catalog:",
-    "@mediapipe/tasks-genai": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@workglow/ai": {
@@ -82,25 +70,9 @@
     },
     "@workglow/util": {
       "optional": false
-    },
-    "@mediapipe/tasks-text": {
-      "optional": true
-    },
-    "@mediapipe/tasks-vision": {
-      "optional": true
-    },
-    "@mediapipe/tasks-audio": {
-      "optional": true
-    },
-    "@mediapipe/tasks-genai": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@mediapipe/tasks-audio": "catalog:",
-    "@mediapipe/tasks-genai": "catalog:",
-    "@mediapipe/tasks-text": "catalog:",
-    "@mediapipe/tasks-vision": "catalog:",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",

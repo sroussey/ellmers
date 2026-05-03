@@ -19,6 +19,7 @@
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
+    "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/task-graph": "workspace:*",

@@ -5,7 +5,7 @@
  */
 
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai-provider";
-import { registerTensorFlowMediaPipe } from "@workglow/ai-provider/tf-mediapipe";
+import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai-provider";
 import { getTaskQueueRegistry, JsonTaskItem, TaskGraph, Workflow } from "@workglow/task-graph";
 import { JsonTask } from "@workglow/tasks";
 import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";
