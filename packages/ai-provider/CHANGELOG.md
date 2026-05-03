@@ -1,5 +1,11 @@
 # @workglow/ai-provider
 
+## 0.2.25
+
+### Tests
+
+- quick fix
+
 ## 0.2.24
 
 ## 0.2.23

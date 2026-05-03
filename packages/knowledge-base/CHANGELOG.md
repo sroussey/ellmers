@@ -1,5 +1,7 @@
 # @workglow/knowledge-base
 
+## 0.2.25
+
 ## 0.2.24
 
 ### Features

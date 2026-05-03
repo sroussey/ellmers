@@ -1,5 +1,81 @@
 # @workglow/task-graph
 
+## 0.2.25
+
+### Features
+
+#### task-graph
+
+- TaskRunner.run() throws on concurrent re-entry
+- TaskGraphRunner.runGraph auto-creates ResourceScope when none passed
+- TaskRunner.run auto-creates ResourceScope when none passed
+
+### Bug Fixes
+
+#### task-graph
+
+- address Copilot PR review on ResourceScope auto-ownership
+- await handleError in runGraph epilogue
+- runtime guard for unset RunScheduler in StreamPump
+- RunContext disposes parentSignal listener on terminal handlers
+
+### Refactors
+
+#### task-graph
+
+- extract StreamProcessor from TaskRunner
+- extract CacheCoordinator from TaskRunner
+- dedupe schema resolution into private resolveSchemas()
+- migrate per-run state from facade fields to TaskRunContext
+- add TaskRunContext value object for per-run state
+- pattern-parity follow-ups from refactor-taskgraph-runner
+- per-run streaming unsub + real spec #7/#8 coverage
+- apply PR #448 review feedback
+- extract DSL state machine to WorkflowBuilder
+- extract loop-builder mode into LoopBuilderContext
+- extract event subscription lifecycle to WorkflowEventBridge
+- extract cache wiring to WorkflowCacheAdapter
+- extract private WorkflowTask class to its own file
+- extract Create*Workflow factories to WorkflowFactories.ts
+- extract pipe/parallel/getLastTask/connect to WorkflowPipe.ts
+- move schema helpers from Workflow.ts to GraphSchemaUtils.ts
+- re-tighten widened facade members to protected
+- extract RunScheduler from TaskGraphRunner
+- privatize StreamPump.pushStreamToEdges
+- extract StreamPump from TaskGraphRunner
+- extract EdgeMaterializer from TaskGraphRunner
+- migrate per-run state from facade fields to RunContext
+- add RunContext value object for per-run state
+
+### Style
+
+#### task-graph
+
+- prettier collapse on StreamPump import block
+
+### Tests
+
+#### task-graph
+
+- add unit tests for Workflow internal seams
+
+### Documentation
+
+#### task-graph
+
+- mark Workflow internal collaborators as @internal
+- document ResourceScope auto-ownership on public surface
+- correct CacheCoordinator.buildKey JSDoc
+- clean up Task 2 JSDoc nits
+- enhance documentation for RunScheduler and TaskGraphRunner
+- document Runner facade + collaborators + RunContext
+- clean up Task 5 doc-hygiene leftovers
+- mark widened EdgeMaterializer back-ref members @internal
+
+### Chores
+
+- format
+
 ## 0.2.24
 
 ### Refactors

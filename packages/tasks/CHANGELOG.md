@@ -1,5 +1,21 @@
 # @workglow/tasks
 
+## 0.2.25
+
+### Refactors
+
+#### task-graph
+
+- migrate per-run state from facade fields to TaskRunContext
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `undici`: ^8.2.0
+
 ## 0.2.24
 
 ## 0.2.23

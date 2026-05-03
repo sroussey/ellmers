@@ -1,5 +1,65 @@
 # @workglow/test
 
+## 0.2.25
+
+### Features
+
+#### task-graph
+
+- TaskRunner.run() throws on concurrent re-entry
+- TaskGraphRunner.runGraph auto-creates ResourceScope when none passed
+- TaskRunner.run auto-creates ResourceScope when none passed
+
+### Bug Fixes
+
+#### task-graph
+
+- address Copilot PR review on ResourceScope auto-ownership
+- await handleError in runGraph epilogue
+
+#### test
+
+- prevent HFTransformersBinding beforeEach timeout (#449)
+
+### Refactors
+
+#### tests
+
+- replace setTimeout with sleep utility for improved readability
+
+#### task-graph
+
+- update port codec registration and improve test coverage
+- per-run streaming unsub + real spec #7/#8 coverage
+- extract DSL state machine to WorkflowBuilder
+
+### Tests
+
+- bun 1.3.13 panics often and makes tests slow
+- quick fix
+
+#### job-queue
+
+- add waitForCondition utility for job deletion verification
+
+#### task-graph
+
+- runPreview does not auto-create or thread ResourceScope
+- failure-path coverage for ResourceScope auto-ownership
+- strengthen Task 5 forwarding tests + add iterator coverage
+- nested-run forwarding disposes exactly once under auto-ownership
+- add `await using` regression for caller-passed ResourceScope
+- add unit tests for TaskRunContext, StreamProcessor, CacheCoordinator
+- add unit tests for Workflow internal seams
+- apply review feedback to Workflow refactor regression net
+- fix type errors in Workflow refactor regression net
+- add Workflow refactor regression net
+- add unit tests for RunScheduler, EdgeMaterializer, StreamPump
+
+### Chores
+
+- format
+
 ## 0.2.24
 
 ### Features
