@@ -135,6 +135,25 @@ export class JobQueueServer<
     this.running = true;
     this.events.emit("server_start", this.queueName);
 
+    // Warn when a process-scoped limiter is paired with a cluster-scoped
+    // queue storage. The user almost certainly meant their configured limit
+    // to be enforced cluster-wide; with a process-scoped limiter they get
+    // N× the limit (one bucket per process).
+    if (
+      this.limiter.scope === "process" &&
+      this.storage.scope === "cluster" &&
+      !(this.limiter instanceof NullLimiter)
+    ) {
+      getLogger().warn(
+        "Process-scoped limiter on cluster-scoped queue storage — limit is enforced per-process, not cluster-wide. Use a cluster-scoped rate limiter storage (Postgres/Supabase) for global enforcement.",
+        {
+          queueName: this.queueName,
+          limiterScope: this.limiter.scope,
+          storage: this.storage.constructor.name,
+        }
+      );
+    }
+
     // Fix stuck jobs from previous runs
     await this.fixupJobs();
 
@@ -153,6 +172,7 @@ export class JobQueueServer<
         (change: QueueChangePayload<Input, Output>) => {
           if (
             change.type === "INSERT" ||
+            change.type === "RESYNC" ||
             (change.type === "UPDATE" && change.new?.status === JobStatus.PENDING)
           ) {
             this.notifyWorkers();

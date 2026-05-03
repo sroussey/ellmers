@@ -10,6 +10,16 @@ import type { PrefixColumn } from "../queue/IQueueStorage";
 export const RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>("ratelimiter.storage");
 
 /**
+ * Whether a rate-limiter storage's state is shared across processes.
+ *
+ * - `"process"` — in-memory / per-process state. Multiple workers in the same
+ *   process share it, but separate processes do not.
+ * - `"cluster"` — state lives in shared external storage (Postgres, Supabase,
+ *   etc.) visible to every process.
+ */
+export type RateLimiterStorageScope = "process" | "cluster";
+
+/**
  * Options for configuring rate limiter storage with prefix filters.
  */
 export interface RateLimiterStorageOptions {
@@ -42,11 +52,45 @@ export interface NextAvailableRecord {
  */
 export interface IRateLimiterStorage {
   /**
+   * Whether this storage is shared across processes. In-memory backends MUST
+   * report `"process"`. Shared databases (Postgres, Supabase) report
+   * `"cluster"`.
+   */
+  readonly scope: RateLimiterStorageScope;
+
+  /**
    * Sets up the database schema and tables.
    * This method should be called before using the storage.
    * For production use, database setup should be done via migrations.
    */
   setupDatabase(): Promise<void>;
+
+  /**
+   * Atomic check-and-record. Returns `true` and inserts an execution row iff
+   * BOTH (a) fewer than `maxExecutions` rows have `executed_at >
+   * (now - windowMs)` AND (b) any persisted `nextAvailableAt` is in the past
+   * or absent. Returns `false` without writing anything otherwise.
+   *
+   * Implementations MUST serialize concurrent callers (advisory locks,
+   * `BEGIN IMMEDIATE`, per-key mutex, etc.) so the count-then-insert window
+   * is uninterruptible.
+   *
+   * @param queueName - The name of the queue
+   * @param maxExecutions - Max allowed executions in the window
+   * @param windowMs - Window size in milliseconds
+   */
+  tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<boolean>;
+
+  /**
+   * Best-effort release: remove the most recent execution row for this queue.
+   * Used when a caller reserved a slot via {@link tryReserveExecution} but
+   * could not actually use it.
+   */
+  releaseExecution(queueName: string): Promise<void>;
 
   /**
    * Records a job execution for rate limiting tracking.

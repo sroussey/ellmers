@@ -38,6 +38,14 @@ export interface SqliteQueueStorageOptions extends QueueStorageOptions {
  * Provides storage and retrieval for job execution states using SQLite.
  */
 export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
+  /**
+   * SQLite is in-process only at the application layer (no LISTEN/NOTIFY,
+   * no shared client across processes). Even if the underlying file is
+   * shared via NFS, the queue contract requires cross-process change
+   * notification we don't provide here, so callers must treat it as
+   * `"process"` scope.
+   */
+  public readonly scope = "process" as const;
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */

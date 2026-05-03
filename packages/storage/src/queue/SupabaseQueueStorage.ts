@@ -27,6 +27,7 @@ export const SUPABASE_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>
  * Provides storage and retrieval for job execution states using Supabase.
  */
 export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
+  public readonly scope = "cluster" as const;
   protected readonly client: SupabaseClient;
   protected readonly prefixes: readonly PrefixColumn[];
   protected readonly prefixValues: Readonly<Record<string, string | number>>;

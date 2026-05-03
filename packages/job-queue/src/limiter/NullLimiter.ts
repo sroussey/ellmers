@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { ILimiter } from "./ILimiter";
+import { ILimiter, LimiterScope } from "./ILimiter";
 
 export const NULL_JOB_LIMITER = createServiceToken<ILimiter>("jobqueue.limiter.null");
 
@@ -13,6 +13,16 @@ export const NULL_JOB_LIMITER = createServiceToken<ILimiter>("jobqueue.limiter.n
  * Null limiter that does nothing.
  */
 export class NullLimiter implements ILimiter {
+  public readonly scope: LimiterScope = "process";
+
+  async tryAcquire(): Promise<boolean> {
+    return true;
+  }
+
+  async release(): Promise<void> {
+    // Do nothing
+  }
+
   async canProceed(): Promise<boolean> {
     return true;
   }
