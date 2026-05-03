@@ -5,9 +5,9 @@
  */
 
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { mcpClientFactory, mcpServerConfigSchema } from "../util/McpClientUtil";
-import type { McpServerConfig } from "../util/McpTaskDeps";
-import { registerMcpTaskDeps } from "../util/McpTaskDeps";
+import { mcpClientFactory, mcpServerConfigSchema } from "@workglow/mcp/util";
+import type { McpServerConfig } from "@workglow/mcp/util";
+import { registerMcpTaskDeps } from "@workglow/mcp/util";
 
 export function registerMcpTaskDepsServer(): void {
   registerMcpTaskDeps({
