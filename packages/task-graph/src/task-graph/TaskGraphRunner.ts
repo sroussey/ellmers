@@ -234,11 +234,11 @@ export class TaskGraphRunner {
     } finally {
       if (ownsScope) {
         await effectiveConfig.resourceScope!.disposeAll();
+        // Only clear our auto-created reference. Caller-passed scopes keep the
+        // caller's lifecycle; `handleStart` overwrites the field on the next
+        // run anyway via `effectiveConfig`.
+        this.resourceScope = undefined;
       }
-      // Reset instance field so a subsequent run on this runner starts clean.
-      // handleStart already overwrites it on the next call, but a stale ref
-      // between runs is brittle.
-      this.resourceScope = undefined;
     }
   }
 

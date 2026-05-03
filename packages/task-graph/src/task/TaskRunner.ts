@@ -19,9 +19,9 @@ import { CacheCoordinator } from "./CacheCoordinator";
 import { resolveSchemaInputs, schemaHasFormatAnnotations } from "./InputResolver";
 import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
+import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
 import { getOutputStreamMode, isTaskStreamable } from "./StreamTypes";
-import { StreamProcessor } from "./StreamProcessor";
 import { Task } from "./Task";
 import {
   TaskAbortedError,
@@ -95,6 +95,15 @@ export class TaskRunner<
   protected resourceScope?: ResourceScope;
 
   /**
+   * True when `this.resourceScope` was auto-created by `run()` (caller did not
+   * pass one in `config`). The flag is used by `own()` so that an auto-owned
+   * scope is not stamped into a child task's long-lived `runConfig` — that
+   * stamp would survive past the parent run's `finally`-block disposal and
+   * leave the child holding a reference to a disposed scope.
+   */
+  protected ownsResourceScope = false;
+
+  /**
    * Input streams for pass-through streaming tasks.
    * Set by the graph runner before executing a streaming task that has
    * upstream streaming edges. Keyed by input port name.
@@ -128,6 +137,7 @@ export class TaskRunner<
     const effectiveConfig: IRunConfig = ownsScope
       ? { ...config, resourceScope: new ResourceScope() }
       : config;
+    this.ownsResourceScope = ownsScope;
 
     try {
       await this.handleStart(effectiveConfig);
@@ -210,11 +220,14 @@ export class TaskRunner<
     } finally {
       if (ownsScope) {
         await effectiveConfig.resourceScope!.disposeAll();
+        // Only clear our auto-created reference. Touching `this.resourceScope`
+        // unconditionally races with concurrent re-entry: `handleStart` early-
+        // returns on `PROCESSING`, so a second `run()` can attach to the in-
+        // flight `currentCtx`; clearing the field then would strip the scope
+        // the original run is still using.
+        this.resourceScope = undefined;
       }
-      // Reset instance field so a subsequent run on this runner starts clean.
-      // handleStart already overwrites it on the next call, but a stale ref
-      // between runs is brittle.
-      this.resourceScope = undefined;
+      this.ownsResourceScope = false;
     }
   }
 
@@ -431,11 +444,21 @@ export class TaskRunner<
     // Propagate parent registry and abort signal to owned ITask instances so
     // that calling task.run() on the returned value inherits this execution context.
     if (hasRunConfig(i)) {
-      Object.assign(i.runConfig, {
+      // Only propagate `resourceScope` if the caller owns its lifecycle. Stamping
+      // an auto-created scope into a long-lived `runConfig` leaks a reference
+      // past the parent run's `finally`-block disposal — the next `task.run()`
+      // on the owned instance would then see a disposed scope, skip auto-create,
+      // and silently drop disposers on its cleared Map. With caller-passed
+      // scopes the caller controls disposal, so the propagation is safe and
+      // preserves resource-sharing across owned-task runs.
+      const stamp: Partial<IRunConfig> = {
         registry: this.registry,
         signal: this.currentCtx?.abortController.signal,
-        resourceScope: this.resourceScope,
-      });
+      };
+      if (!this.ownsResourceScope) {
+        stamp.resourceScope = this.resourceScope;
+      }
+      Object.assign(i.runConfig, stamp);
     }
     // Notify listeners that the entitlement landscape may have changed.
     // For GraphAsTask this is also handled by the subGraph subscription, but
