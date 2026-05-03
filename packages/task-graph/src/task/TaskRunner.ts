@@ -124,82 +124,97 @@ export class TaskRunner<
    * @returns The task output
    */
   async run(overrides: Partial<Input> = {}, config: IRunConfig = {}): Promise<Output> {
-    await this.handleStart(config);
-    const ctx = this.currentCtx!;
-
-    const proto = Object.getPrototypeOf(this.task);
-    if (
-      proto.execute === Task.prototype.execute &&
-      typeof proto.executeStream !== "function" &&
-      proto.executePreview !== Task.prototype.executePreview
-    ) {
-      throw new TaskConfigurationError(
-        `Task "${this.task.type}" implements only executePreview() and cannot be run via run(). ` +
-          `After the run/runPreview split, run() requires execute() (or executeStream()). ` +
-          `See docs/technical/02-dual-mode-execution.md.`
-      );
-    }
+    const ownsScope = config.resourceScope === undefined;
+    const effectiveConfig: IRunConfig = ownsScope
+      ? { ...config, resourceScope: new ResourceScope() }
+      : config;
 
     try {
-      this.task.setInput(overrides);
+      await this.handleStart(effectiveConfig);
+      const ctx = this.currentCtx!;
 
-      await this.resolveSchemas();
-
-      const inputs: Input = this.task.runInputData as Input;
-      const isValid = await this.task.validateInput(inputs);
-      if (!isValid) {
-        throw new TaskInvalidInputError("Invalid input data");
+      const proto = Object.getPrototypeOf(this.task);
+      if (
+        proto.execute === Task.prototype.execute &&
+        typeof proto.executeStream !== "function" &&
+        proto.executePreview !== Task.prototype.executePreview
+      ) {
+        throw new TaskConfigurationError(
+          `Task "${this.task.type}" implements only executePreview() and cannot be run via run(). ` +
+            `After the run/runPreview split, run() requires execute() (or executeStream()). ` +
+            `See docs/technical/02-dual-mode-execution.md.`
+        );
       }
 
-      if (ctx.abortController.signal.aborted) {
-        await this.handleAbort();
-        throw new TaskAbortedError("Promise for task created and aborted before run");
-      }
+      try {
+        this.task.setInput(overrides);
 
-      const isStreamable = isTaskStreamable(this.task);
+        await this.resolveSchemas();
 
-      // Warn if schema declares streaming but executeStream is not implemented
-      if (!isStreamable && typeof this.task.executeStream !== "function") {
-        const streamMode = getOutputStreamMode(this.task.outputSchema());
-        if (streamMode !== "none") {
-          getLogger().warn(
-            `Task "${this.task.type}" declares streaming output (x-stream: "${streamMode}") ` +
-              `but does not implement executeStream(). Falling back to non-streaming execute().`
-          );
+        const inputs: Input = this.task.runInputData as Input;
+        const isValid = await this.task.validateInput(inputs);
+        if (!isValid) {
+          throw new TaskInvalidInputError("Invalid input data");
         }
+
+        if (ctx.abortController.signal.aborted) {
+          await this.handleAbort();
+          throw new TaskAbortedError("Promise for task created and aborted before run");
+        }
+
+        const isStreamable = isTaskStreamable(this.task);
+
+        // Warn if schema declares streaming but executeStream is not implemented
+        if (!isStreamable && typeof this.task.executeStream !== "function") {
+          const streamMode = getOutputStreamMode(this.task.outputSchema());
+          if (streamMode !== "none") {
+            getLogger().warn(
+              `Task "${this.task.type}" declares streaming output (x-stream: "${streamMode}") ` +
+                `but does not implement executeStream(). Falling back to non-streaming execute().`
+            );
+          }
+        }
+
+        const keyInputs = await this.cacheCoordinator.buildKey(inputs, this.outputCache);
+        let outputs = await this.cacheCoordinator.lookup(
+          keyInputs,
+          this.outputCache,
+          isStreamable,
+          ctx
+        );
+
+        if (outputs === undefined) {
+          outputs = isStreamable
+            ? await this.streamProcessor.run(inputs, ctx, {
+                registry: this.registry,
+                resourceScope: this.resourceScope,
+                inputStreams: this.inputStreams,
+                onProgress: this.handleProgress.bind(this),
+                own: this.own,
+              })
+            : await this.executeTask(inputs, ctx);
+
+          await this.cacheCoordinator.save(keyInputs, outputs as Output, this.outputCache);
+          this.task.runOutputData = outputs ?? ({} as Output);
+        }
+
+        await this.handleComplete();
+
+        return this.task.runOutputData as Output;
+      } catch (err: any) {
+        await this.handleError(err);
+        // If a timeout triggered the abort, throw the TaskTimeoutError instead
+        // of the generic TaskAbortedError that the task's execute() may have thrown.
+        throw this.task.error instanceof TaskTimeoutError ? this.task.error : err;
       }
-
-      const keyInputs = await this.cacheCoordinator.buildKey(inputs, this.outputCache);
-      let outputs = await this.cacheCoordinator.lookup(
-        keyInputs,
-        this.outputCache,
-        isStreamable,
-        ctx
-      );
-
-      if (outputs === undefined) {
-        outputs = isStreamable
-          ? await this.streamProcessor.run(inputs, ctx, {
-              registry: this.registry,
-              resourceScope: this.resourceScope,
-              inputStreams: this.inputStreams,
-              onProgress: this.handleProgress.bind(this),
-              own: this.own,
-            })
-          : await this.executeTask(inputs, ctx);
-
-        await this.cacheCoordinator.save(keyInputs, outputs as Output, this.outputCache);
-        this.task.runOutputData = outputs ?? ({} as Output);
+    } finally {
+      if (ownsScope) {
+        await effectiveConfig.resourceScope!.disposeAll();
       }
-
-      await this.handleComplete();
-
-      return this.task.runOutputData as Output;
-    } catch (err: any) {
-      await this.handleError(err);
-      // If a timeout triggered the abort, throw the TaskTimeoutError instead
-      // of the generic TaskAbortedError that the task's execute() may have thrown.
-      throw this.task.error instanceof TaskTimeoutError ? this.task.error : err;
+      // Reset instance field so a subsequent run on this runner starts clean.
+      // handleStart already overwrites it on the next call, but a stale ref
+      // between runs is brittle.
+      this.resourceScope = undefined;
     }
   }
 

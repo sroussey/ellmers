@@ -167,3 +167,66 @@ describe("ResourceScope AI pattern", () => {
     expect(unloaded).toEqual(["test-model"]);
   });
 });
+
+describe("TaskRunner.run auto-ownership", () => {
+  it("auto-creates and disposes a ResourceScope when none is passed", async () => {
+    const disposed: string[] = [];
+
+    class AutoDisposeTask extends Task<{}, { ok: boolean }> {
+      static override readonly type = "AutoDisposeTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+        } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{ ok: boolean }> {
+        ctx.resourceScope?.register("auto:bare", async () => {
+          disposed.push("bare");
+        });
+        return { ok: true };
+      }
+    }
+
+    const task = new AutoDisposeTask({ id: "t1" });
+    const result = await task.run({}, {});
+
+    expect(result).toEqual({ ok: true });
+    // Disposal awaited before run() resolves — so the side effect is visible here.
+    expect(disposed).toEqual(["bare"]);
+  });
+
+  it("does not dispose a caller-passed ResourceScope", async () => {
+    const disposed: string[] = [];
+
+    class CallerOwnsTask extends Task<{}, {}> {
+      static override readonly type = "CallerOwnsTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("caller:bare", async () => {
+          disposed.push("bare");
+        });
+        return {};
+      }
+    }
+
+    const scope = new ResourceScope();
+    const task = new CallerOwnsTask({ id: "t1" });
+    await task.run({}, { resourceScope: scope });
+
+    // Runner did NOT dispose — caller still owns the disposer.
+    expect(disposed).toEqual([]);
+    expect(scope.has("caller:bare")).toBe(true);
+
+    await scope.disposeAll();
+    expect(disposed).toEqual(["bare"]);
+  });
+});
