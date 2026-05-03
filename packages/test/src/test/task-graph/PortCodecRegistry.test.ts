@@ -3,14 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, beforeEach } from "vitest";
-import { registerPortCodec, getPortCodec, _resetPortCodecsForTests } from "@workglow/task-graph";
+import { getPortCodec, registerPortCodec } from "@workglow/task-graph";
+import { describe, expect, test } from "vitest";
 
 describe("PortCodecRegistry", () => {
-  beforeEach(() => {
-    _resetPortCodecsForTests();
-  });
-
   test("register + get round-trip by exact format", () => {
     const codec = {
       serialize: async (v: unknown) => ({ wrapped: v }),
@@ -25,10 +21,10 @@ describe("PortCodecRegistry", () => {
       serialize: async (v: unknown) => v,
       deserialize: async (v: unknown) => v,
     };
-    registerPortCodec("image", codec);
-    expect(getPortCodec("image")).toBe(codec);
-    expect(getPortCodec("image:data-uri")).toBe(codec);
-    expect(getPortCodec("image:bitmap")).toBe(codec);
+    registerPortCodec("test-image", codec);
+    expect(getPortCodec("test-image")).toBe(codec);
+    expect(getPortCodec("test-image:data-uri")).toBe(codec);
+    expect(getPortCodec("test-image:bitmap")).toBe(codec);
   });
 
   test("unknown format returns undefined", () => {
