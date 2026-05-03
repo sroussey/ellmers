@@ -37,6 +37,7 @@ export const IN_MEMORY_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any
  * Supports job scheduling, status tracking, result caching, and prefix-based filtering.
  */
 export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
+  public readonly scope = "process" as const;
   /** The prefix values for filtering jobs */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
   /** Event emitter for change notifications */

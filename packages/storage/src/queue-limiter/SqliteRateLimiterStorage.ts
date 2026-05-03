@@ -7,7 +7,11 @@
 import type { Sqlite } from "@workglow/storage/sqlite";
 import { createServiceToken, sleep, toSQLiteTimestamp } from "@workglow/util";
 import type { PrefixColumn } from "../queue/IQueueStorage";
-import { IRateLimiterStorage, RateLimiterStorageOptions } from "./IRateLimiterStorage";
+import {
+  IRateLimiterStorage,
+  RateLimiterStorageOptions,
+  RateLimiterStorageScope,
+} from "./IRateLimiterStorage";
 
 export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.sqlite"
@@ -18,6 +22,13 @@ export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorag
  * Manages execution records and next available times for rate limiting.
  */
 export class SqliteRateLimiterStorage implements IRateLimiterStorage {
+  /**
+   * `"process"` because a typical SQLite deployment uses a single-process
+   * file. Multi-process SQLite (multiple worker processes opening the same
+   * file) is not safe for rate limiting even with WAL — separate processes
+   * can interleave between BEGIN IMMEDIATE acquisition retries.
+   */
+  public readonly scope: RateLimiterStorageScope = "process";
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
@@ -114,6 +125,81 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
         next_available_at TEXT
       );
     `);
+  }
+
+  public async tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<boolean> {
+    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixParamValues = this.getPrefixParamValues();
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixColumnsInsert =
+      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
+    const prefixPlaceholders =
+      prefixColumnNames.length > 0 ? prefixColumnNames.map(() => "?").join(", ") + ", " : "";
+
+    const windowStart = toSQLiteTimestamp(new Date(Date.now() - windowMs))!;
+
+    // Use a synchronous transaction so the count + insert is atomic against
+    // other writers. The canonical Sqlite.Database.transaction() returns void
+    // by contract, so we capture the result via a closure variable.
+    let result = false;
+    const txn = this.db.transaction((): void => {
+      const countStmt = this.db.prepare<unknown[], { count: number }>(`
+        SELECT COUNT(*) AS count
+        FROM ${this.executionTableName}
+        WHERE queue_name = ? AND executed_at > ?${prefixConditions}
+      `);
+      const countRow = countStmt.get(queueName, windowStart, ...prefixParamValues);
+      if ((countRow?.count ?? 0) >= maxExecutions) {
+        result = false;
+        return;
+      }
+
+      const naStmt = this.db.prepare<unknown[], { next_available_at: string }>(`
+        SELECT next_available_at
+        FROM ${this.nextAvailableTableName}
+        WHERE queue_name = ?${prefixConditions}
+      `);
+      const naRow = naStmt.get(queueName, ...prefixParamValues);
+      if (naRow?.next_available_at) {
+        const nextAvailable = new Date(naRow.next_available_at + "Z").getTime();
+        if (nextAvailable > Date.now()) {
+          result = false;
+          return;
+        }
+      }
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO ${this.executionTableName} (${prefixColumnsInsert}queue_name)
+        VALUES (${prefixPlaceholders}?)
+      `);
+      insertStmt.run(...prefixParamValues, queueName);
+      result = true;
+    });
+
+    txn();
+    return result;
+  }
+
+  public async releaseExecution(queueName: string): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    this.db
+      .prepare(
+        `
+        DELETE FROM ${this.executionTableName}
+        WHERE rowid = (
+          SELECT rowid FROM ${this.executionTableName}
+          WHERE queue_name = ?${prefixConditions}
+          ORDER BY executed_at DESC, rowid DESC
+          LIMIT 1
+        )
+        `
+      )
+      .run(queueName, ...prefixParams);
   }
 
   public async recordExecution(queueName: string): Promise<void> {
