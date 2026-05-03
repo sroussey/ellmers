@@ -1,5 +1,29 @@
 # @workglow/test
 
+## 0.2.27
+
+### Features
+
+#### storage
+
+- enhance queryIndex functionality and add tests
+
+### Bug Fixes
+
+#### job-queue
+
+- release by token to fix wrong-row deletion under contention
+
+#### storage
+
+- export SharedInMemoryTabularStorage from common-server for tests
+
+### Tests
+
+#### job-queue
+
+- atomic-limiter and same-process worker coverage
+
 ## 0.2.26
 
 ### Features

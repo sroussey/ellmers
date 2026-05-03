@@ -1,5 +1,19 @@
 # @workglow/job-queue
 
+## 0.2.27
+
+### Bug Fixes
+
+#### job-queue
+
+- release by token to fix wrong-row deletion under contention
+
+### Refactors
+
+#### job-queue
+
+- atomic claim+limit, LISTEN/NOTIFY, and same-process hot-path
+
 ## 0.2.26
 
 ## 0.2.25

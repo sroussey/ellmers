@@ -1,5 +1,29 @@
 # @workglow/storage
 
+## 0.2.27
+
+### Features
+
+#### storage
+
+- enhance queryIndex functionality and add tests
+
+### Bug Fixes
+
+#### job-queue
+
+- release by token to fix wrong-row deletion under contention
+
+#### storage
+
+- export SharedInMemoryTabularStorage from common-server for tests
+
+### Refactors
+
+#### job-queue
+
+- atomic claim+limit, LISTEN/NOTIFY, and same-process hot-path
+
 ## 0.2.26
 
 ### Features

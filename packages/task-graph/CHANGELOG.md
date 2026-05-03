@@ -1,5 +1,13 @@
 # @workglow/task-graph
 
+## 0.2.27
+
+### Features
+
+#### storage
+
+- enhance queryIndex functionality and add tests
+
 ## 0.2.26
 
 ## 0.2.25
