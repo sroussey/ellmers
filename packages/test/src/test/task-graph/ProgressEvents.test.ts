@@ -6,6 +6,7 @@
 
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { Task, TaskAbortedError, TaskStatus } from "@workglow/task-graph";
+import { sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
@@ -111,7 +112,7 @@ describe("Progress events: terminal-100 tick", () => {
       if (progress !== undefined) events.push(progress);
     });
     const runPromise = task.run();
-    await new Promise((r) => setTimeout(r, 10));
+    await sleep(10);
     await task.runner.abort();
     await expect(runPromise).rejects.toThrow();
     expect(events).toContain(100);

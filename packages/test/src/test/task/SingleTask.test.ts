@@ -5,7 +5,7 @@
  */
 
 import { Task, TaskAbortedError, TaskError, TaskStatus } from "@workglow/task-graph";
-import { setLogger } from "@workglow/util";
+import { setLogger, sleep } from "@workglow/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { EventTestTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
@@ -502,7 +502,7 @@ describe("SingleTask", () => {
         const runPromise = task.run();
 
         // Wait a bit to ensure progress event has time to fire
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await sleep(10);
 
         task.abort();
         await runPromise.catch(() => {});

@@ -17,6 +17,7 @@ import {
   globalServiceRegistry,
   registerInputResolver,
   setLogger,
+  sleep,
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -477,7 +478,7 @@ describe("InputResolver", () => {
 
     test("should support async resolvers", async () => {
       registerInputResolver("async", async (id, format, registry) => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await sleep(10);
         return { asyncResolved: true, id };
       });
 
