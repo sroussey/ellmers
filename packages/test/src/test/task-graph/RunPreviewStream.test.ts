@@ -8,6 +8,8 @@ import { Dataflow, Task, Workflow, type StreamEvent } from "@workglow/task-graph
 import { type ILogger, getLogger, NullLogger, setLogger, sleep } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }> {
   public static override type = "SyntheticStreamSource";
   public static override outputSchema() {
