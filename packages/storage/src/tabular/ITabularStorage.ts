@@ -110,6 +110,13 @@ export interface QueryOptions<Entity> {
   readonly offset?: number;
 }
 
+export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity> {
+  readonly select: readonly K[];
+  readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
 /**
  * Type guard to check if a value is a SearchCondition
  */
@@ -254,6 +261,20 @@ export interface ITabularStorage<
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined>;
+
+  /**
+   * Strict, projected query served entirely by a covering compound index.
+   * Throws CoveringIndexMissingError when no registered index can serve
+   * (criteria + orderBy + select). Returns Pick<Entity, K>[] — never the heavy fields.
+   *
+   * @param criteria - equality (and optionally non-equality) filters
+   * @param options  - select (required), orderBy, limit, offset
+   * @returns array of projected rows (empty array, not undefined, when no matches)
+   */
+  queryIndex<K extends keyof Entity>(
+    criteria: SearchCriteria<Entity>,
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): Promise<Pick<Entity, K>[]>;
 
   /**
    * Subscribes to changes in the repository (including remote changes).
