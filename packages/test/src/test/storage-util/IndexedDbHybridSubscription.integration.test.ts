@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IndexedDbQueueStorage, IndexedDbTabularStorage } from "@workglow/storage";
+import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
+import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

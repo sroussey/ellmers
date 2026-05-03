@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SqliteTabularStorage } from "@workglow/storage";
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
   TaskGraphPrimaryKeyNames,
   TaskGraphSchema,

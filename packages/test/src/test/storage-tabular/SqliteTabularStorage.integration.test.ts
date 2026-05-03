@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SqliteTabularStorage } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

@@ -5,8 +5,8 @@
  */
 
 import { RateLimiter } from "@workglow/job-queue";
-import { Sqlite } from "@workglow/storage/sqlite";
-import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
+import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/sqlite/job-queue";
 import { describe } from "vitest";
 import { runGenericJobQueueTests } from "./genericJobQueueTests";
 import { setLogger } from "@workglow/util";

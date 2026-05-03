@@ -25,8 +25,8 @@ import {
   RateLimiter,
 } from "@workglow/job-queue";
 import { InMemoryQueueStorage, JobStatus } from "@workglow/job-queue";
-import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/sqlite/job-queue";
+import { Sqlite } from "@workglow/sqlite/storage";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,

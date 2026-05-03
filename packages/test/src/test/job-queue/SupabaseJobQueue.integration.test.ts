@@ -5,7 +5,7 @@
  */
 
 import { RateLimiter } from "@workglow/job-queue";
-import { SupabaseQueueStorage, SupabaseRateLimiterStorage } from "@workglow/storage";
+import { SupabaseQueueStorage, SupabaseRateLimiterStorage } from "@workglow/supabase/job-queue";
 import { afterAll, describe } from "vitest";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import { runGenericJobQueueTests } from "./genericJobQueueTests";

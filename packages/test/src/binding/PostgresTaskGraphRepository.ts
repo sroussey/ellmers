@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { PostgresTabularStorage } from "@workglow/storage";
+import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import {
   TaskGraphPrimaryKeyNames,
   TaskGraphSchema,

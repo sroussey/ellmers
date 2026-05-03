@@ -26,19 +26,14 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@workglow/job-queue": {
-      "optional": false
-    },
     "@workglow/util": {
       "optional": false
     }
   },
   "devDependencies": {
-    "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "exports": {

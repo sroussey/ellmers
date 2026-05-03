@@ -5,8 +5,8 @@
  */
 
 import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { Sqlite } from "@workglow/storage/sqlite";
-import { SqliteQueueStorage } from "@workglow/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
+import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe } from "vitest";

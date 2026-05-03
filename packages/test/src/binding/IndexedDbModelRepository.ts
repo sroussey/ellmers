@@ -5,7 +5,7 @@
  */
 
 import { ModelPrimaryKeyNames, ModelRecordSchema, ModelRepository } from "@workglow/ai";
-import { IndexedDbTabularStorage } from "@workglow/storage";
+import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 
 /**
  * IndexedDB implementation of a model repository.
