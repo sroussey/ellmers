@@ -180,6 +180,118 @@
         "tiktoken",
       ],
     },
+    "packages/anthropic": {
+      "name": "@workglow/anthropic",
+      "version": "0.2.27",
+      "dependencies": {
+        "@anthropic-ai/sdk": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/chrome": {
+      "name": "@workglow/chrome",
+      "version": "0.2.27",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/google-gemini": {
+      "name": "@workglow/google-gemini",
+      "version": "0.2.27",
+      "dependencies": {
+        "@google/generative-ai": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/huggingface-inference": {
+      "name": "@workglow/huggingface-inference",
+      "version": "0.2.27",
+      "dependencies": {
+        "@huggingface/inference": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/huggingface-transformers": {
+      "name": "@workglow/huggingface-transformers",
+      "version": "0.2.27",
+      "dependencies": {
+        "@huggingface/transformers": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "packages/indexeddb": {
       "name": "@workglow/indexeddb",
       "version": "0.2.27",
@@ -214,6 +326,77 @@
       },
       "peerDependencies": {
         "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/node-llama-cpp": {
+      "name": "@workglow/node-llama-cpp",
+      "version": "0.2.27",
+      "dependencies": {
+        "node-llama-cpp": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/ollama": {
+      "name": "@workglow/ollama",
+      "version": "0.2.27",
+      "dependencies": {
+        "ollama": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/openai": {
+      "name": "@workglow/openai",
+      "version": "0.2.27",
+      "dependencies": {
+        "js-tiktoken": "catalog:",
+        "openai": "catalog:",
+        "tiktoken": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
       },
     },
@@ -374,6 +557,32 @@
         "pg": "catalog:",
         "playwright": "catalog:",
         "vitest": "^4.1.5",
+      },
+    },
+    "packages/tf-mediapipe": {
+      "name": "@workglow/tf-mediapipe",
+      "version": "0.2.27",
+      "dependencies": {
+        "@mediapipe/tasks-audio": "catalog:",
+        "@mediapipe/tasks-genai": "catalog:",
+        "@mediapipe/tasks-text": "catalog:",
+        "@mediapipe/tasks-vision": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/ai-provider": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
       },
     },
     "packages/util": {
@@ -1028,13 +1237,29 @@
 
     "@workglow/ai-provider": ["@workglow/ai-provider@workspace:packages/ai-provider"],
 
+    "@workglow/anthropic": ["@workglow/anthropic@workspace:packages/anthropic"],
+
+    "@workglow/chrome": ["@workglow/chrome@workspace:packages/chrome"],
+
     "@workglow/cli": ["@workglow/cli@workspace:examples/cli"],
+
+    "@workglow/google-gemini": ["@workglow/google-gemini@workspace:packages/google-gemini"],
+
+    "@workglow/huggingface-inference": ["@workglow/huggingface-inference@workspace:packages/huggingface-inference"],
+
+    "@workglow/huggingface-transformers": ["@workglow/huggingface-transformers@workspace:packages/huggingface-transformers"],
 
     "@workglow/indexeddb": ["@workglow/indexeddb@workspace:packages/indexeddb"],
 
     "@workglow/job-queue": ["@workglow/job-queue@workspace:packages/job-queue"],
 
     "@workglow/knowledge-base": ["@workglow/knowledge-base@workspace:packages/knowledge-base"],
+
+    "@workglow/node-llama-cpp": ["@workglow/node-llama-cpp@workspace:packages/node-llama-cpp"],
+
+    "@workglow/ollama": ["@workglow/ollama@workspace:packages/ollama"],
+
+    "@workglow/openai": ["@workglow/openai@workspace:packages/openai"],
 
     "@workglow/postgres": ["@workglow/postgres@workspace:packages/postgres"],
 
@@ -1049,6 +1274,8 @@
     "@workglow/tasks": ["@workglow/tasks@workspace:packages/tasks"],
 
     "@workglow/test": ["@workglow/test@workspace:packages/test"],
+
+    "@workglow/tf-mediapipe": ["@workglow/tf-mediapipe@workspace:packages/tf-mediapipe"],
 
     "@workglow/util": ["@workglow/util@workspace:packages/util"],
 
