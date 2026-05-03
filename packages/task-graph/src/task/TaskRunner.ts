@@ -133,6 +133,15 @@ export class TaskRunner<
    * @returns The task output
    */
   async run(overrides: Partial<Input> = {}, config: IRunConfig = {}): Promise<Output> {
+    // Reject concurrent run() on the same TaskRunner. Mirrors
+    // TaskGraphRunner.handleStart's "Graph is already running" check.
+    // Raised before any `this.*` mutation so the in-flight run is undisturbed.
+    if (this.task.status === TaskStatus.PROCESSING) {
+      throw new TaskConfigurationError(
+        `Task "${this.task.type}" is already running. Concurrent run() calls on the same TaskRunner are not supported.`
+      );
+    }
+
     const ownsScope = config.resourceScope === undefined;
     const effectiveConfig: IRunConfig = ownsScope
       ? { ...config, resourceScope: new ResourceScope() }
@@ -220,11 +229,6 @@ export class TaskRunner<
     } finally {
       if (ownsScope) {
         await effectiveConfig.resourceScope!.disposeAll();
-        // Only clear our auto-created reference. Touching `this.resourceScope`
-        // unconditionally races with concurrent re-entry: `handleStart` early-
-        // returns on `PROCESSING`, so a second `run()` can attach to the in-
-        // flight `currentCtx`; clearing the field then would strip the scope
-        // the original run is still using.
         this.resourceScope = undefined;
       }
       this.ownsResourceScope = false;
@@ -525,11 +529,11 @@ export class TaskRunner<
   }
 
   /**
-   * Handles task start
+   * Handles task start. Concurrent-run rejection happens in {@link run} before
+   * any state mutation; by the time `handleStart` runs, the task status is
+   * guaranteed to be non-PROCESSING.
    */
   protected async handleStart(config: IRunConfig = {}): Promise<void> {
-    if (this.task.status === TaskStatus.PROCESSING) return;
-
     this.running = true;
 
     this.task.startedAt = new Date();
