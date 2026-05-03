@@ -912,27 +912,36 @@ export function runGenericJobQueueTests(
         }
       }
 
-      // Helper function to get job counts with retries
+      // Helper function to get job counts with retries. Read each known job by
+      // id instead of issuing three independent size() queries: under load a
+      // job can legitimately move PENDING -> PROCESSING -> PENDING/COMPLETED
+      // between those reads, producing transient under/over-count snapshots on
+      // faster Vitest/Node runs.
       async function getJobCounts(
-        runAttempts = 5,
-        retryDelay = 3
+        runAttempts = 50,
+        retryDelay = 5
       ): Promise<{ pending: number; processing: number; completed: number }> {
+        let lastCounts = { pending: 0, processing: 0, completed: 0 };
         for (let i = 0; i < runAttempts; i++) {
           try {
-            const pending = await client.size(JobStatus.PENDING);
-            const processing = await client.size(JobStatus.PROCESSING);
-            const completed = await client.size(JobStatus.COMPLETED);
+            const jobs = await Promise.all(handles.map((handle) => client.getJob(handle.id)));
+            const pending = jobs.filter((job) => job?.status === JobStatus.PENDING).length;
+            const processing = jobs.filter((job) => job?.status === JobStatus.PROCESSING).length;
+            const completed = jobs.filter((job) => job?.status === JobStatus.COMPLETED).length;
 
-            // Verify we're not counting any jobs multiple times
-            if (pending + processing + completed <= numJobs) {
-              return { pending, processing, completed };
+            lastCounts = { pending, processing, completed };
+
+            if (pending > 0 && completed > 0 && pending + processing + completed === numJobs) {
+              return lastCounts;
             }
           } catch (err) {
             if (i === runAttempts - 1) throw err;
-            await sleep(retryDelay);
           }
+          await sleep(retryDelay);
         }
-        throw new JobError("Failed to get consistent job counts");
+        throw new JobError(
+          `Failed to get consistent job counts: pending=${lastCounts.pending}, processing=${lastCounts.processing}, completed=${lastCounts.completed}`
+        );
       }
 
       // Check job states
