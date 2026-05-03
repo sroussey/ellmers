@@ -69,8 +69,16 @@ export interface TaskGraphRunConfig {
    */
   enforceEntitlements?: boolean;
   /**
-   * Resource scope for collecting heavyweight resource disposers during graph execution.
-   * Threaded to all tasks via IExecuteContext. The caller controls disposal.
+   * Resource scope for collecting heavyweight resource disposers during graph
+   * execution. Threaded to all tasks via IExecuteContext.
+   *
+   * If omitted, the top-level runner creates a private scope and `disposeAll()`s
+   * it when the run finishes (success, error, or abort) — automatic cleanup for
+   * casual callers.
+   *
+   * If provided, the caller owns the lifecycle; the runner never calls
+   * `disposeAll`. Use this to share resources (e.g., a loaded AI model) across
+   * multiple runs, then dispose at app shutdown.
    */
   resourceScope?: ResourceScope;
 }
