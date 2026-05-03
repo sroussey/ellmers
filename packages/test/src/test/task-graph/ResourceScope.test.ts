@@ -359,3 +359,45 @@ describe("ResourceScope `await using` integration", () => {
     expect(disposed).toEqual(["t1"]);
   });
 });
+
+describe("ResourceScope nested-run forwarding under auto-ownership", () => {
+  it("GraphAsTask: outermost runner disposes exactly once", async () => {
+    const disposeCalls: string[] = [];
+
+    class CountingDisposerTask extends Task<{ tag: string }, { tag: string }> {
+      static override readonly type = "CountingDisposerTask";
+      static override inputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { tag: { type: "string", default: "default" } },
+        } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { tag: { type: "string" } },
+        } as const satisfies DataPortSchema;
+      }
+      override async execute(
+        input: { tag: string },
+        ctx: IExecuteContext
+      ): Promise<{ tag: string }> {
+        ctx.resourceScope?.register(`count:${input.tag}`, async () => {
+          disposeCalls.push(input.tag);
+        });
+        return { tag: input.tag };
+      }
+    }
+
+    // Outer graph contains an inner Workflow-as-task, which contains the disposer-registering task.
+    const inner = new Workflow();
+    inner.addTask(CountingDisposerTask, { tag: "nested" });
+    const outer = new TaskGraph();
+    outer.addTask(inner.toTask());
+
+    await outer.run({ tag: "nested" });
+
+    // Disposer must fire exactly once — not once per nested level.
+    expect(disposeCalls).toEqual(["nested"]);
+  });
+});
