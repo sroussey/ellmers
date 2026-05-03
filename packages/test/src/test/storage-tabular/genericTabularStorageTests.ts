@@ -1099,6 +1099,77 @@ export function runGenericTabularStorageTests(
       });
     });
 
+    describe("queryIndex (covering-index-only reads)", () => {
+      let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
+
+      beforeEach(async () => {
+        repository = await createSearchableRepository();
+        await repository.setupDatabase?.();
+      });
+
+      afterEach(async () => {
+        await repository.deleteAll();
+        repository.destroy();
+      });
+
+      it("returns rows projected to only the requested columns", async () => {
+        await repository.put({
+          id: "1",
+          category: "a",
+          subcategory: "x",
+          value: 10,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        const rows = await repository.queryIndex(
+          { category: "a" },
+          { select: ["id", "category"] }
+        );
+        expect(rows).toHaveLength(1);
+        expect(Object.keys(rows[0]).sort()).toEqual(["category", "id"]);
+      });
+
+      it("throws when no covering index exists for the criteria column", async () => {
+        // `kind` is not in any of the registered indexes
+        await expect(
+          repository.queryIndex({ kind: "premium" } as any, { select: ["id"] })
+        ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
+      });
+
+      it("returns empty array (not undefined) for no matches", async () => {
+        const rows = await repository.queryIndex(
+          { category: "missing" },
+          { select: ["id"] }
+        );
+        expect(rows).toEqual([]);
+      });
+
+      it("honors limit and offset", async () => {
+        for (let i = 0; i < 5; i++) {
+          await repository.put({
+            id: String(i),
+            category: "a",
+            subcategory: String(i),
+            value: i,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        const rows = await repository.queryIndex(
+          { category: "a" },
+          {
+            select: ["id", "subcategory"],
+            orderBy: [{ column: "subcategory", direction: "ASC" }],
+            limit: 2,
+            offset: 1,
+          }
+        );
+        expect(rows).toHaveLength(2);
+        expect(rows[0].subcategory).toBe("1");
+        expect(rows[1].subcategory).toBe("2");
+      });
+    });
+
     describe(`count tests`, () => {
       let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
 
