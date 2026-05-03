@@ -12,7 +12,17 @@ import { GraphResult, PROPERTY_ARRAY } from "./TaskGraphRunner";
 export interface WorkflowRunConfig {
   /** Optional service registry to use for this workflow run */
   readonly registry?: ServiceRegistry;
-  /** Resource scope for collecting heavyweight resource disposers. */
+  /**
+   * Resource scope for collecting heavyweight resource disposers during the
+   * workflow run.
+   *
+   * If omitted, the underlying graph runner creates a private scope and
+   * disposes it when the run finishes — automatic cleanup for casual callers.
+   *
+   * If provided, the caller owns the lifecycle; the runner never calls
+   * `disposeAll`. Use this to share resources (e.g., a loaded AI model) across
+   * multiple runs, then dispose at app shutdown.
+   */
   readonly resourceScope?: ResourceScope;
 }
 
