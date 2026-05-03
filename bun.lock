@@ -495,27 +495,18 @@
       "name": "@workglow/storage",
       "version": "0.2.27",
       "devDependencies": {
-        "@sqlite.org/sqlite-wasm": "catalog:",
         "@supabase/supabase-js": "catalog:",
-        "@types/better-sqlite3": "^7.6.13",
         "@workglow/job-queue": "workspace:*",
         "@workglow/util": "workspace:*",
-        "better-sqlite3": "catalog:",
         "fake-indexeddb": "^6.2.4",
       },
       "peerDependencies": {
-        "@sqlite.org/sqlite-wasm": "catalog:",
-        "@sqliteai/sqlite-vector": "^0.9.90",
         "@supabase/supabase-js": "catalog:",
         "@workglow/job-queue": "workspace:*",
         "@workglow/util": "workspace:*",
-        "better-sqlite3": "catalog:",
       },
       "optionalPeers": [
-        "@sqlite.org/sqlite-wasm",
-        "@sqliteai/sqlite-vector",
         "@supabase/supabase-js",
-        "better-sqlite3",
       ],
     },
     "packages/supabase": {

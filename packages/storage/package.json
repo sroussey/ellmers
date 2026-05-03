@@ -10,62 +10,41 @@
   "description": "Storage abstraction layer for Workglow, supporting IndexedDB, PostgreSQL, and Supabase with unified interfaces.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,sqlite-br,sqlite-n,sqlite-bu' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-sqlite-browser' 'bun run watch-sqlite-node' 'bun run watch-sqlite-bun'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
-    "watch-sqlite-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/browser.ts",
-    "watch-sqlite-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/node.ts",
-    "watch-sqlite-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/bun.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,sqlite-br,sqlite-n,sqlite-bu' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-sqlite-browser' 'bun run build-sqlite-node' 'bun run build-sqlite-bun'",
+    "build-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
-    "build-sqlite-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/browser.ts",
-    "build-sqlite-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/node.ts",
-    "build-sqlite-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/bun.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "peerDependencies": {
-    "@sqlite.org/sqlite-wasm": "catalog:",
     "@supabase/supabase-js": "catalog:",
-    "@sqliteai/sqlite-vector": "^0.9.90",
     "@workglow/job-queue": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "better-sqlite3": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@sqlite.org/sqlite-wasm": {
-      "optional": true
-    },
-    "@sqliteai/sqlite-vector": {
-      "optional": true
-    },
     "@workglow/job-queue": {
       "optional": false
     },
     "@workglow/util": {
       "optional": false
     },
-    "better-sqlite3": {
-      "optional": true
-    },
     "@supabase/supabase-js": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@sqlite.org/sqlite-wasm": "catalog:",
     "@supabase/supabase-js": "catalog:",
-    "@types/better-sqlite3": "^7.6.13",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*",
-    "better-sqlite3": "catalog:",
     "fake-indexeddb": "^6.2.4"
   },
   "exports": {
@@ -80,18 +59,6 @@
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
-    },
-    "./sqlite": {
-      "browser": {
-        "types": "./dist/sqlite/browser.d.ts",
-        "import": "./dist/sqlite/browser.js"
-      },
-      "bun": {
-        "types": "./dist/sqlite/bun.d.ts",
-        "import": "./dist/sqlite/bun.js"
-      },
-      "types": "./dist/sqlite/node.d.ts",
-      "import": "./dist/sqlite/node.js"
     }
   },
   "files": [

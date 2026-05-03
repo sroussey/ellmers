@@ -7,22 +7,15 @@
 export * from "./common";
 
 export * from "./tabular/FsFolderTabularStorage";
-export * from "./tabular/SqliteTabularStorage";
 export * from "./tabular/SupabaseTabularStorage";
 
 export * from "./kv/FsFolderJsonKvStorage";
 export * from "./kv/FsFolderKvStorage";
-export * from "./kv/SqliteKvStorage";
 export * from "./kv/SupabaseKvStorage";
 
-export * from "./queue/SqliteQueueStorage";
 export * from "./queue/SupabaseQueueStorage";
 
-export * from "./queue-limiter/SqliteRateLimiterStorage";
 export * from "./queue-limiter/SupabaseRateLimiterStorage";
-
-export * from "./vector/SqliteVectorStorage";
-export * from "./vector/SqliteAiVectorStorage";
 
 // testing
 export * from "./kv/IndexedDbKvStorage";

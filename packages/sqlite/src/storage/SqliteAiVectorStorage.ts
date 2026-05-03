@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite } from "@workglow/storage/sqlite";
+import { Sqlite } from "@workglow/sqlite/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -13,9 +13,9 @@ import type {
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
-import { SqliteTabularStorage } from "../tabular/SqliteTabularStorage";
-import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
-import { getMetadataProperty, getVectorProperty } from "./IVectorStorage";
+import { SqliteTabularStorage } from "./SqliteTabularStorage";
+import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
 
 /**
  * Maps TypedArray constructor types to their sqlite-vector encoding function names

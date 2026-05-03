@@ -6,9 +6,13 @@
 
 import { JsonSchema } from "@workglow/util/schema";
 import { createServiceToken } from "@workglow/util";
-import { SqliteTabularStorage } from "../tabular/SqliteTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema, IKvStorage } from "./IKvStorage";
-import { KvViaTabularStorage } from "./KvViaTabularStorage";
+import { SqliteTabularStorage } from "./SqliteTabularStorage";
+import {
+  DefaultKeyValueKey,
+  DefaultKeyValueSchema,
+  IKvStorage,
+  KvViaTabularStorage,
+} from "@workglow/storage";
 
 export const SQLITE_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(
   "storage.kvRepository.sqlite"
