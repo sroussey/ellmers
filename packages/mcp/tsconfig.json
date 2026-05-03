@@ -11,7 +11,6 @@
     { "path": "../util" },
     { "path": "../task-graph" },
     { "path": "../storage" },
-    { "path": "../job-queue" },
-    { "path": "../tasks" }
+    { "path": "../job-queue" }
   ]
 }
