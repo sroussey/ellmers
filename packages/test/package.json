@@ -38,6 +38,7 @@
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",
     "@workglow/node-llama-cpp": "workspace:*",
+    "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/job-queue": "workspace:*",

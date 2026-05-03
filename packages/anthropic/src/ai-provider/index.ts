@@ -6,4 +6,5 @@
 
 export * from "./common/Anthropic_Constants";
 export * from "./common/Anthropic_ModelSchema";
+export * from "./common/Anthropic_ModelSearch";
 export * from "./registerAnthropic";

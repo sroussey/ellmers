@@ -37,9 +37,13 @@
   "dependencies": {
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
+    "@workglow/anthropic": "workspace:*",
+    "@workglow/google-gemini": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",
     "@workglow/node-llama-cpp": "workspace:*",
+    "@workglow/ollama": "workspace:*",
+    "@workglow/openai": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/tasks": "workspace:*",

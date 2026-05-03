@@ -7,4 +7,5 @@
 export * from "./common/OpenAI_Constants";
 export * from "./common/OpenAI_ImageValidation";
 export * from "./common/OpenAI_ModelSchema";
+export * from "./common/OpenAI_ModelSearch";
 export * from "./registerOpenAi";

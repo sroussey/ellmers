@@ -8,4 +8,5 @@ export * from "./common/HFI_AspectRatio";
 export * from "./common/HFI_Constants";
 export * from "./common/HFI_ImageValidation";
 export * from "./common/HFI_ModelSchema";
+export * from "./common/HFI_ModelSearch";
 export * from "./registerHfInference";

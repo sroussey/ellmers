@@ -6,10 +6,10 @@
 
 import { ModelSearchTask } from "@workglow/ai";
 import { afterEach, describe, expect, test } from "vitest";
-import { Anthropic_ModelSearch } from "./provider-anthropic/common/Anthropic_ModelSearch";
-import { Gemini_ModelSearch } from "./provider-gemini/common/Gemini_ModelSearch";
-import { HFI_ModelSearch } from "./provider-hf-inference/common/HFI_ModelSearch";
-import { OpenAI_ModelSearch } from "./provider-openai/common/OpenAI_ModelSearch";
+import { Anthropic_ModelSearch } from "@workglow/anthropic/ai-provider";
+import { Gemini_ModelSearch } from "@workglow/google-gemini/ai-provider";
+import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai-provider";
+import { OpenAI_ModelSearch } from "@workglow/openai/ai-provider";
 
 const originalFetch = globalThis.fetch;
 
