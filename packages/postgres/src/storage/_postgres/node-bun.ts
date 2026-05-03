@@ -12,7 +12,7 @@ let _pg: typeof import("pg") | undefined;
 
 /**
  * Dynamically loads the `pg` package (Node.js and Bun). Idempotent; same implementation as
- * {@link Postgres.init} (mirrors {@link Sqlite.init} from `@workglow/storage/sqlite`).
+ * {@link Postgres.init} (mirrors {@link Sqlite.init} from `@workglow/sqlite/storage`).
  *
  * Call before using {@link getPostgres} or {@link createPool}.
  */
@@ -24,7 +24,7 @@ export async function loadPostgres(): Promise<void> {
     _pg = await import("pg");
   } catch {
     throw new Error(
-      'The "pg" package is required for @workglow/storage/postgres on Node.js or Bun. Install: bun add pg'
+      'The "pg" package is required for @workglow/postgres/storage on Node.js or Bun. Install: bun add pg'
     );
   }
 }

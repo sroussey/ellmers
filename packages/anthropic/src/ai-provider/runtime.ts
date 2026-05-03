@@ -7,7 +7,7 @@
 /**
  * Worker server and main-thread inline Anthropic registration (pulls in `Anthropic_JobRunFns`),
  * plus SDK client helpers (`Anthropic_Client`).
- * Import from `@workglow/ai-provider/anthropic/runtime` — not from the main `anthropic` barrel.
+ * Import from `@workglow/anthropic/ai-provider-runtime` — not from the main `anthropic` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */

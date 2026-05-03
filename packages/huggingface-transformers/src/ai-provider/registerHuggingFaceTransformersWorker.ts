@@ -6,7 +6,7 @@
 
 /**
  * Worker-only entry: registers HuggingFace Transformers task run functions on the worker server.
- * Re-exported from `@workglow/ai-provider/hf-transformers/runtime` so the main bundle does not resolve
+ * Re-exported from `@workglow/huggingface-transformers/ai-provider-runtime` so the main bundle does not resolve
  * `HFT_JobRunFns` / full task implementations.
  */
 

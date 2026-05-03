@@ -15,7 +15,7 @@ let _PoolBound: (new (config?: PoolConfig) => PGLitePool) | undefined;
 
 /**
  * Loads `@electric-sql/pglite` (browser WASM Postgres). Idempotent; same implementation as
- * {@link Postgres.init} (mirrors {@link Sqlite.init} from `@workglow/storage/sqlite`).
+ * {@link Postgres.init} (mirrors {@link Sqlite.init} from `@workglow/sqlite/storage`).
  */
 export async function loadPostgres(): Promise<void> {
   if (_PGlite) {
@@ -37,7 +37,7 @@ export async function loadPostgres(): Promise<void> {
     };
   } catch {
     throw new Error(
-      "@electric-sql/pglite is required for @workglow/storage/postgres in the browser. Install: bun add @electric-sql/pglite"
+      "@electric-sql/pglite is required for @workglow/postgres/storage in the browser. Install: bun add @electric-sql/pglite"
     );
   }
 }
@@ -45,7 +45,7 @@ export async function loadPostgres(): Promise<void> {
 function requirePoolCtor(): new (config?: PoolConfig) => PGLitePool {
   if (!_PoolBound) {
     throw new Error(
-      "Postgres is not ready. Await Postgres.init() before using @workglow/storage/postgres in the browser."
+      "Postgres is not ready. Await Postgres.init() before using @workglow/postgres/storage in the browser."
     );
   }
   return _PoolBound;

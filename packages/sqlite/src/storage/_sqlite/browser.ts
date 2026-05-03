@@ -41,7 +41,7 @@ function initSqlite(): Promise<void> {
       wasmModule = await sqlite3InitModule();
     } catch {
       throw new Error(
-        "@sqlite.org/sqlite-wasm is required for @workglow/storage/sqlite in the browser. Install: bun add @sqlite.org/sqlite-wasm"
+        "@sqlite.org/sqlite-wasm is required for @workglow/sqlite/storage in the browser. Install: bun add @sqlite.org/sqlite-wasm"
       );
     }
   })());

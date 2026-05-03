@@ -37,7 +37,7 @@ function initSqlite(): Promise<void> {
         (mod as unknown as typeof BetterSqlite3);
     } catch {
       throw new Error(
-        "better-sqlite3 is required for @workglow/storage/sqlite on Node.js. Install it with: bun add better-sqlite3"
+        "better-sqlite3 is required for @workglow/sqlite/storage on Node.js. Install it with: bun add better-sqlite3"
       );
     }
   })());

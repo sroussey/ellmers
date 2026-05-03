@@ -15,8 +15,8 @@ import { HuggingFaceTransformersQueuedProvider } from "./HuggingFaceTransformers
  * Register HuggingFace Transformers ONNX on the **main thread** with inline execution
  * (full `@huggingface/transformers` and all task run functions in this bundle).
  *
- * **Re-exported from `@workglow/ai-provider/hf-transformers/runtime`** — not from
- * `@workglow/ai-provider/hf-transformers` — so worker-only apps do not pull this graph.
+ * **Re-exported from `@workglow/huggingface-transformers/ai-provider-runtime`** — not from
+ * `@workglow/huggingface-transformers/ai-provider` — so worker-only apps do not pull this graph.
  */
 export async function registerHuggingFaceTransformersInline(
   options?: AiProviderRegisterOptions

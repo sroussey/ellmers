@@ -5,7 +5,7 @@
  */
 
 /**
- * Canonical SQLite surface for `@workglow/storage/sqlite` across Node (better-sqlite3),
+ * Canonical SQLite surface for `@workglow/sqlite/storage` across Node (better-sqlite3),
  * Bun (native, via adapter), and browser (WASM).
  *
  * On every platform, call `await Sqlite.init()` once before `new Sqlite.Database(...)`.
