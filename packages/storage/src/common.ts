@@ -7,6 +7,12 @@
 export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/CachedTabularStorage";
 export * from "./tabular/CoveringIndexMissingError";
+export { pickCoveringIndex } from "./tabular/coveringIndexPicker";
+export type {
+  RegisteredIndex,
+  PickCoveringIndexInput,
+  PickedIndex,
+} from "./tabular/coveringIndexPicker";
 export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
