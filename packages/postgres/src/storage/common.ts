@@ -4,4 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export {};
+export * from "./_postgres/node-bun";
+export * from "./PostgresKvStorage";
+export * from "./PostgresTabularStorage";
+export * from "./PostgresVectorStorage";

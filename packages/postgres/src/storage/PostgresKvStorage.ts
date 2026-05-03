@@ -6,9 +6,13 @@
 
 import { JsonSchema } from "@workglow/util/schema";
 import { createServiceToken } from "@workglow/util";
-import { PostgresTabularStorage } from "../tabular/PostgresTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema, IKvStorage } from "./IKvStorage";
-import { KvViaTabularStorage } from "./KvViaTabularStorage";
+import { PostgresTabularStorage } from "./PostgresTabularStorage";
+import {
+  DefaultKeyValueKey,
+  DefaultKeyValueSchema,
+  IKvStorage,
+  KvViaTabularStorage,
+} from "@workglow/storage";
 
 export const POSTGRES_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(
   "storage.kvRepository.postgres"

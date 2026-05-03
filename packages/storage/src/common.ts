@@ -5,6 +5,7 @@
  */
 
 export * from "./tabular/BaseTabularStorage";
+export * from "./tabular/BaseSqlTabularStorage";
 export * from "./tabular/CachedTabularStorage";
 export * from "./tabular/CoveringIndexMissingError";
 export { pickCoveringIndex } from "./tabular/coveringIndexPicker";

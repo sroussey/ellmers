@@ -5,7 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { Pool } from "@workglow/storage/postgres";
+import type { Pool } from "@workglow/postgres/storage";
 import { createServiceToken, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
 import { JobStatus } from "@workglow/job-queue";
 import type {
