@@ -4,11 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Task, TaskAbortedError, TaskError, TaskStatus } from "@workglow/task-graph";
+import {
+  Task,
+  TaskAbortedError,
+  TaskConfigurationError,
+  TaskError,
+  TaskStatus,
+} from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
-import { EventTestTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
+import { EventTestTask, LongRunningTask, SimpleProcessingTask, TestIOTask } from "./TestTasks";
 
 const spyOn = vi.spyOn;
 
@@ -620,6 +626,35 @@ describe("SingleTask", () => {
         await runPromise.catch(() => {});
         expect(task.status).toBe(TaskStatus.ABORTING);
       });
+    });
+  });
+
+  describe("Concurrent run() rejection", () => {
+    it("throws TaskConfigurationError when run() is called while the task is PROCESSING", async () => {
+      const task = new LongRunningTask();
+      const inflight = task.run();
+      // Yield so handleStart sets status to PROCESSING and the execute loop is parked.
+      await sleep(0);
+      expect(task.status).toBe(TaskStatus.PROCESSING);
+
+      await expect(task.run()).rejects.toBeInstanceOf(TaskConfigurationError);
+
+      task.abort();
+      await inflight.catch(() => {});
+    });
+
+    it("does not disturb the in-flight run when a concurrent run() is rejected", async () => {
+      const task = new EventTestTask();
+      task.delayMs = 30;
+      const inflight = task.run();
+      await sleep(0);
+      expect(task.status).toBe(TaskStatus.PROCESSING);
+
+      await expect(task.run()).rejects.toBeInstanceOf(TaskConfigurationError);
+
+      const result = await inflight;
+      expect(result).toEqual({ key: "default", previewOnly: false, all: true });
+      expect(task.status).toBe(TaskStatus.COMPLETED);
     });
   });
 });
