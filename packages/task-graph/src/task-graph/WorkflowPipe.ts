@@ -21,11 +21,17 @@ import { Workflow } from "./Workflow";
 // dependency — these need both Workflow and GraphAsTask which live here)
 // ============================================================================
 
+/**
+ * @internal
+ */
 export function getLastTask(workflow: IWorkflow): ITask<any, any, any> | undefined {
   const tasks = workflow.graph.getTasks();
   return tasks.length > 0 ? tasks[tasks.length - 1] : undefined;
 }
 
+/**
+ * @internal
+ */
 export function connect(
   source: ITask<any, any, any>,
   target: ITask<any, any, any>,
