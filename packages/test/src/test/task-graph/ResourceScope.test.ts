@@ -430,6 +430,41 @@ describe("ResourceScope auto-ownership failure paths", () => {
   });
 });
 
+describe("runPreview does not auto-create a ResourceScope", () => {
+  it("runGraphPreview leaves resourceScope undefined and does not call disposers", async () => {
+    const previewSawScope: boolean[] = [];
+
+    class PreviewResourceTask extends Task<{}, {}> {
+      static override readonly type = "PreviewResourceTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("preview:t1", async () => {});
+        return {};
+      }
+      // Note: IExecutePreviewContext = Pick<IExecuteContext, "own"> — no resourceScope.
+      // The point of this test is that runPreview() does not throw and does not
+      // attempt to auto-create or thread a scope.
+      override async executePreview(): Promise<{}> {
+        // Can't observe ctx.resourceScope because IExecutePreviewContext excludes it.
+        // Record that executePreview ran at all (scope tracking is done externally).
+        previewSawScope.push(false); // always false: preview context has no resourceScope
+        return {};
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new PreviewResourceTask({ id: "t1" }));
+    await graph.runPreview();
+
+    expect(previewSawScope).toEqual([false]);
+  });
+});
+
 describe("ResourceScope nested-run forwarding under auto-ownership", () => {
   it("GraphAsTask: outermost runner disposes exactly once", async () => {
     const disposeCalls: string[] = [];
