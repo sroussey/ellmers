@@ -16,6 +16,7 @@ import {
   PermanentJobError,
   RetryableJobError,
 } from "@workglow/job-queue";
+import type { JobHandle } from "@workglow/job-queue";
 import { IQueueStorage } from "@workglow/storage";
 import type { ISpan, ITelemetryProvider } from "@workglow/util";
 import {
@@ -886,7 +887,7 @@ export function runGenericJobQueueTests(
 
     it("should respect rate limits over time", async () => {
       const numJobs = 20;
-      const handles = [];
+      const handles: Array<JobHandle<TOutput>> = [];
 
       // Add burst of jobs
       for (let i = 0; i < numJobs; i++) {
