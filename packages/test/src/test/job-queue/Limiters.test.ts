@@ -5,13 +5,14 @@
  */
 
 import {
-  NullLimiter,
+  CompositeLimiter,
   ConcurrencyLimiter,
   DelayLimiter,
-  CompositeLimiter,
   EvenlySpacedRateLimiter,
+  NullLimiter,
 } from "@workglow/job-queue";
-import { describe, expect, it, beforeEach } from "vitest";
+import { sleep } from "@workglow/util";
+import { beforeEach, describe, expect, it } from "vitest";
 
 describe("NullLimiter", () => {
   const limiter = new NullLimiter();
@@ -98,7 +99,7 @@ describe("DelayLimiter", () => {
   it("should allow proceeding after delay expires", async () => {
     const shortDelayLimiter = new DelayLimiter(10);
     await shortDelayLimiter.recordJobStart();
-    await new Promise((r) => setTimeout(r, 20));
+    await sleep(20);
     expect(await shortDelayLimiter.canProceed()).toBe(true);
   });
 

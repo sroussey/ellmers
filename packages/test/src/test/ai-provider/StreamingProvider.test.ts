@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AiProviderStreamFn } from "@workglow/ai";
 import {
   AiJob,
   AiJobInput,
@@ -11,10 +12,10 @@ import {
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import type { AiProviderStreamFn } from "@workglow/ai";
 import { JobQueueClient, JobQueueServer, RateLimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
 import type { IQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
+import type { StreamEvent } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
@@ -22,8 +23,7 @@ import {
   TaskOutput,
   TaskQueueRegistry,
 } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
-import { setLogger } from "@workglow/util";
+import { setLogger, sleep } from "@workglow/util";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
@@ -223,7 +223,7 @@ describe("Streaming Provider", () => {
       const mockStreamFn: AiProviderStreamFn = async function* (input, model, signal) {
         yield { type: "text-delta", port: "text", textDelta: "Hello" };
         // Simulate slow streaming
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await sleep(200);
         if (signal.aborted) return;
         yield { type: "text-delta", port: "text", textDelta: " world" };
         yield { type: "finish", data: { text: "Hello world" } };

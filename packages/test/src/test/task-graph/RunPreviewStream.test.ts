@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import { Dataflow, Task, Workflow, type StreamEvent } from "@workglow/task-graph";
+import { sleep } from "@workglow/util";
+import { describe, expect, it } from "vitest";
 
 class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }> {
   public static override type = "SyntheticStreamSource";
@@ -27,7 +28,7 @@ class SyntheticStreamSource extends Task<{ trigger: number }, { value: number }>
   async *executeStream(): AsyncIterable<StreamEvent<{ value: number }>> {
     for (let i = 1; i <= 3; i++) {
       yield { type: "snapshot", data: { value: i } };
-      await new Promise((r) => setTimeout(r, 5));
+      await sleep(5);
     }
     yield { type: "finish", data: {} as { value: number } };
   }
