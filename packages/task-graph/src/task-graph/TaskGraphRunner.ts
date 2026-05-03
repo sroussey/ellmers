@@ -188,43 +188,58 @@ export class TaskGraphRunner {
     input: TaskInput = {} as TaskInput,
     config?: TaskGraphRunConfig
   ): Promise<GraphResultArray<ExecuteOutput>> {
-    await this.handleStart(config);
+    const ownsScope = config?.resourceScope === undefined;
+    const effectiveConfig: TaskGraphRunConfig = ownsScope
+      ? { ...config, resourceScope: new ResourceScope() }
+      : config!;
 
-    // Capture ctx locally — terminal handlers (handleAbort/Error/Complete)
-    // clear this.currentCtx, but the abort signal listener may invoke
-    // handleAbort while runGraph's loop or epilogue is still running.
-    // The local reference keeps per-run state readable until runGraph returns.
-    const ctx = this.currentCtx!;
+    try {
+      await this.handleStart(effectiveConfig);
 
-    const results = await this.runScheduler.runLoop<ExecuteOutput>(
-      input,
-      config,
-      ctx,
-      this.edgeMaterializer
-    );
+      // Capture ctx locally — terminal handlers (handleAbort/Error/Complete)
+      // clear this.currentCtx, but the abort signal listener may invoke
+      // handleAbort while runGraph's loop or epilogue is still running.
+      // The local reference keeps per-run state readable until runGraph returns.
+      const ctx = this.currentCtx!;
 
-    // Check graph-level timeout first — it is the root cause when tasks fail due
-    // to the graph abort signal, and should take precedence over any task-level
-    // TaskAbortedError that was placed in failedTaskErrors as a consequence.
-    // Capture pendingGraphTimeoutError BEFORE calling handleAbort, which clears currentCtx.
-    const pendingTimeout = ctx.pendingGraphTimeoutError;
-    if (pendingTimeout) {
-      await this.handleAbort();
-      throw pendingTimeout;
+      const results = await this.runScheduler.runLoop<ExecuteOutput>(
+        input,
+        effectiveConfig,
+        ctx,
+        this.edgeMaterializer
+      );
+
+      // Check graph-level timeout first — it is the root cause when tasks fail due
+      // to the graph abort signal, and should take precedence over any task-level
+      // TaskAbortedError that was placed in failedTaskErrors as a consequence.
+      // Capture pendingGraphTimeoutError BEFORE calling handleAbort, which clears currentCtx.
+      const pendingTimeout = ctx.pendingGraphTimeoutError;
+      if (pendingTimeout) {
+        await this.handleAbort();
+        throw pendingTimeout;
+      }
+      if (ctx.failedTaskErrors.size > 0) {
+        const latestError = ctx.failedTaskErrors.values().next().value!;
+        this.handleError(latestError);
+        throw latestError;
+      }
+      if (ctx.abortController.signal.aborted) {
+        await this.handleAbort();
+        throw new TaskAbortedError();
+      }
+
+      await this.handleComplete();
+
+      return this.filterLeafResults(results);
+    } finally {
+      if (ownsScope) {
+        await effectiveConfig.resourceScope!.disposeAll();
+      }
+      // Reset instance field so a subsequent run on this runner starts clean.
+      // handleStart already overwrites it on the next call, but a stale ref
+      // between runs is brittle.
+      this.resourceScope = undefined;
     }
-    if (ctx.failedTaskErrors.size > 0) {
-      const latestError = ctx.failedTaskErrors.values().next().value!;
-      this.handleError(latestError);
-      throw latestError;
-    }
-    if (ctx.abortController.signal.aborted) {
-      await this.handleAbort();
-      throw new TaskAbortedError();
-    }
-
-    await this.handleComplete();
-
-    return this.filterLeafResults(results);
   }
 
   /**
