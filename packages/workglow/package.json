@@ -159,6 +159,7 @@
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",
+    "@workglow/chrome": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/postgres": "workspace:*",

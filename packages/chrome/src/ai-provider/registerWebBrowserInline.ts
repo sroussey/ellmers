@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import { WEB_BROWSER_STREAM_TASKS, WEB_BROWSER_TASKS } from "./common/WebBrowser_JobRunFns";
 import { WebBrowserQueuedProvider } from "./WebBrowserQueuedProvider";
 

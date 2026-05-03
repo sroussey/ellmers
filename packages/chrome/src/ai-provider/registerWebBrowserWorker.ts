@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerProviderWorker } from "../common/registerProvider";
+import { registerProviderWorker } from "@workglow/ai-provider/common";
 import { WEB_BROWSER_STREAM_TASKS, WEB_BROWSER_TASKS } from "./common/WebBrowser_JobRunFns";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 

@@ -10,7 +10,7 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
+import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { WEB_BROWSER } from "./WebBrowser_Constants";
 
 const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
