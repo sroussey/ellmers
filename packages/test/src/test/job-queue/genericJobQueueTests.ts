@@ -59,6 +59,19 @@ class RecordingTelemetryProvider implements ITelemetryProvider {
   }
 }
 
+async function waitForCondition(
+  predicate: () => Promise<boolean>,
+  timeoutMs: number,
+  intervalMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return true;
+    await sleep(intervalMs);
+  }
+  return predicate();
+}
+
 export interface TInput {
   readonly taskType?: string;
   readonly data?: string;
@@ -212,6 +225,7 @@ export function runGenericJobQueueTests(
 
     it("should delete completed jobs after specified time", async () => {
       const deleteAfterCompletionMs = 10;
+      const cleanupIntervalMs = 5;
 
       // Create a new server with deletion settings
       await server.stop();
@@ -222,7 +236,7 @@ export function runGenericJobQueueTests(
         limiter,
         pollIntervalMs: 1,
         deleteAfterCompletionMs,
-        cleanupIntervalMs: 5,
+        cleanupIntervalMs,
       });
       client.attach(server);
 
@@ -235,10 +249,12 @@ export function runGenericJobQueueTests(
       const jobExists = !!(await client.getJob(handle.id));
       expect(jobExists).toBe(true);
 
-      await sleep(deleteAfterCompletionMs * 3);
-
-      const deletedJobExists = !!(await client.getJob(handle.id));
-      expect(deletedJobExists).toBe(false);
+      const deleted = await waitForCondition(
+        async () => !(await client.getJob(handle.id)),
+        500,
+        cleanupIntervalMs
+      );
+      expect(deleted).toBe(true);
     });
 
     it("should not delete jobs when timing options are undefined", async () => {
