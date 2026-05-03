@@ -7,7 +7,7 @@
 import { SqliteTabularStorage } from "@workglow/storage";
 import { Sqlite } from "@workglow/storage/sqlite";
 import { setLogger, uuid4 } from "@workglow/util";
-import { describe } from "vitest";
+import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AllTypesPrimaryKeyNames,
@@ -72,4 +72,59 @@ describe("SqliteTabularStorage", async () => {
         UuidPrimaryKeyNames
       )
   );
+});
+
+describe("SqliteTabularStorage.queryIndex", () => {
+  it("returns projected rows containing only requested columns", async () => {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      "test_queryindex",
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      [["category", "subcategory"]]
+    );
+    await storage.setupDatabase();
+    await storage.put({
+      id: "k1",
+      category: "a",
+      subcategory: "x",
+      value: 1,
+      createdAt: "2025-01-01T00:00:00Z",
+      updatedAt: "2025-01-01T00:00:00Z",
+    });
+    const rows = await storage.queryIndex(
+      { category: "a" },
+      { select: ["id", "category"], orderBy: [{ column: "subcategory", direction: "ASC" }] }
+    );
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0]).sort()).toEqual(["category", "id"]);
+    expect((rows[0] as any).value).toBeUndefined();
+  });
+
+  it("throws CoveringIndexMissingError when no covering index exists", async () => {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      "test_queryindex_noindex",
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      []
+    );
+    await storage.setupDatabase();
+    await expect(
+      storage.queryIndex({ category: "a" }, { select: ["id"] })
+    ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
+  });
+
+  it("returns empty array (not undefined) on no matches", async () => {
+    const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      ":memory:",
+      "test_queryindex_empty",
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      [["category"]]
+    );
+    await storage.setupDatabase();
+    const rows = await storage.queryIndex({ category: "missing" }, { select: ["id"] });
+    expect(rows).toEqual([]);
+  });
 });
