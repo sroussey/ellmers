@@ -7,11 +7,11 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceToken } from "@workglow/util";
 import type { PrefixColumn } from "@workglow/job-queue";
-import {
+import type {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
-} from "./IRateLimiterStorage";
+} from "@workglow/job-queue";
 
 export const SUPABASE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.supabase"

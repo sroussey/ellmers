@@ -26,9 +26,6 @@ export * from "./kv/KvStorage";
 export * from "./kv/KvViaTabularStorage";
 export * from "./kv/TelemetryKvStorage";
 
-export * from "./queue-limiter/InMemoryRateLimiterStorage";
-export * from "./queue-limiter/IRateLimiterStorage";
-
 export * from "./util/HybridSubscriptionManager";
 export * from "./util/PollingSubscriptionManager";
 export * from "./util/traced";

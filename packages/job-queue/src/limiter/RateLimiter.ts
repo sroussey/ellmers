@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IRateLimiterStorage } from "@workglow/storage";
+import type { IRateLimiterStorage } from "../rate-limiter-storage/IRateLimiterStorage";
 import { ILimiter, LimiterScope, RateLimiterWithBackoffOptions } from "./ILimiter";
 
 /**

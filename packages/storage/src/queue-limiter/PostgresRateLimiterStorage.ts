@@ -7,11 +7,11 @@
 import { createServiceToken } from "@workglow/util";
 import type { Pool } from "@workglow/storage/postgres";
 import type { PrefixColumn } from "@workglow/job-queue";
-import {
+import type {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
-} from "./IRateLimiterStorage";
+} from "@workglow/job-queue";
 
 export const POSTGRES_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.postgres"

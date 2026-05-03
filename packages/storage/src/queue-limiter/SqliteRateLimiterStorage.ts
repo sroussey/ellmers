@@ -7,11 +7,11 @@
 import type { Sqlite } from "@workglow/storage/sqlite";
 import { createServiceToken, sleep, toSQLiteTimestamp } from "@workglow/util";
 import type { PrefixColumn } from "@workglow/job-queue";
-import {
+import type {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
-} from "./IRateLimiterStorage";
+} from "@workglow/job-queue";
 
 export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.sqlite"
