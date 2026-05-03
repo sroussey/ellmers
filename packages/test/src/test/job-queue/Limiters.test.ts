@@ -21,9 +21,19 @@ describe("NullLimiter", () => {
     expect(await limiter.canProceed()).toBe(true);
   });
 
+  it("should always tryAcquire successfully", async () => {
+    expect(await limiter.tryAcquire()).toBe(true);
+    expect(await limiter.tryAcquire()).toBe(true);
+  });
+
+  it("should report process scope", () => {
+    expect(limiter.scope).toBe("process");
+  });
+
   it("should not throw on any method call", async () => {
     await expect(limiter.recordJobStart()).resolves.toBeUndefined();
     await expect(limiter.recordJobCompletion()).resolves.toBeUndefined();
+    await expect(limiter.release()).resolves.toBeUndefined();
     await expect(limiter.setNextAvailableTime(new Date())).resolves.toBeUndefined();
     await expect(limiter.clear()).resolves.toBeUndefined();
   });
@@ -40,6 +50,26 @@ describe("ConcurrencyLimiter", () => {
 
   beforeEach(() => {
     limiter = new ConcurrencyLimiter(2);
+  });
+
+  it("should report process scope", () => {
+    expect(limiter.scope).toBe("process");
+  });
+
+  it("tryAcquire should be atomic under concurrency=2 with 10 parallel acquirers", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => limiter.tryAcquire())
+    );
+    const successes = results.filter((r) => r === true).length;
+    expect(successes).toBe(2);
+  });
+
+  it("release should free a slot for a follow-up tryAcquire", async () => {
+    expect(await limiter.tryAcquire()).toBe(true);
+    expect(await limiter.tryAcquire()).toBe(true);
+    expect(await limiter.tryAcquire()).toBe(false);
+    await limiter.release();
+    expect(await limiter.tryAcquire()).toBe(true);
   });
 
   it("should allow proceeding when under limit", async () => {
@@ -85,6 +115,18 @@ describe("DelayLimiter", () => {
 
   beforeEach(() => {
     limiter = new DelayLimiter(100);
+  });
+
+  it("should report process scope", () => {
+    expect(limiter.scope).toBe("process");
+  });
+
+  it("tryAcquire should be atomic — only one of 5 parallel acquirers wins per delay window", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => limiter.tryAcquire())
+    );
+    const successes = results.filter((r) => r === true).length;
+    expect(successes).toBe(1);
   });
 
   it("should allow proceeding initially", async () => {
@@ -164,6 +206,18 @@ describe("CompositeLimiter", () => {
   });
 });
 
+describe("CompositeLimiter scope", () => {
+  it("should be process when any child is process-scoped", () => {
+    const composite = new CompositeLimiter([new NullLimiter(), new ConcurrencyLimiter(1)]);
+    expect(composite.scope).toBe("process");
+  });
+
+  it("should be process when no children are present", () => {
+    const composite = new CompositeLimiter();
+    expect(composite.scope).toBe("process");
+  });
+});
+
 describe("EvenlySpacedRateLimiter", () => {
   it("should throw for invalid maxExecutions", () => {
     expect(
@@ -180,6 +234,21 @@ describe("EvenlySpacedRateLimiter", () => {
   it("should allow proceeding initially", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 1 });
     expect(await limiter.canProceed()).toBe(true);
+  });
+
+  it("should report process scope", () => {
+    const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 1 });
+    expect(limiter.scope).toBe("process");
+  });
+
+  it("tryAcquire should be atomic under contention", async () => {
+    const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 10 });
+    // idealInterval = 1000ms, so only the first acquirer in a tight burst wins.
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => limiter.tryAcquire())
+    );
+    const successes = results.filter((r) => r === true).length;
+    expect(successes).toBe(1);
   });
 
   it("should space requests by setting next available time", async () => {
