@@ -46,7 +46,19 @@ export interface IExecuteContext {
    * from these streams and re-yield events for immediate downstream delivery.
    */
   inputStreams?: Map<string, ReadableStream<StreamEvent>>;
-  /** Resource scope for registering heavyweight resource disposers. */
+  /**
+   * Resource scope for registering heavyweight resource disposers (model unload,
+   * AI session close, browser disconnect, etc.).
+   *
+   * **Register synchronously from within `execute()` / `executeStream()`.**
+   * The top-level runner disposes the scope as soon as the run completes;
+   * disposers registered after `execute()` resolves will land on a cleared Map
+   * and never be invoked.
+   *
+   * Always defined when the task is run via `Task.run()`, `TaskGraph.run()`,
+   * or `Workflow.run()` — the top-level runner auto-creates one if the caller
+   * did not provide it.
+   */
   resourceScope?: ResourceScope;
 }
 
@@ -115,8 +127,12 @@ export interface IRunConfig {
 
   /**
    * Resource scope for collecting heavyweight resource disposers.
-   * When provided, tasks can register cleanup functions via context.resourceScope.
-   * The caller controls when to invoke them.
+   *
+   * If omitted, the top-level runner creates a private scope and `disposeAll()`s
+   * it when the run finishes (success, error, or abort).
+   *
+   * If provided, the caller owns the lifecycle; the runner never calls
+   * `disposeAll`.
    */
   resourceScope?: ResourceScope;
 
