@@ -1111,6 +1111,57 @@ describe("IteratorTask", () => {
       expect(first.forceScalar).toEqual([100, 200]);
     });
 
+    test("map live progress labels show the active iteration as one-based", async () => {
+      class ProgressLabelTask extends Task<{ item: number }, { processed: number }> {
+        public static override type = "ProgressLabelTask_OneBasedMapProgress";
+
+        public static override inputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { item: { type: "number" } },
+            required: ["item"],
+            additionalProperties: true,
+          } as const satisfies DataPortSchema;
+        }
+
+        public static override outputSchema(): DataPortSchema {
+          return {
+            type: "object",
+            properties: { processed: { type: "number" } },
+            required: ["processed"],
+            additionalProperties: false,
+          } as const satisfies DataPortSchema;
+        }
+
+        override async execute(
+          input: { item: number },
+          context: { updateProgress: (p: number, m?: string) => Promise<void> | void }
+        ): Promise<{ processed: number }> {
+          await context.updateProgress(25, "working");
+          return { processed: input.item * 2 };
+        }
+      }
+
+      const workflow = new Workflow();
+      workflow
+        .map({ concurrencyLimit: 1, maxIterations: "unbounded" })
+        .addTask(ProgressLabelTask)
+        .endMap();
+
+      const mapTask = workflow.graph.getTasks()[0] as MapTask;
+      const liveMessages: string[] = [];
+      mapTask.events.on("progress", (_progress: number | undefined, message?: string) => {
+        if (message?.endsWith(" — working")) {
+          liveMessages.push(message);
+        }
+      });
+
+      const result = await workflow.run({ item: [1, 2, 3] });
+
+      expect(result.processed).toEqual([2, 4, 6]);
+      expect(liveMessages).toEqual(["Map 1/3 — working", "Map 2/3 — working", "Map 3/3 — working"]);
+    });
+
     /**
      * Regression: {@link IteratorTaskRunner.executeSubgraphIteration} used to subscribe to every
      * per-task `progress` event inside an iteration's cloned subgraph and take a `Math.max` as
@@ -1209,19 +1260,18 @@ describe("IteratorTask", () => {
       const result = await workflow.run({ item: [1, 2, 3, 4] });
       expect((result.processed as number[]).slice().sort((a, b) => a - b)).toEqual([2, 4, 6, 8]);
 
-      const mapMessageRegex = /^Map (\d+)\/(\d+)/;
+      const mapCompletionMessageRegex = /^Map (\d+)\/(\d+) iterations$/;
       let sawMapMessage = false;
       for (const e of events) {
         if (!e.message) continue;
-        const match = e.message.match(mapMessageRegex);
+        const match = e.message.match(mapCompletionMessageRegex);
         if (!match) continue;
         sawMapMessage = true;
         const done = Number(match[1]);
         const total = Number(match[2]);
         expect(total).toBe(n);
-        // Pre-fix: `done` jumped to `n` as soon as EarlyProgressTask fired progress=100,
-        // before any SlowWorkTask had resolved. The fix bounds `done` by the number of
-        // iterations whose SlowWorkTask has actually finished.
+        // Completion summaries report finished iterations, unlike live child-progress
+        // labels that report the active iteration ordinal for the UI.
         expect(done).toBeLessThanOrEqual(e.slowDoneAtEmit);
       }
 

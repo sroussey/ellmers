@@ -1078,14 +1078,21 @@ export class IndexedDbTabularStorage<
           }
         }
 
-        // Apply non-equality criteria for index positions beyond the equality prefix
+        // Apply criteria for index positions beyond the equality prefix.
+        // Positions [0, prefix.length) are guaranteed-equal by the IDBKeyRange,
+        // so they don't need re-checking. Positions >= prefix.length must be
+        // filtered here — this includes plain-value equalities trailing a
+        // non-equality break (criteria like `{a:1, b:>=5, c:3}` with prefix=[1]
+        // need an in-cursor `c === 3` check) and any SearchCondition.
         let matches = true;
         for (const [col, crit] of Object.entries(criteria as Record<string, unknown>)) {
-          if (!isSearchCondition(crit)) continue; // equality already handled by range
           const pos = keyPathPositions.get(col);
           if (pos === undefined) continue;
+          if (pos < prefix.length) continue; // covered by IDBKeyRange
           const valFromKey = Array.isArray(key) ? (key as unknown[])[pos] : key;
-          if (!compareWithOperator(valFromKey, crit.operator, crit.value)) {
+          const op: SearchOperator = isSearchCondition(crit) ? crit.operator : "=";
+          const val = isSearchCondition(crit) ? crit.value : crit;
+          if (!compareWithOperator(valFromKey, op, val)) {
             matches = false;
             break;
           }

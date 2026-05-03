@@ -140,14 +140,24 @@ export class IteratorTaskRunner<
   /**
    * Updates parent MapTask / workflow progress from per-iteration partial completion (0–100 each).
    */
-  private emitMapParentProgressFromPartials(childMessage?: string): void {
+  private emitMapParentProgressFromPartials(
+    childMessage?: string,
+    activeIterationIndex?: number
+  ): void {
     const n = this.mapPartialIterationCount;
     if (n <= 0) return;
     const sum = this.mapPartialProgress.reduce((a, b) => a + b, 0);
     const overall = Math.round(sum / n);
     const done = this.mapPartialProgress.filter((v) => v >= 100).length;
-    const base = `Map ${done}/${n}`;
-    const msg = childMessage ? `${base} — ${childMessage}` : `${base} iterations`;
+    const displayIteration =
+      activeIterationIndex === undefined ? done : Math.min(activeIterationIndex + 1, n);
+    const base = `Map ${displayIteration}/${n}`;
+    const msg =
+      activeIterationIndex === undefined
+        ? `${base} iterations`
+        : childMessage
+          ? `${base} — ${childMessage}`
+          : base;
     void this.handleProgress(overall, msg);
   }
 
@@ -278,7 +288,7 @@ export class IteratorTaskRunner<
         this.mapPartialIterationCount > 0
       ) {
         this.mapPartialProgress[index] = Math.max(this.mapPartialProgress[index] ?? 0, p);
-        this.emitMapParentProgressFromPartials(message);
+        this.emitMapParentProgressFromPartials(message, index);
       }
     };
     const unsubscribeGraphProgress = graphClone.subscribe("graph_progress", onGraphProgress);

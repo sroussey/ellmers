@@ -483,6 +483,83 @@ describe("IndexedDbTabularStorage", () => {
       expect(sorted[1].created_at).toBe("0010");
     });
 
+    it("queryIndex honors >= operator when it is the only criterion (full index scan)", async () => {
+      const ActivitySchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          created_at: { type: "string" },
+        },
+        required: ["id", "created_at"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const ActivityPK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof ActivitySchema, typeof ActivityPK>(
+        "gte_only_test_" + Date.now(),
+        ActivitySchema,
+        ActivityPK,
+        [["created_at"]]
+      );
+      await storage.setupDatabase();
+
+      await storage.put({ id: "1", created_at: "0001" });
+      await storage.put({ id: "2", created_at: "0003" });
+      await storage.put({ id: "3", created_at: "0005" });
+      await storage.put({ id: "4", created_at: "0010" });
+
+      const rows = await storage.queryIndex(
+        { created_at: { value: "0003", operator: ">=" } },
+        { select: ["id", "created_at"] }
+      );
+
+      // Should return rows with created_at >= "0003", i.e. "0003", "0005", "0010"
+      const sorted = rows.slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+      expect(sorted.map((r) => r.created_at)).toEqual(["0003", "0005", "0010"]);
+    });
+
+    it("queryIndex applies trailing-equality criterion after a non-equality break", async () => {
+      // Index: [user_id, created_at, status]
+      // criteria: { user_id: "u", created_at: { operator: ">=", value: "0003" }, status: "done" }
+      // The equality prefix covers only user_id (created_at non-equality breaks prefix).
+      // status is a plain-value equality AFTER the break — it must still filter results.
+      const ActivitySchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          user_id: { type: "string" },
+          created_at: { type: "string" },
+          status: { type: "string" },
+        },
+        required: ["id", "user_id", "created_at", "status"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const ActivityPK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof ActivitySchema, typeof ActivityPK>(
+        "trailing_eq_test_" + Date.now(),
+        ActivitySchema,
+        ActivityPK,
+        [["user_id", "created_at", "status"]]
+      );
+      await storage.setupDatabase();
+
+      await storage.put({ id: "1", user_id: "u", created_at: "0001", status: "done" });
+      await storage.put({ id: "2", user_id: "u", created_at: "0005", status: "done" });
+      await storage.put({ id: "3", user_id: "u", created_at: "0005", status: "running" });
+      await storage.put({ id: "4", user_id: "u", created_at: "0010", status: "done" });
+      await storage.put({ id: "5", user_id: "u", created_at: "0010", status: "running" });
+
+      const rows = await storage.queryIndex(
+        { user_id: "u", created_at: { value: "0003", operator: ">=" }, status: "done" },
+        { select: ["id", "user_id", "created_at", "status"] }
+      );
+
+      // Should return rows with created_at >= "0003" AND status === "done": ids 2, 4
+      const ids = rows.map((r) => r.id).sort();
+      expect(ids).toEqual(["2", "4"]);
+    });
+
     it("queryIndex throws StorageValidationError on empty select", async () => {
       const SimpleSchema = {
         type: "object",
