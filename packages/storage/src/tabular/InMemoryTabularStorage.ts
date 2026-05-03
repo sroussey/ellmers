@@ -402,7 +402,7 @@ export class InMemoryTabularStorage<
    * Throws CoveringIndexMissingError when no registered index can serve the request.
    * Returns Pick<Entity, K>[] — never undefined, empty array on no matches.
    */
-  async queryIndex<K extends keyof Entity>(
+  override async queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {

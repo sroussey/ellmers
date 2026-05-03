@@ -354,4 +354,89 @@ describe("IndexedDbTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  describe("IndexedDbTabularStorage.queryIndex (heap bounded)", () => {
+    it("does NOT load value blobs — projected reads stay under 100KB total for 25 rows with 1MB blobs each", async () => {
+      const HeavySchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          user_id: { type: "string" },
+          created_at: { type: "string" },
+          status: { type: "string" },
+          blob: { type: "string" },
+        },
+        required: ["id", "user_id", "created_at", "status", "blob"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const HeavyPK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof HeavySchema, typeof HeavyPK>(
+        "heavy_test_" + Date.now(),
+        HeavySchema,
+        HeavyPK,
+        [["user_id", "created_at", "status"]]
+      );
+      await storage.setupDatabase();
+
+      const oneMB = "x".repeat(1_000_000);
+      for (let i = 0; i < 25; i++) {
+        await storage.put({
+          id: `id-${i}`,
+          user_id: "u",
+          created_at: String(i).padStart(4, "0"),
+          status: i % 2 === 0 ? "completed" : "running",
+          blob: oneMB,
+        });
+      }
+
+      const rows = await storage.queryIndex(
+        { user_id: "u" },
+        {
+          select: ["id", "user_id", "created_at", "status"],
+          orderBy: [{ column: "created_at", direction: "DESC" }],
+        }
+      );
+
+      expect(rows).toHaveLength(25);
+      const totalBytes = JSON.stringify(rows).length;
+      expect(totalBytes).toBeLessThan(100_000);
+      for (const r of rows) {
+        expect((r as any).blob).toBeUndefined();
+      }
+      expect(rows[0].created_at).toBe("0024");
+    });
+
+    it("throws CoveringIndexMissingError if the request can't be served by an index", async () => {
+      const HeavySchema = {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          user_id: { type: "string" },
+          created_at: { type: "string" },
+        },
+        required: ["id", "user_id", "created_at"],
+        additionalProperties: false,
+      } as const satisfies DataPortSchemaObject;
+      const HeavyPK = ["id"] as const;
+
+      const storage = new IndexedDbTabularStorage<typeof HeavySchema, typeof HeavyPK>(
+        "miss_test_" + Date.now(),
+        HeavySchema,
+        HeavyPK,
+        [["user_id"]]
+      );
+      await storage.setupDatabase();
+
+      await expect(
+        storage.queryIndex(
+          { user_id: "u" },
+          {
+            select: ["id", "user_id", "created_at"],
+            orderBy: [{ column: "created_at", direction: "DESC" }],
+          }
+        )
+      ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
+    });
+  });
 });

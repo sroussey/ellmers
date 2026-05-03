@@ -6,6 +6,7 @@
 
 import type {
   AnyTabularStorage,
+  CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   ITabularStorage,
   QueryOptions,
@@ -120,6 +121,17 @@ export class ScopedTabularStorage<
 
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     await this.inner.deleteSearch({ ...(criteria as any), kb_id: this.kbId });
+  }
+
+  async queryIndex<K extends keyof Entity & string>(
+    criteria: SearchCriteria<Entity>,
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): Promise<Pick<Entity, K>[]> {
+    const rows = await this.inner.queryIndex(
+      { ...(criteria as any), kb_id: this.kbId } as any,
+      options as any
+    );
+    return (rows as any[]).map((r) => this.strip(r)) as Pick<Entity, K>[];
   }
 
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
