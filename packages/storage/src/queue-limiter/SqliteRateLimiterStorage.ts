@@ -131,7 +131,7 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean> {
+  ): Promise<unknown | null> {
     const prefixColumnNames = this.getPrefixColumnNames();
     const prefixParamValues = this.getPrefixParamValues();
     const prefixConditions = this.buildPrefixWhereClause();
@@ -144,8 +144,8 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
 
     // Use a synchronous transaction so the count + insert is atomic against
     // other writers. The canonical Sqlite.Database.transaction() returns void
-    // by contract, so we capture the result via a closure variable.
-    let result = false;
+    // by contract, so we capture the inserted id via a closure variable.
+    let insertedId: number | bigint | null = null;
     const txn = this.db.transaction((): void => {
       const countStmt = this.db.prepare<unknown[], { count: number }>(`
         SELECT COUNT(*) AS count
@@ -154,7 +154,6 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
       `);
       const countRow = countStmt.get(queueName, windowStart, ...prefixParamValues);
       if ((countRow?.count ?? 0) >= maxExecutions) {
-        result = false;
         return;
       }
 
@@ -167,7 +166,6 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
       if (naRow?.next_available_at) {
         const nextAvailable = new Date(naRow.next_available_at + "Z").getTime();
         if (nextAvailable > Date.now()) {
-          result = false;
           return;
         }
       }
@@ -176,30 +174,29 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
         INSERT INTO ${this.executionTableName} (${prefixColumnsInsert}queue_name)
         VALUES (${prefixPlaceholders}?)
       `);
-      insertStmt.run(...prefixParamValues, queueName);
-      result = true;
+      const info = insertStmt.run(...prefixParamValues, queueName);
+      insertedId = info.lastInsertRowid;
     });
 
     txn();
-    return result;
+    if (insertedId == null) return null;
+    // Coerce bigint to number when it fits — primary key here is a SQLite
+    // INTEGER which always fits in JS Number for any practical row count.
+    return typeof insertedId === "bigint" ? Number(insertedId) : insertedId;
   }
 
-  public async releaseExecution(queueName: string): Promise<void> {
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
+    // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+    // tokens for different rows; deleting "the most recent" would release the
+    // other worker's slot.
     this.db
       .prepare(
-        `
-        DELETE FROM ${this.executionTableName}
-        WHERE rowid = (
-          SELECT rowid FROM ${this.executionTableName}
-          WHERE queue_name = ?${prefixConditions}
-          ORDER BY executed_at DESC, rowid DESC
-          LIMIT 1
-        )
-        `
+        `DELETE FROM ${this.executionTableName} WHERE id = ? AND queue_name = ?${prefixConditions}`
       )
-      .run(queueName, ...prefixParams);
+      .run(token as number, queueName, ...prefixParams);
   }
 
   public async recordExecution(queueName: string): Promise<void> {

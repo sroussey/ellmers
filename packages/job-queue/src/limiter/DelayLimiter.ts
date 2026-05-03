@@ -19,22 +19,28 @@ export class DelayLimiter implements ILimiter {
   }
 
   /**
-   * Atomic: read-and-set runs in one synchronous slice with no awaits between
-   * the check and the write.
+   * Token records the previous nextAvailableTime so release can roll back to
+   * exactly the state before this acquire — even if other acquires (or
+   * setNextAvailableTime calls) ran in between.
    */
-  async tryAcquire(): Promise<boolean> {
+  async tryAcquire(): Promise<unknown | null> {
     const now = Date.now();
     if (now < this.nextAvailableTime.getTime()) {
-      return false;
+      return null;
     }
-    this.lastAcquireBaseline = this.nextAvailableTime.getTime();
+    const previous = this.nextAvailableTime.getTime();
+    this.lastAcquireBaseline = previous;
     this.nextAvailableTime = new Date(now + this.delayInMilliseconds);
-    return true;
+    return previous;
   }
 
-  async release(): Promise<void> {
-    // Roll back the delay window so the next caller can proceed immediately.
-    this.nextAvailableTime = new Date(this.lastAcquireBaseline);
+  async release(token: unknown): Promise<void> {
+    if (typeof token !== "number") return;
+    // Only roll back if no later acquire/setNextAvailableTime moved the
+    // window forward — otherwise we'd undo someone else's reservation.
+    if (this.nextAvailableTime.getTime() === this.lastAcquireBaseline + this.delayInMilliseconds) {
+      this.nextAvailableTime = new Date(token);
+    }
   }
 
   async recordJobStart(): Promise<void> {

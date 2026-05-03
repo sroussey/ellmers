@@ -75,17 +75,22 @@ export class RateLimiter implements ILimiter {
    * which performs the count, next-available, and insert under a single
    * critical section per backend (advisory xact lock for Postgres, BEGIN
    * IMMEDIATE for SQLite, per-key promise mutex for in-memory).
+   *
+   * Returns the storage-assigned row id as an opaque token on success, or
+   * `null` on failure. The caller MUST pass the token to {@link release} to
+   * roll back — releasing without a token would race to delete the wrong
+   * worker's slot under contention.
    */
-  async tryAcquire(): Promise<boolean> {
-    const reserved = await this.storage.tryReserveExecution(
+  async tryAcquire(): Promise<unknown | null> {
+    const token = await this.storage.tryReserveExecution(
       this.queueName,
       this.maxExecutions,
       this.windowSizeInMilliseconds
     );
-    if (reserved) {
+    if (token !== null && token !== undefined) {
       this.currentBackoffDelay = this.initialBackoffDelay;
       this.localBackoffUntilMs = 0;
-      return true;
+      return token;
     }
 
     // Capacity reached — apply jittered exponential backoff. We hold this
@@ -95,19 +100,23 @@ export class RateLimiter implements ILimiter {
     // dangerous because tryReserveExecution treats it as a hard gate).
     this.localBackoffUntilMs = Date.now() + this.addJitter(this.currentBackoffDelay);
     this.increaseBackoff();
-    return false;
+    return null;
   }
 
   /**
-   * Release the slot reserved by the most recent {@link tryAcquire}. Best-effort:
-   * removes the most recent execution row. Does NOT touch the shared storage
-   * `nextAvailableAt` sentinel — that field is reserved for explicit
-   * external pauses set via {@link setNextAvailableTime}, and clearing it
-   * here would clobber a parallel worker's failed-acquire backoff or, worse,
-   * a deliberate cluster-wide pause.
+   * Release the slot identified by `token` (a value returned from
+   * {@link tryAcquire}). Deletes the specific row by id — NOT the most recent
+   * — so two concurrent acquirers don't race to release each other's slots.
+   * Does NOT touch the shared storage `nextAvailableAt` sentinel; that field
+   * is reserved for explicit external pauses (e.g. cluster-wide rate-limit
+   * cool-down set via {@link setNextAvailableTime}), and clearing it here
+   * would clobber a parallel worker's failed-acquire backoff or a deliberate
+   * cluster-wide pause. Local per-instance backoff is cleared via
+   * {@link localBackoffUntilMs}.
    */
-  async release(): Promise<void> {
-    await this.storage.releaseExecution(this.queueName);
+  async release(token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    await this.storage.releaseExecution(this.queueName, token);
     this.currentBackoffDelay = this.initialBackoffDelay;
     this.localBackoffUntilMs = 0;
   }

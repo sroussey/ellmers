@@ -22,8 +22,8 @@ describe("NullLimiter", () => {
   });
 
   it("should always tryAcquire successfully", async () => {
-    expect(await limiter.tryAcquire()).toBe(true);
-    expect(await limiter.tryAcquire()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should report process scope", () => {
@@ -33,7 +33,7 @@ describe("NullLimiter", () => {
   it("should not throw on any method call", async () => {
     await expect(limiter.recordJobStart()).resolves.toBeUndefined();
     await expect(limiter.recordJobCompletion()).resolves.toBeUndefined();
-    await expect(limiter.release()).resolves.toBeUndefined();
+    await expect(limiter.release(null)).resolves.toBeUndefined();
     await expect(limiter.setNextAvailableTime(new Date())).resolves.toBeUndefined();
     await expect(limiter.clear()).resolves.toBeUndefined();
   });
@@ -60,16 +60,18 @@ describe("ConcurrencyLimiter", () => {
     const results = await Promise.all(
       Array.from({ length: 10 }, () => limiter.tryAcquire())
     );
-    const successes = results.filter((r) => r === true).length;
+    const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(2);
   });
 
   it("release should free a slot for a follow-up tryAcquire", async () => {
-    expect(await limiter.tryAcquire()).toBe(true);
-    expect(await limiter.tryAcquire()).toBe(true);
-    expect(await limiter.tryAcquire()).toBe(false);
-    await limiter.release();
-    expect(await limiter.tryAcquire()).toBe(true);
+    const t1 = await limiter.tryAcquire();
+    const t2 = await limiter.tryAcquire();
+    expect(t1).not.toBeNull();
+    expect(t2).not.toBeNull();
+    expect(await limiter.tryAcquire()).toBeNull();
+    await limiter.release(t1);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should allow proceeding when under limit", async () => {
@@ -125,7 +127,7 @@ describe("DelayLimiter", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => limiter.tryAcquire())
     );
-    const successes = results.filter((r) => r === true).length;
+    const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(1);
   });
 
@@ -247,7 +249,7 @@ describe("EvenlySpacedRateLimiter", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => limiter.tryAcquire())
     );
-    const successes = results.filter((r) => r === true).length;
+    const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(1);
   });
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, sleep } from "@workglow/util";
+import { createServiceToken, sleep, uuid4 } from "@workglow/util";
 import {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
@@ -19,6 +19,8 @@ export const IN_MEMORY_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterSto
  * Record of a job execution stored in memory.
  */
 interface ExecutionEntry {
+  /** Per-row id; serves as the opaque token returned by tryReserveExecution. */
+  readonly id: string;
   readonly queueName: string;
   readonly executedAt: Date;
 }
@@ -93,7 +95,7 @@ export class InMemoryRateLimiterStorage implements IRateLimiterStorage {
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean> {
+  ): Promise<unknown | null> {
     const key = this.makeKey(queueName);
     return this.withKeyLock(key, () => {
       const now = Date.now();
@@ -105,31 +107,31 @@ export class InMemoryRateLimiterStorage implements IRateLimiterStorage {
         if (live.length !== executions.length) {
           this.executions.set(key, live);
         }
-        return false;
+        return null;
       }
       const next = this.nextAvailableTimes.get(key);
       if (next && next.getTime() > now) {
-        return false;
+        return null;
       }
-      live.push({ queueName, executedAt: new Date(now) });
+      const id = uuid4();
+      live.push({ id, queueName, executedAt: new Date(now) });
       this.executions.set(key, live);
-      return true;
+      return id;
     });
   }
 
-  public async releaseExecution(queueName: string): Promise<void> {
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
     const key = this.makeKey(queueName);
     await this.withKeyLock(key, () => {
       const executions = this.executions.get(key);
       if (!executions || executions.length === 0) return;
-      // Pop the most recent.
-      let latestIdx = 0;
-      for (let i = 1; i < executions.length; i++) {
-        if (executions[i].executedAt > executions[latestIdx].executedAt) {
-          latestIdx = i;
-        }
-      }
-      executions.splice(latestIdx, 1);
+      // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+      // tokens for different rows; popping the most recent would release the
+      // other worker's slot.
+      const idx = executions.findIndex((e) => e.id === token);
+      if (idx === -1) return;
+      executions.splice(idx, 1);
       this.executions.set(key, executions);
     });
   }
@@ -139,6 +141,7 @@ export class InMemoryRateLimiterStorage implements IRateLimiterStorage {
     const key = this.makeKey(queueName);
     const executions = this.executions.get(key) ?? [];
     executions.push({
+      id: uuid4(),
       queueName,
       executedAt: new Date(),
     });

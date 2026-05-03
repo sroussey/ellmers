@@ -66,10 +66,15 @@ export interface IRateLimiterStorage {
   setupDatabase(): Promise<void>;
 
   /**
-   * Atomic check-and-record. Returns `true` and inserts an execution row iff
-   * BOTH (a) fewer than `maxExecutions` rows have `executed_at >
-   * (now - windowMs)` AND (b) any persisted `nextAvailableAt` is in the past
-   * or absent. Returns `false` without writing anything otherwise.
+   * Atomic check-and-record. Inserts an execution row and returns the
+   * inserted row's id iff BOTH (a) fewer than `maxExecutions` rows have
+   * `executed_at > (now - windowMs)` AND (b) any persisted `nextAvailableAt`
+   * is in the past or absent. Returns `null` without writing anything
+   * otherwise.
+   *
+   * The returned id MUST be passed to {@link releaseExecution} to free the
+   * slot — otherwise concurrent acquirers would race to delete the wrong
+   * worker's row when one of them rolls back.
    *
    * Implementations MUST serialize concurrent callers (advisory locks,
    * `BEGIN IMMEDIATE`, per-key mutex, etc.) so the count-then-insert window
@@ -78,19 +83,24 @@ export interface IRateLimiterStorage {
    * @param queueName - The name of the queue
    * @param maxExecutions - Max allowed executions in the window
    * @param windowMs - Window size in milliseconds
+   * @returns the inserted row's id on success, or `null` on failure
    */
   tryReserveExecution(
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean>;
+  ): Promise<unknown | null>;
 
   /**
-   * Best-effort release: remove the most recent execution row for this queue.
-   * Used when a caller reserved a slot via {@link tryReserveExecution} but
-   * could not actually use it.
+   * Release the execution row identified by `token` (the value previously
+   * returned from {@link tryReserveExecution}). No-op if the row no longer
+   * exists.
+   *
+   * Critical: implementations MUST delete by id, NOT by recency or position.
+   * Two concurrent workers can hold tokens for different rows; deleting the
+   * "most recent" row would release another worker's reservation.
    */
-  releaseExecution(queueName: string): Promise<void>;
+  releaseExecution(queueName: string, token: unknown): Promise<void>;
 
   /**
    * Records a job execution for rate limiting tracking.

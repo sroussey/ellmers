@@ -136,7 +136,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean> {
+  ): Promise<unknown | null> {
     const prefixColumnNames = this.getPrefixColumnNames();
     const prefixParamValues = this.getPrefixParamValues();
     const prefixCount = prefixColumnNames.length;
@@ -172,11 +172,40 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
 
     const windowStart = new Date(Date.now() - windowMs).toISOString();
 
-    // Use a dedicated client when the pool supports connect() (real pg.Pool).
-    // PGLitePool runs single-connection in-process so plain `db.query` calls
-    // are already serialized and BEGIN/COMMIT around them is safe.
+    // Use a dedicated client when the pool supports connect() (real pg.Pool)
+    // — the advisory xact lock + transaction MUST run on the same connection
+    // for atomicity. Without connect(), only known single-connection wrappers
+    // (PGLitePool, raw PGlite) are safe, since they implicitly serialize all
+    // queries through one underlying connection. Anything else (e.g. a custom
+    // multi-connection adapter without connect()) would dispatch the lock and
+    // the INSERT to different sessions, defeating the lock entirely.
     const supportsConnect =
       typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (!supportsConnect) {
+      // Without connect() we run BEGIN/advisory_lock/INSERT/COMMIT directly on
+      // `db.query`. That's only safe if `db` is a single-connection wrapper
+      // (every query goes through the same underlying session). Recognize:
+      //   - PGLitePool  — our own wrapper class; constructor name preserved.
+      //   - PGlite      — third-party, ships minified so `constructor.name`
+      //     can be obfuscated (observed: "q"). Detect via duck-typing on
+      //     methods PGlite uniquely exposes (`waitReady` Promise + `exec`).
+      // Any other no-connect() pool would dispatch the lock and the INSERT
+      // to potentially different sessions, breaking atomicity.
+      const dbAny = this.db as unknown as {
+        waitReady?: unknown;
+        exec?: unknown;
+        constructor?: { name?: string };
+      };
+      const ctorName = dbAny.constructor?.name;
+      const looksLikePGlite =
+        typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
+      const looksLikePGLitePool = ctorName === "PGLitePool";
+      if (!looksLikePGlite && !looksLikePGLitePool) {
+        throw new Error(
+          `PostgresRateLimiterStorage.tryReserveExecution requires a pg.Pool with connect() or a known single-connection wrapper (PGLitePool, PGlite); got ${ctorName ?? typeof this.db}. A multi-connection pool without connect() would dispatch the advisory lock and the INSERT to different sessions, breaking atomicity.`
+        );
+      }
+    }
     const conn = supportsConnect
       ? await (this.db as unknown as { connect: () => Promise<{
           query: Pool["query"];
@@ -203,7 +232,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
         const n: number = countResult.rows[0]?.n ?? 0;
         if (n >= maxExecutions) {
           await conn.query("COMMIT");
-          return false;
+          return null;
         }
 
         const naResult = await conn.query(
@@ -217,18 +246,19 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
         const nextAvailableAt: Date | null = naResult.rows[0]?.next_available_at ?? null;
         if (nextAvailableAt && new Date(nextAvailableAt).getTime() > Date.now()) {
           await conn.query("COMMIT");
-          return false;
+          return null;
         }
 
-        await conn.query(
+        const insertResult = await conn.query(
           `
           INSERT INTO ${this.executionTableName} (${prefixInsertCols}queue_name)
           VALUES (${prefixInsertPlaceholders}${queueParam})
+          RETURNING id
           `,
           [...prefixParamValues, queueName]
         );
         await conn.query("COMMIT");
-        return true;
+        return insertResult.rows[0]?.id ?? null;
       } catch (err) {
         try {
           await conn.query("ROLLBACK");
@@ -242,19 +272,15 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
     }
   }
 
-  public async releaseExecution(queueName: string): Promise<void> {
-    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(2);
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+    // tokens for different rows; deleting "the most recent" would release the
+    // other worker's slot.
     await this.db.query(
-      `
-      DELETE FROM ${this.executionTableName}
-      WHERE id = (
-        SELECT id FROM ${this.executionTableName}
-        WHERE queue_name = $1${prefixConditions}
-        ORDER BY executed_at DESC, id DESC
-        LIMIT 1
-      )
-      `,
-      [queueName, ...prefixParams]
+      `DELETE FROM ${this.executionTableName} WHERE id = $1 AND queue_name = $2${prefixConditions}`,
+      [token as string | number, queueName, ...prefixParams]
     );
   }
 

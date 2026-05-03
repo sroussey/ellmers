@@ -253,12 +253,12 @@ export class JobQueueWorker<
     if (!job) {
       return false;
     }
-    const acquired = await this.limiter.tryAcquire();
-    if (!acquired) {
+    const limiterToken = await this.limiter.tryAcquire();
+    if (limiterToken === null || limiterToken === undefined) {
       await this.releaseClaimedJob(job);
       return false;
     }
-    await this.processSingleJob(job);
+    await this.processSingleJob(job, limiterToken);
     return true;
   }
 
@@ -356,8 +356,8 @@ export class JobQueueWorker<
           return;
         }
 
-        const acquired = await this.limiter.tryAcquire();
-        if (!acquired) {
+        const limiterToken = await this.limiter.tryAcquire();
+        if (limiterToken === null || limiterToken === undefined) {
           // Lost the race for the last slot, or hit the rate-limit window.
           // Give the job back and wait for capacity.
           await this.releaseClaimedJob(job);
@@ -367,10 +367,11 @@ export class JobQueueWorker<
 
         if (!this.running) {
           // Stop fired while tryAcquire was in flight. Undo both the limiter
-          // reservation and the job claim so we don't start processing on a
-          // worker that's about to exit.
+          // reservation (release THIS token, not "the most recent") and the
+          // job claim so we don't start processing on a worker that's about
+          // to exit.
           try {
-            await this.limiter.release();
+            await this.limiter.release(limiterToken);
           } catch {
             // best-effort
           }
@@ -380,7 +381,7 @@ export class JobQueueWorker<
 
         // Don't await - process in background to allow concurrent jobs.
         // The loop will claim+acquire on the next iteration.
-        this.processSingleJob(job);
+        this.processSingleJob(job, limiterToken);
       } catch {
         // Don't let transient errors kill the loop
         await sleep(this.pollIntervalMs);
@@ -478,7 +479,10 @@ export class JobQueueWorker<
   /**
    * Process a single job
    */
-  protected async processSingleJob(job: Job<Input, Output>): Promise<void> {
+  protected async processSingleJob(
+    job: Job<Input, Output>,
+    limiterToken: unknown
+  ): Promise<void> {
     if (!job || !job.id) {
       throw new JobNotFoundError("Invalid job provided for processing");
     }
@@ -514,10 +518,12 @@ export class JobQueueWorker<
       try {
         await this.validateJobState(job);
       } catch (validationErr) {
-        // Validation failed before we ran any actual work — release the slot
-        // we reserved so it doesn't count toward the rate limit.
+        // Validation failed before we ran any actual work — release THIS
+        // limiter slot (by token, not by recency) so it doesn't count toward
+        // the rate limit and we don't accidentally release another worker's
+        // slot.
         try {
-          await this.limiter.release();
+          await this.limiter.release(limiterToken);
           slotReleased = true;
         } catch {
           // best-effort

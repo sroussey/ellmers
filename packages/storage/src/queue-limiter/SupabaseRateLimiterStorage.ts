@@ -166,21 +166,23 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     const createFnSql = `
       CREATE OR REPLACE FUNCTION ${fnName}(
         ${prefixSigPrefix}_queue_name TEXT, _window_start TIMESTAMPTZ, _max_exec INT
-      ) RETURNS BOOLEAN AS $fn$
+      ) RETURNS BIGINT AS $fn$
       DECLARE
         _count INT;
         _next TIMESTAMPTZ;
+        _new_id BIGINT;
       BEGIN
         PERFORM pg_advisory_xact_lock(${lockKeyExpr});
         SELECT COUNT(*) INTO _count FROM ${this.executionTableName}
           WHERE queue_name = _queue_name AND executed_at > _window_start${prefixWhere};
-        IF _count >= _max_exec THEN RETURN FALSE; END IF;
+        IF _count >= _max_exec THEN RETURN NULL; END IF;
         SELECT next_available_at INTO _next FROM ${this.nextAvailableTableName}
           WHERE queue_name = _queue_name${prefixWhere};
-        IF _next IS NOT NULL AND _next > NOW() THEN RETURN FALSE; END IF;
+        IF _next IS NOT NULL AND _next > NOW() THEN RETURN NULL; END IF;
         INSERT INTO ${this.executionTableName} (${prefixInsertCols}queue_name)
-          VALUES (${prefixInsertVals}_queue_name);
-        RETURN TRUE;
+          VALUES (${prefixInsertVals}_queue_name)
+          RETURNING id INTO _new_id;
+        RETURN _new_id;
       END;
       $fn$ LANGUAGE plpgsql;
     `;
@@ -199,7 +201,7 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean> {
+  ): Promise<unknown | null> {
     const args: Record<string, unknown> = {
       _queue_name: queueName,
       _window_start: new Date(Date.now() - windowMs).toISOString(),
@@ -208,31 +210,35 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     for (const p of this.prefixes) {
       args[`_${p.name}`] = this.prefixValues[p.name];
     }
+    // The PL/pgSQL function returns the inserted id BIGINT on success and
+    // NULL when capacity is reached or external backoff is active.
     const { data, error } = await this.client.rpc(this.atomicReserveFunctionName(), args);
     if (error) throw error;
-    // Real Supabase RPC returns the scalar directly for a function returning
-    // BOOLEAN. The pglite-backed mock executes `SELECT * FROM fn()` and returns
-    // a row array — accept both shapes.
-    if (data === true) return true;
-    if (Array.isArray(data) && data.length > 0) {
+    // The function now returns the inserted row id BIGINT (or NULL when
+    // capacity is reached). Real Supabase RPC returns the scalar directly;
+    // the pglite-backed mock executes `SELECT * FROM fn()` and returns a row
+    // array — accept both shapes.
+    if (data === null || data === undefined) return null;
+    if (Array.isArray(data)) {
+      if (data.length === 0) return null;
       const first = Object.values(data[0] as Record<string, unknown>)[0];
-      return first === true;
+      return first ?? null;
     }
-    return false;
+    // Supabase RPC returns BIGINTs as either numbers or strings depending on
+    // size; both are valid as opaque tokens.
+    return data;
   }
 
-  public async releaseExecution(queueName: string): Promise<void> {
-    // Best-effort: delete the most recent row for this queue/prefix.
-    let select = this.client
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+    // tokens for different rows; deleting "the most recent" would release the
+    // other worker's slot.
+    let del = this.client
       .from(this.executionTableName)
-      .select("id")
+      .delete()
+      .eq("id", token as number | string)
       .eq("queue_name", queueName);
-    select = this.applyPrefixFilters(select);
-    const { data, error } = await select.order("executed_at", { ascending: false }).limit(1);
-    if (error) throw error;
-    if (!data || data.length === 0) return;
-    const id = (data[0] as { id: number | string }).id;
-    let del = this.client.from(this.executionTableName).delete().eq("id", id);
     del = this.applyPrefixFilters(del);
     const { error: delError } = await del;
     if (delError) throw delError;

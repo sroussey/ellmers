@@ -15,11 +15,14 @@ export const NULL_JOB_LIMITER = createServiceToken<ILimiter>("jobqueue.limiter.n
 export class NullLimiter implements ILimiter {
   public readonly scope: LimiterScope = "process";
 
-  async tryAcquire(): Promise<boolean> {
-    return true;
+  /** Sentinel token — non-null so callers' truthy checks see it as a success. */
+  private static readonly SENTINEL = Symbol("NullLimiter.acquired");
+
+  async tryAcquire(): Promise<unknown | null> {
+    return NullLimiter.SENTINEL;
   }
 
-  async release(): Promise<void> {
+  async release(_token: unknown): Promise<void> {
     // Do nothing
   }
 

@@ -40,29 +40,37 @@ export class CompositeLimiter implements ILimiter {
    * Atomic against the composite: acquires children sequentially and rolls
    * back any successfully-acquired prefix if a later child rejects, so the
    * "all-or-nothing" semantics hold under concurrency.
+   *
+   * The returned token is an array of per-child tokens (parallel to
+   * `this.limiters`) so {@link release} can free each child's specific slot
+   * — never "the most recent", which would race other acquirers.
    */
-  async tryAcquire(): Promise<boolean> {
-    const acquired: ILimiter[] = [];
+  async tryAcquire(): Promise<unknown | null> {
+    const tokens: unknown[] = [];
     for (const limiter of this.limiters) {
-      const ok = await limiter.tryAcquire();
-      if (!ok) {
-        // Roll back the partial acquisition.
-        for (const previous of acquired.reverse()) {
+      const t = await limiter.tryAcquire();
+      if (t === null || t === undefined) {
+        // Roll back the partial acquisition. Iterate in reverse so children
+        // are released in opposite order of acquisition.
+        for (let i = tokens.length - 1; i >= 0; i--) {
           try {
-            await previous.release();
+            await this.limiters[i].release(tokens[i]);
           } catch {
             // best-effort
           }
         }
-        return false;
+        return null;
       }
-      acquired.push(limiter);
+      tokens.push(t);
     }
-    return true;
+    return tokens;
   }
 
-  async release(): Promise<void> {
-    await Promise.all(this.limiters.map((l) => l.release().catch(() => {})));
+  async release(token: unknown): Promise<void> {
+    if (!Array.isArray(token)) return;
+    await Promise.all(
+      this.limiters.map((l, i) => l.release(token[i]).catch(() => {}))
+    );
   }
 
   async recordJobStart(): Promise<void> {

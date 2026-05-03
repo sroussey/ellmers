@@ -183,12 +183,12 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     queueName: string,
     maxExecutions: number,
     windowMs: number
-  ): Promise<boolean> {
+  ): Promise<unknown | null> {
     // Soft pre-check against external backoff. Done before opening the tx
     // because next-available lives in a separate IDBDatabase.
     const nextIso = await this.getNextAvailableTime(queueName);
     if (nextIso && new Date(nextIso).getTime() > Date.now()) {
-      return false;
+      return null;
     }
 
     const execDb = await this.getExecutionDb();
@@ -196,10 +196,11 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     const windowStartIso = new Date(Date.now() - windowMs).toISOString();
     const execTx = execDb.transaction(this.executionTableName, "readwrite");
     const execStore = execTx.objectStore(this.executionTableName);
+    const insertedId = crypto.randomUUID();
 
-    return new Promise<boolean>((resolve, reject) => {
+    return new Promise<unknown | null>((resolve, reject) => {
       let liveCount = 0;
-      let inserted = false;
+      let didInsert = false;
       const liveRange = IDBKeyRange.bound(
         [...prefixKeyValues, queueName, windowStartIso],
         [...prefixKeyValues, queueName, "￿"],
@@ -227,7 +228,7 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
         }
 
         const record: ExecutionRecord = {
-          id: crypto.randomUUID(),
+          id: insertedId,
           queue_name: queueName,
           executed_at: new Date().toISOString(),
         };
@@ -235,7 +236,7 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
           (record as Record<string, unknown>)[k] = v;
         }
         const addReq = execStore.add(record);
-        inserted = true;
+        didInsert = true;
         addReq.onerror = () => {
           try {
             execTx.abort();
@@ -247,39 +248,22 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       };
 
       cursorReq.onerror = () => reject(cursorReq.error);
-      execTx.oncomplete = () => resolve(inserted);
+      execTx.oncomplete = () => resolve(didInsert ? insertedId : null);
       execTx.onerror = () => reject(execTx.error);
-      execTx.onabort = () => resolve(false);
+      execTx.onabort = () => resolve(null);
     });
   }
 
-  public async releaseExecution(queueName: string): Promise<void> {
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
     const db = await this.getExecutionDb();
     const tx = db.transaction(this.executionTableName, "readwrite");
     const store = tx.objectStore(this.executionTableName);
-    const index = store.index("queue_executed_at");
-    const prefixKeyValues = this.getPrefixKeyValues();
-
     return new Promise<void>((resolve, reject) => {
-      const range = IDBKeyRange.bound(
-        [...prefixKeyValues, queueName, ""],
-        [...prefixKeyValues, queueName, "￿"]
-      );
-      // Open a descending cursor and delete the first matching record.
-      const req = index.openCursor(range, "prev");
-      let deleted = false;
-      req.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor && !deleted) {
-          const record = cursor.value as ExecutionRecord;
-          if (this.matchesPrefixes(record)) {
-            cursor.delete();
-            deleted = true;
-            return;
-          }
-          cursor.continue();
-        }
-      };
+      // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+      // tokens for different rows; deleting "the most recent" would release
+      // the other worker's slot.
+      const req = store.delete(token as IDBValidKey);
       req.onerror = () => reject(req.error);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);

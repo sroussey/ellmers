@@ -27,15 +27,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   private durations: number[] = [];
   /** Promise chain used to serialize concurrent {@link tryAcquire} callers. */
   private acquireChain: Promise<unknown> = Promise.resolve();
-  /**
-   * Stack of `nextAvailableTime` snapshots captured BEFORE each successful
-   * {@link tryAcquire} advanced it. {@link release} pops the top and restores
-   * the snapshot, which correctly rolls back the most recent acquire even
-   * with multiple in-flight slots. Out-of-order releases (popping a snapshot
-   * that doesn't belong to the released acquire) are best-effort and may
-   * give back a slightly different amount of time than the released slot took.
-   */
-  private acquireSnapshots: number[] = [];
 
   constructor({ maxExecutions, windowSizeInSeconds }: RateLimiterOptions) {
     if (maxExecutions <= 0) {
@@ -59,8 +50,10 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   /**
    * Atomic acquire: serialized by an internal promise chain so two concurrent
    * acquirers cannot both observe `now >= nextAvailableTime` and both proceed.
+   * Returns a token capturing the prior `nextAvailableTime` so {@link release}
+   * can roll back to the exact state before this acquire.
    */
-  async tryAcquire(): Promise<boolean> {
+  async tryAcquire(): Promise<unknown | null> {
     const previous = this.acquireChain;
     let release!: (v: unknown) => void;
     const next = new Promise((r) => {
@@ -71,11 +64,9 @@ export class EvenlySpacedRateLimiter implements ILimiter {
       await previous;
       const now = Date.now();
       if (now < this.nextAvailableTime) {
-        return false;
+        return null;
       }
-      // Snapshot the pre-acquire state so a paired release() can roll back
-      // exactly this acquire's advance even with multiple slots in flight.
-      this.acquireSnapshots.push(this.nextAvailableTime);
+      const priorNextAvailable = this.nextAvailableTime;
       // Reserve the slot by advancing nextAvailableTime now (recordJobStart-style)
       // so a follow-up tryAcquire from another caller in the same tick blocks.
       this.lastStartTime = now;
@@ -87,25 +78,28 @@ export class EvenlySpacedRateLimiter implements ILimiter {
         const waitMs = Math.max(0, this.idealInterval - avgDuration);
         this.nextAvailableTime = now + waitMs;
       }
-      return true;
+      return { priorNextAvailable, advancedTo: this.nextAvailableTime };
     } finally {
       release(undefined);
     }
   }
 
   /**
-   * Roll back a previously acquired slot. Pops the top snapshot from the
-   * acquire stack and restores `nextAvailableTime` to the value it had BEFORE
-   * the most recent acquire advanced it. With multiple in-flight slots this
-   * is exactly right when releases happen in LIFO order; out-of-order
-   * releases give back the most recent acquire's advance regardless, which
-   * is best-effort but never breaks the rate-limit invariant the way the
-   * old `nextAvailableTime = lastStartTime` reset did.
+   * Roll back the slot identified by `token`. Only undoes the advance if no
+   * later acquire moved the window forward — otherwise we'd undo someone
+   * else's reservation.
    */
-  async release(): Promise<void> {
-    const snapshot = this.acquireSnapshots.pop();
-    if (snapshot !== undefined) {
-      this.nextAvailableTime = snapshot;
+  async release(token: unknown): Promise<void> {
+    if (
+      !token ||
+      typeof token !== "object" ||
+      typeof (token as { advancedTo?: unknown }).advancedTo !== "number"
+    ) {
+      return;
+    }
+    const t = token as { priorNextAvailable: number; advancedTo: number };
+    if (this.nextAvailableTime === t.advancedTo) {
+      this.nextAvailableTime = t.priorNextAvailable;
     }
   }
 
@@ -156,6 +150,5 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     this.durations = [];
     this.nextAvailableTime = Date.now();
     this.lastStartTime = 0;
-    this.acquireSnapshots = [];
   }
 }

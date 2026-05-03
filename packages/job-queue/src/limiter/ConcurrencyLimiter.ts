@@ -30,22 +30,26 @@ export class ConcurrencyLimiter implements ILimiter {
     );
   }
 
+  /** Sentinel token; ConcurrencyLimiter has no per-row identity, just a counter. */
+  private static readonly SENTINEL = Symbol("ConcurrencyLimiter.acquired");
+
   /**
    * Atomic in JS's single-threaded sense: the read-then-increment runs without
    * an `await` between them, so no other task can interleave.
    */
-  async tryAcquire(): Promise<boolean> {
+  async tryAcquire(): Promise<unknown | null> {
     if (
       this.currentRunningJobs >= this.maxConcurrentJobs ||
       Date.now() < this.nextAllowedStartTime.getTime()
     ) {
-      return false;
+      return null;
     }
     this.currentRunningJobs++;
-    return true;
+    return ConcurrencyLimiter.SENTINEL;
   }
 
-  async release(): Promise<void> {
+  async release(token: unknown): Promise<void> {
+    if (token !== ConcurrencyLimiter.SENTINEL) return;
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 
