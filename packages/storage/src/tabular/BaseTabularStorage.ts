@@ -350,6 +350,7 @@ export abstract class BaseTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
+    this.validateSelect(options);
     const requiredColumns = [
       ...Object.keys(criteria),
       ...(options.orderBy ?? []).map((o) => String(o.column)),
@@ -518,6 +519,28 @@ export abstract class BaseTabularStorage<
             `Invalid sort direction "${direction}". Must be "ASC" or "DESC"`
           );
         }
+      }
+    }
+  }
+
+  /**
+   * Validates the `select` array in a {@link CoveringIndexQueryOptions}.
+   * Throws {@link StorageValidationError} when `select` is empty or contains
+   * a column that is not in the schema's `properties`.
+   */
+  protected validateSelect<K extends keyof Entity & string>(
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): void {
+    if (!options.select || options.select.length === 0) {
+      throw new StorageValidationError("queryIndex requires a non-empty select array");
+    }
+    const schemaProps = Object.keys(this.schema.properties);
+    for (const col of options.select) {
+      const colStr = String(col);
+      if (!schemaProps.includes(colStr)) {
+        throw new StorageValidationError(
+          `queryIndex select column "${colStr}" is not in schema`
+        );
       }
     }
   }

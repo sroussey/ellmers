@@ -967,6 +967,7 @@ export class PostgresTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
+    this.validateSelect(options);
     this.validateQueryParams(criteria, options);
 
     const registered = this.indexes.map((cols, i) => {
