@@ -6,6 +6,7 @@
 
 export * from "./tabular/BaseTabularStorage";
 export * from "./tabular/CachedTabularStorage";
+export * from "./tabular/CoveringIndexMissingError";
 export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
