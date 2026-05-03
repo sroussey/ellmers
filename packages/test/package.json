@@ -34,6 +34,7 @@
     "@workglow/anthropic": "workspace:*",
     "@workglow/openai": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
+    "@workglow/ollama": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/job-queue": "workspace:*",

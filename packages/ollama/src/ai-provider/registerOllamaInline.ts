@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import { OLLAMA_STREAM_TASKS, OLLAMA_TASKS } from "./common/Ollama_JobRunFns";
 import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
 

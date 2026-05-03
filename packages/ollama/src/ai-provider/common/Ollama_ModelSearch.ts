@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
-import { filterModelSearchResultsByQuery } from "../../common/modelSearchQuery";
+import { filterModelSearchResultsByQuery } from "@workglow/ai-provider/common";
 import { OLLAMA } from "./Ollama_Constants";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 

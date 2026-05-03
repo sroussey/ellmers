@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerProviderWorker } from "../common/registerProvider";
-import { OLLAMA_STREAM_TASKS, OLLAMA_TASKS } from "./common/Ollama_JobRunFns";
+import { registerProviderWorker } from "@workglow/ai-provider/common";
+import { OLLAMA_STREAM_TASKS, OLLAMA_TASKS } from "./common/Ollama_JobRunFns.browser";
 import { OllamaProvider } from "./OllamaProvider";
 
 export async function registerOllamaWorker(): Promise<void> {
