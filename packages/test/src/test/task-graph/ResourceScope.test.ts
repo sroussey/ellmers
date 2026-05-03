@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { ResourceScope } from "@workglow/util";
 import { IExecuteContext, Task, TaskGraph, Workflow } from "@workglow/task-graph";
+import { ResourceScope } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 // A task that registers a disposer on the resource scope
 class ResourceAcquiringTask extends Task<{ name: string }, { name: string }> {
@@ -363,6 +363,10 @@ describe("ResourceScope `await using` integration", () => {
 describe("ResourceScope auto-ownership failure paths", () => {
   it("disposes auto-scope when run is aborted via parentSignal", async () => {
     const events: string[] = [];
+    let registered: () => void;
+    const registeredPromise = new Promise<void>((r) => {
+      registered = r;
+    });
 
     class HangingResourceTask extends Task<{}, {}> {
       static override readonly type = "HangingResourceTask";
@@ -376,8 +380,11 @@ describe("ResourceScope auto-ownership failure paths", () => {
         ctx.resourceScope?.register("abort:t1", async () => {
           events.push("disposed");
         });
-        // Wait for abort
-        await new Promise<void>((resolve, reject) => {
+        // Signal that registration is complete — replaces a wall-clock sleep
+        // so the abort fires deterministically AFTER the disposer is in the Map,
+        // regardless of how busy the test runner is.
+        registered();
+        await new Promise<void>((_resolve, reject) => {
           ctx.signal.addEventListener("abort", () => reject(new Error("aborted")));
         });
         return {};
@@ -390,8 +397,7 @@ describe("ResourceScope auto-ownership failure paths", () => {
 
     const ctrl = new AbortController();
     const runPromise = graph.run({}, { parentSignal: ctrl.signal });
-    // Give the task a tick to register its disposer.
-    await new Promise((r) => setTimeout(r, 10));
+    await registeredPromise;
     ctrl.abort();
 
     await expect(runPromise).rejects.toThrow();
@@ -559,5 +565,116 @@ describe("ResourceScope nested-run forwarding under auto-ownership", () => {
     // All 3 iterations saw the same scope identity → forwarding works.
     expect(capturedScopes).toHaveLength(3);
     expect(new Set(capturedScopes).size).toBe(1);
+  });
+});
+
+describe("ResourceScope auto-ownership does not leak through context.own()", () => {
+  it("auto-owned scope is not stamped into owned tasks' runConfig", async () => {
+    const disposed: string[] = [];
+
+    class ChildResourceTask extends Task<{}, {}> {
+      static override readonly type = "ChildResourceTaskOwn";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("child:resource", async () => {
+          disposed.push("child");
+        });
+        return {};
+      }
+    }
+
+    let ownedChild: ChildResourceTask | undefined;
+
+    class ParentTask extends Task<{}, {}> {
+      static override readonly type = "ParentOwnTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        // Just adopt — don't run it. We want to inspect the stamped runConfig.
+        ownedChild = ctx.own(new ChildResourceTask({ id: "child" }));
+        return {};
+      }
+    }
+
+    const parent = new ParentTask({ id: "parent" });
+    await parent.run();
+
+    // Parent's auto-scope was disposed in `finally`. The owned child must NOT
+    // hold a reference to that disposed scope — otherwise its next `task.run()`
+    // would skip auto-create and silently drop disposers on a cleared Map.
+    expect(ownedChild).toBeDefined();
+    expect(ownedChild!.runConfig?.resourceScope).toBeUndefined();
+
+    // Running the orphaned child should still work end-to-end: it auto-creates
+    // its own fresh scope and disposes it cleanly.
+    await ownedChild!.run();
+    expect(disposed).toEqual(["child"]);
+  });
+
+  it("caller-passed scope IS still propagated through own() (preserves resource sharing)", async () => {
+    const disposed: string[] = [];
+    const callerScope = new ResourceScope();
+
+    class ChildSharedTask extends Task<{}, {}> {
+      static override readonly type = "ChildSharedTaskOwn";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("shared:resource", async () => {
+          disposed.push("shared");
+        });
+        return {};
+      }
+    }
+
+    let ownedChild: ChildSharedTask | undefined;
+
+    class ParentSharedTask extends Task<{}, {}> {
+      static override readonly type = "ParentSharedOwnTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ownedChild = ctx.own(new ChildSharedTask({ id: "child" }));
+        // Run the owned child synchronously inside the parent run. The child
+        // pulls `resourceScope` from its (just-stamped) runConfig — so its
+        // disposer must land on the caller's scope, not on a per-child
+        // auto-scope that would be disposed when the child returns.
+        await ownedChild.run();
+        return {};
+      }
+    }
+
+    const parent = new ParentSharedTask({ id: "parent" });
+    await parent.run({}, { resourceScope: callerScope });
+
+    // Caller-passed scope IS propagated — owned child's runConfig points at it
+    // so that a follow-up `task.run()` on the child shares the same scope and
+    // benefits from first-registration-wins / shared-model semantics.
+    expect(ownedChild).toBeDefined();
+    expect(ownedChild!.runConfig?.resourceScope).toBe(callerScope);
+    // The child's disposer landed on the caller's scope, not a per-run scope.
+    expect(callerScope.has("shared:resource")).toBe(true);
+
+    // Caller still owns disposal — runner did not dispose at parent's exit.
+    expect(disposed).toEqual([]);
+    await callerScope.disposeAll();
+    expect(disposed).toEqual(["shared"]);
   });
 });
