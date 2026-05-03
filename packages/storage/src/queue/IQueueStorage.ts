@@ -44,9 +44,15 @@ export const JobStatus = {
 } as const satisfies Record<JobStatus, JobStatus>;
 
 /**
- * Type of change that occurred in the queue
+ * Type of change that occurred in the queue.
+ *
+ * `RESYNC` is a synthetic event emitted by some backends (e.g. Postgres
+ * LISTEN/NOTIFY) after a (re)connect to indicate that arbitrary changes may
+ * have happened during a disconnect window. Subscribers should treat it as a
+ * "kick the workers, re-poll state" signal — `old` and `new` are both
+ * undefined.
  */
-export type QueueChangeType = "INSERT" | "UPDATE" | "DELETE";
+export type QueueChangeType = "INSERT" | "UPDATE" | "DELETE" | "RESYNC";
 
 /**
  * Payload describing a change to a job
@@ -113,9 +119,28 @@ export type JobStorageFormat<Input, Output> = {
 };
 
 /**
+ * Whether a queue storage's state is shared across processes.
+ *
+ * - `"process"` — in-memory / per-process state. Workers in the same process
+ *   share it, but separate processes do not.
+ * - `"cluster"` — state lives in shared external storage (Postgres, Supabase,
+ *   etc.) visible to every process. Pairing a `"process"`-scoped limiter with
+ *   a `"cluster"`-scoped queue almost always indicates a misconfiguration.
+ */
+export type QueueStorageScope = "process" | "cluster";
+
+/**
  * Interface defining the storage operations for a job queue
  */
 export interface IQueueStorage<Input, Output> {
+  /**
+   * Whether this storage is shared across processes. In-memory / browser
+   * backends MUST report `"process"`. Shared databases (Postgres, Supabase)
+   * report `"cluster"`. Used by JobQueueServer to detect process-scoped
+   * limiters paired with cluster-scoped queues.
+   */
+  readonly scope: QueueStorageScope;
+
   /**
    * Adds a job to the queue storage
    * @param job - The job to add to the queue storage

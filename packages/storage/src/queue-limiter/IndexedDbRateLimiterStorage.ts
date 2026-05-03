@@ -11,7 +11,11 @@ import {
   MigrationOptions,
 } from "../util/IndexedDbTable";
 import type { PrefixColumn } from "../queue/IQueueStorage";
-import { IRateLimiterStorage, RateLimiterStorageOptions } from "./IRateLimiterStorage";
+import {
+  IRateLimiterStorage,
+  RateLimiterStorageOptions,
+  RateLimiterStorageScope,
+} from "./IRateLimiterStorage";
 
 export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.indexedDb"
@@ -45,8 +49,19 @@ interface NextAvailableRecord {
 /**
  * IndexedDB implementation of rate limiter storage.
  * Manages execution records and next available times for rate limiting.
+ *
+ * Atomicity is `"process"`-scoped (browser tab) and the `next_available_at`
+ * pre-check inside {@link tryReserveExecution} runs in a separate IDB
+ * transaction from the count-and-insert. See {@link tryReserveExecution} for
+ * the full caveat — do not assume cross-store atomicity.
  */
 export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
+  /**
+   * `"process"` — IndexedDB is per-origin and shared across tabs but not across
+   * processes (different machines, server processes). Within a single tab the
+   * `readwrite` transaction below provides atomicity.
+   */
+  public readonly scope: RateLimiterStorageScope = "process";
   private executionDb: IDBDatabase | undefined;
   private nextAvailableDb: IDBDatabase | undefined;
   private readonly executionTableName: string;
@@ -148,6 +163,111 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       nextAvailableIndexes,
       this.migrationOptions
     );
+  }
+
+  /**
+   * Atomically reserves an execution slot in IndexedDB.
+   *
+   * Atomicity caveat: this implementation only serializes the `count + insert`
+   * pair (under a single `readwrite` IDB transaction over the executions
+   * store). The `next_available_at` lookup is a soft pre-check performed
+   * BEFORE the tx, because the executions and next-available object stores
+   * live in separate `IDBDatabase` instances by design (one
+   * `ensureIndexedDbTable` call each) and IDB transaction scope cannot cross
+   * databases. This is acceptable for IndexedDB's `"process"` scope: rate-
+   * limit overshoot from a stale next-available read is bounded by single-
+   * tab serial execution, and the stricter count check is what protects the
+   * primary maxExecutions invariant.
+   */
+  public async tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<unknown | null> {
+    // Soft pre-check against external backoff. Done before opening the tx
+    // because next-available lives in a separate IDBDatabase.
+    const nextIso = await this.getNextAvailableTime(queueName);
+    if (nextIso && new Date(nextIso).getTime() > Date.now()) {
+      return null;
+    }
+
+    const execDb = await this.getExecutionDb();
+    const prefixKeyValues = this.getPrefixKeyValues();
+    const windowStartIso = new Date(Date.now() - windowMs).toISOString();
+    const execTx = execDb.transaction(this.executionTableName, "readwrite");
+    const execStore = execTx.objectStore(this.executionTableName);
+    const insertedId = crypto.randomUUID();
+
+    return new Promise<unknown | null>((resolve, reject) => {
+      let liveCount = 0;
+      let didInsert = false;
+      const liveRange = IDBKeyRange.bound(
+        [...prefixKeyValues, queueName, windowStartIso],
+        [...prefixKeyValues, queueName, "￿"],
+        true,
+        false
+      );
+      const cursorReq = execStore.index("queue_executed_at").openCursor(liveRange);
+
+      cursorReq.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const record = cursor.value as ExecutionRecord;
+          if (this.matchesPrefixes(record)) {
+            liveCount++;
+          }
+          cursor.continue();
+          return;
+        }
+
+        if (liveCount >= maxExecutions) {
+          // Aborting fires execTx.onabort below, which resolves with `false`.
+          // No INSERT happened, so capacity is preserved.
+          execTx.abort();
+          return;
+        }
+
+        const record: ExecutionRecord = {
+          id: insertedId,
+          queue_name: queueName,
+          executed_at: new Date().toISOString(),
+        };
+        for (const [k, v] of Object.entries(this.prefixValues)) {
+          (record as Record<string, unknown>)[k] = v;
+        }
+        const addReq = execStore.add(record);
+        didInsert = true;
+        addReq.onerror = () => {
+          try {
+            execTx.abort();
+          } catch {
+            // already aborted
+          }
+          reject(addReq.error);
+        };
+      };
+
+      cursorReq.onerror = () => reject(cursorReq.error);
+      execTx.oncomplete = () => resolve(didInsert ? insertedId : null);
+      execTx.onerror = () => reject(execTx.error);
+      execTx.onabort = () => resolve(null);
+    });
+  }
+
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    const db = await this.getExecutionDb();
+    const tx = db.transaction(this.executionTableName, "readwrite");
+    const store = tx.objectStore(this.executionTableName);
+    return new Promise<void>((resolve, reject) => {
+      // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+      // tokens for different rows; deleting "the most recent" would release
+      // the other worker's slot.
+      const req = store.delete(token as IDBValidKey);
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
   public async recordExecution(queueName: string): Promise<void> {

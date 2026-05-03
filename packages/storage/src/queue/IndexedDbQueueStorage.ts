@@ -40,6 +40,7 @@ export interface IndexedDbQueueStorageOptions extends QueueStorageOptions, Migra
  * Provides storage and retrieval for job execution states using IndexedDB.
  */
 export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
+  public readonly scope = "process" as const;
   private db: IDBDatabase | undefined;
   private readonly tableName: string;
   private readonly migrationOptions: MigrationOptions;

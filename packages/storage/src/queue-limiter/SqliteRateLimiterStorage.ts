@@ -7,7 +7,11 @@
 import type { Sqlite } from "@workglow/storage/sqlite";
 import { createServiceToken, sleep, toSQLiteTimestamp } from "@workglow/util";
 import type { PrefixColumn } from "../queue/IQueueStorage";
-import { IRateLimiterStorage, RateLimiterStorageOptions } from "./IRateLimiterStorage";
+import {
+  IRateLimiterStorage,
+  RateLimiterStorageOptions,
+  RateLimiterStorageScope,
+} from "./IRateLimiterStorage";
 
 export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.sqlite"
@@ -18,6 +22,13 @@ export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorag
  * Manages execution records and next available times for rate limiting.
  */
 export class SqliteRateLimiterStorage implements IRateLimiterStorage {
+  /**
+   * `"process"` because a typical SQLite deployment uses a single-process
+   * file. Multi-process SQLite (multiple worker processes opening the same
+   * file) is not safe for rate limiting even with WAL — separate processes
+   * can interleave between BEGIN IMMEDIATE acquisition retries.
+   */
+  public readonly scope: RateLimiterStorageScope = "process";
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
@@ -114,6 +125,78 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
         next_available_at TEXT
       );
     `);
+  }
+
+  public async tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<unknown | null> {
+    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixParamValues = this.getPrefixParamValues();
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixColumnsInsert =
+      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
+    const prefixPlaceholders =
+      prefixColumnNames.length > 0 ? prefixColumnNames.map(() => "?").join(", ") + ", " : "";
+
+    const windowStart = toSQLiteTimestamp(new Date(Date.now() - windowMs))!;
+
+    // Use a synchronous transaction so the count + insert is atomic against
+    // other writers. The canonical Sqlite.Database.transaction() returns void
+    // by contract, so we capture the inserted id via a closure variable.
+    let insertedId: number | bigint | null = null;
+    const txn = this.db.transaction((): void => {
+      const countStmt = this.db.prepare<unknown[], { count: number }>(`
+        SELECT COUNT(*) AS count
+        FROM ${this.executionTableName}
+        WHERE queue_name = ? AND executed_at > ?${prefixConditions}
+      `);
+      const countRow = countStmt.get(queueName, windowStart, ...prefixParamValues);
+      if ((countRow?.count ?? 0) >= maxExecutions) {
+        return;
+      }
+
+      const naStmt = this.db.prepare<unknown[], { next_available_at: string }>(`
+        SELECT next_available_at
+        FROM ${this.nextAvailableTableName}
+        WHERE queue_name = ?${prefixConditions}
+      `);
+      const naRow = naStmt.get(queueName, ...prefixParamValues);
+      if (naRow?.next_available_at) {
+        const nextAvailable = new Date(naRow.next_available_at + "Z").getTime();
+        if (nextAvailable > Date.now()) {
+          return;
+        }
+      }
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO ${this.executionTableName} (${prefixColumnsInsert}queue_name)
+        VALUES (${prefixPlaceholders}?)
+      `);
+      const info = insertStmt.run(...prefixParamValues, queueName);
+      insertedId = info.lastInsertRowid;
+    });
+
+    txn();
+    if (insertedId == null) return null;
+    // Coerce bigint to number when it fits — primary key here is a SQLite
+    // INTEGER which always fits in JS Number for any practical row count.
+    return typeof insertedId === "bigint" ? Number(insertedId) : insertedId;
+  }
+
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+    // tokens for different rows; deleting "the most recent" would release the
+    // other worker's slot.
+    this.db
+      .prepare(
+        `DELETE FROM ${this.executionTableName} WHERE id = ? AND queue_name = ?${prefixConditions}`
+      )
+      .run(token as number, queueName, ...prefixParams);
   }
 
   public async recordExecution(queueName: string): Promise<void> {

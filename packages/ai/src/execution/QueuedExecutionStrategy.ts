@@ -143,28 +143,36 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
         updateProgress: context.updateProgress,
       });
     } finally {
+      // The token was inserted by acquireLimiterSlot; we don't carry it
+      // through here because the queue's own AiJob/limiter lifecycle owns the
+      // matching release/recordJobCompletion. recordJobCompletion remains the
+      // contract for "this job finished" — token-based release is only for
+      // rolling back an unused acquisition.
       await limiter.recordJobCompletion();
     }
   }
 
   /**
-   * Spin-wait on `limiter.canProceed()` until a slot is available or the
-   * abort signal fires. Yields to the microtask queue between polls; for
-   * concurrency=1 with one caller at a time this usually takes one check.
+   * Atomically acquire a limiter slot, retrying with backoff until success or
+   * abort. Uses {@link ILimiter.tryAcquire} so concurrent callers cannot both
+   * pass a check-then-record sequence and overshoot the configured limit.
    */
   private async acquireLimiterSlot(limiter: ILimiter, signal: AbortSignal): Promise<void> {
-    const poll = async (): Promise<void> => {
-      while (!(await limiter.canProceed())) {
-        if (signal.aborted) {
-          throw signal.reason ?? new AbortSignalJobError("The operation was aborted");
-        }
-        const next = await limiter.getNextAvailableTime();
-        const delay = Math.max(0, next.getTime() - Date.now());
-        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delay, 50)));
+    let token = await limiter.tryAcquire();
+    while (token === null || token === undefined) {
+      if (signal.aborted) {
+        throw signal.reason ?? new AbortSignalJobError("The operation was aborted");
       }
-    };
-    await poll();
-    await limiter.recordJobStart();
+      const next = await limiter.getNextAvailableTime();
+      const delay = Math.max(0, next.getTime() - Date.now());
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delay, 50)));
+      token = await limiter.tryAcquire();
+    }
+    // Token discarded — the surrounding finally calls recordJobCompletion()
+    // on the happy path. If acquire-then-throw happens after this returns,
+    // the outer try/finally would leak a slot until the rate-limit window
+    // rolls — acceptable here since the AiJob path is single-use per call.
+    void token;
   }
 
   private ensureQueue(): Promise<RegisteredQueue<AiJobInput<TaskInput>, TaskOutput>> {

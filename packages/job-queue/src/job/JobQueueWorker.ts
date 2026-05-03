@@ -28,6 +28,14 @@ import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
 import { classToStorage, storageToClass } from "./JobStorageConverters";
 
 /**
+ * Upper bound on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
+ * misconfigured or stuck limiter (e.g. one whose `getNextAvailableTime`
+ * returns hours in the future) from making the worker unresponsive — it
+ * wakes at least this often regardless of what the limiter says.
+ */
+const MAX_LIMITER_WAKE_MS = 30_000;
+
+/**
  * Events emitted by JobQueueWorker
  */
 export type JobQueueWorkerEventListeners<Input, Output> = {
@@ -234,20 +242,23 @@ export class JobQueueWorker<
   }
 
   /**
-   * Process a single job manually (useful for testing or manual control)
+   * Process a single job manually (useful for testing or manual control).
+   *
+   * Uses the atomic claim->acquire->release pattern: claim a job, then atomically
+   * reserve a limiter slot. If the limiter rejects (e.g. raced another worker
+   * to the last slot), the claimed job is released back to PENDING.
    */
   public async processNext(): Promise<boolean> {
-    const canProceed = await this.limiter.canProceed();
-    if (!canProceed) {
-      return false;
-    }
-
     const job = await this.next();
     if (!job) {
       return false;
     }
-
-    await this.processSingleJob(job);
+    const limiterToken = await this.limiter.tryAcquire();
+    if (limiterToken === null || limiterToken === undefined) {
+      await this.releaseClaimedJob(job);
+      return false;
+    }
+    await this.processSingleJob(job, limiterToken);
     return true;
   }
 
@@ -323,44 +334,76 @@ export class JobQueueWorker<
         // Check for aborting jobs
         await this.checkForAbortingJobs();
 
-        const canProceed = await this.limiter.canProceed();
-        if (canProceed) {
-          const job = await this.next();
-          if (job) {
-            if (!this.running) {
-              // We were stopped during one of the awaits above and `next()`
-              // claimed this job after the fact. Release it back to PENDING
-              // so it isn't stuck PROCESSING on a worker that's no longer
-              // running — `fixupJobs()` skips current-server worker IDs, so
-              // nothing else would clean it up.
-              await this.releaseClaimedJob(job);
-              return;
-            }
-            // Don't await - process in background to allow concurrent jobs.
-            // The loop will re-check canProceed on the next iteration; if the
-            // limiter is at capacity it will wait for a notify (fired by the
-            // server when a job completes and frees a slot).
-            this.processSingleJob(job);
-            continue;
-          }
-        }
-
-        // Either no jobs available or limiter is at capacity — wait for
-        // something to change before re-checking.
-        if (canProceed) {
-          // Queue is empty — sleep until notified of new work or until
-          // the next deferred job becomes ready.
+        // Claim first, then atomically reserve a limiter slot. Doing the claim
+        // before the acquire avoids a race window: with the previous "check
+        // canProceed -> claim -> recordJobStart" sequence, two workers could
+        // both observe count < max, both claim, and both then increment —
+        // overshooting the configured limit by exactly the worker concurrency.
+        // The atomic tryAcquire guarantees only one of N concurrent acquirers
+        // succeeds when there's one slot left.
+        const job = await this.next();
+        if (!job) {
+          // Queue is empty — sleep until notified of new work or until the
+          // next deferred job becomes ready.
           const delay = await this.getIdleDelay();
           await this.waitForWakeOrTimeout(delay);
-        } else {
-          // At capacity — wait until notified (a job completes and frees a
-          // slot) or the poll interval expires as a fallback.
-          await this.waitForWakeOrTimeout(this.pollIntervalMs);
+          continue;
         }
+
+        if (!this.running) {
+          // Stopped during the await. Release the job back to PENDING.
+          await this.releaseClaimedJob(job);
+          return;
+        }
+
+        const limiterToken = await this.limiter.tryAcquire();
+        if (limiterToken === null || limiterToken === undefined) {
+          // Lost the race for the last slot, or hit the rate-limit window.
+          // Give the job back and wait for capacity.
+          await this.releaseClaimedJob(job);
+          await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
+          continue;
+        }
+
+        if (!this.running) {
+          // Stop fired while tryAcquire was in flight. Undo both the limiter
+          // reservation (release THIS token, not "the most recent") and the
+          // job claim so we don't start processing on a worker that's about
+          // to exit.
+          try {
+            await this.limiter.release(limiterToken);
+          } catch {
+            // best-effort
+          }
+          await this.releaseClaimedJob(job);
+          return;
+        }
+
+        // Don't await - process in background to allow concurrent jobs.
+        // The loop will claim+acquire on the next iteration.
+        this.processSingleJob(job, limiterToken);
       } catch {
         // Don't let transient errors kill the loop
         await sleep(this.pollIntervalMs);
       }
+    }
+  }
+
+  /**
+   * How long to sleep when the limiter rejected an acquire. Reads the limiter's
+   * own next-available time so we wake exactly when capacity opens, instead of
+   * polling every {@link pollIntervalMs}. Clamped to {@link pollIntervalMs}
+   * (lower bound) and {@link MAX_LIMITER_WAKE_MS} (upper bound) so a
+   * misconfigured/stuck limiter still wakes occasionally.
+   */
+  private async getLimiterWakeDelay(): Promise<number> {
+    try {
+      const next = await this.limiter.getNextAvailableTime();
+      const delay = next.getTime() - Date.now();
+      if (delay <= 0) return this.pollIntervalMs;
+      return Math.min(Math.max(delay, this.pollIntervalMs), MAX_LIMITER_WAKE_MS);
+    } catch {
+      return this.pollIntervalMs;
     }
   }
 
@@ -436,7 +479,10 @@ export class JobQueueWorker<
   /**
    * Process a single job
    */
-  protected async processSingleJob(job: Job<Input, Output>): Promise<void> {
+  protected async processSingleJob(
+    job: Job<Input, Output>,
+    limiterToken: unknown
+  ): Promise<void> {
     if (!job || !job.id) {
       throw new JobNotFoundError("Invalid job provided for processing");
     }
@@ -460,9 +506,30 @@ export class JobQueueWorker<
         })
       : undefined;
 
+    // Set when validateJobState fails and we release() the limiter slot
+    // ourselves — the finally block then skips recordJobCompletion to avoid
+    // double-decrementing limiters where release() and recordJobCompletion()
+    // both decrement (e.g. ConcurrencyLimiter).
+    let slotReleased = false;
     try {
-      await this.validateJobState(job);
-      await this.limiter.recordJobStart();
+      // The limiter slot was already atomically reserved by tryAcquire() in
+      // the main loop (or processNext), so we no longer call recordJobStart
+      // here — doing so would double-count.
+      try {
+        await this.validateJobState(job);
+      } catch (validationErr) {
+        // Validation failed before we ran any actual work — release THIS
+        // limiter slot (by token, not by recency) so it doesn't count toward
+        // the rate limit and we don't accidentally release another worker's
+        // slot.
+        try {
+          await this.limiter.release(limiterToken);
+          slotReleased = true;
+        } catch {
+          // best-effort
+        }
+        throw validationErr;
+      }
 
       const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
@@ -505,7 +572,9 @@ export class JobQueueWorker<
     } finally {
       span?.end();
       try {
-        await this.limiter.recordJobCompletion();
+        if (!slotReleased) {
+          await this.limiter.recordJobCompletion();
+        }
       } finally {
         this.inFlight.delete(job.id);
         resolveInFlight();

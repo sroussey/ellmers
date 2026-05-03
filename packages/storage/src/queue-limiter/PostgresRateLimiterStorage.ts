@@ -7,7 +7,11 @@
 import { createServiceToken } from "@workglow/util";
 import type { Pool } from "@workglow/storage/postgres";
 import type { PrefixColumn } from "../queue/IQueueStorage";
-import { IRateLimiterStorage, RateLimiterStorageOptions } from "./IRateLimiterStorage";
+import {
+  IRateLimiterStorage,
+  RateLimiterStorageOptions,
+  RateLimiterStorageScope,
+} from "./IRateLimiterStorage";
 
 export const POSTGRES_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.postgres"
@@ -18,6 +22,7 @@ export const POSTGRES_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStor
  * Manages execution records and next available times for rate limiting.
  */
 export class PostgresRateLimiterStorage implements IRateLimiterStorage {
+  public readonly scope: RateLimiterStorageScope = "cluster";
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
@@ -125,6 +130,158 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
         PRIMARY KEY (${primaryKeyColumns})
       )
     `);
+  }
+
+  public async tryReserveExecution(
+    queueName: string,
+    maxExecutions: number,
+    windowMs: number
+  ): Promise<unknown | null> {
+    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixParamValues = this.getPrefixParamValues();
+    const prefixCount = prefixColumnNames.length;
+
+    // Parameter layout:
+    //   $1..$N           prefix values (used in lock-key, count, next-available, and INSERT)
+    //   $(N+1)           queueName
+    //   $(N+2)           windowStart timestamp
+    //   $(N+3)           maxExecutions
+    const queueParam = `$${prefixCount + 1}`;
+    const windowStartParam = `$${prefixCount + 2}`;
+
+    // For the advisory lock we hash table-name + prefix values + queue-name into a bigint.
+    // Use hashtextextended which returns int8 (advisory_xact_lock takes bigint).
+    const lockKeyParts: string[] = [`'${this.executionTableName}'`];
+    for (let i = 0; i < prefixCount; i++) {
+      lockKeyParts.push(`$${i + 1}::text`);
+    }
+    lockKeyParts.push(`${queueParam}::text`);
+    const lockKeyExpr = `hashtextextended(${lockKeyParts.join(" || '|' || ")}, 0)`;
+
+    const prefixWhere =
+      prefixCount > 0
+        ? " AND " +
+          prefixColumnNames
+            .map((p, i) => `${p} = $${i + 1}`)
+            .join(" AND ")
+        : "";
+
+    const prefixInsertCols = prefixCount > 0 ? prefixColumnNames.join(", ") + ", " : "";
+    const prefixInsertPlaceholders =
+      prefixCount > 0 ? prefixColumnNames.map((_, i) => `$${i + 1}`).join(", ") + ", " : "";
+
+    const windowStart = new Date(Date.now() - windowMs).toISOString();
+
+    // Use a dedicated client when the pool supports connect() (real pg.Pool)
+    // — the advisory xact lock + transaction MUST run on the same connection
+    // for atomicity. Without connect(), only known single-connection wrappers
+    // (PGLitePool, raw PGlite) are safe, since they implicitly serialize all
+    // queries through one underlying connection. Anything else (e.g. a custom
+    // multi-connection adapter without connect()) would dispatch the lock and
+    // the INSERT to different sessions, defeating the lock entirely.
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (!supportsConnect) {
+      // Without connect() we run BEGIN/advisory_lock/INSERT/COMMIT directly on
+      // `db.query`. That's only safe if `db` is a single-connection wrapper
+      // (every query goes through the same underlying session). Recognize:
+      //   - PGLitePool  — our own wrapper class; constructor name preserved.
+      //   - PGlite      — third-party, ships minified so `constructor.name`
+      //     can be obfuscated (observed: "q"). Detect via duck-typing on
+      //     methods PGlite uniquely exposes (`waitReady` Promise + `exec`).
+      // Any other no-connect() pool would dispatch the lock and the INSERT
+      // to potentially different sessions, breaking atomicity.
+      const dbAny = this.db as unknown as {
+        waitReady?: unknown;
+        exec?: unknown;
+        constructor?: { name?: string };
+      };
+      const ctorName = dbAny.constructor?.name;
+      const looksLikePGlite =
+        typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
+      const looksLikePGLitePool = ctorName === "PGLitePool";
+      if (!looksLikePGlite && !looksLikePGLitePool) {
+        throw new Error(
+          `PostgresRateLimiterStorage.tryReserveExecution requires a pg.Pool with connect() or a known single-connection wrapper (PGLitePool, PGlite); got ${ctorName ?? typeof this.db}. A multi-connection pool without connect() would dispatch the advisory lock and the INSERT to different sessions, breaking atomicity.`
+        );
+      }
+    }
+    const conn = supportsConnect
+      ? await (this.db as unknown as { connect: () => Promise<{
+          query: Pool["query"];
+          release: () => void;
+        }> }).connect()
+      : { query: this.db.query.bind(this.db), release: () => {} };
+
+    try {
+      await conn.query("BEGIN");
+      try {
+        await conn.query(
+          `SELECT pg_advisory_xact_lock(${lockKeyExpr})`,
+          [...prefixParamValues, queueName]
+        );
+
+        const countResult = await conn.query(
+          `
+          SELECT COUNT(*)::int AS n
+          FROM ${this.executionTableName}
+          WHERE queue_name = ${queueParam} AND executed_at > ${windowStartParam}${prefixWhere}
+          `,
+          [...prefixParamValues, queueName, windowStart]
+        );
+        const n: number = countResult.rows[0]?.n ?? 0;
+        if (n >= maxExecutions) {
+          await conn.query("COMMIT");
+          return null;
+        }
+
+        const naResult = await conn.query(
+          `
+          SELECT next_available_at
+          FROM ${this.nextAvailableTableName}
+          WHERE queue_name = ${queueParam}${prefixWhere}
+          `,
+          [...prefixParamValues, queueName]
+        );
+        const nextAvailableAt: Date | null = naResult.rows[0]?.next_available_at ?? null;
+        if (nextAvailableAt && new Date(nextAvailableAt).getTime() > Date.now()) {
+          await conn.query("COMMIT");
+          return null;
+        }
+
+        const insertResult = await conn.query(
+          `
+          INSERT INTO ${this.executionTableName} (${prefixInsertCols}queue_name)
+          VALUES (${prefixInsertPlaceholders}${queueParam})
+          RETURNING id
+          `,
+          [...prefixParamValues, queueName]
+        );
+        await conn.query("COMMIT");
+        return insertResult.rows[0]?.id ?? null;
+      } catch (err) {
+        try {
+          await conn.query("ROLLBACK");
+        } catch {
+          // best-effort
+        }
+        throw err;
+      }
+    } finally {
+      conn.release();
+    }
+  }
+
+  public async releaseExecution(queueName: string, token: unknown): Promise<void> {
+    if (token === null || token === undefined) return;
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    // Delete by id — NEVER by recency. Two concurrent acquirers can hold
+    // tokens for different rows; deleting "the most recent" would release the
+    // other worker's slot.
+    await this.db.query(
+      `DELETE FROM ${this.executionTableName} WHERE id = $1 AND queue_name = $2${prefixConditions}`,
+      [token as string | number, queueName, ...prefixParams]
+    );
   }
 
   public async recordExecution(queueName: string): Promise<void> {

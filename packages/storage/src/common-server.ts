@@ -34,5 +34,6 @@ export * from "./kv/IndexedDbKvStorage";
 export * from "./queue-limiter/IndexedDbRateLimiterStorage";
 export * from "./queue/IndexedDbQueueStorage";
 export * from "./tabular/IndexedDbTabularStorage";
+export * from "./tabular/SharedInMemoryTabularStorage";
 export * from "./vector/IndexedDbVectorStorage";
 export * from "./util/IndexedDbTable";

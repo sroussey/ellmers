@@ -47,7 +47,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: canary
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -179,7 +179,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: canary
+          bun-version: latest
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
