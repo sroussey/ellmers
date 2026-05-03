@@ -5,7 +5,7 @@
  */
 
 import { ModelSearchTask } from "@workglow/ai";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vitest";
 import { Anthropic_ModelSearch } from "./provider-anthropic/common/Anthropic_ModelSearch";
 import { Gemini_ModelSearch } from "./provider-gemini/common/Gemini_ModelSearch";
 import { HFI_ModelSearch } from "./provider-hf-inference/common/HFI_ModelSearch";

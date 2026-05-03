@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, test } from "bun:test";
-import { TypeLandmark, TypePoseLandmark } from "./AiTaskSchemas";
+import { TypeLandmark, TypePoseLandmark } from "@workglow/ai";
+import { describe, expect, test } from "vitest";
 
 describe("AI task schemas", () => {
   test("exports shared landmark schemas", () => {
