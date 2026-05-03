@@ -495,19 +495,14 @@
       "name": "@workglow/storage",
       "version": "0.2.27",
       "devDependencies": {
-        "@supabase/supabase-js": "catalog:",
         "@workglow/job-queue": "workspace:*",
         "@workglow/util": "workspace:*",
         "fake-indexeddb": "^6.2.4",
       },
       "peerDependencies": {
-        "@supabase/supabase-js": "catalog:",
         "@workglow/job-queue": "workspace:*",
         "@workglow/util": "workspace:*",
       },
-      "optionalPeers": [
-        "@supabase/supabase-js",
-      ],
     },
     "packages/supabase": {
       "name": "@workglow/supabase",

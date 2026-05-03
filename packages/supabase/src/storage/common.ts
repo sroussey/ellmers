@@ -4,4 +4,5 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export {};
+export * from "./SupabaseKvStorage";
+export * from "./SupabaseTabularStorage";

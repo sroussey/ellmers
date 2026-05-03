@@ -8,16 +8,12 @@ export * from "./common";
 
 export * from "./tabular/IndexedDbTabularStorage";
 export * from "./tabular/SharedInMemoryTabularStorage";
-export * from "./tabular/SupabaseTabularStorage";
 
 export * from "./kv/IndexedDbKvStorage";
-export * from "./kv/SupabaseKvStorage";
 
 export * from "./queue/IndexedDbQueueStorage";
-export * from "./queue/SupabaseQueueStorage";
 
 export * from "./queue-limiter/IndexedDbRateLimiterStorage";
-export * from "./queue-limiter/SupabaseRateLimiterStorage";
 
 export * from "./vector/IndexedDbVectorStorage";
 

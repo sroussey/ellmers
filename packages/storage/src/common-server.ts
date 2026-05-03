@@ -7,15 +7,9 @@
 export * from "./common";
 
 export * from "./tabular/FsFolderTabularStorage";
-export * from "./tabular/SupabaseTabularStorage";
 
 export * from "./kv/FsFolderJsonKvStorage";
 export * from "./kv/FsFolderKvStorage";
-export * from "./kv/SupabaseKvStorage";
-
-export * from "./queue/SupabaseQueueStorage";
-
-export * from "./queue-limiter/SupabaseRateLimiterStorage";
 
 // testing
 export * from "./kv/IndexedDbKvStorage";

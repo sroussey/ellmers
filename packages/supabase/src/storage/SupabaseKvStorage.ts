@@ -6,9 +6,13 @@
 
 import { createServiceToken } from "@workglow/util";
 import { JsonSchema } from "@workglow/util/schema";
-import { SupabaseTabularStorage } from "../tabular/SupabaseTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema, IKvStorage } from "./IKvStorage";
-import { KvViaTabularStorage } from "./KvViaTabularStorage";
+import { SupabaseTabularStorage } from "./SupabaseTabularStorage";
+import {
+  DefaultKeyValueKey,
+  DefaultKeyValueSchema,
+  IKvStorage,
+  KvViaTabularStorage,
+} from "@workglow/storage";
 
 export const SUPABASE_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(
   "storage.kvRepository.supabase"

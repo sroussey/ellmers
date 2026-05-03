@@ -6,7 +6,7 @@
 
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
-import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
+import { PollingSubscriptionManager } from "@workglow/storage";
 import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,

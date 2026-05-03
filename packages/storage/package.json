@@ -26,7 +26,6 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "@supabase/supabase-js": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
@@ -36,13 +35,9 @@
     },
     "@workglow/util": {
       "optional": false
-    },
-    "@supabase/supabase-js": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@supabase/supabase-js": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*",
     "fake-indexeddb": "^6.2.4"
