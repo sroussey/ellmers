@@ -203,6 +203,25 @@
         "@workglow/util": "workspace:*",
       },
     },
+    "packages/browser-control": {
+      "name": "@workglow/browser-control",
+      "version": "0.2.27",
+      "devDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "optionalDependencies": {
+        "playwright": "catalog:",
+      },
+      "peerDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+        "playwright": "catalog:",
+      },
+      "optionalPeers": [
+        "playwright",
+      ],
+    },
     "packages/chrome": {
       "name": "@workglow/chrome",
       "version": "0.2.27",
@@ -307,6 +326,18 @@
         "@workglow/util": "workspace:*",
       },
     },
+    "packages/javascript": {
+      "name": "@workglow/javascript",
+      "version": "0.2.27",
+      "devDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "packages/job-queue": {
       "name": "@workglow/job-queue",
       "version": "0.2.27",
@@ -326,6 +357,27 @@
       },
       "peerDependencies": {
         "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/mcp": {
+      "name": "@workglow/mcp",
+      "version": "0.2.27",
+      "dependencies": {
+        "@modelcontextprotocol/sdk": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/tasks": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/tasks": "workspace:*",
         "@workglow/util": "workspace:*",
       },
     },
@@ -1239,6 +1291,8 @@
 
     "@workglow/anthropic": ["@workglow/anthropic@workspace:packages/anthropic"],
 
+    "@workglow/browser-control": ["@workglow/browser-control@workspace:packages/browser-control"],
+
     "@workglow/chrome": ["@workglow/chrome@workspace:packages/chrome"],
 
     "@workglow/cli": ["@workglow/cli@workspace:examples/cli"],
@@ -1251,9 +1305,13 @@
 
     "@workglow/indexeddb": ["@workglow/indexeddb@workspace:packages/indexeddb"],
 
+    "@workglow/javascript": ["@workglow/javascript@workspace:packages/javascript"],
+
     "@workglow/job-queue": ["@workglow/job-queue@workspace:packages/job-queue"],
 
     "@workglow/knowledge-base": ["@workglow/knowledge-base@workspace:packages/knowledge-base"],
+
+    "@workglow/mcp": ["@workglow/mcp@workspace:packages/mcp"],
 
     "@workglow/node-llama-cpp": ["@workglow/node-llama-cpp@workspace:packages/node-llama-cpp"],
 

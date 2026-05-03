@@ -1,0 +1,39 @@
+{
+  "name": "@workglow/javascript",
+  "type": "module",
+  "sideEffects": false,
+  "version": "0.2.27",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/workglow.git",
+    "directory": "packages/javascript"
+  },
+  "description": "Sandboxed JavaScript task with vendored interpreter.",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-js": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "import": "./dist/task.js"
+    }
+  },
+  "peerDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "files": ["dist", "src/**/*.md"],
+  "publishConfig": { "access": "public" }
+}
