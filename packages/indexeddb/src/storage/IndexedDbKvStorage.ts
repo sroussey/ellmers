@@ -6,9 +6,13 @@
 
 import { JsonSchema } from "@workglow/util/schema";
 import { createServiceToken } from "@workglow/util";
-import { IndexedDbTabularStorage } from "../tabular/IndexedDbTabularStorage";
-import { DefaultKeyValueKey, DefaultKeyValueSchema, IKvStorage } from "./IKvStorage";
-import { KvViaTabularStorage } from "./KvViaTabularStorage";
+import { IndexedDbTabularStorage } from "./IndexedDbTabularStorage";
+import {
+  DefaultKeyValueKey,
+  DefaultKeyValueSchema,
+  IKvStorage,
+  KvViaTabularStorage,
+} from "@workglow/storage";
 
 export const IDB_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(
   "storage.kvRepository.indexedDb"

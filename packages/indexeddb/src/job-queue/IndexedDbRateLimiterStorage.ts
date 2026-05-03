@@ -9,7 +9,7 @@ import {
   ensureIndexedDbTable,
   ExpectedIndexDefinition,
   MigrationOptions,
-} from "../util/IndexedDbTable";
+} from "../storage/IndexedDbTable";
 import type { PrefixColumn } from "@workglow/job-queue";
 import type {
   IRateLimiterStorage,

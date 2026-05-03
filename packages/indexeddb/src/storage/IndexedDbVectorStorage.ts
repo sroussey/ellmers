@@ -13,16 +13,16 @@ import type {
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
-import type { ClientProvidedKeysOption } from "../tabular/BaseTabularStorage";
-import { IndexedDbTabularStorage } from "../tabular/IndexedDbTabularStorage";
-import type { MigrationOptions } from "../util/IndexedDbTable";
+import { IndexedDbTabularStorage } from "./IndexedDbTabularStorage";
+import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
 import type {
+  ClientProvidedKeysOption,
   AnyVectorStorage,
   HybridSearchOptions,
   IVectorStorage,
   VectorSearchOptions,
-} from "./IVectorStorage";
-import { getMetadataProperty, getVectorProperty } from "./IVectorStorage";
+} from "@workglow/storage";
+import type { MigrationOptions } from "./IndexedDbTable";
 
 export const IDB_VECTOR_REPOSITORY = createServiceToken<AnyVectorStorage>(
   "storage.vectorRepository.indexedDb"

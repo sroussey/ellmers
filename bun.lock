@@ -497,7 +497,6 @@
       "devDependencies": {
         "@workglow/job-queue": "workspace:*",
         "@workglow/util": "workspace:*",
-        "fake-indexeddb": "^6.2.4",
       },
       "peerDependencies": {
         "@workglow/job-queue": "workspace:*",

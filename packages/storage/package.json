@@ -39,8 +39,7 @@
   },
   "devDependencies": {
     "@workglow/job-queue": "workspace:*",
-    "@workglow/util": "workspace:*",
-    "fake-indexeddb": "^6.2.4"
+    "@workglow/util": "workspace:*"
   },
   "exports": {
     ".": {

@@ -5,12 +5,12 @@
  */
 
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
-import { HybridSubscriptionManager } from "../util/HybridSubscriptionManager";
+import { HybridSubscriptionManager } from "@workglow/storage";
 import {
   ensureIndexedDbTable,
   ExpectedIndexDefinition,
   MigrationOptions,
-} from "../util/IndexedDbTable";
+} from "../storage/IndexedDbTable";
 import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,
