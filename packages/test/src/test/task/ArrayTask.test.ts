@@ -600,13 +600,7 @@ describe("ArrayTask", () => {
       expect(task.completedAt).toBeDefined();
     });
 
-    // Manually trigger a progress event before running the task
-    // @ts-expect-error - we are testing the protected method
-    task.runner.handleStart();
-    // @ts-expect-error - we are testing the protected method
-    task.runner.handleProgress(0.5);
-
-    // Run the task
+    // Run the task — it emits start/progress/complete on its own.
     const results = await task.run();
 
     // Verify events were emitted
@@ -669,21 +663,8 @@ describe("ArrayTask", () => {
       });
     });
 
-    // Manually trigger progress events
-    // @ts-expect-error - we are testing the protected method
-    task.runner.handleStart();
-    // @ts-expect-error - we are testing the protected method
-    task.runner.handleProgress(0.5);
-
-    // Manually trigger progress events on child tasks
-    task.subGraph!.getTasks().forEach((childTask: ITask) => {
-      // @ts-expect-error - we are testing the protected method
-      childTask.runner.handleStart();
-      // @ts-expect-error - we are testing the protected method
-      childTask.runner.handleProgress(0.5);
-    });
-
-    // Run the task
+    // Run the task — start/progress/complete events fire on parent and children
+    // through the normal run path.
     await task.run();
 
     // Verify parent events were emitted
