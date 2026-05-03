@@ -35,8 +35,7 @@ export class TaskRunContext {
       // does not fire, so checking .aborted after ensures we never miss an abort.
       const onParentAbort = () => this.abortController.abort();
       parentSignal.addEventListener("abort", onParentAbort, { once: true });
-      this.parentSignalCleanup = () =>
-        parentSignal.removeEventListener("abort", onParentAbort);
+      this.parentSignalCleanup = () => parentSignal.removeEventListener("abort", onParentAbort);
       if (parentSignal.aborted) {
         this.parentSignalCleanup();
         this.parentSignalCleanup = undefined;

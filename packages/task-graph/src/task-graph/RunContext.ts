@@ -44,8 +44,7 @@ export class RunContext {
       // Pattern preserved from commit 4e50c99e.
       const onParentAbort = () => this.abortController.abort();
       parentSignal.addEventListener("abort", onParentAbort, { once: true });
-      this.parentSignalCleanup = () =>
-        parentSignal.removeEventListener("abort", onParentAbort);
+      this.parentSignalCleanup = () => parentSignal.removeEventListener("abort", onParentAbort);
       if (parentSignal.aborted) {
         this.parentSignalCleanup();
         this.parentSignalCleanup = undefined;

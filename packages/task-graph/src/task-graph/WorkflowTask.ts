@@ -15,10 +15,7 @@ import { PROPERTY_ARRAY } from "./TaskGraphRunner";
  * carries Workflow's compound-merge strategy. Constructed only by Workflow;
  * not part of the public surface.
  */
-export class WorkflowTask<
-  I extends DataPorts,
-  O extends DataPorts,
-> extends GraphAsTask<I, O> {
+export class WorkflowTask<I extends DataPorts, O extends DataPorts> extends GraphAsTask<I, O> {
   public static override readonly type = "Workflow";
   public static override readonly compoundMerge = PROPERTY_ARRAY as CompoundMergeStrategy;
 }

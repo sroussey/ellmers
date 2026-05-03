@@ -96,10 +96,7 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
   >(taskClass: ITaskConstructor<I, O, C>, config: C): ITask<I, O, C> {
-    const task = new taskClass(
-      config,
-      this._registry ? { registry: this._registry } : undefined
-    );
+    const task = new taskClass(config, this._registry ? { registry: this._registry } : undefined);
     const id = this._facade.graph.addTask(task);
     this._facade.events.emit("changed", id);
     return task;
@@ -332,11 +329,7 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
    * target is filled in when the next task is added via
    * {@link addTaskWithAutoConnect}.
    */
-  public rename(
-    source: string,
-    target: string,
-    indexOrOptions: number | RenameOptions = -1
-  ): void {
+  public rename(source: string, target: string, indexOrOptions: number | RenameOptions = -1): void {
     this._error = "";
 
     const index =

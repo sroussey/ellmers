@@ -127,4 +127,3 @@ export function CreateAdaptiveWorkflow<
     return scalarHelper.call(this, input, config) as Workflow;
   };
 }
-

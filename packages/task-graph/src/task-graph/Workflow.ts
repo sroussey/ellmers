@@ -102,11 +102,7 @@ export class Workflow<
     const loopContext =
       parent && iteratorTask ? new LoopBuilderContext(parent, iteratorTask) : undefined;
 
-    this._builder = new WorkflowBuilder(
-      this,
-      registry ?? parent?.builderRegistry,
-      loopContext
-    );
+    this._builder = new WorkflowBuilder(this, registry ?? parent?.builderRegistry, loopContext);
 
     if (!parent) {
       this._bridge = new WorkflowEventBridge(this.events);

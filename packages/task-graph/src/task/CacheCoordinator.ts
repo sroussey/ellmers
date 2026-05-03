@@ -36,10 +36,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * suitable for use as a cache key. Properties without a format annotation are
    * passed through unchanged. No-op when no cache is configured.
    */
-  async buildKey(
-    inputs: Input,
-    outputCache: TaskOutputRepository | undefined
-  ): Promise<Input> {
+  async buildKey(inputs: Input, outputCache: TaskOutputRepository | undefined): Promise<Input> {
     if (!outputCache) return inputs;
     const inputSchema = (this.task.constructor as typeof Task).inputSchema();
     return (await CacheCoordinator.normalizeInputsForCacheKey(

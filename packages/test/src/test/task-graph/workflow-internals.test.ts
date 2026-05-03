@@ -146,7 +146,7 @@ describe("LoopBuilderContext", () => {
   it("finalizeTemplate is a no-op on an empty child graph (no subGraph assignment)", () => {
     const parent = new Workflow();
     parent.addTask(WfInternalsSourceTask, { value: "x" });
-    const inner = parent.addLoopTask((WfInternalsSourceTask as any), {});
+    const inner = parent.addLoopTask(WfInternalsSourceTask as any, {});
 
     // Don't add anything to the child — child graph is empty.
     inner.finalizeTemplate();

@@ -1239,9 +1239,7 @@ describe("Workflow — refactor regression net", () => {
       w.addTask(NumberTask, { input: 1 });
       w.onError(new NumberTask({}));
       expect(w.graph.getTasks()).toHaveLength(2);
-      const errorEdges = w.graph
-        .getDataflows()
-        .filter((df) => df.sourceTaskPortId === "[error]");
+      const errorEdges = w.graph.getDataflows().filter((df) => df.sourceTaskPortId === "[error]");
       expect(errorEdges.length).toBe(1);
     });
   });
@@ -1288,9 +1286,7 @@ describe("Workflow — refactor regression net", () => {
       expect(types.filter((t) => t === "NumberToStringTask")).toHaveLength(2);
 
       const conditional = tasks.find((t) => t.type === "ConditionalTask")!;
-      const branchEdges = w.graph
-        .getDataflows()
-        .filter((df) => df.sourceTaskId === conditional.id);
+      const branchEdges = w.graph.getDataflows().filter((df) => df.sourceTaskId === conditional.id);
       expect(branchEdges.map((df) => df.sourceTaskPortId).sort()).toEqual(["else", "then"]);
     });
   });
