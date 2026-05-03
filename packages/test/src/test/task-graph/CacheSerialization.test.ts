@@ -3,15 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, vi, beforeEach } from "vitest";
-import {
-  Task,
-  TaskOutputRepository,
-  registerPortCodec,
-  _resetPortCodecsForTests,
-} from "@workglow/task-graph";
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
-import type { GpuImage } from "@workglow/util/media";
+import { Task, TaskOutputRepository, registerPortCodec } from "@workglow/task-graph";
+import type { ImageValue } from "@workglow/util/media";
+import { describe, expect, test, vi } from "vitest";
 
 class SpyRepo extends TaskOutputRepository {
   private readonly map = new Map<string, unknown>();
@@ -36,14 +31,10 @@ class SpyRepo extends TaskOutputRepository {
 }
 
 describe("TaskRunner cache port serialization", () => {
-  beforeEach(() => {
-    _resetPortCodecsForTests();
-  });
-
   test("output ports declaring a registered format are serialized before saveOutput", async () => {
     const serialize = vi.fn(async (v: unknown) => ({ wire: v }));
     const deserialize = vi.fn(async (v: unknown) => (v as { wire: unknown }).wire);
-    registerPortCodec("test-port", { serialize, deserialize });
+    registerPortCodec("test-port-output", { serialize, deserialize });
 
     class MyTask extends Task<
       Record<string, unknown>,
@@ -53,7 +44,7 @@ describe("TaskRunner cache port serialization", () => {
       static override outputSchema() {
         return {
           type: "object",
-          properties: { thing: { type: "object", format: "test-port", properties: {} } },
+          properties: { thing: { type: "object", format: "test-port-output", properties: {} } },
         } as never;
       }
       override async execute() {
@@ -69,7 +60,7 @@ describe("TaskRunner cache port serialization", () => {
   });
 
   test("cached outputs are deserialized after getOutput", async () => {
-    registerPortCodec("test-port", {
+    registerPortCodec("test-port-cache", {
       serialize: async (v: unknown) => ({ wire: v }),
       deserialize: async (v: unknown) => (v as { wire: unknown }).wire,
     });
@@ -83,7 +74,7 @@ describe("TaskRunner cache port serialization", () => {
       static override outputSchema() {
         return {
           type: "object",
-          properties: { thing: { type: "object", format: "test-port", properties: {} } },
+          properties: { thing: { type: "object", format: "test-port-cache", properties: {} } },
         } as never;
       }
       override async execute() {
@@ -103,7 +94,7 @@ describe("TaskRunner cache port serialization", () => {
   });
 
   test("class-instance inputs keyed identically via the registered codec", async () => {
-    registerPortCodec("test-port", {
+    registerPortCodec("test-port-input", {
       serialize: async (v: unknown) => ({ wire: (v as { reveal(): number }).reveal() }),
       deserialize: async (v: unknown) => ({
         reveal: () => (v as { wire: number }).wire,
@@ -131,7 +122,7 @@ describe("TaskRunner cache port serialization", () => {
       static override inputSchema() {
         return {
           type: "object",
-          properties: { thing: { type: "object", format: "test-port", properties: {} } },
+          properties: { thing: { type: "object", format: "test-port-input", properties: {} } },
         } as never;
       }
       override async execute() {
@@ -147,27 +138,18 @@ describe("TaskRunner cache port serialization", () => {
 });
 
 describe("TaskRunner cache key determinism — image codec", () => {
-  test("two GpuImages with identical pixels hit the same cache entry", async () => {
+  test("two ImageValues with identical pixels hit the same cache entry", async () => {
     await import("@workglow/util/media");
-    const { CpuImage } = await import("@workglow/util/media");
+    const { imageValueFromBuffer } = await import("@workglow/util/media");
 
     const repo = new SpyRepo();
-    const bin = {
-      data: new Uint8ClampedArray([1, 2, 3, 255]),
-      width: 1,
-      height: 1,
-      channels: 4 as const,
-    };
-    const a = CpuImage.fromRaw(bin) as unknown as GpuImage;
-    const b = CpuImage.fromRaw({
-      ...bin,
-      data: new Uint8ClampedArray([1, 2, 3, 255]),
-    }) as unknown as GpuImage;
+    const a = imageValueFromBuffer(Buffer.from([1, 2, 3, 255]), "raw-rgba", 1, 1);
+    const b = imageValueFromBuffer(Buffer.from([1, 2, 3, 255]), "raw-rgba", 1, 1);
     expect(a).not.toBe(b);
 
     let calls = 0;
     class ImgKeyTask extends Task<
-      { image: GpuImage } & Record<string, unknown>,
+      { image: ImageValue } & Record<string, unknown>,
       { x: number } & Record<string, unknown>
     > {
       static override readonly type = "ImgKeyTask";
