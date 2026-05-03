@@ -210,7 +210,15 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     }
     const { data, error } = await this.client.rpc(this.atomicReserveFunctionName(), args);
     if (error) throw error;
-    return data === true;
+    // Real Supabase RPC returns the scalar directly for a function returning
+    // BOOLEAN. The pglite-backed mock executes `SELECT * FROM fn()` and returns
+    // a row array — accept both shapes.
+    if (data === true) return true;
+    if (Array.isArray(data) && data.length > 0) {
+      const first = Object.values(data[0] as Record<string, unknown>)[0];
+      return first === true;
+    }
+    return false;
   }
 
   public async releaseExecution(queueName: string): Promise<void> {
