@@ -325,6 +325,22 @@ Long-lived state from `config` (`registry`, `outputCache`, `resourceScope`, `acc
 
 **Mnemonic:** `TaskGraphRunConfig` is what the caller asks for; `RunContext` is what the runner is doing right now.
 
+#### `resourceScope` ownership
+
+`resourceScope` is special: the runner sets `this.resourceScope` from
+`config.resourceScope` when present, but if the caller did not provide one,
+`runGraph` allocates a private `ResourceScope` and `disposeAll()`s it in a
+`finally` block when the run terminates (success, error, or abort). Casual
+callers get automatic cleanup of heavyweight resources (model unload, AI
+session close, browser disconnect) with no ceremony. Caller-passed scopes are
+never touched by the runner — expert callers retain full lifecycle control.
+
+The same auto-ownership pattern applies to `TaskRunner.run` for the bare-task
+path. Nested runs (`GraphAsTask`, `IteratorTask`, `runTask`, `subGraph.run`)
+always forward `this.resourceScope`, which is defined post-`handleStart`, so
+child runners observe a "caller-passed" scope and never own it. Disposal
+happens exactly once, at the top of the call stack.
+
 ---
 
 ## Execution Flow
