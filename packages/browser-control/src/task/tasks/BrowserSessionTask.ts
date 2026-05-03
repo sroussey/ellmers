@@ -14,7 +14,7 @@ import {
   TaskEntitlements,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { getBrowserDeps } from "../../../util/BrowserTaskDeps";
+import { getBrowserDeps } from "../BrowserTaskDeps";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
 
 const browserSessionTaskConfigSchema = {

@@ -6,8 +6,7 @@
 
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from "node:path";
-import { PlaywrightBackend } from "./task/browser-control/PlaywrightBackend";
-import { registerBrowserDeps } from "./util/BrowserTaskDeps";
+import { PlaywrightBackend, registerBrowserDeps } from "@workglow/browser-control/task";
 import { mcpClientFactory, mcpServerConfigSchema } from "./util/McpClientUtil";
 import type { McpServerConfig } from "./util/McpTaskDeps";
 import { registerMcpTaskDeps } from "./util/McpTaskDeps";

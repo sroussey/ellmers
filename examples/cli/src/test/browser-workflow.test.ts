@@ -10,8 +10,8 @@ import {
   BrowserSessionRegistry,
   BrowserSessionTask,
   BrowserSnapshotTask,
-  registerCommonTasks,
-} from "@workglow/tasks";
+} from "@workglow/browser-control/task";
+import { registerCommonTasks } from "@workglow/tasks";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

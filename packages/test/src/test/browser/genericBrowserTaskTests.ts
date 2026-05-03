@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AccessibilityNode, IBrowserContext } from "@workglow/tasks";
+import type { AccessibilityNode, IBrowserContext } from "@workglow/browser-control/task";
 import {
   BrowserBackTask,
   BrowserClickTask,
@@ -17,7 +17,7 @@ import {
   BrowserSessionTask,
   BrowserSnapshotTask,
   registerBrowserDeps,
-} from "@workglow/tasks";
+} from "@workglow/browser-control/task";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 // ---------------------------------------------------------------------------

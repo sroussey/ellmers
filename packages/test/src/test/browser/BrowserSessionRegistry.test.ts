@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserSessionRegistry } from "@workglow/tasks";
+import { BrowserSessionRegistry } from "@workglow/browser-control/task";
 import { beforeEach, describe, expect, test } from "vitest";
 import { MockBrowserContext } from "./MockBrowserContext";
 

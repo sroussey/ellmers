@@ -62,6 +62,7 @@
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "catalog:",
+    "@workglow/browser-control": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*",
     "@workglow/job-queue": "workspace:*",
@@ -70,6 +71,9 @@
   "peerDependenciesMeta": {
     "@modelcontextprotocol/sdk": {
       "optional": false
+    },
+    "@workglow/browser-control": {
+      "optional": true
     },
     "@workglow/task-graph": {
       "optional": false
@@ -87,13 +91,13 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "catalog:",
     "@types/papaparse": "^5.5.2",
+    "@workglow/browser-control": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "optionalDependencies": {
-    "papaparse": "^5.5.3",
-    "playwright": "catalog:"
+    "papaparse": "^5.5.3"
   }
 }

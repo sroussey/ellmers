@@ -10,8 +10,7 @@ import "./util/SafeFetch.server";
 
 export * from "./common";
 export * from "./task/FileLoaderTask.server";
-export * from "./task/browser-control/ElectronBackend";
-export * from "./task/browser-control/PlaywrightBackend";
+export * from "@workglow/browser-control/task";
 export * from "./util/McpAuthProvider";
 export * from "./util/McpAuthTypes";
 export * from "./util/McpClientUtil";
@@ -21,9 +20,11 @@ import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
 import { registerMcpTaskDepsServer } from "./server";
 import { FileLoaderTask } from "./task/FileLoaderTask.server";
-import { ElectronBackend } from "./task/browser-control/ElectronBackend";
-import { PlaywrightBackend } from "./task/browser-control/PlaywrightBackend";
-import { registerBrowserDeps } from "./util/BrowserTaskDeps";
+import {
+  ElectronBackend,
+  PlaywrightBackend,
+  registerBrowserDeps,
+} from "@workglow/browser-control/task";
 
 registerMcpTaskDepsServer();
 

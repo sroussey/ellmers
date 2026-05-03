@@ -9,7 +9,7 @@ import type {
   BrowserBackendType,
   BrowserConnectOptions,
   IBrowserContext,
-} from "../task/browser-control/IBrowserContext";
+} from "./IBrowserContext";
 
 export interface IBrowserProfileStorage {
   save(projectId: string, profileName: string, state: string): Promise<void>;

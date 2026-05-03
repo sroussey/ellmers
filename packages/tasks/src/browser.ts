@@ -27,23 +27,6 @@ registerMcpTaskDeps({
   },
 });
 
-import { registerBrowserDeps } from "./util/BrowserTaskDeps";
-
-registerBrowserDeps({
-  createContext: () => {
-    throw new Error(
-      "Browser control is not available in this environment. Use the Workglow desktop app."
-    );
-  },
-  availableBackends: [],
-  defaultBackend: "cloud",
-  profileStorage: {
-    save: async () => {},
-    load: async () => null,
-    delete: async () => {},
-  },
-});
-
 import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
 import { FileLoaderTask } from "./task/FileLoaderTask";

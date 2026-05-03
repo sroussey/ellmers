@@ -14,7 +14,6 @@ export * from "./mcp-server/McpServerRepository";
 export * from "./mcp-server/McpServerSchema";
 export * from "./task/adaptive";
 export * from "./task/ArrayTask";
-export * from "./task/browser-control";
 export * from "./task/DateFormatTask";
 export * from "./task/DebugLogTask";
 export * from "./task/DelayTask";
@@ -95,12 +94,10 @@ export * from "./task/vector/VectorNormalizeTask";
 export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
-export * from "./util/BrowserTaskDeps";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
 
 import { TaskRegistry } from "@workglow/task-graph";
-import { registerBrowserTasks } from "./task/browser-control/register";
 import { DateFormatTask } from "./task/DateFormatTask";
 import { DebugLogTask } from "./task/DebugLogTask";
 import { DelayTask } from "./task/DelayTask";
@@ -243,6 +240,5 @@ export let registerCommonTasks = () => {
     ImageTextTask,
   ];
   tasks.map(TaskRegistry.registerTask);
-  registerBrowserTasks();
   return tasks;
 };
