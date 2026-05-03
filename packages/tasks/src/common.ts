@@ -51,7 +51,6 @@ export * from "./task/image/threshold/ImageThresholdTask";
 export * from "./task/image/tint/ImageTintTask";
 export * from "./task/image/transparency/ImageTransparencyTask";
 export * from "./task/InputTask";
-export * from "./task/JavaScriptTask";
 export * from "./task/JsonPathTask";
 export * from "./task/JsonTask";
 export * from "./task/LambdaTask";
@@ -126,7 +125,6 @@ import { ImageThresholdTask } from "./task/image/threshold/ImageThresholdTask";
 import { ImageTintTask } from "./task/image/tint/ImageTintTask";
 import { ImageTransparencyTask } from "./task/image/transparency/ImageTransparencyTask";
 import { InputTask } from "./task/InputTask";
-import { JavaScriptTask } from "./task/JavaScriptTask";
 import { JsonPathTask } from "./task/JsonPathTask";
 import { JsonTask } from "./task/JsonTask";
 import { LambdaTask } from "./task/LambdaTask";
@@ -182,7 +180,6 @@ export let registerCommonTasks = () => {
     HumanApprovalTask,
     HumanInputTask,
     InputTask,
-    JavaScriptTask,
     JsonTask,
     LambdaTask,
     MergeTask,

@@ -13,6 +13,7 @@ export * from "@workglow/postgres/storage";
 export * from "@workglow/postgres/job-queue";
 export * from "@workglow/storage";
 export * from "@workglow/task-graph";
+export * from "@workglow/javascript/task";
 export * from "@workglow/tasks";
 export * from "@workglow/util";
 export * from "@workglow/util/schema";

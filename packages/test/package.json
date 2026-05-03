@@ -47,6 +47,7 @@
     "@workglow/storage": "workspace:*",
     "@workglow/supabase": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/javascript": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
     "fake-indexeddb": "^6.2.4",

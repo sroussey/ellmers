@@ -15,7 +15,7 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { Interpreter } from "../util/interpreter";
+import { Interpreter } from "./interpreter";
 
 const isValidIdentifier = (key: string) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key);
 

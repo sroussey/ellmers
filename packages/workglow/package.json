@@ -166,6 +166,7 @@
     "@workglow/sqlite": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/javascript": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
     "tslog": "^4.9.3"
