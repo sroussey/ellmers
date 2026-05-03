@@ -27,6 +27,15 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   private durations: number[] = [];
   /** Promise chain used to serialize concurrent {@link tryAcquire} callers. */
   private acquireChain: Promise<unknown> = Promise.resolve();
+  /**
+   * Stack of `nextAvailableTime` snapshots captured BEFORE each successful
+   * {@link tryAcquire} advanced it. {@link release} pops the top and restores
+   * the snapshot, which correctly rolls back the most recent acquire even
+   * with multiple in-flight slots. Out-of-order releases (popping a snapshot
+   * that doesn't belong to the released acquire) are best-effort and may
+   * give back a slightly different amount of time than the released slot took.
+   */
+  private acquireSnapshots: number[] = [];
 
   constructor({ maxExecutions, windowSizeInSeconds }: RateLimiterOptions) {
     if (maxExecutions <= 0) {
@@ -64,6 +73,9 @@ export class EvenlySpacedRateLimiter implements ILimiter {
       if (now < this.nextAvailableTime) {
         return false;
       }
+      // Snapshot the pre-acquire state so a paired release() can roll back
+      // exactly this acquire's advance even with multiple slots in flight.
+      this.acquireSnapshots.push(this.nextAvailableTime);
       // Reserve the slot by advancing nextAvailableTime now (recordJobStart-style)
       // so a follow-up tryAcquire from another caller in the same tick blocks.
       this.lastStartTime = now;
@@ -82,12 +94,19 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   }
 
   /**
-   * Roll back a previously acquired slot. Best-effort: resets
-   * `nextAvailableTime` to the lastStartTime so a subsequent tryAcquire can
-   * proceed immediately.
+   * Roll back a previously acquired slot. Pops the top snapshot from the
+   * acquire stack and restores `nextAvailableTime` to the value it had BEFORE
+   * the most recent acquire advanced it. With multiple in-flight slots this
+   * is exactly right when releases happen in LIFO order; out-of-order
+   * releases give back the most recent acquire's advance regardless, which
+   * is best-effort but never breaks the rate-limit invariant the way the
+   * old `nextAvailableTime = lastStartTime` reset did.
    */
   async release(): Promise<void> {
-    this.nextAvailableTime = this.lastStartTime;
+    const snapshot = this.acquireSnapshots.pop();
+    if (snapshot !== undefined) {
+      this.nextAvailableTime = snapshot;
+    }
   }
 
   /** Record that a job is starting now. */
@@ -137,5 +156,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     this.durations = [];
     this.nextAvailableTime = Date.now();
     this.lastStartTime = 0;
+    this.acquireSnapshots = [];
   }
 }

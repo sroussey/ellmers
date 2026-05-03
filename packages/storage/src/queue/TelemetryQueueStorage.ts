@@ -10,6 +10,7 @@ import type {
   JobStatus,
   JobStorageFormat,
   QueueChangePayload,
+  QueueStorageScope,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
 
@@ -22,6 +23,10 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
     private readonly storageName: string,
     private readonly inner: IQueueStorage<Input, Output>
   ) {}
+
+  public get scope(): QueueStorageScope {
+    return this.inner.scope;
+  }
 
   add(job: JobStorageFormat<Input, Output>): Promise<unknown> {
     return traced("workglow.storage.queue.add", this.storageName, () => this.inner.add(job));

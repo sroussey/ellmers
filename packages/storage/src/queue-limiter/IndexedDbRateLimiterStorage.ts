@@ -49,6 +49,11 @@ interface NextAvailableRecord {
 /**
  * IndexedDB implementation of rate limiter storage.
  * Manages execution records and next available times for rate limiting.
+ *
+ * Atomicity is `"process"`-scoped (browser tab) and the `next_available_at`
+ * pre-check inside {@link tryReserveExecution} runs in a separate IDB
+ * transaction from the count-and-insert. See {@link tryReserveExecution} for
+ * the full caveat — do not assume cross-store atomicity.
  */
 export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
   /**
@@ -215,6 +220,8 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
         }
 
         if (liveCount >= maxExecutions) {
+          // Aborting fires execTx.onabort below, which resolves with `false`.
+          // No INSERT happened, so capacity is preserved.
           execTx.abort();
           return;
         }

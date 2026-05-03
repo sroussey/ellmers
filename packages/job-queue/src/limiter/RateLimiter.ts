@@ -18,6 +18,14 @@ export class RateLimiter implements ILimiter {
   protected readonly initialBackoffDelay: number;
   protected readonly backoffMultiplier: number;
   protected readonly maxBackoffDelay: number;
+  /**
+   * Per-instance backoff hint set by the most recent failed {@link tryAcquire}.
+   * Exposed via {@link getNextAvailableTime} so this process's worker sleeps
+   * until the hint expires, but NOT written to storage so a parallel worker's
+   * {@link release} can't clobber it. Cross-process workers each maintain
+   * their own hint.
+   */
+  protected localBackoffUntilMs: number = 0;
 
   constructor(
     protected readonly storage: IRateLimiterStorage,
@@ -76,44 +84,32 @@ export class RateLimiter implements ILimiter {
     );
     if (reserved) {
       this.currentBackoffDelay = this.initialBackoffDelay;
-      // Clear any stale backoff that was set by a previous failed acquire.
-      const next = await this.storage.getNextAvailableTime(this.queueName);
-      if (next && new Date(next).getTime() > Date.now()) {
-        await this.storage.setNextAvailableTime(
-          this.queueName,
-          new Date(Date.now() - 1000).toISOString()
-        );
-      }
+      this.localBackoffUntilMs = 0;
       return true;
     }
 
-    // Capacity reached — apply jittered exponential backoff so callers don't
-    // hammer the storage on every wake.
-    const backoffExpires = new Date(Date.now() + this.addJitter(this.currentBackoffDelay));
-    const existing = await this.storage.getNextAvailableTime(this.queueName);
-    if (!existing || new Date(existing).getTime() < backoffExpires.getTime()) {
-      await this.storage.setNextAvailableTime(this.queueName, backoffExpires.toISOString());
-    }
+    // Capacity reached — apply jittered exponential backoff. We hold this
+    // hint on the instance only; writing to the shared storage sentinel
+    // would race with parallel acquire/release calls (a peer's release()
+    // could clobber our hint, and clobbering the storage sentinel is
+    // dangerous because tryReserveExecution treats it as a hard gate).
+    this.localBackoffUntilMs = Date.now() + this.addJitter(this.currentBackoffDelay);
     this.increaseBackoff();
     return false;
   }
 
   /**
    * Release the slot reserved by the most recent {@link tryAcquire}. Best-effort:
-   * removes the most recent execution row AND clears any backoff written by
-   * a previous failed acquire so a follow-up tryAcquire isn't blocked by a
-   * now-stale "next available at" sentinel.
+   * removes the most recent execution row. Does NOT touch the shared storage
+   * `nextAvailableAt` sentinel — that field is reserved for explicit
+   * external pauses set via {@link setNextAvailableTime}, and clearing it
+   * here would clobber a parallel worker's failed-acquire backoff or, worse,
+   * a deliberate cluster-wide pause.
    */
   async release(): Promise<void> {
     await this.storage.releaseExecution(this.queueName);
-    const next = await this.storage.getNextAvailableTime(this.queueName);
-    if (next && new Date(next).getTime() > Date.now()) {
-      await this.storage.setNextAvailableTime(
-        this.queueName,
-        new Date(Date.now() - 1000).toISOString()
-      );
-    }
     this.currentBackoffDelay = this.initialBackoffDelay;
+    this.localBackoffUntilMs = 0;
   }
 
   protected addJitter(base: number): number {
@@ -192,8 +188,10 @@ export class RateLimiter implements ILimiter {
   }
 
   /**
-   * Retrieves the next available time for the specific queue.
-   * @returns The next available time
+   * Retrieves the next available time for the specific queue. Returns the
+   * latest of: the rate-limit wall (oldest execution + window), any externally
+   * set storage sentinel (explicit pause), and this instance's local backoff
+   * hint from the most recent failed {@link tryAcquire}.
    */
   async getNextAvailableTime(): Promise<Date> {
     // Get the time when the rate limit will allow the next job execution
@@ -202,22 +200,28 @@ export class RateLimiter implements ILimiter {
       this.maxExecutions - 1
     );
 
-    let rateLimitedTime = new Date();
+    let latestMs = Date.now();
     if (oldestExecution) {
-      rateLimitedTime = new Date(oldestExecution);
-      rateLimitedTime.setSeconds(
-        rateLimitedTime.getSeconds() + this.windowSizeInMilliseconds / 1000
+      latestMs = Math.max(
+        latestMs,
+        new Date(oldestExecution).getTime() + this.windowSizeInMilliseconds
       );
     }
 
-    // Get the next available time set externally, if any
+    // External pause set via setNextAvailableTime (cluster-visible).
     const nextAvailableStr = await this.storage.getNextAvailableTime(this.queueName);
-    let nextAvailableTime = new Date();
     if (nextAvailableStr) {
-      nextAvailableTime = new Date(nextAvailableStr);
+      latestMs = Math.max(latestMs, new Date(nextAvailableStr).getTime());
     }
 
-    return nextAvailableTime > rateLimitedTime ? nextAvailableTime : rateLimitedTime;
+    // Local backoff hint from the most recent failed tryAcquire on this
+    // instance — keeps this process's worker from re-acquiring before the
+    // hint expires without polluting cluster state.
+    if (this.localBackoffUntilMs > latestMs) {
+      latestMs = this.localBackoffUntilMs;
+    }
+
+    return new Date(latestMs);
   }
 
   /**
@@ -234,5 +238,6 @@ export class RateLimiter implements ILimiter {
   async clear(): Promise<void> {
     await this.storage.clear(this.queueName);
     this.currentBackoffDelay = this.initialBackoffDelay;
+    this.localBackoffUntilMs = 0;
   }
 }

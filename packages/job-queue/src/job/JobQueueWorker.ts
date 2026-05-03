@@ -28,6 +28,14 @@ import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
 import { classToStorage, storageToClass } from "./JobStorageConverters";
 
 /**
+ * Upper bound on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
+ * misconfigured or stuck limiter (e.g. one whose `getNextAvailableTime`
+ * returns hours in the future) from making the worker unresponsive — it
+ * wakes at least this often regardless of what the limiter says.
+ */
+const MAX_LIMITER_WAKE_MS = 30_000;
+
+/**
  * Events emitted by JobQueueWorker
  */
 export type JobQueueWorkerEventListeners<Input, Output> = {
@@ -384,15 +392,15 @@ export class JobQueueWorker<
    * How long to sleep when the limiter rejected an acquire. Reads the limiter's
    * own next-available time so we wake exactly when capacity opens, instead of
    * polling every {@link pollIntervalMs}. Clamped to {@link pollIntervalMs}
-   * (lower bound) and 30s (upper bound) so a misconfigured/stuck limiter still
-   * wakes occasionally.
+   * (lower bound) and {@link MAX_LIMITER_WAKE_MS} (upper bound) so a
+   * misconfigured/stuck limiter still wakes occasionally.
    */
   private async getLimiterWakeDelay(): Promise<number> {
     try {
       const next = await this.limiter.getNextAvailableTime();
       const delay = next.getTime() - Date.now();
       if (delay <= 0) return this.pollIntervalMs;
-      return Math.min(Math.max(delay, this.pollIntervalMs), 30_000);
+      return Math.min(Math.max(delay, this.pollIntervalMs), MAX_LIMITER_WAKE_MS);
     } catch {
       return this.pollIntervalMs;
     }

@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import type { Pool } from "@workglow/storage/postgres";
-import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
+import { createServiceToken, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
 import {
   IQueueStorage,
   JobStatus,
@@ -25,10 +25,22 @@ export const POSTGRES_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>
 const SAFE_IDENTIFIER = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /**
+ * Subset of pg.PoolClient that {@link PostgresQueueStorage.subscribeToChanges}
+ * needs. Typed locally so we don't require `pg` types at the storage layer.
+ */
+interface ListenClient {
+  query: (sql: string) => Promise<unknown>;
+  release: () => void;
+  removeAllListeners?: (event: string) => void;
+  on: (event: string, listener: (...args: any[]) => void) => void;
+}
+
+/**
  * PostgreSQL implementation of a job queue.
  * Provides storage and retrieval for job execution states using PostgreSQL.
  */
 export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
+  public readonly scope = "cluster" as const;
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
@@ -622,9 +634,10 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Acquires a dedicated client from the pool (LISTEN occupies a connection
    * for its lifetime). On unsubscribe, runs UNLISTEN and releases the client.
    * On connection loss, attempts to reconnect with bounded backoff and
-   * re-LISTEN. This method does NOT emit a synthetic resync event — callers
-   * that care about missed events between disconnect and reconnect must
-   * re-read state via their own recovery strategy.
+   * re-LISTEN. After every successful (re)connect — including the initial
+   * one — emits a synthetic `{ type: "RESYNC" }` event so subscribers can
+   * re-poll state and pick up any rows inserted during the disconnect window
+   * (or between subscribe and the first NOTIFY landing).
    *
    * Throws synchronously when the underlying pool lacks `connect()`
    * (single-connection wrappers like PGLite) so the caller's try/catch can
@@ -638,15 +651,16 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     callback: (change: QueueChangePayload<Input, Output>) => void,
     options?: QueueSubscribeOptions
   ): () => void {
-    const supportsConnect =
-      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
-    if (!supportsConnect) {
+    type PoolWithConnect = { connect: () => Promise<ListenClient> };
+    const poolMaybe = this.db as unknown as Partial<PoolWithConnect>;
+    if (typeof poolMaybe.connect !== "function") {
       // Detect synchronously so callers can catch and fall back to polling
       // without leaving a dangling unhandled promise rejection behind.
       throw new Error(
         "PostgresQueueStorage.subscribeToChanges requires a pg.Pool (got a single-connection wrapper)"
       );
     }
+    const pool = poolMaybe as PoolWithConnect;
 
     const channel = this.notifyChannelName();
     // undefined -> default to instance prefixValues; {} -> no filtering;
@@ -661,14 +675,22 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
           : options.prefixFilter;
 
     let unsubscribed = false;
-    let activeClient: {
-      query: (sql: string) => Promise<unknown>;
-      release: () => void;
-      removeAllListeners?: (event: string) => void;
-      on: (event: string, listener: (...args: any[]) => void) => void;
-    } | null = null;
+    let activeClient: ListenClient | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let backoffMs = 250;
+
+    const dispatch = (change: QueueChangePayload<Input, Output>): void => {
+      try {
+        callback(change);
+      } catch (err) {
+        // Never let user callbacks tear down the listener loop.
+        getLogger().debug("PostgresQueueStorage subscribe callback threw", {
+          channel,
+          changeType: change.type,
+          error: err,
+        });
+      }
+    };
 
     const matchesPrefix = (
       change: QueueChangePayload<Input, Output>,
@@ -719,27 +741,27 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
           old: op === "DELETE" ? fallback : undefined,
         };
         if (effectivePrefixFilter && !matchesPrefix(change, effectivePrefixFilter)) return;
-        try {
-          callback(change);
-        } catch {
-          // never let user callbacks tear down the listener loop
-        }
+        dispatch(change);
       })();
     };
 
     const connect = async (): Promise<void> => {
       if (unsubscribed) return;
       try {
-        const client = await (this.db as unknown as { connect: () => Promise<typeof activeClient> }).connect();
+        const client = await pool.connect();
         if (unsubscribed) {
-          client?.release();
+          client.release();
           return;
         }
         activeClient = client;
-        client?.on("notification", handleNotification);
-        client?.on("error", () => scheduleReconnect());
-        await client?.query(`LISTEN ${channel}`);
+        client.on("notification", handleNotification);
+        client.on("error", () => scheduleReconnect());
+        await client.query(`LISTEN ${channel}`);
         backoffMs = 250; // reset on successful (re)connect
+        // Synthetic resync: any rows inserted between subscribe and LISTEN
+        // landing (or during a reconnect window) have no NOTIFY backing.
+        // Fire a no-payload event so subscribers can re-poll state.
+        dispatch({ type: "RESYNC" });
       } catch {
         scheduleReconnect();
       }
