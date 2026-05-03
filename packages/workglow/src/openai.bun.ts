@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/ai-provider/openai";
+export * from "@workglow/openai/ai-provider";

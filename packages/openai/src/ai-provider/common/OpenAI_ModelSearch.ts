@@ -10,7 +10,7 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { filterLabeledModelsByQuery } from "../../common/modelSearchQuery";
+import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { getClient } from "./OpenAI_Client";
 import { OPENAI } from "./OpenAI_Constants";
 

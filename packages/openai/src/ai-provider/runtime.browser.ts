@@ -4,4 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export {};
+/**
+ * Browser build for OpenAI runtime registration (uses `js-tiktoken` instead of WASM `tiktoken`).
+ * Import from `@workglow/ai-provider/openai/runtime` — not from the main `openai` barrel.
+ *
+ * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
+ */
+export * from "./common/OpenAI_Client";
+export * from "./registerOpenAiInline.browser";
+export * from "./registerOpenAiWorker.browser";

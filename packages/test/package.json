@@ -32,6 +32,7 @@
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",
     "@workglow/anthropic": "workspace:*",
+    "@workglow/openai": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/job-queue": "workspace:*",

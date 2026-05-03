@@ -9,7 +9,7 @@
 import "@workglow/tasks";
 
 import { ImageEditTask, ImageGenerateTask } from "@workglow/ai";
-import { registerOpenAiInline } from "@workglow/ai-provider/openai/runtime";
+import { registerOpenAiInline } from "@workglow/openai/ai-provider-runtime";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const RUN = !!process.env.OPENAI_API_KEY;
