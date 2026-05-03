@@ -5,7 +5,11 @@
  */
 
 import { JobStatus } from "../queue-storage/IQueueStorage";
-import type { IQueueStorage, JobStorageFormat, QueueChangePayload } from "../queue-storage/IQueueStorage";
+import type {
+  IQueueStorage,
+  JobStorageFormat,
+  QueueChangePayload,
+} from "../queue-storage/IQueueStorage";
 import { EventEmitter } from "@workglow/util";
 import { Job } from "./Job";
 import {

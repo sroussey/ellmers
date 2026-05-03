@@ -160,10 +160,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
 
     const prefixWhere =
       prefixCount > 0
-        ? " AND " +
-          prefixColumnNames
-            .map((p, i) => `${p} = $${i + 1}`)
-            .join(" AND ")
+        ? " AND " + prefixColumnNames.map((p, i) => `${p} = $${i + 1}`).join(" AND ")
         : "";
 
     const prefixInsertCols = prefixCount > 0 ? prefixColumnNames.join(", ") + ", " : "";
@@ -197,8 +194,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
         constructor?: { name?: string };
       };
       const ctorName = dbAny.constructor?.name;
-      const looksLikePGlite =
-        typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
+      const looksLikePGlite = typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
       const looksLikePGLitePool = ctorName === "PGLitePool";
       if (!looksLikePGlite && !looksLikePGLitePool) {
         throw new Error(
@@ -207,19 +203,23 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
       }
     }
     const conn = supportsConnect
-      ? await (this.db as unknown as { connect: () => Promise<{
-          query: Pool["query"];
-          release: () => void;
-        }> }).connect()
+      ? await (
+          this.db as unknown as {
+            connect: () => Promise<{
+              query: Pool["query"];
+              release: () => void;
+            }>;
+          }
+        ).connect()
       : { query: this.db.query.bind(this.db), release: () => {} };
 
     try {
       await conn.query("BEGIN");
       try {
-        await conn.query(
-          `SELECT pg_advisory_xact_lock(${lockKeyExpr})`,
-          [...prefixParamValues, queueName]
-        );
+        await conn.query(`SELECT pg_advisory_xact_lock(${lockKeyExpr})`, [
+          ...prefixParamValues,
+          queueName,
+        ]);
 
         const countResult = await conn.query(
           `

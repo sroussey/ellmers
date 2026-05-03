@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { resolveHfImageDims, isHfInpaintingModel } from "@workglow/huggingface-inference/ai-provider";
+import {
+  resolveHfImageDims,
+  isHfInpaintingModel,
+} from "@workglow/huggingface-inference/ai-provider";
 
 describe("HFI aspect-ratio table", () => {
   it("Flux 1:1 → 1024x1024", () => {

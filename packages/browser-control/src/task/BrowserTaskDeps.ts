@@ -5,11 +5,7 @@
  */
 
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
-import type {
-  BrowserBackendType,
-  BrowserConnectOptions,
-  IBrowserContext,
-} from "./IBrowserContext";
+import type { BrowserBackendType, BrowserConnectOptions, IBrowserContext } from "./IBrowserContext";
 
 export interface IBrowserProfileStorage {
   save(projectId: string, profileName: string, state: string): Promise<void>;

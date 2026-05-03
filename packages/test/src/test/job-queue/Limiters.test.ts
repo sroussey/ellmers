@@ -57,9 +57,7 @@ describe("ConcurrencyLimiter", () => {
   });
 
   it("tryAcquire should be atomic under concurrency=2 with 10 parallel acquirers", async () => {
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => limiter.tryAcquire())
-    );
+    const results = await Promise.all(Array.from({ length: 10 }, () => limiter.tryAcquire()));
     const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(2);
   });
@@ -124,9 +122,7 @@ describe("DelayLimiter", () => {
   });
 
   it("tryAcquire should be atomic — only one of 5 parallel acquirers wins per delay window", async () => {
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => limiter.tryAcquire())
-    );
+    const results = await Promise.all(Array.from({ length: 5 }, () => limiter.tryAcquire()));
     const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(1);
   });
@@ -246,9 +242,7 @@ describe("EvenlySpacedRateLimiter", () => {
   it("tryAcquire should be atomic under contention", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 10 });
     // idealInterval = 1000ms, so only the first acquirer in a tight burst wins.
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => limiter.tryAcquire())
-    );
+    const results = await Promise.all(Array.from({ length: 5 }, () => limiter.tryAcquire()));
     const successes = results.filter((r) => r !== null && r !== undefined).length;
     expect(successes).toBe(1);
   });

@@ -25,11 +25,7 @@ import {
   TabularSubscribeOptions,
   pickCoveringIndex,
 } from "@workglow/storage";
-import {
-  ensureIndexedDbTable,
-  ExpectedIndexDefinition,
-  MigrationOptions,
-} from "./IndexedDbTable";
+import { ensureIndexedDbTable, ExpectedIndexDefinition, MigrationOptions } from "./IndexedDbTable";
 
 export const IDB_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.indexedDb"

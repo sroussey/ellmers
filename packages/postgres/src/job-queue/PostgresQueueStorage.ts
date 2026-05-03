@@ -709,9 +709,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     // full row here — keeps subscriber payloads consistent with other backends
     // (e.g. Supabase realtime, IndexedDb) and lets prefixFilter inspect the
     // prefix columns the row actually has.
-    const hydrate = async (
-      id: unknown
-    ): Promise<JobStorageFormat<Input, Output> | undefined> => {
+    const hydrate = async (id: unknown): Promise<JobStorageFormat<Input, Output> | undefined> => {
       try {
         return await this.get(id);
       } catch {

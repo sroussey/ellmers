@@ -160,7 +160,11 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
       this.prefixes.length > 0 ? this.prefixes.map((p) => p.name).join(", ") + ", " : "";
     const prefixInsertVals =
       this.prefixes.length > 0 ? this.prefixes.map((p) => `_${p.name}`).join(", ") + ", " : "";
-    const lockKeyParts = [`'${this.executionTableName}'`, ...this.prefixes.map((p) => `_${p.name}::text`), `_queue_name::text`];
+    const lockKeyParts = [
+      `'${this.executionTableName}'`,
+      ...this.prefixes.map((p) => `_${p.name}::text`),
+      `_queue_name::text`,
+    ];
     const lockKeyExpr = `hashtextextended(${lockKeyParts.join(" || '|' || ")}, 0)`;
 
     const createFnSql = `

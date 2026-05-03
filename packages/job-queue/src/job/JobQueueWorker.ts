@@ -480,10 +480,7 @@ export class JobQueueWorker<
   /**
    * Process a single job
    */
-  protected async processSingleJob(
-    job: Job<Input, Output>,
-    limiterToken: unknown
-  ): Promise<void> {
+  protected async processSingleJob(job: Job<Input, Output>, limiterToken: unknown): Promise<void> {
     if (!job || !job.id) {
       throw new JobNotFoundError("Invalid job provided for processing");
     }

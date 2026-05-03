@@ -14,11 +14,7 @@ import type {
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
 import { PostgresTabularStorage } from "./PostgresTabularStorage";
-import {
-  StorageValidationError,
-  getMetadataProperty,
-  getVectorProperty,
-} from "@workglow/storage";
+import { StorageValidationError, getMetadataProperty, getVectorProperty } from "@workglow/storage";
 import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
 
 /**
