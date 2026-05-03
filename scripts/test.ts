@@ -104,6 +104,7 @@ Runners:  ${KNOWN_RUNNERS.join(", ")} (default: both)
 
 Options:
   --all          Run full suite (bun + vitest, no filters, very slow)
+  --dry-run      Print runner commands without executing them
   --help         Show this usage message
 
 Examples:
@@ -166,21 +167,11 @@ function collectFiles(
 }
 
 async function runBunTest(files: string[]): Promise<number> {
-  const parallelFlag =
-    files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)
-      ? "--parallel=1"
-      : "--parallel";
-  // Match vitest's testTimeout: Bun's default is 5s per test, which is easy to exceed in HF/Sqlite work
-  const timeoutFlag = "--timeout=15000";
-  const proc = Bun.spawn(
-    files.length > 0
-      ? ["bun", "test", timeoutFlag, parallelFlag, ...files]
-      : ["bun", "test", timeoutFlag, parallelFlag],
-    {
-      cwd: ROOT,
-      stdio: ["inherit", "inherit", "inherit"],
-    }
-  );
+  const args = buildBunTestArgs(files);
+  const proc = Bun.spawn(args, {
+    cwd: ROOT,
+    stdio: ["inherit", "inherit", "inherit"],
+  });
   const exitCode = await proc.exited;
   if (exitCode !== 0) {
     console.error(`Bun test failed with exit code ${exitCode}`);
@@ -188,7 +179,18 @@ async function runBunTest(files: string[]): Promise<number> {
   return exitCode;
 }
 
-async function runVitest(files: string[]): Promise<number> {
+function buildBunTestArgs(files: string[]): string[] {
+  const parallelFlag: string =
+    files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)
+      ? "--parallel=1"
+      : "--parallel";
+  // Match vitest's testTimeout: Bun's default is 5s per test, which is easy to exceed in HF/Sqlite work
+  const timeoutFlag = "--timeout=15000";
+  const flags = [timeoutFlag, parallelFlag].filter((flag) => flag.length > 0);
+  return files.length > 0 ? ["bun", "test", ...flags, ...files] : ["bun", "test", ...flags];
+}
+
+function buildVitestArgs(files: string[]): string[] {
   // When no file filter: run all. Otherwise pass relative paths as name filters.
   const relFiles = files.length > 0 ? files.map((f) => relative(ROOT, f)) : [];
   const args = ["npx", "vitest", "run", ...relFiles];
@@ -198,6 +200,11 @@ async function runVitest(files: string[]): Promise<number> {
   if (process.env.CI) {
     args.push("--coverage");
   }
+  return args;
+}
+
+async function runVitest(files: string[]): Promise<number> {
+  const args = buildVitestArgs(files);
   const proc = Bun.spawn(args, {
     cwd: ROOT,
     stdio: ["inherit", "inherit", "inherit"],
@@ -219,7 +226,8 @@ if (rawArgs.includes("--help")) {
 }
 
 const runAll = rawArgs.includes("--all");
-const filteredArgs = rawArgs.filter((a) => a !== "--all");
+const dryRun = rawArgs.includes("--dry-run");
+const filteredArgs = rawArgs.filter((a) => a !== "--all" && a !== "--dry-run");
 
 if (!runAll && filteredArgs.length === 0) {
   showHelp();
@@ -274,6 +282,16 @@ const kindLabel = kinds.length > 0 ? kinds.join("+") : "all";
 const sectionLabel = sections.length > 0 ? sections.join("+") : "all";
 const fileCount = files.length > 0 ? `${files.length} file(s)` : "all files";
 console.log(`\nRunning ${kindLabel} tests in sections [${sectionLabel}] — ${fileCount}\n`);
+
+if (dryRun) {
+  if (!vitestOnly) {
+    console.log(JSON.stringify(buildBunTestArgs(files)));
+  }
+  if (!bunOnly) {
+    console.log(JSON.stringify(buildVitestArgs(files)));
+  }
+  process.exit(0);
+}
 
 // ── Execute ───────────────────────────────────────────────────────────────────
 
