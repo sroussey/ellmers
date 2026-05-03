@@ -168,6 +168,7 @@
     "@workglow/task-graph": "workspace:*",
     "@workglow/browser-control": "workspace:*",
     "@workglow/javascript": "workspace:*",
+    "@workglow/mcp": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
     "tslog": "^4.9.3"

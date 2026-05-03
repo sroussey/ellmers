@@ -15,6 +15,8 @@ export * from "@workglow/storage";
 export * from "@workglow/task-graph";
 export * from "@workglow/browser-control/task";
 export * from "@workglow/javascript/task";
+export * from "@workglow/mcp/tasks";
+export * from "@workglow/mcp/util";
 export * from "@workglow/tasks";
 export * from "@workglow/util";
 export * from "@workglow/util/schema";

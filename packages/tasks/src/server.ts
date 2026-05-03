@@ -4,12 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from "node:path";
 import { PlaywrightBackend, registerBrowserDeps } from "@workglow/browser-control/task";
-import { mcpClientFactory, mcpServerConfigSchema } from "./util/McpClientUtil";
-import type { McpServerConfig } from "./util/McpTaskDeps";
-import { registerMcpTaskDeps } from "./util/McpTaskDeps";
+export { registerMcpTaskDepsServer } from "@workglow/mcp/tasks";
 
 const SAFE_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
@@ -20,21 +17,6 @@ function safeName(value: string, label: string): string {
     );
   }
   return value;
-}
-
-export function registerMcpTaskDepsServer(): void {
-  registerMcpTaskDeps({
-    mcpClientFactory,
-    mcpServerConfigSchema,
-    createStdioTransport: (config: McpServerConfig) =>
-      Promise.resolve(
-        new StdioClientTransport({
-          command: config.command!,
-          args: config.args,
-          env: config.env,
-        })
-      ),
-  });
 }
 
 export function registerBrowserDepsServer(): void {

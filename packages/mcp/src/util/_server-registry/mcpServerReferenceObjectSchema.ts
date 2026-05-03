@@ -9,7 +9,7 @@
  */
 
 import type { DataPortSchemaObject, JsonSchema } from "@workglow/util/schema";
-import type { McpTaskDeps } from "../util/McpTaskDeps";
+import type { McpTaskDeps } from "../McpTaskDeps";
 
 /** Optional fields from {@link McpServerRecordSchema} not present on {@link mcpServerConfigSchema}. */
 export const mcpServerRecordMetadataProperties = {

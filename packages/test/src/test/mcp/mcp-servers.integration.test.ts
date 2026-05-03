@@ -14,7 +14,7 @@ import {
   McpPromptGetTask,
   McpResourceReadTask,
   McpToolCallTask,
-} from "@workglow/tasks";
+} from "@workglow/mcp/tasks";
 import type {
   McpListTaskOutput,
   McpPromptGetTaskConfig,
@@ -22,7 +22,7 @@ import type {
   McpResourceReadTaskConfig,
   McpResourceReadTaskOutput,
   McpToolCallTaskConfig,
-} from "@workglow/tasks";
+} from "@workglow/mcp/tasks";
 import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";

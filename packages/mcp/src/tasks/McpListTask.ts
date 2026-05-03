@@ -15,10 +15,10 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { getMcpServerConfig } from "../../mcp-server/getMcpServerConfig";
-import { TypeMcpServer } from "../../mcp-server/mcpServerReferenceObjectSchema";
-import { getMcpServerTransport } from "../../util/getMcpServerTransport";
-import { getMcpTaskDeps } from "../../util/McpTaskDeps";
+import { getMcpServerConfig } from "../util/_server-registry/getMcpServerConfig";
+import { TypeMcpServer } from "../util/_server-registry/mcpServerReferenceObjectSchema";
+import { getMcpServerTransport } from "../util/getMcpServerTransport";
+import { getMcpTaskDeps } from "../util/McpTaskDeps";
 
 const mcpListTypes = ["tools", "resources", "prompts"] as const;
 

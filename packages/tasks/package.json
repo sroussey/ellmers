@@ -61,19 +61,19 @@
     "undici": "^8.2.0"
   },
   "peerDependencies": {
-    "@modelcontextprotocol/sdk": "catalog:",
     "@workglow/browser-control": "workspace:*",
+    "@workglow/mcp": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@modelcontextprotocol/sdk": {
-      "optional": false
-    },
     "@workglow/browser-control": {
       "optional": true
+    },
+    "@workglow/mcp": {
+      "optional": false
     },
     "@workglow/task-graph": {
       "optional": false
@@ -89,9 +89,9 @@
     }
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "catalog:",
     "@types/papaparse": "^5.5.2",
     "@workglow/browser-control": "workspace:*",
+    "@workglow/mcp": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",

@@ -44,7 +44,7 @@ function toMcpRequestedSchema(
  * Usage:
  * ```ts
  * import { Server } from "@modelcontextprotocol/sdk/server";
- * import { McpElicitationConnector } from "@workglow/tasks";
+ * import { McpElicitationConnector } from "@workglow/mcp/tasks";
  * import { HUMAN_CONNECTOR } from "@workglow/util";
  *
  * const mcpServer: Server = ...; // your MCP server instance

@@ -11,7 +11,7 @@ import {
   TaskGraphSchema,
   TaskGraphPrimaryKeyNames,
 } from "@workglow/task-graph";
-import { mcpServerConfigSchema } from "@workglow/tasks";
+import { mcpServerConfigSchema } from "@workglow/mcp/util";
 import type { CliConfig } from "./config";
 
 export const McpServerRecordSchema = {

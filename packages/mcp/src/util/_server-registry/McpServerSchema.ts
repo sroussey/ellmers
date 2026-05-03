@@ -5,7 +5,7 @@
  */
 
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
-import { mcpServerConfigSchema } from "../util/McpClientUtil";
+import { mcpServerConfigSchema } from "../McpClientUtil";
 import { mcpServerRecordMetadataProperties } from "./mcpServerReferenceObjectSchema";
 
 export const McpServerRecordSchema = {

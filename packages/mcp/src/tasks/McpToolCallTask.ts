@@ -16,11 +16,11 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, DataPortSchemaObject } from "@workglow/util/schema";
-import { getMcpServerConfig } from "../../mcp-server/getMcpServerConfig";
-import { TypeMcpServer } from "../../mcp-server/mcpServerReferenceObjectSchema";
-import { getMcpServerTransport } from "../../util/getMcpServerTransport";
-import type { McpServerConfig } from "../../util/McpTaskDeps";
-import { getMcpTaskDeps } from "../../util/McpTaskDeps";
+import { getMcpServerConfig } from "../util/_server-registry/getMcpServerConfig";
+import { TypeMcpServer } from "../util/_server-registry/mcpServerReferenceObjectSchema";
+import { getMcpServerTransport } from "../util/getMcpServerTransport";
+import type { McpServerConfig } from "../util/McpTaskDeps";
+import { getMcpTaskDeps } from "../util/McpTaskDeps";
 import type { McpListTaskInput } from "./McpListTask";
 import { mcpList } from "./McpListTask";
 

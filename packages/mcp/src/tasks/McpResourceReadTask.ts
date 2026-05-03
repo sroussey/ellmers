@@ -16,10 +16,10 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { getMcpServerConfig } from "../../mcp-server/getMcpServerConfig";
-import { getMcpServerTransport } from "../../util/getMcpServerTransport";
-import { TypeMcpServer } from "../../mcp-server/mcpServerReferenceObjectSchema";
-import { getMcpTaskDeps } from "../../util/McpTaskDeps";
+import { getMcpServerConfig } from "../util/_server-registry/getMcpServerConfig";
+import { getMcpServerTransport } from "../util/getMcpServerTransport";
+import { TypeMcpServer } from "../util/_server-registry/mcpServerReferenceObjectSchema";
+import { getMcpTaskDeps } from "../util/McpTaskDeps";
 
 const contentItemSchema = {
   anyOf: [

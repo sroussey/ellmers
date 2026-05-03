@@ -7,11 +7,6 @@
 // Load adaptive first so Workflow.prototype.add/subtract/multiply/divide/sum are registered
 import "./task/adaptive";
 
-export * from "./mcp-server/getMcpServerConfig";
-export * from "./mcp-server/InMemoryMcpServerRepository";
-export * from "./mcp-server/McpServerRegistry";
-export * from "./mcp-server/McpServerRepository";
-export * from "./mcp-server/McpServerSchema";
 export * from "./task/adaptive";
 export * from "./task/ArrayTask";
 export * from "./task/DateFormatTask";
@@ -53,12 +48,6 @@ export * from "./task/InputTask";
 export * from "./task/JsonPathTask";
 export * from "./task/JsonTask";
 export * from "./task/LambdaTask";
-export * from "./task/mcp/McpListTask";
-export * from "./task/mcp/McpPromptGetTask";
-export * from "./task/mcp/McpResourceReadTask";
-export * from "./task/mcp/McpSearchTask";
-export * from "./task/mcp/McpToolCallTask";
-export * from "./task/McpElicitationConnector";
 export * from "./task/MergeTask";
 export * from "./task/OutputTask";
 export * from "./task/RegexTask";
@@ -125,11 +114,6 @@ import { InputTask } from "./task/InputTask";
 import { JsonPathTask } from "./task/JsonPathTask";
 import { JsonTask } from "./task/JsonTask";
 import { LambdaTask } from "./task/LambdaTask";
-import { McpListTask } from "./task/mcp/McpListTask";
-import { McpPromptGetTask } from "./task/mcp/McpPromptGetTask";
-import { McpResourceReadTask } from "./task/mcp/McpResourceReadTask";
-import { McpSearchTask } from "./task/mcp/McpSearchTask";
-import { McpToolCallTask } from "./task/mcp/McpToolCallTask";
 import { MergeTask } from "./task/MergeTask";
 import { OutputTask } from "./task/OutputTask";
 import { RegexTask } from "./task/RegexTask";
@@ -202,11 +186,6 @@ export let registerCommonTasks = () => {
     VectorNormalizeTask,
     VectorScaleTask,
     VectorSubtractTask,
-    McpToolCallTask,
-    McpResourceReadTask,
-    McpPromptGetTask,
-    McpSearchTask,
-    McpListTask,
     StringConcatTask,
     StringIncludesTask,
     StringJoinTask,

@@ -47,6 +47,7 @@
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/browser-control": "workspace:*",
+    "@workglow/mcp": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
     "@huggingface/transformers": "catalog:",

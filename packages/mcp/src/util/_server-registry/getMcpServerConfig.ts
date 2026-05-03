@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { McpServerConfig } from "../util/McpTaskDeps";
+import type { McpServerConfig } from "../McpTaskDeps";
 
 /**
  * Extracts a McpServerConfig from a task's config or input object.

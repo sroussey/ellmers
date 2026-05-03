@@ -49,17 +49,13 @@
     "@modelcontextprotocol/sdk": "catalog:"
   },
   "peerDependencies": {
-    "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
-    "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "devDependencies": {
-    "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
-    "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "files": ["dist", "src/**/*.md"],
