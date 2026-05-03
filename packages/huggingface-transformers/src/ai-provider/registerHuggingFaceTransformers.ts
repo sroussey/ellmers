@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderWithWorker } from "../common/registerProvider";
+import { registerProviderWithWorker } from "@workglow/ai-provider/common";
 import { HuggingFaceTransformersQueuedProvider } from "./HuggingFaceTransformersQueuedProvider";
 
 /**

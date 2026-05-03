@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
-import { searchHfModels, mapHfModelResult } from "../../common/HfModelSearch";
+import { searchHfModels, mapHfModelResult } from "@workglow/ai-provider/common";
 import { HF_TRANSFORMERS_ONNX } from "./HFT_Constants";
 import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 

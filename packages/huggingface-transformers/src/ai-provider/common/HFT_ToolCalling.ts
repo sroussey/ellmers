@@ -25,7 +25,7 @@ import {
   getAvailableParsers,
   getGenerationPrefix,
   parseToolCalls,
-} from "../../common/ToolCallParsers";
+} from "@workglow/ai-provider/common";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";

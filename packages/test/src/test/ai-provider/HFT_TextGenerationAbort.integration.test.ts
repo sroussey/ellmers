@@ -16,8 +16,8 @@ import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
-} from "@workglow/ai-provider/hf-transformers/runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/ai-provider/hf-transformers/runtime";
+} from "@workglow/huggingface-transformers/ai-provider-runtime";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry, TaskStatus } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

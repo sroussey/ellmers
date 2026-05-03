@@ -7,7 +7,7 @@
  */
 
 import { registerAiTasks, setGlobalModelRepository } from "@workglow/ai";
-import { registerHuggingFaceTransformers } from "@workglow/ai-provider/hf-transformers";
+import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai-provider";
 import { registerBaseTasks, registerBuiltInTransforms } from "@workglow/task-graph";
 import { registerCommonTasks } from "@workglow/tasks";
 import {

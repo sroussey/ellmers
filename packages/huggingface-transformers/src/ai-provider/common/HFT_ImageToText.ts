@@ -7,7 +7,7 @@
 import type { ImageToTextPipeline } from "@huggingface/transformers";
 import type { AiProviderRunFn, ImageToTextTaskInput, ImageToTextTaskOutput } from "@workglow/ai";
 import type { ImageValue } from "@workglow/util/media";
-import { imageValueToBlob } from "../../common/imageOutputHelpers";
+import { imageValueToBlob } from "@workglow/ai-provider/common";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 

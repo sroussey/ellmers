@@ -156,6 +156,7 @@
     "@workglow/openai": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/ollama": "workspace:*",
+    "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/postgres": "workspace:*",

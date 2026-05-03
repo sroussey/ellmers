@@ -5,7 +5,7 @@
  */
 
 import { AiChatTask } from "@workglow/ai";
-import type { HfTransformersOnnxModelConfig } from "@workglow/ai-provider/hf-transformers";
+import type { HfTransformersOnnxModelConfig } from "@workglow/huggingface-transformers/ai-provider";
 import { TaskGraph } from "@workglow/task-graph";
 import type { TaskGraphTabularRepository } from "@workglow/task-graph";
 

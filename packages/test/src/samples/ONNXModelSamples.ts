@@ -1,6 +1,6 @@
 import { getGlobalModelRepository } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
-import type { HfTransformersOnnxModelRecord } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai-provider";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider";
 
 export async function registerHuggingfaceLocalModels(): Promise<void> {
   const onnxModels: HfTransformersOnnxModelRecord[] = [

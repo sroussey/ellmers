@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import { registerProviderInline } from "../common/registerProvider";
+import { registerProviderInline } from "@workglow/ai-provider/common";
 import { clearHftInlinePipelineCache } from "./common/HFT_InlineLifecycle";
 import { HFT_PREVIEW_TASKS, HFT_STREAM_TASKS, HFT_TASKS } from "./common/HFT_JobRunFns";
 import { loadTransformersSDK } from "./common/HFT_Pipeline";
