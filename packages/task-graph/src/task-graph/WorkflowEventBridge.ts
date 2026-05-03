@@ -9,6 +9,7 @@ import type { TaskGraph } from "./TaskGraph";
 import type { WorkflowEventListeners } from "./Workflow";
 
 /**
+ * @internal
  * Routes TaskGraph mutation events, entitlement updates, and per-run streaming
  * events to a Workflow's EventEmitter. Owns subscription lifecycle:
  *   attach(graph)   → subscribe to mutation + entitlement events
