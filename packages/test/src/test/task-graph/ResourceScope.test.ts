@@ -168,6 +168,69 @@ describe("ResourceScope AI pattern", () => {
   });
 });
 
+describe("TaskGraphRunner.runGraph auto-ownership", () => {
+  it("auto-creates and disposes a ResourceScope when none is passed", async () => {
+    const disposed: string[] = [];
+
+    class GraphAutoDisposeTask extends Task<{}, { name: string }> {
+      static override readonly type = "GraphAutoDisposeTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { name: { type: "string" } },
+        } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{ name: string }> {
+        ctx.resourceScope?.register("auto:graph", async () => {
+          disposed.push("graph");
+        });
+        return { name: "ok" };
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new GraphAutoDisposeTask({ id: "t1" }));
+    await graph.run();
+
+    // Auto-disposal awaited before graph.run() resolves.
+    expect(disposed).toEqual(["graph"]);
+  });
+
+  it("does not dispose a caller-passed ResourceScope", async () => {
+    const disposed: string[] = [];
+
+    class CallerOwnsGraphTask extends Task<{}, {}> {
+      static override readonly type = "CallerOwnsGraphTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("caller:graph", async () => {
+          disposed.push("graph");
+        });
+        return {};
+      }
+    }
+
+    const scope = new ResourceScope();
+    const graph = new TaskGraph();
+    graph.addTask(new CallerOwnsGraphTask({ id: "t1" }));
+    await graph.run({}, { resourceScope: scope });
+
+    expect(disposed).toEqual([]);
+    expect(scope.has("caller:graph")).toBe(true);
+
+    await scope.disposeAll();
+    expect(disposed).toEqual(["graph"]);
+  });
+});
+
 describe("TaskRunner.run auto-ownership", () => {
   it("auto-creates and disposes a ResourceScope when none is passed", async () => {
     const disposed: string[] = [];
