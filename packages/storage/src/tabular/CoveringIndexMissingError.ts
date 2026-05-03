@@ -18,9 +18,7 @@ export class CoveringIndexMissingError extends StorageError {
     requiredColumns: readonly string[],
     registeredIndexes: ReadonlyArray<readonly string[]>
   ) {
-    const indexList = registeredIndexes
-      .map((cols) => `[${cols.join(", ")}]`)
-      .join(", ");
+    const indexList = registeredIndexes.map((cols) => `[${cols.join(", ")}]`).join(", ");
     super(
       `No covering index for table "${table}". ` +
         `Required columns: [${requiredColumns.join(", ")}]. ` +

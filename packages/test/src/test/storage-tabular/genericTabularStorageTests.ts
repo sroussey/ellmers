@@ -1121,10 +1121,7 @@ export function runGenericTabularStorageTests(
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        const rows = await repository.queryIndex(
-          { category: "a" },
-          { select: ["id", "category"] }
-        );
+        const rows = await repository.queryIndex({ category: "a" }, { select: ["id", "category"] });
         expect(rows).toHaveLength(1);
         expect(Object.keys(rows[0]).sort()).toEqual(["category", "id"]);
       });
@@ -1137,10 +1134,7 @@ export function runGenericTabularStorageTests(
       });
 
       it("returns empty array (not undefined) for no matches", async () => {
-        const rows = await repository.queryIndex(
-          { category: "missing" },
-          { select: ["id"] }
-        );
+        const rows = await repository.queryIndex({ category: "missing" }, { select: ["id"] });
         expect(rows).toEqual([]);
       });
 

@@ -503,9 +503,9 @@ describe("IndexedDbTabularStorage", () => {
       );
       await storage.setupDatabase();
 
-      await expect(
-        storage.queryIndex({ user_id: "u" }, { select: [] as any })
-      ).rejects.toThrow(/non-empty select/);
+      await expect(storage.queryIndex({ user_id: "u" }, { select: [] as any })).rejects.toThrow(
+        /non-empty select/
+      );
     });
   });
 });

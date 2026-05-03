@@ -817,10 +817,7 @@ export class SupabaseTabularStorage<
     });
 
     const colList = options.select.map(String).join(",");
-    let q = this.applyCriteriaToFilter(
-      this.client.from(this.table).select(colList),
-      criteria
-    );
+    let q = this.applyCriteriaToFilter(this.client.from(this.table).select(colList), criteria);
 
     if (options.orderBy) {
       for (const { column, direction } of options.orderBy) {
@@ -828,9 +825,7 @@ export class SupabaseTabularStorage<
       }
     }
     if (options.offset !== undefined && options.limit === undefined) {
-      throw new StorageValidationError(
-        "queryIndex with offset requires limit (no implicit cap)"
-      );
+      throw new StorageValidationError("queryIndex with offset requires limit (no implicit cap)");
     }
     if (options.offset !== undefined || options.limit !== undefined) {
       const start = options.offset ?? 0;

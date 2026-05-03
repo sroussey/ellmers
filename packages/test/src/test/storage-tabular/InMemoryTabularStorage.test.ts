@@ -99,12 +99,9 @@ describe("InMemoryTabularStorage.queryIndex", () => {
       SearchPrimaryKeyNames,
       [["category"]]
     );
-    await expect(
-      storage.queryIndex(
-        { value: 1 },
-        { select: ["id"] }
-      )
-    ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
+    await expect(storage.queryIndex({ value: 1 }, { select: ["id"] })).rejects.toThrow(
+      /CoveringIndexMissingError|No covering index/
+    );
   });
 
   it("returns empty array (not undefined) on no matches", async () => {
@@ -113,10 +110,7 @@ describe("InMemoryTabularStorage.queryIndex", () => {
       SearchPrimaryKeyNames,
       [["category"]]
     );
-    const rows = await storage.queryIndex(
-      { category: "missing" },
-      { select: ["id"] }
-    );
+    const rows = await storage.queryIndex({ category: "missing" }, { select: ["id"] });
     expect(rows).toEqual([]);
   });
 
@@ -126,9 +120,9 @@ describe("InMemoryTabularStorage.queryIndex", () => {
       SearchPrimaryKeyNames,
       [["category"]]
     );
-    await expect(
-      storage.queryIndex({ category: "a" }, { select: [] as any })
-    ).rejects.toThrow(/non-empty select/);
+    await expect(storage.queryIndex({ category: "a" }, { select: [] as any })).rejects.toThrow(
+      /non-empty select/
+    );
   });
 
   it("throws StorageValidationError when select contains a column not in schema", async () => {

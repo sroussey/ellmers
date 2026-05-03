@@ -986,7 +986,7 @@ export class IndexedDbTabularStorage<
     this.validateQueryParams(criteria, options);
 
     const registered = this.indexes.map((cols) => {
-      const cs = (Array.isArray(cols) ? (cols as string[]) : [cols as string]);
+      const cs = Array.isArray(cols) ? (cols as string[]) : [cols as string];
       return { name: cs.join("_"), keyPath: cs };
     });
 

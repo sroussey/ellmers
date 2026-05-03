@@ -538,9 +538,7 @@ export abstract class BaseTabularStorage<
     for (const col of options.select) {
       const colStr = String(col);
       if (!schemaProps.includes(colStr)) {
-        throw new StorageValidationError(
-          `queryIndex select column "${colStr}" is not in schema`
-        );
+        throw new StorageValidationError(`queryIndex select column "${colStr}" is not in schema`);
       }
     }
   }

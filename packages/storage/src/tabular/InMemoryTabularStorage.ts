@@ -411,7 +411,7 @@ export class InMemoryTabularStorage<
 
     const registered = this.indexes.map((cols, i) => ({
       name: `idx_${i}`,
-      keyPath: (cols as string[]),
+      keyPath: cols as string[],
     }));
 
     pickCoveringIndex({

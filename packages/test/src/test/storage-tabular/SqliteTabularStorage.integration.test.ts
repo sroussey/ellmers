@@ -110,9 +110,9 @@ describe("SqliteTabularStorage.queryIndex", () => {
       []
     );
     await storage.setupDatabase();
-    await expect(
-      storage.queryIndex({ category: "a" }, { select: ["id"] })
-    ).rejects.toThrow(/CoveringIndexMissingError|No covering index/);
+    await expect(storage.queryIndex({ category: "a" }, { select: ["id"] })).rejects.toThrow(
+      /CoveringIndexMissingError|No covering index/
+    );
   });
 
   it("returns empty array (not undefined) on no matches", async () => {
