@@ -360,6 +360,76 @@ describe("ResourceScope `await using` integration", () => {
   });
 });
 
+describe("ResourceScope auto-ownership failure paths", () => {
+  it("disposes auto-scope when run is aborted via parentSignal", async () => {
+    const events: string[] = [];
+
+    class HangingResourceTask extends Task<{}, {}> {
+      static override readonly type = "HangingResourceTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+        ctx.resourceScope?.register("abort:t1", async () => {
+          events.push("disposed");
+        });
+        // Wait for abort
+        await new Promise<void>((resolve, reject) => {
+          ctx.signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+        return {};
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new HangingResourceTask({ id: "t1" }));
+    graph.on("abort", () => events.push("abort-event"));
+
+    const ctrl = new AbortController();
+    const runPromise = graph.run({}, { parentSignal: ctrl.signal });
+    // Give the task a tick to register its disposer.
+    await new Promise((r) => setTimeout(r, 10));
+    ctrl.abort();
+
+    await expect(runPromise).rejects.toThrow();
+
+    // Both the abort event and the disposer fired.
+    expect(events).toContain("abort-event");
+    expect(events).toContain("disposed");
+    // Abort event before disposal (handleAbort is awaited in the epilogue).
+    expect(events.indexOf("abort-event")).toBeLessThan(events.indexOf("disposed"));
+  });
+
+  it("resets this.resourceScope even when handleStart rejects (maxTasks)", async () => {
+    class TrivialTask extends Task<{}, {}> {
+      static override readonly type = "TrivialTask";
+      static override inputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return { type: "object", properties: {} } as const satisfies DataPortSchema;
+      }
+      override async execute(): Promise<{}> {
+        return {};
+      }
+    }
+
+    const graph = new TaskGraph();
+    graph.addTask(new TrivialTask({ id: "a" }));
+    graph.addTask(new TrivialTask({ id: "b" }));
+
+    // maxTasks: 1 forces handleStart to throw before any task runs.
+    await expect(graph.run({}, { maxTasks: 1 })).rejects.toThrow();
+
+    // Subsequent run with no maxTasks should succeed — the previous run's
+    // auto-scope did not leak into the runner instance.
+    await graph.run();
+  });
+});
+
 describe("ResourceScope nested-run forwarding under auto-ownership", () => {
   it("GraphAsTask: outermost runner disposes exactly once", async () => {
     const disposeCalls: string[] = [];
