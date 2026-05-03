@@ -28,7 +28,6 @@ export * from "./kv/TelemetryKvStorage";
 
 export * from "./util/HybridSubscriptionManager";
 export * from "./util/PollingSubscriptionManager";
-export * from "./util/traced";
 
 export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";

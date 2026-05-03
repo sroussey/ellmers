@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getTelemetryProvider, SpanStatusCode } from "@workglow/util";
+import { SpanStatusCode } from "./ITelemetryProvider";
+import { getTelemetryProvider } from "./TelemetryRegistry";
 
 /**
  * Executes an async function within a telemetry span.

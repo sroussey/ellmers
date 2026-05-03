@@ -5,7 +5,7 @@
  */
 
 import type { JSONValue } from "../tabular/ITabularStorage";
-import { traced } from "../util/traced";
+import { traced } from "@workglow/util";
 import type { IKvStorage, KvEventListener, KvEventName, KvEventParameters } from "./IKvStorage";
 
 /**

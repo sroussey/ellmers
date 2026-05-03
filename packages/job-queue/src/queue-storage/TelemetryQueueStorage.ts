@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { traced } from "./traced";
+import { traced } from "@workglow/util";
 import type {
   IQueueStorage,
   JobStatus,

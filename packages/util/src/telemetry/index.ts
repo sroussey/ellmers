@@ -9,3 +9,4 @@ export * from "./ITelemetryProvider";
 export * from "./NoopTelemetryProvider";
 export * from "./OTelTelemetryProvider";
 export * from "./TelemetryRegistry";
+export * from "./traced";
