@@ -180,6 +180,21 @@
         "tiktoken",
       ],
     },
+    "packages/indexeddb": {
+      "name": "@workglow/indexeddb",
+      "version": "0.2.27",
+      "devDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+        "fake-indexeddb": "^6.2.4",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "packages/job-queue": {
       "name": "@workglow/job-queue",
       "version": "0.2.27",
@@ -198,6 +213,45 @@
         "@workglow/util": "workspace:*",
       },
       "peerDependencies": {
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/postgres": {
+      "name": "@workglow/postgres",
+      "version": "0.2.27",
+      "dependencies": {
+        "@electric-sql/pglite": "catalog:",
+        "pg": "catalog:",
+      },
+      "devDependencies": {
+        "@types/pg": "^8.18.0",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "packages/sqlite": {
+      "name": "@workglow/sqlite",
+      "version": "0.2.27",
+      "dependencies": {
+        "@sqlite.org/sqlite-wasm": "catalog:",
+        "@sqliteai/sqlite-vector": "^0.9.90",
+        "better-sqlite3": "catalog:",
+      },
+      "devDependencies": {
+        "@types/better-sqlite3": "^7.6.13",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
         "@workglow/storage": "workspace:*",
         "@workglow/util": "workspace:*",
       },
@@ -235,6 +289,23 @@
         "better-sqlite3",
         "pg",
       ],
+    },
+    "packages/supabase": {
+      "name": "@workglow/supabase",
+      "version": "0.2.27",
+      "dependencies": {
+        "@supabase/supabase-js": "catalog:",
+      },
+      "devDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
     },
     "packages/task-graph": {
       "name": "@workglow/task-graph",
@@ -959,11 +1030,19 @@
 
     "@workglow/cli": ["@workglow/cli@workspace:examples/cli"],
 
+    "@workglow/indexeddb": ["@workglow/indexeddb@workspace:packages/indexeddb"],
+
     "@workglow/job-queue": ["@workglow/job-queue@workspace:packages/job-queue"],
 
     "@workglow/knowledge-base": ["@workglow/knowledge-base@workspace:packages/knowledge-base"],
 
+    "@workglow/postgres": ["@workglow/postgres@workspace:packages/postgres"],
+
+    "@workglow/sqlite": ["@workglow/sqlite@workspace:packages/sqlite"],
+
     "@workglow/storage": ["@workglow/storage@workspace:packages/storage"],
+
+    "@workglow/supabase": ["@workglow/supabase@workspace:packages/supabase"],
 
     "@workglow/task-graph": ["@workglow/task-graph@workspace:packages/task-graph"],
 
