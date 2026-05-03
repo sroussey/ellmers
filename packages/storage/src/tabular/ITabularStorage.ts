@@ -110,7 +110,7 @@ export interface QueryOptions<Entity> {
   readonly offset?: number;
 }
 
-export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity> {
+export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity & string> {
   readonly select: readonly K[];
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
@@ -271,7 +271,7 @@ export interface ITabularStorage<
    * @param options  - select (required), orderBy, limit, offset
    * @returns array of projected rows (empty array, not undefined, when no matches)
    */
-  queryIndex<K extends keyof Entity>(
+  queryIndex<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]>;
@@ -300,4 +300,6 @@ export interface ITabularStorage<
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-export type AnyTabularStorage = ITabularStorage<any, any, any, any, any>;
+export type AnyTabularStorage = Omit<ITabularStorage<any, any, any, any, any>, "queryIndex"> & {
+  queryIndex(criteria: any, options: any): Promise<any[]>;
+};
