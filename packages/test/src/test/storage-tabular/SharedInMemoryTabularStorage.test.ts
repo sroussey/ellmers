@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Imported directly from source — `@workglow/storage` only exposes this class in
-// its `browser` conditional export and these tests run under Node.
-import { SharedInMemoryTabularStorage } from "../../../../storage/src/tabular/SharedInMemoryTabularStorage";
+import { SharedInMemoryTabularStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
