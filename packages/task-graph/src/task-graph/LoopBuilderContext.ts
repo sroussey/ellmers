@@ -11,12 +11,16 @@ import { autoConnect } from "./autoConnect";
 import type { TaskGraph } from "./TaskGraph";
 import type { Workflow } from "./Workflow";
 
+/**
+ * @internal
+ */
 export interface PendingLoopConnect {
   readonly parent: ITask;
   readonly iteratorTask: ITask;
 }
 
 /**
+ * @internal
  * Runs deferred auto-connect for a loop iterator task on the parent
  * workflow's graph. Extracted as a free function so it can be invoked
  * from both {@link LoopBuilderContext.consumePendingConnect} and from
@@ -53,6 +57,7 @@ export function runLoopAutoConnect(
 }
 
 /**
+ * @internal
  * Holds the parent <-> child relationship for a Workflow operating in
  * loop-builder mode (created by parent.addLoopTask). Owns deferred
  * auto-connect state. Has no events, no DSL.

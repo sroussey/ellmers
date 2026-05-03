@@ -5,6 +5,7 @@
  */
 
 /**
+ * @internal
  * Per-run mutable state for a single Workflow.run() invocation. Built at the
  * top of run(), discarded in the run's finally clause. Mirrors RunContext on
  * the TaskGraphRunner side: a small value object so per-run resources have a

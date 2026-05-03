@@ -9,6 +9,12 @@ import type { DataPorts } from "../task/TaskTypes";
 import type { CompoundMergeStrategy } from "./TaskGraphRunner";
 import { PROPERTY_ARRAY } from "./TaskGraphRunner";
 
+/**
+ * @internal
+ * Workflow's private GraphAsTask subclass — the runtime task instance that
+ * carries Workflow's compound-merge strategy. Constructed only by Workflow;
+ * not part of the public surface.
+ */
 export class WorkflowTask<
   I extends DataPorts,
   O extends DataPorts,
