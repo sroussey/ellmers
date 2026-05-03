@@ -363,6 +363,7 @@ describe("ResourceScope `await using` integration", () => {
 describe("ResourceScope nested-run forwarding under auto-ownership", () => {
   it("GraphAsTask: outermost runner disposes exactly once", async () => {
     const disposeCalls: string[] = [];
+    const capturedScopes: ResourceScope[] = [];
 
     class CountingDisposerTask extends Task<{ tag: string }, { tag: string }> {
       static override readonly type = "CountingDisposerTask";
@@ -382,6 +383,7 @@ describe("ResourceScope nested-run forwarding under auto-ownership", () => {
         input: { tag: string },
         ctx: IExecuteContext
       ): Promise<{ tag: string }> {
+        if (ctx.resourceScope) capturedScopes.push(ctx.resourceScope);
         ctx.resourceScope?.register(`count:${input.tag}`, async () => {
           disposeCalls.push(input.tag);
         });
@@ -399,5 +401,58 @@ describe("ResourceScope nested-run forwarding under auto-ownership", () => {
 
     // Disposer must fire exactly once — not once per nested level.
     expect(disposeCalls).toEqual(["nested"]);
+    // All task executions must see the same scope identity (correct forwarding).
+    expect(new Set(capturedScopes).size).toBe(1);
+  });
+
+  it("MapTask iteration: scope persists across iterations, disposes once at end", async () => {
+    const disposeCalls: string[] = [];
+    const capturedScopes: ResourceScope[] = [];
+
+    class IteratingDisposerTask extends Task<{ item: number }, { item: number }> {
+      static override readonly type = "IteratingDisposerTask";
+      static override inputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { item: { type: "number" } },
+          required: ["item"],
+          additionalProperties: true,
+        } as const satisfies DataPortSchema;
+      }
+      static override outputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: { item: { type: "number" } },
+        } as const satisfies DataPortSchema;
+      }
+      override async execute(
+        input: { item: number },
+        ctx: IExecuteContext
+      ): Promise<{ item: number }> {
+        if (ctx.resourceScope) capturedScopes.push(ctx.resourceScope);
+        // Same key across all 3 iterations. With one shared scope (correct
+        // forwarding), first-registration-wins keeps only the first; with
+        // per-iteration scopes (broken forwarding), each iteration's scope
+        // gets its own copy and disposes at iteration end → 3 entries.
+        ctx.resourceScope?.register("model:shared", async () => {
+          disposeCalls.push("disposed");
+        });
+        return { item: input.item };
+      }
+    }
+
+    const workflow = new Workflow();
+    workflow
+      .map({ maxIterations: "unbounded", concurrencyLimit: 1 })
+      .addTask(IteratingDisposerTask)
+      .endMap();
+
+    await workflow.run({ item: [1, 2, 3] });
+
+    // First-registration-wins held → exactly one disposer fired.
+    expect(disposeCalls).toEqual(["disposed"]);
+    // All 3 iterations saw the same scope identity → forwarding works.
+    expect(capturedScopes).toHaveLength(3);
+    expect(new Set(capturedScopes).size).toBe(1);
   });
 });
