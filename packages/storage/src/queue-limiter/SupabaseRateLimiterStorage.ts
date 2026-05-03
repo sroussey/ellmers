@@ -6,7 +6,7 @@
 
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceToken } from "@workglow/util";
-import type { PrefixColumn } from "../queue/IQueueStorage";
+import type { PrefixColumn } from "@workglow/job-queue";
 import {
   IRateLimiterStorage,
   RateLimiterStorageOptions,

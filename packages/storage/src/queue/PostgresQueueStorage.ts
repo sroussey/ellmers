@@ -7,15 +7,15 @@
 import { createHash } from "node:crypto";
 import type { Pool } from "@workglow/storage/postgres";
 import { createServiceToken, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
-import {
+import { JobStatus } from "@workglow/job-queue";
+import type {
   IQueueStorage,
-  JobStatus,
   JobStorageFormat,
   PrefixColumn,
   QueueChangePayload,
   QueueStorageOptions,
   QueueSubscribeOptions,
-} from "./IQueueStorage";
+} from "@workglow/job-queue";
 
 export const POSTGRES_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.postgres"

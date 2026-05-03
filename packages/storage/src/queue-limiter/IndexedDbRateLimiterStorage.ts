@@ -10,7 +10,7 @@ import {
   ExpectedIndexDefinition,
   MigrationOptions,
 } from "../util/IndexedDbTable";
-import type { PrefixColumn } from "../queue/IQueueStorage";
+import type { PrefixColumn } from "@workglow/job-queue";
 import {
   IRateLimiterStorage,
   RateLimiterStorageOptions,

@@ -7,16 +7,16 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
-import {
+import { JobStatus } from "@workglow/job-queue";
+import type {
   IQueueStorage,
-  JobStatus,
   JobStorageFormat,
   PrefixColumn,
   QueueChangePayload,
   QueueChangeType,
   QueueStorageOptions,
   QueueSubscribeOptions,
-} from "./IQueueStorage";
+} from "@workglow/job-queue";
 
 export const SUPABASE_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.supabase"

@@ -26,10 +26,6 @@ export * from "./kv/KvStorage";
 export * from "./kv/KvViaTabularStorage";
 export * from "./kv/TelemetryKvStorage";
 
-export * from "./queue/InMemoryQueueStorage";
-export * from "./queue/IQueueStorage";
-export * from "./queue/TelemetryQueueStorage";
-
 export * from "./queue-limiter/InMemoryRateLimiterStorage";
 export * from "./queue-limiter/IRateLimiterStorage";
 

@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobStatus, JobStorageFormat } from "@workglow/storage";
+import { JobStatus } from "../queue-storage/IQueueStorage";
+import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { Job, JobClass } from "./Job";
 
 /**

@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import type { PrefixColumn } from "../queue/IQueueStorage";
+import type { PrefixColumn } from "@workglow/job-queue";
 
 export const RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>("ratelimiter.storage");
 

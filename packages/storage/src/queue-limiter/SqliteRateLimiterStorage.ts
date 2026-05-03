@@ -6,7 +6,7 @@
 
 import type { Sqlite } from "@workglow/storage/sqlite";
 import { createServiceToken, sleep, toSQLiteTimestamp } from "@workglow/util";
-import type { PrefixColumn } from "../queue/IQueueStorage";
+import type { PrefixColumn } from "@workglow/job-queue";
 import {
   IRateLimiterStorage,
   RateLimiterStorageOptions,

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobStatus } from "@workglow/storage";
+import { JobStatus } from "../queue-storage/IQueueStorage";
 import { JobError } from "./JobError";
 import type { JobProgressListener } from "./JobQueueEventListeners";
 

@@ -6,7 +6,7 @@
 
 import { createServiceToken } from "@workglow/util";
 import type { Pool } from "@workglow/storage/postgres";
-import type { PrefixColumn } from "../queue/IQueueStorage";
+import type { PrefixColumn } from "@workglow/job-queue";
 import {
   IRateLimiterStorage,
   RateLimiterStorageOptions,
