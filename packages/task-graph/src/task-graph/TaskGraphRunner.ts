@@ -220,7 +220,7 @@ export class TaskGraphRunner {
       }
       if (ctx.failedTaskErrors.size > 0) {
         const latestError = ctx.failedTaskErrors.values().next().value!;
-        this.handleError(latestError);
+        await this.handleError(latestError);
         throw latestError;
       }
       if (ctx.abortController.signal.aborted) {
