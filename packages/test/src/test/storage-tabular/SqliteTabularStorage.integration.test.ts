@@ -196,4 +196,47 @@ describe("SqliteTabularStorage.withTransaction", () => {
     // The doomed put should never have been observed by listeners.
     expect(observed).toEqual([]);
   });
+
+  it("serializes external put() calls behind a running withTransaction (rollback case)", async () => {
+    // The concurrency contract: while withTransaction is awaiting its callback,
+    // an unrelated `storage.put()` invoked from outside `fn` must NOT slip into
+    // the open transaction. The mutex enforces this — the external put queues
+    // until COMMIT/ROLLBACK releases the lock.
+    const storage = await makeStorage();
+
+    let releaseInner: () => void = () => {};
+    const innerCanFinish = new Promise<void>((resolve) => {
+      releaseInner = resolve;
+    });
+
+    const txPromise = storage.withTransaction(async (tx) => {
+      await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+      // Hold the transaction open until the external caller has been queued.
+      await innerCanFinish;
+      throw new Error("rollback");
+    });
+
+    // Yield enough microtasks for the external put() to observe withTransaction's mutex hold.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const externalPut = storage.put({
+      name: "external-row",
+      type: "x",
+      option: "external",
+      success: true,
+    });
+
+    // Let the inner callback throw, triggering ROLLBACK.
+    releaseInner();
+    await expect(txPromise).rejects.toThrow("rollback");
+
+    // External put runs *after* ROLLBACK and is its own committed write.
+    await externalPut;
+
+    // tx-row was rolled back, external-row was committed independently.
+    expect(await storage.get({ name: "tx-row", type: "x" })).toBeUndefined();
+    const ext = await storage.get({ name: "external-row", type: "x" });
+    expect(ext?.option).toEqual("external");
+  });
 });

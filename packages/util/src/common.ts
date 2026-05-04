@@ -9,6 +9,7 @@ export * from "./di";
 export * from "./events/EventEmitter";
 export * from "./human/HumanConnector";
 export * from "./logging";
+export * from "./utilities/AsyncMutex";
 export * from "./utilities/BaseError";
 export * from "./utilities/Misc";
 export * from "./utilities/objectOfArraysAsArrayOfObjects";

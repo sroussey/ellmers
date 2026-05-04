@@ -5,7 +5,7 @@
  */
 
 import type { Pool } from "@workglow/postgres/storage";
-import { createServiceToken } from "@workglow/util";
+import { AsyncMutex, createServiceToken } from "@workglow/util";
 import type { TypedArray } from "@workglow/util/schema";
 import {
   DataPortSchemaObject,
@@ -657,6 +657,18 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Per-instance async mutex. Every public read/write method acquires it
+   * before touching `this.db`; `withTransaction` holds it for the duration
+   * of the user's callback so concurrent calls from outside `fn` queue
+   * behind the transaction instead of slipping into it.
+   *
+   * The Proxy returned by {@link createTxView} routes back to the private
+   * `_*Internal` methods directly, so calls made *through* the `tx` handle
+   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   */
+  private mutex = new AsyncMutex();
+
+  /**
    * Tracks whether this storage instance is currently inside a
    * `withTransaction` call. While true, `put`/`putBulk` route their `put`
    * events to {@link deferredPutEvents} instead of emitting immediately, so
@@ -690,6 +702,10 @@ export class PostgresTabularStorage<
    *        commit if inside a {@link withTransaction})
    */
   async put(entity: InsertType): Promise<Entity> {
+    return this.mutex.acquire(() => this._putInternal(entity));
+  }
+
+  private async _putInternal(entity: InsertType): Promise<Entity> {
     const { sql, params } = this.buildPutSql(entity);
     const result = await this.db.query(sql, params);
     const updatedEntity = this.hydrateRow(result.rows[0]);
@@ -714,6 +730,10 @@ export class PostgresTabularStorage<
    * {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
+    return this.mutex.acquire(() => this._putBulkInternal(entities));
+  }
+
+  private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
     const conn = await this.acquireConnection();
@@ -763,6 +783,51 @@ export class PostgresTabularStorage<
    * `withTransaction` call is in flight; on the supported single-connection
    * wrappers those calls would also run through the open transaction.
    */
+  /**
+   * Build a Proxy view of `this` that routes public-method names to their
+   * private `_*Internal` siblings, bypassing the mutex. Handed to the
+   * `withTransaction` callback so inner calls do not deadlock against the
+   * mutex held by the surrounding transaction.
+   */
+  private createTxView(): this {
+    const target = this;
+    const internalNameByPublic: Record<string, keyof this> = {
+      put: "_putInternal" as keyof this,
+      putBulk: "_putBulkInternal" as keyof this,
+      get: "_getInternal" as keyof this,
+      delete: "_deleteInternal" as keyof this,
+      getAll: "_getAllInternal" as keyof this,
+      deleteAll: "_deleteAllInternal" as keyof this,
+      size: "_sizeInternal" as keyof this,
+      count: "_countInternal" as keyof this,
+      getBulk: "_getBulkInternal" as keyof this,
+      deleteSearch: "_deleteSearchInternal" as keyof this,
+      query: "_queryInternal" as keyof this,
+      queryIndex: "_queryIndexInternal" as keyof this,
+    };
+    return new Proxy(target, {
+      get(t, prop, receiver) {
+        if (prop === "withTransaction") {
+          return () => {
+            throw new Error(
+              "PostgresTabularStorage.withTransaction does not support nesting. " +
+                "Use SAVEPOINT directly or refactor to a single transaction."
+            );
+          };
+        }
+        if (typeof prop === "string" && prop in internalNameByPublic) {
+          const internalKey = internalNameByPublic[prop];
+          const internal = t[internalKey] as unknown;
+          if (typeof internal === "function") {
+            return (internal as (...args: unknown[]) => unknown).bind(t);
+          }
+        }
+        const value = Reflect.get(t, prop, receiver);
+        return typeof value === "function" ? value.bind(t) : value;
+      },
+    }) as this;
+  }
+
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     const supportsConnect =
       typeof (this.db as unknown as { connect?: unknown }).connect === "function";
@@ -774,43 +839,45 @@ export class PostgresTabularStorage<
       );
     }
 
-    if (this.inTransaction) {
-      throw new Error(
-        "PostgresTabularStorage.withTransaction does not support nesting. " +
-          "Use SAVEPOINT directly or refactor to a single transaction."
-      );
-    }
+    return this.mutex.acquire(async () => {
+      if (this.inTransaction) {
+        throw new Error(
+          "PostgresTabularStorage.withTransaction does not support nesting. " +
+            "Use SAVEPOINT directly or refactor to a single transaction."
+        );
+      }
 
-    // Flag and buffer setup wrapped in try/finally so a failing BEGIN cannot
-    // leave inTransaction stuck at true forever.
-    this.inTransaction = true;
-    this.deferredPutEvents = [];
-    try {
-      await this.db.query("BEGIN");
-      let result: T;
+      // Flag and buffer setup wrapped in try/finally so a failing BEGIN cannot
+      // leave inTransaction stuck at true forever.
+      this.inTransaction = true;
+      this.deferredPutEvents = [];
       try {
-        result = await fn(this);
-        await this.db.query("COMMIT");
-      } catch (err) {
+        await this.db.query("BEGIN");
+        let result: T;
         try {
-          await this.db.query("ROLLBACK");
-        } catch {
-          // prefer the original error if rollback fails
+          result = await fn(this.createTxView());
+          await this.db.query("COMMIT");
+        } catch (err) {
+          try {
+            await this.db.query("ROLLBACK");
+          } catch {
+            // prefer the original error if rollback fails
+          }
+          throw err;
         }
-        throw err;
+        // Flush deferred events only on commit success.
+        const events = this.deferredPutEvents;
+        this.deferredPutEvents = [];
+        this.inTransaction = false;
+        for (const entity of events) {
+          this.events.emit("put", entity);
+        }
+        return result;
+      } finally {
+        this.inTransaction = false;
+        this.deferredPutEvents = [];
       }
-      // Flush deferred events only on commit success.
-      const events = this.deferredPutEvents;
-      this.deferredPutEvents = [];
-      this.inTransaction = false;
-      for (const entity of events) {
-        this.events.emit("put", entity);
-      }
-      return result;
-    } finally {
-      this.inTransaction = false;
-      this.deferredPutEvents = [];
-    }
+    });
   }
 
   /**
@@ -821,6 +888,10 @@ export class PostgresTabularStorage<
    * @emits "get" event with the key when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
+    return this.mutex.acquire(() => this._getInternal(key));
+  }
+
+  private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
     const db = this.db;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((discriminatorKey, i) => `"${discriminatorKey}" = $${i + 1}`)
@@ -852,6 +923,10 @@ export class PostgresTabularStorage<
    * @emits "delete" event with the key when successful
    */
   async delete(value: PrimaryKey | Entity): Promise<void> {
+    return this.mutex.acquire(() => this._deleteInternal(value));
+  }
+
+  private async _deleteInternal(value: PrimaryKey | Entity): Promise<void> {
     const db = this.db;
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const whereClauses = (this.primaryKeyColumns() as string[])
@@ -869,6 +944,10 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
+    return this.mutex.acquire(() => this._getAllInternal(options));
+  }
+
+  private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
     this.validateGetAllOptions(options);
     const db = this.db;
     let sql = `SELECT * FROM "${this.table}"`;
@@ -909,6 +988,10 @@ export class PostgresTabularStorage<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
+    return this.mutex.acquire(() => this._deleteAllInternal());
+  }
+
+  private async _deleteAllInternal(): Promise<void> {
     const db = this.db;
     await db.query(`DELETE FROM "${this.table}"`);
     this.events.emit("clearall");
@@ -920,6 +1003,10 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to the count of stored items
    */
   async size(): Promise<number> {
+    return this.mutex.acquire(() => this._sizeInternal());
+  }
+
+  private async _sizeInternal(): Promise<number> {
     const db = this.db;
     const result = await db.query(`SELECT COUNT(*) FROM "${this.table}"`);
     return parseInt(result.rows[0].count, 10);
@@ -929,8 +1016,12 @@ export class PostgresTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    return this.mutex.acquire(() => this._countInternal(criteria));
+  }
+
+  private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      return await this.size();
+      return await this._sizeInternal();
     }
 
     this.validateQueryParams(criteria);
@@ -950,6 +1041,10 @@ export class PostgresTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex.acquire(() => this._getBulkInternal(offset, limit));
+  }
+
+  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `"${String(col)}"`)
@@ -1021,6 +1116,10 @@ export class PostgresTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    return this.mutex.acquire(() => this._deleteSearchInternal(criteria));
+  }
+
+  private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
     if (criteriaKeys.length === 0) {
       return;
@@ -1040,6 +1139,13 @@ export class PostgresTabularStorage<
    * @returns Array of matching entities or undefined if no matches found
    */
   async query(
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
+  ): Promise<Entity[] | undefined> {
+    return this.mutex.acquire(() => this._queryInternal(criteria, options));
+  }
+
+  private async _queryInternal(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
@@ -1091,6 +1197,13 @@ export class PostgresTabularStorage<
    * @throws {CoveringIndexMissingError} when no registered index covers the query
    */
   override async queryIndex<K extends keyof Entity & string>(
+    criteria: SearchCriteria<Entity>,
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): Promise<Pick<Entity, K>[]> {
+    return this.mutex.acquire(() => this._queryIndexInternal(criteria, options));
+  }
+
+  private async _queryIndexInternal<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
