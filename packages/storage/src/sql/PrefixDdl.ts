@@ -28,17 +28,105 @@ export interface ISqlPrefixColumn {
 const SAFE_IDENTIFIER = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /**
+ * Common SQL reserved words rejected by {@link assertPrefixesSafe}. Used as
+ * unquoted identifiers these would generate hard-to-debug syntax errors,
+ * even when they pass the {@link SAFE_IDENTIFIER} regex. The list isn't
+ * exhaustive (full SQL has hundreds of reserved words across dialects), but
+ * it covers the keywords most likely to be picked as a "tenant" / "user" /
+ * "group" prefix name. Comparison is case-insensitive.
+ */
+const SQL_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  "all",
+  "alter",
+  "and",
+  "as",
+  "asc",
+  "between",
+  "by",
+  "case",
+  "check",
+  "column",
+  "constraint",
+  "create",
+  "cross",
+  "current",
+  "default",
+  "delete",
+  "desc",
+  "distinct",
+  "drop",
+  "else",
+  "end",
+  "exists",
+  "false",
+  "for",
+  "foreign",
+  "from",
+  "full",
+  "function",
+  "grant",
+  "group",
+  "having",
+  "in",
+  "index",
+  "inner",
+  "insert",
+  "into",
+  "is",
+  "join",
+  "key",
+  "left",
+  "like",
+  "limit",
+  "natural",
+  "not",
+  "null",
+  "offset",
+  "on",
+  "or",
+  "order",
+  "outer",
+  "primary",
+  "references",
+  "returning",
+  "right",
+  "select",
+  "set",
+  "table",
+  "then",
+  "true",
+  "union",
+  "unique",
+  "update",
+  "user",
+  "using",
+  "values",
+  "view",
+  "when",
+  "where",
+  "with",
+]);
+
+/**
  * Throws if any prefix column name would be unsafe to splice into DDL.
  *
- * Every helper in this module that splices `prefix.name` into SQL calls this
- * first, so storage backends don't need to remember to validate at construction
- * time — but doing so up front still surfaces invalid configurations earlier.
+ * Beyond shape-checking via {@link SAFE_IDENTIFIER}, this also rejects names
+ * that match a common SQL reserved word ({@link SQL_RESERVED_WORDS}) since
+ * they're spliced unquoted and would otherwise produce confusing syntax
+ * errors at the database level. Every helper in this module that splices
+ * `prefix.name` into SQL calls this first, so storage backends don't need to
+ * remember to validate at construction time.
  */
 export function assertPrefixesSafe(prefixes: readonly ISqlPrefixColumn[]): void {
   for (const p of prefixes) {
     if (!SAFE_IDENTIFIER.test(p.name)) {
       throw new Error(
         `Prefix column name must start with a letter and contain only letters, digits, and underscores, got: ${p.name}`
+      );
+    }
+    if (SQL_RESERVED_WORDS.has(p.name.toLowerCase())) {
+      throw new Error(
+        `Prefix column name "${p.name}" is a reserved SQL keyword. Pick a different identifier (e.g. "${p.name}_id").`
       );
     }
   }

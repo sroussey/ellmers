@@ -159,6 +159,25 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
    * Idempotent.
    */
   public async migrate(): Promise<void> {
+    // Close any prior connections before reopening — repeated migrate() /
+    // setupDatabase() calls would otherwise leak IDB handles and pin the
+    // pre-migration versions of both databases.
+    if (this.executionDb) {
+      try {
+        this.executionDb.close();
+      } catch {
+        // ignore — close is best-effort
+      }
+      this.executionDb = undefined;
+    }
+    if (this.nextAvailableDb) {
+      try {
+        this.nextAvailableDb.close();
+      } catch {
+        // ignore — close is best-effort
+      }
+      this.nextAvailableDb = undefined;
+    }
     await runIndexedDbMigrationGroups(this.getMigrations());
     this.executionDb = await openIndexedDbConnection(this.executionTableName);
     this.nextAvailableDb = await openIndexedDbConnection(this.nextAvailableTableName);
