@@ -382,12 +382,18 @@ export class SqliteTabularStorage<
   }
 
   /**
-   * Stores a key-value pair in the database
-   * @param entity - The entity to store (may be missing auto-generated keys)
-   * @returns The entity with any server-generated fields updated
-   * @emits 'put' event when successful
+   * Synchronously inserts a single entity using prepared `INSERT OR REPLACE …
+   * RETURNING *`. Extracted so {@link putBulk} can call it inside a single
+   * `db.transaction(...)` — better-sqlite3 transactions require a sync body,
+   * and every step here (key generation, statement prep, bind, RETURNING) is
+   * synchronous in our SQLite drivers.
+   *
+   * @param entity - The entity to insert (may be missing auto-generated keys)
+   * @param emitEvent - When false, suppresses the `put` event so the caller
+   *                    can defer emission until the surrounding transaction
+   *                    has actually committed.
    */
-  async put(entity: InsertType): Promise<Entity> {
+  private executePutSync(entity: InsertType, emitEvent: boolean = true): Entity {
     const db = this.db;
     let entityToInsert = entity as unknown as Entity;
 
@@ -570,88 +576,42 @@ export class SqliteTabularStorage<
       updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as ValueOptionType);
     }
 
-    this.events.emit("put", updatedEntity);
+    if (emitEvent) {
+      this.events.emit("put", updatedEntity);
+    }
     return updatedEntity;
   }
 
   /**
-   * Stores multiple key-value pairs in the database in a bulk operation
-   * @param entities - Array of entities to store (may be missing auto-generated keys)
-   * @returns Array of entities with any server-generated fields updated
-   * @emits 'put' event for each entity stored
+   * Stores a key-value pair in the database
+   * @param entity - The entity to store (may be missing auto-generated keys)
+   * @returns The entity with any server-generated fields updated
+   * @emits 'put' event when successful
+   */
+  async put(entity: InsertType): Promise<Entity> {
+    return this.executePutSync(entity);
+  }
+
+  /**
+   * Stores multiple entities in a single SQL transaction.
+   *
+   * Wrapping the per-row `INSERT OR REPLACE … RETURNING *` calls in
+   * {@link Sqlite.Database.transaction} collapses N fsyncs into one
+   * `COMMIT`, which is the dominant cost of SQLite writes — typically a
+   * 100×–1000× speedup over Promise-fanned individual inserts.
+   *
+   * `put` events are deferred until after the transaction commits so listeners
+   * never observe rows that are about to roll back.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
-    // Use individual put calls to ensure auto-generated keys are handled correctly
-    // Each put() call will handle auto-generated keys appropriately
-    return await Promise.all(entities.map((entity) => this.put(entity)));
-
-    /* Original bulk implementation - keeping for reference but using simpler approach above
-    const db = this.db;
-
-    // For SQLite bulk inserts with RETURNING, we need to do them individually
-    // or use a transaction with multiple INSERT statements
     const updatedEntities: Entity[] = [];
-
-    // Use a transaction for better performance
-    const transaction = db.transaction((entitiesToInsert: any[]) => {
-      for (const entity of entitiesToInsert) {
-        const { key, value } = this.separateKeyValueFromCombined(entity);
-        const sql = `
-          INSERT OR REPLACE INTO \`${
-            this.table
-          }\` (${this.primaryKeyColumnList()} ${this.valueColumnList() ? ", " + this.valueColumnList() : ""})
-          VALUES (
-            ${this.primaryKeyColumns()
-              .map(() => "?")
-              .join(", ")}
-            ${
-              this.valueColumns().length > 0
-                ? ", " +
-                  this.valueColumns()
-                    .map(() => "?")
-                    .join(", ")
-                : ""
-            }
-          )
-          RETURNING *
-        `;
-        const stmt = db.prepare(sql);
-        const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
-        const valueParams = this.getValueAsOrderedArray(value);
-        const params = [...primaryKeyParams, ...valueParams];
-
-        // Ensure all params are SQLite-compatible (same validation as put method)
-        for (let i = 0; i < params.length; i++) {
-          let param = params[i];
-          if (param === undefined) {
-            params[i] = null;
-          } else if (param !== null && typeof param === "object") {
-            // TypeScript now knows param is an object (not null), so we can use instanceof
-            const paramObj: object = param as object;
-            if (
-              !(paramObj instanceof Uint8Array) &&
-              (typeof Buffer === "undefined" || !(paramObj instanceof Buffer))
-            ) {
-              params[i] = JSON.stringify(paramObj) as ValueOptionType;
-            }
-          }
-        }
-
-        // @ts-ignore
-        const updatedEntity = stmt.get(...params) as Entity;
-
-        // Convert all columns according to schema
-        for (const k in this.schema.properties) {
-          // @ts-ignore
-          updatedEntity[k] = this.sqlToJsValue(k, updatedEntity[k]);
-        }
-
-        updatedEntities.push(updatedEntity);
+    const transaction = this.db.transaction((items: InsertType[]) => {
+      for (const item of items) {
+        updatedEntities.push(this.executePutSync(item, false));
       }
     });
-
     transaction(entities);
 
     for (const entity of updatedEntities) {
@@ -659,7 +619,30 @@ export class SqliteTabularStorage<
     }
 
     return updatedEntities;
-    */
+  }
+
+  /**
+   * Runs `fn` inside a single SQLite transaction. Uses raw `BEGIN` /
+   * `COMMIT` / `ROLLBACK` rather than {@link Sqlite.Database.transaction}
+   * because `fn` is async — better-sqlite3's transaction wrapper requires a
+   * synchronous body. SQLite drivers in this codebase are single-threaded, so
+   * concurrent calls will serialize at the database lock; do not nest
+   * withTransaction calls.
+   */
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    this.db.exec("BEGIN");
+    try {
+      const result = await fn(this);
+      this.db.exec("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // prefer the original error if rollback fails
+      }
+      throw err;
+    }
   }
 
   /**

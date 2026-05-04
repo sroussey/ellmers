@@ -288,6 +288,21 @@ export interface ITabularStorage<
   ): () => void;
 
   /**
+   * Runs `fn` inside a single transaction. If `fn` throws, all writes performed
+   * inside it are rolled back; otherwise they commit atomically.
+   *
+   * Backends differ in how strong the guarantee is:
+   *   - SQLite, PostgreSQL: real `BEGIN` / `COMMIT` / `ROLLBACK`.
+   *   - Supabase, in-memory, file system: best-effort. The callback runs to
+   *     completion and rejection propagates, but partial writes are not
+   *     rolled back because the backend does not expose a transaction surface.
+   *
+   * The storage instance passed to `fn` may be the same instance (`this`) or a
+   * transaction-scoped clone — callers must use the provided handle.
+   */
+  withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
+
+  /**
    * Sets up the database/storage for the repository.
    * Must be called before using any other methods (except for in-memory implementations).
    * @returns Promise that resolves when setup is complete
@@ -300,6 +315,10 @@ export interface ITabularStorage<
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-export type AnyTabularStorage = Omit<ITabularStorage<any, any, any, any, any>, "queryIndex"> & {
+export type AnyTabularStorage = Omit<
+  ITabularStorage<any, any, any, any, any>,
+  "queryIndex" | "withTransaction"
+> & {
   queryIndex(criteria: any, options: any): Promise<any[]>;
+  withTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T>;
 };

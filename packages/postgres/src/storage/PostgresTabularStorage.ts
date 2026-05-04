@@ -494,16 +494,13 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Stores or updates a row in the database.
-   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
-   *
-   * @param entity - The entity to store (may be missing auto-generated keys)
-   * @returns The entity with any server-generated fields updated
-   * @emits "put" event with the updated entity when successful
+   * Builds the parameterized `INSERT … ON CONFLICT … RETURNING *` SQL for a
+   * single entity, applying the auto-generated-key policy. Extracted so
+   * {@link put} and {@link putBulk} can share the column/parameter logic
+   * while routing the actual query through different connections (the pool
+   * vs. a transaction-bound client).
    */
-  async put(entity: InsertType): Promise<Entity> {
-    const db = this.db;
-
+  private buildPutSql(entity: InsertType): { sql: string; params: ValueOptionType[] } {
     // Determine which columns to include in INSERT
     const columnsToInsert: string[] = [];
     const paramsToInsert: ValueOptionType[] = [];
@@ -568,7 +565,7 @@ export class PostgresTabularStorage<
       valueColumns.length > 0
         ? `
       ON CONFLICT (${this.primaryKeyColumnList('"')}) DO UPDATE
-      SET 
+      SET
       ${(valueColumns as string[])
         .map((col) => {
           const colIdx = columnsToInsert.indexOf(String(col));
@@ -585,105 +582,141 @@ export class PostgresTabularStorage<
       RETURNING *
     `;
 
-    const params = paramsToInsert;
-    const result = await db.query(sql, params);
+    return { sql, params: paramsToInsert };
+  }
 
-    const updatedEntity = result.rows[0] as Entity;
-    // Convert blob fields from SQL to JS values
-    const updatedRecord = updatedEntity as Record<string, unknown>;
+  /** Hydrate a row returned by Postgres back into entity-shaped JS values. */
+  private hydrateRow(row: unknown): Entity {
+    const entity = row as Entity;
+    const record = entity as Record<string, unknown>;
     for (const key in this.schema.properties) {
-      updatedRecord[key] = this.sqlToJsValue(key, updatedRecord[key] as ValueOptionType);
+      record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
     }
+    return entity;
+  }
 
+  /**
+   * `pg.Pool#connect()` is only present on real `pg` pools. PGlite-style
+   * single-connection wrappers serialize all queries through one underlying
+   * session, so `BEGIN`/`COMMIT` issued via `this.db.query` is already
+   * transaction-safe for them — we only need a dedicated client when a true
+   * multi-connection pool is in play.
+   */
+  private async acquireConnection(): Promise<{
+    query: Pool["query"];
+    release: () => void;
+  }> {
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (!supportsConnect) {
+      return {
+        query: this.db.query.bind(this.db) as Pool["query"],
+        release: () => {},
+      };
+    }
+    return await (
+      this.db as unknown as {
+        connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
+      }
+    ).connect();
+  }
+
+  /**
+   * Stores or updates a row in the database.
+   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
+   *
+   * @param entity - The entity to store (may be missing auto-generated keys)
+   * @returns The entity with any server-generated fields updated
+   * @emits "put" event with the updated entity when successful
+   */
+  async put(entity: InsertType): Promise<Entity> {
+    const { sql, params } = this.buildPutSql(entity);
+    const result = await this.db.query(sql, params);
+    const updatedEntity = this.hydrateRow(result.rows[0]);
     this.events.emit("put", updatedEntity);
     return updatedEntity;
   }
 
   /**
-   * Stores multiple rows in the database in a bulk operation.
-   * Uses individual put calls to ensure auto-generated keys are handled correctly.
+   * Stores multiple rows atomically inside a single `BEGIN` / `COMMIT`. All
+   * inserts share one connection, which (a) reduces pool churn vs. a
+   * `Promise.all` fan-out, (b) gives all-or-nothing semantics, and (c) lets
+   * Postgres group the writes into a single commit with one fsync rather than
+   * one per row.
    *
-   * @param entities - Array of entities to store (may be missing auto-generated keys)
-   * @returns Array of entities with any server-generated fields updated
-   * @emits "put" event for each entity stored
+   * Per-row UPSERT — instead of a multi-VALUES insert — keeps the
+   * auto-generated key policy and `RETURNING *` shape identical to {@link put}
+   * and stays correct when a batch mixes rows that include the auto-gen key
+   * with rows that omit it.
+   *
+   * `put` events are deferred until after `COMMIT` so listeners do not see
+   * rows that are about to roll back.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
-    // Use individual put calls to ensure auto-generated keys are handled correctly
-    return await Promise.all(entities.map((entity) => this.put(entity)));
-
-    /* Original bulk implementation - keeping for reference but using simpler approach above
-    if (entities.length === 0) return [];
-
-    const db = this.db;
-
-    // Prepare all parameters and build VALUES clause
-    const allParams: any[] = [];
-    const valuesPerRow = this.primaryKeyColumns().length + this.valueColumns().length;
-    let paramIndex = 1;
-
-    // Build the VALUES clauses - one for each entity
-    const valuesClauses = entities
-      .map((entity) => {
-        const { key, value } = this.separateKeyValueFromCombined(entity);
-        const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
-        const valueParams = this.getValueAsOrderedArray(value);
-        const entityParams = [...primaryKeyParams, ...valueParams];
-
-        // Add all parameters for this entity to the flat array
-        allParams.push(...entityParams);
-
-        // Create placeholders for this row using PostgreSQL $1, $2, etc.
-        const placeholders = Array(valuesPerRow)
-          .fill(0)
-          .map(() => `$${paramIndex++}`)
-          .join(", ");
-        return `(${placeholders})`;
-      })
-      .join(", ");
-
-    const sql = `
-      INSERT INTO "${this.table}" (
-        ${this.primaryKeyColumnList('"')} ${this.valueColumnList() ? ", " + this.valueColumnList('"') : ""}
-      )
-      VALUES ${valuesClauses}
-      ${
-        !this.valueColumnList()
-          ? ""
-          : `
-      ON CONFLICT (${this.primaryKeyColumnList('"')}) DO UPDATE
-      SET 
-      ${(this.valueColumns() as string[])
-        .map((col) => {
-          // For the UPDATE part, we need to reference the excluded values
-          return `"${col}" = EXCLUDED."${col}"`;
-        })
-        .join(", ")}
-      `
+    const conn = await this.acquireConnection();
+    const updatedEntities: Entity[] = [];
+    try {
+      await conn.query("BEGIN");
+      try {
+        for (const entity of entities) {
+          const { sql, params } = this.buildPutSql(entity);
+          const result = await conn.query(sql, params);
+          updatedEntities.push(this.hydrateRow(result.rows[0]));
+        }
+        await conn.query("COMMIT");
+      } catch (err) {
+        try {
+          await conn.query("ROLLBACK");
+        } catch {
+          // prefer the original error if rollback fails
+        }
+        throw err;
       }
-      RETURNING *
-    `;
+    } finally {
+      conn.release();
+    }
 
-    const result = await db.query(sql, allParams);
-
-    const updatedEntities = result.rows.map((row) => {
-      const entity = row as Entity;
-      // Convert blob fields from SQL to JS values
-      for (const key in this.schema.properties) {
-        // @ts-ignore
-        entity[key] = this.sqlToJsValue(key, entity[key]);
-      }
-      return entity;
-    });
-
-    // Emit events for each entity
     for (const entity of updatedEntities) {
       this.events.emit("put", entity);
     }
 
     return updatedEntities;
-    */
+  }
+
+  /**
+   * Runs `fn` inside a `BEGIN` / `COMMIT` on `this.db`. This is only safe
+   * when `this.db` is a single-connection wrapper (PGLitePool, raw PGlite) —
+   * see the comment on {@link acquireConnection}. With a real `pg.Pool`,
+   * subsequent `this.db.query` calls inside `fn` could be dispatched to
+   * different sessions and the surrounding `BEGIN`/`COMMIT` would not bind
+   * them together, so we throw rather than provide a false guarantee.
+   */
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (supportsConnect) {
+      throw new Error(
+        "PostgresTabularStorage.withTransaction is not supported on a multi-connection pg.Pool, " +
+          "because methods on this storage dispatch each query through the pool independently. " +
+          "Use putBulk for atomic bulk inserts, or wrap the underlying pool yourself."
+      );
+    }
+
+    await this.db.query("BEGIN");
+    try {
+      const result = await fn(this);
+      await this.db.query("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        await this.db.query("ROLLBACK");
+      } catch {
+        // prefer the original error if rollback fails
+      }
+      throw err;
+    }
   }
 
   /**

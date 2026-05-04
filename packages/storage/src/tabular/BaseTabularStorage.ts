@@ -728,6 +728,15 @@ export abstract class BaseTabularStorage<
   }
 
   /**
+   * Runs `fn` inside a transaction. The default implementation provides no
+   * rollback semantics — it simply invokes `fn(this)`. Concrete subclasses
+   * with native transaction support (SQLite, PostgreSQL) override this.
+   */
+  async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    return await fn(this);
+  }
+
+  /**
    * Sets up the database/storage for the repository.
    * Must be called before using any other methods (except for in-memory implementations).
    * Default implementation is a no-op - override in subclasses that need setup.

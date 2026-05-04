@@ -136,6 +136,12 @@ export class TelemetryTabularStorage<
     return this.inner.subscribeToChanges(callback, options);
   }
 
+  withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    return traced("workglow.storage.tabular.withTransaction", this.storageName, () =>
+      this.inner.withTransaction(() => fn(this))
+    );
+  }
+
   setupDatabase(): Promise<void> {
     return this.inner.setupDatabase();
   }

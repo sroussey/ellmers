@@ -226,6 +226,10 @@ export class ScopedTabularStorage<
     }, options);
   }
 
+  withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    return this.inner.withTransaction(() => fn(this));
+  }
+
   // Lifecycle — no-op for shared storage
   async setupDatabase(): Promise<void> {
     // No-op: shared storage lifecycle is managed externally
