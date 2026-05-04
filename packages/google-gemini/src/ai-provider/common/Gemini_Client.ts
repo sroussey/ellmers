@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { loadProviderSdk, resolveApiKey } from "@workglow/ai-provider/common";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 let _sdk: typeof import("@google/generative-ai") | undefined;
 
 export async function loadGeminiSDK() {
   if (!_sdk) {
-    try {
-      _sdk = await import("@google/generative-ai");
-    } catch {
-      throw new Error(
-        "@google/generative-ai is required for Gemini tasks. Install it with: bun add @google/generative-ai"
-      );
-    }
+    _sdk = await loadProviderSdk<typeof import("@google/generative-ai")>(
+      "@google/generative-ai",
+      "Gemini"
+    );
   }
   return _sdk.GoogleGenerativeAI;
 }
@@ -30,18 +28,11 @@ interface ResolvedProviderConfig {
 
 export function getApiKey(model: GeminiModelConfig | undefined): string {
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
-  const apiKey =
-    config?.credential_key ||
-    config?.api_key ||
-    (typeof process !== "undefined"
-      ? process.env?.GOOGLE_API_KEY || process.env?.GEMINI_API_KEY
-      : undefined);
-  if (!apiKey) {
-    throw new Error(
-      "Missing Google API key: set provider_config.credential_key or the GOOGLE_API_KEY / GEMINI_API_KEY environment variable."
-    );
-  }
-  return apiKey;
+  return resolveApiKey({
+    config,
+    envVar: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+    providerLabel: "Google",
+  });
 }
 
 export function getModelName(model: GeminiModelConfig | undefined): string {

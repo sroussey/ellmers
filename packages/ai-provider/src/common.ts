@@ -15,3 +15,6 @@ export * from "./common/ToolCallParsers";
 export * from "./common/HfModelSearch";
 export * from "./common/PipelineTaskMapping";
 export * from "./common/imageOutputHelpers";
+export * from "./common/BaseCloudProvider";
+export * from "./common/CloudProviderClient";
+export * from "./common/OpenAIShapedChat";

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { loadProviderSdk, resolveApiKey } from "@workglow/ai-provider/common";
 import type { InferenceProviderOrPolicy } from "@huggingface/inference";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
@@ -11,13 +12,10 @@ let _sdk: typeof import("@huggingface/inference") | undefined;
 
 export async function loadHfInferenceSDK() {
   if (!_sdk) {
-    try {
-      _sdk = await import("@huggingface/inference");
-    } catch {
-      throw new Error(
-        "@huggingface/inference is required for Hugging Face Inference tasks. Install it with: bun add @huggingface/inference"
-      );
-    }
+    _sdk = await loadProviderSdk<typeof import("@huggingface/inference")>(
+      "@huggingface/inference",
+      "Hugging Face Inference"
+    );
   }
   return _sdk;
 }
@@ -32,15 +30,11 @@ interface ResolvedProviderConfig {
 export async function getClient(model: HfInferenceModelConfig | undefined) {
   const sdk = await loadHfInferenceSDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
-  const apiKey =
-    config?.credential_key ||
-    config?.api_key ||
-    (typeof process !== "undefined" ? process.env?.HF_TOKEN : undefined);
-  if (!apiKey) {
-    throw new Error(
-      "Missing Hugging Face API key: set provider_config.credential_key or the HF_TOKEN environment variable."
-    );
-  }
+  const apiKey = resolveApiKey({
+    config,
+    envVar: "HF_TOKEN",
+    providerLabel: "Hugging Face",
+  });
   try {
     return new sdk.InferenceClient(apiKey);
   } catch (err) {

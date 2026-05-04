@@ -5,36 +5,30 @@
  */
 
 import { AiProvider } from "@workglow/ai";
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { OPENAI } from "./common/OpenAI_Constants";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
 
+const OPENAI_QUEUED_TASK_TYPES = [
+  "TextGenerationTask",
+  "TextEmbeddingTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "CountTokensTask",
+  "ModelInfoTask",
+  "StructuredGenerationTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+  "ImageGenerateTask",
+  "ImageEditTask",
+] as const;
+
 /** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class OpenAiQueuedProvider extends AiProvider<OpenAiModelConfig> {
-  readonly name = OPENAI;
-  readonly displayName = "OpenAI";
-  readonly isLocal = false;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "CountTokensTask",
-    "ModelInfoTask",
-    "StructuredGenerationTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-    "ImageGenerateTask",
-    "ImageEditTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, OpenAiModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, OpenAiModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, OpenAiModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class OpenAiQueuedProvider extends createCloudProviderClass<
+  OpenAiModelConfig,
+  typeof OPENAI_QUEUED_TASK_TYPES
+>(AiProvider, {
+  name: OPENAI,
+  displayName: "OpenAI",
+  taskTypes: OPENAI_QUEUED_TASK_TYPES,
+}) {}

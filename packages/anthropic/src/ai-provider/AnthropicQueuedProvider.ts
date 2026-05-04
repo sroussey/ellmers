@@ -5,33 +5,27 @@
  */
 
 import { AiProvider } from "@workglow/ai";
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { ANTHROPIC } from "./common/Anthropic_Constants";
 import type { AnthropicModelConfig } from "./common/Anthropic_ModelSchema";
 
+const ANTHROPIC_TASK_TYPES = [
+  "CountTokensTask",
+  "ModelInfoTask",
+  "TextGenerationTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "StructuredGenerationTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+] as const;
+
 /** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class AnthropicQueuedProvider extends AiProvider<AnthropicModelConfig> {
-  readonly name = ANTHROPIC;
-  readonly displayName = "Anthropic";
-  readonly isLocal = false;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "CountTokensTask",
-    "ModelInfoTask",
-    "TextGenerationTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "StructuredGenerationTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, AnthropicModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, AnthropicModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, AnthropicModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class AnthropicQueuedProvider extends createCloudProviderClass<
+  AnthropicModelConfig,
+  typeof ANTHROPIC_TASK_TYPES
+>(AiProvider, {
+  name: ANTHROPIC,
+  displayName: "Anthropic",
+  taskTypes: ANTHROPIC_TASK_TYPES,
+}) {}
