@@ -56,11 +56,9 @@ export const MAX_CURSOR_LENGTH = 8 * 1024;
  * tightened in future versions (signed, length-limited, etc.).
  */
 export function encodeCursor(payload: CursorPayload): Cursor {
-  if (payload.n.length !== payload.c.length) {
-    throw new Error(
-      `Cursor names/values arity mismatch: ${payload.n.length} vs ${payload.c.length}`
-    );
-  }
+  // Caller is trusted (we construct payloads internally); the n/c arity
+  // mismatch check lives on the decode side, where cursors come from the
+  // wire and must be validated before use.
   const json = JSON.stringify(payload);
   let base64: string;
   if (typeof Buffer !== "undefined") {

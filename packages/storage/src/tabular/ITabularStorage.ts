@@ -115,6 +115,21 @@ export interface QueryOptions<Entity> {
    * deleted between page fetches (entries can be skipped or duplicated).
    * Use {@link ITabularStorage.getPage} / {@link ITabularStorage.queryPage}
    * with a {@link Cursor} instead.
+   *
+   * @example
+   * ```ts
+   * // Before (offset paging):
+   * const rows = await storage.getAll({ orderBy, limit: 50, offset: 100 });
+   *
+   * // After (cursor paging — also stable under concurrent writes):
+   * let cursor: Cursor | undefined;
+   * for (let i = 0; i < 3; i++) {
+   *   const page = await storage.getPage({ orderBy, limit: 50, cursor });
+   *   cursor = page.nextCursor;
+   *   if (!cursor) break;
+   * }
+   * const rows = await storage.getPage({ orderBy, limit: 50, cursor });
+   * ```
    */
   readonly offset?: number;
 }
@@ -154,9 +169,29 @@ export interface PageRequest<Entity> {
  * When `nextCursor` is present, callers should pass it back via
  * {@link PageRequest.cursor} to fetch the next page.
  *
- * Note: a non-undefined `nextCursor` does not guarantee additional rows
- * exist — callers must be prepared for the next page to be empty if rows
- * matching the cursor were deleted in the meantime.
+ * **Termination contract.** A defined `nextCursor` does NOT guarantee
+ * additional rows exist — concurrent deletes can produce an empty page
+ * mid-iteration even though `nextCursor` was set. Loops MUST therefore
+ * terminate on either condition, not just on `nextCursor`:
+ *
+ * ```ts
+ * // CORRECT — terminates on both `nextCursor` and empty `items`:
+ * let cursor: Cursor | undefined;
+ * do {
+ *   const page = await storage.getPage({ limit: 100, cursor });
+ *   for (const row of page.items) handle(row);
+ *   if (page.items.length === 0) break;
+ *   cursor = page.nextCursor;
+ * } while (cursor);
+ *
+ * // WRONG — can spin forever if a concurrent delete empties the next page
+ * // while leaving rows further along the cursor that get deleted in turn:
+ * while (page.nextCursor) { page = await storage.getPage({ cursor: page.nextCursor }); }
+ * ```
+ *
+ * The bundled async generators ({@link ITabularStorage.records},
+ * {@link ITabularStorage.pages}) honour this contract; reach for them
+ * instead of writing the loop manually.
  */
 export interface Page<Entity> {
   readonly items: ReadonlyArray<Entity>;

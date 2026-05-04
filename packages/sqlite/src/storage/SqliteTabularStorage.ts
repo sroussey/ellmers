@@ -846,6 +846,10 @@ export class SqliteTabularStorage<
   private sqliteDialect() {
     return {
       quote: "`",
+      // SQLite uses positional `?` placeholders so the index is intentionally
+      // unused. If a future contributor needs numbered placeholders (SQLite
+      // does support `?N`), update both the placeholder and any callers
+      // sharing the running paramIdx counter.
       placeholder: (_index: number) => "?",
       buildSearchWhere: (
         criteria: SearchCriteria<Entity>,

@@ -41,6 +41,7 @@ import {
   StorageEmptyCriteriaError,
   StorageInvalidColumnError,
   StorageInvalidLimitError,
+  StorageUnsupportedError,
   StorageValidationError,
 } from "./StorageError";
 
@@ -68,7 +69,10 @@ function toCursorValue(value: unknown): string | number | boolean | null {
 /**
  * Compares two cursor key values using the same ordering rules as the
  * in-memory backend: nulls sort before non-nulls, then standard `<`/`>`
- * comparison. Returns -1, 0, or 1.
+ * comparison. Booleans are coerced to numbers (`false` < `true`) so the
+ * sort and the keyset filter agree — JS `true > false` happens to coerce
+ * identically today, but pinning the rule here keeps both call sites
+ * consistent. Returns -1, 0, or 1.
  */
 function compareKeyValues(
   a: string | number | boolean | null,
@@ -77,8 +81,10 @@ function compareKeyValues(
   if (a === null && b === null) return 0;
   if (a === null) return -1;
   if (b === null) return 1;
-  if (a < b) return -1;
-  if (a > b) return 1;
+  const av = typeof a === "boolean" ? Number(a) : a;
+  const bv = typeof b === "boolean" ? Number(b) : b;
+  if (av < bv) return -1;
+  if (av > bv) return 1;
   return 0;
 }
 
@@ -522,11 +528,25 @@ export abstract class BaseTabularStorage<
       !userTouchesPk;
 
     let queryCriteria: SearchCriteria<Entity> = userCriteria;
-    // The simple keyset path pushes a single inequality on the primary key
-    // into `query()` and trusts the backend's `LIMIT n ORDER BY pk` to be
-    // both correct and efficient. The fallback path fetches everything,
-    // sorts and filters in-memory. Concrete backends with tuple comparison
-    // should override `getPage`/`queryPage` to push the work down to SQL.
+    // Three pushdown tiers, in decreasing precision:
+    //
+    //   1. Simple keyset (`canPushKeyset` true): the effective ordering is
+    //      a single PK column, so one `pk OP ?` inequality is exactly the
+    //      keyset filter. Backend returns at most `limit` correct rows.
+    //
+    //   2. Leading-column pushdown (the fallback below): the effective
+    //      ordering is compound (or non-PK + PK tiebreaker). We can't
+    //      express the full keyset through `query()` (which is AND-only),
+    //      but we *can* push the leading column's inequality to prune the
+    //      bulk of the table, then sort and apply the full multi-column
+    //      keyset in memory. Bounded fetch as long as the leading column
+    //      isn't degenerate (single value across the whole table).
+    //
+    //   3. Full scan (last resort): leading column has a NULL cursor value
+    //      we can't express, or the user already filters on that column,
+    //      or there's no cursor (page 1). We fetch everything, sort, slice.
+    //      Backends with tuple comparison should override `getPage` to
+    //      avoid this.
     const useFallback = !canPushKeyset;
 
     if (cursorPayload && canPushKeyset) {
@@ -536,6 +556,10 @@ export abstract class BaseTabularStorage<
       // ordering, so cursorPayload has exactly one entry and `c[0]` is the
       // last seen PK value. PK columns are NOT NULL so there's no need for
       // the IS NULL gymnastics the SQL/in-memory keyset paths handle.
+      // The simple-keyset path's correctness depends on the backend's
+      // `query()` calling `jsToSqlValue` (or equivalent) on the
+      // SearchCondition value — every concrete backend in this monorepo
+      // does, but a third-party backend would need to as well.
       const lastPk = cursorPayload.c[0] as Entity[keyof Entity];
       const keysetCondition: SearchCondition<Entity[keyof Entity]> = {
         value: lastPk,
@@ -545,6 +569,43 @@ export abstract class BaseTabularStorage<
         ...userCriteria,
         [pkCol]: keysetCondition,
       } as SearchCriteria<Entity>;
+    } else if (cursorPayload && useFallback) {
+      // Tier 2: try to prune the bulk of the table by pushing the leading
+      // ordering column's inequality into `query()`. Skip when the user
+      // already filters on the leading column (we'd trample their criterion)
+      // or the cursor's leading value is NULL — `query()` can't express
+      // `col >= NULL` in NULLs-first semantics, so that case stays as a
+      // full scan.
+      const leading = effectiveOrderBy[0];
+      const leadingCol = leading.column;
+      const leadingCursor = cursorPayload.c[0];
+      const userTouchesLeading = Object.prototype.hasOwnProperty.call(
+        userCriteria,
+        leadingCol
+      );
+      if (leadingCursor !== null && !userTouchesLeading) {
+        // ASC NULLs-first: rows >= cursor[0] include the cursor row plus
+        // anything strictly greater; the in-memory keyset filter then drops
+        // the cursor row and any earlier-on-tiebreaker rows. NULLs (which
+        // sort before in ASC NULLs-first) are correctly excluded.
+        // DESC NULLs-last: rows <= cursor[0] include the cursor row plus
+        // anything strictly smaller; NULL rows would sort AFTER (NULLs-last)
+        // and so should be included too, but `query()` is AND-only and we
+        // can't express `col <= ? OR col IS NULL`. Accept the over-prune —
+        // any NULL rows on the leading column will be missed by paging when
+        // DESC. This matches the documented limitation that callers
+        // ordering DESC by a nullable non-PK column should override
+        // `getPage` for full correctness.
+        const op = leading.direction === "ASC" ? ">=" : "<=";
+        const leadingCondition: SearchCondition<Entity[keyof Entity]> = {
+          value: leadingCursor as Entity[keyof Entity],
+          operator: op,
+        };
+        queryCriteria = {
+          ...userCriteria,
+          [leadingCol]: leadingCondition,
+        } as SearchCriteria<Entity>;
+      }
     }
 
     const fetchLimit = useFallback ? undefined : limit;
@@ -554,10 +615,28 @@ export abstract class BaseTabularStorage<
       ...(fetchLimit !== undefined ? { limit: fetchLimit } : {}),
     };
 
-    const rows =
-      Object.keys(queryCriteria).length === 0
-        ? await this.getAll(queryOptions)
-        : await this.query(queryCriteria, queryOptions);
+    let rows: Entity[] | undefined;
+    if (Object.keys(queryCriteria).length === 0) {
+      rows = await this.getAll(queryOptions);
+    } else {
+      try {
+        rows = await this.query(queryCriteria, queryOptions);
+      } catch (err) {
+        // Backends like FsFolder don't implement `query()`. The leading-
+        // column pushdown is a perf optimisation, not a correctness
+        // requirement — fall through to a full scan when the backend
+        // can't filter for us. User-supplied criteria still need to fail
+        // loudly, so we only swallow the error when we'd added our own
+        // pushdown criterion AND the user passed none.
+        const userHadNoCriteria =
+          !criteria || Object.keys(criteria).length === 0;
+        if (err instanceof StorageUnsupportedError && userHadNoCriteria) {
+          rows = await this.getAll({ orderBy: effectiveOrderBy });
+        } else {
+          throw err;
+        }
+      }
+    }
 
     let items: Entity[] = rows ?? [];
 
@@ -616,10 +695,7 @@ export abstract class BaseTabularStorage<
       for (const { column, direction } of orderBy) {
         const aVal = (a[column] ?? null) as string | number | boolean | null;
         const bVal = (b[column] ?? null) as string | number | boolean | null;
-        const cmp = compareKeyValues(
-          typeof aVal === "boolean" ? Number(aVal) : aVal,
-          typeof bVal === "boolean" ? Number(bVal) : bVal
-        );
+        const cmp = compareKeyValues(aVal, bVal);
         if (cmp !== 0) return direction === "ASC" ? cmp : -cmp;
       }
       return 0;

@@ -1766,6 +1766,46 @@ export function runGenericTabularStorageTests(
         await expect(repository.getPage({ limit: -1 })).rejects.toThrow();
         await expect(repository.getPage({ limit: 1.5 })).rejects.toThrow();
       });
+
+      it("round-trips cursor values through SQL/PostgREST escaping for thorny strings", async () => {
+        // Stresses the encoding/escaping pipeline end-to-end. SQL backends
+        // bind values as parameters so quoting is trivial there; the value
+        // for Supabase travels through PostgREST's `.or()` filter grammar
+        // (which uses `,`, `.`, `(`, `)`, `:`, `"` as syntax delimiters)
+        // and back through the mock parser's unescape. Anything that
+        // breaks that round-trip surfaces as a missing or duplicate row.
+        const now = new Date().toISOString();
+        const thornyIds = [
+          "id,with,commas",
+          'id"with"quotes',
+          "id\\with\\backslashes",
+          "id.with.periods",
+          "id(with)parens",
+          'id"and\\both,plus.everything(else)',
+        ];
+        const rows = thornyIds.map((id) => ({
+          id,
+          category: "c",
+          subcategory: "s",
+          value: 1,
+          createdAt: now,
+          updatedAt: now,
+        }));
+        await repository.putBulk(rows);
+
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({ limit: 2, cursor });
+          for (const row of page.items) seen.push(row.id);
+          if (page.items.length === 0) break;
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        // Order is by primary key (id) ASC; the exact ordering depends on
+        // string collation but every row must appear exactly once.
+        expect(seen.sort()).toEqual([...thornyIds].sort());
+      });
     });
   }
 
