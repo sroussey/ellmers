@@ -1,5 +1,13 @@
 # @workglow/test
 
+## 0.2.29
+
+### Refactors
+
+#### ai-provider
+
+- enhance model search functionality
+
 ## 0.2.28
 
 ### Refactors
