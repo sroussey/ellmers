@@ -131,7 +131,11 @@ interface ToolCallAccumulatorEntry {
  *  - `text-delta` for each non-empty `delta.content`.
  *  - `object-delta` (single-element array) per tool-call delta with the latest
  *    parsed input. The downstream `StreamProcessor` upserts by `id`.
- *  - `finish` with `{}` once the stream ends — the consumer accumulates.
+ *  - `finish` with structural defaults (`{ text: "", toolCalls: [] }`) once the
+ *    stream ends. The defaults are minimal scaffolding so the final output
+ *    always satisfies {@link ToolCallingTaskOutput} even when the model
+ *    streams only `tool_calls` (no `content` deltas) — the consumer's
+ *    `StreamProcessor` overrides any port for which deltas were accumulated.
  */
 export async function* accumulateOpenAIStream(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -176,5 +180,8 @@ export async function* accumulateOpenAIStream(
     }
   }
 
-  yield { type: "finish", data: {} as ToolCallingTaskOutput };
+  yield {
+    type: "finish",
+    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
+  };
 }
