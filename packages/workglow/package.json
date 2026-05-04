@@ -124,6 +124,14 @@
       "types": "./dist/tf-mediapipe-runtime.d.ts",
       "import": "./dist/tf-mediapipe-runtime.js"
     },
+    "./chrome-ai": {
+      "types": "./dist/chrome-ai.d.ts",
+      "import": "./dist/chrome-ai.js"
+    },
+    "./chrome-ai/runtime": {
+      "types": "./dist/chrome-ai-runtime.d.ts",
+      "import": "./dist/chrome-ai-runtime.js"
+    },
     "./worker": {
       "react-native": {
         "types": "./dist/worker-browser.d.ts",
@@ -158,7 +166,7 @@
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/huggingface-inference": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",
-    "@workglow/chrome": "workspace:*",
+    "@workglow/chrome-ai": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/postgres": "workspace:*",
