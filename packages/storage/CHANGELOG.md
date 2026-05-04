@@ -1,5 +1,42 @@
 # @workglow/storage
 
+## 0.2.28
+
+### Refactors
+
+#### storage
+
+- break temporary storage→job-queue cycle now that vendor queue impls are out
+
+#### indexeddb
+
+- move IndexedDB backends from @workglow/storage to @workglow/indexeddb
+
+#### supabase
+
+- move Supabase backends from @workglow/storage to @workglow/supabase
+
+#### sqlite
+
+- move SQLite backends from @workglow/storage to @workglow/sqlite
+
+#### postgres
+
+- move Postgres backends from @workglow/storage to @workglow/postgres
+
+#### util
+
+- consolidate traced helper into @workglow/util/telemetry
+
+#### job-queue
+
+- move IRateLimiterStorage + InMemory from @workglow/storage
+- move IQueueStorage + InMemory + Telemetry from @workglow/storage
+
+### Chores
+
+- code-review cleanup
+
 ## 0.2.27
 
 ### Features

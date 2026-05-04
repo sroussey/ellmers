@@ -1,5 +1,21 @@
 # @workglow/web
 
+## 0.2.28
+
+### Bug Fixes
+
+- examples imports for moved symbols
+
+### Refactors
+
+#### tf-mediapipe
+
+- move provider from @workglow/ai-provider to @workglow/tf-mediapipe
+
+#### huggingface-transformers
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-transformers
+
 ## 0.2.27
 
 ## 0.2.26

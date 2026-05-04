@@ -20,8 +20,9 @@ export interface BrowserTaskDeps {
   readonly profileStorage: IBrowserProfileStorage;
 }
 
-export const BROWSER_CONTROL_TASK_DEPS =
-  createServiceToken<BrowserTaskDeps>("@workglow/browser-control");
+export const BROWSER_CONTROL_TASK_DEPS = createServiceToken<BrowserTaskDeps>(
+  "@workglow/browser-control"
+);
 
 export function registerBrowserDeps(deps: BrowserTaskDeps): void {
   globalServiceRegistry.registerInstance(BROWSER_CONTROL_TASK_DEPS, deps);

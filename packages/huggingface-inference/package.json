@@ -2,7 +2,7 @@
   "name": "@workglow/huggingface-inference",
   "type": "module",
   "sideEffects": false,
-  "version": "0.2.27",
+  "version": "0.2.28",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
@@ -50,6 +50,11 @@
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
-  "files": ["dist", "src/**/*.md"],
-  "publishConfig": { "access": "public" }
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
