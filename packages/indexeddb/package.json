@@ -58,6 +58,17 @@
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
   },
+  "peerDependenciesMeta": {
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
+  },
   "devDependencies": {
     "fake-indexeddb": "^6.2.4",
     "@workglow/job-queue": "workspace:*",

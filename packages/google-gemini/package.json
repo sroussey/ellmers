@@ -42,6 +42,26 @@
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
+  "peerDependenciesMeta": {
+    "@workglow/ai": {
+      "optional": false
+    },
+    "@workglow/ai-provider": {
+      "optional": false
+    },
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/task-graph": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
+  },
   "devDependencies": {
     "@workglow/ai": "workspace:*",
     "@workglow/ai-provider": "workspace:*",

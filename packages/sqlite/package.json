@@ -57,15 +57,33 @@
       "import": "./dist/job-queue/node.js"
     }
   },
-  "dependencies": {
+  "peerDependencies": {
     "better-sqlite3": "catalog:",
     "@sqlite.org/sqlite-wasm": "catalog:",
-    "@sqliteai/sqlite-vector": "^0.9.90"
-  },
-  "peerDependencies": {
+    "@sqliteai/sqlite-vector": "^0.9.90",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "@sqlite.org/sqlite-wasm": {
+      "optional": true
+    },
+    "@sqliteai/sqlite-vector": {
+      "optional": true
+    },
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -53,14 +53,29 @@
       "import": "./dist/job-queue/node.js"
     }
   },
-  "dependencies": {
-    "@electric-sql/pglite": "catalog:",
-    "pg": "catalog:"
-  },
   "peerDependencies": {
+    "@electric-sql/pglite": "catalog:",
+    "pg": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
   },
   "devDependencies": {
     "@types/pg": "^8.18.0",
