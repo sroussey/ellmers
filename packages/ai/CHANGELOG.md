@@ -1,5 +1,17 @@
 # @workglow/ai
 
+## 0.2.30
+
+### Refactors
+
+#### ai
+
+- update task categories from "Vector Store" to "Document"
+
+### Chores
+
+- update docs to reflect current code
+
 ## 0.2.29
 
 ## 0.2.28

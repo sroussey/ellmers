@@ -1,5 +1,11 @@
 # @workglow/job-queue
 
+## 0.2.30
+
+### Chores
+
+- update docs to reflect current code
+
 ## 0.2.29
 
 ## 0.2.28

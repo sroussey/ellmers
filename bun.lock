@@ -34,7 +34,7 @@
     },
     "examples/cli": {
       "name": "@workglow/cli",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "bin": "./dist/workglow.js",
       "dependencies": {
         "@anthropic-ai/sdk": "catalog:",
@@ -74,7 +74,7 @@
     },
     "examples/web": {
       "name": "@workglow/web",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@codemirror/lang-json": "^6.0.2",
         "@huggingface/transformers": "catalog:",
@@ -117,7 +117,7 @@
     },
     "packages/ai": {
       "name": "@workglow/ai",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/job-queue": "workspace:*",
         "@workglow/knowledge-base": "workspace:*",
@@ -135,7 +135,7 @@
     },
     "packages/ai-provider": {
       "name": "@workglow/ai-provider",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/ai": "workspace:*",
         "@workglow/job-queue": "workspace:*",
@@ -153,7 +153,7 @@
     },
     "packages/anthropic": {
       "name": "@workglow/anthropic",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@anthropic-ai/sdk": "catalog:",
       },
@@ -176,7 +176,7 @@
     },
     "packages/browser-control": {
       "name": "@workglow/browser-control",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
@@ -197,7 +197,7 @@
     },
     "packages/chrome-ai": {
       "name": "@workglow/chrome-ai",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/ai": "workspace:*",
         "@workglow/ai-provider": "workspace:*",
@@ -217,7 +217,7 @@
     },
     "packages/google-gemini": {
       "name": "@workglow/google-gemini",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@google/generative-ai": "catalog:",
       },
@@ -240,7 +240,7 @@
     },
     "packages/huggingface-inference": {
       "name": "@workglow/huggingface-inference",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@huggingface/inference": "catalog:",
       },
@@ -263,7 +263,7 @@
     },
     "packages/huggingface-transformers": {
       "name": "@workglow/huggingface-transformers",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@huggingface/transformers": "catalog:",
       },
@@ -286,7 +286,7 @@
     },
     "packages/indexeddb": {
       "name": "@workglow/indexeddb",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/job-queue": "workspace:*",
         "@workglow/storage": "workspace:*",
@@ -301,7 +301,7 @@
     },
     "packages/javascript": {
       "name": "@workglow/javascript",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
@@ -313,7 +313,7 @@
     },
     "packages/job-queue": {
       "name": "@workglow/job-queue",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/util": "workspace:*",
       },
@@ -323,7 +323,7 @@
     },
     "packages/knowledge-base": {
       "name": "@workglow/knowledge-base",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/storage": "workspace:*",
         "@workglow/util": "workspace:*",
@@ -335,7 +335,7 @@
     },
     "packages/mcp": {
       "name": "@workglow/mcp",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@modelcontextprotocol/sdk": "catalog:",
       },
@@ -352,7 +352,7 @@
     },
     "packages/node-llama-cpp": {
       "name": "@workglow/node-llama-cpp",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "node-llama-cpp": "catalog:",
       },
@@ -375,7 +375,7 @@
     },
     "packages/ollama": {
       "name": "@workglow/ollama",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "ollama": "catalog:",
       },
@@ -398,7 +398,7 @@
     },
     "packages/openai": {
       "name": "@workglow/openai",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "js-tiktoken": "catalog:",
         "openai": "catalog:",
@@ -423,7 +423,7 @@
     },
     "packages/postgres": {
       "name": "@workglow/postgres",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@types/pg": "^8.18.0",
         "@workglow/job-queue": "workspace:*",
@@ -444,7 +444,7 @@
     },
     "packages/sqlite": {
       "name": "@workglow/sqlite",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@types/better-sqlite3": "^7.6.13",
         "@workglow/job-queue": "workspace:*",
@@ -467,7 +467,7 @@
     },
     "packages/storage": {
       "name": "@workglow/storage",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/util": "workspace:*",
       },
@@ -477,7 +477,7 @@
     },
     "packages/supabase": {
       "name": "@workglow/supabase",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@supabase/supabase-js": "catalog:",
       },
@@ -494,7 +494,7 @@
     },
     "packages/task-graph": {
       "name": "@workglow/task-graph",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@workglow/job-queue": "workspace:*",
         "@workglow/storage": "workspace:*",
@@ -508,7 +508,7 @@
     },
     "packages/tasks": {
       "name": "@workglow/tasks",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "ipaddr.js": "^2.4.0",
         "undici": "^8.2.0",
@@ -532,7 +532,7 @@
     },
     "packages/test": {
       "name": "@workglow/test",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "devDependencies": {
         "@electric-sql/pglite": "catalog:",
         "@modelcontextprotocol/sdk": "catalog:",
@@ -570,7 +570,7 @@
     },
     "packages/tf-mediapipe": {
       "name": "@workglow/tf-mediapipe",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@mediapipe/tasks-audio": "catalog:",
         "@mediapipe/tasks-genai": "catalog:",
@@ -596,7 +596,7 @@
     },
     "packages/util": {
       "name": "@workglow/util",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@sroussey/json-schema-library": "^11.4.0",
         "@sroussey/json-schema-to-ts": "3.1.4",
@@ -607,7 +607,7 @@
     },
     "packages/workglow": {
       "name": "workglow",
-      "version": "0.2.29",
+      "version": "0.2.30",
       "dependencies": {
         "@workglow/ai": "workspace:*",
         "@workglow/anthropic": "workspace:*",

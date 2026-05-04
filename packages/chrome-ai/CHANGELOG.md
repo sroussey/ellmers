@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.30
+
+### Refactors
+
+#### chrome-ai
+
+- rename @workglow/chrome to @workglow/chrome-ai (#457)
+
+### Chores
+
+- update peer deps
+
 ## 0.2.29
 
 ## 0.2.28
