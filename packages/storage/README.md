@@ -1,6 +1,6 @@
 # @workglow/storage
 
-Modular storage solutions for Workglow.AI platform with multiple backend implementations. Provides consistent interfaces for key-value storage, tabular data storage, and job queue persistence.
+Modular storage solutions for Workglow.AI platform with multiple backend implementations. Provides consistent interfaces for key-value, tabular, and vector data storage. Job queue persistence lives in `@workglow/job-queue` and the vendor `./job-queue` packages.
 
 - [Quick Start](#quick-start)
 - [Installation](#installation)
@@ -20,9 +20,6 @@ Modular storage solutions for Workglow.AI platform with multiple backend impleme
     - [Bulk Operations](#bulk-operations-1)
     - [Searching and Filtering](#searching-and-filtering)
     - [Environment-Specific Tabular Storage](#environment-specific-tabular-storage)
-  - [Queue Storage](#queue-storage)
-    - [Basic Job Queue Operations](#basic-job-queue-operations)
-    - [Job Management](#job-management)
 - [Environment-Specific Usage](#environment-specific-usage)
   - [Browser Environment](#browser-environment)
   - [Node.js Environment](#nodejs-environment)
@@ -35,7 +32,6 @@ Modular storage solutions for Workglow.AI platform with multiple backend impleme
 - [API Reference](#api-reference)
   - [IKvStorage\<Key, Value\>](#ikvrepositorykey-value)
   - [ITabularStorage\<Schema, PrimaryKeyNames\>](#itabularrepositoryschema-primarykeynames)
-  - [IQueueStorage\<Input, Output\>](#iqueuestorageinput-output)
 - [Examples](#examples)
   - [User Management System](#user-management-system)
   - [Configuration Management](#configuration-management)
@@ -455,14 +451,16 @@ const fileUsers = new FsFolderTabularStorage<typeof UserSchema, ["id"]>(
 
 ### Queue Storage
 
-Persistent job queue storage for background processing and task management.
-
-> **Note**: Queue storage is primarily used internally by the job queue system. Direct usage is for advanced scenarios.
+Persistent job queue storage for background processing and task management lives in
+`@workglow/job-queue`. In-memory queue storage is exported from `@workglow/job-queue`;
+backend-specific queue storage is exported from vendor packages such as
+`@workglow/sqlite/job-queue`, `@workglow/postgres/job-queue`, `@workglow/indexeddb/job-queue`,
+and `@workglow/supabase/job-queue`.
 
 #### Basic Job Queue Operations
 
 ```typescript
-import { InMemoryQueueStorage, JobStatus } from "@workglow/storage";
+import { InMemoryQueueStorage, JobStatus } from "@workglow/job-queue";
 
 // Define job input/output types
 type ProcessingInput = { text: string; options: any };
@@ -520,11 +518,11 @@ await jobQueue.deleteJobsByStatusAndAge(JobStatus.COMPLETED, 24 * 60 * 60 * 1000
 import {
   IndexedDbKvRepository,
   IndexedDbTabularStorage,
-  IndexedDbQueueStorage,
   SupabaseKvRepository,
   SupabaseTabularStorage,
-  SupabaseQueueStorage,
 } from "@workglow/storage";
+import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
+import { SupabaseQueueStorage } from "@workglow/supabase/job-queue";
 import { createClient } from "@supabase/supabase-js";
 
 // Local browser storage with IndexedDB
@@ -560,10 +558,10 @@ const users = new PostgresTabularStorage(pool, "users", UserSchema, ["id"]);
 import {
   SqliteTabularStorage,
   FsFolderJsonKvRepository,
-  PostgresQueueStorage,
   SupabaseTabularStorage,
 } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { PostgresQueueStorage } from "@workglow/postgres/job-queue";
+import { Sqlite } from "@workglow/sqlite/storage";
 import { createClient } from "@supabase/supabase-js";
 
 await Sqlite.init();
@@ -648,7 +646,6 @@ const tabularSchema = TypeTabularStorage({
   title: "Data Source",
   description: "Tabular data repository",
 });
-
 ```
 
 ### Event-Driven Architecture
@@ -807,28 +804,6 @@ await repo.deleteSearch({
 });
 ```
 
-### IQueueStorage<Input, Output>
-
-Core interface for job queue storage:
-
-```typescript
-interface IQueueStorage<Input, Output> {
-  add(job: JobStorageFormat<Input, Output>): Promise<unknown>;
-  get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined>;
-  next(): Promise<JobStorageFormat<Input, Output> | undefined>;
-  complete(job: JobStorageFormat<Input, Output>): Promise<void>;
-  peek(status?: JobStatus, num?: number): Promise<JobStorageFormat<Input, Output>[]>;
-  size(status?: JobStatus): Promise<number>;
-  abort(id: unknown): Promise<void>;
-  saveProgress(id: unknown, progress: number, message: string, details: any): Promise<void>;
-  deleteAll(): Promise<void>;
-  getByRunId(runId: string): Promise<Array<JobStorageFormat<Input, Output>>>;
-  outputForInput(input: Input): Promise<Output | null>;
-  delete(id: unknown): Promise<void>;
-  deleteJobsByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void>;
-}
-```
-
 ## Examples
 
 ### User Management System
@@ -970,11 +945,8 @@ class ConfigManager {
 ```typescript
 import { createClient } from "@supabase/supabase-js";
 import { JsonSchema } from "@workglow/util";
-import {
-  SupabaseTabularStorage,
-  SupabaseKvRepository,
-  SupabaseQueueStorage,
-} from "@workglow/storage";
+import { SupabaseTabularStorage, SupabaseKvRepository } from "@workglow/storage";
+import { SupabaseQueueStorage } from "@workglow/supabase/job-queue";
 
 // Initialize Supabase client
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);

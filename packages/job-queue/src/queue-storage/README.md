@@ -11,7 +11,7 @@ This is not a job queue implementation. It is a storage implementation for job q
 - Multiple storage implementations:
   - `InMemoryQueueStorage` - Volatile memory (dev/testing)
   - `IndexedDbQueueStorage` - Browser-based storage
-  - `SqliteQueueStorage` - Embedded SQLite (pass a `Sqlite.Database` from `@workglow/storage/sqlite`; call `await Sqlite.init()` before opening the DB)
+  - `SqliteQueueStorage` - Embedded SQLite (import from `@workglow/sqlite/job-queue`; pass a `Sqlite.Database` from `@workglow/sqlite/storage`; call `await Sqlite.init()` before opening the DB)
   - `PostgresQueueStorage` - Production-grade PostgreSQL
 - Job lifecycle management:
   - PENDING → PROCESSING → COMPLETED/FAILED/ABORTED

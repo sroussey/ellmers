@@ -29,14 +29,14 @@ interface ILimiter {
 
 ### Method Semantics
 
-| Method | Called By | Purpose |
-|---|---|---|
-| `canProceed()` | Worker (before claiming) | Returns `true` if the limiter allows a new job to start right now |
-| `recordJobStart()` | Worker (after claiming) | Notifies the limiter that a job has started executing |
-| `recordJobCompletion()` | Worker (in `finally` block) | Notifies the limiter that a job has finished (success or failure) |
-| `getNextAvailableTime()` | Worker (when rescheduling) | Returns the earliest `Date` at which the next job could execute |
-| `setNextAvailableTime(date)` | External callers | Externally impose a delay (e.g., from a 429 Retry-After header) |
-| `clear()` | Cleanup / testing | Resets the limiter to its initial state |
+| Method                       | Called By                   | Purpose                                                           |
+| ---------------------------- | --------------------------- | ----------------------------------------------------------------- |
+| `canProceed()`               | Worker (before claiming)    | Returns `true` if the limiter allows a new job to start right now |
+| `recordJobStart()`           | Worker (after claiming)     | Notifies the limiter that a job has started executing             |
+| `recordJobCompletion()`      | Worker (in `finally` block) | Notifies the limiter that a job has finished (success or failure) |
+| `getNextAvailableTime()`     | Worker (when rescheduling)  | Returns the earliest `Date` at which the next job could execute   |
+| `setNextAvailableTime(date)` | External callers            | Externally impose a delay (e.g., from a 429 Retry-After header)   |
+| `clear()`                    | Cleanup / testing           | Resets the limiter to its initial state                           |
 
 The worker integration is straightforward. In the `processJobs` loop:
 
@@ -79,26 +79,26 @@ const limiter = new ConcurrencyLimiter(5); // max 5 concurrent jobs
 
 ### How It Works
 
-The limiter maintains a `currentRunningJobs` counter. `canProceed()` returns `true` only when this counter is below the configured maximum *and* the current time is past any externally set `nextAllowedStartTime`. `recordJobStart()` increments the counter; `recordJobCompletion()` decrements it (with a floor of 0).
+The limiter maintains a `currentRunningJobs` counter. `canProceed()` returns `true` only when this counter is below the configured maximum _and_ the current time is past any externally set `nextAllowedStartTime`. `recordJobStart()` increments the counter; `recordJobCompletion()` decrements it (with a floor of 0).
 
 This limiter is ideal for controlling parallelism within a single process -- for example, limiting concurrent GPU inference tasks or database connections.
 
 ### Configuration
 
-| Parameter | Type | Description |
-|---|---|---|
+| Parameter           | Type     | Description                                       |
+| ------------------- | -------- | ------------------------------------------------- |
 | `maxConcurrentJobs` | `number` | Maximum number of jobs executing at the same time |
 
 ```typescript
 const limiter = new ConcurrencyLimiter(3);
 
-await limiter.canProceed();       // true (0 running)
-await limiter.recordJobStart();   // 1 running
-await limiter.recordJobStart();   // 2 running
-await limiter.recordJobStart();   // 3 running
-await limiter.canProceed();       // false (at capacity)
+await limiter.canProceed(); // true (0 running)
+await limiter.recordJobStart(); // 1 running
+await limiter.recordJobStart(); // 2 running
+await limiter.recordJobStart(); // 3 running
+await limiter.canProceed(); // false (at capacity)
 await limiter.recordJobCompletion(); // 2 running
-await limiter.canProceed();       // true
+await limiter.canProceed(); // true
 ```
 
 ## RateLimiter
@@ -106,8 +106,7 @@ await limiter.canProceed();       // true
 A sliding-window rate limiter with exponential backoff and jitter. Unlike the `ConcurrencyLimiter`, this limiter uses an `IRateLimiterStorage` backend to persist execution timestamps, making it suitable for cross-process rate limiting.
 
 ```typescript
-import { RateLimiter } from "@workglow/job-queue";
-import { InMemoryRateLimiterStorage } from "@workglow/storage";
+import { InMemoryRateLimiterStorage, RateLimiter } from "@workglow/job-queue";
 
 const storage = new InMemoryRateLimiterStorage();
 await storage.setupDatabase();
@@ -161,13 +160,13 @@ interface IRateLimiterStorage {
 
 ### Configuration Reference
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `maxExecutions` | `number` | (required) | Maximum executions allowed per window |
-| `windowSizeInSeconds` | `number` | (required) | Length of the sliding window |
-| `initialBackoffDelay` | `number` | `1000` | Initial backoff delay in ms |
-| `backoffMultiplier` | `number` | `2` | Multiplier applied on each successive backoff |
-| `maxBackoffDelay` | `number` | `600000` | Maximum backoff delay (10 minutes) |
+| Option                | Type     | Default    | Description                                   |
+| --------------------- | -------- | ---------- | --------------------------------------------- |
+| `maxExecutions`       | `number` | (required) | Maximum executions allowed per window         |
+| `windowSizeInSeconds` | `number` | (required) | Length of the sliding window                  |
+| `initialBackoffDelay` | `number` | `1000`     | Initial backoff delay in ms                   |
+| `backoffMultiplier`   | `number` | `2`        | Multiplier applied on each successive backoff |
+| `maxBackoffDelay`     | `number` | `600000`   | Maximum backoff delay (10 minutes)            |
 
 ## DelayLimiter
 
@@ -185,9 +184,9 @@ On `recordJobStart()`, the limiter sets `nextAvailableTime = now + delayInMillis
 
 ### Configuration
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `delayInMilliseconds` | `number` | `50` | Minimum delay between consecutive starts |
+| Parameter             | Type     | Default | Description                              |
+| --------------------- | -------- | ------- | ---------------------------------------- |
+| `delayInMilliseconds` | `number` | `50`    | Minimum delay between consecutive starts |
 
 ## EvenlySpacedRateLimiter
 
@@ -218,14 +217,14 @@ This approach is ideal for API calls where you need a steady request rate rather
 
 ### Configuration
 
-| Option | Type | Description |
-|---|---|---|
-| `maxExecutions` | `number` | Maximum executions allowed per window |
-| `windowSizeInSeconds` | `number` | Length of the time window |
+| Option                | Type     | Description                           |
+| --------------------- | -------- | ------------------------------------- |
+| `maxExecutions`       | `number` | Maximum executions allowed per window |
+| `windowSizeInSeconds` | `number` | Length of the time window             |
 
 ## CompositeLimiter
 
-The `CompositeLimiter` combines multiple limiters using AND semantics: a job can only proceed if *every* constituent limiter approves. This is the primary mechanism for layering different rate limiting strategies.
+The `CompositeLimiter` combines multiple limiters using AND semantics: a job can only proceed if _every_ constituent limiter approves. This is the primary mechanism for layering different rate limiting strategies.
 
 ```typescript
 import { CompositeLimiter, ConcurrencyLimiter, RateLimiter } from "@workglow/job-queue";
@@ -243,7 +242,7 @@ const limiter = new CompositeLimiter([
 
 - **`canProceed()`** iterates through all limiters and returns `false` at the first one that denies. Short-circuit evaluation means expensive checks can be placed later in the list.
 - **`recordJobStart()`** and **`recordJobCompletion()`** are forwarded to all limiters.
-- **`getNextAvailableTime()`** returns the *latest* (most restrictive) time across all limiters.
+- **`getNextAvailableTime()`** returns the _latest_ (most restrictive) time across all limiters.
 - **`setNextAvailableTime(date)`** is forwarded to all limiters.
 - **`clear()`** clears all limiters.
 
@@ -292,10 +291,7 @@ class ApiJob extends Job<ApiInput, ApiOutput> {
     const response = await fetch(input.url);
     if (response.status === 429) {
       const retryAfter = parseInt(response.headers.get("Retry-After") || "60", 10);
-      throw new RetryableJobError(
-        "Rate limited by API",
-        new Date(Date.now() + retryAfter * 1000)
-      );
+      throw new RetryableJobError("Rate limited by API", new Date(Date.now() + retryAfter * 1000));
     }
     return await response.json();
   }
@@ -310,9 +306,9 @@ Limit concurrent requests to an AI provider while respecting their per-minute qu
 
 ```typescript
 const anthropicLimiter = new CompositeLimiter([
-  new ConcurrencyLimiter(5),                // max 5 in-flight requests
+  new ConcurrencyLimiter(5), // max 5 in-flight requests
   new RateLimiter(rateLimiterStorage, "anthropic", {
-    maxExecutions: 50,                       // 50 requests per minute
+    maxExecutions: 50, // 50 requests per minute
     windowSizeInSeconds: 60,
     initialBackoffDelay: 2_000,
     backoffMultiplier: 2,
@@ -378,12 +374,12 @@ const server = new JobQueueServer(LocalJob, {
 
 The limiter system uses Workglow's dependency injection to register default instances:
 
-| Token | Description |
-|---|---|
-| `JOB_LIMITER` | Generic limiter token (`"jobqueue.limiter"`) |
-| `CONCURRENT_JOB_LIMITER` | Concurrency limiter token (`"jobqueue.limiter.concurrent"`) |
+| Token                            | Description                                                          |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `JOB_LIMITER`                    | Generic limiter token (`"jobqueue.limiter"`)                         |
+| `CONCURRENT_JOB_LIMITER`         | Concurrency limiter token (`"jobqueue.limiter.concurrent"`)          |
 | `EVENLY_SPACED_JOB_RATE_LIMITER` | Evenly-spaced limiter token (`"jobqueue.limiter.rate.evenlyspaced"`) |
-| `NULL_JOB_LIMITER` | Null limiter token (`"jobqueue.limiter.null"`) |
+| `NULL_JOB_LIMITER`               | Null limiter token (`"jobqueue.limiter.null"`)                       |
 
 ## API Reference
 

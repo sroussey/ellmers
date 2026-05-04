@@ -75,8 +75,10 @@ resulting type is `[progress: number, message?: string]`.
 ### EmittedReturnType
 
 ```ts
-export type EmittedReturnType<Events, EventType extends keyof Events> =
-  EventParameters<Events, EventType>;
+export type EmittedReturnType<Events, EventType extends keyof Events> = EventParameters<
+  Events,
+  EventType
+>;
 ```
 
 Alias used as the resolved type of `waitOn()`. Returns the full parameter tuple as an array.
@@ -131,7 +133,9 @@ Removes a previously registered listener by reference identity. Returns `this` f
 If the listener is not found, this is a no-op.
 
 ```ts
-const handler = (percent: number) => { /* ... */ };
+const handler = (percent: number) => {
+  /* ... */
+};
 emitter.on("progress", handler);
 emitter.off("progress", handler);
 ```
@@ -163,7 +167,7 @@ provided. Returns `this` for chaining.
 
 ```ts
 emitter.removeAllListeners("progress"); // clear one event
-emitter.removeAllListeners();           // clear everything
+emitter.removeAllListeners(); // clear everything
 ```
 
 ---
@@ -305,12 +309,12 @@ public emit<Event extends keyof EventListenerTypes>(
 
 **Design decisions:**
 
-| Behavior | Rationale |
-|---|---|
-| **Listener snapshot** | The listener array is shallow-copied before iteration. This prevents issues when a listener adds or removes other listeners during emission (concurrent modification). |
-| **Error collection** | All listeners run regardless of whether earlier listeners throw. Errors are collected in an array. |
-| **First-error re-throw** | After all listeners have executed, the first collected error is re-thrown. Subsequent errors are silently discarded. This ensures the emitter does not swallow exceptions while still guaranteeing all listeners fire. |
-| **Once cleanup after iteration** | One-time listeners are removed from the original array (not the snapshot) after the full iteration completes. This ensures `once` listeners are called exactly once even if `emit()` is called reentrantly. |
+| Behavior                         | Rationale                                                                                                                                                                                                              |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Listener snapshot**            | The listener array is shallow-copied before iteration. This prevents issues when a listener adds or removes other listeners during emission (concurrent modification).                                                 |
+| **Error collection**             | All listeners run regardless of whether earlier listeners throw. Errors are collected in an array.                                                                                                                     |
+| **First-error re-throw**         | After all listeners have executed, the first collected error is re-thrown. Subsequent errors are silently discarded. This ensures the emitter does not swallow exceptions while still guaranteeing all listeners fire. |
+| **Once cleanup after iteration** | One-time listeners are removed from the original array (not the snapshot) after the full iteration completes. This ensures `once` listeners are called exactly once even if `emit()` is called reentrantly.            |
 
 ---
 
@@ -347,8 +351,8 @@ store.on("delete", (key) => {
   console.log(`Deleted ${key}`);
 });
 
-await store.put("foo", { data: 42 });  // triggers "put" event
-await store.delete("foo");              // triggers "delete" event
+await store.put("foo", { data: 42 }); // triggers "put" event
+await store.delete("foo"); // triggers "delete" event
 ```
 
 ### Tabular Storage Events
@@ -371,7 +375,9 @@ events after the corresponding operation completes. The `CachedTabularStorage` a
 
 ### Queue Storage Events
 
-Defined inline in `packages/storage/src/queue/InMemoryQueueStorage.ts`:
+Defined in `@workglow/job-queue` at
+`packages/job-queue/src/queue-storage/IQueueStorage.ts` and implemented by
+`InMemoryQueueStorage` in `packages/job-queue/src/queue-storage/InMemoryQueueStorage.ts`:
 
 ```ts
 type QueueEventListeners<Input, Output> = {
@@ -413,7 +419,12 @@ type TaskEventListeners = {
   progress: (progress: number, message?: string, ...args: any[]) => void;
   iteration_start: (index: number, iterationCount: number) => void;
   iteration_complete: (index: number, iterationCount: number) => void;
-  iteration_progress: (index: number, iterationCount: number, progress: number, message?: string) => void;
+  iteration_progress: (
+    index: number,
+    iterationCount: number,
+    progress: number,
+    message?: string
+  ) => void;
   regenerate: () => void;
   reset: () => void;
   status: (status: TaskStatus) => void;
@@ -425,25 +436,25 @@ type TaskEventListeners = {
 };
 ```
 
-| Event | Emitted by | When |
-|---|---|---|
-| `start` | `TaskRunner` | Task begins execution |
-| `complete` | `TaskRunner` | Task finishes successfully |
-| `abort` | `TaskRunner` | Task is aborted (carries `TaskAbortedError`) |
-| `error` | `TaskRunner` | Task execution fails (carries `TaskError`) |
-| `disabled` | `TaskRunner` / `TaskGraphRunner` | Task is skipped due to disabled status |
-| `progress` | `Task.execute()` via context | Task reports progress (0-100) |
-| `status` | `TaskRunner` | Status transitions (always paired with lifecycle events) |
-| `stream_start` | `TaskRunner` | Streaming task begins producing chunks |
-| `stream_chunk` | `TaskRunner` | Each incremental delta from a streaming task |
-| `stream_end` | `TaskRunner` | Streaming task finishes (carries final output) |
-| `regenerate` | `IteratorTask`, `Task` | Task regenerates its internal subgraph |
-| `reset` | `TaskGraphRunner` | Task is reset to `PENDING` state |
-| `schemaChange` | `Task.emitSchemaChange()` | Dynamic input/output schema changes |
-| `entitlementChange` | `Task` | Required entitlements change |
-| `iteration_start` | `IteratorTask` | Per-iteration subgraph run begins |
-| `iteration_complete` | `IteratorTask` | Per-iteration subgraph run finishes |
-| `iteration_progress` | `IteratorTask` | Per-iteration progress update |
+| Event                | Emitted by                       | When                                                     |
+| -------------------- | -------------------------------- | -------------------------------------------------------- |
+| `start`              | `TaskRunner`                     | Task begins execution                                    |
+| `complete`           | `TaskRunner`                     | Task finishes successfully                               |
+| `abort`              | `TaskRunner`                     | Task is aborted (carries `TaskAbortedError`)             |
+| `error`              | `TaskRunner`                     | Task execution fails (carries `TaskError`)               |
+| `disabled`           | `TaskRunner` / `TaskGraphRunner` | Task is skipped due to disabled status                   |
+| `progress`           | `Task.execute()` via context     | Task reports progress (0-100)                            |
+| `status`             | `TaskRunner`                     | Status transitions (always paired with lifecycle events) |
+| `stream_start`       | `TaskRunner`                     | Streaming task begins producing chunks                   |
+| `stream_chunk`       | `TaskRunner`                     | Each incremental delta from a streaming task             |
+| `stream_end`         | `TaskRunner`                     | Streaming task finishes (carries final output)           |
+| `regenerate`         | `IteratorTask`, `Task`           | Task regenerates its internal subgraph                   |
+| `reset`              | `TaskGraphRunner`                | Task is reset to `PENDING` state                         |
+| `schemaChange`       | `Task.emitSchemaChange()`        | Dynamic input/output schema changes                      |
+| `entitlementChange`  | `Task`                           | Required entitlements change                             |
+| `iteration_start`    | `IteratorTask`                   | Per-iteration subgraph run begins                        |
+| `iteration_complete` | `IteratorTask`                   | Per-iteration subgraph run finishes                      |
+| `iteration_progress` | `IteratorTask`                   | Per-iteration progress update                            |
 
 ### Dataflow Events
 
@@ -580,12 +591,12 @@ this.events.emit("error", String(error));
 `TaskGraph` provides higher-level subscription methods that compose individual task and dataflow
 subscriptions into aggregate observers:
 
-| Method | Listens to | Returns |
-|---|---|---|
-| `subscribeToTaskStatus(callback)` | `status` on all tasks + `task_added` | `() => void` |
-| `subscribeToTaskProgress(callback)` | `progress` on all tasks + `task_added` | `() => void` |
-| `subscribeToDataflowStatus(callback)` | `status` on all dataflows + `dataflow_added` | `() => void` |
-| `subscribeToTaskStreaming(callbacks)` | `task_stream_start/chunk/end` on graph | `() => void` |
+| Method                                  | Listens to                                            | Returns      |
+| --------------------------------------- | ----------------------------------------------------- | ------------ |
+| `subscribeToTaskStatus(callback)`       | `status` on all tasks + `task_added`                  | `() => void` |
+| `subscribeToTaskProgress(callback)`     | `progress` on all tasks + `task_added`                | `() => void` |
+| `subscribeToDataflowStatus(callback)`   | `status` on all dataflows + `dataflow_added`          | `() => void` |
+| `subscribeToTaskStreaming(callbacks)`   | `task_stream_start/chunk/end` on graph                | `() => void` |
 | `subscribeToTaskEntitlements(callback)` | `entitlementChange` on all tasks + structural changes | `() => void` |
 
 Each method automatically subscribes to future tasks/dataflows via `task_added`/`dataflow_added`
@@ -603,38 +614,38 @@ class EventEmitter<EventListenerTypes extends Record<string, (...args: any) => a
 
 **Type Parameters:**
 
-| Parameter | Constraint | Description |
-|---|---|---|
+| Parameter            | Constraint                              | Description                                        |
+| -------------------- | --------------------------------------- | -------------------------------------------------- |
 | `EventListenerTypes` | `Record<string, (...args: any) => any>` | Map of event names to listener function signatures |
 
 **Methods:**
 
-| Method | Signature | Returns | Description |
-|---|---|---|---|
-| `on` | `on<E extends keyof T>(event: E, listener: T[E]): this` | `this` | Register a persistent listener |
-| `off` | `off<E extends keyof T>(event: E, listener: T[E]): this` | `this` | Remove a listener by reference |
-| `once` | `once<E extends keyof T>(event: E, listener: T[E]): this` | `this` | Register a one-time listener |
-| `emit` | `emit<E extends keyof T>(event: E, ...args: EventParameters<T, E>): void` | `void` | Fire an event synchronously |
-| `subscribe` | `subscribe<E extends keyof T>(event: E, listener: T[E]): () => void` | `() => void` | Register a listener; returns unsubscribe function |
-| `waitOn` | `waitOn<E extends keyof T>(event: E): Promise<EmittedReturnType<T, E>>` | `Promise<[...args]>` | Returns a promise resolved on next emission |
-| `removeAllListeners` | `removeAllListeners(event?: E): this` | `this` | Remove all listeners for one or all events |
+| Method               | Signature                                                                 | Returns              | Description                                       |
+| -------------------- | ------------------------------------------------------------------------- | -------------------- | ------------------------------------------------- |
+| `on`                 | `on<E extends keyof T>(event: E, listener: T[E]): this`                   | `this`               | Register a persistent listener                    |
+| `off`                | `off<E extends keyof T>(event: E, listener: T[E]): this`                  | `this`               | Remove a listener by reference                    |
+| `once`               | `once<E extends keyof T>(event: E, listener: T[E]): this`                 | `this`               | Register a one-time listener                      |
+| `emit`               | `emit<E extends keyof T>(event: E, ...args: EventParameters<T, E>): void` | `void`               | Fire an event synchronously                       |
+| `subscribe`          | `subscribe<E extends keyof T>(event: E, listener: T[E]): () => void`      | `() => void`         | Register a listener; returns unsubscribe function |
+| `waitOn`             | `waitOn<E extends keyof T>(event: E): Promise<EmittedReturnType<T, E>>`   | `Promise<[...args]>` | Returns a promise resolved on next emission       |
+| `removeAllListeners` | `removeAllListeners(event?: E): this`                                     | `this`               | Remove all listeners for one or all events        |
 
 ### Exported Type Utilities
 
-| Type | Description |
-|---|---|
-| `EventParameters<Events, EventType>` | Extracts the parameter tuple of a listener function |
+| Type                                   | Description                                           |
+| -------------------------------------- | ----------------------------------------------------- |
+| `EventParameters<Events, EventType>`   | Extracts the parameter tuple of a listener function   |
 | `EmittedReturnType<Events, EventType>` | Alias of `EventParameters`; return type of `waitOn()` |
 
 ### Domain-Specific Event Types
 
-| Type | Package | Events |
-|---|---|---|
-| `KvEventListeners<Key, Value, Combined>` | `@workglow/storage` | `put`, `get`, `getAll`, `delete`, `deleteall` |
-| `TabularEventListeners<PrimaryKey, Entity>` | `@workglow/storage` | `put`, `get`, `query`, `delete`, `clearall` |
-| `QueueEventListeners<Input, Output>` | `@workglow/storage` | `change` |
-| `GraphEventListeners<NodeId, EdgeId>` | `@workglow/util/graph` | `node-added`, `node-removed`, `node-replaced`, `edge-added`, `edge-removed`, `edge-replaced` |
-| `TaskEventListeners` | `@workglow/task-graph` | `start`, `complete`, `abort`, `error`, `disabled`, `progress`, `iteration_start`, `iteration_complete`, `iteration_progress`, `regenerate`, `reset`, `status`, `schemaChange`, `entitlementChange`, `stream_start`, `stream_chunk`, `stream_end` |
-| `DataflowEventListeners` | `@workglow/task-graph` | `start`, `streaming`, `complete`, `disabled`, `abort`, `error`, `reset`, `status` |
-| `TaskGraphListeners` | `@workglow/task-graph` | `graph_progress`, `start`, `complete`, `error`, `abort`, `disabled`, `task_stream_start`, `task_stream_chunk`, `task_stream_end`, `entitlementChange`, `task_added`, `task_removed`, `task_replaced`, `dataflow_added`, `dataflow_removed`, `dataflow_replaced` |
-| `WorkflowEventListeners` | `@workglow/task-graph` | `changed`, `reset`, `error`, `start`, `complete`, `abort`, `stream_start`, `stream_chunk`, `stream_end`, `entitlementChange` |
+| Type                                        | Package                | Events                                                                                                                                                                                                                                                          |
+| ------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KvEventListeners<Key, Value, Combined>`    | `@workglow/storage`    | `put`, `get`, `getAll`, `delete`, `deleteall`                                                                                                                                                                                                                   |
+| `TabularEventListeners<PrimaryKey, Entity>` | `@workglow/storage`    | `put`, `get`, `query`, `delete`, `clearall`                                                                                                                                                                                                                     |
+| `QueueEventListeners<Input, Output>`        | `@workglow/storage`    | `change`                                                                                                                                                                                                                                                        |
+| `GraphEventListeners<NodeId, EdgeId>`       | `@workglow/util/graph` | `node-added`, `node-removed`, `node-replaced`, `edge-added`, `edge-removed`, `edge-replaced`                                                                                                                                                                    |
+| `TaskEventListeners`                        | `@workglow/task-graph` | `start`, `complete`, `abort`, `error`, `disabled`, `progress`, `iteration_start`, `iteration_complete`, `iteration_progress`, `regenerate`, `reset`, `status`, `schemaChange`, `entitlementChange`, `stream_start`, `stream_chunk`, `stream_end`                |
+| `DataflowEventListeners`                    | `@workglow/task-graph` | `start`, `streaming`, `complete`, `disabled`, `abort`, `error`, `reset`, `status`                                                                                                                                                                               |
+| `TaskGraphListeners`                        | `@workglow/task-graph` | `graph_progress`, `start`, `complete`, `error`, `abort`, `disabled`, `task_stream_start`, `task_stream_chunk`, `task_stream_end`, `entitlementChange`, `task_added`, `task_removed`, `task_replaced`, `dataflow_added`, `dataflow_removed`, `dataflow_replaced` |
+| `WorkflowEventListeners`                    | `@workglow/task-graph` | `changed`, `reset`, `error`, `start`, `complete`, `abort`, `stream_start`, `stream_chunk`, `stream_end`, `entitlementChange`                                                                                                                                    |

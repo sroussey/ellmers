@@ -48,15 +48,15 @@ The system is composed of several different systems, several of which that can b
 
 Some tasks are run in a queue, so that a full task queue can resume where it left off (in concert with a TaskOutputRepository). Queues handling things like retries, timeouts, and other things that are not directly related to the task itself. There are several storage implementations:
 
-- **InMemoryQueueStorage**: The InMemoryQueueStorage is a simple in-memory queue storage that is not resumable.
-- **IndexedDbQueueStorage**: The IndexedDbQueueStorage is a queue storage that is stored in the browser's IndexedDB and is resumable.
-- **SqliteQueueStorage**: The SqliteQueueStorage is a queue storage that is stored in a SQLite database and is resumable. Call **`await Sqlite.init()`** once (from `workglow` or `@workglow/storage/sqlite`) before constructing **`new Sqlite.Database(...)`** or any storage that opens SQLite by path.
-- **PostgresQueueStorage**: The PostgresQueueStorage is a queue storage that is stored in a Postgres database and is resumable.
+- **InMemoryQueueStorage**: Exported from `@workglow/job-queue`; a simple in-memory queue storage that is not resumable.
+- **IndexedDbQueueStorage**: Exported from `@workglow/indexeddb/job-queue`; stored in the browser's IndexedDB and resumable.
+- **SqliteQueueStorage**: Exported from `@workglow/sqlite/job-queue`; stored in a SQLite database and resumable. Call **`await Sqlite.init()`** once (from `workglow` or `@workglow/sqlite/storage`) before constructing **`new Sqlite.Database(...)`** or any storage that opens SQLite by path.
+- **PostgresQueueStorage**: Exported from `@workglow/postgres/job-queue`; stored in a Postgres database and resumable.
 
 Queues can have limiters, like only running one task at a time, or based on rate limits.
 
 - **RateLimiter**: The RateLimiter is a rate limiter that can be used to limit the number of tasks that are run in a certain time period. If a task using an API errors out, the rate limiter can use details of the error response to determine how long to wait before trying again. Rate limiters are created by combining the `RateLimiter` class with a storage backend:
-  - **SqliteRateLimiterStorage**: Storage backend for rate limiters using a Sqlite database (same **`await Sqlite.init()`** requirement as other SQLite-backed storage).
+  - **SqliteRateLimiterStorage**: Storage backend from `@workglow/sqlite/job-queue` for rate limiters using a Sqlite database (same **`await Sqlite.init()`** requirement as other SQLite-backed storage).
   - **PostgresRateLimiterStorage**: Storage backend for rate limiters using a Postgres database.
   - **InMemoryRateLimiterStorage**: Storage backend for rate limiters stored in memory.
   - **IndexedDbRateLimiterStorage**: Storage backend for rate limiters using the browser's IndexedDB.\*

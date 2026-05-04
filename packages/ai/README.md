@@ -35,8 +35,12 @@ import {
   AiJobInput,
 } from "@workglow/ai";
 import { Workflow, getTaskQueueRegistry, TaskInput, TaskOutput } from "@workglow/task-graph";
-import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import {
+  ConcurrencyLimiter,
+  InMemoryQueueStorage,
+  JobQueueClient,
+  JobQueueServer,
+} from "@workglow/job-queue";
 import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
 import { registerHuggingFaceTransformersInline } from "@workglow/ai-provider/hf-transformers/runtime";
 
@@ -438,8 +442,12 @@ Each provider needs a job queue for task execution:
 
 ```typescript
 import { getTaskQueueRegistry, TaskInput, TaskOutput } from "@workglow/task-graph";
-import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import {
+  ConcurrencyLimiter,
+  InMemoryQueueStorage,
+  JobQueueClient,
+  JobQueueServer,
+} from "@workglow/job-queue";
 import { AiJob, AiJobInput } from "@workglow/ai";
 import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
 
@@ -527,20 +535,20 @@ The AI package provides a comprehensive set of tasks for building RAG pipelines.
 
 ### Vector and Storage Tasks
 
-| Task                    | Description                                                                       |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| `ChunkVectorUpsertTask` | Stores chunks + their embeddings in a KnowledgeBase (input: `chunks` + `vector`)  |
-| `VectorQuantizeTask`    | Quantizes vectors for storage efficiency                                          |
+| Task                    | Description                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `ChunkVectorUpsertTask` | Stores chunks + their embeddings in a KnowledgeBase (input: `chunks` + `vector`) |
+| `VectorQuantizeTask`    | Quantizes vectors for storage efficiency                                         |
 
 ### Retrieval and Generation Tasks
 
-| Task                 | Description                                                              |
-| -------------------- | ------------------------------------------------------------------------ |
-| `ChunkRetrievalTask` | End-to-end retrieval: embeds the query, runs similarity or hybrid search |
-| `QueryExpanderTask`  | Expands queries (multi-query / synonyms) for better retrieval coverage   |
-| `RerankerTask`       | Reranks search results (simple heuristic or reciprocal-rank-fusion)      |
+| Task                 | Description                                                                 |
+| -------------------- | --------------------------------------------------------------------------- |
+| `ChunkRetrievalTask` | End-to-end retrieval: embeds the query, runs similarity or hybrid search    |
+| `QueryExpanderTask`  | Expands queries (multi-query / synonyms) for better retrieval coverage      |
+| `RerankerTask`       | Reranks search results (simple heuristic or reciprocal-rank-fusion)         |
 | `HierarchyJoinTask`  | Enriches retrieved metadata with parent summaries, section titles, entities |
-| `ContextBuilderTask` | Builds formatted context for LLM prompts                                 |
+| `ContextBuilderTask` | Builds formatted context for LLM prompts                                    |
 
 ### Complete RAG Workflow Example
 

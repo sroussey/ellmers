@@ -8,7 +8,7 @@
 
 ## Overview
 
-The Workglow storage layer (`@workglow/storage`) provides four unified interfaces -- `IKvStorage`, `ITabularStorage`, `IQueueStorage`, and `IVectorStorage` -- that abstract over multiple persistence backends. Application code programs against these interfaces, and the concrete backend is selected at configuration time. This design allows the same pipeline to run with in-memory storage during development, SQLite for single-machine deployments, PostgreSQL for production clusters, IndexedDB in the browser, and Supabase for managed cloud infrastructure.
+The Workglow storage layer (`@workglow/storage`) provides unified interfaces for key-value, tabular, and vector storage. Job queue persistence is owned by `@workglow/job-queue`, with backend implementations exported from each vendor package's `./job-queue` subpath. Application code programs against these interfaces, and the concrete backend is selected at configuration time. This design allows the same pipeline to run with in-memory storage during development, SQLite for single-machine deployments, PostgreSQL for production clusters, IndexedDB in the browser, and Supabase for managed cloud infrastructure.
 
 Every storage interface is event-driven, schema-typed, and backend-agnostic. The storage layer also integrates with Workglow's service registry for dependency injection and with the task system's input resolution mechanism for runtime schema-based lookups.
 
@@ -42,27 +42,27 @@ interface IKvStorage<
 
 ### Events
 
-| Event | Parameters | Description |
-|---|---|---|
-| `put` | `(key, value)` | A value was stored |
-| `get` | `(key, value \| undefined)` | A value was retrieved |
-| `getAll` | `(results \| undefined)` | All values were retrieved |
-| `delete` | `(key)` | A value was deleted |
-| `deleteall` | `()` | All values were deleted |
+| Event       | Parameters                  | Description               |
+| ----------- | --------------------------- | ------------------------- |
+| `put`       | `(key, value)`              | A value was stored        |
+| `get`       | `(key, value \| undefined)` | A value was retrieved     |
+| `getAll`    | `(results \| undefined)`    | All values were retrieved |
+| `delete`    | `(key)`                     | A value was deleted       |
+| `deleteall` | `()`                        | All values were deleted   |
 
 ### Available Backends
 
-| Backend | Class | Runtime | Notes |
-|---|---|---|---|
-| In-Memory | `InMemoryKvStorage` | All | Fast, non-persistent |
-| SQLite | `SqliteKvStorage` | Node, Bun | File-based persistence |
-| PostgreSQL | `PostgresKvStorage` | Node, Bun | Network-based |
-| Supabase | `SupabaseKvStorage` | All | Cloud PostgreSQL |
-| IndexedDB | `IndexedDbKvStorage` | Browser | Browser-native |
-| Filesystem (JSON) | `FsFolderJsonKvStorage` | Node, Bun | One JSON file per key |
-| Filesystem | `FsFolderKvStorage` | Node, Bun | Raw file storage |
-| Via Tabular | `KvViaTabularStorage` | All | Adapts tabular storage as KV |
-| Telemetry | `TelemetryKvStorage` | All | Wraps another KV with tracing |
+| Backend           | Class                   | Runtime   | Notes                         |
+| ----------------- | ----------------------- | --------- | ----------------------------- |
+| In-Memory         | `InMemoryKvStorage`     | All       | Fast, non-persistent          |
+| SQLite            | `SqliteKvStorage`       | Node, Bun | File-based persistence        |
+| PostgreSQL        | `PostgresKvStorage`     | Node, Bun | Network-based                 |
+| Supabase          | `SupabaseKvStorage`     | All       | Cloud PostgreSQL              |
+| IndexedDB         | `IndexedDbKvStorage`    | Browser   | Browser-native                |
+| Filesystem (JSON) | `FsFolderJsonKvStorage` | Node, Bun | One JSON file per key         |
+| Filesystem        | `FsFolderKvStorage`     | Node, Bun | Raw file storage              |
+| Via Tabular       | `KvViaTabularStorage`   | All       | Adapts tabular storage as KV  |
+| Telemetry         | `TelemetryKvStorage`    | All       | Wraps another KV with tracing |
 
 ### Usage Example
 
@@ -103,8 +103,14 @@ interface ITabularStorage<
   getBulk(offset: number, limit: number): Promise<Entity[] | undefined>;
   records(pageSize?: number): AsyncGenerator<Entity, void, undefined>;
   pages(pageSize?: number): AsyncGenerator<Entity[], void, undefined>;
-  query(criteria: SearchCriteria<Entity>, options?: QueryOptions<Entity>): Promise<Entity[] | undefined>;
-  subscribeToChanges(callback: (change: TabularChangePayload<Entity>) => void, options?: TabularSubscribeOptions): () => void;
+  query(
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
+  ): Promise<Entity[] | undefined>;
+  subscribeToChanges(
+    callback: (change: TabularChangePayload<Entity>) => void,
+    options?: TabularSubscribeOptions
+  ): () => void;
   setupDatabase(): Promise<void>;
   destroy(): void;
 }
@@ -182,11 +188,14 @@ for await (const page of storage.pages(100)) {
 Subscribe to INSERT, UPDATE, and DELETE events -- including changes from other processes:
 
 ```typescript
-const unsubscribe = storage.subscribeToChanges((change) => {
-  console.log(change.type); // "INSERT" | "UPDATE" | "DELETE"
-  console.log(change.old);  // previous entity (for UPDATE/DELETE)
-  console.log(change.new);  // new entity (for INSERT/UPDATE)
-}, { pollingIntervalMs: 1000 });
+const unsubscribe = storage.subscribeToChanges(
+  (change) => {
+    console.log(change.type); // "INSERT" | "UPDATE" | "DELETE"
+    console.log(change.old); // previous entity (for UPDATE/DELETE)
+    console.log(change.new); // new entity (for INSERT/UPDATE)
+  },
+  { pollingIntervalMs: 1000 }
+);
 
 // Later: stop listening
 unsubscribe();
@@ -194,32 +203,32 @@ unsubscribe();
 
 ### Events
 
-| Event | Parameters | Description |
-|---|---|---|
-| `put` | `(entity)` | An entity was inserted or updated |
-| `get` | `(key, entity \| undefined)` | An entity was retrieved |
-| `query` | `(criteria, entities \| undefined)` | A query was executed |
-| `delete` | `(key)` | An entity was deleted |
-| `clearall` | `()` | All entities were deleted |
+| Event      | Parameters                          | Description                       |
+| ---------- | ----------------------------------- | --------------------------------- |
+| `put`      | `(entity)`                          | An entity was inserted or updated |
+| `get`      | `(key, entity \| undefined)`        | An entity was retrieved           |
+| `query`    | `(criteria, entities \| undefined)` | A query was executed              |
+| `delete`   | `(key)`                             | An entity was deleted             |
+| `clearall` | `()`                                | All entities were deleted         |
 
 ### Available Backends
 
-| Backend | Class | Runtime | Notes |
-|---|---|---|---|
-| In-Memory | `InMemoryTabularStorage` | All | Fast, non-persistent |
-| Shared In-Memory | `SharedInMemoryTabularStorage` | All | Shared between instances |
-| SQLite | `SqliteTabularStorage` | Node, Bun | File-based persistence |
-| PostgreSQL | `PostgresTabularStorage` | Node, Bun | Network-based |
-| Supabase | `SupabaseTabularStorage` | All | Cloud PostgreSQL |
-| IndexedDB | `IndexedDbTabularStorage` | Browser | Browser-native |
-| Filesystem | `FsFolderTabularStorage` | Node, Bun | Directory-based |
-| HuggingFace | `HuggingFaceTabularStorage` | All | HuggingFace datasets |
-| Cached | `CachedTabularStorage` | All | Read-through cache wrapper |
-| Telemetry | `TelemetryTabularStorage` | All | Wraps with tracing |
+| Backend          | Class                          | Runtime   | Notes                      |
+| ---------------- | ------------------------------ | --------- | -------------------------- |
+| In-Memory        | `InMemoryTabularStorage`       | All       | Fast, non-persistent       |
+| Shared In-Memory | `SharedInMemoryTabularStorage` | All       | Shared between instances   |
+| SQLite           | `SqliteTabularStorage`         | Node, Bun | File-based persistence     |
+| PostgreSQL       | `PostgresTabularStorage`       | Node, Bun | Network-based              |
+| Supabase         | `SupabaseTabularStorage`       | All       | Cloud PostgreSQL           |
+| IndexedDB        | `IndexedDbTabularStorage`      | Browser   | Browser-native             |
+| Filesystem       | `FsFolderTabularStorage`       | Node, Bun | Directory-based            |
+| HuggingFace      | `HuggingFaceTabularStorage`    | All       | HuggingFace datasets       |
+| Cached           | `CachedTabularStorage`         | All       | Read-through cache wrapper |
+| Telemetry        | `TelemetryTabularStorage`      | All       | Wraps with tracing         |
 
-## IQueueStorage -- Queue Storage
+## IQueueStorage -- Job Queue Storage
 
-Specialized storage for job queue persistence. It extends beyond basic CRUD to support atomic job claiming, abort signaling, progress tracking, and TTL-based cleanup.
+Specialized storage for job queue persistence is exported from `@workglow/job-queue`, not `@workglow/storage`. It extends beyond basic CRUD to support atomic job claiming, abort signaling, progress tracking, and TTL-based cleanup.
 
 ```typescript
 interface IQueueStorage<Input, Output> {
@@ -233,11 +242,19 @@ interface IQueueStorage<Input, Output> {
   outputForInput(input: Input): Promise<Output | null>;
   abort(id: unknown): Promise<void>;
   getByRunId(runId: string): Promise<Array<JobStorageFormat<Input, Output>>>;
-  saveProgress(id: unknown, progress: number, message: string, details: Record<string, any> | null): Promise<void>;
+  saveProgress(
+    id: unknown,
+    progress: number,
+    message: string,
+    details: Record<string, any> | null
+  ): Promise<void>;
   delete(id: unknown): Promise<void>;
   deleteJobsByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void>;
   setupDatabase(): Promise<void>;
-  subscribeToChanges(callback: (change: QueueChangePayload<Input, Output>) => void, options?: QueueSubscribeOptions): () => void;
+  subscribeToChanges(
+    callback: (change: QueueChangePayload<Input, Output>) => void,
+    options?: QueueSubscribeOptions
+  ): () => void;
 }
 ```
 
@@ -323,14 +340,14 @@ storage.subscribeToChanges(callback, { prefixFilter: {} });
 
 ### Available Backends
 
-| Backend | Class | Runtime |
-|---|---|---|
-| In-Memory | `InMemoryQueueStorage` | All |
-| SQLite | `SqliteQueueStorage` | Node, Bun |
-| PostgreSQL | `PostgresQueueStorage` | Node, Bun |
-| Supabase | `SupabaseQueueStorage` | All |
-| IndexedDB | `IndexedDbQueueStorage` | Browser |
-| Telemetry | `TelemetryQueueStorage` | All |
+| Backend    | Class                   | Import                          |
+| ---------- | ----------------------- | ------------------------------- |
+| In-Memory  | `InMemoryQueueStorage`  | `@workglow/job-queue`           |
+| SQLite     | `SqliteQueueStorage`    | `@workglow/sqlite/job-queue`    |
+| PostgreSQL | `PostgresQueueStorage`  | `@workglow/postgres/job-queue`  |
+| Supabase   | `SupabaseQueueStorage`  | `@workglow/supabase/job-queue`  |
+| IndexedDB  | `IndexedDbQueueStorage` | `@workglow/indexeddb/job-queue` |
+| Telemetry  | `TelemetryQueueStorage` | `@workglow/job-queue`           |
 
 ## IVectorStorage -- Vector Storage
 
@@ -346,8 +363,14 @@ interface IVectorStorage<
   InsertType,
 > extends ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, InsertType> {
   getVectorDimensions(): number;
-  similaritySearch(query: TypedArray, options?: VectorSearchOptions<Metadata>): Promise<(Entity & { score: number })[]>;
-  hybridSearch?(query: TypedArray, options: HybridSearchOptions<Metadata>): Promise<(Entity & { score: number })[]>;
+  similaritySearch(
+    query: TypedArray,
+    options?: VectorSearchOptions<Metadata>
+  ): Promise<(Entity & { score: number })[]>;
+  hybridSearch?(
+    query: TypedArray,
+    options: HybridSearchOptions<Metadata>
+  ): Promise<(Entity & { score: number })[]>;
 }
 ```
 
@@ -383,14 +406,14 @@ Not all backends support hybrid search. Check with `typeof storage.hybridSearch 
 
 ```typescript
 interface VectorSearchOptions<Metadata> {
-  readonly topK?: number;           // Max results (default varies by backend)
-  readonly filter?: Partial<Metadata>;  // Metadata filter
-  readonly scoreThreshold?: number;     // Minimum similarity score
+  readonly topK?: number; // Max results (default varies by backend)
+  readonly filter?: Partial<Metadata>; // Metadata filter
+  readonly scoreThreshold?: number; // Minimum similarity score
 }
 
 interface HybridSearchOptions<Metadata> extends VectorSearchOptions<Metadata> {
-  readonly textQuery: string;       // Full-text search query
-  readonly vectorWeight?: number;   // Weight for vector vs text (0-1)
+  readonly textQuery: string; // Full-text search query
+  readonly vectorWeight?: number; // Weight for vector vs text (0-1)
 }
 ```
 
@@ -401,19 +424,19 @@ The module provides helper functions for introspecting vector schemas:
 ```typescript
 import { getVectorProperty, getMetadataProperty } from "@workglow/storage";
 
-const vectorColumn = getVectorProperty(schema);   // e.g., "vector"
+const vectorColumn = getVectorProperty(schema); // e.g., "vector"
 const metadataColumn = getMetadataProperty(schema); // e.g., "metadata"
 ```
 
 ### Available Backends
 
-| Backend | Class | Runtime | Notes |
-|---|---|---|---|
-| In-Memory | `InMemoryVectorStorage` | All | Brute-force cosine similarity |
-| SQLite | `SqliteVectorStorage` | Node, Bun | sqlite-vec extension |
-| SQLite AI | `SqliteAiVectorStorage` | Node, Bun | Optimized for AI workflows |
-| PostgreSQL | `PostgresVectorStorage` | Node, Bun | pgvector extension |
-| IndexedDB | `IndexedDbVectorStorage` | Browser | Brute-force in browser |
+| Backend    | Class                    | Runtime   | Notes                         |
+| ---------- | ------------------------ | --------- | ----------------------------- |
+| In-Memory  | `InMemoryVectorStorage`  | All       | Brute-force cosine similarity |
+| SQLite     | `SqliteVectorStorage`    | Node, Bun | sqlite-vec extension          |
+| SQLite AI  | `SqliteAiVectorStorage`  | Node, Bun | Optimized for AI workflows    |
+| PostgreSQL | `PostgresVectorStorage`  | Node, Bun | pgvector extension            |
+| IndexedDB  | `IndexedDbVectorStorage` | Browser   | Brute-force in browser        |
 
 ## Registry and Input Resolution
 
@@ -438,10 +461,10 @@ When a task runs, the framework's input resolver maps the string identifier to t
 
 ### Service Tokens
 
-| Token | Type | Description |
-|---|---|---|
-| `QUEUE_STORAGE` | `IQueueStorage<any, any>` | Default queue storage |
-| `RATE_LIMITER_STORAGE` | `IRateLimiterStorage` | Default rate limiter storage |
+| Token                  | Type                                                 | Description                  |
+| ---------------------- | ---------------------------------------------------- | ---------------------------- |
+| `QUEUE_STORAGE`        | `IQueueStorage<any, any>` from `@workglow/job-queue` | Default queue storage        |
+| `RATE_LIMITER_STORAGE` | `IRateLimiterStorage` from `@workglow/job-queue`     | Default rate limiter storage |
 
 ## Database Setup
 
@@ -452,7 +475,11 @@ const storage = new SqliteTabularStorage(db, "users", UserSchema, UserPrimaryKey
 await storage.setupDatabase(); // Creates table and indices
 
 // Now safe to use
-await storage.put({ name: "Alice", email: "alice@example.com", created_at: new Date().toISOString() });
+await storage.put({
+  name: "Alice",
+  email: "alice@example.com",
+  created_at: new Date().toISOString(),
+});
 ```
 
 ## API Reference
@@ -485,7 +512,7 @@ await storage.put({ name: "Alice", email: "alice@example.com", created_at: new D
 - `setupDatabase(): Promise<void>` -- Initialize the database schema.
 - `destroy(): void` -- Free resources.
 
-### IQueueStorage
+### IQueueStorage (`@workglow/job-queue`)
 
 - `add(job): Promise<unknown>` -- Add a job, returns its ID.
 - `get(id): Promise<JobStorageFormat | undefined>` -- Get a job by ID.

@@ -91,8 +91,13 @@ The job queue system is split into three main components:
 ## Quick Start
 
 ```typescript
-import { Job, JobQueueClient, JobQueueServer, IJobExecuteContext } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import {
+  InMemoryQueueStorage,
+  Job,
+  JobQueueClient,
+  JobQueueServer,
+  IJobExecuteContext,
+} from "@workglow/job-queue";
 
 // 1. Define your input/output types
 interface ProcessTextInput {
@@ -440,7 +445,7 @@ await client.abortJobRun("batch-001");
 ### In-Memory Storage
 
 ```typescript
-import { InMemoryQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage } from "@workglow/job-queue";
 
 const storage = new InMemoryQueueStorage<Input, Output>("my-queue");
 await storage.setupDatabase();
@@ -449,7 +454,7 @@ await storage.setupDatabase();
 ### IndexedDB Storage (Browser)
 
 ```typescript
-import { IndexedDbQueueStorage } from "@workglow/storage";
+import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
 
 const storage = new IndexedDbQueueStorage<Input, Output>("my-queue");
 await storage.setupDatabase();
@@ -460,8 +465,8 @@ await storage.setupDatabase();
 `SqliteQueueStorage` takes an open **`Sqlite.Database`** instance (not a path string).
 
 ```typescript
-import { SqliteQueueStorage } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
+import { Sqlite } from "@workglow/sqlite/storage";
 
 await Sqlite.init();
 const db = new Sqlite.Database("./jobs.db");
@@ -472,7 +477,7 @@ await storage.setupDatabase();
 ### PostgreSQL Storage (Node.js/Bun)
 
 ```typescript
-import { PostgresQueueStorage } from "@workglow/storage";
+import { PostgresQueueStorage } from "@workglow/postgres/job-queue";
 import { Pool } from "pg";
 
 const pool = new Pool({
@@ -510,8 +515,7 @@ const limiter = new DelayLimiter(500);
 ### Rate Limiter
 
 ```typescript
-import { RateLimiter } from "@workglow/job-queue";
-import { InMemoryRateLimiterStorage } from "@workglow/storage";
+import { InMemoryRateLimiterStorage, RateLimiter } from "@workglow/job-queue";
 
 // Create storage for the rate limiter
 const rateLimiterStorage = new InMemoryRateLimiterStorage();
@@ -533,9 +537,9 @@ import {
   CompositeLimiter,
   ConcurrencyLimiter,
   DelayLimiter,
+  InMemoryRateLimiterStorage,
   RateLimiter,
 } from "@workglow/job-queue";
-import { InMemoryRateLimiterStorage } from "@workglow/storage";
 
 // Create storage for the rate limiter
 const rateLimiterStorage = new InMemoryRateLimiterStorage();
@@ -765,8 +769,13 @@ Example test:
 
 ```typescript
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { Job, JobQueueClient, JobQueueServer, IJobExecuteContext } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import {
+  InMemoryQueueStorage,
+  Job,
+  JobQueueClient,
+  JobQueueServer,
+  IJobExecuteContext,
+} from "@workglow/job-queue";
 
 class TestJob extends Job<{ data: string }, { result: string }> {
   async execute(input: { data: string }, context: IJobExecuteContext) {
