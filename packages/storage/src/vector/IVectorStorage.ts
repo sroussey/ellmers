@@ -29,6 +29,69 @@ export type AnyVectorStorage = Omit<
 };
 
 /**
+ * Distance metric used by vector indexes.
+ *
+ * - `cosine`: cosine distance (1 - cosine similarity). Default for embedding
+ *   models that produce normalised vectors. Recommended starting point for
+ *   text/RAG workloads.
+ * - `l2`: euclidean distance. Use when vectors carry magnitude information.
+ * - `ip`: negative inner product. Use when embeddings are pre-normalised AND
+ *   you want a slightly cheaper similarity computation than cosine.
+ */
+export type VectorDistanceMetric = "cosine" | "l2" | "ip";
+
+/**
+ * HNSW index parameters. HNSW is the default approximate-nearest-neighbour
+ * algorithm in pgvector and other modern vector indexes; tuning these knobs
+ * trades index build cost and memory for recall and query latency.
+ *
+ * Defaults from pgvector when unspecified: `m = 16`, `efConstruction = 64`,
+ * `efSearch = 40`.
+ *
+ * - `m`: number of bi-directional links per layer. Higher = better recall,
+ *   more memory, slower build. Typical values: 8 (low-recall), 16 (default),
+ *   32 (high-recall).
+ * - `efConstruction`: candidate-list size during index build. Higher = better
+ *   recall, much slower build. Typical values: 64 (default), 200, 400.
+ * - `efSearch`: candidate-list size at query time. Higher = better recall,
+ *   slower queries. Typical values: 40 (default), 80, 200. This is the knob
+ *   you want to tune at query time once the index is built.
+ */
+export interface HnswIndexOptions {
+  readonly m?: number;
+  readonly efConstruction?: number;
+  readonly efSearch?: number;
+}
+
+/**
+ * IVFFlat index parameters (pgvector). Offers faster builds than HNSW at the
+ * cost of recall, useful for very large corpora.
+ *
+ * - `lists`: number of inverted lists. pgvector docs recommend `rows / 1000`
+ *   for up to 1M rows, then `sqrt(rows)` for larger sets.
+ * - `probes`: number of lists scanned at query time. Higher = better recall,
+ *   slower queries. Default `1`.
+ */
+export interface IvfflatIndexOptions {
+  readonly lists: number;
+  readonly probes?: number;
+}
+
+/**
+ * Vector-index tuning options threaded into the storage constructor and
+ * applied during {@link IVectorStorage} setup / migration.
+ *
+ * Only one of `hnsw` or `ivfflat` should be set; if both are absent the
+ * backend uses a sensible default (HNSW on pgvector, COSINE-only for
+ * sqlite-vec which does not yet support HNSW tuning).
+ */
+export interface VectorIndexOptions {
+  readonly distance?: VectorDistanceMetric;
+  readonly hnsw?: HnswIndexOptions;
+  readonly ivfflat?: IvfflatIndexOptions;
+}
+
+/**
  * Options for vector search operations
  */
 export interface VectorSearchOptions<

@@ -14,6 +14,7 @@ import {
 } from "@workglow/util/schema";
 import {
   BaseSqlTabularStorage,
+  buildSearchWhere,
   ClientProvidedKeysOption,
   KeyGenerationStrategy,
   AnyTabularStorage,
@@ -21,12 +22,11 @@ import {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   InsertEntity,
-  isSearchCondition,
   Page,
   PageRequest,
   QueryOptions,
+  SqliteDialect,
   SearchCriteria,
-  SearchOperator,
   SimplifyPrimaryKey,
   TabularChangePayload,
   TabularSubscribeOptions,
@@ -1030,33 +1030,12 @@ export class SqliteTabularStorage<
     whereClause: string;
     params: ValueOptionType[];
   } {
-    const conditions: string[] = [];
-    const params: ValueOptionType[] = [];
-
-    for (const column of Object.keys(criteria) as Array<keyof Entity>) {
-      if (!(column in this.schema.properties)) {
-        throw new Error(`Schema must have a ${String(column)} field to use deleteSearch`);
-      }
-
-      const criterion = criteria[column];
-      let operator: SearchOperator = "=";
-      let value: Entity[keyof Entity];
-
-      if (isSearchCondition(criterion)) {
-        operator = criterion.operator;
-        value = criterion.value as Entity[keyof Entity];
-      } else {
-        value = criterion as Entity[keyof Entity];
-      }
-
-      conditions.push(`\`${String(column)}\` ${operator} ?`);
-      params.push(this.jsToSqlValue(column as string, value));
-    }
-
-    return {
-      whereClause: conditions.join(" AND "),
-      params,
-    };
+    return buildSearchWhere<Entity>(
+      SqliteDialect,
+      criteria,
+      this.schema.properties as Record<string, unknown>,
+      (column, value) => this.jsToSqlValue(column, value)
+    );
   }
 
   /**

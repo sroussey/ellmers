@@ -8,3 +8,6 @@ export * from "./_postgres/node-bun";
 export * from "./PostgresKvStorage";
 export * from "./PostgresTabularStorage";
 export * from "./PostgresVectorStorage";
+
+// Versioned migrations runner for SQL backends in this package.
+export * from "../migrations/PostgresMigrationRunner";
