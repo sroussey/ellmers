@@ -12,8 +12,11 @@ import { StorageValidationError } from "./StorageError";
  * Encodes the position of the last seen row so the next page can resume
  * from there using keyset (a.k.a. seek) pagination. Callers must treat
  * cursors as opaque — the encoding is an implementation detail.
+ *
+ * Named `PageCursor` (not `Cursor`) to avoid colliding with the unrelated
+ * generic iterator type `Cursor<T>` exported from `@workglow/util`.
  */
-export type Cursor = string & { readonly __cursorBrand: unique symbol };
+export type PageCursor = string & { readonly __pageCursorBrand: unique symbol };
 
 /**
  * Internal cursor payload.
@@ -55,7 +58,7 @@ export const MAX_CURSOR_LENGTH = 8 * 1024;
  * not documented for callers — it's an implementation detail and may be
  * tightened in future versions (signed, length-limited, etc.).
  */
-export function encodeCursor(payload: CursorPayload): Cursor {
+export function encodeCursor(payload: CursorPayload): PageCursor {
   // Caller is trusted (we construct payloads internally); the n/c arity
   // mismatch check lives on the decode side, where cursors come from the
   // wire and must be validated before use.
@@ -88,7 +91,7 @@ export function encodeCursor(payload: CursorPayload): Cursor {
     .slice(0, trimEnd)
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
-  return urlSafe as Cursor;
+  return urlSafe as PageCursor;
 }
 
 /**
@@ -98,7 +101,7 @@ export function encodeCursor(payload: CursorPayload): Cursor {
  *   {@link MAX_CURSOR_LENGTH}, or the format version is unknown. Callers
  *   should surface these as 4xx errors rather than retrying.
  */
-export function decodeCursor(cursor: Cursor | string): CursorPayload {
+export function decodeCursor(cursor: PageCursor | string): CursorPayload {
   if (typeof cursor !== "string" || cursor.length === 0) {
     throw new StorageValidationError("Cursor must be a non-empty string");
   }
@@ -133,6 +136,10 @@ export function decodeCursor(cursor: Cursor | string): CursorPayload {
   }
 
   const p = parsed as Partial<CursorPayload>;
+  // Validate every shape the rest of the system relies on. The `c` element
+  // type check is what stops a hostile cursor from smuggling an object or
+  // array into a downstream SQL parameter binder or string comparator —
+  // every consumer assumes `c[i]` is a primitive (or null).
   if (
     !p ||
     typeof p !== "object" ||
@@ -140,7 +147,14 @@ export function decodeCursor(cursor: Cursor | string): CursorPayload {
     !Array.isArray(p.c) ||
     !Array.isArray(p.n) ||
     p.n.length !== p.c.length ||
-    !p.n.every((name) => typeof name === "string")
+    !p.n.every((name) => typeof name === "string") ||
+    !p.c.every(
+      (v) =>
+        v === null ||
+        typeof v === "string" ||
+        typeof v === "number" ||
+        typeof v === "boolean"
+    )
   ) {
     throw new StorageValidationError(`Cursor format is unsupported (expected v${CURSOR_VERSION})`);
   }

@@ -32,10 +32,10 @@ import {
 import { CoveringIndexMissingError } from "./CoveringIndexMissingError";
 import {
   assertCursorMatches,
-  Cursor,
   CursorPayload,
   decodeCursor,
   encodeCursor,
+  PageCursor,
 } from "./Cursor";
 import {
   StorageEmptyCriteriaError,
@@ -431,7 +431,7 @@ export abstract class BaseTabularStorage<
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let cursor: Cursor | undefined;
+    let cursor: PageCursor | undefined;
     while (true) {
       const page = await this.getPage({ limit: pageSize, cursor });
       for (const entity of page.items) {
@@ -453,7 +453,7 @@ export abstract class BaseTabularStorage<
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let cursor: Cursor | undefined;
+    let cursor: PageCursor | undefined;
     while (true) {
       const page = await this.getPage({ limit: pageSize, cursor });
       if (page.items.length > 0) {
@@ -616,22 +616,30 @@ export abstract class BaseTabularStorage<
     };
 
     let rows: Entity[] | undefined;
+    // Tracks whether we wound up using `getAll()` because `query()` was
+    // unsupported and we fell back. In that case the backend never
+    // applied our keyset / leading-column predicate, so we must drive
+    // the in-memory sort + keyset filter ourselves even if `useFallback`
+    // is false (which it would be when the *simple-keyset* path tried to
+    // push `pk OP ?` to `query()` and got rejected — without this flag
+    // the cursor predicate would never run and pages would repeat rows).
+    let forcedFallback = false;
     if (Object.keys(queryCriteria).length === 0) {
       rows = await this.getAll(queryOptions);
     } else {
       try {
         rows = await this.query(queryCriteria, queryOptions);
       } catch (err) {
-        // Backends like FsFolder don't implement `query()`. The leading-
-        // column pushdown is a perf optimisation, not a correctness
-        // requirement — fall through to a full scan when the backend
-        // can't filter for us. User-supplied criteria still need to fail
-        // loudly, so we only swallow the error when we'd added our own
-        // pushdown criterion AND the user passed none.
+        // Backends like FsFolder don't implement `query()`. Falling back
+        // to a full scan keeps the call correct as long as we then sort
+        // and filter in memory ourselves. User-supplied criteria still
+        // need to fail loudly, so we only swallow the error when we'd
+        // added our own pushdown criterion AND the user passed none.
         const userHadNoCriteria =
           !criteria || Object.keys(criteria).length === 0;
         if (err instanceof StorageUnsupportedError && userHadNoCriteria) {
           rows = await this.getAll({ orderBy: effectiveOrderBy });
+          forcedFallback = true;
         } else {
           throw err;
         }
@@ -640,7 +648,7 @@ export abstract class BaseTabularStorage<
 
     let items: Entity[] = rows ?? [];
 
-    if (useFallback) {
+    if (useFallback || forcedFallback) {
       // Keyset paging requires rows to be seen in a definite order. Some
       // backends don't honour `orderBy` reliably (FsFolder, certain remote
       // services), so we re-sort here to guarantee correctness rather than
@@ -740,7 +748,7 @@ export abstract class BaseTabularStorage<
   protected buildCursor(
     row: Entity,
     effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>
-  ): Cursor {
+  ): PageCursor {
     const n = effectiveOrderBy.map((spec) => String(spec.column));
     const c = effectiveOrderBy.map((spec) => toCursorValue(row[spec.column]));
     return encodeCursor({ v: 1, n, c });

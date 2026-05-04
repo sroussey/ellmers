@@ -6,9 +6,9 @@
 
 import { EventParameters } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
-import type { Cursor } from "./Cursor";
+import type { PageCursor } from "./Cursor";
 
-export type { Cursor } from "./Cursor";
+export type { PageCursor } from "./Cursor";
 
 // Generic type for possible value types in the repository
 export type ValueOptionType = string | number | bigint | boolean | null | Uint8Array;
@@ -114,7 +114,7 @@ export interface QueryOptions<Entity> {
    * @deprecated Offset-based paging is unstable when rows are inserted or
    * deleted between page fetches (entries can be skipped or duplicated).
    * Use {@link ITabularStorage.getPage} / {@link ITabularStorage.queryPage}
-   * with a {@link Cursor} instead.
+   * with a {@link PageCursor} instead.
    *
    * @example
    * ```ts
@@ -122,7 +122,7 @@ export interface QueryOptions<Entity> {
    * const rows = await storage.getAll({ orderBy, limit: 50, offset: 100 });
    *
    * // After (cursor paging — also stable under concurrent writes):
-   * let cursor: Cursor | undefined;
+   * let cursor: PageCursor | undefined;
    * for (let i = 0; i < 3; i++) {
    *   const page = await storage.getPage({ orderBy, limit: 50, cursor });
    *   cursor = page.nextCursor;
@@ -159,7 +159,7 @@ export interface PageRequest<Entity> {
   /** Maximum number of rows to return. Defaults to 100. */
   readonly limit?: number;
   /** Opaque cursor returned by a previous call; omit to start from the beginning. */
-  readonly cursor?: Cursor;
+  readonly cursor?: PageCursor;
 }
 
 /**
@@ -176,7 +176,7 @@ export interface PageRequest<Entity> {
  *
  * ```ts
  * // CORRECT — terminates on both `nextCursor` and empty `items`:
- * let cursor: Cursor | undefined;
+ * let cursor: PageCursor | undefined;
  * do {
  *   const page = await storage.getPage({ limit: 100, cursor });
  *   for (const row of page.items) handle(row);
@@ -195,7 +195,7 @@ export interface PageRequest<Entity> {
  */
 export interface Page<Entity> {
   readonly items: ReadonlyArray<Entity>;
-  readonly nextCursor: Cursor | undefined;
+  readonly nextCursor: PageCursor | undefined;
 }
 
 /**

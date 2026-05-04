@@ -21,7 +21,7 @@ import {
   TabularChangePayload,
   TabularSubscribeOptions,
 } from "./ITabularStorage";
-import { Cursor, decodeCursor, encodeCursor } from "./Cursor";
+import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
 import { StorageUnsupportedError } from "./StorageError";
 
 export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
@@ -34,21 +34,21 @@ export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
  * the offset directly against the HF `/rows` endpoint, which doesn't
  * support tuple comparisons. Stability under concurrent writes is moot
  * because HF datasets are read-only.
+ *
+ * The synthetic `hfOffset` "column name" makes the cursor self-describing
+ * for `decodeCursor`'s n/c arity check. HF's offset paging doesn't
+ * actually reference a column, but the cursor format requires names
+ * alongside values. The chosen identifier satisfies the schema
+ * column-name regex (`^[a-zA-Z][a-zA-Z0-9_]*$`) so the cursor would pass
+ * schema-membership validation if that ever broadens.
  */
-// Synthetic column name used solely to make the cursor self-describing for
-// `decodeCursor`'s n/c arity check. HF's offset paging doesn't actually
-// reference a column, but the cursor format requires names alongside values.
-// Synthetic column name used solely to make the cursor self-describing for
-// `decodeCursor`'s n/c arity check. Picks an identifier that satisfies the
-// schema column-name regex (`^[a-zA-Z][a-zA-Z0-9_]*$`) so the cursor would
-// pass schema-membership validation if the validation step ever broadens.
 const HF_OFFSET_CURSOR_NAME = "hfOffset";
 
-function encodeOffsetCursor(offset: number): Cursor {
+function encodeOffsetCursor(offset: number): PageCursor {
   return encodeCursor({ v: 1, n: [HF_OFFSET_CURSOR_NAME], c: [offset] });
 }
 
-function decodeOffsetCursor(cursor: Cursor | string): number {
+function decodeOffsetCursor(cursor: PageCursor | string): number {
   const payload = decodeCursor(cursor);
   if (payload.n[0] !== HF_OFFSET_CURSOR_NAME) {
     throw new Error("Cursor was not produced by HuggingFaceTabularStorage");

@@ -7,8 +7,11 @@
 import type {
   AnyTabularStorage,
   CoveringIndexQueryOptions,
+  PageCursor,
   DeleteSearchCriteria,
   ITabularStorage,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   TabularChangePayload,
@@ -139,21 +142,41 @@ export class ScopedTabularStorage<
     return this.stripArray(results);
   }
 
+  async getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
+    // ScopedTabularStorage always paginates the inner store filtered by
+    // `kb_id`, so even the no-criteria `getPage` becomes a `queryPage` on
+    // the inner storage. The cursor returned by inner is opaque to our
+    // callers and round-trips through us unchanged.
+    return this.scopedPage(undefined, request);
+  }
+
+  async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request?: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    return this.scopedPage(criteria, request);
+  }
+
+  private async scopedPage(
+    criteria: SearchCriteria<Entity> | undefined,
+    request: PageRequest<Entity> | undefined
+  ): Promise<Page<Entity>> {
+    const scopedCriteria = { ...((criteria ?? {}) as any), kb_id: this.kbId };
+    const innerPage = await this.inner.queryPage(scopedCriteria, request as any);
+    const items = innerPage.items.map((row: any) => this.strip(row)) as Entity[];
+    return { items, nextCursor: innerPage.nextCursor };
+  }
+
   async *records(pageSize: number = 100): AsyncGenerator<Entity, void, undefined> {
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let offset = 0;
+    let cursor: PageCursor | undefined;
     while (true) {
-      const page = await this.getBulk(offset, pageSize);
-      if (!page || page.length === 0) {
-        break;
-      }
-      for (const entity of page) {
-        yield entity;
-      }
-      if (page.length < pageSize) break;
-      offset += pageSize;
+      const page = await this.getPage({ limit: pageSize, cursor });
+      for (const entity of page.items) yield entity;
+      if (!page.nextCursor || page.items.length === 0) break;
+      cursor = page.nextCursor;
     }
   }
 
@@ -161,15 +184,12 @@ export class ScopedTabularStorage<
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let offset = 0;
+    let cursor: PageCursor | undefined;
     while (true) {
-      const page = await this.getBulk(offset, pageSize);
-      if (!page || page.length === 0) {
-        break;
-      }
-      yield page;
-      if (page.length < pageSize) break;
-      offset += pageSize;
+      const page = await this.getPage({ limit: pageSize, cursor });
+      if (page.items.length > 0) yield page.items.slice() as Entity[];
+      if (!page.nextCursor || page.items.length === 0) break;
+      cursor = page.nextCursor;
     }
   }
 

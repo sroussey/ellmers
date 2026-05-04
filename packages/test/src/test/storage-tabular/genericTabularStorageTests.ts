@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Cursor, ITabularStorage, StorageUnsupportedError } from "@workglow/storage";
+import { ITabularStorage, PageCursor, StorageUnsupportedError } from "@workglow/storage";
 import { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -1480,7 +1480,7 @@ export function runGenericTabularStorageTests(
       it("iterates the entire table by following nextCursor", async () => {
         await seedRows(7);
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({ limit: 3, cursor });
           for (const row of page.items) seen.push(row.id);
@@ -1546,7 +1546,7 @@ export function runGenericTabularStorageTests(
       it("paginates filtered results via queryPage", async () => {
         await seedRows(8);
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.queryPage(
             { category: "even" },
@@ -1561,7 +1561,7 @@ export function runGenericTabularStorageTests(
       it("supports DESC ordering via the cursor", async () => {
         await seedRows(5);
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({
             limit: 2,
@@ -1579,7 +1579,7 @@ export function runGenericTabularStorageTests(
         // is what keeps iteration deterministic when sort columns collide.
         await seedRows(8);
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({
             limit: 3,
@@ -1610,7 +1610,7 @@ export function runGenericTabularStorageTests(
         // must emit `(category < ?) OR (category = ? AND value > ?) OR ...`.
         await seedRows(8);
         const seen: Array<{ id: string; category: string; value: number }> = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({
             limit: 3,
@@ -1679,7 +1679,7 @@ export function runGenericTabularStorageTests(
         await repository.putBulk(rows);
 
         const seen: Array<{ id: string; kind: string | undefined }> = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({
             limit: 2,
@@ -1726,8 +1726,8 @@ export function runGenericTabularStorageTests(
         await seedRows(6);
         const seenA: string[] = [];
         const seenB: string[] = [];
-        let cursorA: Cursor | undefined;
-        let cursorB: Cursor | undefined;
+        let cursorA: PageCursor | undefined;
+        let cursorB: PageCursor | undefined;
         for (let step = 0; step < 4; step++) {
           const pageA = await repository.getPage({ limit: 2, cursor: cursorA });
           const pageB = await repository.getPage({ limit: 2, cursor: cursorB });
@@ -1794,7 +1794,7 @@ export function runGenericTabularStorageTests(
         await repository.putBulk(rows);
 
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({ limit: 2, cursor });
           for (const row of page.items) seen.push(row.id);
@@ -2258,7 +2258,7 @@ export function runGenericTabularStorageTests(
         await repository.putBulk(entities);
 
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         do {
           const page = await repository.getPage({ limit: 2, cursor });
           for (const row of page.items) seen.push(row.name);
@@ -2397,7 +2397,7 @@ export function runGenericTabularStorageTests(
         await repository.putBulk(initial);
 
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         let pageCount = 0;
         do {
           const page = await repository.getPage({ limit: 2, cursor });
@@ -2442,7 +2442,7 @@ export function runGenericTabularStorageTests(
         await repository.putBulk(entities);
 
         const seen: string[] = [];
-        let cursor: Cursor | undefined;
+        let cursor: PageCursor | undefined;
         try {
           do {
             const page = await repository.queryPage({ type: "even" }, { limit: 2, cursor });

@@ -28,10 +28,14 @@ export interface IClosableSupabaseClient extends SupabaseClient {
  *
  * The mock backend is PGlite (real Postgres), so we emit standard SQL.
  */
-function translatePostgrestFilter(
-  filter: string,
-  topLevelOp: "or" | "and"
-): string {
+/**
+ * Only the top-level `.or()` filter shape used by `SupabaseTabularStorage`
+ * is supported here, because that's all the production code ever emits;
+ * adding `.and()` support would mean a different join here. Kept as a
+ * single-purpose helper rather than a configurable one to avoid a dead
+ * parameter that future callers might trust.
+ */
+function translatePostgrestFilter(filter: string): string {
   let i = 0;
   const s = filter;
 
@@ -49,7 +53,7 @@ function translatePostgrestFilter(
       // Trailing whitespace is tolerated by PostgREST; skip it.
       while (i < s.length && /\s/.test(s[i])) i++;
     }
-    return parts.join(closingChar === null && topLevelOp === "or" ? " OR " : " OR ");
+    return parts.join(" OR ");
   }
 
   function parseExpr(): string {
@@ -722,7 +726,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
             whereParts.push(whereClause);
           }
           for (const orFilter of queryBuilder._orFilters) {
-            whereParts.push(`(${translatePostgrestFilter(orFilter, "or")})`);
+            whereParts.push(`(${translatePostgrestFilter(orFilter)})`);
           }
           if (whereParts.length > 0) {
             query += ` WHERE ${whereParts.join(" AND ")}`;
