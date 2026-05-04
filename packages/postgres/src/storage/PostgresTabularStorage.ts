@@ -5,7 +5,7 @@
  */
 
 import type { Pool } from "@workglow/postgres/storage";
-import { AsyncMutex, createServiceToken } from "@workglow/util";
+import { createServiceToken } from "@workglow/util";
 import type { TypedArray } from "@workglow/util/schema";
 import {
   DataPortSchemaObject,
@@ -657,16 +657,30 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Per-instance async mutex. Every public read/write method acquires it
-   * before touching `this.db`; `withTransaction` holds it for the duration
-   * of the user's callback so concurrent calls from outside `fn` queue
-   * behind the transaction instead of slipping into it.
+   * Per-instance promise-chain mutex. Every public read/write method awaits
+   * the previous holder before running and yields the lock when it settles;
+   * `withTransaction` holds it for the duration of the user's callback so
+   * concurrent calls from outside `fn` queue behind the transaction instead
+   * of slipping into it.
    *
    * The Proxy returned by {@link createTxView} routes back to the private
    * `_*Internal` methods directly, so calls made *through* the `tx` handle
    * inside `fn` do not deadlock against the mutex held by `withTransaction`.
    */
-  private mutex = new AsyncMutex();
+  private mutexChain: Promise<void> = Promise.resolve();
+  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
 
   /**
    * Tracks whether this storage instance is currently inside a
@@ -702,7 +716,7 @@ export class PostgresTabularStorage<
    *        commit if inside a {@link withTransaction})
    */
   async put(entity: InsertType): Promise<Entity> {
-    return this.mutex.acquire(() => this._putInternal(entity));
+    return this.mutex(() => this._putInternal(entity));
   }
 
   private async _putInternal(entity: InsertType): Promise<Entity> {
@@ -730,7 +744,7 @@ export class PostgresTabularStorage<
    * {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    return this.mutex.acquire(() => this._putBulkInternal(entities));
+    return this.mutex(() => this._putBulkInternal(entities));
   }
 
   private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
@@ -839,7 +853,7 @@ export class PostgresTabularStorage<
       );
     }
 
-    return this.mutex.acquire(async () => {
+    return this.mutex(async () => {
       if (this.inTransaction) {
         throw new Error(
           "PostgresTabularStorage.withTransaction does not support nesting. " +
@@ -888,7 +902,7 @@ export class PostgresTabularStorage<
    * @emits "get" event with the key when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
-    return this.mutex.acquire(() => this._getInternal(key));
+    return this.mutex(() => this._getInternal(key));
   }
 
   private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
@@ -923,7 +937,7 @@ export class PostgresTabularStorage<
    * @emits "delete" event with the key when successful
    */
   async delete(value: PrimaryKey | Entity): Promise<void> {
-    return this.mutex.acquire(() => this._deleteInternal(value));
+    return this.mutex(() => this._deleteInternal(value));
   }
 
   private async _deleteInternal(value: PrimaryKey | Entity): Promise<void> {
@@ -944,7 +958,7 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._getAllInternal(options));
+    return this.mutex(() => this._getAllInternal(options));
   }
 
   private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
@@ -988,7 +1002,7 @@ export class PostgresTabularStorage<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
-    return this.mutex.acquire(() => this._deleteAllInternal());
+    return this.mutex(() => this._deleteAllInternal());
   }
 
   private async _deleteAllInternal(): Promise<void> {
@@ -1003,7 +1017,7 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to the count of stored items
    */
   async size(): Promise<number> {
-    return this.mutex.acquire(() => this._sizeInternal());
+    return this.mutex(() => this._sizeInternal());
   }
 
   private async _sizeInternal(): Promise<number> {
@@ -1016,7 +1030,7 @@ export class PostgresTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
-    return this.mutex.acquire(() => this._countInternal(criteria));
+    return this.mutex(() => this._countInternal(criteria));
   }
 
   private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
@@ -1041,7 +1055,7 @@ export class PostgresTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._getBulkInternal(offset, limit));
+    return this.mutex(() => this._getBulkInternal(offset, limit));
   }
 
   private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
@@ -1116,7 +1130,7 @@ export class PostgresTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    return this.mutex.acquire(() => this._deleteSearchInternal(criteria));
+    return this.mutex(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
@@ -1142,7 +1156,7 @@ export class PostgresTabularStorage<
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._queryInternal(criteria, options));
+    return this.mutex(() => this._queryInternal(criteria, options));
   }
 
   private async _queryInternal(
@@ -1200,7 +1214,7 @@ export class PostgresTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
-    return this.mutex.acquire(() => this._queryIndexInternal(criteria, options));
+    return this.mutex(() => this._queryIndexInternal(criteria, options));
   }
 
   private async _queryIndexInternal<K extends keyof Entity & string>(

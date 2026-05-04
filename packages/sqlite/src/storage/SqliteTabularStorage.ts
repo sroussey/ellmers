@@ -5,7 +5,7 @@
  */
 
 import { Sqlite } from "@workglow/sqlite/storage";
-import { AsyncMutex, createServiceToken, uuid4 } from "@workglow/util";
+import { createServiceToken, uuid4 } from "@workglow/util";
 import {
   DataPortSchemaObject,
   FromSchema,
@@ -594,7 +594,7 @@ export class SqliteTabularStorage<
    * @emits 'put' event when successful (deferred until commit if inside withTransaction)
    */
   async put(entity: InsertType): Promise<Entity> {
-    return this.mutex.acquire(() => this._putInternal(entity));
+    return this.mutex(() => this._putInternal(entity));
   }
 
   private async _putInternal(entity: InsertType): Promise<Entity> {
@@ -614,7 +614,7 @@ export class SqliteTabularStorage<
    * inside a {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    return this.mutex.acquire(() => this._putBulkInternal(entities));
+    return this.mutex(() => this._putBulkInternal(entities));
   }
 
   private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
@@ -643,16 +643,30 @@ export class SqliteTabularStorage<
   }
 
   /**
-   * Per-instance async mutex. Every public read/write method acquires it
-   * before touching `this.db`; `withTransaction` holds it for the duration
-   * of the user's callback so concurrent calls from outside `fn` queue
-   * behind the transaction instead of slipping into it.
+   * Per-instance promise-chain mutex. Every public read/write method awaits
+   * the previous holder before running and yields the lock when it settles;
+   * `withTransaction` holds it for the duration of the user's callback so
+   * concurrent calls from outside `fn` queue behind the transaction instead
+   * of slipping into it.
    *
    * The Proxy returned by {@link createTxView} routes back to the private
    * `_*Internal` methods directly, so calls made *through* the `tx` handle
    * inside `fn` do not deadlock against the mutex held by `withTransaction`.
    */
-  private mutex = new AsyncMutex();
+  private mutexChain: Promise<void> = Promise.resolve();
+  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
 
   /**
    * Tracks whether this storage instance is currently inside a
@@ -737,7 +751,7 @@ export class SqliteTabularStorage<
    * directly if you need nested rollback boundaries.
    */
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
-    return this.mutex.acquire(async () => {
+    return this.mutex(async () => {
       if (this.inTransaction) {
         throw new Error(
           "SqliteTabularStorage.withTransaction does not support nesting. " +
@@ -786,7 +800,7 @@ export class SqliteTabularStorage<
    * @emits 'get' event when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
-    return this.mutex.acquire(() => this._getInternal(key));
+    return this.mutex(() => this._getInternal(key));
   }
 
   private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
@@ -821,7 +835,7 @@ export class SqliteTabularStorage<
    * @emits 'delete' event when successful
    */
   async delete(key: PrimaryKey): Promise<void> {
-    return this.mutex.acquire(() => this._deleteInternal(key));
+    return this.mutex(() => this._deleteInternal(key));
   }
 
   private async _deleteInternal(key: PrimaryKey): Promise<void> {
@@ -842,7 +856,7 @@ export class SqliteTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._getAllInternal(options));
+    return this.mutex(() => this._getAllInternal(options));
   }
 
   private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
@@ -888,7 +902,7 @@ export class SqliteTabularStorage<
    * @emits 'clearall' event when successful
    */
   async deleteAll(): Promise<void> {
-    return this.mutex.acquire(() => this._deleteAllInternal());
+    return this.mutex(() => this._deleteAllInternal());
   }
 
   private async _deleteAllInternal(): Promise<void> {
@@ -902,7 +916,7 @@ export class SqliteTabularStorage<
    * @returns The count of entries
    */
   async size(): Promise<number> {
-    return this.mutex.acquire(() => this._sizeInternal());
+    return this.mutex(() => this._sizeInternal());
   }
 
   private async _sizeInternal(): Promise<number> {
@@ -917,7 +931,7 @@ export class SqliteTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
-    return this.mutex.acquire(() => this._countInternal(criteria));
+    return this.mutex(() => this._countInternal(criteria));
   }
 
   private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
@@ -941,7 +955,7 @@ export class SqliteTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._getBulkInternal(offset, limit));
+    return this.mutex(() => this._getBulkInternal(offset, limit));
   }
 
   private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
@@ -1014,7 +1028,7 @@ export class SqliteTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    return this.mutex.acquire(() => this._deleteSearchInternal(criteria));
+    return this.mutex(() => this._deleteSearchInternal(criteria));
   }
 
   private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
@@ -1042,7 +1056,7 @@ export class SqliteTabularStorage<
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
-    return this.mutex.acquire(() => this._queryInternal(criteria, options));
+    return this.mutex(() => this._queryInternal(criteria, options));
   }
 
   private async _queryInternal(
@@ -1105,7 +1119,7 @@ export class SqliteTabularStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
-    return this.mutex.acquire(() => this._queryIndexInternal(criteria, options));
+    return this.mutex(() => this._queryIndexInternal(criteria, options));
   }
 
   private async _queryIndexInternal<K extends keyof Entity & string>(
