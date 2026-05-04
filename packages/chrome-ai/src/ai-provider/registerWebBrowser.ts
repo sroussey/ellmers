@@ -6,12 +6,12 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderWithWorker } from "@workglow/ai-provider/common";
-import { WebBrowserQueuedProvider } from "./WebBrowserQueuedProvider";
+import { WebBrowserProvider } from "./WebBrowserProvider";
 
 export async function registerWebBrowser(
   options: AiProviderRegisterOptions & {
     worker: Worker | (() => Worker);
   }
 ): Promise<void> {
-  await registerProviderWithWorker(new WebBrowserQueuedProvider(), "Web browser", options);
+  await registerProviderWithWorker(new WebBrowserProvider(), "Web browser", options);
 }
