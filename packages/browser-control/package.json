@@ -42,13 +42,9 @@
   "peerDependencies": {
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*",
-    "electron": "catalog:",
     "playwright": "catalog:"
   },
   "peerDependenciesMeta": {
-    "electron": {
-      "optional": true
-    },
     "playwright": {
       "optional": true
     },
