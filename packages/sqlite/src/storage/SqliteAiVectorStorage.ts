@@ -15,7 +15,13 @@ import type {
 import { cosineSimilarity } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
 import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
-import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+import type {
+  HybridSearchOptions,
+  IVectorStorage,
+  VectorDistanceMetric,
+  VectorIndexOptions,
+  VectorSearchOptions,
+} from "@workglow/storage";
 
 /**
  * Maps TypedArray constructor types to their sqlite-vector encoding function names
@@ -113,6 +119,9 @@ export class SqliteAiVectorStorage<
    * @param dimensions - The number of dimensions of the vector
    * @param vectorCtor - TypedArray constructor for stored vectors (e.g. {@link Float32Array})
    */
+  private readonly indexOptions: VectorIndexOptions;
+  private readonly distance: VectorDistanceMetric;
+
   constructor(
     dbOrPath: string | Sqlite.Database,
     table: string = "vectors",
@@ -120,13 +129,27 @@ export class SqliteAiVectorStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     dimensions: number,
-    vectorCtor: TypedArrayConstructor = Float32Array
+    vectorCtor: TypedArrayConstructor = Float32Array,
+    indexOptions: VectorIndexOptions = {}
   ) {
     super(dbOrPath, table, schema, primaryKeyNames, indexes);
 
     this.vectorDimensions = dimensions;
     this.vectorCtor = vectorCtor;
     this.vectorTypeSuffix = getVectorTypeSuffix(vectorCtor);
+    this.indexOptions = indexOptions;
+    this.distance = indexOptions.distance ?? "cosine";
+    // sqlite-vector's `vector_full_scan` returns a distance value that this
+    // class converts to a similarity via `1 - distance` — which is only
+    // correct for cosine. L2 / IP support would need a different score+
+    // threshold semantic; until that lands we reject them up front rather
+    // than silently returning wrong scores.
+    if (this.distance !== "cosine") {
+      throw new Error(
+        `SqliteAiVectorStorage only supports cosine distance; received "${this.distance}". ` +
+          `Use PostgresVectorStorage for l2 / ip distances.`
+      );
+    }
 
     // Cache vector and metadata property names from schema
     const vectorProp = getVectorProperty(schema);
@@ -135,6 +158,11 @@ export class SqliteAiVectorStorage<
     }
     this.vectorPropertyName = vectorProp as keyof Entity;
     this.metadataPropertyName = getMetadataProperty(schema) as keyof Entity | undefined;
+  }
+
+  /** Returns the configured index/tuning options (sqlite-vector ignores HNSW knobs). */
+  public getIndexOptions(): VectorIndexOptions {
+    return this.indexOptions;
   }
 
   getVectorDimensions(): number {

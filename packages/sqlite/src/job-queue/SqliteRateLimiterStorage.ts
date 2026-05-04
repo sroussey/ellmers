@@ -12,6 +12,15 @@ import type {
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import {
+  assertPrefixesSafe,
+  buildPrefixWhereClause,
+  getPrefixColumnNames,
+  getPrefixParamValues,
+  SqliteDialect,
+} from "@workglow/storage";
+import { SqliteMigrationRunner } from "../migrations/SqliteMigrationRunner";
+import { sqliteRateLimiterMigrations } from "../migrations/sqliteRateLimiterMigrations";
 
 export const SQLITE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.sqlite"
@@ -44,6 +53,8 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
   ) {
     this.prefixes = options?.prefixes ?? [];
     this.prefixValues = options?.prefixValues ?? {};
+    // Validate prefix column names before deriving table names from them.
+    assertPrefixesSafe(this.prefixes);
 
     // Generate table names based on prefix configuration
     if (this.prefixes.length > 0) {
@@ -56,75 +67,41 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
     }
   }
 
-  /**
-   * Gets the SQL column type for a prefix column (SQLite uses TEXT for uuid).
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "TEXT" : "INTEGER";
+  /** WHERE-clause helper for the SQLite dialect. */
+  private buildPrefixWhereClause(): string {
+    return buildPrefixWhereClause(SqliteDialect, this.prefixes, this.prefixValues).conditions;
+  }
+
+  /** Returns prefix values in column order. */
+  private getPrefixParamValues(): Array<string | number> {
+    return getPrefixParamValues(this.prefixes, this.prefixValues);
   }
 
   /**
-   * Builds the prefix columns SQL for CREATE TABLE.
+   * Returns the versioned migrations that this storage's tables depend on.
+   * Production code should run these via {@link SqliteMigrationRunner} as part
+   * of an explicit migration step rather than calling {@link setupDatabase}.
    */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
+  public getMigrations() {
+    return sqliteRateLimiterMigrations(
+      this.executionTableName,
+      this.nextAvailableTableName,
       this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n        ") + ",\n        "
     );
   }
 
-  /**
-   * Builds prefix column names for use in queries.
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
+  /** Applies any pending migrations for this rate limiter's tables. */
+  public async migrate(): Promise<void> {
+    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
   }
 
   /**
-   * Builds WHERE clause conditions for prefix filtering.
+   * @deprecated Use {@link migrate} in production. Kept for tests and ad-hoc
+   * scripts that relied on idempotent CREATE-IF-NOT-EXISTS DDL.
    */
-  private buildPrefixWhereClause(): string {
-    if (this.prefixes.length === 0) {
-      return "";
-    }
-    const conditions = this.prefixes.map((p) => `${p.name} = ?`).join(" AND ");
-    return " AND " + conditions;
-  }
-
-  /**
-   * Gets prefix values as an array in column order.
-   */
-  private getPrefixParamValues(): Array<string | number> {
-    return this.prefixes.map((p) => this.prefixValues[p.name]);
-  }
-
   public async setupDatabase(): Promise<void> {
     await sleep(0);
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.executionTableName} (
-        id INTEGER PRIMARY KEY,
-        ${prefixColumnsSql}queue_name TEXT NOT NULL,
-        executed_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE INDEX IF NOT EXISTS rate_limit_exec_queue${indexSuffix}_idx 
-        ON ${this.executionTableName} (${prefixIndexPrefix}queue_name, executed_at);
-    `);
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.nextAvailableTableName} (
-        ${prefixColumnsSql}queue_name TEXT PRIMARY KEY,
-        next_available_at TEXT
-      );
-    `);
+    await this.migrate();
   }
 
   public async tryReserveExecution(
@@ -132,7 +109,7 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
     maxExecutions: number,
     windowMs: number
   ): Promise<unknown | null> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixParamValues = this.getPrefixParamValues();
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixColumnsInsert =
@@ -200,7 +177,7 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
   }
 
   public async recordExecution(queueName: string): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixColumnsInsert =
       prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
     const prefixPlaceholders =
@@ -264,7 +241,7 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
   }
 
   public async setNextAvailableTime(queueName: string, nextAvailableAt: string): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixColumnsInsert =
       prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
     const prefixPlaceholders =

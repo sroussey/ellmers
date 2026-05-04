@@ -347,6 +347,85 @@ Quantized vectors reduce storage and can improve performance:
 - **Cons:** Requires PostgreSQL server and pgvector extension
 - **Setup:** `CREATE EXTENSION vector;`
 
+## Vector Index Tuning
+
+`PostgresVectorStorage` (from `@workglow/postgres/storage`) and
+`SqliteAiVectorStorage` (from `@workglow/sqlite/storage`) accept a
+`VectorIndexOptions` constructor argument that controls the underlying index
+type and its recall/latency trade-offs.
+
+```typescript
+import { PostgresVectorStorage } from "@workglow/postgres/storage";
+
+const repo = new PostgresVectorStorage(
+  pool,
+  "vectors",
+  schema,
+  ["id"],
+  [],
+  768,
+  Float32Array,
+  {
+    distance: "cosine",
+    hnsw: { m: 16, efConstruction: 64, efSearch: 80 },
+    // or, for very large corpora:
+    // ivfflat: { lists: 1000, probes: 10 },
+  }
+);
+```
+
+### Recall vs latency cheat sheet
+
+| Backend | Index | Tunable | Recall ↑ knob | Latency ↓ knob | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `PostgresVectorStorage` (pgvector) | HNSW (default) | `m`, `efConstruction`, `efSearch` | raise `m` (8 → 16 → 32), `efConstruction` (64 → 200 → 400), `efSearch` (40 → 80 → 200) | lower the same knobs | `m` and `efConstruction` are build-time; rebuilding the index is required to change them. `efSearch` is per-session — see note below. |
+| `PostgresVectorStorage` (pgvector) | IVFFlat | `lists`, `probes` | raise `probes` (1 → 10 → 50) | lower `probes` | Use when build time matters more than peak recall. Pgvector docs: `lists ≈ rows / 1000` up to 1M rows, `≈ sqrt(rows)` beyond. |
+| `SqliteAiVectorStorage` (sqlite-vector) | brute-force `vector_full_scan` | cosine only | n/a (always exact) | shrink corpus / lower `topK` | sqlite-vector does not yet expose HNSW; recall is 100% but latency is O(n). The constructor rejects non-cosine distances rather than silently producing wrong scores. |
+| `InMemoryVectorStorage` | brute-force JS cosine | n/a | n/a (always exact) | shrink corpus / lower `topK` | Recall is 100%; intended for tests and small corpora only. |
+| `IndexedDbVectorStorage` | brute-force JS cosine | n/a | n/a (always exact) | shrink corpus / lower `topK` | Browser-only; same trade-offs as InMemory. |
+
+### Applying `efSearch` / `probes` at query time
+
+Pgvector reads `hnsw.ef_search` and `ivfflat.probes` from the active session.
+With a node-postgres `Pool`, every `pool.query()` checks out a fresh client, so
+running `SET hnsw.ef_search = N` before the search query has no effect. To apply
+query-time tuning, either:
+
+1. Set it on the role/database so all connections inherit it:
+   `ALTER ROLE workglow SET hnsw.ef_search = 80;`
+2. Run searches against a single checked-out client inside a transaction:
+   ```sql
+   BEGIN;
+   SET LOCAL hnsw.ef_search = 80;
+   SELECT * FROM vectors ORDER BY embedding <=> $1::vector LIMIT 10;
+   COMMIT;
+   ```
+
+`PostgresVectorStorage.getQueryTuning()` returns the configured values so a
+caller can wire them into either approach.
+
+## Migrations
+
+Production code should run schema changes through versioned migrations rather
+than the legacy `setupDatabase()` shim. Each SQL backend exposes
+`migrate()` (idempotent, safe to call repeatedly) and `getMigrations()`
+(returns the migration set so callers can compose several backends under a
+single runner).
+
+```typescript
+import { PostgresMigrationRunner } from "@workglow/postgres/storage";
+
+const runner = new PostgresMigrationRunner(pool);
+await runner.run([
+  ...queue.getMigrations(),
+  ...rateLimiter.getMigrations(),
+]);
+```
+
+`setupDatabase()` is `@deprecated` on `IQueueStorage`, `IRateLimiterStorage`,
+and `ITabularStorage` — it now delegates to `migrate()` for SQL backends so
+existing tests keep working.
+
 ## Integration with KnowledgeBase
 
 The chunk vector repository works alongside `KnowledgeBase` for hierarchical document storage:

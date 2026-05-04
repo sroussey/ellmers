@@ -488,7 +488,14 @@ export interface ITabularStorage<
 
   /**
    * Sets up the database/storage for the repository.
-   * Must be called before using any other methods (except for in-memory implementations).
+   *
+   * @deprecated Tabular storage tables are dynamically generated from a schema,
+   * so this method remains supported as a "create if missing" entry point.
+   * Production code that owns the schema lifecycle should drive table creation
+   * through versioned migrations (see `@workglow/storage` migrations module +
+   * the `MigrationRunner` exported from `@workglow/postgres` /
+   * `@workglow/sqlite`) and treat this call only as a fallback in tests /
+   * in-memory cases.
    * @returns Promise that resolves when setup is complete
    */
   setupDatabase(): Promise<void>;
