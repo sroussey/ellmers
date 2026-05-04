@@ -6,6 +6,7 @@
 
 import "./media/imageCacheCodec";
 import "./media/imageHydrationResolver";
+export { registerImageDefaults } from "./media/imageHydrationResolver";
 
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";

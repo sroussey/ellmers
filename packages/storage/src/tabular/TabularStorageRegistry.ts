@@ -21,19 +21,13 @@ export const TABULAR_REPOSITORIES = createServiceToken<Map<string, AnyTabularSto
   "storage.tabular.repositories"
 );
 
-// Register default factory if not already registered
-globalServiceRegistry.registerIfAbsent(
-  TABULAR_REPOSITORIES,
-  (): Map<string, AnyTabularStorage> => new Map(),
-  true
-);
-
 /**
- * Gets the global tabular repository registry
- * @returns Map of tabular repository ID to instance
+ * Gets the tabular repository registry from the given registry (defaults to global).
  */
-export function getGlobalTabularRepositories(): Map<string, AnyTabularStorage> {
-  return globalServiceRegistry.get(TABULAR_REPOSITORIES);
+export function getGlobalTabularRepositories(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, AnyTabularStorage> {
+  return registry.get(TABULAR_REPOSITORIES);
 }
 
 /**
@@ -74,11 +68,11 @@ function resolveRepositoryFromRegistry(
   return repo;
 }
 
-// Register the repository resolver for format: "storage:tabular"
-registerInputResolver("storage:tabular", resolveRepositoryFromRegistry);
-
-// Register the compactor — reverse map lookup by identity
-registerInputCompactor("storage:tabular", (value, _format, registry) => {
+function compactTabularRepository(
+  value: unknown,
+  _format: string,
+  registry: ServiceRegistry
+): string | undefined {
   const repos = registry.has(TABULAR_REPOSITORIES)
     ? registry.get(TABULAR_REPOSITORIES)
     : getGlobalTabularRepositories();
@@ -87,4 +81,23 @@ registerInputCompactor("storage:tabular", (value, _format, registry) => {
     if (repo === value) return id;
   }
   return undefined;
-});
+}
+
+/**
+ * Registers the tabular storage default factory and the "storage:tabular" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerTabularStorageDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(
+    TABULAR_REPOSITORIES,
+    (): Map<string, AnyTabularStorage> => new Map(),
+    true
+  );
+  registerInputResolver("storage:tabular", resolveRepositoryFromRegistry, registry);
+  registerInputCompactor("storage:tabular", compactTabularRepository, registry);
+}
+
+// Self-register on the global registry. Idempotent.
+registerTabularStorageDefaults();

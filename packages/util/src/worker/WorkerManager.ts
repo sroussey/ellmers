@@ -535,4 +535,15 @@ export class WorkerManager {
 
 export const WORKER_MANAGER = createServiceToken<WorkerManager>("worker.manager");
 
-globalServiceRegistry.register(WORKER_MANAGER, () => new WorkerManager(), true);
+/**
+ * Registers the WorkerManager default factory on the given registry.
+ * Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerWorkerManagerDefaults(
+  registry: import("../di/ServiceRegistry").ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(WORKER_MANAGER, () => new WorkerManager(), true);
+}
+
+// Self-register on the global registry. Idempotent.
+registerWorkerManagerDefaults();

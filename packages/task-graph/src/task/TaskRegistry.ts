@@ -105,13 +105,6 @@ export const TaskRegistry = {
 export const TASK_CONSTRUCTORS =
   createServiceToken<Map<string, AnyTaskConstructor>>("task.constructors");
 
-// Register default factory backed by the global TaskRegistry
-globalServiceRegistry.registerIfAbsent(
-  TASK_CONSTRUCTORS,
-  (): Map<string, AnyTaskConstructor> => TaskRegistry.all,
-  true
-);
-
 /**
  * Gets the global task constructors map.
  * @returns The registered task constructors map
@@ -182,11 +175,11 @@ function resolveTaskFromRegistry(
   };
 }
 
-// Register the tasks resolver for format: "tasks"
-registerInputResolver("tasks", resolveTaskFromRegistry);
-
-// Register the tasks compactor — extracts name from a resolved task definition
-registerInputCompactor("tasks", (value, _format, registry) => {
+function compactTask(
+  value: unknown,
+  _format: string,
+  registry: ServiceRegistry
+): string | undefined {
   if (typeof value === "object" && value !== null && "name" in value) {
     const name = (value as Record<string, unknown>).name;
     if (typeof name !== "string") return undefined;
@@ -195,4 +188,21 @@ registerInputCompactor("tasks", (value, _format, registry) => {
     return ctor ? name : undefined;
   }
   return undefined;
-});
+}
+
+/**
+ * Registers the task constructor map default factory and the "tasks" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerTaskDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
+  registry.registerIfAbsent(
+    TASK_CONSTRUCTORS,
+    (): Map<string, AnyTaskConstructor> => TaskRegistry.all,
+    true
+  );
+  registerInputResolver("tasks", resolveTaskFromRegistry, registry);
+  registerInputCompactor("tasks", compactTask, registry);
+}
+
+// Self-register on the global registry. Idempotent.
+registerTaskDefaults();

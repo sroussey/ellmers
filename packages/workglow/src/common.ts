@@ -24,8 +24,4 @@ export * from "@workglow/util/graph";
 export * from "@workglow/util/media";
 export * from "@workglow/util/compress";
 export * from "./logging";
-
-// Override the default ConsoleLogger with tslog.
-import { TsLogLogger } from "./logging";
-import { setLogger } from "@workglow/util";
-setLogger(new TsLogLogger());
+export * from "./bootstrap";

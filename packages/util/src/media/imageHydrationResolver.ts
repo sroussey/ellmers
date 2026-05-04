@@ -4,6 +4,7 @@
  * All Rights Reserved
  */
 import { registerInputResolver } from "../di/InputResolverRegistry";
+import { globalServiceRegistry } from "../di/ServiceRegistry";
 import { normalizeToImageValue } from "./imageValue";
 import type { ServiceRegistry } from "../di/ServiceRegistry";
 
@@ -29,4 +30,15 @@ async function resolveImage(
   return id;
 }
 
-registerInputResolver("image", resolveImage);
+/**
+ * Registers the "image" input resolver on the given registry.
+ * Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerImageDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registerInputResolver("image", resolveImage, registry);
+}
+
+// Self-register on the global registry. Idempotent.
+registerImageDefaults();

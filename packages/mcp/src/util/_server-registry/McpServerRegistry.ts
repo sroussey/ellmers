@@ -25,28 +25,23 @@ export const MCP_SERVERS =
 export const MCP_SERVER_REPOSITORY =
   createServiceToken<McpServerRepository>("mcp-server.repository");
 
-globalServiceRegistry.registerIfAbsent(
-  MCP_SERVERS,
-  (): Map<string, McpServerConnection> => new Map(),
-  true
-);
-
-globalServiceRegistry.registerIfAbsent(
-  MCP_SERVER_REPOSITORY,
-  (): McpServerRepository => new InMemoryMcpServerRepository(),
-  true
-);
-
-export function getGlobalMcpServers(): Map<string, McpServerConnection> {
-  return globalServiceRegistry.get(MCP_SERVERS);
+export function getGlobalMcpServers(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, McpServerConnection> {
+  return registry.get(MCP_SERVERS);
 }
 
-export function getGlobalMcpServerRepository(): McpServerRepository {
-  return globalServiceRegistry.get(MCP_SERVER_REPOSITORY);
+export function getGlobalMcpServerRepository(
+  registry: ServiceRegistry = globalServiceRegistry
+): McpServerRepository {
+  return registry.get(MCP_SERVER_REPOSITORY);
 }
 
-export function setGlobalMcpServerRepository(repository: McpServerRepository): void {
-  globalServiceRegistry.registerInstance(MCP_SERVER_REPOSITORY, repository);
+export function setGlobalMcpServerRepository(
+  repository: McpServerRepository,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(MCP_SERVER_REPOSITORY, repository);
 }
 
 export async function registerMcpServer(config: McpServerRecord): Promise<void> {
@@ -86,13 +81,34 @@ async function resolveServerFromRegistry(
   return record;
 }
 
-registerInputResolver("mcp-server", resolveServerFromRegistry);
-
-// Register the compactor — extracts server_id from an McpServerRecord
-registerInputCompactor("mcp-server", (value) => {
+function compactMcpServer(value: unknown): string | undefined {
   if (typeof value === "object" && value !== null && "server_id" in value) {
     const id = (value as Record<string, unknown>).server_id;
     return typeof id === "string" ? id : undefined;
   }
   return undefined;
-});
+}
+
+/**
+ * Registers the MCP server default factories and the "mcp-server" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerMcpServerDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(
+    MCP_SERVERS,
+    (): Map<string, McpServerConnection> => new Map(),
+    true
+  );
+  registry.registerIfAbsent(
+    MCP_SERVER_REPOSITORY,
+    (): McpServerRepository => new InMemoryMcpServerRepository(),
+    true
+  );
+  registerInputResolver("mcp-server", resolveServerFromRegistry, registry);
+  registerInputCompactor("mcp-server", compactMcpServer, registry);
+}
+
+// Self-register on the global registry. Idempotent.
+registerMcpServerDefaults();

@@ -32,39 +32,32 @@ export const KNOWLEDGE_BASE_REPOSITORY = createServiceToken<KnowledgeBaseReposit
   "knowledge-base.repository"
 );
 
-// Register default factory for live KB map if not already registered
-globalServiceRegistry.registerIfAbsent(
-  KNOWLEDGE_BASES,
-  (): Map<string, KnowledgeBase> => new Map(),
-  true
-);
-
-// Register default factory for KB repository if not already registered
-globalServiceRegistry.registerIfAbsent(
-  KNOWLEDGE_BASE_REPOSITORY,
-  (): KnowledgeBaseRepository => new InMemoryKnowledgeBaseRepository(),
-  true
-);
-
 /**
- * Gets the global knowledge base registry
+ * Gets the knowledge base map from the given registry (defaults to global).
  */
-export function getGlobalKnowledgeBases(): Map<string, KnowledgeBase> {
-  return globalServiceRegistry.get(KNOWLEDGE_BASES);
+export function getGlobalKnowledgeBases(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, KnowledgeBase> {
+  return registry.get(KNOWLEDGE_BASES);
 }
 
 /**
- * Gets the global knowledge base repository instance
+ * Gets the knowledge base repository instance from the given registry (defaults to global).
  */
-export function getGlobalKnowledgeBaseRepository(): KnowledgeBaseRepository {
-  return globalServiceRegistry.get(KNOWLEDGE_BASE_REPOSITORY);
+export function getGlobalKnowledgeBaseRepository(
+  registry: ServiceRegistry = globalServiceRegistry
+): KnowledgeBaseRepository {
+  return registry.get(KNOWLEDGE_BASE_REPOSITORY);
 }
 
 /**
- * Sets the global knowledge base repository instance
+ * Sets the knowledge base repository instance on the given registry (defaults to global).
  */
-export function setGlobalKnowledgeBaseRepository(repository: KnowledgeBaseRepository): void {
-  globalServiceRegistry.registerInstance(KNOWLEDGE_BASE_REPOSITORY, repository);
+export function setGlobalKnowledgeBaseRepository(
+  repository: KnowledgeBaseRepository,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(KNOWLEDGE_BASE_REPOSITORY, repository);
 }
 
 export interface RegisterKnowledgeBaseOptions {
@@ -190,11 +183,11 @@ async function resolveKnowledgeBaseFromRegistry(
   return kb;
 }
 
-// Register the resolver for format: "knowledge-base"
-registerInputResolver("knowledge-base", resolveKnowledgeBaseFromRegistry);
-
-// Register the compactor — reverse map lookup by identity
-registerInputCompactor("knowledge-base", (value, _format, registry) => {
+function compactKnowledgeBase(
+  value: unknown,
+  _format: string,
+  registry: ServiceRegistry
+): string | undefined {
   const kbs = registry.has(KNOWLEDGE_BASES)
     ? registry.get<Map<string, KnowledgeBase>>(KNOWLEDGE_BASES)
     : getGlobalKnowledgeBases();
@@ -203,4 +196,25 @@ registerInputCompactor("knowledge-base", (value, _format, registry) => {
     if (kb === value) return id;
   }
   return undefined;
-});
+}
+
+/**
+ * Registers the knowledge base default factories and the "knowledge-base" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerKnowledgeBaseDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(KNOWLEDGE_BASES, (): Map<string, KnowledgeBase> => new Map(), true);
+  registry.registerIfAbsent(
+    KNOWLEDGE_BASE_REPOSITORY,
+    (): KnowledgeBaseRepository => new InMemoryKnowledgeBaseRepository(),
+    true
+  );
+  registerInputResolver("knowledge-base", resolveKnowledgeBaseFromRegistry, registry);
+  registerInputCompactor("knowledge-base", compactKnowledgeBase, registry);
+}
+
+// Self-register on the global registry. Idempotent — a no-op once
+// `bootstrapWorkglow()` (or another importer) has populated these tokens.
+registerKnowledgeBaseDefaults();

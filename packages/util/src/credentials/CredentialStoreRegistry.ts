@@ -12,25 +12,23 @@ import { CREDENTIAL_STORE } from "./ICredentialStore";
 import type { ICredentialStore } from "./ICredentialStore";
 import { InMemoryCredentialStore } from "./InMemoryCredentialStore";
 
-// Register default in-memory factory if not already registered
-globalServiceRegistry.registerIfAbsent(
-  CREDENTIAL_STORE,
-  (): ICredentialStore => new InMemoryCredentialStore(),
-  true
-);
-
 /**
- * Gets the global credential store instance
+ * Gets the credential store from the given registry (defaults to global).
  */
-export function getGlobalCredentialStore(): ICredentialStore {
-  return globalServiceRegistry.get(CREDENTIAL_STORE);
+export function getGlobalCredentialStore(
+  registry: ServiceRegistry = globalServiceRegistry
+): ICredentialStore {
+  return registry.get(CREDENTIAL_STORE);
 }
 
 /**
- * Sets the global credential store instance
+ * Sets the credential store on the given registry (defaults to global).
  */
-export function setGlobalCredentialStore(store: ICredentialStore): void {
-  globalServiceRegistry.registerInstance(CREDENTIAL_STORE, store);
+export function setGlobalCredentialStore(
+  store: ICredentialStore,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(CREDENTIAL_STORE, store);
 }
 
 /**
@@ -55,15 +53,31 @@ export async function resolveCredential(
   return store.get(key);
 }
 
-// Register "credential" input resolver so resolveSchemaInputs can resolve
-// credential_key properties annotated with format: "credential" automatically.
-// Returns undefined (rather than throwing) when the key isn't found, so
-// downstream code (e.g., provider getClient) can fall back to env vars.
-registerInputResolver("credential", async (id, _format, registry) => {
-  return (await resolveCredential(id, registry)) ?? id;
-});
+/**
+ * Registers the credential store default factory and the "credential" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerCredentialDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(
+    CREDENTIAL_STORE,
+    (): ICredentialStore => new InMemoryCredentialStore(),
+    true
+  );
+  registerInputResolver(
+    "credential",
+    async (id, _format, registry) => {
+      return (await resolveCredential(id, registry)) ?? id;
+    },
+    registry
+  );
+  registerInputCompactor(
+    "credential",
+    (value) => (typeof value === "string" ? value : undefined),
+    registry
+  );
+}
 
-// Credentials are already strings — pass through unchanged
-registerInputCompactor("credential", (value) => {
-  return typeof value === "string" ? value : undefined;
-});
+// Self-register on the global registry. Idempotent.
+registerCredentialDefaults();

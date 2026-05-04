@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, globalServiceRegistry } from "../di/ServiceRegistry";
+import { createServiceToken, globalServiceRegistry, ServiceRegistry } from "../di/ServiceRegistry";
 import { readRuntimeEnv } from "../utilities/runtimeEnv";
 import { ConsoleTelemetryProvider } from "./ConsoleTelemetryProvider";
 import type { ITelemetryProvider } from "./ITelemetryProvider";
@@ -34,18 +34,33 @@ function createDefaultTelemetryProvider(): ITelemetryProvider {
   return new NoopTelemetryProvider();
 }
 
-// Register the default provider based on environment configuration.
-globalServiceRegistry.registerIfAbsent(TELEMETRY_PROVIDER, createDefaultTelemetryProvider, true);
+/**
+ * Registers the default telemetry provider factory on the given registry.
+ * Called by `bootstrapWorkglow` / `createOrchestrationContext`.
+ */
+export function registerTelemetryDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(TELEMETRY_PROVIDER, createDefaultTelemetryProvider, true);
+}
+
+// Self-register on the global registry. Idempotent.
+registerTelemetryDefaults();
 
 /**
- * Returns the current global telemetry provider.
+ * Returns the telemetry provider from the given registry (defaults to global).
  */
-export function getTelemetryProvider(): ITelemetryProvider {
-  return globalServiceRegistry.get(TELEMETRY_PROVIDER);
+export function getTelemetryProvider(
+  registry: ServiceRegistry = globalServiceRegistry
+): ITelemetryProvider {
+  if (!registry.has(TELEMETRY_PROVIDER)) {
+    registerTelemetryDefaults(registry);
+  }
+  return registry.get(TELEMETRY_PROVIDER);
 }
 
 /**
- * Replaces the global telemetry provider instance.
+ * Replaces the telemetry provider on the given registry (defaults to global).
  *
  * @example
  * ```ts
@@ -55,6 +70,9 @@ export function getTelemetryProvider(): ITelemetryProvider {
  * setTelemetryProvider(new OTelTelemetryProvider(trace.getTracer("my-app")));
  * ```
  */
-export function setTelemetryProvider(provider: ITelemetryProvider): void {
-  globalServiceRegistry.registerInstance(TELEMETRY_PROVIDER, provider);
+export function setTelemetryProvider(
+  provider: ITelemetryProvider,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(TELEMETRY_PROVIDER, provider);
 }

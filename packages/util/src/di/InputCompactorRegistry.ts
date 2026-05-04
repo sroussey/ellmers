@@ -28,19 +28,29 @@ export type InputCompactorFn = (
 export const INPUT_COMPACTORS =
   createServiceToken<Map<string, InputCompactorFn>>("task.input.compactors");
 
-// Register default factory if not already registered
-globalServiceRegistry.registerIfAbsent(
-  INPUT_COMPACTORS,
-  (): Map<string, InputCompactorFn> => new Map(),
-  true
-);
+/**
+ * Registers an empty compactor map on the given registry if absent.
+ * Called as part of `bootstrapWorkglow` / `createOrchestrationContext`.
+ */
+export function registerInputCompactorDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(INPUT_COMPACTORS, (): Map<string, InputCompactorFn> => new Map(), true);
+}
+
+// Self-register on the global registry. Idempotent.
+registerInputCompactorDefaults();
 
 /**
- * Gets the global input compactor registry
- * @returns Map of format prefix to compactor function
+ * Gets the input compactor registry from the given registry (defaults to global).
  */
-export function getInputCompactors(): Map<string, InputCompactorFn> {
-  return globalServiceRegistry.get(INPUT_COMPACTORS);
+export function getInputCompactors(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, InputCompactorFn> {
+  if (!registry.has(INPUT_COMPACTORS)) {
+    registerInputCompactorDefaults(registry);
+  }
+  return registry.get(INPUT_COMPACTORS);
 }
 
 /**
@@ -62,7 +72,11 @@ export function getInputCompactors(): Map<string, InputCompactorFn> {
  * });
  * ```
  */
-export function registerInputCompactor(formatPrefix: string, compactor: InputCompactorFn): void {
-  const compactors = getInputCompactors();
+export function registerInputCompactor(
+  formatPrefix: string,
+  compactor: InputCompactorFn,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  const compactors = getInputCompactors(registry);
   compactors.set(formatPrefix, compactor);
 }

@@ -45,19 +45,38 @@ function createDefaultLogger(): ILogger {
   return new NullLogger();
 }
 
-// Register default logger: NullLogger unless LOGGER_LEVEL env var is set.
-globalServiceRegistry.registerIfAbsent(LOGGER, createDefaultLogger, true);
+/**
+ * Registers the default logger factory on the given registry if absent.
+ * Called by `bootstrapWorkglow` / `createOrchestrationContext`.
+ */
+export function registerLoggerDefaults(
+  registry: import("../di/ServiceRegistry").ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(LOGGER, createDefaultLogger, true);
+}
+
+// Self-register on the global registry. Idempotent.
+registerLoggerDefaults();
 
 /**
- * Returns the current global logger.
+ * Returns the logger from the given registry (defaults to global).
+ * If no logger is registered yet, a NullLogger is returned via the default factory.
  */
-export function getLogger(): ILogger {
-  return globalServiceRegistry.get(LOGGER);
+export function getLogger(
+  registry: import("../di/ServiceRegistry").ServiceRegistry = globalServiceRegistry
+): ILogger {
+  if (!registry.has(LOGGER)) {
+    registerLoggerDefaults(registry);
+  }
+  return registry.get(LOGGER);
 }
 
 /**
- * Replaces the global logger instance.
+ * Replaces the logger instance on the given registry (defaults to global).
  */
-export function setLogger(logger: ILogger): void {
-  globalServiceRegistry.registerInstance(LOGGER, logger);
+export function setLogger(
+  logger: ILogger,
+  registry: import("../di/ServiceRegistry").ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(LOGGER, logger);
 }

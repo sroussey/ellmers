@@ -6,8 +6,12 @@
 
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";
-import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
-import type { JsonSchema } from "@workglow/util/worker";
+import {
+  createServiceToken,
+  globalServiceRegistry,
+  WORKER_MANAGER,
+} from "@workglow/util/worker";
+import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
 import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
 import type { IAiExecutionStrategy, AiStrategyResolver } from "../execution/IAiExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
@@ -390,11 +394,43 @@ export class AiProviderRegistry {
   }
 }
 
-// Singleton instance management for the ProviderRegistry
-let providerRegistry: AiProviderRegistry = new AiProviderRegistry();
-export function getAiProviderRegistry() {
-  return providerRegistry;
+/**
+ * Service token for the AI provider registry.
+ */
+export const AI_PROVIDER_REGISTRY = createServiceToken<AiProviderRegistry>("ai.provider.registry");
+
+/**
+ * Returns the AI provider registry from the given registry (defaults to global).
+ */
+export function getAiProviderRegistry(
+  registry: ServiceRegistry = globalServiceRegistry
+): AiProviderRegistry {
+  return registry.get(AI_PROVIDER_REGISTRY);
 }
-export function setAiProviderRegistry(pr: AiProviderRegistry) {
-  providerRegistry = pr;
+
+/**
+ * Replaces the AI provider registry on the given registry (defaults to global).
+ */
+export function setAiProviderRegistry(
+  pr: AiProviderRegistry,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerInstance(AI_PROVIDER_REGISTRY, pr);
 }
+
+/**
+ * Registers the AI provider registry default factory on the given registry.
+ * Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerAiProviderDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(
+    AI_PROVIDER_REGISTRY,
+    (): AiProviderRegistry => new AiProviderRegistry(),
+    true
+  );
+}
+
+// Self-register on the global registry. Idempotent.
+registerAiProviderDefaults();
