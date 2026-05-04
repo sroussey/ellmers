@@ -6,3 +6,9 @@
 
 export * from "./IndexedDbQueueStorage";
 export * from "./IndexedDbRateLimiterStorage";
+
+// Versioned migration sets for the queue + rate-limiter object stores, plus
+// the runner that applies them via IDB's native onupgradeneeded.
+export * from "../migrations/IndexedDbMigrationRunner";
+export * from "../migrations/indexedDbQueueMigrations";
+export * from "../migrations/indexedDbRateLimiterMigrations";
