@@ -60,10 +60,25 @@ export interface IRateLimiterStorage {
 
   /**
    * Sets up the database schema and tables.
-   * This method should be called before using the storage.
-   * For production use, database setup should be done via migrations.
+   *
+   * @deprecated Production code should run versioned migrations instead — call
+   * {@link migrate} on backends that expose it (or run {@link getMigrations}
+   * through a `MigrationRunner` from `@workglow/postgres` /
+   * `@workglow/sqlite`). Kept for tests and ad-hoc scripts.
    */
   setupDatabase(): Promise<void>;
+
+  /**
+   * Applies any pending migrations for this rate limiter's tables.
+   * Optional — only SQL backends implement it.
+   */
+  migrate?(): Promise<void>;
+
+  /**
+   * Returns this storage's versioned migrations for composition with other
+   * storages' migrations under a single `MigrationRunner`. Optional.
+   */
+  getMigrations?(): ReadonlyArray<unknown>;
 
   /**
    * Atomic check-and-record. Inserts an execution row and returns the

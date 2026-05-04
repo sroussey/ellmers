@@ -12,6 +12,15 @@ import type {
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import {
+  assertPrefixesSafe,
+  buildPrefixWhereClause,
+  getPrefixColumnNames,
+  getPrefixParamValues,
+  PostgresDialect,
+} from "@workglow/storage";
+import { PostgresMigrationRunner } from "../migrations/PostgresMigrationRunner";
+import { postgresRateLimiterMigrations } from "../migrations/postgresRateLimiterMigrations";
 
 export const POSTGRES_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.postgres"
@@ -38,6 +47,8 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
   ) {
     this.prefixes = options?.prefixes ?? [];
     this.prefixValues = options?.prefixValues ?? {};
+    // Validate prefix column names before deriving table names from them.
+    assertPrefixesSafe(this.prefixes);
 
     // Generate table names based on prefix configuration
     if (this.prefixes.length > 0) {
@@ -50,86 +61,41 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
     }
   }
 
-  /**
-   * Gets the SQL column type for a prefix column.
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "UUID" : "INTEGER";
+  /** WHERE-clause helper specialized for the Postgres dialect. */
+  private buildPrefixWhereClause(startParam: number) {
+    return buildPrefixWhereClause(PostgresDialect, this.prefixes, this.prefixValues, startParam);
+  }
+
+  /** Returns prefix values in column order. */
+  private getPrefixParamValues(): Array<string | number> {
+    return getPrefixParamValues(this.prefixes, this.prefixValues);
   }
 
   /**
-   * Builds the prefix columns SQL for CREATE TABLE.
+   * Returns the versioned migrations that this storage's tables depend on.
+   * Production code should run these via {@link PostgresMigrationRunner} as
+   * part of an explicit migration step rather than calling
+   * {@link setupDatabase}.
    */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
+  public getMigrations() {
+    return postgresRateLimiterMigrations(
+      this.executionTableName,
+      this.nextAvailableTableName,
       this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n        ") + ",\n        "
     );
   }
 
-  /**
-   * Builds prefix column names for use in queries.
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
+  /** Applies any pending migrations for this rate limiter's tables. */
+  public async migrate(): Promise<void> {
+    await new PostgresMigrationRunner(this.db).run(this.getMigrations());
   }
 
   /**
-   * Builds WHERE clause conditions for prefix filtering.
-   * @param startParam - The starting parameter number for parameterized queries
+   * @deprecated Use {@link migrate} in production. Kept for tests and ad-hoc
+   * scripts that relied on idempotent CREATE-IF-NOT-EXISTS DDL.
    */
-  private buildPrefixWhereClause(startParam: number): {
-    conditions: string;
-    params: Array<string | number>;
-  } {
-    if (this.prefixes.length === 0) {
-      return { conditions: "", params: [] };
-    }
-    const conditions = this.prefixes.map((p, i) => `${p.name} = $${startParam + i}`).join(" AND ");
-    const params = this.prefixes.map((p) => this.prefixValues[p.name]);
-    return { conditions: " AND " + conditions, params };
-  }
-
-  /**
-   * Gets prefix values as an array in column order.
-   */
-  private getPrefixParamValues(): Array<string | number> {
-    return this.prefixes.map((p) => this.prefixValues[p.name]);
-  }
-
   public async setupDatabase(): Promise<void> {
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
-
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS ${this.executionTableName} (
-        id SERIAL PRIMARY KEY,
-        ${prefixColumnsSql}queue_name TEXT NOT NULL,
-        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `);
-
-    await this.db.query(`
-      CREATE INDEX IF NOT EXISTS rate_limit_exec_queue${indexSuffix}_idx 
-        ON ${this.executionTableName} (${prefixIndexPrefix}queue_name, executed_at)
-    `);
-
-    // For the next_available table, we need a composite primary key with prefixes
-    const primaryKeyColumns =
-      prefixColumnNames.length > 0 ? `${prefixColumnNames.join(", ")}, queue_name` : "queue_name";
-
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS ${this.nextAvailableTableName} (
-        ${prefixColumnsSql}queue_name TEXT NOT NULL,
-        next_available_at TIMESTAMP WITH TIME ZONE,
-        PRIMARY KEY (${primaryKeyColumns})
-      )
-    `);
+    await this.migrate();
   }
 
   public async tryReserveExecution(
@@ -137,7 +103,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
     maxExecutions: number,
     windowMs: number
   ): Promise<unknown | null> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixParamValues = this.getPrefixParamValues();
     const prefixCount = prefixColumnNames.length;
 
@@ -285,7 +251,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
   }
 
   public async recordExecution(queueName: string): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixColumnsInsert =
       prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
     const prefixParamValues = this.getPrefixParamValues();
@@ -359,7 +325,7 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
   }
 
   public async setNextAvailableTime(queueName: string, nextAvailableAt: string): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const prefixColumnsInsert =
       prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
     const prefixParamValues = this.getPrefixParamValues();

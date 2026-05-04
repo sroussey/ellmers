@@ -247,10 +247,32 @@ export interface IQueueStorage<Input, Output> {
 
   /**
    * Sets up the database schema and tables.
-   * This method should be called before using the storage in tests.
-   * For production use, database setup should be done via migrations.
+   *
+   * @deprecated Production code should run versioned migrations instead — call
+   * {@link migrate} (or run {@link getMigrations} through a `MigrationRunner`
+   * from `@workglow/postgres` / `@workglow/sqlite`). This method is kept for
+   * tests and ad-hoc scripts that previously relied on idempotent
+   * CREATE-IF-NOT-EXISTS DDL.
    */
   setupDatabase(): Promise<void>;
+
+  /**
+   * Applies any pending migrations for this queue's tables.
+   *
+   * Optional because backends without a real schema (in-memory, IndexedDB)
+   * have nothing to migrate. SQL backends (Postgres, SQLite, Supabase)
+   * implement this and it is the recommended production entry point.
+   */
+  migrate?(): Promise<void>;
+
+  /**
+   * Returns this storage's versioned migrations as opaque, runnable units.
+   *
+   * Callers can pass them to `SqliteMigrationRunner` / `PostgresMigrationRunner`
+   * to compose migrations across multiple storages into a single deployment
+   * step. Optional for the same reason as {@link migrate}.
+   */
+  getMigrations?(): ReadonlyArray<unknown>;
 
   /**
    * Subscribes to changes in the queue (including remote changes).

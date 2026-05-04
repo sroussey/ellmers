@@ -15,6 +15,15 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
+import {
+  assertPrefixesSafe,
+  buildPrefixInsertFragments,
+  buildPrefixWhereClause,
+  getPrefixParamValues,
+  SqliteDialect,
+} from "@workglow/storage";
+import { SqliteMigrationRunner } from "../migrations/SqliteMigrationRunner";
+import { sqliteQueueMigrations } from "../migrations/sqliteQueueMigrations";
 
 export const SQLITE_QUEUE_STORAGE =
   createServiceToken<IQueueStorage<any, any>>("jobqueue.storage.sqlite");
@@ -60,6 +69,10 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   ) {
     this.prefixes = options?.prefixes ?? [];
     this.prefixValues = options?.prefixValues ?? {};
+    // Validate prefix column names eagerly — they are spliced into DDL and
+    // table names without parameterisation, so unsafe identifiers must fail
+    // at construction rather than at the first migrate()/query call.
+    assertPrefixesSafe(this.prefixes);
     // Generate table name based on prefix configuration to avoid column conflicts
     if (this.prefixes.length > 0) {
       const prefixNames = this.prefixes.map((p) => p.name).join("_");
@@ -69,87 +82,41 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     }
   }
 
-  /**
-   * Gets the SQL column type for a prefix column (SQLite uses TEXT for uuid)
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "TEXT" : "INTEGER";
-  }
-
-  /**
-   * Builds the prefix columns SQL for CREATE TABLE
-   */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
-      this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n        ") + ",\n        "
-    );
-  }
-
-  /**
-   * Builds prefix column names for use in queries
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
-  }
-
-  /**
-   * Builds WHERE clause conditions for prefix filtering
-   * @returns The conditions string with placeholders
-   */
+  /** WHERE-clause helper for the SQLite dialect (positional `?` placeholders). */
   private buildPrefixWhereClause(): string {
-    if (this.prefixes.length === 0) {
-      return "";
-    }
-    const conditions = this.prefixes.map((p) => `${p.name} = ?`).join(" AND ");
-    return " AND " + conditions;
+    return buildPrefixWhereClause(SqliteDialect, this.prefixes, this.prefixValues).conditions;
+  }
+
+  /** Returns prefix values in column order. */
+  private getPrefixParamValues(): Array<string | number> {
+    return getPrefixParamValues(this.prefixes, this.prefixValues);
   }
 
   /**
-   * Gets prefix values as an array in column order
+   * Returns the versioned migrations that this storage's table layout depends on.
+   * Production code should run these via {@link SqliteMigrationRunner} as part
+   * of an explicit migration step rather than calling {@link setupDatabase}.
    */
-  private getPrefixParamValues(): Array<string | number> {
-    return this.prefixes.map((p) => this.prefixValues[p.name]);
+  public getMigrations() {
+    return sqliteQueueMigrations(this.tableName, this.prefixes);
   }
 
+  /**
+   * Applies any pending migrations for this queue's table.
+   * Safe to call repeatedly — already-applied versions are skipped.
+   */
+  public async migrate(): Promise<void> {
+    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
+  }
+
+  /**
+   * @deprecated Use {@link migrate} (or run {@link getMigrations} via your own
+   * {@link SqliteMigrationRunner}) in production. Kept for tests and ad-hoc
+   * scripts that previously relied on idempotent CREATE-IF-NOT-EXISTS DDL.
+   */
   public async setupDatabase(): Promise<void> {
     await sleep(0);
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        id INTEGER PRIMARY KEY,
-        ${prefixColumnsSql}fingerprint text NOT NULL,
-        queue text NOT NULL,
-        job_run_id text NOT NULL,
-        status TEXT NOT NULL default 'PENDING',
-        input TEXT NOT NULL,
-        output TEXT,
-        run_attempts INTEGER default 0,
-        max_retries INTEGER default 23,
-        run_after TEXT NOT NULL,
-        last_ran_at TEXT,
-        created_at TEXT NOT NULL,
-        completed_at TEXT,
-        deadline_at TEXT,
-        error TEXT,
-        error_code TEXT,
-        progress REAL DEFAULT 0,
-        progress_message TEXT DEFAULT '',
-        progress_details TEXT NULL,
-        worker_id TEXT
-      );
-      
-      CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, run_after);
-      CREATE INDEX IF NOT EXISTS job_queue_fingerprint${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status);
-      CREATE INDEX IF NOT EXISTS job_queue_job_run_id${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, job_run_id);
-    `);
+    await this.migrate();
   }
 
   /**
@@ -169,11 +136,8 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     job.created_at = now;
     job.run_after = now;
 
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixColumnsInsert =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const prefixPlaceholders =
-      prefixColumnNames.length > 0 ? prefixColumnNames.map(() => "?").join(", ") + ", " : "";
+    const { columns: prefixColumnsInsert, placeholders: prefixPlaceholders } =
+      buildPrefixInsertFragments(SqliteDialect, this.prefixes);
     const prefixParamValues = this.getPrefixParamValues();
 
     const AddQuery = `

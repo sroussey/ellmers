@@ -16,13 +16,20 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
+import {
+  assertPrefixesSafe,
+  buildPrefixInsertFragments,
+  buildPrefixWhereClause,
+  getPrefixColumnNames,
+  getPrefixParamValues,
+  PostgresDialect,
+} from "@workglow/storage";
+import { PostgresMigrationRunner } from "../migrations/PostgresMigrationRunner";
+import { postgresQueueMigrations } from "../migrations/postgresQueueMigrations";
 
 export const POSTGRES_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.postgres"
 );
-
-/** Regex for safe SQL identifiers: starts with a letter, then alphanumeric/underscores */
-const SAFE_IDENTIFIER = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 /**
  * Subset of pg.PoolClient that {@link PostgresQueueStorage.subscribeToChanges}
@@ -57,13 +64,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     this.prefixValues = options?.prefixValues ?? {};
 
     // Validate prefix column names to prevent SQL injection in DDL statements
-    for (const prefix of this.prefixes) {
-      if (!SAFE_IDENTIFIER.test(prefix.name)) {
-        throw new Error(
-          `Prefix column name must start with a letter and contain only letters, digits, and underscores, got: ${prefix.name}`
-        );
-      }
-    }
+    assertPrefixesSafe(this.prefixes);
 
     // Generate table name based on prefix configuration to avoid column conflicts
     if (this.prefixes.length > 0) {
@@ -74,160 +75,40 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     }
   }
 
-  /**
-   * Gets the SQL column type for a prefix column
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "UUID" : "INTEGER";
+  /** WHERE-clause helper specialized for this instance's dialect + prefix values. */
+  private buildPrefixWhereClause(startParam: number) {
+    return buildPrefixWhereClause(PostgresDialect, this.prefixes, this.prefixValues, startParam);
   }
 
-  /**
-   * Builds the prefix columns SQL for CREATE TABLE
-   */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
-      this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n      ") + ",\n      "
-    );
-  }
-
-  /**
-   * Builds prefix column names for use in queries
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
-  }
-
-  /**
-   * Builds WHERE clause conditions for prefix filtering
-   * @param startParam - The starting parameter number for parameterized queries
-   * @returns Object with conditions string and parameter values
-   */
-  private buildPrefixWhereClause(startParam: number): {
-    conditions: string;
-    params: Array<string | number>;
-  } {
-    if (this.prefixes.length === 0) {
-      return { conditions: "", params: [] };
-    }
-    const conditions = this.prefixes.map((p, i) => `${p.name} = $${startParam + i}`).join(" AND ");
-    const params = this.prefixes.map((p) => this.prefixValues[p.name]);
-    return { conditions: " AND " + conditions, params };
-  }
-
-  /**
-   * Gets prefix values as an array in column order
-   */
+  /** Returns prefix values in column order. */
   private getPrefixParamValues(): Array<string | number> {
-    return this.prefixes.map((p) => this.prefixValues[p.name]);
+    return getPrefixParamValues(this.prefixes, this.prefixValues);
   }
 
+  /**
+   * Returns the versioned migrations that this storage's table layout depends on.
+   * Production code should run these via {@link PostgresMigrationRunner} as part
+   * of an explicit migration step rather than calling {@link setupDatabase}.
+   */
+  public getMigrations() {
+    return postgresQueueMigrations(this.tableName, this.prefixes);
+  }
+
+  /**
+   * Applies any pending migrations for this queue's table.
+   * Safe to call repeatedly — already-applied versions are skipped.
+   */
+  public async migrate(): Promise<void> {
+    await new PostgresMigrationRunner(this.db).run(this.getMigrations());
+  }
+
+  /**
+   * @deprecated Use {@link migrate} (or run {@link getMigrations} via your own
+   * {@link PostgresMigrationRunner}) in production. Kept for tests and ad-hoc
+   * scripts that previously relied on idempotent CREATE-IF-NOT-EXISTS DDL.
+   */
   public async setupDatabase(): Promise<void> {
-    let sql: string;
-    try {
-      const enumValues = Object.values(JobStatus);
-      for (const v of enumValues) {
-        if (!SAFE_IDENTIFIER.test(v)) {
-          throw new Error(`Invalid JobStatus enum value: ${v}`);
-        }
-      }
-      sql = `CREATE TYPE job_status AS ENUM (${enumValues.map((v) => `'${v}'`).join(",")})`;
-      await this.db.query(sql);
-    } catch (e: any) {
-      // Ignore error if type already exists (code 42710)
-      if (e.code !== "42710") throw e;
-    }
-
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-
-    sql = `
-    CREATE TABLE IF NOT EXISTS ${this.tableName} (
-      id SERIAL NOT NULL,
-      ${prefixColumnsSql}fingerprint text NOT NULL,
-      queue text NOT NULL,
-      job_run_id text NOT NULL,
-      status job_status NOT NULL default 'PENDING',
-      input jsonb NOT NULL,
-      output jsonb,
-      run_attempts integer default 0,
-      max_retries integer default 20,
-      run_after timestamp with time zone DEFAULT now(),
-      last_ran_at timestamp with time zone,
-      created_at timestamp with time zone DEFAULT now(),
-      deadline_at timestamp with time zone,
-      completed_at timestamp with time zone,
-      error text,
-      error_code text,
-      progress real DEFAULT 0,
-      progress_message text DEFAULT '',
-      progress_details jsonb,
-      worker_id text
-    )`;
-
-    await this.db.query(sql);
-
-    // Create indexes with prefix columns prepended
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
-
-    sql = `
-      CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx 
-        ON ${this.tableName} (${prefixIndexPrefix}id, status, run_after)`;
-    await this.db.query(sql);
-
-    sql = `
-      CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx 
-        ON ${this.tableName} (${prefixIndexPrefix}queue, status, run_after)`;
-    await this.db.query(sql);
-
-    sql = `
-      CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx
-        ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`;
-    await this.db.query(sql);
-
-    // Install LISTEN/NOTIFY plumbing so subscribers can wake on INSERT/UPDATE
-    // without polling. The channel name is derived from md5(table || queue) so
-    // (a) it fits Postgres's 63-char identifier limit even with long queue
-    // names, and (b) different queues on the same table don't share a channel.
-    //
-    // Best-effort: in-process Postgres-compatible engines like PGLite may not
-    // implement pg_notify or plpgsql. Skip trigger installation in that case
-    // — subscribeToChanges will throw synchronously for those engines anyway,
-    // so callers fall back to polling.
-    const fnName = `${this.tableName}_notify`;
-    const trgName = `${this.tableName}_notify_trg`;
-    try {
-      await this.db.query(`
-        CREATE OR REPLACE FUNCTION ${fnName}() RETURNS trigger AS $fn$
-        DECLARE
-          channel TEXT := 'wglw_q_' || md5('${this.tableName}' || COALESCE(NEW.queue, OLD.queue));
-          payload TEXT;
-        BEGIN
-          payload := json_build_object(
-            'op', TG_OP,
-            'id', COALESCE(NEW.id, OLD.id),
-            'queue', COALESCE(NEW.queue, OLD.queue),
-            'status', COALESCE(NEW.status::text, OLD.status::text)
-          )::text;
-          PERFORM pg_notify(channel, payload);
-          RETURN NULL;
-        END;
-        $fn$ LANGUAGE plpgsql;
-      `);
-      await this.db.query(`DROP TRIGGER IF EXISTS ${trgName} ON ${this.tableName}`);
-      await this.db.query(`
-        CREATE TRIGGER ${trgName}
-          AFTER INSERT OR UPDATE ON ${this.tableName}
-          FOR EACH ROW EXECUTE FUNCTION ${fnName}();
-      `);
-    } catch {
-      // best-effort — the engine doesn't support LISTEN/NOTIFY; subscribers
-      // will get a synchronous throw and fall back to polling.
-    }
+    await this.migrate();
   }
 
   /**
@@ -259,14 +140,10 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     job.created_at = now;
     job.run_after = now;
 
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixColumnsInsert =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
+    const { columns: prefixColumnsInsert, placeholders: prefixParamPlaceholders } =
+      buildPrefixInsertFragments(PostgresDialect, this.prefixes, 1);
     const prefixParamValues = this.getPrefixParamValues();
-    const prefixParamPlaceholders =
-      prefixColumnNames.length > 0
-        ? prefixColumnNames.map((_, i) => `$${i + 1}`).join(",") + ","
-        : "";
     const baseParamStart = prefixColumnNames.length + 1;
 
     const sql = `

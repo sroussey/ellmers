@@ -15,7 +15,13 @@ import type {
 import { cosineSimilarity } from "@workglow/util/schema";
 import { PostgresTabularStorage } from "./PostgresTabularStorage";
 import { StorageValidationError, getMetadataProperty, getVectorProperty } from "@workglow/storage";
-import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+import type {
+  HybridSearchOptions,
+  IVectorStorage,
+  VectorDistanceMetric,
+  VectorIndexOptions,
+  VectorSearchOptions,
+} from "@workglow/storage";
 
 /**
  * PostgreSQL vector repository implementation using pgvector extension.
@@ -48,6 +54,7 @@ export class PostgresVectorStorage<
   private readonly vectorCtor: TypedArrayConstructor;
   private vectorPropertyName: keyof Entity;
   private metadataPropertyName: keyof Entity | undefined;
+  private readonly indexOptions: VectorIndexOptions;
 
   /**
    * Creates a new PostgreSQL vector repository
@@ -58,6 +65,11 @@ export class PostgresVectorStorage<
    * @param indexes - Array of columns or column arrays to make searchable
    * @param dimensions - The number of dimensions of the vector
    * @param vectorCtor - TypedArray constructor used when hydrating vectors from SQL text (e.g. {@link Float32Array})
+   * @param indexOptions - Tuning for the pgvector index (HNSW vs IVFFlat,
+   *                       distance metric, m / efConstruction / lists / probes).
+   *                       See {@link VectorIndexOptions} for the recall/latency
+   *                       trade-offs. Defaults to HNSW with cosine distance and
+   *                       pgvector's built-in `m=16`, `efConstruction=64` defaults.
    */
   constructor(
     db: Pool,
@@ -66,12 +78,14 @@ export class PostgresVectorStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     dimensions: number,
-    vectorCtor: TypedArrayConstructor = Float32Array
+    vectorCtor: TypedArrayConstructor = Float32Array,
+    indexOptions: VectorIndexOptions = {}
   ) {
     super(db, table, schema, primaryKeyNames, indexes);
 
     this.vectorDimensions = dimensions;
     this.vectorCtor = vectorCtor;
+    this.indexOptions = indexOptions;
 
     // Cache vector and metadata property names from schema
     const vectorProp = getVectorProperty(schema);
@@ -86,6 +100,72 @@ export class PostgresVectorStorage<
     return this.vectorDimensions;
   }
 
+  /** Exposes tuning to {@link PostgresTabularStorage.createVectorIndexes}. */
+  protected override getVectorIndexOptions(): VectorIndexOptions {
+    return this.indexOptions;
+  }
+
+  /** Resolved distance metric for this storage (defaults to cosine). */
+  private get distance(): VectorDistanceMetric {
+    return this.indexOptions.distance ?? "cosine";
+  }
+
+  /**
+   * pgvector distance operators per metric:
+   *   - cosine:        `<=>`  → cosine distance ∈ [0, 2]
+   *   - l2 (euclidean): `<->` → L2 distance ∈ [0, ∞)
+   *   - ip (inner):     `<#>` → negative inner product (pgvector negates so
+   *                      smaller = "more similar", matching the other ops)
+   */
+  private get distanceOperator(): string {
+    switch (this.distance) {
+      case "l2":
+        return "<->";
+      case "ip":
+        return "<#>";
+      default:
+        return "<=>";
+    }
+  }
+
+  /**
+   * SQL fragment that converts the raw distance from {@link distanceOperator}
+   * into a "higher = more similar" score that the rest of the API exposes.
+   *
+   *   - cosine:  1 - cosine_distance       → similarity in [-1, 1]
+   *   - l2:      1 / (1 + l2_distance)     → ∈ (0, 1], 1 is exact match
+   *   - ip:      -(neg_inner_product)      → the actual dot product
+   */
+  private buildScoreExpr(vectorExpr: string, queryParam: string): string {
+    const op = this.distanceOperator;
+    switch (this.distance) {
+      case "l2":
+        return `(1.0 / (1.0 + (${vectorExpr} ${op} ${queryParam}::vector)))`;
+      case "ip":
+        return `(-1.0 * (${vectorExpr} ${op} ${queryParam}::vector))`;
+      default:
+        return `(1 - (${vectorExpr} ${op} ${queryParam}::vector))`;
+    }
+  }
+
+  /**
+   * Returns the `efSearch` / `probes` values configured at construction time.
+   *
+   * NOTE: these are query-time GUCs and must be set on the active session.
+   * With a {@link Pool}, a connection is checked out per `pool.query()`, so a
+   * standalone `SET hnsw.ef_search = N` issued before a SELECT lands on a
+   * different client and has no effect. To apply them, callers should run
+   * search queries against a single checked-out client (using `pool.connect()`)
+   * inside a transaction with `SET LOCAL`, or set them at the role/database
+   * level via `ALTER ROLE ... SET hnsw.ef_search = N`.
+   */
+  public getQueryTuning(): { efSearch?: number; probes?: number } {
+    return {
+      efSearch: this.indexOptions.hnsw?.efSearch,
+      probes: this.indexOptions.ivfflat?.probes,
+    };
+  }
+
   public async similaritySearch(
     query: TypedArray,
     options: VectorSearchOptions<Metadata> = {}
@@ -97,11 +177,13 @@ export class PostgresVectorStorage<
       const queryVector = `[${Array.from(query).join(",")}]`;
       const vectorCol = String(this.vectorPropertyName);
       const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      const distOp = this.distanceOperator;
+      const scoreExpr = this.buildScoreExpr(vectorCol, "$1");
 
       let sql = `
-        SELECT 
+        SELECT
           *,
-          1 - (${vectorCol} <=> $1::vector) as score
+          ${scoreExpr} as score
         FROM "${this.table}"
       `;
 
@@ -125,12 +207,14 @@ export class PostgresVectorStorage<
 
       if (scoreThreshold > 0) {
         sql += filter ? " AND" : " WHERE";
-        sql += ` (1 - (${vectorCol} <=> $1::vector)) >= $${paramIndex}`;
+        sql += ` ${scoreExpr} >= $${paramIndex}`;
         params.push(scoreThreshold);
         paramIndex++;
       }
 
-      sql += ` ORDER BY ${vectorCol} <=> $1::vector LIMIT $${paramIndex}`;
+      // ORDER BY uses the raw distance (smaller = closer) so the configured
+      // pgvector index can serve the query directly.
+      sql += ` ORDER BY ${vectorCol} ${distOp} $1::vector LIMIT $${paramIndex}`;
       params.push(topK);
 
       const result = await this.db.query(sql, params);
@@ -177,14 +261,16 @@ export class PostgresVectorStorage<
       const tsQueryText = textQuery;
       const vectorCol = String(this.vectorPropertyName);
       const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      const vectorScoreExpr = this.buildScoreExpr(vectorCol, "$1");
+      const combinedScoreExpr = `(
+            $2 * ${vectorScoreExpr} +
+            $3 * ts_rank(to_tsvector('english', ${metadataCol || "''"}::text), plainto_tsquery('english', $4))
+          )`;
 
       let sql = `
-        SELECT 
+        SELECT
           *,
-          (
-            $2 * (1 - (${vectorCol} <=> $1::vector)) +
-            $3 * ts_rank(to_tsvector('english', ${metadataCol || "''"}::text), plainto_tsquery('english', $4))
-          ) as score
+          ${combinedScoreExpr} as score
         FROM "${this.table}"
       `;
 
@@ -208,10 +294,7 @@ export class PostgresVectorStorage<
 
       if (scoreThreshold > 0) {
         sql += filter ? " AND" : " WHERE";
-        sql += ` (
-          $2 * (1 - (${vectorCol} <=> $1::vector)) +
-          $3 * ts_rank(to_tsvector('english', ${metadataCol || "''"}::text), plainto_tsquery('english', $4))
-        ) >= $${paramIndex}`;
+        sql += ` ${combinedScoreExpr} >= $${paramIndex}`;
         params.push(scoreThreshold);
         paramIndex++;
       }
