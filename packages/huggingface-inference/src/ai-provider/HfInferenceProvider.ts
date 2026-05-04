@@ -5,45 +5,29 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
-import type {
-  AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
-} from "@workglow/ai/worker";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { HF_INFERENCE } from "./common/HFI_Constants";
 import type { HfInferenceModelConfig } from "./common/HFI_ModelSchema";
 
+const HFI_WORKER_TASK_TYPES = [
+  "ModelInfoTask",
+  "TextGenerationTask",
+  "TextEmbeddingTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+] as const;
+
 /**
- * AI provider for Hugging Face Inference API.
- *
- * Supports text generation, text embedding, text rewriting, and text summarization
- * via the Hugging Face Inference API using the `@huggingface/inference` SDK.
- *
- * Task run functions are injected via the constructor so that the `@huggingface/inference` SDK
- * is only imported where actually needed (inline mode, worker server), not on
- * the main thread in worker mode.
+ * Worker-server registration for Hugging Face Inference. Imports `AiProvider`
+ * from `@workglow/ai/worker` so the SDK is only loaded in the worker.
  */
-export class HfInferenceProvider extends AiProvider<HfInferenceModelConfig> {
-  readonly name = HF_INFERENCE;
-  readonly displayName = "Hugging Face Inference";
-  readonly isLocal = false;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "ModelInfoTask",
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, HfInferenceModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, HfInferenceModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, HfInferenceModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class HfInferenceProvider extends createCloudProviderClass<
+  HfInferenceModelConfig,
+  typeof HFI_WORKER_TASK_TYPES
+>(AiProvider, {
+  name: HF_INFERENCE,
+  displayName: "Hugging Face Inference",
+  taskTypes: HFI_WORKER_TASK_TYPES,
+}) {}

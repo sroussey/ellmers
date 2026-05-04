@@ -5,32 +5,27 @@
  */
 
 import { AiProvider } from "@workglow/ai";
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { OLLAMA } from "./common/Ollama_Constants";
 import type { OllamaModelConfig } from "./common/Ollama_ModelSchema";
 
+const OLLAMA_TASK_TYPES = [
+  "ModelInfoTask",
+  "TextGenerationTask",
+  "TextEmbeddingTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+] as const;
+
 /** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class OllamaQueuedProvider extends AiProvider<OllamaModelConfig> {
-  readonly name = OLLAMA;
-  readonly displayName = "Ollama";
-  readonly isLocal = true;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "ModelInfoTask",
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, OllamaModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, OllamaModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, OllamaModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class OllamaQueuedProvider extends createCloudProviderClass<
+  OllamaModelConfig,
+  typeof OLLAMA_TASK_TYPES
+>(AiProvider, {
+  name: OLLAMA,
+  displayName: "Ollama",
+  isLocal: true,
+  taskTypes: OLLAMA_TASK_TYPES,
+}) {}

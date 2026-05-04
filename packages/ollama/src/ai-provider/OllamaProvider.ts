@@ -5,48 +5,33 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
-import type {
-  AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
-} from "@workglow/ai/worker";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { OLLAMA } from "./common/Ollama_Constants";
 import type { OllamaModelConfig } from "./common/Ollama_ModelSchema";
 
+const OLLAMA_TASK_TYPES = [
+  "ModelInfoTask",
+  "TextGenerationTask",
+  "TextEmbeddingTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+] as const;
+
 /**
- * AI provider for Ollama local LLM server.
+ * Worker-server registration for Ollama. Imports `AiProvider` from
+ * `@workglow/ai/worker` so the SDK is only loaded in the worker.
  *
- * Supports text generation, text embedding, text rewriting, and text summarization
- * via the Ollama API using the `ollama` SDK.
- *
- * Ollama runs locally and does not require an API key -- only a `base_url`
+ * Ollama runs locally and does not require an API key — only a `base_url`
  * (defaults to `http://localhost:11434`).
- *
- * Task run functions are injected via the constructor so that the `ollama` SDK
- * is only imported where actually needed (inline mode, worker server), not on
- * the main thread in worker mode.
  */
-export class OllamaProvider extends AiProvider<OllamaModelConfig> {
-  readonly name = OLLAMA;
-  readonly displayName = "Ollama";
-  readonly isLocal = true;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "ModelInfoTask",
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, OllamaModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, OllamaModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, OllamaModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class OllamaProvider extends createCloudProviderClass<
+  OllamaModelConfig,
+  typeof OLLAMA_TASK_TYPES
+>(AiProvider, {
+  name: OLLAMA,
+  displayName: "Ollama",
+  isLocal: true,
+  taskTypes: OLLAMA_TASK_TYPES,
+}) {}

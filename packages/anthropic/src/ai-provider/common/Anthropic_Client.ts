@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isBrowserLike, loadProviderSdk, resolveApiKey } from "@workglow/ai-provider/common";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
 let _sdk: typeof import("@anthropic-ai/sdk") | undefined;
 
 export async function loadAnthropicSDK() {
   if (!_sdk) {
-    try {
-      _sdk = await import("@anthropic-ai/sdk");
-    } catch {
-      throw new Error(
-        "@anthropic-ai/sdk is required for Anthropic tasks. Install it with: bun add @anthropic-ai/sdk"
-      );
-    }
+    _sdk = await loadProviderSdk<typeof import("@anthropic-ai/sdk")>(
+      "@anthropic-ai/sdk",
+      "Anthropic"
+    );
   }
   return _sdk.default;
 }
@@ -32,21 +30,16 @@ interface ResolvedProviderConfig {
 export async function getClient(model: AnthropicModelConfig | undefined) {
   const Anthropic = await loadAnthropicSDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
-  const apiKey =
-    config?.credential_key ||
-    config?.api_key ||
-    (typeof process !== "undefined" ? process.env?.ANTHROPIC_API_KEY : undefined);
-  if (!apiKey) {
-    throw new Error(
-      "Missing Anthropic API key: set provider_config.credential_key or the ANTHROPIC_API_KEY environment variable."
-    );
-  }
+  const apiKey = resolveApiKey({
+    config,
+    envVar: "ANTHROPIC_API_KEY",
+    providerLabel: "Anthropic",
+  });
   try {
     return new Anthropic({
       apiKey,
       baseURL: config?.base_url || undefined,
-      dangerouslyAllowBrowser:
-        typeof globalThis.document !== "undefined" || "WorkerGlobalScope" in globalThis,
+      dangerouslyAllowBrowser: isBrowserLike(),
     });
   } catch (err) {
     throw new Error(

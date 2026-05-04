@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { loadProviderSdk } from "@workglow/ai-provider/common";
 import { OLLAMA_DEFAULT_BASE_URL } from "./Ollama_Constants";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
@@ -13,12 +14,12 @@ let _OllamaClass: (new (config: { host: string }) => any) | undefined;
 
 export async function loadOllamaSDK(): Promise<(new (config: { host: string }) => any) & {}> {
   if (!_OllamaClass) {
-    try {
-      const sdk = await import("ollama");
-      _OllamaClass = sdk.Ollama;
-    } catch {
-      throw new Error("ollama is required for Ollama tasks. Install it with: bun add ollama");
-    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sdk = await loadProviderSdk<{ Ollama: new (config: { host: string }) => any }>(
+      "ollama",
+      "Ollama"
+    );
+    _OllamaClass = sdk.Ollama;
   }
   return _OllamaClass;
 }

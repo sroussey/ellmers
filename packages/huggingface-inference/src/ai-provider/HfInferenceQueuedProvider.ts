@@ -5,34 +5,28 @@
  */
 
 import { AiProvider } from "@workglow/ai";
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import { createCloudProviderClass } from "@workglow/ai-provider/common";
 import { HF_INFERENCE } from "./common/HFI_Constants";
 import type { HfInferenceModelConfig } from "./common/HFI_ModelSchema";
 
+const HFI_QUEUED_TASK_TYPES = [
+  "ModelInfoTask",
+  "TextGenerationTask",
+  "TextEmbeddingTask",
+  "TextRewriterTask",
+  "TextSummaryTask",
+  "ToolCallingTask",
+  "ModelSearchTask",
+  "ImageGenerateTask",
+  "ImageEditTask",
+] as const;
+
 /** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class HfInferenceQueuedProvider extends AiProvider<HfInferenceModelConfig> {
-  readonly name = HF_INFERENCE;
-  readonly displayName = "Hugging Face Inference";
-  readonly isLocal = false;
-  readonly supportsBrowser = true;
-
-  readonly taskTypes = [
-    "ModelInfoTask",
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-    "ImageGenerateTask",
-    "ImageEditTask",
-  ] as const;
-
-  constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, HfInferenceModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, HfInferenceModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, HfInferenceModelConfig>>
-  ) {
-    super(tasks, streamTasks, previewTasks);
-  }
-}
+export class HfInferenceQueuedProvider extends createCloudProviderClass<
+  HfInferenceModelConfig,
+  typeof HFI_QUEUED_TASK_TYPES
+>(AiProvider, {
+  name: HF_INFERENCE,
+  displayName: "Hugging Face Inference",
+  taskTypes: HFI_QUEUED_TASK_TYPES,
+}) {}

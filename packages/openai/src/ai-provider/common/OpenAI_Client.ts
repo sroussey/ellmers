@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isBrowserLike, loadProviderSdk, resolveApiKey } from "@workglow/ai-provider/common";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -11,12 +12,9 @@ let _OpenAIClass: (new (config: any) => any) | undefined;
 
 export async function loadOpenAISDK() {
   if (!_OpenAIClass) {
-    try {
-      const sdk = await import("openai");
-      _OpenAIClass = sdk.default;
-    } catch {
-      throw new Error("openai is required for OpenAI tasks. Install it with: bun add openai");
-    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sdk = await loadProviderSdk<{ default: new (config: any) => any }>("openai", "OpenAI");
+    _OpenAIClass = sdk.default;
   }
   return _OpenAIClass;
 }
@@ -32,22 +30,17 @@ interface ResolvedProviderConfig {
 export async function getClient(model: OpenAiModelConfig | undefined) {
   const OpenAI = await loadOpenAISDK();
   const config = model?.provider_config as ResolvedProviderConfig | undefined;
-  const apiKey =
-    config?.credential_key ||
-    config?.api_key ||
-    (typeof process !== "undefined" ? process.env?.OPENAI_API_KEY : undefined);
-  if (!apiKey) {
-    throw new Error(
-      "Missing OpenAI API key: set provider_config.credential_key or the OPENAI_API_KEY environment variable."
-    );
-  }
+  const apiKey = resolveApiKey({
+    config,
+    envVar: "OPENAI_API_KEY",
+    providerLabel: "OpenAI",
+  });
   try {
     return new OpenAI({
       apiKey,
       baseURL: config?.base_url || undefined,
       organization: config?.organization || undefined,
-      dangerouslyAllowBrowser:
-        typeof globalThis.document !== "undefined" || "WorkerGlobalScope" in globalThis,
+      dangerouslyAllowBrowser: isBrowserLike(),
     });
   } catch (err) {
     throw new Error(
