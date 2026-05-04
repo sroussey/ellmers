@@ -4,14 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeAll } from "vitest";
-import { Dataflow } from "../Dataflow";
-import { TaskGraph } from "../TaskGraph";
-import { TaskGraphRunner } from "../TaskGraphRunner";
-import { TaskStatus } from "../../task/TaskTypes";
-import { registerBuiltInTransforms } from "../transforms";
-import { Task } from "../../task/Task";
+import {
+  Dataflow,
+  Task,
+  TaskGraph,
+  TaskGraphRunner,
+  TaskStatus,
+  registerBuiltInTransforms,
+} from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { beforeAll, describe, expect, it } from "vitest";
 
 describe("TaskGraphRunner applies transforms on edges", () => {
   beforeAll(() => {

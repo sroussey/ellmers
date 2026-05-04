@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
-  uppercaseTransform,
   lowercaseTransform,
-  truncateTransform,
   substringTransform,
-} from "../../transforms/string-casts";
+  truncateTransform,
+  uppercaseTransform,
+} from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 describe("uppercase", () => {
   it("uppercases strings", async () => {

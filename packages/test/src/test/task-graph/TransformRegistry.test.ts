@@ -3,11 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
-import { TransformRegistry, TRANSFORM_DEFS } from "../TransformRegistry";
-import type { ITransformDef } from "../TransformTypes";
+import type { ITransformDef } from "@workglow/task-graph";
+import { TRANSFORM_DEFS, TransformRegistry, registerBuiltInTransforms } from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
-import { registerBuiltInTransforms } from "../transforms";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const dummy: ITransformDef<{ x: number }> = {
   id: "dummy-test",

@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { unixToIsoDateTransform, isoDateToUnixTransform } from "../../transforms/date-conversions";
+import { isoDateToUnixTransform, unixToIsoDateTransform } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 describe("unixToIsoDate", () => {
   it("converts seconds to ISO", async () => {

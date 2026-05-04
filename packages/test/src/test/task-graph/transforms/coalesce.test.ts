@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { coalesceTransform } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import { coalesceTransform } from "../../transforms/coalesce";
 
 describe("coalesce", () => {
   it("returns input when non-null", async () => {

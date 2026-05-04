@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeAll } from "vitest";
-import { Dataflow, DATAFLOW_ALL_PORTS } from "../Dataflow";
-import { TaskStatus } from "../../task/TaskTypes";
-import { registerBuiltInTransforms } from "../transforms";
+import {
+  Dataflow,
+  DATAFLOW_ALL_PORTS,
+  registerBuiltInTransforms,
+  TaskStatus,
+} from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
+import { beforeAll, describe, expect, it } from "vitest";
 
 describe("Dataflow streaming + transforms (runner-only MVP)", () => {
   beforeAll(() => registerBuiltInTransforms());
@@ -41,7 +44,7 @@ describe("Dataflow streaming + transforms (runner-only MVP)", () => {
   });
 
   it("double-call of applyTransforms on same dataflow would double-apply (proves single-apply is required)", async () => {
-    // Documentary test — show why we don't want BOTH paths transforming.
+    // Documentary test - show why we don't want BOTH paths transforming.
     const d = new Dataflow("a", DATAFLOW_ALL_PORTS, "b", "in");
     d.value = { created_at: 1700000000 };
     d.setTransforms([
@@ -52,9 +55,9 @@ describe("Dataflow streaming + transforms (runner-only MVP)", () => {
     expect(d.value).toBe("2023-11-14T22:13:20.000Z");
     // Second call: `pick({path:"created_at"})` on an ISO string returns undefined, then
     // `unixToIsoDate(undefined, {unit:"s"})` calls `new Date(NaN).toISOString()` which throws.
-    // applyTransforms sets d.status = FAILED and re-throws — the dataflow is corrupted.
+    // applyTransforms sets d.status = FAILED and re-throws - the dataflow is corrupted.
     // This confirms that applying transforms twice isn't safe; the runner is the single entry point.
     await expect(d.applyTransforms(globalServiceRegistry)).rejects.toThrow();
-    expect(d.status).toBe(TaskStatus.FAILED); // dataflow is now in error state — non-idempotent
+    expect(d.status).toBe(TaskStatus.FAILED); // dataflow is now in error state - non-idempotent
   });
 });

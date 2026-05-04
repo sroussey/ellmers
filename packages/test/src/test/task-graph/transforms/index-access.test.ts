@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { indexTransform } from "../../transforms/index-access";
+import { indexTransform } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 describe("index transform", () => {
   it("applies a positive index", async () => {

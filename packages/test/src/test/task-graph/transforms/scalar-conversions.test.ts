@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
   numberToStringTransform,
-  toBooleanTransform,
-  stringifyTransform,
   parseJsonTransform,
-} from "../../transforms/scalar-conversions";
+  stringifyTransform,
+  toBooleanTransform,
+} from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 describe("numberToString", () => {
   it("converts number to string", async () => {
@@ -23,7 +23,7 @@ describe("numberToString", () => {
       type: "string",
     });
   });
-  it("suggestFromSchemas number → string", () => {
+  it("suggestFromSchemas number -> string", () => {
     const res = numberToStringTransform.suggestFromSchemas!(
       { type: "number" } as DataPortSchema,
       { type: "string" } as DataPortSchema
@@ -33,12 +33,12 @@ describe("numberToString", () => {
 });
 
 describe("toBoolean", () => {
-  it("maps 'true' → true", async () =>
+  it("maps 'true' -> true", async () =>
     expect(await toBooleanTransform.apply("true", {})).toBe(true));
-  it("maps 'false' → false", async () =>
+  it("maps 'false' -> false", async () =>
     expect(await toBooleanTransform.apply("false", {})).toBe(false));
-  it("maps 1 → true", async () => expect(await toBooleanTransform.apply(1, {})).toBe(true));
-  it("maps 0 → false", async () => expect(await toBooleanTransform.apply(0, {})).toBe(false));
+  it("maps 1 -> true", async () => expect(await toBooleanTransform.apply(1, {})).toBe(true));
+  it("maps 0 -> false", async () => expect(await toBooleanTransform.apply(0, {})).toBe(false));
 });
 
 describe("stringify", () => {

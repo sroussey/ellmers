@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { pickTransform } from "../../transforms/pick";
+import { pickTransform } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 describe("pick transform", () => {
   it("applies a top-level path", async () => {

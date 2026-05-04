@@ -4,14 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeAll } from "vitest";
-import { Dataflow } from "../Dataflow";
-import { TaskStatus } from "../../task/TaskTypes";
-import { registerBuiltInTransforms } from "../transforms";
+import {
+  Dataflow,
+  Task,
+  TaskGraph,
+  TaskStatus,
+  registerBuiltInTransforms,
+} from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { Task } from "../../task/Task";
-import { TaskGraph } from "../TaskGraph";
+import { beforeAll, describe, expect, it } from "vitest";
 
 describe("Dataflow transforms accessors", () => {
   it("defaults to empty chain", () => {
@@ -150,10 +152,10 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
     const d = new Dataflow("src112", "customer", "tgt112", "date");
     graph.addDataflow(d);
 
-    // Without transforms: object vs date-time string → incompatible.
+    // Without transforms: object vs date-time string -> incompatible.
     expect(d.semanticallyCompatible(graph, d)).toBe("incompatible");
 
-    // With pick(created_at) → number, then unixToIsoDate(s) → string/date-time → static.
+    // With pick(created_at) -> number, then unixToIsoDate(s) -> string/date-time -> static.
     d.setTransforms([
       { id: "pick", params: { path: "created_at" } },
       { id: "unixToIsoDate", params: { unit: "s" } },
@@ -162,7 +164,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
   });
 
   it("returns incompatible when chain contains unknown transform id", () => {
-    // SrcTask and TgtTask with matching { x: string } schemas — would normally be "static".
+    // SrcTask and TgtTask with matching { x: string } schemas - would normally be "static".
     class SrcXTask extends Task<Record<string, never>, { x: string }> {
       static override readonly type = "SrcXTestTask112";
       static override readonly category = "Test";
@@ -212,7 +214,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
     const d = new Dataflow("srcx112", "x", "tgtx112", "x");
     graph.addDataflow(d);
 
-    // Without transforms, the string→string connection should be compatible.
+    // Without transforms, the string->string connection should be compatible.
     expect(d.semanticallyCompatible(graph, d)).toBe("static");
 
     // An unknown transform id causes short-circuit to "incompatible".
