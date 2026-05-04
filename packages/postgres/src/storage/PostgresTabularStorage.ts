@@ -596,11 +596,25 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * `pg.Pool#connect()` is only present on real `pg` pools. PGlite-style
-   * single-connection wrappers serialize all queries through one underlying
-   * session, so `BEGIN`/`COMMIT` issued via `this.db.query` is already
-   * transaction-safe for them — we only need a dedicated client when a true
-   * multi-connection pool is in play.
+   * Acquires a client that BEGIN/COMMIT-style transactions can safely run on.
+   *
+   * - Real `pg.Pool` exposes `connect()`, which dedicates a client for the
+   *   transaction duration.
+   * - PGlite-style single-connection wrappers (PGLitePool, raw PGlite)
+   *   serialize every `query()` through one underlying session, so issuing
+   *   the BEGIN/COMMIT pair directly on `this.db.query` is equivalent.
+   * - Anything else — a custom no-`connect()` adapter that fans queries
+   *   across sessions — would dispatch the BEGIN and the bracketed queries
+   *   to different sessions, silently breaking atomicity. We refuse to
+   *   operate on it rather than provide a false guarantee.
+   *
+   * Whitelist mirrors {@link
+   * PostgresRateLimiterStorage.tryReserveExecution}: the rate limiter has
+   * the same atomicity requirement, and divergence here would let a pool
+   * type be safe in one place and unsafe in another.
+   *
+   * Caller MUST invoke `release()` on the returned client. The no-op release
+   * for single-connection wrappers is safe.
    */
   private async acquireConnection(): Promise<{
     query: Pool["query"];
@@ -608,17 +622,38 @@ export class PostgresTabularStorage<
   }> {
     const supportsConnect =
       typeof (this.db as unknown as { connect?: unknown }).connect === "function";
-    if (!supportsConnect) {
-      return {
-        query: this.db.query.bind(this.db) as Pool["query"],
-        release: () => {},
-      };
+    if (supportsConnect) {
+      return await (
+        this.db as unknown as {
+          connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
+        }
+      ).connect();
     }
-    return await (
-      this.db as unknown as {
-        connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
-      }
-    ).connect();
+
+    // Without connect() we route BEGIN/COMMIT through this.db.query directly.
+    // That is only safe if every query funnels through one underlying session.
+    // Recognize:
+    //   - PGLitePool — our own wrapper class; constructor name preserved.
+    //   - PGlite     — third-party, ships minified so `constructor.name` can
+    //     be obfuscated (observed: "q"). Detect via duck-typing on methods
+    //     PGlite uniquely exposes (`waitReady` Promise + `exec`).
+    const dbAny = this.db as unknown as {
+      waitReady?: unknown;
+      exec?: unknown;
+      constructor?: { name?: string };
+    };
+    const ctorName = dbAny.constructor?.name;
+    const looksLikePGlite = typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
+    const looksLikePGLitePool = ctorName === "PGLitePool";
+    if (!looksLikePGlite && !looksLikePGLitePool) {
+      throw new Error(
+        `PostgresTabularStorage.putBulk requires a pg.Pool with connect() or a known single-connection wrapper (PGLitePool, PGlite); got ${ctorName ?? typeof this.db}. A multi-connection pool without connect() would dispatch BEGIN and the bracketed INSERTs to different sessions, breaking atomicity.`
+      );
+    }
+    return {
+      query: this.db.query.bind(this.db) as Pool["query"],
+      release: () => {},
+    };
   }
 
   /**

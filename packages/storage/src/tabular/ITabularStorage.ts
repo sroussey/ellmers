@@ -175,6 +175,16 @@ export interface ITabularStorage<
 > {
   // Core methods
   put(value: InsertType): Promise<Entity>;
+  /**
+   * Stores multiple entities in a single bulk operation.
+   *
+   * **Ordering guarantee:** the returned array is in the same order as the
+   * input — `result[i]` always corresponds to `values[i]`. Callers may rely on
+   * this to align bulk inserts with parallel arrays (e.g. chunks paired with
+   * embeddings). Backends are responsible for preserving the order even when
+   * the underlying engine does not formally guarantee it (see each backend's
+   * implementation).
+   */
   putBulk(values: InsertType[]): Promise<Entity[]>;
   get(key: PrimaryKey): Promise<Entity | undefined>;
   delete(key: PrimaryKey | Entity): Promise<void>;

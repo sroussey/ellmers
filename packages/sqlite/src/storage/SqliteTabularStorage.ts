@@ -622,14 +622,33 @@ export class SqliteTabularStorage<
   }
 
   /**
+   * Tracks whether this storage instance is currently inside a
+   * `withTransaction` call so we can refuse nested entry. SQLite errors on
+   * nested `BEGIN` (it has no autonomous transactions), and silently letting
+   * the inner call's `ROLLBACK` tear down the outer transaction would be a
+   * subtle data-loss footgun.
+   */
+  private inTransaction: boolean = false;
+
+  /**
    * Runs `fn` inside a single SQLite transaction. Uses raw `BEGIN` /
    * `COMMIT` / `ROLLBACK` rather than {@link Sqlite.Database.transaction}
    * because `fn` is async — better-sqlite3's transaction wrapper requires a
    * synchronous body. SQLite drivers in this codebase are single-threaded, so
-   * concurrent calls will serialize at the database lock; do not nest
-   * withTransaction calls.
+   * concurrent calls will serialize at the database lock.
+   *
+   * Nested `withTransaction` calls on the same storage throw rather than
+   * reusing the outer transaction implicitly. Use {@link Sqlite.Database}
+   * `SAVEPOINT`s directly if you need nested rollback boundaries.
    */
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    if (this.inTransaction) {
+      throw new Error(
+        "SqliteTabularStorage.withTransaction does not support nesting. " +
+          "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
+      );
+    }
+    this.inTransaction = true;
     this.db.exec("BEGIN");
     try {
       const result = await fn(this);
@@ -642,6 +661,8 @@ export class SqliteTabularStorage<
         // prefer the original error if rollback fails
       }
       throw err;
+    } finally {
+      this.inTransaction = false;
     }
   }
 

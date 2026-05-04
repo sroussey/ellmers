@@ -226,6 +226,47 @@ export function runGenericTabularStorageTests(
       expect(Array.isArray(returned)).toBe(true);
       expect(returned.length).toEqual(0);
     });
+
+    it("should return putBulk() entities in the same order as the input", async () => {
+      // Inputs deliberately interleave name/type combos so any backend that
+      // returns rows in PK order (rather than input order) would mismatch.
+      const entities = [
+        { name: "key3", type: "string3", option: "third", success: true },
+        { name: "key1", type: "string1", option: "first", success: false },
+        { name: "key2", type: "string2", option: "second", success: true },
+      ];
+
+      const returned = await repository.putBulk(entities);
+
+      expect(returned).toHaveLength(entities.length);
+      for (let i = 0; i < entities.length; i++) {
+        expect(returned[i].name).toEqual(entities[i].name);
+        expect(returned[i].type).toEqual(entities[i].type);
+        expect(returned[i].option).toEqual(entities[i].option);
+      }
+    });
+
+    describe("withTransaction", () => {
+      it("should commit writes performed inside a successful transaction", async () => {
+        await repository.withTransaction(async (tx) => {
+          await tx.put({ name: "tx1", type: "ok", option: "committed", success: true });
+          await tx.put({ name: "tx2", type: "ok", option: "committed", success: true });
+        });
+
+        const r1 = await repository.get({ name: "tx1", type: "ok" });
+        const r2 = await repository.get({ name: "tx2", type: "ok" });
+        expect(r1?.option).toEqual("committed");
+        expect(r2?.option).toEqual("committed");
+      });
+
+      it("should propagate the result of the transaction callback", async () => {
+        const result = await repository.withTransaction(async (tx) => {
+          await tx.put({ name: "tx", type: "result", option: "val", success: true });
+          return 42;
+        });
+        expect(result).toEqual(42);
+      });
+    });
   });
 
   // Only run compound index tests if createCompoundRepository is provided

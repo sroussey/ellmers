@@ -8,7 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
-import { afterAll, describe } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AllTypesPrimaryKeyNames,
@@ -82,4 +82,30 @@ describe("PostgresTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  describe("withTransaction", () => {
+    it("rolls back all writes when the callback throws", async () => {
+      const storage = new PostgresTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        db,
+        `tx_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+
+      await expect(
+        storage.withTransaction(async (tx) => {
+          await tx.put({ name: "a", type: "x", option: "v1", success: true });
+          await tx.put({ name: "b", type: "x", option: "v2", success: true });
+          throw new Error("boom");
+        })
+      ).rejects.toThrow("boom");
+
+      expect(await storage.get({ name: "a", type: "x" })).toBeUndefined();
+      expect(await storage.get({ name: "b", type: "x" })).toBeUndefined();
+    });
+  });
 });

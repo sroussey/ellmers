@@ -467,6 +467,15 @@ export class SupabaseTabularStorage<
    * round trip — far cheaper than `Promise.all` fanning out one HTTPS request
    * per row.
    *
+   * **Ordering:** when every input row has its full primary key populated, we
+   * reorder the response by primary key so positional alignment with the
+   * input is guaranteed regardless of how Postgres orders `RETURNING`. When a
+   * row omits an auto-generated key we cannot reorder after the fact, so we
+   * fall back to the order Postgres returns — which in practice tracks
+   * `VALUES` input order for plain `INSERT ... RETURNING`. Callers that need
+   * positional alignment when auto-gen keys are in play should provide the
+   * keys themselves.
+   *
    * `put` events are deferred until after the upsert resolves so listeners do
    * not see rows from a request that ultimately failed.
    */
@@ -482,11 +491,60 @@ export class SupabaseTabularStorage<
     if (error) throw error;
     if (!data) return [];
 
-    const updatedEntities = (data as unknown[]).map((row) => this.hydrateRow(row));
-    for (const entity of updatedEntities) {
+    const returnedRows = (data as unknown[]).map((row) => this.hydrateRow(row));
+
+    // Reorder by primary key when every input row carries its full PK. With an
+    // auto-generated key omitted from the input, we have no key to match on,
+    // so trust the response order (Postgres's INSERT ... RETURNING preserves
+    // VALUES order in practice).
+    const orderedEntities = this.alignBulkResponseToInputOrder(
+      normalizedEntities,
+      returnedRows
+    );
+
+    for (const entity of orderedEntities) {
       this.events.emit("put", entity);
     }
-    return updatedEntities;
+    return orderedEntities;
+  }
+
+  /**
+   * If every input row supplies its full primary key, build a PK index over
+   * the response and emit rows in input order. Otherwise return the response
+   * as-is — there is no key to match on, so we have to trust the backend.
+   */
+  private alignBulkResponseToInputOrder(
+    inputs: ReadonlyArray<Record<string, unknown>>,
+    responseRows: Entity[]
+  ): Entity[] {
+    if (inputs.length !== responseRows.length) {
+      // Server returned a different cardinality (e.g. dedup); fall back to as-is.
+      return responseRows;
+    }
+    const pkColumns = this.primaryKeyColumns().map(String);
+    for (const input of inputs) {
+      for (const col of pkColumns) {
+        if (input[col] === undefined || input[col] === null) {
+          return responseRows;
+        }
+      }
+    }
+
+    const fingerprint = (row: Record<string, unknown>): string =>
+      pkColumns.map((c) => String(row[c])).join(" ");
+
+    const responseByPk = new Map<string, Entity>();
+    for (const row of responseRows) {
+      responseByPk.set(fingerprint(row as unknown as Record<string, unknown>), row);
+    }
+
+    const ordered: Entity[] = [];
+    for (const input of inputs) {
+      const match = responseByPk.get(fingerprint(input));
+      if (!match) return responseRows; // unexpected; fall back
+      ordered.push(match);
+    }
+    return ordered;
   }
 
   /**

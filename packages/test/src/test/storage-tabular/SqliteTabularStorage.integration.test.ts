@@ -128,3 +128,47 @@ describe("SqliteTabularStorage.queryIndex", () => {
     expect(rows).toEqual([]);
   });
 });
+
+describe("SqliteTabularStorage.withTransaction", () => {
+  async function makeStorage() {
+    const storage = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      `tx_test_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    return storage;
+  }
+
+  it("rolls back all writes when the callback throws", async () => {
+    const storage = await makeStorage();
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "a", type: "x", option: "v1", success: true });
+        await tx.put({ name: "b", type: "x", option: "v2", success: true });
+        throw new Error("boom");
+      })
+    ).rejects.toThrow("boom");
+
+    expect(await storage.get({ name: "a", type: "x" })).toBeUndefined();
+    expect(await storage.get({ name: "b", type: "x" })).toBeUndefined();
+  });
+
+  it("rejects nested withTransaction calls instead of corrupting the outer transaction", async () => {
+    const storage = await makeStorage();
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "outer", type: "x", option: "v", success: true });
+        await tx.withTransaction(async () => {
+          // unreachable
+        });
+      })
+    ).rejects.toThrow(/does not support nesting/);
+
+    // Outer transaction was rolled back as a result of the nested-call error.
+    expect(await storage.get({ name: "outer", type: "x" })).toBeUndefined();
+  });
+});
