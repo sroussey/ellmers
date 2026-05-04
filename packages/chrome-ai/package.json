@@ -11,20 +11,32 @@
   "description": "Chrome built-in AI provider for @workglow/ai-provider.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts",
+    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",
     "build-js": "bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts",
+    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "exports": {
     "./ai-provider": {
+      "browser": {
+        "types": "./dist/ai-provider.d.ts",
+        "import": "./dist/ai-provider.js"
+      },
       "types": "./dist/ai-provider.d.ts",
       "import": "./dist/ai-provider.js"
+    },
+    "./ai-provider-runtime": {
+      "browser": {
+        "types": "./dist/ai-provider-runtime.d.ts",
+        "import": "./dist/ai-provider-runtime.js"
+      },
+      "types": "./dist/ai-provider-runtime.d.ts",
+      "import": "./dist/ai-provider-runtime.js"
     }
   },
   "peerDependencies": {
