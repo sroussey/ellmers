@@ -162,10 +162,16 @@ export async function* accumulateOpenAIStream(
       if (tcDelta.function?.name) acc.name = tcDelta.function.name;
       if (tcDelta.function?.arguments) acc.arguments += tcDelta.function.arguments;
 
+      // Synthesise a stable id when the provider doesn't emit one, matching
+      // the non-streaming `parseOpenAIToolCallMessage` fallback. Without this,
+      // multiple tool calls with empty ids would collide under the
+      // StreamProcessor's id-based upsert.
+      const stableId = acc.id || `call_${idx}`;
+
       yield {
         type: "object-delta",
         port: "toolCalls",
-        objectDelta: [{ id: acc.id, name: acc.name, input: parseToolArgs(acc.arguments) }],
+        objectDelta: [{ id: stableId, name: acc.name, input: parseToolArgs(acc.arguments) }],
       };
     }
   }
