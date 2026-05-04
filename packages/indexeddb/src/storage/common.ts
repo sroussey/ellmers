@@ -8,3 +8,6 @@ export * from "./IndexedDbTable";
 export * from "./IndexedDbKvStorage";
 export * from "./IndexedDbTabularStorage";
 export * from "./IndexedDbVectorStorage";
+
+// Versioned migrations runner for IndexedDB-backed schemas.
+export * from "../migrations/IndexedDbMigrationRunner";
