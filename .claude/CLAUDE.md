@@ -91,7 +91,17 @@ Spaces (not tabs), double quotes, semicolons, trailing commas (es5), 100 char pr
 
 ### License header
 
-All source files: `@license Copyright 2025 Steven Roussey ... SPDX-License-Identifier: Apache-2.0`
+All source files start with:
+
+```ts
+/**
+ * @license
+ * Copyright <YEAR> Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+```
+
+`<YEAR>` is the year the file was **created**, not the current year. Do not bump the year on edits — leave existing headers alone. New files use the current year (e.g., a file created in 2026 uses `Copyright 2026`).
 
 ## Key packages
 
