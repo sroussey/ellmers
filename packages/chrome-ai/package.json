@@ -1,12 +1,12 @@
 {
-  "name": "@workglow/chrome",
+  "name": "@workglow/chrome-ai",
   "type": "module",
   "sideEffects": false,
   "version": "0.2.29",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
-    "directory": "packages/chrome"
+    "directory": "packages/chrome-ai"
   },
   "description": "Chrome built-in AI provider for @workglow/ai-provider.",
   "scripts": {

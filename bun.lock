@@ -193,8 +193,8 @@
         "playwright",
       ],
     },
-    "packages/chrome": {
-      "name": "@workglow/chrome",
+    "packages/chrome-ai": {
+      "name": "@workglow/chrome-ai",
       "version": "0.2.29",
       "devDependencies": {
         "@workglow/ai": "workspace:*",
@@ -605,7 +605,7 @@
         "@workglow/ai": "workspace:*",
         "@workglow/anthropic": "workspace:*",
         "@workglow/browser-control": "workspace:*",
-        "@workglow/chrome": "workspace:*",
+        "@workglow/chrome-ai": "workspace:*",
         "@workglow/google-gemini": "workspace:*",
         "@workglow/huggingface-inference": "workspace:*",
         "@workglow/huggingface-transformers": "workspace:*",
@@ -1222,7 +1222,7 @@
 
     "@workglow/browser-control": ["@workglow/browser-control@workspace:packages/browser-control"],
 
-    "@workglow/chrome": ["@workglow/chrome@workspace:packages/chrome"],
+    "@workglow/chrome-ai": ["@workglow/chrome-ai@workspace:packages/chrome-ai"],
 
     "@workglow/cli": ["@workglow/cli@workspace:examples/cli"],
 
