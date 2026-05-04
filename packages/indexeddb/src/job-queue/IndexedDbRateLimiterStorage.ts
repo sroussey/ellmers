@@ -5,11 +5,9 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import {
-  ensureIndexedDbTable,
-  ExpectedIndexDefinition,
-  MigrationOptions,
-} from "../storage/IndexedDbTable";
+import type { MigrationOptions } from "../storage/IndexedDbTable";
+import { runIndexedDbMigrationGroups } from "../migrations/IndexedDbMigrationRunner";
+import { indexedDbRateLimiterMigrationGroups } from "../migrations/indexedDbRateLimiterMigrations";
 import type { PrefixColumn } from "@workglow/job-queue";
 import type {
   IRateLimiterStorage,
@@ -20,6 +18,24 @@ import type {
 export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.indexedDb"
 );
+
+/**
+ * Opens an IDB connection at the database's current version (no schema
+ * change) and wires `onversionchange` so a future upgrade in another tab
+ * doesn't deadlock this connection.
+ */
+function openIndexedDbConnection(dbName: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(dbName);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error(`IndexedDB ${dbName} blocked while opening for use`));
+  });
+}
 
 /**
  * Extended options for IndexedDB rate limiter storage including prefix support.
@@ -66,14 +82,12 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
   private nextAvailableDb: IDBDatabase | undefined;
   private readonly executionTableName: string;
   private readonly nextAvailableTableName: string;
-  private readonly migrationOptions: MigrationOptions;
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
 
   constructor(options: IndexedDbRateLimiterStorageOptions = {}) {
-    this.migrationOptions = options;
     this.prefixes = options.prefixes ?? [];
     this.prefixValues = options.prefixValues ?? {};
 
@@ -126,43 +140,38 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     return this.nextAvailableDb!;
   }
 
-  public async setupDatabase(): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
-
-    // Build index key paths with prefixes prepended
-    const buildKeyPath = (basePath: string[]): string[] => {
-      return [...prefixColumnNames, ...basePath];
-    };
-
-    const executionIndexes: ExpectedIndexDefinition[] = [
-      {
-        name: "queue_executed_at",
-        keyPath: buildKeyPath(["queue_name", "executed_at"]),
-        options: { unique: false },
-      },
-    ];
-
-    this.executionDb = await ensureIndexedDbTable(
+  /**
+   * Returns the versioned migration groups (one per IndexedDB database) that
+   * the rate-limiter's tables depend on. The execution and next-available
+   * stores live in separate databases, so this returns two groups.
+   */
+  public getMigrations() {
+    return indexedDbRateLimiterMigrationGroups(
       this.executionTableName,
-      "id",
-      executionIndexes,
-      this.migrationOptions
-    );
-
-    const nextAvailableIndexes: ExpectedIndexDefinition[] = [
-      {
-        name: "queue_name",
-        keyPath: buildKeyPath(["queue_name"]),
-        options: { unique: true },
-      },
-    ];
-
-    this.nextAvailableDb = await ensureIndexedDbTable(
       this.nextAvailableTableName,
-      buildKeyPath(["queue_name"]).join("_"),
-      nextAvailableIndexes,
-      this.migrationOptions
+      this.prefixes
     );
+  }
+
+  /**
+   * Applies any pending migrations for the rate limiter's two IndexedDB
+   * databases, then opens long-lived connections at the migrated versions.
+   * Idempotent.
+   */
+  public async migrate(): Promise<void> {
+    await runIndexedDbMigrationGroups(this.getMigrations());
+    this.executionDb = await openIndexedDbConnection(this.executionTableName);
+    this.nextAvailableDb = await openIndexedDbConnection(this.nextAvailableTableName);
+  }
+
+  /**
+   * @deprecated Use {@link migrate} (or run {@link getMigrations} via
+   * {@link IndexedDbMigrationRunner} groups). Kept as the canonical
+   * schema-setup entry point for tests and ad-hoc scripts; delegates to
+   * {@link migrate}.
+   */
+  public async setupDatabase(): Promise<void> {
+    await this.migrate();
   }
 
   /**

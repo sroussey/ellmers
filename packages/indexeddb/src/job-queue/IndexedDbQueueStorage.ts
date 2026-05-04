@@ -6,11 +6,9 @@
 
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 import { HybridSubscriptionManager } from "@workglow/storage";
-import {
-  ensureIndexedDbTable,
-  ExpectedIndexDefinition,
-  MigrationOptions,
-} from "../storage/IndexedDbTable";
+import type { MigrationOptions } from "../storage/IndexedDbTable";
+import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
+import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
 import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,
@@ -43,7 +41,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   public readonly scope = "process" as const;
   private db: IDBDatabase | undefined;
   private readonly tableName: string;
-  private readonly migrationOptions: MigrationOptions;
   /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
   /** The prefix values for filtering */
@@ -64,7 +61,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     public readonly queueName: string,
     options: IndexedDbQueueStorageOptions = {}
   ) {
-    this.migrationOptions = options;
     this.prefixes = options.prefixes ?? [];
     this.prefixValues = options.prefixValues ?? {};
     this.hybridOptions = {
@@ -78,13 +74,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     } else {
       this.tableName = "jobs";
     }
-  }
-
-  /**
-   * Gets prefix column names for use in indexes
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
   }
 
   /**
@@ -113,46 +102,49 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
+   * Returns the versioned migrations that this storage's object store + indexes
+   * depend on. Production code should run these via {@link IndexedDbMigrationRunner}
+   * (or the convenience {@link migrate}) rather than {@link setupDatabase}.
+   */
+  public getMigrations() {
+    return indexedDbQueueMigrations(this.tableName, this.prefixes);
+  }
+
+  /**
+   * Applies any pending migrations for this queue's IndexedDB database, then
+   * opens a long-lived connection at the migrated version that subsequent
+   * operations reuse. Idempotent — re-running on an already-migrated DB only
+   * opens the connection.
+   */
+  public async migrate(): Promise<void> {
+    const runner = new IndexedDbMigrationRunner(this.tableName);
+    await runner.run(this.getMigrations());
+    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(this.tableName);
+      req.onsuccess = () => {
+        const db = req.result;
+        // Mirror the original setupDatabase behaviour: close on
+        // `versionchange` so a future schema bump (in another tab) doesn't
+        // block forever.
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
+      req.onerror = () => reject(req.error);
+      req.onblocked = () =>
+        reject(new Error(`IndexedDB ${this.tableName} blocked while opening for queue use`));
+    });
+  }
+
+  /**
    * Sets up the IndexedDB database table with the required schema and indexes.
-   * Must be called before using any other methods.
+   *
+   * @deprecated Production code should run versioned migrations instead — call
+   * {@link migrate} (or run {@link getMigrations} through an
+   * {@link IndexedDbMigrationRunner}). Kept as the public schema-setup entry
+   * point for tests and ad-hoc scripts; delegates to {@link migrate}.
    */
   public async setupDatabase(): Promise<void> {
-    const prefixColumnNames = this.getPrefixColumnNames();
-
-    // Build index key paths with prefixes prepended
-    const buildKeyPath = (basePath: string[]): string[] => {
-      return [...prefixColumnNames, ...basePath];
-    };
-
-    const expectedIndexes: ExpectedIndexDefinition[] = [
-      {
-        name: "queue_status",
-        keyPath: buildKeyPath(["queue", "status"]),
-        options: { unique: false },
-      },
-      {
-        name: "queue_status_run_after",
-        keyPath: buildKeyPath(["queue", "status", "run_after"]),
-        options: { unique: false },
-      },
-      {
-        name: "queue_job_run_id",
-        keyPath: buildKeyPath(["queue", "job_run_id"]),
-        options: { unique: false },
-      },
-      {
-        name: "queue_fingerprint_status",
-        keyPath: buildKeyPath(["queue", "fingerprint", "status"]),
-        options: { unique: false },
-      },
-    ];
-
-    this.db = await ensureIndexedDbTable(
-      this.tableName,
-      "id",
-      expectedIndexes,
-      this.migrationOptions
-    );
+    await this.migrate();
   }
 
   /**
