@@ -902,10 +902,12 @@ export class SupabaseTabularStorage<
    * description of the OR-of-AND form and NULL semantics; this is the
    * same logic translated to PostgREST's filter grammar.
    *
-   * Returns `null` when the cursor's leading column is NULL in a DESC
-   * orderBy — there is no row positioned after a NULLs-last trailer, so
-   * the page is unconditionally empty and the caller should skip the
-   * round-trip.
+   * Returns `null` when *every* OR-clause is unreachable, which means the
+   * caller can skip the round-trip — the page is unconditionally empty.
+   * The common trigger is a single-column DESC orderBy parked on a NULL
+   * cursor (no row comes after a NULLs-last trailer); compound orderings
+   * with later tiebreaker columns will still produce reachable clauses
+   * even when the leading cursor value is NULL.
    */
   private buildSupabaseKeysetFilter(
     orderBy: ReadonlyArray<{ column: keyof Entity; direction: "ASC" | "DESC" }>,
@@ -928,13 +930,16 @@ export class SupabaseTabularStorage<
       let cmp: string;
       if (v === null) {
         if (dir === "ASC") {
+          // ASC NULLS-FIRST: rows strictly after NULL on this column are
+          // any non-null value.
           cmp = `${col}.not.is.null`;
-        } else if (i === 0) {
-          // Whole keyset is unreachable — no clause can match.
-          return null;
         } else {
-          // Strict comparison after equality on a NULL preceding column
-          // can never succeed; drop this OR-clause entirely.
+          // DESC NULLS-LAST: nothing comes strictly after a NULL on this
+          // column. The i-th OR-clause contributes no rows — drop it. We
+          // can't `return null`, because subsequent clauses (i+1, i+2, …)
+          // can still produce matches via equality on the NULL preceding
+          // columns plus a tiebreaker on a later column. Mirrors the
+          // `1 = 0` predicate in `BaseSqlTabularStorage.buildKeysetWhere`.
           continue;
         }
       } else {

@@ -570,12 +570,24 @@ export abstract class BaseTabularStorage<
         [pkCol]: keysetCondition,
       } as SearchCriteria<Entity>;
     } else if (cursorPayload && useFallback) {
-      // Tier 2: try to prune the bulk of the table by pushing the leading
-      // ordering column's inequality into `query()`. Skip when the user
-      // already filters on the leading column (we'd trample their criterion)
-      // or the cursor's leading value is NULL — `query()` can't express
-      // `col >= NULL` in NULLs-first semantics, so that case stays as a
-      // full scan.
+      // Tier 2: prune the bulk of the table by pushing the leading
+      // ordering column's inequality into `query()`. We push only for
+      // ASC because:
+      //   - ASC NULLs-first: rows `>= cursor[0]` include the cursor row
+      //     plus anything strictly greater; the in-memory keyset filter
+      //     then drops the cursor row and any earlier-on-tiebreaker rows.
+      //     NULL rows (which sort before in ASC NULLs-first) are
+      //     correctly excluded by `>=` because SQL `null >= x` is null.
+      //   - DESC NULLs-last would need `(col <= ? OR col IS NULL)` to
+      //     keep the NULL trailer rows that sort *after* the cursor.
+      //     `query()` is AND-only and can't express the OR, so pushing
+      //     `col <= ?` would silently drop the NULL trailer. We fall
+      //     through to a full scan instead — slower, but correct on
+      //     nullable DESC orderings. SQL backends override `getPage`
+      //     entirely so they don't pay this price.
+      // Skipped when the user already filters on the leading column
+      // (we'd trample their criterion) or the cursor's leading value
+      // is NULL (no representable `col > NULL` in NULLs-first ASC).
       const leading = effectiveOrderBy[0];
       const leadingCol = leading.column;
       const leadingCursor = cursorPayload.c[0];
@@ -583,23 +595,14 @@ export abstract class BaseTabularStorage<
         userCriteria,
         leadingCol
       );
-      if (leadingCursor !== null && !userTouchesLeading) {
-        // ASC NULLs-first: rows >= cursor[0] include the cursor row plus
-        // anything strictly greater; the in-memory keyset filter then drops
-        // the cursor row and any earlier-on-tiebreaker rows. NULLs (which
-        // sort before in ASC NULLs-first) are correctly excluded.
-        // DESC NULLs-last: rows <= cursor[0] include the cursor row plus
-        // anything strictly smaller; NULL rows would sort AFTER (NULLs-last)
-        // and so should be included too, but `query()` is AND-only and we
-        // can't express `col <= ? OR col IS NULL`. Accept the over-prune —
-        // any NULL rows on the leading column will be missed by paging when
-        // DESC. This matches the documented limitation that callers
-        // ordering DESC by a nullable non-PK column should override
-        // `getPage` for full correctness.
-        const op = leading.direction === "ASC" ? ">=" : "<=";
+      if (
+        leading.direction === "ASC" &&
+        leadingCursor !== null &&
+        !userTouchesLeading
+      ) {
         const leadingCondition: SearchCondition<Entity[keyof Entity]> = {
           value: leadingCursor as Entity[keyof Entity],
-          operator: op,
+          operator: ">=",
         };
         queryCriteria = {
           ...userCriteria,

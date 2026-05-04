@@ -1702,6 +1702,241 @@ export function runGenericTabularStorageTests(
         expect(seen.slice(0, 2).every((r) => r.kind == null)).toBe(true);
       });
 
+      it("paginates compound (nullable, non-null) ASC orderBy across the NULL/non-null boundary", async () => {
+        // Exercises the SQL keyset's NULL-aware predicates on a compound
+        // ordering where the leading column is nullable. Specifically:
+        //   - When the cursor is parked on a NULL-kind row, the next-page
+        //     filter must be `(kind IS NOT NULL) OR (kind IS NULL AND value > ?)`
+        //     (the strict NULL → IS NOT NULL branch plus the tiebreaker AND).
+        //   - When the cursor is parked on a non-null-kind row, the filter
+        //     must be `(kind > ?) OR (kind = ? AND value > ?)` (the regular
+        //     OR-of-AND with no NULL gymnastics).
+        // Both branches need to produce identical results from the same
+        // table iteration, regardless of which row the page boundary lands on.
+        const now = new Date().toISOString();
+        const rows = [
+          // Two NULL-kind rows differing only by value (force the in-NULL-run
+          // tiebreaker case).
+          { id: "n1", category: "c", subcategory: "s", value: 1, createdAt: now, updatedAt: now },
+          { id: "n2", category: "c", subcategory: "s", value: 3, createdAt: now, updatedAt: now },
+          // Three named-kind rows.
+          {
+            id: "k1",
+            category: "c",
+            subcategory: "s",
+            kind: "alpha",
+            value: 10,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "k2",
+            category: "c",
+            subcategory: "s",
+            kind: "alpha",
+            value: 20,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "k3",
+            category: "c",
+            subcategory: "s",
+            kind: "beta",
+            value: 5,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+        await repository.putBulk(rows);
+
+        // Iterate one row per page so every cursor lands on a row whose
+        // keyset position matters for the next call. With NULLs-first ASC,
+        // the order is: (null, 1) (null, 3) (alpha, 10) (alpha, 20) (beta, 5).
+        const seen: string[] = [];
+        let cursor: PageCursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 1,
+            cursor,
+            orderBy: [
+              { column: "kind", direction: "ASC" },
+              { column: "value", direction: "ASC" },
+            ],
+          });
+          for (const row of page.items) seen.push(row.id);
+          if (page.items.length === 0) break;
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        expect(seen).toEqual(["n1", "n2", "k1", "k2", "k3"]);
+      });
+
+      it("paginates compound (nullable DESC, non-null ASC) — mixed direction with NULLs trailing", async () => {
+        // Exercises the mixed ASC/DESC keyset expansion on a nullable
+        // leading column. With kind DESC + NULLs-last, named rows come
+        // first (largest kind to smallest), then NULL rows ordered by the
+        // value ASC tiebreaker. The keyset must:
+        //   - On a non-null cursor row: emit `(kind < ? OR kind IS NULL)
+        //     AND ...` — DESC NULLs-last means anything smaller than the
+        //     cursor's kind, plus the NULL trailer.
+        //   - On a NULL cursor row: emit `(1=0) OR (kind IS NULL AND value > ?)` —
+        //     no rows come after the NULL run except more-advanced NULL rows
+        //     (tiebreaker on value ASC).
+        const now = new Date().toISOString();
+        const rows = [
+          {
+            id: "k1",
+            category: "c",
+            subcategory: "s",
+            kind: "alpha",
+            value: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "k2",
+            category: "c",
+            subcategory: "s",
+            kind: "beta",
+            value: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+          { id: "n1", category: "c", subcategory: "s", value: 1, createdAt: now, updatedAt: now },
+          { id: "n2", category: "c", subcategory: "s", value: 2, createdAt: now, updatedAt: now },
+        ];
+        await repository.putBulk(rows);
+
+        const seen: string[] = [];
+        let cursor: PageCursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 1,
+            cursor,
+            orderBy: [
+              { column: "kind", direction: "DESC" },
+              { column: "value", direction: "ASC" },
+            ],
+          });
+          for (const row of page.items) seen.push(row.id);
+          if (page.items.length === 0) break;
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        // beta > alpha (DESC); NULLs trail. Within NULL run: value 1 then 2.
+        expect(seen).toEqual(["k2", "k1", "n1", "n2"]);
+      });
+
+      it("paginates compound (non-null ASC, nullable ASC) — non-leading nullable column", async () => {
+        // The NULL-handling branches in `buildKeysetWhere` apply at any
+        // column position, not just the leading one. Here `kind` is at the
+        // tiebreaker position; equality on the prior `category` column +
+        // strict NULL/non-NULL on `kind` must still produce the right rows.
+        const now = new Date().toISOString();
+        const rows = [
+          // Same category, mix of NULL and non-NULL kinds.
+          {
+            id: "a1",
+            category: "x",
+            subcategory: "s",
+            value: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "a2",
+            category: "x",
+            subcategory: "s",
+            kind: "first",
+            value: 2,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "a3",
+            category: "x",
+            subcategory: "s",
+            kind: "second",
+            value: 3,
+            createdAt: now,
+            updatedAt: now,
+          },
+          // Different category to confirm equality on category is honoured.
+          {
+            id: "b1",
+            category: "y",
+            subcategory: "s",
+            kind: "first",
+            value: 10,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+        await repository.putBulk(rows);
+
+        const seen: string[] = [];
+        let cursor: PageCursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 1,
+            cursor,
+            orderBy: [
+              { column: "category", direction: "ASC" },
+              { column: "kind", direction: "ASC" },
+            ],
+          });
+          for (const row of page.items) seen.push(row.id);
+          if (page.items.length === 0) break;
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        // category=x rows first (NULL-kind first via NULLs-first ASC, then
+        // first, then second), then category=y row.
+        expect(seen).toEqual(["a1", "a2", "a3", "b1"]);
+      });
+
+      it("returns no rows when DESC cursor is parked on a NULL value with no further NULL tiebreaker rows", async () => {
+        // DESC NULLs-last + cursor on a NULL leading column should yield
+        // an empty page when there's no more-advanced row in the NULL run.
+        // The Supabase implementation short-circuits this without a
+        // round-trip; the SQL backends emit a `(1 = 0) OR ...` predicate
+        // that filters everything out. Either way: empty next page.
+        const now = new Date().toISOString();
+        const rows = [
+          {
+            id: "k1",
+            category: "c",
+            subcategory: "s",
+            kind: "alpha",
+            value: 1,
+            createdAt: now,
+            updatedAt: now,
+          },
+          // Single NULL-kind row. DESC NULLs-last places it at the end;
+          // there's nothing after it.
+          { id: "n1", category: "c", subcategory: "s", value: 1, createdAt: now, updatedAt: now },
+        ];
+        await repository.putBulk(rows);
+
+        const seen: string[] = [];
+        let cursor: PageCursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 1,
+            cursor,
+            orderBy: [{ column: "kind", direction: "DESC" }],
+          });
+          for (const row of page.items) seen.push(row.id);
+          if (page.items.length === 0) break;
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        // k1 (kind=alpha) comes before n1 (NULL trailer). After n1 the
+        // DESC keyset on a NULL leading value must return empty.
+        expect(seen).toEqual(["k1", "n1"]);
+      });
+
       it("emits a non-undefined nextCursor when the page is full and the next call returns empty", async () => {
         // The contract documents that a non-undefined nextCursor doesn't
         // guarantee more rows; this pins the behaviour at the boundary
