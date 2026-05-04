@@ -171,4 +171,29 @@ describe("SqliteTabularStorage.withTransaction", () => {
     // Outer transaction was rolled back as a result of the nested-call error.
     expect(await storage.get({ name: "outer", type: "x" })).toBeUndefined();
   });
+
+  it("defers put events until COMMIT and discards them on ROLLBACK", async () => {
+    const storage = await makeStorage();
+    const observed: string[] = [];
+    storage.on("put", (entity) => observed.push(entity.name));
+
+    await storage.withTransaction(async (tx) => {
+      await tx.put({ name: "committed", type: "x", option: "v", success: true });
+      // No events should have been observed yet
+      expect(observed).toEqual([]);
+    });
+    expect(observed).toEqual(["committed"]);
+
+    observed.length = 0;
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "doomed", type: "x", option: "v", success: true });
+        throw new Error("rollback");
+      })
+    ).rejects.toThrow("rollback");
+
+    // The doomed put should never have been observed by listeners.
+    expect(observed).toEqual([]);
+  });
 });

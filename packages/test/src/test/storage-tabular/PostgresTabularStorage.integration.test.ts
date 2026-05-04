@@ -84,7 +84,7 @@ describe("PostgresTabularStorage", () => {
   );
 
   describe("withTransaction", () => {
-    it("rolls back all writes when the callback throws", async () => {
+    async function makeTxStorage() {
       const storage = new PostgresTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
@@ -95,6 +95,11 @@ describe("PostgresTabularStorage", () => {
         CompoundPrimaryKeyNames
       );
       await storage.setupDatabase();
+      return storage;
+    }
+
+    it("rolls back all writes when the callback throws", async () => {
+      const storage = await makeTxStorage();
 
       await expect(
         storage.withTransaction(async (tx) => {
@@ -106,6 +111,29 @@ describe("PostgresTabularStorage", () => {
 
       expect(await storage.get({ name: "a", type: "x" })).toBeUndefined();
       expect(await storage.get({ name: "b", type: "x" })).toBeUndefined();
+    });
+
+    it("defers put events until COMMIT and discards them on ROLLBACK", async () => {
+      const storage = await makeTxStorage();
+      const observed: string[] = [];
+      storage.on("put", (entity) => observed.push(entity.name));
+
+      await storage.withTransaction(async (tx) => {
+        await tx.put({ name: "committed", type: "x", option: "v", success: true });
+        expect(observed).toEqual([]);
+      });
+      expect(observed).toEqual(["committed"]);
+
+      observed.length = 0;
+
+      await expect(
+        storage.withTransaction(async (tx) => {
+          await tx.put({ name: "doomed", type: "x", option: "v", success: true });
+          throw new Error("rollback");
+        })
+      ).rejects.toThrow("rollback");
+
+      expect(observed).toEqual([]);
     });
   });
 });

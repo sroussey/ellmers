@@ -577,7 +577,12 @@ export class SqliteTabularStorage<
     }
 
     if (emitEvent) {
-      this.events.emit("put", updatedEntity);
+      if (this.inTransaction) {
+        // Defer until the surrounding withTransaction commits (or discard on rollback)
+        this.deferredPutEvents.push(updatedEntity);
+      } else {
+        this.events.emit("put", updatedEntity);
+      }
     }
     return updatedEntity;
   }
@@ -586,7 +591,7 @@ export class SqliteTabularStorage<
    * Stores a key-value pair in the database
    * @param entity - The entity to store (may be missing auto-generated keys)
    * @returns The entity with any server-generated fields updated
-   * @emits 'put' event when successful
+   * @emits 'put' event when successful (deferred until commit if inside withTransaction)
    */
   async put(entity: InsertType): Promise<Entity> {
     return this.executePutSync(entity);
@@ -601,7 +606,8 @@ export class SqliteTabularStorage<
    * 100×–1000× speedup over Promise-fanned individual inserts.
    *
    * `put` events are deferred until after the transaction commits so listeners
-   * never observe rows that are about to roll back.
+   * never observe rows that are about to roll back. When this call is nested
+   * inside a {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
@@ -614,8 +620,15 @@ export class SqliteTabularStorage<
     });
     transaction(entities);
 
-    for (const entity of updatedEntities) {
-      this.events.emit("put", entity);
+    if (this.inTransaction) {
+      // Outer withTransaction owns event delivery; queue and let it flush
+      for (const entity of updatedEntities) {
+        this.deferredPutEvents.push(entity);
+      }
+    } else {
+      for (const entity of updatedEntities) {
+        this.events.emit("put", entity);
+      }
     }
 
     return updatedEntities;
@@ -623,12 +636,20 @@ export class SqliteTabularStorage<
 
   /**
    * Tracks whether this storage instance is currently inside a
-   * `withTransaction` call so we can refuse nested entry. SQLite errors on
-   * nested `BEGIN` (it has no autonomous transactions), and silently letting
-   * the inner call's `ROLLBACK` tear down the outer transaction would be a
-   * subtle data-loss footgun.
+   * `withTransaction` call so we can refuse nested entry, route `put` events
+   * to a deferred queue, and detect concurrency-contract violations early.
+   * SQLite errors on nested `BEGIN` (it has no autonomous transactions), and
+   * silently letting the inner call's `ROLLBACK` tear down the outer
+   * transaction would be a subtle data-loss footgun.
    */
   private inTransaction: boolean = false;
+
+  /**
+   * `put` events emitted by writes inside an active `withTransaction` are
+   * queued here and flushed after `COMMIT` succeeds (or discarded on
+   * `ROLLBACK`), so listeners never observe rows that ultimately rolled back.
+   */
+  private deferredPutEvents: Entity[] = [];
 
   /**
    * Runs `fn` inside a single SQLite transaction. Uses raw `BEGIN` /
@@ -640,6 +661,11 @@ export class SqliteTabularStorage<
    * Nested `withTransaction` calls on the same storage throw rather than
    * reusing the outer transaction implicitly. Use {@link Sqlite.Database}
    * `SAVEPOINT`s directly if you need nested rollback boundaries.
+   *
+   * **Concurrency contract** — see {@link ITabularStorage.withTransaction}.
+   * Do not invoke methods on this storage instance from outside `fn` while a
+   * `withTransaction` call is in flight; those calls will execute against
+   * the same `db` handle and become part of the open transaction.
    */
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) {
@@ -648,21 +674,37 @@ export class SqliteTabularStorage<
           "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
       );
     }
+    // Ensure inTransaction is reset even if BEGIN itself throws (e.g. disk
+    // full, database locked) — without the outer try/finally the flag would
+    // stay true forever and every subsequent withTransaction would mistake
+    // itself for a nested call.
     this.inTransaction = true;
-    this.db.exec("BEGIN");
+    this.deferredPutEvents = [];
     try {
-      const result = await fn(this);
-      this.db.exec("COMMIT");
-      return result;
-    } catch (err) {
+      this.db.exec("BEGIN");
+      let result: T;
       try {
-        this.db.exec("ROLLBACK");
-      } catch {
-        // prefer the original error if rollback fails
+        result = await fn(this);
+        this.db.exec("COMMIT");
+      } catch (err) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // prefer the original error if rollback fails
+        }
+        throw err;
       }
-      throw err;
+      // Flush deferred events only on commit success.
+      const events = this.deferredPutEvents;
+      this.deferredPutEvents = [];
+      this.inTransaction = false;
+      for (const entity of events) {
+        this.events.emit("put", entity);
+      }
+      return result;
     } finally {
       this.inTransaction = false;
+      this.deferredPutEvents = [];
     }
   }
 

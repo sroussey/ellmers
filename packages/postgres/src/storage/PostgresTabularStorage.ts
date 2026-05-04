@@ -657,18 +657,43 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Tracks whether this storage instance is currently inside a
+   * `withTransaction` call. While true, `put`/`putBulk` route their `put`
+   * events to {@link deferredPutEvents} instead of emitting immediately, so
+   * listeners cannot observe rows that are about to roll back.
+   */
+  private inTransaction: boolean = false;
+
+  /**
+   * `put` events emitted by writes inside an active `withTransaction` are
+   * queued here and flushed after `COMMIT` succeeds (or discarded on
+   * `ROLLBACK`).
+   */
+  private deferredPutEvents: Entity[] = [];
+
+  /** Emit `put` immediately, or queue if inside a withTransaction. */
+  private emitPut(entity: Entity): void {
+    if (this.inTransaction) {
+      this.deferredPutEvents.push(entity);
+    } else {
+      this.events.emit("put", entity);
+    }
+  }
+
+  /**
    * Stores or updates a row in the database.
    * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
    *
    * @param entity - The entity to store (may be missing auto-generated keys)
    * @returns The entity with any server-generated fields updated
-   * @emits "put" event with the updated entity when successful
+   * @emits "put" event with the updated entity when successful (deferred until
+   *        commit if inside a {@link withTransaction})
    */
   async put(entity: InsertType): Promise<Entity> {
     const { sql, params } = this.buildPutSql(entity);
     const result = await this.db.query(sql, params);
     const updatedEntity = this.hydrateRow(result.rows[0]);
-    this.events.emit("put", updatedEntity);
+    this.emitPut(updatedEntity);
     return updatedEntity;
   }
 
@@ -685,7 +710,8 @@ export class PostgresTabularStorage<
    * with rows that omit it.
    *
    * `put` events are deferred until after `COMMIT` so listeners do not see
-   * rows that are about to roll back.
+   * rows that are about to roll back. When this call is nested inside a
+   * {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
@@ -714,7 +740,7 @@ export class PostgresTabularStorage<
     }
 
     for (const entity of updatedEntities) {
-      this.events.emit("put", entity);
+      this.emitPut(entity);
     }
 
     return updatedEntities;
@@ -727,6 +753,15 @@ export class PostgresTabularStorage<
    * subsequent `this.db.query` calls inside `fn` could be dispatched to
    * different sessions and the surrounding `BEGIN`/`COMMIT` would not bind
    * them together, so we throw rather than provide a false guarantee.
+   *
+   * `put` events emitted from inside `fn` are buffered and delivered after
+   * `COMMIT`; if `fn` throws, they are discarded along with the rolled-back
+   * rows.
+   *
+   * **Concurrency contract** — see {@link ITabularStorage.withTransaction}.
+   * Do not invoke methods on this storage instance from outside `fn` while a
+   * `withTransaction` call is in flight; on the supported single-connection
+   * wrappers those calls would also run through the open transaction.
    */
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     const supportsConnect =
@@ -739,18 +774,42 @@ export class PostgresTabularStorage<
       );
     }
 
-    await this.db.query("BEGIN");
+    if (this.inTransaction) {
+      throw new Error(
+        "PostgresTabularStorage.withTransaction does not support nesting. " +
+          "Use SAVEPOINT directly or refactor to a single transaction."
+      );
+    }
+
+    // Flag and buffer setup wrapped in try/finally so a failing BEGIN cannot
+    // leave inTransaction stuck at true forever.
+    this.inTransaction = true;
+    this.deferredPutEvents = [];
     try {
-      const result = await fn(this);
-      await this.db.query("COMMIT");
-      return result;
-    } catch (err) {
+      await this.db.query("BEGIN");
+      let result: T;
       try {
-        await this.db.query("ROLLBACK");
-      } catch {
-        // prefer the original error if rollback fails
+        result = await fn(this);
+        await this.db.query("COMMIT");
+      } catch (err) {
+        try {
+          await this.db.query("ROLLBACK");
+        } catch {
+          // prefer the original error if rollback fails
+        }
+        throw err;
       }
-      throw err;
+      // Flush deferred events only on commit success.
+      const events = this.deferredPutEvents;
+      this.deferredPutEvents = [];
+      this.inTransaction = false;
+      for (const entity of events) {
+        this.events.emit("put", entity);
+      }
+      return result;
+    } finally {
+      this.inTransaction = false;
+      this.deferredPutEvents = [];
     }
   }
 

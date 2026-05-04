@@ -299,16 +299,39 @@ export interface ITabularStorage<
 
   /**
    * Runs `fn` inside a single transaction. If `fn` throws, all writes performed
-   * inside it are rolled back; otherwise they commit atomically.
+   * inside it are rolled back; otherwise they commit atomically. Mutation
+   * events (e.g. `put`) emitted inside `fn` are buffered and delivered after
+   * the transaction commits, so listeners never observe rows that are about
+   * to roll back.
    *
    * Backends differ in how strong the guarantee is:
-   *   - SQLite, PostgreSQL: real `BEGIN` / `COMMIT` / `ROLLBACK`.
-   *   - Supabase, in-memory, file system: best-effort. The callback runs to
-   *     completion and rejection propagates, but partial writes are not
-   *     rolled back because the backend does not expose a transaction surface.
+   *   - **SQLite**: real `BEGIN` / `COMMIT` / `ROLLBACK`.
+   *   - **PostgreSQL**: real `BEGIN` / `COMMIT` / `ROLLBACK` only when the
+   *     underlying handle is a single-connection wrapper (PGLitePool, raw
+   *     PGlite). On a multi-connection `pg.Pool` the call throws, because
+   *     methods on this storage dispatch each query through the pool
+   *     independently and the surrounding `BEGIN`/`COMMIT` cannot bracket
+   *     them. Use {@link putBulk} for atomic bulk inserts on a real pool, or
+   *     wrap the pool yourself.
+   *   - **Supabase, in-memory, file system, IndexedDB**: best-effort. The
+   *     callback runs to completion and rejection propagates, but partial
+   *     writes are not rolled back because the backend does not expose a
+   *     transaction surface usable by this API.
    *
-   * The storage instance passed to `fn` may be the same instance (`this`) or a
-   * transaction-scoped clone — callers must use the provided handle.
+   * **Concurrency contract:** `withTransaction` does not isolate the storage
+   * instance from concurrent callers. While `fn` is awaiting, any unrelated
+   * operation invoked on the same storage instance from concurrent code will
+   * run on the same underlying connection (for SQLite and single-connection
+   * Postgres wrappers) and become part of this transaction. Do not invoke
+   * other methods on the same storage instance from outside `fn` while a
+   * `withTransaction` call is in flight; serialize that work yourself, or
+   * use a separate storage instance for the concurrent work.
+   *
+   * The storage instance passed to `fn` is the same instance (`this`) for
+   * every backend in this codebase. The `tx` parameter is provided so the
+   * callback signature stays forward-compatible with a future backend that
+   * returns a transaction-scoped clone — callers should use the handle and
+   * not capture `this` directly.
    */
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
 
