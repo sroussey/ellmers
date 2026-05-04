@@ -14,6 +14,12 @@ import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { getClient } from "./OpenAI_Client";
 import { OPENAI } from "./OpenAI_Constants";
 
+interface OpenAiModelListItem {
+  readonly label: string;
+  readonly value: string;
+  readonly description?: string;
+}
+
 const OPENAI_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "gpt-image-2", value: "gpt-image-2" },
   { label: "dall-e-3", value: "dall-e-3" },
@@ -35,16 +41,14 @@ const OPENAI_IMAGE_MODELS: Array<{ value: string; tasks: string[] }> = [
   { value: "dall-e-3", tasks: ["ImageGenerateTask"] },
 ];
 
-async function listOpenAiModels(
-  credentialKey: string
-): Promise<Array<{ label: string; value: string }>> {
+async function listOpenAiModels(credentialKey: string): Promise<OpenAiModelListItem[]> {
   const client = await getClient({
     provider: OPENAI,
     provider_config: { model_name: "", credential_key: credentialKey },
   });
-  const models: Array<{ label: string; value: string }> = [];
+  const models: OpenAiModelListItem[] = [];
   for await (const m of client.models.list()) {
-    models.push({ label: `${m.id}  ${m.owned_by}`, value: m.id });
+    models.push({ label: m.id, value: m.id, description: m.owned_by });
   }
   models.sort((a, b) => {
     const aGpt = a.value.startsWith("gpt") || a.value.startsWith("o1") ? 0 : 1;
@@ -55,13 +59,13 @@ async function listOpenAiModels(
   return models;
 }
 
-function mapModelList(models: Array<{ label: string; value: string }>): ModelSearchResultItem[] {
+function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
   return models.map((m) => {
     const imageEntry = OPENAI_IMAGE_MODELS.find((i) => i.value === m.value);
     return {
       id: m.value,
       label: m.label,
-      description: "",
+      description: m.description ?? "",
       record: {
         model_id: m.value,
         provider: OPENAI,
@@ -80,7 +84,7 @@ export const OpenAI_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
 > = async (input) => {
-  let models: Array<{ label: string; value: string }>;
+  let models: OpenAiModelListItem[];
   if (!input.credential_key) {
     models = OPENAI_FALLBACK;
   } else {
