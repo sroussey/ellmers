@@ -141,8 +141,8 @@ export class SqliteAiVectorStorage<
     this.distance = indexOptions.distance ?? "cosine";
     // sqlite-vector's `vector_full_scan` returns a distance value that this
     // class converts to a similarity via `1 - distance` — which is only
-    // correct for cosine. L2 / IP support would need a different score+
-    // threshold semantic; until that lands we reject them up front rather
+    // correct for cosine. L2 / IP support would need different score and
+    // threshold semantics; until that lands we reject them up front rather
     // than silently returning wrong scores.
     if (this.distance !== "cosine") {
       throw new Error(

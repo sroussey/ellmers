@@ -199,6 +199,10 @@ export class PostgresVectorStorage<
 
       const params: any[] = [queryVector];
       let paramIndex = 2;
+      // Track whether we've actually emitted a WHERE — `filter` alone isn't
+      // sufficient because it can be truthy yet contribute zero predicates
+      // (empty object, or no metadata column to apply it against).
+      let hasWhere = false;
 
       if (filter && Object.keys(filter).length > 0 && metadataCol) {
         const conditions: string[] = [];
@@ -215,15 +219,19 @@ export class PostgresVectorStorage<
           params.push(String(value));
           paramIndex++;
         }
-        sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) {
+          sql += ` WHERE ${conditions.join(" AND ")}`;
+          hasWhere = true;
+        }
       }
 
-      if (scoreThreshold > 0) {
-        sql += filter ? " AND" : " WHERE";
-        sql += ` ${scoreExpr} >= $${paramIndex}`;
-        params.push(scoreThreshold);
-        paramIndex++;
-      }
+      // Always emit the score threshold predicate so behaviour matches the
+      // in-memory fallback (`score >= scoreThreshold`) for every metric and
+      // every threshold value (including 0 / negative).
+      sql += hasWhere ? " AND" : " WHERE";
+      sql += ` ${scoreExpr} >= $${paramIndex}`;
+      params.push(scoreThreshold);
+      paramIndex++;
 
       // ORDER BY uses the raw distance (smaller = closer) so the configured
       // pgvector index can serve the query directly.
@@ -291,6 +299,9 @@ export class PostgresVectorStorage<
 
       const params: any[] = [queryVector, vectorWeight, 1 - vectorWeight, tsQueryText];
       let paramIndex = 5;
+      // Track whether we've actually emitted a WHERE — see similaritySearch
+      // for why `filter` alone isn't a sufficient signal.
+      let hasWhere = false;
 
       if (filter && Object.keys(filter).length > 0 && metadataCol) {
         const conditions: string[] = [];
@@ -304,15 +315,18 @@ export class PostgresVectorStorage<
           params.push(String(value));
           paramIndex++;
         }
-        sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) {
+          sql += ` WHERE ${conditions.join(" AND ")}`;
+          hasWhere = true;
+        }
       }
 
-      if (scoreThreshold > 0) {
-        sql += filter ? " AND" : " WHERE";
-        sql += ` ${combinedScoreExpr} >= $${paramIndex}`;
-        params.push(scoreThreshold);
-        paramIndex++;
-      }
+      // Always emit the score threshold predicate (matches the in-memory
+      // fallback's `>= scoreThreshold` semantics for every threshold value).
+      sql += hasWhere ? " AND" : " WHERE";
+      sql += ` ${combinedScoreExpr} >= $${paramIndex}`;
+      params.push(scoreThreshold);
+      paramIndex++;
 
       sql += ` ORDER BY score DESC LIMIT $${paramIndex}`;
       params.push(topK);
