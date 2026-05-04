@@ -22,6 +22,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -822,6 +824,49 @@ export class SqliteTabularStorage<
     }
 
     return rows;
+  }
+
+  /**
+   * Cursor-paginated read with keyset predicates pushed into SQL. Uses
+   * `LIMIT N` plus a row-value-style WHERE so the database returns at most
+   * one page worth of rows regardless of table size.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.runSqlPage(undefined, request, this.sqliteDialect());
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSqlPage(criteria, request, this.sqliteDialect());
+  }
+
+  private sqliteDialect() {
+    return {
+      quote: "`",
+      placeholder: (_index: number) => "?",
+      buildSearchWhere: (
+        criteria: SearchCriteria<Entity>,
+        startIndex: number
+      ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } => {
+        const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
+        return { whereClause, params, nextIndex: startIndex + params.length };
+      },
+      executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
+        const stmt = this.db.prepare(sql);
+        // @ts-ignore - generic spread on prepared statement
+        const rows = stmt.all(...params) as Entity[];
+        for (const row of rows) {
+          const record = row as Record<string, unknown>;
+          for (const k in this.schema.properties) {
+            record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+          }
+        }
+        return rows;
+      },
+    };
   }
 
   /**

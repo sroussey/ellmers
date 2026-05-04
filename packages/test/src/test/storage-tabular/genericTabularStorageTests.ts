@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITabularStorage } from "@workglow/storage";
+import { Cursor, ITabularStorage, StorageUnsupportedError } from "@workglow/storage";
 import { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -1444,6 +1444,329 @@ export function runGenericTabularStorageTests(
         }
       });
     });
+
+    describe("cursor pagination on single-PK schema", () => {
+      // SearchSchema has a single-column primary key (`id`). This block
+      // exercises the simple-keyset pushdown path in BaseTabularStorage and
+      // the SQL row-value pushdown in BaseSqlTabularStorage; both rely on a
+      // single inequality on the primary key, which is the most common case
+      // in practice.
+      let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
+
+      beforeEach(async () => {
+        repository = await createSearchableRepository();
+        await repository.setupDatabase?.();
+      });
+
+      afterEach(async () => {
+        await repository.deleteAll();
+        repository.destroy();
+      });
+
+      const seedRows = async (n: number): Promise<void> => {
+        const now = new Date().toISOString();
+        const rows = Array.from({ length: n }, (_, i) => ({
+          // Zero-padded so lexicographic order matches numeric order.
+          id: `id-${String(i).padStart(3, "0")}`,
+          category: i % 2 === 0 ? "even" : "odd",
+          subcategory: "s",
+          value: i,
+          createdAt: now,
+          updatedAt: now,
+        }));
+        await repository.putBulk(rows);
+      };
+
+      it("iterates the entire table by following nextCursor", async () => {
+        await seedRows(7);
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({ limit: 3, cursor });
+          for (const row of page.items) seen.push(row.id);
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(seen).toEqual([
+          "id-000",
+          "id-001",
+          "id-002",
+          "id-003",
+          "id-004",
+          "id-005",
+          "id-006",
+        ]);
+      });
+
+      it("is stable under concurrent inserts that sort before the cursor", async () => {
+        await seedRows(5);
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.id)).toEqual(["id-000", "id-001"]);
+
+        const now = new Date().toISOString();
+        await repository.put({
+          id: "id--early",
+          category: "x",
+          subcategory: "s",
+          value: -1,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.map((r) => r.id)).toEqual(["id-002", "id-003"]);
+      });
+
+      it("surfaces inserts that sort after the cursor", async () => {
+        await seedRows(5);
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.id)).toEqual(["id-000", "id-001"]);
+
+        const now = new Date().toISOString();
+        // Insert a row that sorts strictly after id-001 but before id-002:
+        // "id-001a" lies between "id-001" and "id-002" lexicographically.
+        await repository.put({
+          id: "id-001a",
+          category: "x",
+          subcategory: "s",
+          value: 99,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.map((r) => r.id)).toEqual(["id-001a", "id-002"]);
+      });
+
+      it("paginates filtered results via queryPage", async () => {
+        await seedRows(8);
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.queryPage(
+            { category: "even" },
+            { limit: 2, cursor }
+          );
+          for (const row of page.items) seen.push(row.id);
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(seen).toEqual(["id-000", "id-002", "id-004", "id-006"]);
+      });
+
+      it("supports DESC ordering via the cursor", async () => {
+        await seedRows(5);
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 2,
+            cursor,
+            orderBy: [{ column: "id", direction: "DESC" }],
+          });
+          for (const row of page.items) seen.push(row.id);
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(seen).toEqual(["id-004", "id-003", "id-002", "id-001", "id-000"]);
+      });
+
+      it("paginates by a non-PK orderBy with primary key as tiebreaker", async () => {
+        // Many rows share `category=even` / `category=odd`; the PK tiebreaker
+        // is what keeps iteration deterministic when sort columns collide.
+        await seedRows(8);
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 3,
+            cursor,
+            orderBy: [{ column: "category", direction: "ASC" }],
+          });
+          for (const row of page.items) seen.push(row.id);
+          cursor = page.nextCursor;
+        } while (cursor);
+        // All four `even` rows precede all four `odd` rows; within each group
+        // the ids are visited in PK order.
+        expect(seen).toEqual([
+          "id-000",
+          "id-002",
+          "id-004",
+          "id-006",
+          "id-001",
+          "id-003",
+          "id-005",
+          "id-007",
+        ]);
+      });
+
+      it("paginates with mixed ASC/DESC orderBy", async () => {
+        // Exercises the OR-of-AND keyset expansion in `buildKeysetWhere`:
+        // a single-column comparison can't express "category DESC, value ASC"
+        // when the cursor straddles a category boundary, so the SQL backend
+        // must emit `(category < ?) OR (category = ? AND value > ?) OR ...`.
+        await seedRows(8);
+        const seen: Array<{ id: string; category: string; value: number }> = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 3,
+            cursor,
+            orderBy: [
+              { column: "category", direction: "DESC" },
+              { column: "value", direction: "ASC" },
+            ],
+          });
+          for (const row of page.items) {
+            seen.push({ id: row.id, category: row.category, value: row.value });
+          }
+          cursor = page.nextCursor;
+        } while (cursor);
+        // category DESC: "odd" (1,3,5,7) before "even" (0,2,4,6); within each
+        // the value ASC tiebreaker dictates 1<3<5<7 then 0<2<4<6.
+        expect(seen.map((r) => r.id)).toEqual([
+          "id-001",
+          "id-003",
+          "id-005",
+          "id-007",
+          "id-000",
+          "id-002",
+          "id-004",
+          "id-006",
+        ]);
+      });
+
+      it("paginates by a nullable column with NULLs ordering correctly", async () => {
+        // `kind` is optional in SearchSchema, so some rows have NULL.
+        // ASC orders NULLs first (matches in-memory comparator + the
+        // `NULLS FIRST` clauses in SQL); resuming through the NULL run
+        // and into the non-null tail must not skip or duplicate.
+        const now = new Date().toISOString();
+        const rows = [
+          { id: "n1", category: "c", subcategory: "s", value: 1, createdAt: now, updatedAt: now },
+          { id: "n2", category: "c", subcategory: "s", value: 2, createdAt: now, updatedAt: now },
+          {
+            id: "k1",
+            category: "c",
+            subcategory: "s",
+            kind: "alpha",
+            value: 3,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "k2",
+            category: "c",
+            subcategory: "s",
+            kind: "beta",
+            value: 4,
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "k3",
+            category: "c",
+            subcategory: "s",
+            kind: "gamma",
+            value: 5,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+        await repository.putBulk(rows);
+
+        const seen: Array<{ id: string; kind: string | undefined }> = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({
+            limit: 2,
+            cursor,
+            orderBy: [{ column: "kind", direction: "ASC" }],
+          });
+          for (const row of page.items) {
+            seen.push({ id: row.id, kind: row.kind });
+          }
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        // First two slots: the two NULL-kind rows in PK order. Then the
+        // three named rows in alphabetic order.
+        const nullIds = seen.filter((r) => r.kind == null).map((r) => r.id);
+        const namedIds = seen.filter((r) => r.kind != null).map((r) => r.id);
+        expect(nullIds.sort()).toEqual(["n1", "n2"]);
+        expect(namedIds).toEqual(["k1", "k2", "k3"]);
+        // First two seen entries must be the NULL run.
+        expect(seen.slice(0, 2).every((r) => r.kind == null)).toBe(true);
+      });
+
+      it("emits a non-undefined nextCursor when the page is full and the next call returns empty", async () => {
+        // The contract documents that a non-undefined nextCursor doesn't
+        // guarantee more rows; this pins the behaviour at the boundary
+        // where row count equals limit exactly.
+        await seedRows(2);
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.length).toBe(2);
+        expect(firstPage.nextCursor).toBeDefined();
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.length).toBe(0);
+        expect(secondPage.nextCursor).toBeUndefined();
+      });
+
+      it("supports two iterators advancing independently over the same store", async () => {
+        // Each iterator owns its cursor; one falling behind or skipping a
+        // page must not affect the other. (Cursors are pure values, so
+        // this should be trivially true — but the test guards against
+        // any backend that secretly relies on per-instance state.)
+        await seedRows(6);
+        const seenA: string[] = [];
+        const seenB: string[] = [];
+        let cursorA: Cursor | undefined;
+        let cursorB: Cursor | undefined;
+        for (let step = 0; step < 4; step++) {
+          const pageA = await repository.getPage({ limit: 2, cursor: cursorA });
+          const pageB = await repository.getPage({ limit: 2, cursor: cursorB });
+          for (const r of pageA.items) seenA.push(r.id);
+          for (const r of pageB.items) seenB.push(r.id);
+          cursorA = pageA.nextCursor;
+          cursorB = pageB.nextCursor;
+          if (!cursorA && !cursorB) break;
+        }
+        expect(seenA).toEqual(seenB);
+        expect(seenA).toEqual(["id-000", "id-001", "id-002", "id-003", "id-004", "id-005"]);
+      });
+
+      it("rejects a cursor whose orderBy shape doesn't match the request", async () => {
+        // Same arity, different column — easy to do by accident if a
+        // caller switches sort key mid-iteration. The cursor's column
+        // names must be checked, not just its arity.
+        await seedRows(3);
+        const firstPage = await repository.getPage({
+          limit: 1,
+          orderBy: [{ column: "value", direction: "ASC" }],
+        });
+        expect(firstPage.nextCursor).toBeDefined();
+        await expect(
+          repository.getPage({
+            limit: 1,
+            cursor: firstPage.nextCursor,
+            orderBy: [{ column: "category", direction: "ASC" }],
+          })
+        ).rejects.toThrow();
+      });
+
+      it("rejects non-integer and non-positive limits", async () => {
+        await seedRows(1);
+        await expect(repository.getPage({ limit: 0 })).rejects.toThrow();
+        await expect(repository.getPage({ limit: -1 })).rejects.toThrow();
+        await expect(repository.getPage({ limit: 1.5 })).rejects.toThrow();
+      });
+    });
   }
 
   if (createAllTypesRepository) {
@@ -1873,6 +2196,229 @@ export function runGenericTabularStorageTests(
         expect(pages[0].length).toBe(3);
         expect(pages[1].length).toBe(3);
         expect(pages[2].length).toBe(3);
+      });
+    });
+
+    describe("getPage (cursor-based)", () => {
+      it("should return empty page with no cursor for empty table", async () => {
+        const page = await repository.getPage();
+        expect(page.items.length).toBe(0);
+        expect(page.nextCursor).toBeUndefined();
+      });
+
+      it("should iterate all rows by following nextCursor", async () => {
+        // Insert keys in shuffled order to verify ordering is by PK, not insert order.
+        const entities = [
+          { name: "key3", type: "type3", option: "v3", success: true },
+          { name: "key1", type: "type1", option: "v1", success: true },
+          { name: "key5", type: "type5", option: "v5", success: false },
+          { name: "key2", type: "type2", option: "v2", success: false },
+          { name: "key4", type: "type4", option: "v4", success: true },
+        ];
+        await repository.putBulk(entities);
+
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        do {
+          const page = await repository.getPage({ limit: 2, cursor });
+          for (const row of page.items) seen.push(row.name);
+          cursor = page.nextCursor;
+        } while (cursor);
+
+        expect(seen).toEqual(["key1", "key2", "key3", "key4", "key5"]);
+      });
+
+      it("should signal end-of-iteration with undefined nextCursor on partial page", async () => {
+        await repository.putBulk([
+          { name: "a", type: "t", option: "v", success: true },
+          { name: "b", type: "t", option: "v", success: true },
+          { name: "c", type: "t", option: "v", success: true },
+        ]);
+
+        const page = await repository.getPage({ limit: 10 });
+        expect(page.items.length).toBe(3);
+        expect(page.nextCursor).toBeUndefined();
+      });
+
+      it("should ignore inserts that sort before the cursor", async () => {
+        // The motivating case for keyset paging: with offset paging, inserting
+        // a row before the current scan position shifts everything by one so
+        // the next page re-emits a row. With cursor paging the cursor anchors
+        // to a specific row, so we resume cleanly after it.
+        const initial = Array.from({ length: 5 }, (_, i) => ({
+          name: `key${i}`,
+          type: "t",
+          option: `v${i}`,
+          success: true,
+        }));
+        await repository.putBulk(initial);
+
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.name)).toEqual(["key0", "key1"]);
+
+        // Concurrent insert that sorts before the cursor ("aaa" < "key2").
+        await repository.put({ name: "aaa", type: "t", option: "v", success: true });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        // Cursor resumes after key1; "aaa" sorts earlier so it must not
+        // appear, and we must not skip key2.
+        expect(secondPage.items.map((r) => r.name)).toEqual(["key2", "key3"]);
+      });
+
+      it("should surface inserts that sort after the cursor in subsequent pages", async () => {
+        // Symmetry check: a row inserted at a position the iteration hasn't
+        // reached yet should appear in the page that covers that position.
+        // (Offset paging would also "see" it but at the wrong slot.)
+        await repository.putBulk([
+          { name: "key0", type: "t", option: "v0", success: true },
+          { name: "key1", type: "t", option: "v1", success: true },
+          { name: "key3", type: "t", option: "v3", success: true },
+          { name: "key5", type: "t", option: "v5", success: true },
+        ]);
+
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.name)).toEqual(["key0", "key1"]);
+
+        // Insert a row that lives between key1 and key3 — i.e. strictly
+        // after the cursor. It should show up on the next page.
+        await repository.put({ name: "key2", type: "t", option: "v2", success: true });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.map((r) => r.name)).toEqual(["key2", "key3"]);
+
+        const thirdPage = await repository.getPage({
+          limit: 2,
+          cursor: secondPage.nextCursor,
+        });
+        expect(thirdPage.items.map((r) => r.name)).toEqual(["key5"]);
+      });
+
+      it("should be stable when rows past the cursor are deleted", async () => {
+        const initial = Array.from({ length: 6 }, (_, i) => ({
+          name: `k${i}`,
+          type: "t",
+          option: `v${i}`,
+          success: true,
+        }));
+        await repository.putBulk(initial);
+
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.name)).toEqual(["k0", "k1"]);
+
+        // Delete a row in the unread tail. It must simply be absent rather
+        // than perturbing offsets.
+        await repository.delete({ name: "k3", type: "t" });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.map((r) => r.name)).toEqual(["k2", "k4"]);
+      });
+
+      it("should be unaffected by deleting rows already returned", async () => {
+        // Deleting an already-yielded row must not cause the next page to
+        // shift backward. The cursor is a fixed sort-key position, not an
+        // offset.
+        const initial = Array.from({ length: 6 }, (_, i) => ({
+          name: `k${i}`,
+          type: "t",
+          option: `v${i}`,
+          success: true,
+        }));
+        await repository.putBulk(initial);
+
+        const firstPage = await repository.getPage({ limit: 2 });
+        expect(firstPage.items.map((r) => r.name)).toEqual(["k0", "k1"]);
+
+        await repository.delete({ name: "k0", type: "t" });
+        await repository.delete({ name: "k1", type: "t" });
+
+        const secondPage = await repository.getPage({
+          limit: 2,
+          cursor: firstPage.nextCursor,
+        });
+        expect(secondPage.items.map((r) => r.name)).toEqual(["k2", "k3"]);
+      });
+
+      it("should tolerate concurrent inserts and deletes during iteration", async () => {
+        const initial = Array.from({ length: 6 }, (_, i) => ({
+          name: `m${i}`,
+          type: "t",
+          option: `v${i}`,
+          success: true,
+        }));
+        await repository.putBulk(initial);
+
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        let pageCount = 0;
+        do {
+          const page = await repository.getPage({ limit: 2, cursor });
+          for (const row of page.items) seen.push(row.name);
+          cursor = page.nextCursor;
+          pageCount++;
+          if (pageCount === 1) {
+            // After page 1: insert one row before and one after; delete one
+            // row past the cursor.
+            await repository.put({ name: "aaa", type: "t", option: "v", success: true });
+            await repository.put({ name: "m4_5", type: "t", option: "v", success: true });
+            await repository.delete({ name: "m3", type: "t" });
+          }
+        } while (cursor);
+
+        // We should never re-emit a row we've already seen, and we should
+        // include every row that lived strictly after the cursor at the
+        // moment we passed it.
+        expect(new Set(seen).size).toBe(seen.length); // no duplicates
+        expect(seen).toContain("m0");
+        expect(seen).toContain("m1");
+        expect(seen).not.toContain("aaa"); // sorts before cursor
+        expect(seen).not.toContain("m3"); // deleted before next page
+        expect(seen).toContain("m4_5"); // inserted after cursor, in unread tail
+      });
+
+      it("should reject malformed cursors", async () => {
+        await expect(
+          repository.getPage({ limit: 2, cursor: "not-a-real-cursor" as any })
+        ).rejects.toThrow();
+      });
+    });
+
+    describe("queryPage (cursor-based)", () => {
+      it("should paginate filtered results", async () => {
+        const entities = Array.from({ length: 8 }, (_, i) => ({
+          name: `n${i}`,
+          type: i % 2 === 0 ? "even" : "odd",
+          option: `v${i}`,
+          success: true,
+        }));
+        await repository.putBulk(entities);
+
+        const seen: string[] = [];
+        let cursor: Cursor | undefined;
+        try {
+          do {
+            const page = await repository.queryPage({ type: "even" }, { limit: 2, cursor });
+            for (const row of page.items) seen.push(row.name);
+            cursor = page.nextCursor;
+          } while (cursor);
+        } catch (err) {
+          // Backends without `query()` support (e.g. FsFolder) can't
+          // support `queryPage` either; skip this assertion for them.
+          // `instanceof` is reliable across this monorepo because
+          // `@workglow/storage` is the single source of the class.
+          if (err instanceof StorageUnsupportedError) return;
+          throw err;
+        }
+
+        expect(seen.sort()).toEqual(["n0", "n2", "n4", "n6"]);
       });
     });
   });

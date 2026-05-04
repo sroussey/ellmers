@@ -14,6 +14,7 @@ export type {
   PickCoveringIndexInput,
   PickedIndex,
 } from "./tabular/coveringIndexPicker";
+export * from "./tabular/Cursor";
 export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";

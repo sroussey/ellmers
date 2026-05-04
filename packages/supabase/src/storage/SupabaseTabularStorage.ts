@@ -21,6 +21,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -31,7 +33,28 @@ import {
   ValueOptionType,
   pickCoveringIndex,
   StorageValidationError,
+  assertCursorMatches,
+  decodeCursor,
 } from "@workglow/storage";
+
+/**
+ * Quotes a value for inclusion in a PostgREST filter expression.
+ *
+ * PostgREST treats commas, periods, parentheses, colons, double-quotes,
+ * and whitespace as filter syntax delimiters; values containing any of
+ * these need to be wrapped in double-quotes (with embedded `"` and `\`
+ * escaped). ISO timestamps contain dots, so most non-trivial values need
+ * quoting. We err on the side of quoting anything that isn't a clean
+ * integer or boolean — false positives are cheap; false negatives produce
+ * malformed filters that PostgREST silently mis-parses.
+ */
+function escapePostgrest(value: string | number | boolean | null): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  const s = String(value);
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
 
 export const SUPABASE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.supabase"
@@ -790,6 +813,143 @@ export class SupabaseTabularStorage<
     }
     this.events.emit("query", criteria as Partial<Entity>, undefined);
     return undefined;
+  }
+
+  /**
+   * Cursor-paginated read pushed into PostgREST. Builds a keyset OR-of-AND
+   * filter via Supabase's `.or()` plus per-column `.order()` with explicit
+   * `nullsFirst` so iteration semantics match the rest of the package
+   * (NULLs sort before non-null for ASC, after for DESC). The pushdown
+   * makes memory and wire traffic O(pageSize) regardless of table size,
+   * unlike the in-memory base-class fallback which would full-table-scan.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.runSupabasePage(undefined, request);
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSupabasePage(criteria, request);
+  }
+
+  private async runSupabasePage(
+    criteria: SearchCriteria<Entity> | undefined,
+    request: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    // Validate before we send column names through PostgREST filters or
+    // ORDER BY — caller is the trust boundary for orderBy contents.
+    this.validatePageRequest(request);
+    const limit = request.limit ?? 100;
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
+    const orderBy = request.orderBy;
+    const effectiveOrderBy = this.buildEffectiveOrderBy(orderBy, pkColumns);
+    const effectiveColumns = effectiveOrderBy.map((o) => String(o.column));
+
+    let cursorPayload;
+    if (request.cursor !== undefined) {
+      cursorPayload = decodeCursor(request.cursor);
+      assertCursorMatches(cursorPayload, effectiveColumns);
+    }
+
+    let query: any = this.client.from(this.table).select("*");
+    if (criteria && Object.keys(criteria).length > 0) {
+      query = this.applyCriteriaToFilter(query, criteria);
+    }
+
+    if (cursorPayload) {
+      const filter = this.buildSupabaseKeysetFilter(effectiveOrderBy, cursorPayload.c);
+      // `null` is the keyset builder's signal for "no rows possible" — e.g.
+      // a DESC cursor parked on a NULL leading column; nothing comes after
+      // a NULLs-last trailer. Short-circuit instead of issuing the query.
+      if (filter === null) {
+        return { items: [], nextCursor: undefined };
+      }
+      query = query.or(filter);
+    }
+
+    for (const { column, direction } of effectiveOrderBy) {
+      query = query.order(String(column), {
+        ascending: direction === "ASC",
+        nullsFirst: direction === "ASC",
+      });
+    }
+    query = query.limit(limit);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const items = (data ?? []) as Entity[];
+    for (const row of items) {
+      const record = row as Record<string, unknown>;
+      for (const k in this.schema.properties) {
+        record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+      }
+    }
+
+    const nextCursor =
+      items.length === limit
+        ? this.buildCursor(items[items.length - 1], effectiveOrderBy)
+        : undefined;
+    return { items, nextCursor };
+  }
+
+  /**
+   * Builds a PostgREST OR-of-AND filter string for keyset pagination.
+   * See {@link BaseSqlTabularStorage.buildKeysetWhere} for the canonical
+   * description of the OR-of-AND form and NULL semantics; this is the
+   * same logic translated to PostgREST's filter grammar.
+   *
+   * Returns `null` when the cursor's leading column is NULL in a DESC
+   * orderBy — there is no row positioned after a NULLs-last trailer, so
+   * the page is unconditionally empty and the caller should skip the
+   * round-trip.
+   */
+  private buildSupabaseKeysetFilter(
+    orderBy: ReadonlyArray<{ column: keyof Entity; direction: "ASC" | "DESC" }>,
+    cursorValues: ReadonlyArray<string | number | boolean | null>
+  ): string | null {
+    const orClauses: string[] = [];
+    for (let i = 0; i < orderBy.length; i++) {
+      const andParts: string[] = [];
+      // Equality on preceding columns; collapse to `is.null` for null cursors
+      // because PostgREST `eq.null` doesn't exist (and SQL semantics agree
+      // that `col = NULL` is never true).
+      for (let j = 0; j < i; j++) {
+        const col = String(orderBy[j].column);
+        const v = cursorValues[j];
+        andParts.push(v === null ? `${col}.is.null` : `${col}.eq.${escapePostgrest(v)}`);
+      }
+      const col = String(orderBy[i].column);
+      const v = cursorValues[i];
+      const dir = orderBy[i].direction;
+      let cmp: string;
+      if (v === null) {
+        if (dir === "ASC") {
+          cmp = `${col}.not.is.null`;
+        } else if (i === 0) {
+          // Whole keyset is unreachable — no clause can match.
+          return null;
+        } else {
+          // Strict comparison after equality on a NULL preceding column
+          // can never succeed; drop this OR-clause entirely.
+          continue;
+        }
+      } else {
+        if (dir === "ASC") {
+          cmp = `${col}.gt.${escapePostgrest(v)}`;
+        } else {
+          // Smaller than the cursor, then NULLs-last trailer.
+          cmp = `or(${col}.lt.${escapePostgrest(v)},${col}.is.null)`;
+        }
+      }
+      andParts.push(cmp);
+      orClauses.push(andParts.length === 1 ? andParts[0] : `and(${andParts.join(",")})`);
+    }
+    if (orClauses.length === 0) return null;
+    return orClauses.join(",");
   }
 
   override async queryIndex<K extends keyof Entity & string>(

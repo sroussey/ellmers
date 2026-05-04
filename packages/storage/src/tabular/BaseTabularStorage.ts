@@ -14,7 +14,11 @@ import {
   InsertEntity,
   isSearchCondition,
   ITabularStorage,
+  OrderBy,
+  Page,
+  PageRequest,
   QueryOptions,
+  SearchCondition,
   SearchCriteria,
   SimplifyPrimaryKey,
   TabularChangePayload,
@@ -27,6 +31,13 @@ import {
 } from "./ITabularStorage";
 import { CoveringIndexMissingError } from "./CoveringIndexMissingError";
 import {
+  assertCursorMatches,
+  Cursor,
+  CursorPayload,
+  decodeCursor,
+  encodeCursor,
+} from "./Cursor";
+import {
   StorageEmptyCriteriaError,
   StorageInvalidColumnError,
   StorageInvalidLimitError,
@@ -36,6 +47,40 @@ import {
 export const TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository"
 );
+
+/**
+ * Converts a row column value into a JSON-serialisable form for cursor
+ * encoding. Dates become ISO strings; bigints become decimal strings;
+ * Uint8Array values are not supported as cursor keys.
+ */
+function toCursorValue(value: unknown): string | number | boolean | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  throw new Error(
+    `Cannot encode value of type ${typeof value} into a pagination cursor; use a key column with a primitive type.`
+  );
+}
+
+/**
+ * Compares two cursor key values using the same ordering rules as the
+ * in-memory backend: nulls sort before non-nulls, then standard `<`/`>`
+ * comparison. Returns -1, 0, or 1.
+ */
+function compareKeyValues(
+  a: string | number | boolean | null,
+  b: string | number | boolean | null
+): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return -1;
+  if (b === null) return 1;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
 
 /**
  * Options for controlling how client-provided values for auto-generated keys are handled
@@ -369,52 +414,260 @@ export abstract class BaseTabularStorage<
 
   /**
    * Async generator that yields records one at a time.
-   * Uses getBulk internally to fetch pages of data.
+   *
+   * Backed by cursor-based pagination so iteration is stable when rows are
+   * inserted or deleted concurrently — unlike offset paging, which can skip
+   * or duplicate rows under those conditions.
+   *
    * @param pageSize - Number of records to fetch per page (default: 100)
-   * @yields Individual entity records
    */
   async *records(pageSize: number = 100): AsyncGenerator<Entity, void, undefined> {
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let offset = 0;
+    let cursor: Cursor | undefined;
     while (true) {
-      const page = await this.getBulk(offset, pageSize);
-      if (!page || page.length === 0) {
-        break;
-      }
-      for (const entity of page) {
+      const page = await this.getPage({ limit: pageSize, cursor });
+      for (const entity of page.items) {
         yield entity;
       }
-      if (page.length < pageSize) {
-        break;
-      }
-      offset += pageSize;
+      if (!page.nextCursor || page.items.length === 0) break;
+      cursor = page.nextCursor;
     }
   }
 
   /**
    * Async generator that yields pages of records.
-   * Uses getBulk internally to fetch pages of data.
+   *
+   * Backed by cursor-based pagination — stable under concurrent writes.
+   *
    * @param pageSize - Number of records per page (default: 100)
-   * @yields Arrays of entities
    */
   async *pages(pageSize: number = 100): AsyncGenerator<Entity[], void, undefined> {
     if (pageSize <= 0) {
       throw new RangeError(`pageSize must be greater than 0, got ${pageSize}`);
     }
-    let offset = 0;
+    let cursor: Cursor | undefined;
     while (true) {
-      const page = await this.getBulk(offset, pageSize);
-      if (!page || page.length === 0) {
-        break;
+      const page = await this.getPage({ limit: pageSize, cursor });
+      if (page.items.length > 0) {
+        yield page.items.slice() as Entity[];
       }
-      yield page;
-      if (page.length < pageSize) {
-        break;
-      }
-      offset += pageSize;
+      if (!page.nextCursor || page.items.length === 0) break;
+      cursor = page.nextCursor;
     }
+  }
+
+  /**
+   * Default keyset-pagination implementation. Backends that can express
+   * tuple comparison natively (SQL row-value comparisons) should override
+   * this for efficiency, but the default works against any implementation
+   * of {@link query} / {@link getAll}.
+   */
+  async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.runPage(undefined, request);
+  }
+
+  /** Default cursor-paginated form of {@link query}. */
+  async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    return this.runPage(criteria, request);
+  }
+
+  /**
+   * Shared keyset-pagination engine for both {@link getPage} and
+   * {@link queryPage}. Translates the cursor into AND criteria using the
+   * primary key column(s) and runs the existing {@link query}/{@link getAll}
+   * machinery, then re-encodes the position of the last returned row.
+   *
+   * For composite primary keys this performs the keyset comparison in
+   * memory after fetching a candidate window. SQL backends should override
+   * {@link getPage}/{@link queryPage} to push it down to the database.
+   */
+  protected async runPage(
+    criteria: SearchCriteria<Entity> | undefined,
+    request: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    this.validatePageRequest(request);
+    const limit = request.limit ?? 100;
+
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
+    const orderBy = request.orderBy;
+    const effectiveOrderBy = this.buildEffectiveOrderBy(orderBy, pkColumns);
+    const effectiveColumns = effectiveOrderBy.map((o) => String(o.column));
+
+    let cursorPayload: CursorPayload | undefined;
+    if (request.cursor !== undefined) {
+      cursorPayload = decodeCursor(request.cursor);
+      assertCursorMatches(cursorPayload, effectiveColumns);
+    }
+
+    const pkCol = pkColumns[0];
+    const userCriteria = criteria ?? ({} as SearchCriteria<Entity>);
+    const userTouchesPk =
+      pkColumns.length === 1 && Object.prototype.hasOwnProperty.call(userCriteria, pkCol);
+
+    // The simple-keyset path pushes one `pk OP ?` predicate into `query()`.
+    // It works whenever the effective ordering is exactly "primary key in
+    // some direction" — that's true both when the caller passed no orderBy
+    // (we default to PK ASC) and when they passed exactly the primary key
+    // themselves (any direction). We still bail out if the caller already
+    // has a criterion on the PK column, because we'd otherwise overwrite it.
+    const canPushKeyset =
+      pkColumns.length === 1 &&
+      effectiveOrderBy.length === 1 &&
+      effectiveOrderBy[0].column === pkCol &&
+      !userTouchesPk;
+
+    let queryCriteria: SearchCriteria<Entity> = userCriteria;
+    // The simple keyset path pushes a single inequality on the primary key
+    // into `query()` and trusts the backend's `LIMIT n ORDER BY pk` to be
+    // both correct and efficient. The fallback path fetches everything,
+    // sorts and filters in-memory. Concrete backends with tuple comparison
+    // should override `getPage`/`queryPage` to push the work down to SQL.
+    const useFallback = !canPushKeyset;
+
+    if (cursorPayload && canPushKeyset) {
+      const direction = effectiveOrderBy[0].direction;
+      const op = direction === "ASC" ? ">" : "<";
+      // canPushKeyset implies a single-column PK as the only effective
+      // ordering, so cursorPayload has exactly one entry and `c[0]` is the
+      // last seen PK value. PK columns are NOT NULL so there's no need for
+      // the IS NULL gymnastics the SQL/in-memory keyset paths handle.
+      const lastPk = cursorPayload.c[0] as Entity[keyof Entity];
+      const keysetCondition: SearchCondition<Entity[keyof Entity]> = {
+        value: lastPk,
+        operator: op,
+      };
+      queryCriteria = {
+        ...userCriteria,
+        [pkCol]: keysetCondition,
+      } as SearchCriteria<Entity>;
+    }
+
+    const fetchLimit = useFallback ? undefined : limit;
+
+    const queryOptions: QueryOptions<Entity> = {
+      orderBy: effectiveOrderBy,
+      ...(fetchLimit !== undefined ? { limit: fetchLimit } : {}),
+    };
+
+    const rows =
+      Object.keys(queryCriteria).length === 0
+        ? await this.getAll(queryOptions)
+        : await this.query(queryCriteria, queryOptions);
+
+    let items: Entity[] = rows ?? [];
+
+    if (useFallback) {
+      // Keyset paging requires rows to be seen in a definite order. Some
+      // backends don't honour `orderBy` reliably (FsFolder, certain remote
+      // services), so we re-sort here to guarantee correctness rather than
+      // trust the backend.
+      items = this.sortInMemory(items.slice(), effectiveOrderBy);
+      if (cursorPayload) {
+        items = this.applyKeysetFilter(items, cursorPayload, effectiveOrderBy, pkColumns);
+      }
+    }
+
+    if (items.length > limit) {
+      items = items.slice(0, limit);
+    }
+
+    const nextCursor =
+      items.length === limit
+        ? this.buildCursor(items[items.length - 1], effectiveOrderBy)
+        : undefined;
+
+    return { items, nextCursor };
+  }
+
+  /**
+   * Returns the order spec actually used to drive a keyset page: the
+   * caller's `orderBy` (if any) followed by every primary-key column as a
+   * stable tiebreaker. PK columns are appended in ASC direction unless the
+   * caller already specified a direction for them.
+   */
+  protected buildEffectiveOrderBy(
+    orderBy: ReadonlyArray<OrderBy<Entity>> | undefined,
+    pkColumns: ReadonlyArray<keyof Entity>
+  ): ReadonlyArray<OrderBy<Entity>> {
+    const result: OrderBy<Entity>[] = orderBy ? orderBy.slice() : [];
+    const seen = new Set(result.map((o) => o.column));
+    for (const pk of pkColumns) {
+      if (!seen.has(pk)) {
+        result.push({ column: pk, direction: "ASC" });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Sorts rows in place by the given order spec, using the same null-first
+   * comparison rules as the cursor filter so results are consistent.
+   */
+  protected sortInMemory(
+    rows: Entity[],
+    orderBy: ReadonlyArray<OrderBy<Entity>>
+  ): Entity[] {
+    rows.sort((a, b) => {
+      for (const { column, direction } of orderBy) {
+        const aVal = (a[column] ?? null) as string | number | boolean | null;
+        const bVal = (b[column] ?? null) as string | number | boolean | null;
+        const cmp = compareKeyValues(
+          typeof aVal === "boolean" ? Number(aVal) : aVal,
+          typeof bVal === "boolean" ? Number(bVal) : bVal
+        );
+        if (cmp !== 0) return direction === "ASC" ? cmp : -cmp;
+      }
+      return 0;
+    });
+    return rows;
+  }
+
+  /**
+   * In-memory keyset filter: drops rows that come at or before the cursor
+   * row according to `orderBy + primaryKey`. Used by the default
+   * implementation when the backend can't express tuple comparison.
+   */
+  protected applyKeysetFilter(
+    rows: Entity[],
+    cursor: CursorPayload,
+    effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>,
+    _pkColumns: ReadonlyArray<keyof Entity>
+  ): Entity[] {
+    return rows.filter((row) => {
+      for (let i = 0; i < effectiveOrderBy.length; i++) {
+        const { column, direction } = effectiveOrderBy[i];
+        const rowVal = row[column] as string | number | boolean | null | undefined;
+        const cmp = compareKeyValues(
+          rowVal ?? null,
+          cursor.c[i] ?? null
+        );
+        if (cmp === 0) continue;
+        return direction === "ASC" ? cmp > 0 : cmp < 0;
+      }
+      return false; // exact match -> already returned, skip
+    });
+  }
+
+  /**
+   * Encodes the position of `row` as an opaque cursor. The caller passes
+   * the effective ordering it just used — caller-supplied `orderBy`
+   * followed by any primary-key columns not already covered by `orderBy`
+   * — and this writes one value per effective column, in the same order.
+   * Computing that ordering is the caller's responsibility because they
+   * already have it in hand and we don't want to recompute it here.
+   */
+  protected buildCursor(
+    row: Entity,
+    effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>
+  ): Cursor {
+    const n = effectiveOrderBy.map((spec) => String(spec.column));
+    const c = effectiveOrderBy.map((spec) => toCursorValue(row[spec.column]));
+    return encodeCursor({ v: 1, n, c });
   }
 
   /**
@@ -508,19 +761,50 @@ export abstract class BaseTabularStorage<
       throw new StorageValidationError(`Query offset must be non-negative, got ${options.offset}`);
     }
 
-    if (options.orderBy) {
-      const validDirections = ["ASC", "DESC"];
-      for (const { column, direction } of options.orderBy) {
-        if (!(column in this.schema.properties)) {
-          throw new StorageInvalidColumnError(String(column));
-        }
-        if (!validDirections.includes(direction)) {
-          throw new StorageValidationError(
-            `Invalid sort direction "${direction}". Must be "ASC" or "DESC"`
-          );
-        }
+    this.validateOrderBy(options.orderBy);
+  }
+
+  /**
+   * Validates the `orderBy` clause of a {@link PageRequest}: column names
+   * must exist in the schema and directions must be `"ASC"` or `"DESC"`.
+   *
+   * Page paths (`getPage`/`queryPage`) must call this before any backend
+   * builds SQL, because column names from `request.orderBy` end up
+   * interpolated directly into `ORDER BY` and the keyset `WHERE` clauses.
+   * Without this guard a caller passing arbitrary strings would either
+   * trigger a backend SQL error or, worse, allow SQL injection on backends
+   * that emit unquoted identifiers.
+   */
+  protected validateOrderBy(
+    orderBy: ReadonlyArray<OrderBy<Entity>> | undefined
+  ): void {
+    if (!orderBy) return;
+    const validDirections = ["ASC", "DESC"];
+    for (const { column, direction } of orderBy) {
+      if (!(column in this.schema.properties)) {
+        throw new StorageInvalidColumnError(String(column));
+      }
+      if (!validDirections.includes(direction)) {
+        throw new StorageValidationError(
+          `Invalid sort direction "${direction}". Must be "ASC" or "DESC"`
+        );
       }
     }
+  }
+
+  /**
+   * Validates the components of a cursor-paginated request that are about
+   * to be used to build a query. Centralises the schema-level guarantees
+   * that `runPage`/`runSqlPage`/Supabase's `runSupabasePage` all rely on
+   * before they interpolate column names into SQL or PostgREST filters.
+   */
+  protected validatePageRequest(request: PageRequest<Entity>): void {
+    if (request.limit !== undefined) {
+      if (!Number.isInteger(request.limit) || request.limit <= 0) {
+        throw new StorageInvalidLimitError(request.limit);
+      }
+    }
+    this.validateOrderBy(request.orderBy);
   }
 
   /**

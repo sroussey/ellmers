@@ -22,6 +22,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -856,9 +858,52 @@ export class PostgresTabularStorage<
     whereClause: string;
     params: ValueOptionType[];
   } {
+    const built = this.buildSearchWhereWithIndex(criteria, 1);
+    return { whereClause: built.whereClause, params: built.params };
+  }
+
+  /**
+   * Cursor-paginated read with keyset predicates pushed into SQL.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.runSqlPage(undefined, request, this.postgresDialect());
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSqlPage(criteria, request, this.postgresDialect());
+  }
+
+  private postgresDialect() {
+    return {
+      quote: '"',
+      placeholder: (index: number) => `$${index}`,
+      buildSearchWhere: (criteria: SearchCriteria<Entity>, startIndex: number) =>
+        this.buildSearchWhereWithIndex(criteria, startIndex),
+      executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
+        const result = await this.db.query(sql, params as unknown[]);
+        const rows = (result.rows ?? []) as Entity[];
+        for (const row of rows) {
+          const record = row as Record<string, unknown>;
+          for (const k in this.schema.properties) {
+            record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+          }
+        }
+        return rows;
+      },
+    };
+  }
+
+  private buildSearchWhereWithIndex(
+    criteria: SearchCriteria<Entity>,
+    startIndex: number
+  ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } {
     const conditions: string[] = [];
     const params: ValueOptionType[] = [];
-    let paramIndex = 1;
+    let paramIndex = startIndex;
 
     for (const column of Object.keys(criteria) as Array<keyof Entity>) {
       if (!(column in this.schema.properties)) {
@@ -884,6 +929,7 @@ export class PostgresTabularStorage<
     return {
       whereClause: conditions.join(" AND "),
       params,
+      nextIndex: paramIndex,
     };
   }
 

@@ -16,6 +16,8 @@ import type {
   DeleteSearchCriteria,
   InsertEntity,
   ITabularStorage,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -99,6 +101,21 @@ export class TelemetryTabularStorage<
   getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
     return traced("workglow.storage.tabular.getBulk", this.storageName, () =>
       this.inner.getBulk(offset, limit)
+    );
+  }
+
+  getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
+    return traced("workglow.storage.tabular.getPage", this.storageName, () =>
+      this.inner.getPage(request)
+    );
+  }
+
+  queryPage(
+    criteria: SearchCriteria<Entity>,
+    request?: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    return traced("workglow.storage.tabular.queryPage", this.storageName, () =>
+      this.inner.queryPage(criteria, request)
     );
   }
 
