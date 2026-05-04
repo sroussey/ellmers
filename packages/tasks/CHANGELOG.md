@@ -1,5 +1,15 @@
 # @workglow/tasks
 
+## 0.2.29
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `ipaddr.js`: ^2.4.0
+
 ## 0.2.28
 
 ### Refactors

@@ -15,16 +15,18 @@ export function normalizedModelSearchQuery(query: string | undefined): string | 
 }
 
 /**
- * Filter static/SDK model rows by optional query (substring match on label and id).
+ * Filter static/SDK model rows by optional query (substring match on label, value, or description).
  */
-export function filterLabeledModelsByQuery(
-  models: ReadonlyArray<{ label: string; value: string }>,
-  query: string | undefined
-): Array<{ label: string; value: string }> {
+export function filterLabeledModelsByQuery<
+  T extends { label: string; value: string; description?: string },
+>(models: ReadonlyArray<T>, query: string | undefined): T[] {
   const q = normalizedModelSearchQuery(query);
   if (!q) return [...models];
   return models.filter(
-    (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+    (m) =>
+      m.value.toLowerCase().includes(q) ||
+      m.label.toLowerCase().includes(q) ||
+      m.description?.toLowerCase().includes(q)
   );
 }
 

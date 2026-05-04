@@ -14,6 +14,12 @@ import { filterLabeledModelsByQuery } from "@workglow/ai-provider/common";
 import { getClient } from "./Anthropic_Client";
 import { ANTHROPIC } from "./Anthropic_Constants";
 
+interface AnthropicModelListItem {
+  readonly label: string;
+  readonly value: string;
+  readonly description?: string;
+}
+
 const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "claude-opus-4-7", value: "claude-opus-4-7" },
   { label: "claude-sonnet-4-6", value: "claude-sonnet-4-6" },
@@ -24,25 +30,23 @@ const ANTHROPIC_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "claude-3-5-haiku-20241022", value: "claude-3-5-haiku-20241022" },
 ];
 
-async function listAnthropicModels(
-  credentialKey: string
-): Promise<Array<{ label: string; value: string }>> {
+async function listAnthropicModels(credentialKey: string): Promise<AnthropicModelListItem[]> {
   const client = await getClient({
     provider: ANTHROPIC,
     provider_config: { model_name: "", credential_key: credentialKey },
   });
-  const models: Array<{ label: string; value: string }> = [];
+  const models: AnthropicModelListItem[] = [];
   for await (const m of client.beta.models.list()) {
-    models.push({ label: `${m.id}  ${m.display_name}`, value: m.id });
+    models.push({ label: m.display_name, value: m.id, description: m.id });
   }
   return models;
 }
 
-function mapModelList(models: Array<{ label: string; value: string }>): ModelSearchResultItem[] {
+function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[] {
   return models.map((m) => ({
     id: m.value,
     label: m.label,
-    description: "",
+    description: m.description ?? "",
     record: {
       model_id: m.value,
       provider: ANTHROPIC,
@@ -60,7 +64,7 @@ export const Anthropic_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
 > = async (input) => {
-  let models: Array<{ label: string; value: string }>;
+  let models: AnthropicModelListItem[];
   if (!input.credential_key) {
     models = ANTHROPIC_FALLBACK;
   } else {

@@ -77,8 +77,8 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
   const title = model.displayName || id;
   return {
     id,
-    label: model.displayName ? `${id}  ${model.displayName}` : id,
-    description: model.description ?? "",
+    label: title,
+    description: model.displayName ? id : (model.description ?? ""),
     record: {
       model_id: id,
       provider: GOOGLE_GEMINI,

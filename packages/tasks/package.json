@@ -1,7 +1,7 @@
 {
   "name": "@workglow/tasks",
   "type": "module",
-  "version": "0.2.28",
+  "version": "0.2.29",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
@@ -57,7 +57,7 @@
     "access": "public"
   },
   "dependencies": {
-    "ipaddr.js": "^2.2.0",
+    "ipaddr.js": "^2.4.0",
     "undici": "^8.2.0"
   },
   "peerDependencies": {

@@ -1,7 +1,7 @@
 {
   "name": "@workglow/sqlite",
   "type": "module",
-  "version": "0.2.28",
+  "version": "0.2.29",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",

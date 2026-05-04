@@ -1,5 +1,7 @@
 # @workglow/storage
 
+## 0.2.29
+
 ## 0.2.28
 
 ### Refactors

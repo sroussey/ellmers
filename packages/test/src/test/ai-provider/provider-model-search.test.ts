@@ -5,11 +5,12 @@
  */
 
 import { ModelSearchTask } from "@workglow/ai";
-import { afterEach, describe, expect, test } from "vitest";
 import { Anthropic_ModelSearch } from "@workglow/anthropic/ai-provider";
 import { Gemini_ModelSearch } from "@workglow/google-gemini/ai-provider";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai-provider";
 import { OpenAI_ModelSearch } from "@workglow/openai/ai-provider";
+import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai-provider";
+import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;
 
@@ -90,6 +91,8 @@ describe("provider model search samples", () => {
 
     expect(requestedUrl).toContain("key=test-gemini-key");
     expect(results.map((model) => model.id)).toContain("gemini-live-test");
+    expect(results[0]?.label).toBe("Gemini Live Test");
+    expect(results[0]?.description).toBe("gemini-live-test");
   });
 
   test("Gemini live search rejects API failures when credentialed", async () => {
@@ -148,5 +151,31 @@ describe("provider model search samples", () => {
         undefined as any
       )
     ).rejects.toThrow("HuggingFace API returned 401");
+  });
+
+  test("TensorFlow MediaPipe search includes known model records", async () => {
+    const { results } = await TFMP_ModelSearch(
+      { provider: TENSORFLOW_MEDIAPIPE, query: "pose" } as any,
+      undefined as any,
+      undefined as any,
+      undefined as any
+    );
+
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        id: "pose-landmarker",
+        label: "Pose Landmarker",
+        record: expect.objectContaining({
+          provider: TENSORFLOW_MEDIAPIPE,
+          title: "Pose Landmarker",
+          tasks: ["PoseLandmarkerTask"],
+          provider_config: expect.objectContaining({
+            task_engine: "vision",
+            pipeline: "vision-pose-landmarker",
+            model_path: expect.stringContaining("pose_landmarker_lite.task"),
+          }),
+        }),
+      })
+    );
   });
 });
