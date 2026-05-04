@@ -70,7 +70,7 @@ export class KbToDocumentsTask extends Task<
   KbToDocumentsTaskConfig
 > {
   public static override type = "KbToDocumentsTask";
-  public static override category = "Vector Store";
+  public static override category = "Document";
   public static override title = "Knowledge Base to Documents";
   public static override description =
     "List documents from a knowledge base, optionally filtering to only those that need embedding";

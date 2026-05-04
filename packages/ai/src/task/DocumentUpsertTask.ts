@@ -4,9 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Document, KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import { DocumentMetadataSchema } from "@workglow/knowledge-base";
 import type { DocumentMetadata, DocumentNode } from "@workglow/knowledge-base";
+import {
+  Document,
+  DocumentMetadataSchema,
+  KnowledgeBase,
+  TypeKnowledgeBase,
+} from "@workglow/knowledge-base";
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -85,7 +89,7 @@ export class DocumentUpsertTask extends Task<
   DocumentUpsertTaskConfig
 > {
   public static override type = "DocumentUpsertTask";
-  public static override category = "Vector Store";
+  public static override category = "Document";
   public static override title = "Add Document";
   public static override description = "Persist a parsed document tree to a knowledge base";
   public static override cacheable = false; // Has side effects
