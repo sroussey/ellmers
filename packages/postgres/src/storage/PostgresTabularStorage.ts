@@ -40,6 +40,21 @@ export const POSTGRES_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>
 );
 
 /**
+ * Validates a vector-index numeric tuning value: undefined is allowed
+ * (caller wants the pgvector default), otherwise it must be a finite,
+ * positive integer. Throws a clear error rather than splicing `NaN` /
+ * `Infinity` / negative numbers / floats into DDL.
+ */
+function assertPositiveInt(value: number | undefined, label: string): void {
+  if (value === undefined) return;
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      `VectorIndexOptions.${label} must be a positive integer; received ${String(value)}`
+    );
+  }
+}
+
+/**
  * A PostgreSQL-based tabular repository implementation that extends BaseSqlTabularStorage.
  * This class provides persistent storage for data in a PostgreSQL database,
  * making it suitable for multi-user scenarios.
@@ -484,6 +499,20 @@ export class PostgresTabularStorage<
       return; // No vector columns, nothing to do
     }
 
+    const opts = this.getVectorIndexOptions();
+    // Validate the option shape up front so a misconfiguration fails before
+    // we touch the database (rather than producing surprising SQL errors).
+    if (opts.hnsw && opts.ivfflat) {
+      throw new Error(
+        "VectorIndexOptions: only one of `hnsw` or `ivfflat` may be set; received both."
+      );
+    }
+    assertPositiveInt(opts.hnsw?.m, "hnsw.m");
+    assertPositiveInt(opts.hnsw?.efConstruction, "hnsw.efConstruction");
+    assertPositiveInt(opts.hnsw?.efSearch, "hnsw.efSearch");
+    assertPositiveInt(opts.ivfflat?.lists, "ivfflat.lists");
+    assertPositiveInt(opts.ivfflat?.probes, "ivfflat.probes");
+
     // Try to enable pgvector extension
     try {
       await this.db.query("CREATE EXTENSION IF NOT EXISTS vector");
@@ -495,7 +524,6 @@ export class PostgresTabularStorage<
       return;
     }
 
-    const opts = this.getVectorIndexOptions();
     const distance = opts.distance ?? "cosine";
     const opClass =
       distance === "l2"
@@ -514,7 +542,7 @@ export class PostgresTabularStorage<
             CREATE INDEX IF NOT EXISTS "${indexName}"
             ON "${this.table}"
             USING ivfflat ("${column}" ${opClass})
-            WITH (lists = ${Number(lists)})
+            WITH (lists = ${lists})
           `);
         } catch (error) {
           console.warn(`Failed to create IVFFlat index on ${column}:`, error);
@@ -527,9 +555,9 @@ export class PostgresTabularStorage<
     // applied per-session at query time (see PostgresVectorStorage).
     const hnsw = opts.hnsw ?? {};
     const buildParams: string[] = [];
-    if (typeof hnsw.m === "number") buildParams.push(`m = ${Number(hnsw.m)}`);
+    if (typeof hnsw.m === "number") buildParams.push(`m = ${hnsw.m}`);
     if (typeof hnsw.efConstruction === "number") {
-      buildParams.push(`ef_construction = ${Number(hnsw.efConstruction)}`);
+      buildParams.push(`ef_construction = ${hnsw.efConstruction}`);
     }
     const withClause = buildParams.length > 0 ? ` WITH (${buildParams.join(", ")})` : "";
 

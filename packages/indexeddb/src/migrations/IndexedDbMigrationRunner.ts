@@ -47,25 +47,30 @@ function getIndexedDb(): IDBFactory {
 /**
  * Runs versioned migrations against a single IndexedDB database.
  *
- * Mapping between {@link IMigration} and IDB's native versioning:
- *   - Migrations are sorted by `(component asc, version asc)` and assigned a
- *     1-based ordinal. The runner opens the database with `version =
- *     migrations.length`, which is the only event that triggers
- *     `onupgradeneeded`.
- *   - Inside the callback we apply migrations whose ordinal is greater than
- *     `oldVersion`, exactly once each, in order. The bookkeeping object store
- *     `_storage_migrations` records `(component, version, description,
- *     applied_at)` for traceability.
- *   - Adding new migrations later increments the ordinal count, which becomes
- *     the new IDB version — onupgradeneeded fires with `oldVersion =
- *     previousCount`, and only the truly-new migrations run.
+ * Bookkeeping-driven dispatch (NOT IDB-version-ordinal driven). The runner:
+ *   1. Probes the DB to read the `_storage_migrations` object store, building
+ *      a set of already-applied `(component, version)` pairs. The probe
+ *      registers an `onupgradeneeded` handler so that if the DB doesn't yet
+ *      exist, IDB's auto-creation path also creates the bookkeeping store
+ *      atomically (rather than leaving an empty v1 DB with no schema).
+ *   2. Computes the pending migrations as `sorted \ alreadyApplied` —
+ *      identifying each migration by `(component, version)`, NOT by its
+ *      position in the sorted array. This means inserting a new migration
+ *      that sorts BEFORE existing ones (e.g. a new component name that's
+ *      lexicographically earlier) is still correctly detected as pending.
+ *   3. If pending is empty, returns without bumping the IDB version.
+ *   4. Otherwise reopens at `currentVersion + 1` and runs every pending
+ *      migration inside the upgrade transaction, recording each in the
+ *      bookkeeping store as it goes.
+ *
+ * The IDB database version is treated purely as a monotonic trigger for
+ * `onupgradeneeded`; we never use it to decide which migrations to apply.
  *
  * Caveats:
- *   - All migrations targeting one database must be passed to a single
- *     {@link run} call. Splitting them across calls would shrink the
- *     advertised version and IDB rejects opening at a lower version than
- *     the on-disk one.
- *   - `up()` must be synchronous (see {@link IndexedDbUpgradeContext}).
+ *   - `up()` must be synchronous. IDB upgrade transactions auto-commit as
+ *     soon as control returns to the event loop, so awaited Promises between
+ *     IDB requests would silently lose the rest of the migration. The runner
+ *     throws if `up()` returns a Promise.
  */
 export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgradeContext> {
   constructor(
@@ -74,48 +79,30 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
   ) {}
 
   /**
-   * Ensures the bookkeeping object store exists. We bump the IDB version by
-   * one if the store is missing — that is the only IDB-permitted way to
-   * create an object store.
+   * Probe the DB without forcing a schema change. Reads the bookkeeping
+   * store (creating it on first run via the auto-fired upgrade callback)
+   * and returns the current IDB version + the set of applied migrations
+   * keyed by `${component}@${version}`.
    */
-  async ensureBookkeepingTable(): Promise<void> {
-    const probe = await new Promise<IDBDatabase>((resolve, reject) => {
+  private async probe(): Promise<{ currentVersion: number; applied: Set<string> }> {
+    return new Promise((resolve, reject) => {
       const req = this.idb.open(this.dbName);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    if (probe.objectStoreNames.contains(MIGRATIONS_TABLE)) {
-      probe.close();
-      return;
-    }
-    const currentVersion = probe.version;
-    probe.close();
-    await new Promise<void>((resolve, reject) => {
-      const reopen = this.idb.open(this.dbName, currentVersion + 1);
-      reopen.onupgradeneeded = () => {
-        const u = reopen.result;
+      req.onupgradeneeded = () => {
+        // Fires only when the DB doesn't already exist (oldVersion = 0).
+        // We seed the bookkeeping store atomically with DB creation so a
+        // fresh DB never lacks it.
+        const u = req.result;
         if (!u.objectStoreNames.contains(MIGRATIONS_TABLE)) {
           u.createObjectStore(MIGRATIONS_TABLE, { keyPath: ["component", "version"] });
         }
       };
-      reopen.onsuccess = () => {
-        reopen.result.close();
-        resolve();
-      };
-      reopen.onerror = () => reject(reopen.error);
-      reopen.onblocked = () =>
-        reject(new Error(`IndexedDB ${this.dbName} blocked while creating bookkeeping store`));
-    });
-  }
-
-  async appliedVersions(component: string): Promise<Set<number>> {
-    return new Promise<Set<number>>((resolve, reject) => {
-      const req = this.idb.open(this.dbName);
       req.onsuccess = () => {
         const db = req.result;
+        const currentVersion = db.version;
         if (!db.objectStoreNames.contains(MIGRATIONS_TABLE)) {
+          // Existed prior to this runner ever being used — no bookkeeping yet.
           db.close();
-          resolve(new Set());
+          resolve({ currentVersion, applied: new Set() });
           return;
         }
         const tx = db.transaction(MIGRATIONS_TABLE, "readonly");
@@ -124,7 +111,10 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
         getAll.onsuccess = () => {
           const rows = getAll.result as Array<{ component: string; version: number }>;
           db.close();
-          resolve(new Set(rows.filter((r) => r.component === component).map((r) => r.version)));
+          resolve({
+            currentVersion,
+            applied: new Set(rows.map((r) => `${r.component}@${r.version}`)),
+          });
         };
         getAll.onerror = () => {
           db.close();
@@ -132,7 +122,27 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
         };
       };
       req.onerror = () => reject(req.error);
+      req.onblocked = () =>
+        reject(new Error(`IndexedDB ${this.dbName} blocked while probing for bookkeeping store`));
     });
+  }
+
+  /** Ensures the bookkeeping object store exists (created lazily by {@link probe}). */
+  async ensureBookkeepingTable(): Promise<void> {
+    await this.probe();
+  }
+
+  async appliedVersions(component: string): Promise<Set<number>> {
+    const { applied } = await this.probe();
+    const versions = new Set<number>();
+    for (const key of applied) {
+      const at = key.lastIndexOf("@");
+      if (at < 0) continue;
+      const c = key.slice(0, at);
+      const v = Number(key.slice(at + 1));
+      if (c === component && Number.isFinite(v)) versions.add(v);
+    }
+    return versions;
   }
 
   async run(
@@ -141,21 +151,15 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
     const sorted = sortMigrations(migrations);
     if (sorted.length === 0) return [];
 
-    const targetVersion = sorted.length;
+    const { currentVersion, applied: alreadyApplied } = await this.probe();
+    const pending = sorted.filter((m) => !alreadyApplied.has(`${m.component}@${m.version}`));
+    if (pending.length === 0) return [];
+
+    // Bump the IDB version monotonically — its only role is to trigger
+    // onupgradeneeded. The bookkeeping store decides what actually runs.
+    const targetVersion = currentVersion + 1;
     const applied: IndexedDbMigration[] = [];
 
-    // Always open at the target version. IDB will:
-    //   - skip onupgradeneeded if the existing DB version >= targetVersion
-    //     (no-op — all migrations already applied)
-    //   - throw VersionError if the existing DB version > targetVersion
-    //     (caller has fewer migrations than the DB has been migrated to;
-    //      surface the error)
-    //   - fire onupgradeneeded with oldVersion < targetVersion otherwise,
-    //     and we run only the as-yet-unapplied migrations.
-    //
-    // We deliberately avoid a separate probe `idb.open(name)` (no version):
-    // on a non-existent DB that creates an empty v1 with NO upgrade callback,
-    // which would silently skip the real schema work below.
     await new Promise<void>((resolve, reject) => {
       const upreq = this.idb.open(this.dbName, targetVersion);
       upreq.onupgradeneeded = (ev) => {
@@ -170,9 +174,7 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
           }
           const meta = tx.objectStore(MIGRATIONS_TABLE);
 
-          // Migrations whose ordinal (1-based) > oldVersion need to run.
-          for (let i = oldVersion; i < sorted.length; i++) {
-            const m = sorted[i];
+          for (const m of pending) {
             const ctx: IndexedDbUpgradeContext = { db, tx, oldVersion, newVersion };
             const result = m.up(ctx);
             if (result instanceof Promise) {

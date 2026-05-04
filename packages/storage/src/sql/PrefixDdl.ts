@@ -44,6 +44,29 @@ export function assertPrefixesSafe(prefixes: readonly ISqlPrefixColumn[]): void 
   }
 }
 
+/**
+ * Throws if any declared prefix column lacks a value in `prefixValues`.
+ *
+ * Prefix columns are declared `NOT NULL` in the DDL helpers; binding
+ * `undefined` for them later yields opaque database errors ("invalid input
+ * syntax for type X" / "null value violates not-null constraint"). Catch the
+ * misconfiguration at the call site instead.
+ */
+export function assertPrefixValuesPresent(
+  prefixes: readonly ISqlPrefixColumn[],
+  prefixValues: Readonly<Record<string, string | number>>
+): void {
+  for (const p of prefixes) {
+    const v = prefixValues[p.name];
+    if (v === undefined || v === null) {
+      throw new Error(
+        `Missing prefix value for column "${p.name}". Every prefix declared in \`prefixes\` ` +
+          `must have a corresponding entry in \`prefixValues\`.`
+      );
+    }
+  }
+}
+
 /** Returns the SQL column type for a {@link ISqlPrefixColumn} on the given dialect. */
 export function prefixColumnType(dialect: ISqlDialect, type: ISqlPrefixColumn["type"]): string {
   if (type === "uuid") {
@@ -108,6 +131,7 @@ export function buildPrefixWhereClause(
 ): { conditions: string; params: Array<string | number> } {
   if (prefixes.length === 0) return { conditions: "", params: [] };
   assertPrefixesSafe(prefixes);
+  assertPrefixValuesPresent(prefixes, prefixValues);
   const conditions = prefixes
     .map((p, i) => `${p.name} = ${dialect.placeholder(startParam + i)}`)
     .join(" AND ");
@@ -120,6 +144,8 @@ export function getPrefixParamValues(
   prefixes: readonly ISqlPrefixColumn[],
   prefixValues: Readonly<Record<string, string | number>>
 ): Array<string | number> {
+  if (prefixes.length === 0) return [];
+  assertPrefixValuesPresent(prefixes, prefixValues);
   return prefixes.map((p) => prefixValues[p.name]);
 }
 

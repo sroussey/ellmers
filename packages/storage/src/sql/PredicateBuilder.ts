@@ -47,7 +47,7 @@ export function buildSearchWhere<Entity>(
 
   for (const column of Object.keys(criteria) as Array<keyof Entity>) {
     if (!(column in schemaProps)) {
-      throw new Error(`Schema must have a ${String(column)} field to use deleteSearch`);
+      throw new Error(`Schema must have a "${String(column)}" field to use it in search criteria`);
     }
 
     const criterion = criteria[column];

@@ -14,7 +14,12 @@ import type {
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
 import { PostgresTabularStorage } from "./PostgresTabularStorage";
-import { StorageValidationError, getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import {
+  PostgresDialect,
+  StorageValidationError,
+  getMetadataProperty,
+  getVectorProperty,
+} from "@workglow/storage";
 import type {
   HybridSearchOptions,
   IVectorStorage,
@@ -175,8 +180,13 @@ export class PostgresVectorStorage<
     try {
       // Try native pgvector search first
       const queryVector = `[${Array.from(query).join(",")}]`;
-      const vectorCol = String(this.vectorPropertyName);
-      const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      // Use the raw column name for object-property lookup on result rows,
+      // and a quoted form for splicing into SQL identifiers (handles reserved
+      // words, mixed case, and any caller-supplied schema).
+      const vectorColRaw = String(this.vectorPropertyName);
+      const vectorCol = PostgresDialect.quoteId(vectorColRaw);
+      const metadataColRaw = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      const metadataCol = metadataColRaw ? PostgresDialect.quoteId(metadataColRaw) : null;
       const distOp = this.distanceOperator;
       const scoreExpr = this.buildScoreExpr(vectorCol, "$1");
 
@@ -198,6 +208,9 @@ export class PostgresVectorStorage<
               `Invalid metadata filter key: "${key}". Keys must match /^[a-zA-Z_][a-zA-Z0-9_]*$/.`
             );
           }
+          // The JSON key inside `->>` is already validated above; we still
+          // need to quote the column identifier itself to handle non-trivial
+          // metadata column names.
           conditions.push(`${metadataCol}->>'${key}' = $${paramIndex}`);
           params.push(String(value));
           paramIndex++;
@@ -226,7 +239,7 @@ export class PostgresVectorStorage<
           `SELECT ${vectorCol}::text FROM "${this.table}" WHERE ${this.getPrimaryKeyWhereClause()}`,
           this.getPrimaryKeyValues(row)
         );
-        const vectorStr = vectorResult.rows[0]?.[vectorCol] || "[]";
+        const vectorStr = vectorResult.rows[0]?.[vectorColRaw] || "[]";
         const vectorArray = JSON.parse(vectorStr);
 
         results.push({
@@ -259,8 +272,10 @@ export class PostgresVectorStorage<
       const queryVector = `[${Array.from(query).join(",")}]`;
       // Use plainto_tsquery via parameterized query to avoid tsquery injection
       const tsQueryText = textQuery;
-      const vectorCol = String(this.vectorPropertyName);
-      const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      const vectorColRaw = String(this.vectorPropertyName);
+      const vectorCol = PostgresDialect.quoteId(vectorColRaw);
+      const metadataColRaw = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+      const metadataCol = metadataColRaw ? PostgresDialect.quoteId(metadataColRaw) : null;
       const vectorScoreExpr = this.buildScoreExpr(vectorCol, "$1");
       const combinedScoreExpr = `(
             $2 * ${vectorScoreExpr} +
@@ -311,7 +326,7 @@ export class PostgresVectorStorage<
           `SELECT ${vectorCol}::text FROM "${this.table}" WHERE ${this.getPrimaryKeyWhereClause()}`,
           this.getPrimaryKeyValues(row)
         );
-        const vectorStr = vectorResult.rows[0]?.[vectorCol] || "[]";
+        const vectorStr = vectorResult.rows[0]?.[vectorColRaw] || "[]";
         const vectorArray = JSON.parse(vectorStr);
 
         results.push({
@@ -333,9 +348,28 @@ export class PostgresVectorStorage<
   }
 
   /**
-   * Fallback search using in-memory cosine similarity
+   * Throws if the configured distance metric isn't cosine. The in-memory
+   * fallback paths below only know how to compute cosine similarity; if
+   * pgvector is unavailable for an `l2`/`ip` storage, falling back would
+   * silently return wrong scores. Callers using non-cosine distances must
+   * keep pgvector working.
+   */
+  private assertFallbackSupportsDistance(): void {
+    if (this.distance !== "cosine") {
+      throw new Error(
+        `PostgresVectorStorage: pgvector is unavailable and the in-memory ` +
+          `fallback only supports cosine distance (configured: "${this.distance}"). ` +
+          `Install pgvector or switch the storage to cosine distance.`
+      );
+    }
+  }
+
+  /**
+   * Fallback search using in-memory cosine similarity. Only valid for
+   * `distance: "cosine"`; see {@link assertFallbackSupportsDistance}.
    */
   private async searchFallback(query: TypedArray, options: VectorSearchOptions<Metadata>) {
+    this.assertFallbackSupportsDistance();
     const { topK = 10, filter, scoreThreshold = 0 } = options;
     const allRows = (await this.getAll()) || [];
     const results: Array<Entity & { score: number }> = [];
@@ -364,9 +398,11 @@ export class PostgresVectorStorage<
   }
 
   /**
-   * Fallback hybrid search
+   * Fallback hybrid search. Only valid for `distance: "cosine"`; see
+   * {@link assertFallbackSupportsDistance}.
    */
   private async hybridSearchFallback(query: TypedArray, options: HybridSearchOptions<Metadata>) {
+    this.assertFallbackSupportsDistance();
     const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
 
     const allRows = (await this.getAll()) || [];
