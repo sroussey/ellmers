@@ -117,6 +117,18 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
    * opens the connection.
    */
   public async migrate(): Promise<void> {
+    // Close any prior connection before reopening — repeated migrate() /
+    // setupDatabase() calls would otherwise leak IDB handles and keep the
+    // pre-migration version alive, which can also block subsequent schema
+    // bumps from a second tab.
+    if (this.db) {
+      try {
+        this.db.close();
+      } catch {
+        // ignore — close is best-effort
+      }
+      this.db = undefined;
+    }
     const runner = new IndexedDbMigrationRunner(this.tableName);
     await runner.run(this.getMigrations());
     this.db = await new Promise<IDBDatabase>((resolve, reject) => {

@@ -36,9 +36,12 @@ const JOB_STATUS_V1: readonly string[] = [
  * Sanity check: if a developer adds a status to {@link JobStatus} without
  * also writing a follow-up migration that ALTER TYPE-adds it, queries that
  * insert the new status will fail at runtime against any DB still on v1.
- * Catch that at module-load time instead.
+ *
+ * Run lazily from {@link postgresQueueMigrations} (NOT at module import) so
+ * that consumers re-exporting this module via barrel files don't crash on
+ * import when they have no intention of running migrations.
  */
-{
+function assertJobStatusMatchesV1(): void {
   const current = new Set(Object.values(JobStatus));
   for (const v of JOB_STATUS_V1) {
     if (!current.has(v as JobStatus)) {
@@ -70,6 +73,7 @@ export function postgresQueueMigrations(
   tableName: string,
   prefixes: readonly PrefixColumn[]
 ): IMigration<Pool>[] {
+  assertJobStatusMatchesV1();
   const component = `queue:postgres:${tableName}`;
   const prefixColumnsSql = buildPrefixColumnsSql(PostgresDialect, prefixes);
   const prefixIndexPrefix = getPrefixIndexPrefix(prefixes);
