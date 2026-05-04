@@ -39,7 +39,15 @@ function translatePostgrestFilter(filter: string): string {
   let i = 0;
   const s = filter;
 
-  function parseList(closingChar: string | null): string {
+  // Each list-style construct (top-level `.or(...)`, `and(...)`, `or(...)`)
+  // joins its child expressions with its own operator. Returning each
+  // child's pre-rendered SQL fragment and joining at the right level —
+  // rather than splitting/rejoining a flat string — preserves the
+  // structure of nested groups. Importantly, an `or(...)` group nested
+  // inside an `and(...)` group keeps its `OR` operator instead of being
+  // mistakenly rewritten to `AND`. SupabaseTabularStorage emits exactly
+  // that shape for DESC keyset clauses (`and(eq.x, or(lt.y, is.null))`).
+  function parseList(closingChar: string | null, joinOp: " AND " | " OR " = " OR "): string {
     const parts: string[] = [];
     while (i < s.length) {
       const part = parseExpr();
@@ -53,7 +61,7 @@ function translatePostgrestFilter(filter: string): string {
       // Trailing whitespace is tolerated by PostgREST; skip it.
       while (i < s.length && /\s/.test(s[i])) i++;
     }
-    return parts.join(" OR ");
+    return parts.join(joinOp);
   }
 
   function parseExpr(): string {
@@ -61,18 +69,16 @@ function translatePostgrestFilter(filter: string): string {
     if (i >= s.length) return "";
     if (s.startsWith("and(", i)) {
       i += 4;
-      const inner = parseGroup(")");
-      return `(${inner.split(" OR ").join(" AND ")})`;
+      return `(${parseGroup(")", " AND ")})`;
     }
     if (s.startsWith("or(", i)) {
       i += 3;
-      const inner = parseGroup(")");
-      return `(${inner})`;
+      return `(${parseGroup(")", " OR ")})`;
     }
     return parseAtom();
   }
 
-  function parseGroup(closingChar: string): string {
+  function parseGroup(closingChar: string, joinOp: " AND " | " OR "): string {
     const parts: string[] = [];
     while (i < s.length && s[i] !== closingChar) {
       const part = parseExpr();
@@ -82,7 +88,7 @@ function translatePostgrestFilter(filter: string): string {
       }
     }
     if (s[i] === closingChar) i++;
-    return parts.join(" OR ");
+    return parts.join(joinOp);
   }
 
   function parseAtom(): string {

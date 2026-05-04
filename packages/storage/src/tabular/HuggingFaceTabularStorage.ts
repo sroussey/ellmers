@@ -22,7 +22,7 @@ import {
   TabularSubscribeOptions,
 } from "./ITabularStorage";
 import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
-import { StorageUnsupportedError } from "./StorageError";
+import { StorageUnsupportedError, StorageValidationError } from "./StorageError";
 
 export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.huggingface"
@@ -49,13 +49,17 @@ function encodeOffsetCursor(offset: number): PageCursor {
 }
 
 function decodeOffsetCursor(cursor: PageCursor | string): number {
+  // Use `StorageValidationError` (not generic `Error`) so callers that
+  // surface decode failures as 4xx responses can catch one consistent
+  // error type across all backends — matches how `decodeCursor` itself
+  // and every other cursor validator in the storage package behave.
   const payload = decodeCursor(cursor);
   if (payload.n[0] !== HF_OFFSET_CURSOR_NAME) {
-    throw new Error("Cursor was not produced by HuggingFaceTabularStorage");
+    throw new StorageValidationError("Cursor was not produced by HuggingFaceTabularStorage");
   }
   const value = payload.c[0];
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new Error("Invalid HuggingFace pagination cursor");
+    throw new StorageValidationError("Invalid HuggingFace pagination cursor");
   }
   return value;
 }

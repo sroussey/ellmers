@@ -51,38 +51,55 @@ export const TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 
 /**
  * Converts a row column value into a JSON-serialisable form for cursor
- * encoding. Dates become ISO strings; bigints become decimal strings;
- * Uint8Array values are not supported as cursor keys.
+ * encoding, and is also used by the in-memory comparator so that row
+ * values and decoded cursor values are normalised the same way before
+ * comparison. Returning `string | number | boolean | null` keeps the
+ * comparison space simple (lexicographic on strings, numeric on numbers).
+ *
+ * - `Date` becomes its ISO 8601 string. ISO 8601 sorts chronologically
+ *   under lexicographic comparison, which is the property we rely on to
+ *   compare a row's `Date` against a cursor's encoded date string.
+ * - `bigint` is rejected. JS `bigint > bigint` works numerically, but
+ *   once a bigint is encoded into the cursor as a decimal string, naive
+ *   string comparison no longer matches the numeric order (`"10" < "9"`).
+ *   Mixing the two in the in-memory comparator would silently mis-order
+ *   pages. Until the cursor format carries explicit type information,
+ *   keyset paging on a bigint column is unsupported — fail loudly so
+ *   callers either change the column type or override `getPage`.
+ * - `Uint8Array` and other object types are not orderable as cursor keys.
  */
 function toCursorValue(value: unknown): string | number | boolean | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
-  if (typeof value === "bigint") return value.toString();
   if (value instanceof Date) return value.toISOString();
+  if (typeof value === "bigint") {
+    throw new Error(
+      "bigint values are not supported as cursor keys — string-encoded bigints don't sort numerically. Use a number column or override `getPage` for this storage."
+    );
+  }
   throw new Error(
     `Cannot encode value of type ${typeof value} into a pagination cursor; use a key column with a primitive type.`
   );
 }
 
 /**
- * Compares two cursor key values using the same ordering rules as the
- * in-memory backend: nulls sort before non-nulls, then standard `<`/`>`
- * comparison. Booleans are coerced to numbers (`false` < `true`) so the
- * sort and the keyset filter agree — JS `true > false` happens to coerce
- * identically today, but pinning the rule here keeps both call sites
- * consistent. Returns -1, 0, or 1.
+ * Compares two cursor key values, normalising each side through
+ * {@link toCursorValue} first so a row's runtime value (which may be a
+ * `Date` or other rich type) is comparable against a cursor's decoded
+ * primitive. Nulls sort before non-nulls, then standard `<`/`>`. Booleans
+ * are coerced to numbers (`false` < `true`) so the sort and the keyset
+ * filter can never disagree on boolean ordering. Returns -1, 0, or 1.
  */
-function compareKeyValues(
-  a: string | number | boolean | null,
-  b: string | number | boolean | null
-): number {
-  if (a === null && b === null) return 0;
-  if (a === null) return -1;
-  if (b === null) return 1;
-  const av = typeof a === "boolean" ? Number(a) : a;
-  const bv = typeof b === "boolean" ? Number(b) : b;
+function compareKeyValues(a: unknown, b: unknown): number {
+  const an = toCursorValue(a);
+  const bn = toCursorValue(b);
+  if (an === null && bn === null) return 0;
+  if (an === null) return -1;
+  if (bn === null) return 1;
+  const av = typeof an === "boolean" ? Number(an) : an;
+  const bv = typeof bn === "boolean" ? Number(bn) : bn;
   if (av < bv) return -1;
   if (av > bv) return 1;
   return 0;
@@ -704,9 +721,11 @@ export abstract class BaseTabularStorage<
   ): Entity[] {
     rows.sort((a, b) => {
       for (const { column, direction } of orderBy) {
-        const aVal = (a[column] ?? null) as string | number | boolean | null;
-        const bVal = (b[column] ?? null) as string | number | boolean | null;
-        const cmp = compareKeyValues(aVal, bVal);
+        // `compareKeyValues` runs each side through `toCursorValue`, so
+        // we don't need (and shouldn't) coerce types here — passing the
+        // raw row value lets `Date` (and any other type the encoder
+        // supports) compare correctly against a decoded cursor value.
+        const cmp = compareKeyValues(a[column], b[column]);
         if (cmp !== 0) return direction === "ASC" ? cmp : -cmp;
       }
       return 0;
@@ -728,11 +747,11 @@ export abstract class BaseTabularStorage<
     return rows.filter((row) => {
       for (let i = 0; i < effectiveOrderBy.length; i++) {
         const { column, direction } = effectiveOrderBy[i];
-        const rowVal = row[column] as string | number | boolean | null | undefined;
-        const cmp = compareKeyValues(
-          rowVal ?? null,
-          cursor.c[i] ?? null
-        );
+        // `compareKeyValues` normalises both sides through `toCursorValue`,
+        // so passing the raw row value here lets a `Date` row column be
+        // compared against the decoded ISO string in the cursor without a
+        // type-mismatch surprise.
+        const cmp = compareKeyValues(row[column], cursor.c[i]);
         if (cmp === 0) continue;
         return direction === "ASC" ? cmp > 0 : cmp < 0;
       }
