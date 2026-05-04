@@ -5,7 +5,7 @@
  */
 
 import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage } from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe } from "vitest";

@@ -1,5 +1,37 @@
 # @workglow/cli
 
+## 0.2.28
+
+### Bug Fixes
+
+- examples imports for moved symbols
+
+### Refactors
+
+#### mcp
+
+- move MCP tasks and util from @workglow/tasks to @workglow/mcp
+
+#### browser-control
+
+- move browser-control backends from @workglow/tasks to @workglow/browser-control
+
+#### ai-provider
+
+- final trim of vendor subpaths and SDK peers
+
+#### node-llama-cpp
+
+- move provider from @workglow/ai-provider to @workglow/node-llama-cpp
+
+#### huggingface-inference
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-inference
+
+#### huggingface-transformers
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-transformers
+
 ## 0.2.27
 
 ## 0.2.26

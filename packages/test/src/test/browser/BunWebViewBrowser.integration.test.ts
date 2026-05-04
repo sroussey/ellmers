@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BunWebViewBackend } from "@workglow/tasks";
+import { BunWebViewBackend } from "@workglow/browser-control/task";
 import { describe } from "vitest";
 import { isChromeAvailable } from "./chromeAvailability";
 import { runGenericBrowserTaskTests } from "./genericBrowserTaskTests";

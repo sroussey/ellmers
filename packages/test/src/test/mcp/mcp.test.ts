@@ -9,8 +9,8 @@ import {
   McpPromptGetTask,
   McpResourceReadTask,
   McpToolCallTask,
-} from "@workglow/tasks";
-import { mcpClientFactory } from "@workglow/tasks";
+} from "@workglow/mcp/tasks";
+import { mcpClientFactory } from "@workglow/mcp/util";
 import { setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

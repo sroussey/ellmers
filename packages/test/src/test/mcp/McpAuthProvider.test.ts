@@ -5,7 +5,7 @@
  */
 
 import type { OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { CredentialStoreOAuthProvider } from "@workglow/tasks";
+import { CredentialStoreOAuthProvider } from "@workglow/mcp/util";
 import { InMemoryCredentialStore } from "@workglow/util";
 import { beforeEach, describe, expect, it } from "vitest";
 

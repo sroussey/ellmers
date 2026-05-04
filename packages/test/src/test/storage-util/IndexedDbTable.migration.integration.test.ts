@@ -8,7 +8,7 @@ import {
   dropIndexedDbTable,
   ensureIndexedDbTable,
   ExpectedIndexDefinition,
-} from "@workglow/storage";
+} from "@workglow/indexeddb/storage";
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { setLogger } from "@workglow/util";

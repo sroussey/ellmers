@@ -14,8 +14,8 @@ import {
   knowledgeBaseTableNames,
   registerKnowledgeBase,
 } from "@workglow/knowledge-base";
-import { SqliteAiVectorStorage, SqliteTabularStorage } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { SqliteAiVectorStorage, SqliteTabularStorage } from "@workglow/sqlite/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
 import type { TypedArrayConstructor } from "@workglow/util/schema";
 
 export interface CreateSqliteKnowledgeBaseOptions {

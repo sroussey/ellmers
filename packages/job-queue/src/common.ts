@@ -19,3 +19,10 @@ export * from "./limiter/EvenlySpacedRateLimiter";
 export * from "./limiter/ILimiter";
 export * from "./limiter/NullLimiter";
 export * from "./limiter/RateLimiter";
+
+export * from "./queue-storage/IQueueStorage";
+export * from "./queue-storage/InMemoryQueueStorage";
+export * from "./queue-storage/TelemetryQueueStorage";
+
+export * from "./rate-limiter-storage/IRateLimiterStorage";
+export * from "./rate-limiter-storage/InMemoryRateLimiterStorage";

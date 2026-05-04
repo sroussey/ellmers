@@ -1,0 +1,66 @@
+{
+  "name": "@workglow/browser-control",
+  "type": "module",
+  "version": "0.2.28",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/workglow.git",
+    "directory": "packages/browser-control"
+  },
+  "description": "Browser-control tasks for Workglow (Playwright, Electron, CDP, BunWebView backends).",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-js": "concurrently -c 'auto' -n 'task,task-server,task-electron' 'bun run watch-task' 'bun run watch-task-server' 'bun run watch-task-electron'",
+    "watch-task": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "watch-task-server": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/task-server.ts",
+    "watch-task-electron": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/task-electron.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "concurrently -c 'auto' -n 'task,task-server,task-electron' 'bun run build-task' 'bun run build-task-server' 'bun run build-task-electron'",
+    "build-task": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "build-task-server": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/task-server.ts",
+    "build-task-electron": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/task-electron.ts",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "import": "./dist/task.js"
+    },
+    "./task-server": {
+      "types": "./dist/task-server.d.ts",
+      "import": "./dist/task-server.js"
+    },
+    "./task-electron": {
+      "types": "./dist/task-electron.d.ts",
+      "import": "./dist/task-electron.js"
+    }
+  },
+  "peerDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*",
+    "playwright": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "optionalDependencies": {
+    "playwright": "catalog:"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,5 +1,68 @@
 # @workglow/test
 
+## 0.2.28
+
+### Refactors
+
+- update libs imports for queue/limiter symbols moved to @workglow/job-queue
+
+#### mcp
+
+- move MCP tasks and util from @workglow/tasks to @workglow/mcp
+
+#### browser-control
+
+- move browser-control backends from @workglow/tasks to @workglow/browser-control
+
+#### javascript
+
+- move JavaScriptTask + interpreter from @workglow/tasks to @workglow/javascript
+
+#### ai-provider
+
+- final trim of vendor subpaths and SDK peers
+
+#### tf-mediapipe
+
+- move provider from @workglow/ai-provider to @workglow/tf-mediapipe
+
+#### node-llama-cpp
+
+- move provider from @workglow/ai-provider to @workglow/node-llama-cpp
+
+#### huggingface-inference
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-inference
+
+#### huggingface-transformers
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-transformers
+
+#### ollama
+
+- move provider from @workglow/ai-provider to @workglow/ollama
+
+#### google-gemini
+
+- move provider from @workglow/ai-provider to @workglow/google-gemini
+
+#### openai
+
+- move provider from @workglow/ai-provider to @workglow/openai
+
+#### anthropic
+
+- move provider from @workglow/ai-provider to @workglow/anthropic
+
+#### storage
+
+- break temporary storage→job-queue cycle now that vendor queue impls are out
+
+### Chores
+
+- code-review cleanup
+- format
+
 ## 0.2.27
 
 ### Features

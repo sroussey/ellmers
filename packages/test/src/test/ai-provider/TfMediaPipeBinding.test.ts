@@ -15,15 +15,15 @@
 //   TENSORFLOW_MEDIAPIPE,
 //   TensorFlowMediaPipeProvider,
 //   type TFMPModelRecord,
-// } from "@workglow/ai-provider/tf-mediapipe";
-// import { TFMP_TASKS } from "@workglow/ai-provider/tf-mediapipe";
+// } from "@workglow/tf-mediapipe/ai-provider";
+// import { TFMP_TASKS } from "@workglow/tf-mediapipe/ai-provider";
 // import {
 //   ConcurrencyLimiter,
 //   JobQueueClient,
 //   JobQueueServer,
 //   RateLimiter,
 // } from "@workglow/job-queue";
-// import { Sqlite } from "@workglow/storage/sqlite";
+// import { Sqlite } from "@workglow/sqlite/storage";
 // import {
 //   InMemoryQueueStorage,
 //   SqliteQueueStorage,

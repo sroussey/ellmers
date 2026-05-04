@@ -5,7 +5,7 @@
  */
 
 import { RateLimiter } from "@workglow/job-queue";
-import type { IRateLimiterStorage } from "@workglow/storage";
+import type { IRateLimiterStorage } from "@workglow/job-queue";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
 interface MockRateLimiterStorage extends IRateLimiterStorage {
@@ -229,9 +229,7 @@ describe("RateLimiter", () => {
         maxExecutions: 10,
         windowSizeInSeconds: 60,
       });
-      const results = await Promise.all(
-        Array.from({ length: 100 }, () => limiter.tryAcquire())
-      );
+      const results = await Promise.all(Array.from({ length: 100 }, () => limiter.tryAcquire()));
       const successes = results.filter((r) => r !== null && r !== undefined).length;
       expect(successes).toBe(10);
     });

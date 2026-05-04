@@ -1,0 +1,68 @@
+{
+  "name": "@workglow/mcp",
+  "type": "module",
+  "version": "0.2.28",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/workglow.git",
+    "directory": "packages/mcp"
+  },
+  "description": "Model Context Protocol tasks and plumbing for Workglow.",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-js": "concurrently -c 'auto' -n 'tasks-br,tasks-n,tasks-bu,util' 'bun run watch-tasks-browser' 'bun run watch-tasks-node' 'bun run watch-tasks-bun' 'bun run watch-util'",
+    "watch-tasks-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/tasks/browser.ts",
+    "watch-tasks-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/tasks/node.ts",
+    "watch-tasks-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/tasks/bun.ts",
+    "watch-util": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/util.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "concurrently -c 'auto' -n 'tasks-br,tasks-n,tasks-bu,util' 'bun run build-tasks-browser' 'bun run build-tasks-node' 'bun run build-tasks-bun' 'bun run build-util'",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-tasks-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/tasks/browser.ts",
+    "build-tasks-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/tasks/node.ts",
+    "build-tasks-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/tasks/bun.ts",
+    "build-util": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/util.ts",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./tasks": {
+      "browser": {
+        "types": "./dist/tasks/browser.d.ts",
+        "import": "./dist/browser.js"
+      },
+      "bun": {
+        "types": "./dist/tasks/bun.d.ts",
+        "import": "./dist/bun.js"
+      },
+      "types": "./dist/tasks/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./util": {
+      "types": "./dist/util.d.ts",
+      "import": "./dist/util.js"
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:"
+  },
+  "peerDependencies": {
+    "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "devDependencies": {
+    "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

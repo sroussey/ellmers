@@ -6,7 +6,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setHftCacheDir } from "../packages/ai-provider/src/provider-hf-transformers/runtime";
+import { setHftCacheDir } from "../packages/huggingface-transformers/src/ai-provider/runtime";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 

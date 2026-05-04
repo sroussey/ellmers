@@ -9,8 +9,8 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { OPENAI } from "@workglow/ai-provider/openai";
-import { registerOpenAiInline } from "@workglow/ai-provider/openai/runtime";
+import { OPENAI } from "@workglow/openai/ai-provider";
+import { registerOpenAiInline } from "@workglow/openai/ai-provider-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 

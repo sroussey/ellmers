@@ -4,12 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  DefaultKeyValueKey,
-  DefaultKeyValueSchema,
-  SupabaseKvStorage,
-  SupabaseTabularStorage,
-} from "@workglow/storage";
+import { DefaultKeyValueKey, DefaultKeyValueSchema } from "@workglow/storage";
+import { SupabaseKvStorage, SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterAll, describe } from "vitest";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";

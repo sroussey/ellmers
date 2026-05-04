@@ -1,5 +1,49 @@
 # @workglow/ai-provider
 
+## 0.2.28
+
+### Refactors
+
+#### ai-provider
+
+- final trim of vendor subpaths and SDK peers
+
+#### chrome
+
+- move provider from @workglow/ai-provider to @workglow/chrome
+
+#### tf-mediapipe
+
+- move provider from @workglow/ai-provider to @workglow/tf-mediapipe
+
+#### node-llama-cpp
+
+- move provider from @workglow/ai-provider to @workglow/node-llama-cpp
+
+#### huggingface-inference
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-inference
+
+#### huggingface-transformers
+
+- move provider from @workglow/ai-provider to @workglow/huggingface-transformers
+
+#### ollama
+
+- move provider from @workglow/ai-provider to @workglow/ollama
+
+#### google-gemini
+
+- move provider from @workglow/ai-provider to @workglow/google-gemini
+
+#### openai
+
+- move provider from @workglow/ai-provider to @workglow/openai
+
+#### anthropic
+
+- move provider from @workglow/ai-provider to @workglow/anthropic
+
 ## 0.2.27
 
 ## 0.2.26

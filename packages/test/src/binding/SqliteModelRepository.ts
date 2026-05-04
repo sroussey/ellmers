@@ -5,7 +5,7 @@
  */
 
 import { ModelPrimaryKeyNames, ModelRecordSchema, ModelRepository } from "@workglow/ai";
-import { SqliteTabularStorage } from "@workglow/storage";
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 
 /**
  * SQLite implementation of a model repository.

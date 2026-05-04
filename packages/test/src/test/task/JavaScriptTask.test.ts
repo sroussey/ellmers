@@ -5,7 +5,7 @@
  */
 
 import { TaskGraph, TaskStatus, Workflow } from "@workglow/task-graph";
-import { javaScript, JavaScriptTask } from "@workglow/tasks";
+import { javaScript, JavaScriptTask } from "@workglow/javascript/task";
 import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";

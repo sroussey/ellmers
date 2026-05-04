@@ -1,7 +1,7 @@
 {
   "name": "workglow",
   "type": "module",
-  "version": "0.2.27",
+  "version": "0.2.28",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
@@ -151,74 +151,25 @@
   },
   "dependencies": {
     "@workglow/ai": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
+    "@workglow/anthropic": "workspace:*",
+    "@workglow/openai": "workspace:*",
+    "@workglow/google-gemini": "workspace:*",
+    "@workglow/ollama": "workspace:*",
+    "@workglow/huggingface-transformers": "workspace:*",
+    "@workglow/huggingface-inference": "workspace:*",
+    "@workglow/tf-mediapipe": "workspace:*",
+    "@workglow/chrome": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
     "@workglow/job-queue": "workspace:*",
+    "@workglow/postgres": "workspace:*",
+    "@workglow/sqlite": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
+    "@workglow/browser-control": "workspace:*",
+    "@workglow/javascript": "workspace:*",
+    "@workglow/mcp": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",
     "tslog": "^4.9.3"
-  },
-  "peerDependencies": {
-    "@modelcontextprotocol/sdk": "catalog:",
-    "@huggingface/transformers": "catalog:",
-    "@mediapipe/tasks-text": "catalog:",
-    "@mediapipe/tasks-vision": "catalog:",
-    "@mediapipe/tasks-audio": "catalog:",
-    "@mediapipe/tasks-genai": "catalog:",
-    "openai": "catalog:",
-    "@anthropic-ai/sdk": "catalog:",
-    "@google/generative-ai": "catalog:",
-    "ollama": "catalog:",
-    "node-llama-cpp": "catalog:",
-    "@sqlite.org/sqlite-wasm": "catalog:",
-    "better-sqlite3": "catalog:",
-    "pg": "catalog:",
-    "@supabase/supabase-js": "catalog:"
-  },
-  "peerDependenciesMeta": {
-    "@huggingface/transformers": {
-      "optional": true
-    },
-    "@mediapipe/tasks-text": {
-      "optional": true
-    },
-    "@mediapipe/tasks-vision": {
-      "optional": true
-    },
-    "@mediapipe/tasks-audio": {
-      "optional": true
-    },
-    "@mediapipe/tasks-genai": {
-      "optional": true
-    },
-    "openai": {
-      "optional": true
-    },
-    "@anthropic-ai/sdk": {
-      "optional": true
-    },
-    "@google/generative-ai": {
-      "optional": true
-    },
-    "ollama": {
-      "optional": true
-    },
-    "node-llama-cpp": {
-      "optional": true
-    },
-    "@sqlite.org/sqlite-wasm": {
-      "optional": true
-    },
-    "better-sqlite3": {
-      "optional": true
-    },
-    "pg": {
-      "optional": true
-    },
-    "@supabase/supabase-js": {
-      "optional": true
-    }
   }
 }

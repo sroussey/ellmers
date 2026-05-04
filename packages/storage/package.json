@@ -1,7 +1,7 @@
 {
   "name": "@workglow/storage",
   "type": "module",
-  "version": "0.2.27",
+  "version": "0.2.28",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
@@ -10,73 +10,31 @@
   "description": "Storage abstraction layer for Workglow, supporting IndexedDB, PostgreSQL, and Supabase with unified interfaces.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,sqlite-br,sqlite-n,sqlite-bu,pg-br,pg-nb' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-sqlite-browser' 'bun run watch-sqlite-node' 'bun run watch-sqlite-bun' 'bun run watch-postgres-browser' 'bun run watch-postgres-node-bun'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
-    "watch-sqlite-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/browser.ts",
-    "watch-sqlite-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/node.ts",
-    "watch-sqlite-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/bun.ts",
-    "watch-postgres-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/postgres ./src/postgres/browser.ts",
-    "watch-postgres-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/postgres ./src/postgres/node-bun.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,sqlite-br,sqlite-n,sqlite-bu,pg-br,pg-nb' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-sqlite-browser' 'bun run build-sqlite-node' 'bun run build-sqlite-bun' 'bun run build-postgres-browser' 'bun run build-postgres-node-bun'",
+    "build-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
-    "build-sqlite-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/browser.ts",
-    "build-sqlite-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/node.ts",
-    "build-sqlite-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist/sqlite ./src/sqlite/bun.ts",
-    "build-postgres-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/postgres ./src/postgres/browser.ts",
-    "build-postgres-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/postgres ./src/postgres/node-bun.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": "catalog:",
-    "@sqlite.org/sqlite-wasm": "catalog:",
-    "@supabase/supabase-js": "catalog:",
-    "@sqliteai/sqlite-vector": "^0.9.90",
-    "@workglow/util": "workspace:*",
-    "better-sqlite3": "catalog:",
-    "pg": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@electric-sql/pglite": {
-      "optional": true
-    },
-    "@sqlite.org/sqlite-wasm": {
-      "optional": true
-    },
-    "@sqliteai/sqlite-vector": {
-      "optional": true
-    },
     "@workglow/util": {
       "optional": false
-    },
-    "better-sqlite3": {
-      "optional": true
-    },
-    "pg": {
-      "optional": true
-    },
-    "@supabase/supabase-js": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@electric-sql/pglite": "catalog:",
-    "@sqlite.org/sqlite-wasm": "catalog:",
-    "@supabase/supabase-js": "catalog:",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/pg": "^8.18.0",
-    "@workglow/util": "workspace:*",
-    "better-sqlite3": "catalog:",
-    "fake-indexeddb": "^6.2.4",
-    "pg": "catalog:"
+    "@workglow/util": "workspace:*"
   },
   "exports": {
     ".": {
@@ -90,30 +48,6 @@
       },
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
-    },
-    "./sqlite": {
-      "browser": {
-        "types": "./dist/sqlite/browser.d.ts",
-        "import": "./dist/sqlite/browser.js"
-      },
-      "bun": {
-        "types": "./dist/sqlite/bun.d.ts",
-        "import": "./dist/sqlite/bun.js"
-      },
-      "types": "./dist/sqlite/node.d.ts",
-      "import": "./dist/sqlite/node.js"
-    },
-    "./postgres": {
-      "browser": {
-        "types": "./dist/postgres/browser.d.ts",
-        "import": "./dist/postgres/browser.js"
-      },
-      "bun": {
-        "types": "./dist/postgres/node-bun.d.ts",
-        "import": "./dist/postgres/node-bun.js"
-      },
-      "types": "./dist/postgres/node-bun.d.ts",
-      "import": "./dist/postgres/node-bun.js"
     }
   },
   "files": [

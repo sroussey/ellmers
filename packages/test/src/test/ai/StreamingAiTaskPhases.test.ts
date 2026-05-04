@@ -14,8 +14,8 @@ import {
 } from "@workglow/ai";
 import type { AiProviderStreamFn } from "@workglow/ai";
 import { JobQueueClient, JobQueueServer, RateLimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/storage";
-import type { IQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
+import type { IQueueStorage } from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,

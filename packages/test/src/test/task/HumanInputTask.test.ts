@@ -12,7 +12,8 @@ import {
   TaskStatus,
   Workflow,
 } from "@workglow/task-graph";
-import { HumanApprovalTask, HumanInputTask, McpElicitationConnector } from "@workglow/tasks";
+import { HumanApprovalTask, HumanInputTask } from "@workglow/tasks";
+import { McpElicitationConnector } from "@workglow/mcp/tasks";
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";

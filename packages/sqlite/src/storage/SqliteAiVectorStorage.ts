@@ -1,0 +1,655 @@
+/**
+ * @license
+ * Copyright 2025 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { Sqlite } from "@workglow/sqlite/storage";
+import type {
+  DataPortSchemaObject,
+  FromSchema,
+  TypedArray,
+  TypedArrayConstructor,
+  TypedArraySchemaOptions,
+} from "@workglow/util/schema";
+import { cosineSimilarity } from "@workglow/util/schema";
+import { SqliteTabularStorage } from "./SqliteTabularStorage";
+import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+
+/**
+ * Maps TypedArray constructor types to their sqlite-vector encoding function names
+ * and corresponding distance metric types.
+ */
+const VECTOR_TYPE_MAP: Record<string, string> = {
+  Float32Array: "f32",
+  Float64Array: "f32", // sqlite-vector doesn't support f64, convert to f32
+  Int8Array: "i8",
+  Uint8Array: "u8",
+  Int16Array: "f16", // approximate mapping
+};
+
+/**
+ * Gets the sqlite-vector encoding function suffix for a given TypedArray type
+ */
+function getVectorTypeSuffix(vectorCtor: TypedArrayConstructor): string {
+  return VECTOR_TYPE_MAP[vectorCtor.name] || "f32";
+}
+
+/**
+ * Gets the sqlite-vector type string for vector_init options
+ */
+function getVectorTypeOption(vectorCtor: TypedArrayConstructor): string {
+  const typeMap: Record<string, string> = {
+    Float32Array: "FLOAT32",
+    Float64Array: "FLOAT32",
+    Int8Array: "INT8",
+    Uint8Array: "UINT8",
+    Int16Array: "FLOAT16",
+  };
+  return typeMap[vectorCtor.name] || "FLOAT32";
+}
+
+/**
+ * Check if metadata matches filter
+ */
+function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
+  for (const [key, value] of Object.entries(filter)) {
+    if (metadata[key as keyof Metadata] !== value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Escape a SQL identifier (table/column name) by doubling any backtick characters,
+ * then wrapping in backticks. This prevents SQL injection via identifier names.
+ */
+function escapeIdentifier(name: string): string {
+  return "`" + name.replace(/`/g, "``") + "`";
+}
+
+/**
+ * SQLite vector storage implementation using the @sqliteai/sqlite-vector extension.
+ * Provides native vector similarity search via SQLite virtual table functions
+ * instead of in-memory brute-force search.
+ *
+ * Requirements:
+ * - @sqliteai/sqlite-vector package installed
+ * - Extension loaded via db.loadExtension(getExtensionPath())
+ *
+ * Vectors are stored as BLOBs using sqlite-vector encoding functions (vector_as_f32, etc.)
+ * and searched using vector_full_scan for efficient KNN queries.
+ *
+ * @template Schema - The schema for the vector storage
+ * @template PrimaryKeyNames - The primary key names
+ * @template VectorCtor - Constructor for stored vectors (default {@link typeof Float32Array})
+ * @template Metadata - The metadata type
+ */
+export class SqliteAiVectorStorage<
+  Schema extends DataPortSchemaObject,
+  PrimaryKeyNames extends ReadonlyArray<keyof Schema["properties"]>,
+  Metadata extends Record<string, unknown> | undefined = Record<string, unknown>,
+  Entity = FromSchema<Schema, TypedArraySchemaOptions>,
+>
+  extends SqliteTabularStorage<Schema, PrimaryKeyNames, Entity>
+  implements IVectorStorage<Metadata, Schema, Entity, PrimaryKeyNames>
+{
+  private vectorDimensions: number;
+  private readonly vectorCtor: TypedArrayConstructor;
+  private vectorPropertyName: keyof Entity;
+  private metadataPropertyName: keyof Entity | undefined;
+  private vectorTypeSuffix: string;
+  private extensionLoaded: boolean = false;
+
+  /**
+   * Creates a new SQLite AI vector storage
+   * @param dbOrPath - Either a Database instance or a path to the SQLite database file
+   * @param table - The name of the table to use for storage
+   * @param schema - The schema for the entity
+   * @param primaryKeyNames - Array of property names forming the primary key
+   * @param indexes - Array of columns to index
+   * @param dimensions - The number of dimensions of the vector
+   * @param vectorCtor - TypedArray constructor for stored vectors (e.g. {@link Float32Array})
+   */
+  constructor(
+    dbOrPath: string | Sqlite.Database,
+    table: string = "vectors",
+    schema: Schema,
+    primaryKeyNames: PrimaryKeyNames,
+    indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
+    dimensions: number,
+    vectorCtor: TypedArrayConstructor = Float32Array
+  ) {
+    super(dbOrPath, table, schema, primaryKeyNames, indexes);
+
+    this.vectorDimensions = dimensions;
+    this.vectorCtor = vectorCtor;
+    this.vectorTypeSuffix = getVectorTypeSuffix(vectorCtor);
+
+    // Cache vector and metadata property names from schema
+    const vectorProp = getVectorProperty(schema);
+    if (!vectorProp) {
+      throw new Error("Schema must have a property with type array and format TypedArray");
+    }
+    this.vectorPropertyName = vectorProp as keyof Entity;
+    this.metadataPropertyName = getMetadataProperty(schema) as keyof Entity | undefined;
+  }
+
+  getVectorDimensions(): number {
+    return this.vectorDimensions;
+  }
+
+  /**
+   * Load the sqlite-vector extension and initialize vector indexing on the vector column.
+   * Extension loading is best-effort: if unavailable, operations fall back to in-memory search.
+   */
+  public override async setupDatabase(): Promise<void> {
+    // Always create the table first via the parent class
+    await super.setupDatabase();
+
+    // Try to load the sqlite-vector extension if not already loaded
+    if (!this.extensionLoaded) {
+      try {
+        // Try to load the extension - the caller may have already loaded it
+        const { getExtensionPath } = await import("@sqliteai/sqlite-vector");
+        this.database.loadExtension(getExtensionPath());
+        this.extensionLoaded = true;
+      } catch {
+        // Extension might already be loaded by the caller; verify with vector_version()
+        try {
+          this.database.exec("SELECT vector_version()");
+          this.extensionLoaded = true;
+        } catch {
+          // Extension is unavailable; operations will fall back to in-memory search
+        }
+      }
+    }
+
+    // Initialize the vector column for sqlite-vector indexing (only if extension is available)
+    if (this.extensionLoaded) {
+      const vectorCol = String(this.vectorPropertyName);
+      const vectorType = getVectorTypeOption(this.vectorCtor);
+      try {
+        this.database
+          .prepare("SELECT vector_init(?, ?, ?)")
+          .run(
+            this.table,
+            vectorCol,
+            `dimension=${this.vectorDimensions},type=${vectorType},distance=COSINE`
+          );
+      } catch {
+        // vector_init may fail if already initialized, that's OK
+      }
+    }
+  }
+
+  /**
+   * Encode a vector as a BLOB using sqlite-vector functions.
+   * Returns a JSON string representation suitable for vector_as_f32() etc.
+   */
+  private encodeVectorJson(vector: TypedArray): string {
+    return `[${Array.from(vector).join(",")}]`;
+  }
+
+  /**
+   * Decode a vector BLOB from SQLite back to a TypedArray.
+   * sqlite-vector stores vectors as BLOBs, but when we SELECT them
+   * they come back as Buffer/Uint8Array. We also handle JSON string fallback.
+   */
+  private decodeVector(raw: unknown): TypedArray {
+    if (raw instanceof Uint8Array || (typeof Buffer !== "undefined" && raw instanceof Buffer)) {
+      // Normalize to a Uint8Array view so we respect byteOffset/byteLength for Buffer as well.
+      const view =
+        raw instanceof Uint8Array
+          ? raw
+          : new Uint8Array(
+              (raw as Buffer).buffer,
+              (raw as Buffer).byteOffset,
+              (raw as Buffer).byteLength
+            );
+
+      if (this.vectorCtor.name === "Float32Array" || this.vectorCtor === Float32Array) {
+        return new Float32Array(view.buffer, view.byteOffset, this.vectorDimensions) as TypedArray;
+      }
+      // For other types, read as float32 and convert
+      const f32 = new Float32Array(view.buffer, view.byteOffset, this.vectorDimensions);
+      return new this.vectorCtor(Array.from(f32));
+    }
+    if (typeof raw === "string") {
+      // JSON string fallback
+      const array = JSON.parse(raw);
+      return new this.vectorCtor(array);
+    }
+    if (Array.isArray(raw)) {
+      return new this.vectorCtor(raw);
+    }
+    throw new Error(`Cannot decode vector from type: ${typeof raw}`);
+  }
+
+  /**
+   * Override jsToSqlValue to encode vectors as BLOBs via sqlite-vector functions
+   */
+  protected override jsToSqlValue(
+    column: string,
+    value: Entity[keyof Entity]
+  ): ReturnType<SqliteTabularStorage<Schema, PrimaryKeyNames, Entity>["jsToSqlValue"]> {
+    if (column === String(this.vectorPropertyName) && value != null) {
+      // For vector columns, encode as JSON string for sqlite-vector
+      const vector = value as unknown as TypedArray;
+      return this.encodeVectorJson(vector) as any;
+    }
+    return super.jsToSqlValue(column, value);
+  }
+
+  /**
+   * Override sqlToJsValue to decode vector BLOBs back to TypedArrays
+   */
+  protected override sqlToJsValue(column: string, value: any): Entity[keyof Entity] {
+    if (column === String(this.vectorPropertyName) && value != null) {
+      return this.decodeVector(value) as Entity[keyof Entity];
+    }
+    return super.sqlToJsValue(column, value);
+  }
+
+  /**
+   * Override mapTypeToSQL to use BLOB for vector columns instead of TEXT
+   */
+  protected override mapTypeToSQL(typeDef: any): string {
+    if (typeof typeDef !== "boolean" && typeDef.type === "array") {
+      const format = typeDef.format as string | undefined;
+      if (format === "TypedArray" || format?.startsWith("TypedArray:")) {
+        return "BLOB";
+      }
+    }
+    return super.mapTypeToSQL(typeDef);
+  }
+
+  /**
+   * Override put to use sqlite-vector encoding for vector data.
+   * Builds a custom INSERT OR REPLACE that wraps the vector column
+   * with vector_as_fXX() to encode as a native vector BLOB.
+   * Falls back to base class put() if the extension is not available.
+   */
+  public override async put(entity: any): Promise<Entity> {
+    if (!this.extensionLoaded) {
+      return super.put(entity);
+    }
+
+    const db = this.database;
+    const vectorCol = String(this.vectorPropertyName);
+
+    // Handle auto-generated keys (UUID generation)
+    let entityToInsert = entity;
+    if (this.hasAutoGeneratedKey() && this.autoGeneratedKeyName) {
+      const keyName = String(this.autoGeneratedKeyName);
+      const clientProvidedValue = (entity as Record<string, unknown>)[keyName];
+      const hasClientValue = clientProvidedValue !== undefined && clientProvidedValue !== null;
+      const clientProvidedKeys = this.clientProvidedKeys;
+      const autoGeneratedKeyStrategy = this.autoGeneratedKeyStrategy;
+
+      if (
+        autoGeneratedKeyStrategy === "uuid" &&
+        !hasClientValue &&
+        clientProvidedKeys !== "always"
+      ) {
+        const generatedValue = this.generateKeyValue(keyName, "uuid");
+        entityToInsert = { ...entity, [keyName]: generatedValue };
+      }
+    }
+
+    // Build column lists and values
+    const allColumns: string[] = [];
+    const placeholders: string[] = [];
+    const params: any[] = [];
+
+    // Primary key columns
+    const pkColumns = this.primaryKeyColumns() as string[];
+    for (const col of pkColumns) {
+      const autoGeneratedKeyStrategy = this.autoGeneratedKeyStrategy;
+      const isAutoKey = this.isAutoGeneratedKey(col);
+      if (isAutoKey && autoGeneratedKeyStrategy === "autoincrement") {
+        const clientProvidedKeys = this.clientProvidedKeys;
+        const clientValue = (entityToInsert as Record<string, unknown>)[col];
+        if (clientProvidedKeys === "if-missing" && clientValue != null) {
+          allColumns.push(col);
+          placeholders.push("?");
+          params.push((this as any).jsToSqlValue(col, clientValue));
+        }
+        continue;
+      }
+      allColumns.push(col);
+      placeholders.push("?");
+      params.push(this.jsToSqlValue(col, (entityToInsert as Record<string, unknown>)[col] as any));
+    }
+
+    // Value columns
+    const valueColumns = this.valueColumns() as string[];
+    for (const col of valueColumns) {
+      allColumns.push(col);
+      const value = (entityToInsert as Record<string, unknown>)[col];
+
+      if (col === vectorCol && value != null) {
+        // Use vector_as_fXX() for the vector column
+        placeholders.push(`vector_as_${this.vectorTypeSuffix}(?)`);
+        params.push(this.encodeVectorJson(value as TypedArray));
+      } else {
+        placeholders.push("?");
+        params.push(this.jsToSqlValue(col, value as any));
+      }
+    }
+
+    const columnList = allColumns.map((c) => `\`${c}\``).join(", ");
+    const placeholderList = placeholders.join(", ");
+
+    const sql = `
+      INSERT OR REPLACE INTO ${escapeIdentifier(this.table)} (${columnList})
+      VALUES (${placeholderList})
+      RETURNING *
+    `;
+
+    // Ensure all params are SQLite-compatible
+    for (let i = 0; i < params.length; i++) {
+      if (params[i] === undefined) {
+        params[i] = null;
+      } else if (params[i] !== null && typeof params[i] === "object") {
+        const p = params[i];
+        if (
+          !(p instanceof Uint8Array) &&
+          (typeof Buffer === "undefined" || !(p instanceof Buffer))
+        ) {
+          params[i] = JSON.stringify(p);
+        }
+      }
+    }
+
+    const stmt = db.prepare(sql);
+    // @ts-ignore - SQLite typing for variadic bindings
+    const updatedEntity = stmt.get(...params) as Entity;
+
+    // Convert all columns according to schema
+    const updatedRecord = updatedEntity as Record<string, unknown>;
+    for (const k in this.schema.properties) {
+      updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as any);
+    }
+
+    this.events.emit("put", updatedEntity);
+    return updatedEntity;
+  }
+
+  /**
+   * Perform similarity search using sqlite-vector's vector_full_scan.
+   * Uses native COSINE distance computation in SQLite rather than in-memory JS.
+   * Falls back to in-memory search if the extension is unavailable.
+   */
+  async similaritySearch(query: TypedArray, options: VectorSearchOptions<Metadata> = {}) {
+    if (!this.extensionLoaded) {
+      return this.searchFallback(query, options);
+    }
+
+    const { topK = 10, filter, scoreThreshold = 0 } = options;
+    const db = this.database;
+    const tableName = this.table;
+    const vectorCol = String(this.vectorPropertyName);
+    const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+
+    try {
+      const queryJson = this.encodeVectorJson(query);
+      const queryBlob = db
+        .prepare(`SELECT vector_as_${this.vectorTypeSuffix}(?) as v`)
+        .get(queryJson) as { v: Buffer };
+
+      if (filter && Object.keys(filter).length > 0) {
+        // When filtering, use streaming mode (no k parameter) so we can filter rows
+        const sql = `
+          SELECT t.*, v.distance
+          FROM ${escapeIdentifier(tableName)} AS t
+          JOIN vector_full_scan(?, ?, ?) AS v
+          ON t.rowid = v.rowid
+          ORDER BY v.distance ASC
+        `;
+        const stmt = db.prepare(sql);
+        const rows = stmt.all(tableName, vectorCol, queryBlob.v) as Array<
+          Record<string, unknown> & { distance: number }
+        >;
+
+        const results: Array<Entity & { score: number }> = [];
+        for (const row of rows) {
+          // Convert distance to similarity score (cosine distance to cosine similarity)
+          const score = 1 - row.distance;
+
+          if (score < scoreThreshold) {
+            continue;
+          }
+
+          // Convert SQL values to JS
+          const entity = { ...row } as Record<string, unknown>;
+          delete entity.distance;
+          for (const k in this.schema.properties) {
+            entity[k] = this.sqlToJsValue(k, entity[k] as any);
+          }
+
+          // Apply metadata filter (use empty object if no metadata column)
+          const metadata = metadataCol ? (entity[metadataCol] as Metadata) : ({} as Metadata);
+          if (filter && !matchesFilter(metadata, filter)) {
+            continue;
+          }
+
+          results.push({ ...entity, score } as Entity & { score: number });
+
+          if (results.length >= topK) {
+            break;
+          }
+        }
+
+        results.sort((a, b) => b.score - a.score);
+        return results.slice(0, topK);
+      }
+
+      // No filter - use top-k mode for efficiency
+      const sql = `
+        SELECT t.*, v.distance
+        FROM ${escapeIdentifier(tableName)} AS t
+        JOIN vector_full_scan(?, ?, ?, ?) AS v
+        ON t.rowid = v.rowid
+        ORDER BY v.distance ASC
+      `;
+      const stmt = db.prepare(sql);
+      const rows = stmt.all(tableName, vectorCol, queryBlob.v, topK) as Array<
+        Record<string, unknown> & { distance: number }
+      >;
+
+      const results: Array<Entity & { score: number }> = [];
+      for (const row of rows) {
+        const score = 1 - row.distance;
+
+        if (score < scoreThreshold) {
+          continue;
+        }
+
+        const entity = { ...row } as Record<string, unknown>;
+        delete entity.distance;
+        for (const k in this.schema.properties) {
+          entity[k] = this.sqlToJsValue(k, entity[k] as any);
+        }
+
+        results.push({ ...entity, score } as Entity & { score: number });
+      }
+
+      return results;
+    } catch (error) {
+      // Fall back to in-memory similarity calculation if sqlite-vector fails
+      console.warn("sqlite-vector query failed, falling back to in-memory search:", error);
+      return this.searchFallback(query, options);
+    }
+  }
+
+  /**
+   * Hybrid search combining vector similarity with text relevance.
+   * Uses sqlite-vector for the vector component and keyword matching for text.
+   * Falls back to in-memory search if the extension is unavailable.
+   */
+  async hybridSearch(query: TypedArray, options: HybridSearchOptions<Metadata>) {
+    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
+
+    if (!textQuery || textQuery.trim().length === 0) {
+      return this.similaritySearch(query, { topK, filter, scoreThreshold });
+    }
+
+    if (!this.extensionLoaded) {
+      return this.hybridSearchFallback(query, options);
+    }
+
+    const db = this.database;
+    const tableName = this.table;
+    const vectorCol = String(this.vectorPropertyName);
+    const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
+
+    try {
+      const queryJson = this.encodeVectorJson(query);
+      const queryBlob = db
+        .prepare(`SELECT vector_as_${this.vectorTypeSuffix}(?) as v`)
+        .get(queryJson) as { v: Buffer };
+
+      // Use streaming mode for hybrid search to allow text scoring on all results
+      const sql = `
+        SELECT t.*, v.distance
+        FROM ${escapeIdentifier(tableName)} AS t
+        JOIN vector_full_scan(?, ?, ?) AS v
+        ON t.rowid = v.rowid
+        ORDER BY v.distance ASC
+      `;
+      const stmt = db.prepare(sql);
+      const rows = stmt.all(tableName, vectorCol, queryBlob.v) as Array<
+        Record<string, unknown> & { distance: number }
+      >;
+
+      const queryLower = textQuery.toLowerCase();
+      const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+      const results: Array<Entity & { score: number }> = [];
+
+      for (const row of rows) {
+        const vectorScore = 1 - row.distance;
+
+        const entity = { ...row } as Record<string, unknown>;
+        delete entity.distance;
+        for (const k in this.schema.properties) {
+          entity[k] = this.sqlToJsValue(k, entity[k] as any);
+        }
+
+        const metadata = metadataCol ? (entity[metadataCol] as Metadata) : ({} as Metadata);
+
+        // Apply metadata filter
+        if (filter && !matchesFilter(metadata, filter)) {
+          continue;
+        }
+
+        // Calculate text relevance
+        const metadataText = Object.values(metadata ?? {})
+          .join(" ")
+          .toLowerCase();
+        let textScore = 0;
+        if (queryWords.length > 0) {
+          let matches = 0;
+          for (const word of queryWords) {
+            if (metadataText.includes(word)) {
+              matches++;
+            }
+          }
+          textScore = matches / queryWords.length;
+        }
+
+        const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
+
+        if (combinedScore < scoreThreshold) {
+          continue;
+        }
+
+        results.push({ ...entity, score: combinedScore } as Entity & { score: number });
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      return results.slice(0, topK);
+    } catch (error) {
+      console.warn("sqlite-vector hybrid query failed, falling back to in-memory search:", error);
+      return this.hybridSearchFallback(query, options);
+    }
+  }
+
+  /**
+   * Fallback search using in-memory cosine similarity
+   */
+  private async searchFallback(query: TypedArray, options: VectorSearchOptions<Metadata>) {
+    const { topK = 10, filter, scoreThreshold = 0 } = options;
+    const allRows = (await this.getAll()) || [];
+    const results: Array<Entity & { score: number }> = [];
+
+    for (const row of allRows) {
+      const vector = row[this.vectorPropertyName] as TypedArray;
+      const metadata = this.metadataPropertyName
+        ? (row[this.metadataPropertyName] as Metadata)
+        : ({} as Metadata);
+
+      if (filter && !matchesFilter(metadata, filter)) {
+        continue;
+      }
+
+      const score = cosineSimilarity(query, vector);
+
+      if (score >= scoreThreshold) {
+        results.push({ ...row, score } as Entity & { score: number });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, topK);
+  }
+
+  /**
+   * Fallback hybrid search using in-memory computation
+   */
+  private async hybridSearchFallback(query: TypedArray, options: HybridSearchOptions<Metadata>) {
+    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
+
+    const allRows = (await this.getAll()) || [];
+    const results: Array<Entity & { score: number }> = [];
+    const queryLower = textQuery.toLowerCase();
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+
+    for (const row of allRows) {
+      const vector = row[this.vectorPropertyName] as TypedArray;
+      const metadata = this.metadataPropertyName
+        ? (row[this.metadataPropertyName] as Metadata)
+        : ({} as Metadata);
+
+      if (filter && !matchesFilter(metadata, filter)) {
+        continue;
+      }
+
+      const vectorScore = cosineSimilarity(query, vector);
+      const metadataText = Object.values(metadata ?? {})
+        .join(" ")
+        .toLowerCase();
+      let textScore = 0;
+      if (queryWords.length > 0) {
+        let matches = 0;
+        for (const word of queryWords) {
+          if (metadataText.includes(word)) {
+            matches++;
+          }
+        }
+        textScore = matches / queryWords.length;
+      }
+
+      const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
+
+      if (combinedScore >= scoreThreshold) {
+        results.push({ ...row, score: combinedScore } as Entity & { score: number });
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, topK);
+  }
+}

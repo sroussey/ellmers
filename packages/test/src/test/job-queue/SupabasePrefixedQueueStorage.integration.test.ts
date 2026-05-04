@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SupabaseQueueStorage } from "@workglow/storage";
+import { SupabaseQueueStorage } from "@workglow/supabase/job-queue";
 import { afterAll, describe } from "vitest";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";

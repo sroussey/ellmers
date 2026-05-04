@@ -5,6 +5,7 @@
  */
 
 export * from "./tabular/BaseTabularStorage";
+export * from "./tabular/BaseSqlTabularStorage";
 export * from "./tabular/CachedTabularStorage";
 export * from "./tabular/CoveringIndexMissingError";
 export { pickCoveringIndex } from "./tabular/coveringIndexPicker";
@@ -26,16 +27,8 @@ export * from "./kv/KvStorage";
 export * from "./kv/KvViaTabularStorage";
 export * from "./kv/TelemetryKvStorage";
 
-export * from "./queue/InMemoryQueueStorage";
-export * from "./queue/IQueueStorage";
-export * from "./queue/TelemetryQueueStorage";
-
-export * from "./queue-limiter/InMemoryRateLimiterStorage";
-export * from "./queue-limiter/IRateLimiterStorage";
-
 export * from "./util/HybridSubscriptionManager";
 export * from "./util/PollingSubscriptionManager";
-export * from "./util/traced";
 
 export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";

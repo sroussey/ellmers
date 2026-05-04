@@ -4,13 +4,7 @@
   "files": [
     "./src/browser.ts",
     "./src/node.ts",
-    "./src/bun.ts",
-    "./src/sqlite/canonical-api.ts",
-    "./src/sqlite/browser.ts",
-    "./src/sqlite/node.ts",
-    "./src/sqlite/bun.ts",
-    "./src/postgres/browser.ts",
-    "./src/postgres/node-bun.ts"
+    "./src/bun.ts"
   ],
   "exclude": ["dist", "node_modules"],
   "compilerOptions": {

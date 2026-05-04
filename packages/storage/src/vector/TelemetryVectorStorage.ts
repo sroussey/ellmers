@@ -16,7 +16,7 @@ import type {
   SimplifyPrimaryKey,
 } from "../tabular/ITabularStorage";
 import { TelemetryTabularStorage } from "../tabular/TelemetryTabularStorage";
-import { traced } from "../util/traced";
+import { traced } from "@workglow/util";
 import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
 
 /**

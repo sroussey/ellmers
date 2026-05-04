@@ -6,7 +6,7 @@
 
 import "fake-indexeddb/auto";
 
-import { IndexedDbVectorStorage } from "@workglow/storage";
+import { IndexedDbVectorStorage } from "@workglow/indexeddb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

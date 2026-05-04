@@ -20,7 +20,7 @@ import type {
   TabInfo,
   ElementRef,
   AriaRole,
-} from "@workglow/tasks";
+} from "@workglow/browser-control/task";
 
 export interface CallRecord {
   method: string;

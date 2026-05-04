@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SqliteAiVectorStorage } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { SqliteAiVectorStorage } from "@workglow/sqlite/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

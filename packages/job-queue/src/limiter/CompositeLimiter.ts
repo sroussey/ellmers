@@ -68,9 +68,7 @@ export class CompositeLimiter implements ILimiter {
 
   async release(token: unknown): Promise<void> {
     if (!Array.isArray(token)) return;
-    await Promise.all(
-      this.limiters.map((l, i) => l.release(token[i]).catch(() => {}))
-    );
+    await Promise.all(this.limiters.map((l, i) => l.release(token[i]).catch(() => {})));
   }
 
   async recordJobStart(): Promise<void> {

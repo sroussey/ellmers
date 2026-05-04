@@ -5,7 +5,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { PostgresKvStorage } from "@workglow/storage";
+import { PostgresKvStorage } from "@workglow/postgres/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
 import { afterAll, describe } from "vitest";

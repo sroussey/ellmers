@@ -1,5 +1,25 @@
 # @workglow/tasks
 
+## 0.2.28
+
+### Refactors
+
+#### tasks
+
+- strip MCP and browser-control auto-registration from runtime entries
+
+#### mcp
+
+- move MCP tasks and util from @workglow/tasks to @workglow/mcp
+
+#### browser-control
+
+- move browser-control backends from @workglow/tasks to @workglow/browser-control
+
+#### javascript
+
+- move JavaScriptTask + interpreter from @workglow/tasks to @workglow/javascript
+
 ## 0.2.27
 
 ## 0.2.26

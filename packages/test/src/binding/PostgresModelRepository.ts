@@ -5,7 +5,7 @@
  */
 
 import { ModelPrimaryKeyNames, ModelRecordSchema, ModelRepository } from "@workglow/ai";
-import { PostgresTabularStorage } from "@workglow/storage";
+import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { Pool } from "pg";
 
 /**

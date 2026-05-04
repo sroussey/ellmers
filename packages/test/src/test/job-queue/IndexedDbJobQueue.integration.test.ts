@@ -7,7 +7,7 @@
 import "fake-indexeddb/auto";
 
 import { RateLimiter } from "@workglow/job-queue";
-import { IndexedDbQueueStorage, IndexedDbRateLimiterStorage } from "@workglow/storage";
+import { IndexedDbQueueStorage, IndexedDbRateLimiterStorage } from "@workglow/indexeddb/job-queue";
 import { setLogger } from "@workglow/util";
 import { describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

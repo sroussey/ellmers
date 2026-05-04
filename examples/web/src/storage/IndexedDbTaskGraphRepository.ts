@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IndexedDbTabularStorage } from "@workglow/storage";
+import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import {
   TaskGraphPrimaryKeyNames,
   TaskGraphSchema,

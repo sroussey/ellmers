@@ -11,7 +11,7 @@ import {
   JobQueueServer,
 } from "@workglow/job-queue";
 import type { ILimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/storage";
+import { InMemoryQueueStorage } from "@workglow/job-queue";
 import { getTaskQueueRegistry, TaskConfigurationError } from "@workglow/task-graph";
 import type { RegisteredQueue, IExecuteContext, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";

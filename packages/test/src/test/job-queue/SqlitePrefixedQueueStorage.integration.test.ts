@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Sqlite } from "@workglow/storage/sqlite";
-import { SqliteQueueStorage } from "@workglow/storage";
+import { Sqlite } from "@workglow/sqlite/storage";
+import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { describe } from "vitest";
 import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";
 import { setLogger } from "@workglow/util";

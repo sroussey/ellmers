@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/ai-provider/ollama";
+export * from "@workglow/ollama/ai-provider";

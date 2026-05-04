@@ -7,14 +7,8 @@
 // Load adaptive first so Workflow.prototype.add/subtract/multiply/divide/sum are registered
 import "./task/adaptive";
 
-export * from "./mcp-server/getMcpServerConfig";
-export * from "./mcp-server/InMemoryMcpServerRepository";
-export * from "./mcp-server/McpServerRegistry";
-export * from "./mcp-server/McpServerRepository";
-export * from "./mcp-server/McpServerSchema";
 export * from "./task/adaptive";
 export * from "./task/ArrayTask";
-export * from "./task/browser-control";
 export * from "./task/DateFormatTask";
 export * from "./task/DebugLogTask";
 export * from "./task/DelayTask";
@@ -51,16 +45,9 @@ export * from "./task/image/threshold/ImageThresholdTask";
 export * from "./task/image/tint/ImageTintTask";
 export * from "./task/image/transparency/ImageTransparencyTask";
 export * from "./task/InputTask";
-export * from "./task/JavaScriptTask";
 export * from "./task/JsonPathTask";
 export * from "./task/JsonTask";
 export * from "./task/LambdaTask";
-export * from "./task/mcp/McpListTask";
-export * from "./task/mcp/McpPromptGetTask";
-export * from "./task/mcp/McpResourceReadTask";
-export * from "./task/mcp/McpSearchTask";
-export * from "./task/mcp/McpToolCallTask";
-export * from "./task/McpElicitationConnector";
 export * from "./task/MergeTask";
 export * from "./task/OutputTask";
 export * from "./task/RegexTask";
@@ -96,12 +83,10 @@ export * from "./task/vector/VectorNormalizeTask";
 export * from "./task/vector/VectorScaleTask";
 export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
-export * from "./util/BrowserTaskDeps";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
 
 import { TaskRegistry } from "@workglow/task-graph";
-import { registerBrowserTasks } from "./task/browser-control/register";
 import { DateFormatTask } from "./task/DateFormatTask";
 import { DebugLogTask } from "./task/DebugLogTask";
 import { DelayTask } from "./task/DelayTask";
@@ -126,15 +111,9 @@ import { ImageThresholdTask } from "./task/image/threshold/ImageThresholdTask";
 import { ImageTintTask } from "./task/image/tint/ImageTintTask";
 import { ImageTransparencyTask } from "./task/image/transparency/ImageTransparencyTask";
 import { InputTask } from "./task/InputTask";
-import { JavaScriptTask } from "./task/JavaScriptTask";
 import { JsonPathTask } from "./task/JsonPathTask";
 import { JsonTask } from "./task/JsonTask";
 import { LambdaTask } from "./task/LambdaTask";
-import { McpListTask } from "./task/mcp/McpListTask";
-import { McpPromptGetTask } from "./task/mcp/McpPromptGetTask";
-import { McpResourceReadTask } from "./task/mcp/McpResourceReadTask";
-import { McpSearchTask } from "./task/mcp/McpSearchTask";
-import { McpToolCallTask } from "./task/mcp/McpToolCallTask";
 import { MergeTask } from "./task/MergeTask";
 import { OutputTask } from "./task/OutputTask";
 import { RegexTask } from "./task/RegexTask";
@@ -182,7 +161,6 @@ export let registerCommonTasks = () => {
     HumanApprovalTask,
     HumanInputTask,
     InputTask,
-    JavaScriptTask,
     JsonTask,
     LambdaTask,
     MergeTask,
@@ -208,11 +186,6 @@ export let registerCommonTasks = () => {
     VectorNormalizeTask,
     VectorScaleTask,
     VectorSubtractTask,
-    McpToolCallTask,
-    McpResourceReadTask,
-    McpPromptGetTask,
-    McpSearchTask,
-    McpListTask,
     StringConcatTask,
     StringIncludesTask,
     StringJoinTask,
@@ -246,6 +219,5 @@ export let registerCommonTasks = () => {
     ImageTextTask,
   ];
   tasks.map(TaskRegistry.registerTask);
-  registerBrowserTasks();
   return tasks;
 };

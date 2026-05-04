@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IndexedDbQueueStorage } from "@workglow/storage";
+import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";
 import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";

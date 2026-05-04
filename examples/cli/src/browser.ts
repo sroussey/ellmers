@@ -23,12 +23,12 @@ export async function registerCliBrowserDeps(config: CliConfig): Promise<void> {
   const chromePath = config.browser?.["chrome-path"];
   // const headless = config.browser?.headless;
 
-  const { registerBrowserDeps } = await import("@workglow/tasks");
+  const { registerBrowserDeps } = await import("@workglow/browser-control/task");
 
   const profileBaseDir = path.join(path.dirname(config.directories.cache), "browser-profiles");
 
   if (backend === "bun-webview") {
-    const { BunWebViewBackend } = await import("@workglow/tasks");
+    const { BunWebViewBackend } = await import("@workglow/browser-control/task");
     registerBrowserDeps({
       createContext: (_options) => {
         return new BunWebViewBackend(chromePath);
@@ -38,7 +38,7 @@ export async function registerCliBrowserDeps(config: CliConfig): Promise<void> {
       profileStorage: buildProfileStorage(profileBaseDir),
     });
   } else if (backend === "playwright") {
-    const { PlaywrightBackend } = await import("@workglow/tasks");
+    const { PlaywrightBackend } = await import("@workglow/browser-control/task");
     registerBrowserDeps({
       createContext: (_options) => {
         const pw = new PlaywrightBackend();

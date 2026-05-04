@@ -1,5 +1,11 @@
 # @workglow/ai
 
+## 0.2.28
+
+### Refactors
+
+- update libs imports for queue/limiter symbols moved to @workglow/job-queue
+
 ## 0.2.27
 
 ### Bug Fixes

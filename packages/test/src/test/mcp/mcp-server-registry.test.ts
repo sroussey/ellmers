@@ -15,11 +15,10 @@ import {
   setGlobalMcpServerRepository,
   getMcpServerConfig,
   MCP_SERVERS,
-  McpToolCallTask,
-  McpListTask,
   mcpClientFactory,
-} from "@workglow/tasks";
-import type { McpServerRecord } from "@workglow/tasks";
+} from "@workglow/mcp/util";
+import { McpToolCallTask, McpListTask } from "@workglow/mcp/tasks";
+import type { McpServerRecord } from "@workglow/mcp/util";
 import { resolveSchemaInputs, Task } from "@workglow/task-graph";
 import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";

@@ -11,20 +11,11 @@ import "./task/image/registerImageTextRenderer.node";
 import "./util/SafeFetch.server";
 
 export * from "./common";
-export * from "./task/browser-control/PlaywrightBackend";
 export * from "./task/FileLoaderTask.server";
-export * from "./util/McpAuthProvider";
-export * from "./util/McpAuthTypes";
-export * from "./util/McpClientUtil";
-export * from "./util/McpTaskDeps";
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { registerCommonTasks as registerCommonTasksFn } from "./common";
-import { registerBrowserDepsServer, registerMcpTaskDepsServer } from "./server";
 import { FileLoaderTask } from "./task/FileLoaderTask.server";
-
-registerMcpTaskDepsServer();
-registerBrowserDepsServer();
 
 export const registerCommonTasks = () => {
   const tasks = registerCommonTasksFn();

@@ -11,26 +11,22 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import type { HfTransformersOnnxModelRecord } from "@workglow/ai-provider/hf-transformers/runtime";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   HF_TRANSFORMERS_ONNX_CPU,
   registerHuggingFaceTransformersInline,
-} from "@workglow/ai-provider/hf-transformers/runtime";
+} from "@workglow/huggingface-transformers/ai-provider-runtime";
 import {
   ConcurrencyLimiter,
   JobQueueClient,
   JobQueueServer,
   RateLimiter,
 } from "@workglow/job-queue";
-import {
-  InMemoryQueueStorage,
-  JobStatus,
-  SqliteQueueStorage,
-  SqliteRateLimiterStorage,
-} from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { InMemoryQueueStorage, JobStatus } from "@workglow/job-queue";
+import { SqliteQueueStorage, SqliteRateLimiterStorage } from "@workglow/sqlite/job-queue";
+import { Sqlite } from "@workglow/sqlite/storage";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,

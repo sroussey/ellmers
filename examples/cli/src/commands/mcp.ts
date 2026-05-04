@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { searchMcpRegistryPage } from "@workglow/tasks";
-import type { McpSearchResultItem } from "@workglow/tasks";
+import { searchMcpRegistryPage } from "@workglow/mcp/tasks";
+import type { McpSearchResultItem } from "@workglow/mcp/tasks";
 import type { Command } from "commander";
 import { editStringInExternalEditor } from "../editInEditor";
 import { loadConfig } from "../config";

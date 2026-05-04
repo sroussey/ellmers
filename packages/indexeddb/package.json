@@ -1,0 +1,74 @@
+{
+  "name": "@workglow/indexeddb",
+  "type": "module",
+  "version": "0.2.28",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/workglow.git",
+    "directory": "packages/indexeddb"
+  },
+  "description": "IndexedDB backends for @workglow/storage and @workglow/job-queue.",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun'",
+    "watch-storage-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
+    "watch-storage-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
+    "watch-jq-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
+    "watch-jq-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run build-storage-browser' 'bun run build-storage-node-bun' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
+    "build-storage-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
+    "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
+    "build-jq-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./storage": {
+      "browser": {
+        "types": "./dist/storage/browser.d.ts",
+        "import": "./dist/storage/browser.js"
+      },
+      "bun": {
+        "types": "./dist/storage/node.d.ts",
+        "import": "./dist/storage/node.js"
+      },
+      "types": "./dist/storage/node.d.ts",
+      "import": "./dist/storage/node.js"
+    },
+    "./job-queue": {
+      "browser": {
+        "types": "./dist/job-queue/browser.d.ts",
+        "import": "./dist/job-queue/browser.js"
+      },
+      "bun": {
+        "types": "./dist/job-queue/node.d.ts",
+        "import": "./dist/job-queue/node.js"
+      },
+      "types": "./dist/job-queue/node.d.ts",
+      "import": "./dist/job-queue/node.js"
+    }
+  },
+  "peerDependencies": {
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/storage": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.4",
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/storage": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,5 +1,24 @@
 # @workglow/job-queue
 
+## 0.2.28
+
+### Refactors
+
+- update libs imports for queue/limiter symbols moved to @workglow/job-queue
+
+#### util
+
+- consolidate traced helper into @workglow/util/telemetry
+
+#### job-queue
+
+- move IRateLimiterStorage + InMemory from @workglow/storage
+- move IQueueStorage + InMemory + Telemetry from @workglow/storage
+
+### Chores
+
+- format
+
 ## 0.2.27
 
 ### Bug Fixes
