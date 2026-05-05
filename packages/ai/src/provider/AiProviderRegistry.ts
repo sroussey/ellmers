@@ -6,11 +6,7 @@
 
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";
-import {
-  createServiceToken,
-  globalServiceRegistry,
-  WORKER_MANAGER,
-} from "@workglow/util/worker";
+import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
 import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
 import type { IAiExecutionStrategy, AiStrategyResolver } from "../execution/IAiExecutionStrategy";

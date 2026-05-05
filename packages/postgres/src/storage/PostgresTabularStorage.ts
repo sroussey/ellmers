@@ -22,6 +22,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -494,16 +496,13 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Stores or updates a row in the database.
-   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
-   *
-   * @param entity - The entity to store (may be missing auto-generated keys)
-   * @returns The entity with any server-generated fields updated
-   * @emits "put" event with the updated entity when successful
+   * Builds the parameterized `INSERT … ON CONFLICT … RETURNING *` SQL for a
+   * single entity, applying the auto-generated-key policy. Extracted so
+   * {@link put} and {@link putBulk} can share the column/parameter logic
+   * while routing the actual query through different connections (the pool
+   * vs. a transaction-bound client).
    */
-  async put(entity: InsertType): Promise<Entity> {
-    const db = this.db;
-
+  private buildPutSql(entity: InsertType): { sql: string; params: ValueOptionType[] } {
     // Determine which columns to include in INSERT
     const columnsToInsert: string[] = [];
     const paramsToInsert: ValueOptionType[] = [];
@@ -568,7 +567,7 @@ export class PostgresTabularStorage<
       valueColumns.length > 0
         ? `
       ON CONFLICT (${this.primaryKeyColumnList('"')}) DO UPDATE
-      SET 
+      SET
       ${(valueColumns as string[])
         .map((col) => {
           const colIdx = columnsToInsert.indexOf(String(col));
@@ -585,105 +584,367 @@ export class PostgresTabularStorage<
       RETURNING *
     `;
 
-    const params = paramsToInsert;
-    const result = await db.query(sql, params);
+    return { sql, params: paramsToInsert };
+  }
 
-    const updatedEntity = result.rows[0] as Entity;
-    // Convert blob fields from SQL to JS values
-    const updatedRecord = updatedEntity as Record<string, unknown>;
+  /** Hydrate a row returned by Postgres back into entity-shaped JS values. */
+  private hydrateRow(row: unknown): Entity {
+    const entity = row as Entity;
+    const record = entity as Record<string, unknown>;
     for (const key in this.schema.properties) {
-      updatedRecord[key] = this.sqlToJsValue(key, updatedRecord[key] as ValueOptionType);
+      record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
+    }
+    return entity;
+  }
+
+  /**
+   * Acquires a client that BEGIN/COMMIT-style transactions can safely run on.
+   *
+   * - Real `pg.Pool` exposes `connect()`, which dedicates a client for the
+   *   transaction duration.
+   * - PGlite-style single-connection wrappers (PGLitePool, raw PGlite)
+   *   serialize every `query()` through one underlying session, so issuing
+   *   the BEGIN/COMMIT pair directly on `this.db.query` is equivalent.
+   * - Anything else — a custom no-`connect()` adapter that fans queries
+   *   across sessions — would dispatch the BEGIN and the bracketed queries
+   *   to different sessions, silently breaking atomicity. We refuse to
+   *   operate on it rather than provide a false guarantee.
+   *
+   * Whitelist mirrors {@link
+   * PostgresRateLimiterStorage.tryReserveExecution}: the rate limiter has
+   * the same atomicity requirement, and divergence here would let a pool
+   * type be safe in one place and unsafe in another.
+   *
+   * Caller MUST invoke `release()` on the returned client. The no-op release
+   * for single-connection wrappers is safe.
+   */
+  private async acquireConnection(): Promise<{
+    query: Pool["query"];
+    release: () => void;
+  }> {
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+    if (supportsConnect) {
+      return await (
+        this.db as unknown as {
+          connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
+        }
+      ).connect();
     }
 
-    this.events.emit("put", updatedEntity);
+    // Without connect() we route BEGIN/COMMIT through this.db.query directly.
+    // That is only safe if every query funnels through one underlying session.
+    // Recognize:
+    //   - PGLitePool — our own wrapper class; constructor name preserved.
+    //   - PGlite     — third-party, ships minified so `constructor.name` can
+    //     be obfuscated (observed: "q"). Detect via duck-typing on methods
+    //     PGlite uniquely exposes (`waitReady` Promise + `exec`).
+    const dbAny = this.db as unknown as {
+      waitReady?: unknown;
+      exec?: unknown;
+      constructor?: { name?: string };
+    };
+    const ctorName = dbAny.constructor?.name;
+    const looksLikePGlite = typeof dbAny.exec === "function" && dbAny.waitReady !== undefined;
+    const looksLikePGLitePool = ctorName === "PGLitePool";
+    if (!looksLikePGlite && !looksLikePGLitePool) {
+      throw new Error(
+        `PostgresTabularStorage.putBulk requires a pg.Pool with connect() or a known single-connection wrapper (PGLitePool, PGlite); got ${ctorName ?? typeof this.db}. A multi-connection pool without connect() would dispatch BEGIN and the bracketed INSERTs to different sessions, breaking atomicity.`
+      );
+    }
+    return {
+      query: this.db.query.bind(this.db) as Pool["query"],
+      release: () => {},
+    };
+  }
+
+  /**
+   * Per-instance promise-chain mutex. Only meaningful on single-connection
+   * backends (PGlite / PGLitePool) — there `withTransaction` runs on the
+   * shared session and we need to keep external callers from slipping into
+   * the open transaction. On a real `pg.Pool` (anything exposing
+   * `connect()`) the mutex would serialize independent reads/writes that
+   * Postgres is happy to fan across separate pool clients, turning the
+   * pool's main benefit into a per-instance bottleneck — so we short-circuit
+   * to a no-op on that path. Real-pool isolation comes from
+   * `withTransaction` dedicating its own client via `pool.connect()`.
+   *
+   * The Proxy returned by {@link createTxView} routes back to the private
+   * `_*Internal` methods directly, so calls made *through* the `tx` handle
+   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   */
+  private mutexChain: Promise<void> = Promise.resolve();
+  private get serializeOps(): boolean {
+    return typeof (this.db as unknown as { connect?: unknown }).connect !== "function";
+  }
+  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.serializeOps) return fn();
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
+   * Used only to fail fast when `fn` captures the *original* storage instead
+   * of the `tx` handle and tries to recursively call `withTransaction` —
+   * that would deadlock against its own mutex on the PGlite path. Calls
+   * routed through `tx` hit the proxy's `withTransaction` override before
+   * reaching here.
+   */
+  private inTransaction: boolean = false;
+
+  /**
+   * Emits a `put` event. Overridden on the {@link createTxView} proxy to
+   * push into a per-transaction buffer instead, so listeners never observe
+   * rows that are about to roll back.
+   */
+  protected emitPut(entity: Entity): void {
+    this.events.emit("put", entity);
+  }
+
+  /**
+   * Stores or updates a row in the database.
+   * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
+   *
+   * @param entity - The entity to store (may be missing auto-generated keys)
+   * @returns The entity with any server-generated fields updated
+   * @emits "put" event with the updated entity when successful (deferred until
+   *        commit if inside a {@link withTransaction})
+   */
+  async put(entity: InsertType): Promise<Entity> {
+    return this.mutex(() => this._putInternal(entity));
+  }
+
+  private async _putInternal(entity: InsertType): Promise<Entity> {
+    const { sql, params } = this.buildPutSql(entity);
+    const result = await this.db.query(sql, params);
+    const updatedEntity = this.hydrateRow(result.rows[0]);
+    this.emitPut(updatedEntity);
     return updatedEntity;
   }
 
   /**
-   * Stores multiple rows in the database in a bulk operation.
-   * Uses individual put calls to ensure auto-generated keys are handled correctly.
+   * Stores multiple rows atomically inside a single `BEGIN` / `COMMIT`. All
+   * inserts share one connection, which (a) reduces pool churn vs. a
+   * `Promise.all` fan-out, (b) gives all-or-nothing semantics, and (c) lets
+   * Postgres group the writes into a single commit with one fsync rather than
+   * one per row.
    *
-   * @param entities - Array of entities to store (may be missing auto-generated keys)
-   * @returns Array of entities with any server-generated fields updated
-   * @emits "put" event for each entity stored
+   * Per-row UPSERT — instead of a multi-VALUES insert — keeps the
+   * auto-generated key policy and `RETURNING *` shape identical to {@link put}
+   * and stays correct when a batch mixes rows that include the auto-gen key
+   * with rows that omit it.
+   *
+   * `put` events are deferred until after `COMMIT` so listeners do not see
+   * rows that are about to roll back. When this call is nested inside a
+   * {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
+    return this.mutex(() => this._putBulkInternal(entities));
+  }
+
+  private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
-    // Use individual put calls to ensure auto-generated keys are handled correctly
-    return await Promise.all(entities.map((entity) => this.put(entity)));
-
-    /* Original bulk implementation - keeping for reference but using simpler approach above
-    if (entities.length === 0) return [];
-
-    const db = this.db;
-
-    // Prepare all parameters and build VALUES clause
-    const allParams: any[] = [];
-    const valuesPerRow = this.primaryKeyColumns().length + this.valueColumns().length;
-    let paramIndex = 1;
-
-    // Build the VALUES clauses - one for each entity
-    const valuesClauses = entities
-      .map((entity) => {
-        const { key, value } = this.separateKeyValueFromCombined(entity);
-        const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
-        const valueParams = this.getValueAsOrderedArray(value);
-        const entityParams = [...primaryKeyParams, ...valueParams];
-
-        // Add all parameters for this entity to the flat array
-        allParams.push(...entityParams);
-
-        // Create placeholders for this row using PostgreSQL $1, $2, etc.
-        const placeholders = Array(valuesPerRow)
-          .fill(0)
-          .map(() => `$${paramIndex++}`)
-          .join(", ");
-        return `(${placeholders})`;
-      })
-      .join(", ");
-
-    const sql = `
-      INSERT INTO "${this.table}" (
-        ${this.primaryKeyColumnList('"')} ${this.valueColumnList() ? ", " + this.valueColumnList('"') : ""}
-      )
-      VALUES ${valuesClauses}
-      ${
-        !this.valueColumnList()
-          ? ""
-          : `
-      ON CONFLICT (${this.primaryKeyColumnList('"')}) DO UPDATE
-      SET 
-      ${(this.valueColumns() as string[])
-        .map((col) => {
-          // For the UPDATE part, we need to reference the excluded values
-          return `"${col}" = EXCLUDED."${col}"`;
-        })
-        .join(", ")}
-      `
+    // Already inside an outer transaction (called via the `tx` view inside
+    // `withTransaction`)? Skip our own BEGIN/COMMIT — Postgres `BEGIN`
+    // inside an active transaction is a warning + no-op, and the inner
+    // `COMMIT` would commit the OUTER transaction prematurely. Run the
+    // inserts directly on `this.db`, which the proxy has already swapped to
+    // the transaction-bound client (real pool) or the shared session
+    // (PGlite).
+    if (this.inTransaction) {
+      const updated: Entity[] = [];
+      for (const entity of entities) {
+        const { sql, params } = this.buildPutSql(entity);
+        const result = await this.db.query(sql, params);
+        updated.push(this.hydrateRow(result.rows[0]));
       }
-      RETURNING *
-    `;
-
-    const result = await db.query(sql, allParams);
-
-    const updatedEntities = result.rows.map((row) => {
-      const entity = row as Entity;
-      // Convert blob fields from SQL to JS values
-      for (const key in this.schema.properties) {
-        // @ts-ignore
-        entity[key] = this.sqlToJsValue(key, entity[key]);
-      }
-      return entity;
-    });
-
-    // Emit events for each entity
-    for (const entity of updatedEntities) {
-      this.events.emit("put", entity);
+      for (const entity of updated) this.emitPut(entity);
+      return updated;
     }
 
+    const conn = await this.acquireConnection();
+    const updatedEntities: Entity[] = [];
+    try {
+      await conn.query("BEGIN");
+      try {
+        for (const entity of entities) {
+          const { sql, params } = this.buildPutSql(entity);
+          const result = await conn.query(sql, params);
+          updatedEntities.push(this.hydrateRow(result.rows[0]));
+        }
+        await conn.query("COMMIT");
+      } catch (err) {
+        try {
+          await conn.query("ROLLBACK");
+        } catch {
+          // prefer the original error if rollback fails
+        }
+        throw err;
+      }
+    } finally {
+      conn.release();
+    }
+
+    for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;
-    */
+  }
+
+  /**
+   * Build a Proxy view of `this` for the `withTransaction` callback. The
+   * proxy:
+   *
+   *   - Swaps `db` for the transaction-bound handle so every query inside
+   *     `fn` runs on it: the dedicated client returned by `pool.connect()`
+   *     for a real `pg.Pool`, or the shared session for PGlite/PGLitePool.
+   *   - Routes any public method `foo` whose private sibling `_fooInternal`
+   *     exists to that sibling, so calls made through `tx` bypass the
+   *     mutex (PGlite path) and do not deadlock. The naming convention is
+   *     the only sync mechanism — adding a public method with a matching
+   *     `_fooInternal` is enough; no explicit map to keep in step.
+   *   - Reports `inTransaction === true`, which is what
+   *     {@link _putBulkInternal} keys off to skip its own BEGIN/COMMIT
+   *     and run on the swapped `db` directly.
+   *   - Overrides {@link emitPut} to queue events on a per-transaction
+   *     buffer; the outer `withTransaction` flushes that buffer after
+   *     `COMMIT` (or discards on `ROLLBACK`).
+   *   - Throws on nested `withTransaction` — Postgres has no autonomous
+   *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
+   */
+  private createTxView(
+    txDb: { query: Pool["query"] },
+    deferredPutEvents: Entity[]
+  ): this {
+    const target = this;
+    return new Proxy(target, {
+      get(t, prop, receiver) {
+        if (prop === "withTransaction") {
+          return () => {
+            throw new Error(
+              "PostgresTabularStorage.withTransaction does not support nesting. " +
+                "Use SAVEPOINT directly or refactor to a single transaction."
+            );
+          };
+        }
+        if (prop === "db") return txDb;
+        if (prop === "inTransaction") return true;
+        if (prop === "emitPut") {
+          return (entity: Entity) => deferredPutEvents.push(entity);
+        }
+        if (typeof prop === "string") {
+          const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
+          if (typeof internal === "function") {
+            return (...args: unknown[]) =>
+              (internal as (...a: unknown[]) => unknown).apply(receiver, args);
+          }
+        }
+        const value = Reflect.get(t, prop, receiver);
+        return typeof value === "function" ? value.bind(receiver) : value;
+      },
+    }) as this;
+  }
+
+  /**
+   * Runs `fn` inside a single Postgres transaction.
+   *
+   * **Real `pg.Pool`** — acquires a dedicated client via `pool.connect()`,
+   * runs `BEGIN`/`COMMIT`/`ROLLBACK` on that client, and routes every
+   * query inside `fn` through it. The parent storage instance keeps fanning
+   * external traffic across the pool, so external callers run *in parallel*
+   * with the open transaction (no per-instance mutex). This is the natural
+   * Postgres concurrency model.
+   *
+   * **PGlite / PGLitePool** — single underlying session: the parent's mutex
+   * is acquired for the duration of `fn` so external callers queue behind
+   * the transaction instead of slipping into it. `BEGIN`/`COMMIT` run on
+   * the shared `this.db`.
+   *
+   * `put` events emitted from inside `fn` (whether via `tx.put`,
+   * `tx.putBulk`, or any other writer) are buffered on a per-transaction
+   * queue and flushed to the parent's event emitter after `COMMIT`. If `fn`
+   * throws, the buffer is discarded along with the rolled-back rows so
+   * listeners never observe writes that did not actually commit.
+   *
+   * Recursive calls — either through the original instance or through `tx`
+   * — throw rather than reusing the outer transaction implicitly. Use
+   * SAVEPOINT directly for nested rollback boundaries.
+   */
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    const supportsConnect =
+      typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+
+    if (supportsConnect) {
+      // Real pg.Pool: dedicate a client to this transaction; the parent's
+      // pool stays available for external callers, who run in parallel on
+      // other clients. We deliberately do NOT set `this.inTransaction` here
+      // — it would make external `_putBulkInternal` calls short-circuit
+      // their own BEGIN/COMMIT even though they are not actually nested.
+      // Nested calls via a captured original `this` simply acquire another
+      // pool client and run as an independent transaction; Postgres handles
+      // the concurrency, so no nesting guard is required on this path.
+      const client = await (
+        this.db as unknown as {
+          connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
+        }
+      ).connect();
+      try {
+        return await this.runInTransaction(fn, { query: client.query.bind(client) });
+      } finally {
+        client.release();
+      }
+    }
+
+    // PGlite/PGLitePool: single underlying session. Serialize against
+    // external callers via the mutex, and set `inTransaction` so that a
+    // nested `withTransaction` invoked via the original (rather than `tx`)
+    // throws instead of deadlocking on its own mutex.
+    if (this.inTransaction) {
+      throw new Error(
+        "PostgresTabularStorage.withTransaction does not support nesting. " +
+          "Use SAVEPOINT directly or refactor to a single transaction."
+      );
+    }
+    return this.mutex(async () => {
+      this.inTransaction = true;
+      try {
+        return await this.runInTransaction(fn, { query: this.db.query.bind(this.db) });
+      } finally {
+        this.inTransaction = false;
+      }
+    });
+  }
+
+  private async runInTransaction<T>(
+    fn: (tx: this) => Promise<T>,
+    txDb: { query: Pool["query"] }
+  ): Promise<T> {
+    const deferredPutEvents: Entity[] = [];
+    await txDb.query("BEGIN");
+    let result: T;
+    try {
+      result = await fn(this.createTxView(txDb, deferredPutEvents));
+      await txDb.query("COMMIT");
+    } catch (err) {
+      try {
+        await txDb.query("ROLLBACK");
+      } catch {
+        // prefer the original error if rollback fails
+      }
+      throw err;
+    }
+    // Flush deferred events only on commit success.
+    for (const entity of deferredPutEvents) this.events.emit("put", entity);
+    return result;
   }
 
   /**
@@ -694,6 +955,10 @@ export class PostgresTabularStorage<
    * @emits "get" event with the key when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
+    return this.mutex(() => this._getInternal(key));
+  }
+
+  private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
     const db = this.db;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((discriminatorKey, i) => `"${discriminatorKey}" = $${i + 1}`)
@@ -725,6 +990,10 @@ export class PostgresTabularStorage<
    * @emits "delete" event with the key when successful
    */
   async delete(value: PrimaryKey | Entity): Promise<void> {
+    return this.mutex(() => this._deleteInternal(value));
+  }
+
+  private async _deleteInternal(value: PrimaryKey | Entity): Promise<void> {
     const db = this.db;
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const whereClauses = (this.primaryKeyColumns() as string[])
@@ -742,6 +1011,10 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getAllInternal(options));
+  }
+
+  private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
     this.validateGetAllOptions(options);
     const db = this.db;
     let sql = `SELECT * FROM "${this.table}"`;
@@ -782,6 +1055,10 @@ export class PostgresTabularStorage<
    * @emits "clearall" event when successful
    */
   async deleteAll(): Promise<void> {
+    return this.mutex(() => this._deleteAllInternal());
+  }
+
+  private async _deleteAllInternal(): Promise<void> {
     const db = this.db;
     await db.query(`DELETE FROM "${this.table}"`);
     this.events.emit("clearall");
@@ -793,6 +1070,10 @@ export class PostgresTabularStorage<
    * @returns Promise resolving to the count of stored items
    */
   async size(): Promise<number> {
+    return this.mutex(() => this._sizeInternal());
+  }
+
+  private async _sizeInternal(): Promise<number> {
     const db = this.db;
     const result = await db.query(`SELECT COUNT(*) FROM "${this.table}"`);
     return parseInt(result.rows[0].count, 10);
@@ -802,8 +1083,12 @@ export class PostgresTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    return this.mutex(() => this._countInternal(criteria));
+  }
+
+  private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      return await this.size();
+      return await this._sizeInternal();
     }
 
     this.validateQueryParams(criteria);
@@ -823,6 +1108,10 @@ export class PostgresTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getBulkInternal(offset, limit));
+  }
+
+  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `"${String(col)}"`)
@@ -856,9 +1145,73 @@ export class PostgresTabularStorage<
     whereClause: string;
     params: ValueOptionType[];
   } {
+    const built = this.buildSearchWhereWithIndex(criteria, 1);
+    return { whereClause: built.whereClause, params: built.params };
+  }
+
+  /**
+   * Cursor-paginated read with keyset predicates pushed into SQL.
+   *
+   * Goes through {@link mutex} so on the single-connection PGlite path a
+   * `getPage` issued while a `withTransaction` is in flight queues behind
+   * the transaction's `BEGIN`/`COMMIT` instead of slipping in between them
+   * on the shared session. On a real `pg.Pool`, {@link mutex} is a no-op —
+   * page reads fan out to other pool clients in parallel as expected. The
+   * Proxy returned by {@link createTxView} auto-routes to
+   * {@link _getPageInternal} via the `_*Internal` naming convention, so
+   * calls made through `tx` bypass the mutex (which the transaction holds)
+   * and run on the transaction-bound `db`.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.mutex(() => this._getPageInternal(request));
+  }
+
+  private async _getPageInternal(request: PageRequest<Entity>): Promise<Page<Entity>> {
+    return this.runSqlPage(undefined, request, this.postgresDialect());
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    return this.mutex(() => this._queryPageInternal(criteria, request));
+  }
+
+  private async _queryPageInternal(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSqlPage(criteria, request, this.postgresDialect());
+  }
+
+  private postgresDialect() {
+    return {
+      quote: '"',
+      placeholder: (index: number) => `$${index}`,
+      buildSearchWhere: (criteria: SearchCriteria<Entity>, startIndex: number) =>
+        this.buildSearchWhereWithIndex(criteria, startIndex),
+      executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
+        const result = await this.db.query(sql, params as unknown[]);
+        const rows = (result.rows ?? []) as Entity[];
+        for (const row of rows) {
+          const record = row as Record<string, unknown>;
+          for (const k in this.schema.properties) {
+            record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+          }
+        }
+        return rows;
+      },
+    };
+  }
+
+  private buildSearchWhereWithIndex(
+    criteria: SearchCriteria<Entity>,
+    startIndex: number
+  ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } {
     const conditions: string[] = [];
     const params: ValueOptionType[] = [];
-    let paramIndex = 1;
+    let paramIndex = startIndex;
 
     for (const column of Object.keys(criteria) as Array<keyof Entity>) {
       if (!(column in this.schema.properties)) {
@@ -884,6 +1237,7 @@ export class PostgresTabularStorage<
     return {
       whereClause: conditions.join(" AND "),
       params,
+      nextIndex: paramIndex,
     };
   }
 
@@ -894,6 +1248,10 @@ export class PostgresTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    return this.mutex(() => this._deleteSearchInternal(criteria));
+  }
+
+  private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
     if (criteriaKeys.length === 0) {
       return;
@@ -913,6 +1271,13 @@ export class PostgresTabularStorage<
    * @returns Array of matching entities or undefined if no matches found
    */
   async query(
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
+  ): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._queryInternal(criteria, options));
+  }
+
+  private async _queryInternal(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
@@ -964,6 +1329,13 @@ export class PostgresTabularStorage<
    * @throws {CoveringIndexMissingError} when no registered index covers the query
    */
   override async queryIndex<K extends keyof Entity & string>(
+    criteria: SearchCriteria<Entity>,
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): Promise<Pick<Entity, K>[]> {
+    return this.mutex(() => this._queryIndexInternal(criteria, options));
+  }
+
+  private async _queryIndexInternal<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {

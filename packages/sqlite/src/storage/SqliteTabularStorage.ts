@@ -22,6 +22,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -382,12 +384,18 @@ export class SqliteTabularStorage<
   }
 
   /**
-   * Stores a key-value pair in the database
-   * @param entity - The entity to store (may be missing auto-generated keys)
-   * @returns The entity with any server-generated fields updated
-   * @emits 'put' event when successful
+   * Synchronously inserts a single entity using prepared `INSERT OR REPLACE …
+   * RETURNING *`. Extracted so {@link putBulk} can call it inside a single
+   * `db.transaction(...)` — better-sqlite3 transactions require a sync body,
+   * and every step here (key generation, statement prep, bind, RETURNING) is
+   * synchronous in our SQLite drivers.
+   *
+   * @param entity - The entity to insert (may be missing auto-generated keys)
+   * @param emitEvent - When false, suppresses the `put` event so the caller
+   *                    can defer emission until the surrounding transaction
+   *                    has actually committed.
    */
-  async put(entity: InsertType): Promise<Entity> {
+  private executePutSync(entity: InsertType, emitEvent: boolean = true): Entity {
     const db = this.db;
     let entityToInsert = entity as unknown as Entity;
 
@@ -570,96 +578,191 @@ export class SqliteTabularStorage<
       updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as ValueOptionType);
     }
 
-    this.events.emit("put", updatedEntity);
+    if (emitEvent) this.emitPut(updatedEntity);
     return updatedEntity;
   }
 
   /**
-   * Stores multiple key-value pairs in the database in a bulk operation
-   * @param entities - Array of entities to store (may be missing auto-generated keys)
-   * @returns Array of entities with any server-generated fields updated
-   * @emits 'put' event for each entity stored
+   * Emits a `put` event. Overridden on the {@link createTxView} proxy to push
+   * into a per-transaction buffer instead, so listeners never observe rows
+   * that are about to roll back.
+   */
+  protected emitPut(entity: Entity): void {
+    this.events.emit("put", entity);
+  }
+
+  /**
+   * Stores a key-value pair in the database
+   * @param entity - The entity to store (may be missing auto-generated keys)
+   * @returns The entity with any server-generated fields updated
+   * @emits 'put' event when successful (deferred until commit if inside withTransaction)
+   */
+  async put(entity: InsertType): Promise<Entity> {
+    return this.mutex(() => this._putInternal(entity));
+  }
+
+  private async _putInternal(entity: InsertType): Promise<Entity> {
+    return this.executePutSync(entity);
+  }
+
+  /**
+   * Stores multiple entities in a single SQL transaction.
+   *
+   * Wrapping the per-row `INSERT OR REPLACE … RETURNING *` calls in
+   * {@link Sqlite.Database.transaction} collapses N fsyncs into one
+   * `COMMIT`, which is the dominant cost of SQLite writes — typically a
+   * 100×–1000× speedup over Promise-fanned individual inserts.
+   *
+   * `put` events are deferred until after the transaction commits so listeners
+   * never observe rows that are about to roll back. When this call is nested
+   * inside a {@link withTransaction}, deferral extends to that outer commit.
    */
   async putBulk(entities: InsertType[]): Promise<Entity[]> {
+    return this.mutex(() => this._putBulkInternal(entities));
+  }
+
+  private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
-    // Use individual put calls to ensure auto-generated keys are handled correctly
-    // Each put() call will handle auto-generated keys appropriately
-    return await Promise.all(entities.map((entity) => this.put(entity)));
-
-    /* Original bulk implementation - keeping for reference but using simpler approach above
-    const db = this.db;
-
-    // For SQLite bulk inserts with RETURNING, we need to do them individually
-    // or use a transaction with multiple INSERT statements
     const updatedEntities: Entity[] = [];
-
-    // Use a transaction for better performance
-    const transaction = db.transaction((entitiesToInsert: any[]) => {
-      for (const entity of entitiesToInsert) {
-        const { key, value } = this.separateKeyValueFromCombined(entity);
-        const sql = `
-          INSERT OR REPLACE INTO \`${
-            this.table
-          }\` (${this.primaryKeyColumnList()} ${this.valueColumnList() ? ", " + this.valueColumnList() : ""})
-          VALUES (
-            ${this.primaryKeyColumns()
-              .map(() => "?")
-              .join(", ")}
-            ${
-              this.valueColumns().length > 0
-                ? ", " +
-                  this.valueColumns()
-                    .map(() => "?")
-                    .join(", ")
-                : ""
-            }
-          )
-          RETURNING *
-        `;
-        const stmt = db.prepare(sql);
-        const primaryKeyParams = this.getPrimaryKeyAsOrderedArray(key);
-        const valueParams = this.getValueAsOrderedArray(value);
-        const params = [...primaryKeyParams, ...valueParams];
-
-        // Ensure all params are SQLite-compatible (same validation as put method)
-        for (let i = 0; i < params.length; i++) {
-          let param = params[i];
-          if (param === undefined) {
-            params[i] = null;
-          } else if (param !== null && typeof param === "object") {
-            // TypeScript now knows param is an object (not null), so we can use instanceof
-            const paramObj: object = param as object;
-            if (
-              !(paramObj instanceof Uint8Array) &&
-              (typeof Buffer === "undefined" || !(paramObj instanceof Buffer))
-            ) {
-              params[i] = JSON.stringify(paramObj) as ValueOptionType;
-            }
-          }
-        }
-
-        // @ts-ignore
-        const updatedEntity = stmt.get(...params) as Entity;
-
-        // Convert all columns according to schema
-        for (const k in this.schema.properties) {
-          // @ts-ignore
-          updatedEntity[k] = this.sqlToJsValue(k, updatedEntity[k]);
-        }
-
-        updatedEntities.push(updatedEntity);
+    const transaction = this.db.transaction((items: InsertType[]) => {
+      for (const item of items) {
+        updatedEntities.push(this.executePutSync(item, false));
       }
     });
-
     transaction(entities);
 
-    for (const entity of updatedEntities) {
-      this.events.emit("put", entity);
-    }
-
+    for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;
-    */
+  }
+
+  /**
+   * Per-instance promise-chain mutex. Every public read/write method awaits
+   * the previous holder before running and yields the lock when it settles;
+   * `withTransaction` holds it for the duration of the user's callback so
+   * concurrent calls from outside `fn` queue behind the transaction instead
+   * of slipping into it.
+   *
+   * The Proxy returned by {@link createTxView} routes back to the private
+   * `_*Internal` methods directly, so calls made *through* the `tx` handle
+   * inside `fn` do not deadlock against the mutex held by `withTransaction`.
+   */
+  private mutexChain: Promise<void> = Promise.resolve();
+  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Build a Proxy view of `this` for the `withTransaction` callback. The
+   * proxy:
+   *
+   *   - Routes any public method `foo` whose private sibling `_fooInternal`
+   *     exists to that sibling, so calls made *through* `tx` bypass the
+   *     mutex held by `withTransaction` and do not deadlock. The naming
+   *     convention is the only sync mechanism — adding a new public method
+   *     with a matching `_fooInternal` is enough; no map to keep in step.
+   *   - Overrides {@link emitPut} so events emitted inside `fn` queue on a
+   *     per-transaction buffer instead of firing immediately, then get
+   *     flushed by `withTransaction` after `COMMIT` (or discarded on
+   *     `ROLLBACK`).
+   *   - Throws on nested `withTransaction` — SQLite has no autonomous
+   *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
+   */
+  private createTxView(deferredPutEvents: Entity[]): this {
+    const target = this;
+    return new Proxy(target, {
+      get(t, prop, receiver) {
+        if (prop === "withTransaction") {
+          return () => {
+            throw new Error(
+              "SqliteTabularStorage.withTransaction does not support nesting. " +
+                "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
+            );
+          };
+        }
+        if (prop === "emitPut") {
+          return (entity: Entity) => deferredPutEvents.push(entity);
+        }
+        if (typeof prop === "string") {
+          const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
+          if (typeof internal === "function") {
+            return (...args: unknown[]) =>
+              (internal as (...a: unknown[]) => unknown).apply(receiver, args);
+          }
+        }
+        const value = Reflect.get(t, prop, receiver);
+        return typeof value === "function" ? value.bind(receiver) : value;
+      },
+    }) as this;
+  }
+
+  /**
+   * Runs `fn` inside a single SQLite transaction. Uses raw `BEGIN` /
+   * `COMMIT` / `ROLLBACK` rather than {@link Sqlite.Database.transaction}
+   * because `fn` is async — better-sqlite3's transaction wrapper requires a
+   * synchronous body.
+   *
+   * Concurrent ops on the same storage instance from *outside* `fn` queue
+   * on this storage's mutex until the transaction commits or rolls back, so
+   * unrelated work cannot accidentally run inside the open transaction.
+   * The `tx` handle passed to `fn` is a Proxy that routes back to internal
+   * (unlocked) implementations, so calls *through* `tx` inside `fn` do not
+   * deadlock against the mutex.
+   *
+   * Nested `withTransaction` calls on `tx` throw rather than reusing the
+   * outer transaction implicitly. Use {@link Sqlite.Database} `SAVEPOINT`s
+   * directly if you need nested rollback boundaries.
+   */
+  /**
+   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
+   * Used only to fail fast when `fn` captures the *original* storage instead
+   * of the `tx` handle and tries to recursively call `withTransaction` —
+   * that would deadlock against its own mutex. Calls routed through `tx`
+   * hit the proxy's `withTransaction` override before reaching here.
+   */
+  private inTransaction: boolean = false;
+
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    if (this.inTransaction) {
+      throw new Error(
+        "SqliteTabularStorage.withTransaction does not support nesting. " +
+          "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
+      );
+    }
+    return this.mutex(async () => {
+      const deferredPutEvents: Entity[] = [];
+      this.inTransaction = true;
+      try {
+        this.db.exec("BEGIN");
+        let result: T;
+        try {
+          result = await fn(this.createTxView(deferredPutEvents));
+          this.db.exec("COMMIT");
+        } catch (err) {
+          try {
+            this.db.exec("ROLLBACK");
+          } catch {
+            // prefer the original error if rollback fails
+          }
+          throw err;
+        }
+        // Flush deferred events only on commit success.
+        for (const entity of deferredPutEvents) this.events.emit("put", entity);
+        return result;
+      } finally {
+        this.inTransaction = false;
+      }
+    });
   }
 
   /**
@@ -669,6 +772,10 @@ export class SqliteTabularStorage<
    * @emits 'get' event when successful
    */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
+    return this.mutex(() => this._getInternal(key));
+  }
+
+  private async _getInternal(key: PrimaryKey): Promise<Entity | undefined> {
     const db = this.db;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key) => `\`${key}\` = ?`)
@@ -700,6 +807,10 @@ export class SqliteTabularStorage<
    * @emits 'delete' event when successful
    */
   async delete(key: PrimaryKey): Promise<void> {
+    return this.mutex(() => this._deleteInternal(key));
+  }
+
+  private async _deleteInternal(key: PrimaryKey): Promise<void> {
     const db = this.db;
     const whereClauses = (this.primaryKeyColumns() as string[])
       .map((key) => `${key} = ?`)
@@ -717,6 +828,10 @@ export class SqliteTabularStorage<
    * @returns Promise resolving to an array of entries or undefined if not found
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getAllInternal(options));
+  }
+
+  private async _getAllInternal(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
     this.validateGetAllOptions(options);
     const db = this.db;
     let sql = `SELECT * FROM \`${this.table}\``;
@@ -759,6 +874,10 @@ export class SqliteTabularStorage<
    * @emits 'clearall' event when successful
    */
   async deleteAll(): Promise<void> {
+    return this.mutex(() => this._deleteAllInternal());
+  }
+
+  private async _deleteAllInternal(): Promise<void> {
     const db = this.db;
     db.exec(`DELETE FROM \`${this.table}\``);
     this.events.emit("clearall");
@@ -769,6 +888,10 @@ export class SqliteTabularStorage<
    * @returns The count of entries
    */
   async size(): Promise<number> {
+    return this.mutex(() => this._sizeInternal());
+  }
+
+  private async _sizeInternal(): Promise<number> {
     const db = this.db;
     const stmt = db.prepare<unknown[], { count: number }>(`
       SELECT COUNT(*) AS count FROM \`${this.table}\`
@@ -780,8 +903,12 @@ export class SqliteTabularStorage<
    * Counts rows matching the specified search criteria.
    */
   override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    return this.mutex(() => this._countInternal(criteria));
+  }
+
+  private async _countInternal(criteria?: SearchCriteria<Entity>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      return await this.size();
+      return await this._sizeInternal();
     }
 
     this.validateQueryParams(criteria);
@@ -800,6 +927,10 @@ export class SqliteTabularStorage<
    * @returns Array of entities or undefined if no records found
    */
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getBulkInternal(offset, limit));
+  }
+
+  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `\`${String(col)}\``)
@@ -822,6 +953,72 @@ export class SqliteTabularStorage<
     }
 
     return rows;
+  }
+
+  /**
+   * Cursor-paginated read with keyset predicates pushed into SQL. Uses
+   * `LIMIT N` plus a row-value-style WHERE so the database returns at most
+   * one page worth of rows regardless of table size.
+   *
+   * Goes through the per-instance mutex so a `getPage` call issued while a
+   * `withTransaction` is in flight queues behind the transaction instead of
+   * firing a `prepare`/`stmt.all` against the shared connection between the
+   * transaction's `BEGIN` and `COMMIT`. The proxy returned by
+   * {@link createTxView} routes back to {@link _getPageInternal} directly,
+   * so calls made *through* the `tx` handle bypass the mutex (which the
+   * transaction already holds) and run on the same connection.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.mutex(() => this._getPageInternal(request));
+  }
+
+  private async _getPageInternal(request: PageRequest<Entity>): Promise<Page<Entity>> {
+    return this.runSqlPage(undefined, request, this.sqliteDialect());
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    return this.mutex(() => this._queryPageInternal(criteria, request));
+  }
+
+  private async _queryPageInternal(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSqlPage(criteria, request, this.sqliteDialect());
+  }
+
+  private sqliteDialect() {
+    return {
+      quote: "`",
+      // SQLite uses positional `?` placeholders so the index is intentionally
+      // unused. If a future contributor needs numbered placeholders (SQLite
+      // does support `?N`), update both the placeholder and any callers
+      // sharing the running paramIdx counter.
+      placeholder: (_index: number) => "?",
+      buildSearchWhere: (
+        criteria: SearchCriteria<Entity>,
+        startIndex: number
+      ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } => {
+        const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
+        return { whereClause, params, nextIndex: startIndex + params.length };
+      },
+      executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
+        const stmt = this.db.prepare(sql);
+        // @ts-ignore - generic spread on prepared statement
+        const rows = stmt.all(...params) as Entity[];
+        for (const row of rows) {
+          const record = row as Record<string, unknown>;
+          for (const k in this.schema.properties) {
+            record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+          }
+        }
+        return rows;
+      },
+    };
   }
 
   /**
@@ -869,6 +1066,10 @@ export class SqliteTabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    return this.mutex(() => this._deleteSearchInternal(criteria));
+  }
+
+  private async _deleteSearchInternal(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     const criteriaKeys = Object.keys(criteria) as Array<keyof Entity>;
     if (criteriaKeys.length === 0) {
       return;
@@ -890,6 +1091,13 @@ export class SqliteTabularStorage<
    * @returns Array of matching entities or undefined if no matches found
    */
   async query(
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
+  ): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._queryInternal(criteria, options));
+  }
+
+  private async _queryInternal(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
@@ -946,6 +1154,13 @@ export class SqliteTabularStorage<
    * @throws {CoveringIndexMissingError} when no registered index covers the query
    */
   override async queryIndex<K extends keyof Entity & string>(
+    criteria: SearchCriteria<Entity>,
+    options: CoveringIndexQueryOptions<Entity, K>
+  ): Promise<Pick<Entity, K>[]> {
+    return this.mutex(() => this._queryIndexInternal(criteria, options));
+  }
+
+  private async _queryIndexInternal<K extends keyof Entity & string>(
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {

@@ -38,9 +38,7 @@ function createDefaultTelemetryProvider(): ITelemetryProvider {
  * Registers the default telemetry provider factory on the given registry.
  * Called by `bootstrapWorkglow` / `createOrchestrationContext`.
  */
-export function registerTelemetryDefaults(
-  registry: ServiceRegistry = globalServiceRegistry
-): void {
+export function registerTelemetryDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
   registry.registerIfAbsent(TELEMETRY_PROVIDER, createDefaultTelemetryProvider, true);
 }
 

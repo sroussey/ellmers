@@ -27,7 +27,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - run: bun run build
       - name: Upload build artifacts
@@ -67,7 +71,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -91,7 +99,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -115,7 +127,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -135,7 +151,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -155,7 +175,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -179,7 +203,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -207,7 +235,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -239,7 +271,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -271,7 +307,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -299,7 +339,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -327,7 +371,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -365,7 +413,11 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned: a recent `latest` regressed the isolated-linker symlink
+          # creation for scoped packages with periods (e.g. `@sqlite.org/sqlite-wasm`),
+          # producing a tree where tsgo cannot resolve type-only imports in
+          # `packages/sqlite/src/storage/_sqlite/browser.ts`. Bump deliberately.
+          bun-version: "1.3.11"
       - run: bun i
       - name: Download Vitest coverage fragments
         run: mkdir -p coverage-parts

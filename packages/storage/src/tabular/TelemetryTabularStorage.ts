@@ -16,6 +16,8 @@ import type {
   DeleteSearchCriteria,
   InsertEntity,
   ITabularStorage,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
@@ -102,6 +104,21 @@ export class TelemetryTabularStorage<
     );
   }
 
+  getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
+    return traced("workglow.storage.tabular.getPage", this.storageName, () =>
+      this.inner.getPage(request)
+    );
+  }
+
+  queryPage(
+    criteria: SearchCriteria<Entity>,
+    request?: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    return traced("workglow.storage.tabular.queryPage", this.storageName, () =>
+      this.inner.queryPage(criteria, request)
+    );
+  }
+
   query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
@@ -134,6 +151,24 @@ export class TelemetryTabularStorage<
     options?: TabularSubscribeOptions
   ): () => void {
     return this.inner.subscribeToChanges(callback, options);
+  }
+
+  withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    // Construct a tx-bound telemetry wrapper that forwards to the inner's
+    // transaction handle (`innerTx`) — the proxy from the inner's
+    // `createTxView`. Passing the outer `this` would re-enter `inner.put()`
+    // through the public, mutex-acquiring path and deadlock against the held
+    // mutex on single-connection backends, or run on the wrong connection on
+    // real `pg.Pool`.
+    return traced("workglow.storage.tabular.withTransaction", this.storageName, () =>
+      this.inner.withTransaction((innerTx) => {
+        const txWrapper = new TelemetryTabularStorage(
+          this.storageName,
+          innerTx as ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, InsertType>
+        ) as this;
+        return fn(txWrapper);
+      })
+    );
   }
 
   setupDatabase(): Promise<void> {

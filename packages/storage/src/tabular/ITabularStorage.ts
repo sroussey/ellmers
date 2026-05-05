@@ -6,6 +6,9 @@
 
 import { EventParameters } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import type { PageCursor } from "./Cursor";
+
+export type { PageCursor } from "./Cursor";
 
 // Generic type for possible value types in the repository
 export type ValueOptionType = string | number | bigint | boolean | null | Uint8Array;
@@ -107,6 +110,28 @@ export interface OrderBy<Entity> {
 export interface QueryOptions<Entity> {
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
+  /**
+   * @deprecated Offset-based paging is unstable when rows are inserted or
+   * deleted between page fetches (entries can be skipped or duplicated).
+   * Use {@link ITabularStorage.getPage} / {@link ITabularStorage.queryPage}
+   * with a {@link PageCursor} instead.
+   *
+   * @example
+   * ```ts
+   * // Before (offset paging):
+   * const rows = await storage.getAll({ orderBy, limit: 50, offset: 100 });
+   *
+   * // After (cursor paging — also stable under concurrent writes):
+   * let cursor: PageCursor | undefined;
+   * for (let i = 0; i < 2; i++) {
+   *   const skip = await storage.getPage({ orderBy, limit: 50, cursor });
+   *   cursor = skip.nextCursor;
+   *   if (!cursor) break;
+   * }
+   * const page = await storage.getPage({ orderBy, limit: 50, cursor });
+   * const rows = page.items;
+   * ```
+   */
   readonly offset?: number;
 }
 
@@ -115,6 +140,63 @@ export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity & stri
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
   readonly offset?: number;
+}
+
+/**
+ * Request for a cursor-paginated read.
+ *
+ * Pagination is keyset-based: the next page resumes after the row encoded
+ * in `cursor`, with the primary key acting as the stable tiebreaker.
+ * This is stable under concurrent inserts and deletes — unlike offset-based
+ * paging, which can skip or duplicate rows when the underlying data
+ * shifts between calls.
+ *
+ * If `orderBy` is omitted, rows are returned in primary-key order ascending.
+ * If `orderBy` is provided, the effective ordering is `[...orderBy, ...primaryKey]`
+ * so iteration remains deterministic when sort columns contain duplicates.
+ */
+export interface PageRequest<Entity> {
+  readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
+  /** Maximum number of rows to return. Defaults to 100. */
+  readonly limit?: number;
+  /** Opaque cursor returned by a previous call; omit to start from the beginning. */
+  readonly cursor?: PageCursor;
+}
+
+/**
+ * A page of results from a cursor-paginated read.
+ *
+ * `nextCursor` is `undefined` when there are no more rows to fetch.
+ * When `nextCursor` is present, callers should pass it back via
+ * {@link PageRequest.cursor} to fetch the next page.
+ *
+ * **Termination contract.** A defined `nextCursor` does NOT guarantee
+ * additional rows exist — concurrent deletes can produce an empty page
+ * mid-iteration even though `nextCursor` was set. Loops MUST therefore
+ * terminate on either condition, not just on `nextCursor`:
+ *
+ * ```ts
+ * // CORRECT — terminates on both `nextCursor` and empty `items`:
+ * let cursor: PageCursor | undefined;
+ * do {
+ *   const page = await storage.getPage({ limit: 100, cursor });
+ *   for (const row of page.items) handle(row);
+ *   if (page.items.length === 0) break;
+ *   cursor = page.nextCursor;
+ * } while (cursor);
+ *
+ * // WRONG — can spin forever if a concurrent delete empties the next page
+ * // while leaving rows further along the cursor that get deleted in turn:
+ * while (page.nextCursor) { page = await storage.getPage({ cursor: page.nextCursor }); }
+ * ```
+ *
+ * The bundled async generators ({@link ITabularStorage.records},
+ * {@link ITabularStorage.pages}) honour this contract; reach for them
+ * instead of writing the loop manually.
+ */
+export interface Page<Entity> {
+  readonly items: ReadonlyArray<Entity>;
+  readonly nextCursor: PageCursor | undefined;
 }
 
 /**
@@ -175,6 +257,26 @@ export interface ITabularStorage<
 > {
   // Core methods
   put(value: InsertType): Promise<Entity>;
+  /**
+   * Stores multiple entities in a single bulk operation.
+   *
+   * **Ordering guarantee:** the returned array is in the same order as the
+   * input — `result[i]` always corresponds to `values[i]`. Callers may rely on
+   * this to align bulk inserts with parallel arrays (e.g. chunks paired with
+   * embeddings). Backends are responsible for preserving the order even when
+   * the underlying engine does not formally guarantee it (see each backend's
+   * implementation).
+   *
+   * **Caveat for integer auto-generated keys on remote backends.** Supplying
+   * inputs that omit a backend-assigned integer-autoincrement primary key
+   * leaves the wrapper with no key to match a returned row to a request row
+   * (UUIDs are filled in client-side, so they don't have this problem). Such
+   * inputs fall back to the server's response order, which Postgres does not
+   * formally contract for `INSERT ... RETURNING`. The fallback is reliable in
+   * practice but if `result[i] === values[i]` matters for correctness, supply
+   * the primary key on every input — for example by minting it client-side
+   * — or split the call into per-row `put`s.
+   */
   putBulk(values: InsertType[]): Promise<Entity[]>;
   get(key: PrimaryKey): Promise<Entity | undefined>;
   delete(key: PrimaryKey | Entity): Promise<void>;
@@ -211,8 +313,34 @@ export interface ITabularStorage<
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
+   * @deprecated Offset-based paging is unstable under concurrent writes.
+   *   Use {@link getPage} for stable, keyset-based pagination.
    */
   getBulk(offset: number, limit: number): Promise<Entity[] | undefined>;
+
+  /**
+   * Fetches a page of records using cursor-based (keyset) pagination.
+   *
+   * Stable under concurrent inserts and deletes: the cursor encodes the
+   * last seen primary key so the next page resumes from a precise position
+   * rather than a numeric offset that shifts as rows are added or removed.
+   *
+   * @param request - Optional ordering, limit, and cursor.
+   * @returns A {@link Page} with the rows for this page and a `nextCursor`
+   *   to use for the next call (or `undefined` when iteration is complete).
+   */
+  getPage(request?: PageRequest<Entity>): Promise<Page<Entity>>;
+
+  /**
+   * Cursor-paginated form of {@link query}.
+   *
+   * @param criteria - Object with column names as keys and values or SearchConditions
+   * @param request - Optional ordering, limit, and cursor.
+   */
+  queryPage(
+    criteria: SearchCriteria<Entity>,
+    request?: PageRequest<Entity>
+  ): Promise<Page<Entity>>;
 
   /**
    * Async generator that yields records one at a time.
@@ -253,6 +381,15 @@ export interface ITabularStorage<
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    * Uses optimized index paths when possible, falls back to full scan otherwise.
    *
+   * Implementation contract for third-party backends: when binding a
+   * `SearchCondition` value into the underlying datastore, run it
+   * through the same conversion path as a row value going *into* the
+   * store (e.g. `jsToSqlValue` for SQL backends — Date → ISO string,
+   * etc.). The cursor pagination machinery in {@link getPage} relies
+   * on this round-trip to compare a row's stored representation
+   * against a cursor's decoded value; any backend that skips the
+   * conversion would silently mis-page on Date or other rich types.
+   *
    * @param criteria - Object with column names as keys and values or SearchConditions
    * @param options - Optional ordering, limit, and offset options
    * @returns Array of matching entities or undefined if no matches found
@@ -288,6 +425,68 @@ export interface ITabularStorage<
   ): () => void;
 
   /**
+   * Runs `fn` inside a single transaction. If `fn` throws, all writes performed
+   * inside it are rolled back; otherwise they commit atomically. Mutation
+   * events (e.g. `put`) emitted inside `fn` are buffered and delivered after
+   * the transaction commits, so listeners never observe rows that are about
+   * to roll back.
+   *
+   * Backends differ in how strong the guarantee is:
+   *   - **SQLite**: real `BEGIN` / `COMMIT` / `ROLLBACK`.
+   *   - **PostgreSQL**: real `BEGIN` / `COMMIT` / `ROLLBACK`. On a real
+   *     `pg.Pool` (anything exposing `connect()`) the implementation
+   *     dedicates a client via `pool.connect()` and runs the transaction on
+   *     that client, leaving the parent's pool free for external traffic
+   *     in parallel. On single-connection wrappers (PGLitePool, raw PGlite)
+   *     the transaction runs on the shared session and concurrent calls on
+   *     the same instance are serialized behind a per-instance mutex so
+   *     they cannot slip into the open transaction.
+   *   - **Supabase, in-memory, file system, IndexedDB**: best-effort. The
+   *     callback runs to completion and rejection propagates, but partial
+   *     writes are not rolled back because the backend does not expose a
+   *     transaction surface usable by this API.
+   *
+   * **Concurrency contract:**
+   *   - On backends with native transaction support (SQLite, PostgreSQL),
+   *     concurrent calls on the same storage instance are isolated from the
+   *     open transaction: SQLite and the single-connection Postgres path
+   *     serialize them through a per-instance mutex; the real-pool Postgres
+   *     path runs them on independent pool clients in parallel. Either way,
+   *     unrelated writes never accidentally commit or roll back along with
+   *     `fn`.
+   *   - On best-effort backends concurrent writes have no atomicity barrier
+   *     to begin with — the contract on those backends is "runs `fn`", not
+   *     "isolates `fn`".
+   *
+   * The `tx` handle passed to `fn` is **not** the same object as `this` for
+   * backends with native transaction support — it is a Proxy that routes
+   * writes through the transaction-bound resources (the dedicated client on
+   * real `pg.Pool`, the bypass-mutex internal methods on SQLite/PGlite) and
+   * routes events through the transaction's deferred-emit queue. Callers
+   * MUST use `tx` for everything inside `fn`. Capturing the outer `this` and
+   * calling methods on it from inside `fn` will deadlock against the held
+   * mutex (single-connection backends) or run on the wrong connection
+   * (`pg.Pool`), and is unsupported.
+   *
+   * **Nested calls.** Calls made through the `tx` handle always throw —
+   * `tx.withTransaction(...)` is a hard error on every backend. Calls made
+   * through the *original* (captured `this`) handle behave per backend:
+   *   - **SQLite, single-connection Postgres** (PGlite, PGLitePool): throw,
+   *     because the backend has no autonomous `BEGIN` and reusing the open
+   *     transaction implicitly would be ambiguous.
+   *   - **Real `pg.Pool` Postgres**: acquire an *independent* client and run
+   *     as an *independent* transaction with its own commit/rollback boundary.
+   *     This is the natural Postgres concurrency model on a pool — nothing
+   *     ties the two transactions together. If you want the inner work to
+   *     roll back when the outer throws, do not use a captured `this`; use
+   *     `tx` (which throws) and a SAVEPOINT instead.
+   *
+   * Use SAVEPOINT directly if you need nested rollback boundaries within a
+   * single logical transaction.
+   */
+  withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
+
+  /**
    * Sets up the database/storage for the repository.
    * Must be called before using any other methods (except for in-memory implementations).
    * @returns Promise that resolves when setup is complete
@@ -300,6 +499,10 @@ export interface ITabularStorage<
   [Symbol.asyncDispose](): Promise<void>;
 }
 
-export type AnyTabularStorage = Omit<ITabularStorage<any, any, any, any, any>, "queryIndex"> & {
+export type AnyTabularStorage = Omit<
+  ITabularStorage<any, any, any, any, any>,
+  "queryIndex" | "withTransaction"
+> & {
   queryIndex(criteria: any, options: any): Promise<any[]>;
+  withTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T>;
 };

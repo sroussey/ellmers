@@ -8,7 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
-import { afterAll, describe } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AllTypesPrimaryKeyNames,
@@ -82,4 +82,205 @@ describe("PostgresTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  describe("withTransaction", () => {
+    async function makeTxStorage() {
+      const storage = new PostgresTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        db,
+        `tx_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    }
+
+    it("rolls back all writes when the callback throws", async () => {
+      const storage = await makeTxStorage();
+
+      await expect(
+        storage.withTransaction(async (tx) => {
+          await tx.put({ name: "a", type: "x", option: "v1", success: true });
+          await tx.put({ name: "b", type: "x", option: "v2", success: true });
+          throw new Error("boom");
+        })
+      ).rejects.toThrow("boom");
+
+      expect(await storage.get({ name: "a", type: "x" })).toBeUndefined();
+      expect(await storage.get({ name: "b", type: "x" })).toBeUndefined();
+    });
+
+    it("defers put events until COMMIT and discards them on ROLLBACK", async () => {
+      const storage = await makeTxStorage();
+      const observed: string[] = [];
+      storage.on("put", (entity) => observed.push(entity.name));
+
+      await storage.withTransaction(async (tx) => {
+        await tx.put({ name: "committed", type: "x", option: "v", success: true });
+        expect(observed).toEqual([]);
+      });
+      expect(observed).toEqual(["committed"]);
+
+      observed.length = 0;
+
+      await expect(
+        storage.withTransaction(async (tx) => {
+          await tx.put({ name: "doomed", type: "x", option: "v", success: true });
+          throw new Error("rollback");
+        })
+      ).rejects.toThrow("rollback");
+
+      expect(observed).toEqual([]);
+    });
+
+    it("supports tx.putBulk inside withTransaction without a nested BEGIN/COMMIT", async () => {
+      const storage = await makeTxStorage();
+
+      await storage.withTransaction(async (tx) => {
+        await tx.putBulk([
+          { name: "bulk1", type: "x", option: "a", success: true },
+          { name: "bulk2", type: "x", option: "b", success: true },
+        ]);
+      });
+
+      expect((await storage.get({ name: "bulk1", type: "x" }))?.option).toEqual("a");
+      expect((await storage.get({ name: "bulk2", type: "x" }))?.option).toEqual("b");
+    });
+
+    it("rolls back tx.putBulk writes when the surrounding callback throws", async () => {
+      const storage = await makeTxStorage();
+
+      await expect(
+        storage.withTransaction(async (tx) => {
+          await tx.putBulk([
+            { name: "drop1", type: "x", option: "a", success: true },
+            { name: "drop2", type: "x", option: "b", success: true },
+          ]);
+          throw new Error("rollback bulk");
+        })
+      ).rejects.toThrow("rollback bulk");
+
+      expect(await storage.get({ name: "drop1", type: "x" })).toBeUndefined();
+      expect(await storage.get({ name: "drop2", type: "x" })).toBeUndefined();
+    });
+  });
+
+  // The "real pg.Pool" path of withTransaction acquires a dedicated client via
+  // `pool.connect()` and runs BEGIN/COMMIT on that client, leaving the parent's
+  // pool free for external traffic. To exercise this code path without spinning
+  // up a real Postgres in CI, we wrap PGlite with a thin adapter that exposes
+  // `connect()`. The adapter routes every "client" query back to the same
+  // PGlite session — that's not a faithful reproduction of pg.Pool's per-client
+  // session isolation, but it is enough to verify (a) the dedicated-client
+  // code path executes, (b) BEGIN/COMMIT/ROLLBACK plumbing works, and (c) the
+  // parent's mutex is not held during `fn`, so external callers run in
+  // parallel.
+  describe("withTransaction (dedicated-client path via fake pool)", () => {
+    function makeFakePool(pglite: PGlite): unknown {
+      return new Proxy(pglite, {
+        get(target, prop, receiver) {
+          if (prop === "connect") {
+            return async () => ({
+              query: (pglite.query as (...args: unknown[]) => unknown).bind(pglite),
+              release: () => {},
+            });
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    }
+
+    async function makePoolStorage() {
+      const pglite = new PGlite();
+      const fakePool = makeFakePool(pglite) as Pool;
+      const storage = new PostgresTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        fakePool,
+        `tx_pool_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return { storage, pglite };
+    }
+
+    it("commits writes via the dedicated client", async () => {
+      const { storage, pglite } = await makePoolStorage();
+      try {
+        await storage.withTransaction(async (tx) => {
+          await tx.put({ name: "p1", type: "x", option: "v1", success: true });
+          await tx.put({ name: "p2", type: "x", option: "v2", success: true });
+        });
+        expect((await storage.get({ name: "p1", type: "x" }))?.option).toEqual("v1");
+        expect((await storage.get({ name: "p2", type: "x" }))?.option).toEqual("v2");
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("rolls back when the callback throws", async () => {
+      const { storage, pglite } = await makePoolStorage();
+      try {
+        await expect(
+          storage.withTransaction(async (tx) => {
+            await tx.put({ name: "r1", type: "x", option: "v", success: true });
+            throw new Error("boom");
+          })
+        ).rejects.toThrow("boom");
+        expect(await storage.get({ name: "r1", type: "x" })).toBeUndefined();
+      } finally {
+        await pglite.close();
+      }
+    });
+
+    it("does not block external put() on the parent's mutex while fn is awaiting", async () => {
+      // This is the property the dedicated-client path exists to provide. The
+      // parent's mutex must NOT be held while `withTransaction`'s `fn` awaits,
+      // so external callers run in parallel. We verify it by holding `fn` open
+      // until an external `storage.put()` resolves: if the mutex were held,
+      // the external put would queue and never complete before we release.
+      const { storage, pglite } = await makePoolStorage();
+      try {
+        let releaseInner!: () => void;
+        const inner = new Promise<void>((r) => {
+          releaseInner = r;
+        });
+
+        const txP = storage.withTransaction(async (tx) => {
+          await tx.put({ name: "inside-tx", type: "x", option: "tx", success: true });
+          await inner;
+        });
+
+        // Yield enough microtasks for `withTransaction` to enter `fn`.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // External put on the same instance — would deadlock against a held
+        // mutex, completes quickly when no mutex is held.
+        let externalPutDone = false;
+        const externalP = storage
+          .put({ name: "external", type: "x", option: "ext", success: true })
+          .then((r) => {
+            externalPutDone = true;
+            return r;
+          });
+
+        // Wait long enough for the external put to round-trip through PGlite.
+        await new Promise((r) => setTimeout(r, 50));
+        expect(externalPutDone).toBe(true);
+
+        releaseInner();
+        await txP;
+        await externalP;
+      } finally {
+        await pglite.close();
+      }
+    });
+  });
 });

@@ -128,3 +128,115 @@ describe("SqliteTabularStorage.queryIndex", () => {
     expect(rows).toEqual([]);
   });
 });
+
+describe("SqliteTabularStorage.withTransaction", () => {
+  async function makeStorage() {
+    const storage = new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      ":memory:",
+      `tx_test_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    await storage.setupDatabase();
+    return storage;
+  }
+
+  it("rolls back all writes when the callback throws", async () => {
+    const storage = await makeStorage();
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "a", type: "x", option: "v1", success: true });
+        await tx.put({ name: "b", type: "x", option: "v2", success: true });
+        throw new Error("boom");
+      })
+    ).rejects.toThrow("boom");
+
+    expect(await storage.get({ name: "a", type: "x" })).toBeUndefined();
+    expect(await storage.get({ name: "b", type: "x" })).toBeUndefined();
+  });
+
+  it("rejects nested withTransaction calls instead of corrupting the outer transaction", async () => {
+    const storage = await makeStorage();
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "outer", type: "x", option: "v", success: true });
+        await tx.withTransaction(async () => {
+          // unreachable
+        });
+      })
+    ).rejects.toThrow(/does not support nesting/);
+
+    // Outer transaction was rolled back as a result of the nested-call error.
+    expect(await storage.get({ name: "outer", type: "x" })).toBeUndefined();
+  });
+
+  it("defers put events until COMMIT and discards them on ROLLBACK", async () => {
+    const storage = await makeStorage();
+    const observed: string[] = [];
+    storage.on("put", (entity) => observed.push(entity.name));
+
+    await storage.withTransaction(async (tx) => {
+      await tx.put({ name: "committed", type: "x", option: "v", success: true });
+      // No events should have been observed yet
+      expect(observed).toEqual([]);
+    });
+    expect(observed).toEqual(["committed"]);
+
+    observed.length = 0;
+
+    await expect(
+      storage.withTransaction(async (tx) => {
+        await tx.put({ name: "doomed", type: "x", option: "v", success: true });
+        throw new Error("rollback");
+      })
+    ).rejects.toThrow("rollback");
+
+    // The doomed put should never have been observed by listeners.
+    expect(observed).toEqual([]);
+  });
+
+  it("serializes external put() calls behind a running withTransaction (rollback case)", async () => {
+    // The concurrency contract: while withTransaction is awaiting its callback,
+    // an unrelated `storage.put()` invoked from outside `fn` must NOT slip into
+    // the open transaction. The mutex enforces this — the external put queues
+    // until COMMIT/ROLLBACK releases the lock.
+    const storage = await makeStorage();
+
+    let releaseInner: () => void = () => {};
+    const innerCanFinish = new Promise<void>((resolve) => {
+      releaseInner = resolve;
+    });
+
+    const txPromise = storage.withTransaction(async (tx) => {
+      await tx.put({ name: "tx-row", type: "x", option: "tx", success: true });
+      // Hold the transaction open until the external caller has been queued.
+      await innerCanFinish;
+      throw new Error("rollback");
+    });
+
+    // Yield enough microtasks for the external put() to observe withTransaction's mutex hold.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const externalPut = storage.put({
+      name: "external-row",
+      type: "x",
+      option: "external",
+      success: true,
+    });
+
+    // Let the inner callback throw, triggering ROLLBACK.
+    releaseInner();
+    await expect(txPromise).rejects.toThrow("rollback");
+
+    // External put runs *after* ROLLBACK and is its own committed write.
+    await externalPut;
+
+    // tx-row was rolled back, external-row was committed independently.
+    expect(await storage.get({ name: "tx-row", type: "x" })).toBeUndefined();
+    const ext = await storage.get({ name: "external-row", type: "x" });
+    expect(ext?.option).toEqual("external");
+  });
+});

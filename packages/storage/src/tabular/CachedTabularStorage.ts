@@ -329,6 +329,47 @@ export class CachedTabularStorage<
   }
 
   /**
+   * Runs `fn` inside the durable store's transaction. The cache layer is
+   * intentionally bypassed for the transaction's duration — coordinating
+   * two-phase commit between the durable store and an in-memory cache is
+   * out of scope, and callers asking for `withTransaction` are asking for
+   * atomicity, which only the durable can provide. Inside `fn`, reads and
+   * writes go straight through the durable's transaction handle.
+   *
+   * **`tx` identity:** the handle passed to `fn` is the durable store's
+   * transaction proxy, not a `CachedTabularStorage`, despite the `(tx: this)`
+   * type. Wrapper-specific members like `tx.cache` or `tx.invalidateCache()`
+   * therefore type-check but throw at runtime — call them on the original
+   * wrapper after `withTransaction` resolves instead.
+   *
+   * **Cache freshness on commit/rollback:** any rows the transaction touched
+   * (committed inserts/updates/deletes, or rolled-back attempts that were
+   * already mirrored into the cache via earlier non-tx writes) leave the
+   * cache potentially out of step with durable. Invalidate unconditionally
+   * after `fn` resolves so the next read repopulates the cache from durable
+   * — over-invalidating on rollback is cheap and avoids leaking the
+   * rollback boundary into the cache layer. Inheriting `BaseTabularStorage`'s
+   * no-op default here would silently lose the rollback / atomicity guarantee,
+   * since the default just runs `fn(this)` against the cached wrapper itself.
+   */
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    await this.initializeCache();
+    try {
+      return await this.durable.withTransaction(
+        fn as unknown as (
+          tx: ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>
+        ) => Promise<T>
+      );
+    } finally {
+      // Conservative: forget what we cached and let subsequent reads re-warm
+      // from durable. `invalidateCache()` is a deleteAll on the cache plus a
+      // reset of the init flag, so the next read goes through `initializeCache`
+      // and rebuilds from the durable's post-commit state.
+      await this.invalidateCache();
+    }
+  }
+
+  /**
    * Invalidates the cache by clearing it and resetting initialization flag
    */
   async invalidateCache(): Promise<void> {

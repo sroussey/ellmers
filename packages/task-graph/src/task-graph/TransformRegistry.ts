@@ -26,9 +26,7 @@ export const TRANSFORM_DEFS = createServiceToken<Map<string, ITransformDef<any>>
  * Registers the transform defs map default factory on the given registry.
  * Called by `bootstrapWorkglow` and `createOrchestrationContext`.
  */
-export function registerTransformDefaults(
-  registry: ServiceRegistry = globalServiceRegistry
-): void {
+export function registerTransformDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
   registry.registerIfAbsent(
     TRANSFORM_DEFS,
     (): Map<string, ITransformDef<any>> => TransformRegistry.all,

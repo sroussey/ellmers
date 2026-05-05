@@ -20,8 +20,12 @@ import type {
   TabularEventListeners,
 } from "../tabular/ITabularStorage";
 
-export type AnyVectorStorage = Omit<IVectorStorage<any, any, any, any>, "queryIndex"> & {
+export type AnyVectorStorage = Omit<
+  IVectorStorage<any, any, any, any>,
+  "queryIndex" | "withTransaction"
+> & {
   queryIndex(criteria: any, options: any): Promise<any[]>;
+  withTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T>;
 };
 
 /**
