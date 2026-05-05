@@ -5,7 +5,6 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import type { MigrationOptions } from "../storage/IndexedDbTable";
 import { runIndexedDbMigrationGroups } from "../migrations/IndexedDbMigrationRunner";
 import { indexedDbRateLimiterMigrationGroups } from "../migrations/indexedDbRateLimiterMigrations";
 import type { PrefixColumn } from "@workglow/job-queue";
@@ -39,9 +38,14 @@ function openIndexedDbConnection(dbName: string): Promise<IDBDatabase> {
 
 /**
  * Extended options for IndexedDB rate limiter storage including prefix support.
+ *
+ * NOTE: this used to extend `MigrationOptions` (data-transformer +
+ * `allowDestructiveMigration` + progress callbacks honoured by the
+ * legacy {@link ensureIndexedDbTable} path). Once `migrate()` switched
+ * to the versioned runner those callbacks were no longer plumbed through,
+ * so the extension was dropped to avoid a misleading contract.
  */
-export interface IndexedDbRateLimiterStorageOptions
-  extends RateLimiterStorageOptions, MigrationOptions {}
+export interface IndexedDbRateLimiterStorageOptions extends RateLimiterStorageOptions {}
 
 /**
  * Execution record stored in IndexedDB.

@@ -6,7 +6,6 @@
 
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 import { HybridSubscriptionManager } from "@workglow/storage";
-import type { MigrationOptions } from "../storage/IndexedDbTable";
 import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
 import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
 import { JobStatus } from "@workglow/job-queue";
@@ -24,9 +23,17 @@ export const INDEXED_DB_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, an
 );
 
 /**
- * Extended options for IndexedDB queue storage including prefix support
+ * Extended options for IndexedDB queue storage including prefix support.
+ *
+ * NOTE: this used to extend `MigrationOptions` (data-transformer +
+ * `allowDestructiveMigration` + progress callbacks honoured by the
+ * legacy {@link ensureIndexedDbTable} path). Once `migrate()` switched
+ * to the versioned runner those callbacks were no longer plumbed through,
+ * so the extension was dropped to avoid a misleading "you can pass these
+ * and they will run" contract. If a future migration genuinely needs
+ * progress reporting, expose the relevant subset explicitly instead.
  */
-export interface IndexedDbQueueStorageOptions extends QueueStorageOptions, MigrationOptions {
+export interface IndexedDbQueueStorageOptions extends QueueStorageOptions {
   /** Enable BroadcastChannel notifications (default: true) */
   readonly useBroadcastChannel?: boolean;
   /** Backup polling interval in ms (default: 5000, 0 to disable) */
