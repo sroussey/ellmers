@@ -576,15 +576,17 @@ export class SqliteTabularStorage<
       updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as ValueOptionType);
     }
 
-    if (emitEvent) {
-      if (this.inTransaction) {
-        // Defer until the surrounding withTransaction commits (or discard on rollback)
-        this.deferredPutEvents.push(updatedEntity);
-      } else {
-        this.events.emit("put", updatedEntity);
-      }
-    }
+    if (emitEvent) this.emitPut(updatedEntity);
     return updatedEntity;
+  }
+
+  /**
+   * Emits a `put` event. Overridden on the {@link createTxView} proxy to push
+   * into a per-transaction buffer instead, so listeners never observe rows
+   * that are about to roll back.
+   */
+  protected emitPut(entity: Entity): void {
+    this.events.emit("put", entity);
   }
 
   /**
@@ -628,17 +630,7 @@ export class SqliteTabularStorage<
     });
     transaction(entities);
 
-    if (this.inTransaction) {
-      // Outer withTransaction owns event delivery; queue and let it flush
-      for (const entity of updatedEntities) {
-        this.deferredPutEvents.push(entity);
-      }
-    } else {
-      for (const entity of updatedEntities) {
-        this.events.emit("put", entity);
-      }
-    }
-
+    for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;
   }
 
@@ -669,47 +661,23 @@ export class SqliteTabularStorage<
   }
 
   /**
-   * Tracks whether this storage instance is currently inside a
-   * `withTransaction` call so we can refuse nested entry and route `put`
-   * events to a deferred queue. SQLite errors on nested `BEGIN` (it has no
-   * autonomous transactions), and silently letting the inner call's
-   * `ROLLBACK` tear down the outer transaction would be a subtle data-loss
-   * footgun.
-   */
-  private inTransaction: boolean = false;
-
-  /**
-   * `put` events emitted by writes inside an active `withTransaction` are
-   * queued here and flushed after `COMMIT` succeeds (or discarded on
-   * `ROLLBACK`), so listeners never observe rows that ultimately rolled back.
-   */
-  private deferredPutEvents: Entity[] = [];
-
-  /**
-   * Build a Proxy view of `this` that routes public-method names to their
-   * private `_*Internal` siblings, bypassing the mutex. Handed to the
-   * `withTransaction` callback so inner calls do not deadlock against the
-   * mutex held by the surrounding transaction.
+   * Build a Proxy view of `this` for the `withTransaction` callback. The
+   * proxy:
    *
-   * `withTransaction` itself is overridden on the proxy to throw — nested
-   * transactions are not supported (SQLite has no autonomous BEGIN).
+   *   - Routes any public method `foo` whose private sibling `_fooInternal`
+   *     exists to that sibling, so calls made *through* `tx` bypass the
+   *     mutex held by `withTransaction` and do not deadlock. The naming
+   *     convention is the only sync mechanism — adding a new public method
+   *     with a matching `_fooInternal` is enough; no map to keep in step.
+   *   - Overrides {@link emitPut} so events emitted inside `fn` queue on a
+   *     per-transaction buffer instead of firing immediately, then get
+   *     flushed by `withTransaction` after `COMMIT` (or discarded on
+   *     `ROLLBACK`).
+   *   - Throws on nested `withTransaction` — SQLite has no autonomous
+   *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
-  private createTxView(): this {
+  private createTxView(deferredPutEvents: Entity[]): this {
     const target = this;
-    const internalNameByPublic: Record<string, keyof this> = {
-      put: "_putInternal" as keyof this,
-      putBulk: "_putBulkInternal" as keyof this,
-      get: "_getInternal" as keyof this,
-      delete: "_deleteInternal" as keyof this,
-      getAll: "_getAllInternal" as keyof this,
-      deleteAll: "_deleteAllInternal" as keyof this,
-      size: "_sizeInternal" as keyof this,
-      count: "_countInternal" as keyof this,
-      getBulk: "_getBulkInternal" as keyof this,
-      deleteSearch: "_deleteSearchInternal" as keyof this,
-      query: "_queryInternal" as keyof this,
-      queryIndex: "_queryIndexInternal" as keyof this,
-    };
     return new Proxy(target, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
@@ -720,15 +688,18 @@ export class SqliteTabularStorage<
             );
           };
         }
-        if (typeof prop === "string" && prop in internalNameByPublic) {
-          const internalKey = internalNameByPublic[prop];
-          const internal = t[internalKey] as unknown;
+        if (prop === "emitPut") {
+          return (entity: Entity) => deferredPutEvents.push(entity);
+        }
+        if (typeof prop === "string") {
+          const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
           if (typeof internal === "function") {
-            return (internal as (...args: unknown[]) => unknown).bind(t);
+            return (...args: unknown[]) =>
+              (internal as (...a: unknown[]) => unknown).apply(receiver, args);
           }
         }
         const value = Reflect.get(t, prop, receiver);
-        return typeof value === "function" ? value.bind(t) : value;
+        return typeof value === "function" ? value.bind(receiver) : value;
       },
     }) as this;
   }
@@ -750,25 +721,30 @@ export class SqliteTabularStorage<
    * outer transaction implicitly. Use {@link Sqlite.Database} `SAVEPOINT`s
    * directly if you need nested rollback boundaries.
    */
+  /**
+   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
+   * Used only to fail fast when `fn` captures the *original* storage instead
+   * of the `tx` handle and tries to recursively call `withTransaction` —
+   * that would deadlock against its own mutex. Calls routed through `tx`
+   * hit the proxy's `withTransaction` override before reaching here.
+   */
+  private inTransaction: boolean = false;
+
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    if (this.inTransaction) {
+      throw new Error(
+        "SqliteTabularStorage.withTransaction does not support nesting. " +
+          "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
+      );
+    }
     return this.mutex(async () => {
-      if (this.inTransaction) {
-        throw new Error(
-          "SqliteTabularStorage.withTransaction does not support nesting. " +
-            "Run nested rollback boundaries with SAVEPOINT directly, or refactor to a single transaction."
-        );
-      }
-      // Ensure inTransaction is reset even if BEGIN itself throws (e.g. disk
-      // full, database locked) — without the outer try/finally the flag would
-      // stay true forever and every subsequent withTransaction would mistake
-      // itself for a nested call.
+      const deferredPutEvents: Entity[] = [];
       this.inTransaction = true;
-      this.deferredPutEvents = [];
       try {
         this.db.exec("BEGIN");
         let result: T;
         try {
-          result = await fn(this.createTxView());
+          result = await fn(this.createTxView(deferredPutEvents));
           this.db.exec("COMMIT");
         } catch (err) {
           try {
@@ -779,16 +755,10 @@ export class SqliteTabularStorage<
           throw err;
         }
         // Flush deferred events only on commit success.
-        const events = this.deferredPutEvents;
-        this.deferredPutEvents = [];
-        this.inTransaction = false;
-        for (const entity of events) {
-          this.events.emit("put", entity);
-        }
+        for (const entity of deferredPutEvents) this.events.emit("put", entity);
         return result;
       } finally {
         this.inTransaction = false;
-        this.deferredPutEvents = [];
       }
     });
   }

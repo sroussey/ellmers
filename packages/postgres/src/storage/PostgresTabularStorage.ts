@@ -683,27 +683,22 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Tracks whether this storage instance is currently inside a
-   * `withTransaction` call. While true, `put`/`putBulk` route their `put`
-   * events to {@link deferredPutEvents} instead of emitting immediately, so
-   * listeners cannot observe rows that are about to roll back.
+   * True while the parent instance is between `BEGIN` and `COMMIT`/`ROLLBACK`.
+   * Used only to fail fast when `fn` captures the *original* storage instead
+   * of the `tx` handle and tries to recursively call `withTransaction` —
+   * that would deadlock against its own mutex on the PGlite path. Calls
+   * routed through `tx` hit the proxy's `withTransaction` override before
+   * reaching here.
    */
   private inTransaction: boolean = false;
 
   /**
-   * `put` events emitted by writes inside an active `withTransaction` are
-   * queued here and flushed after `COMMIT` succeeds (or discarded on
-   * `ROLLBACK`).
+   * Emits a `put` event. Overridden on the {@link createTxView} proxy to
+   * push into a per-transaction buffer instead, so listeners never observe
+   * rows that are about to roll back.
    */
-  private deferredPutEvents: Entity[] = [];
-
-  /** Emit `put` immediately, or queue if inside a withTransaction. */
-  private emitPut(entity: Entity): void {
-    if (this.inTransaction) {
-      this.deferredPutEvents.push(entity);
-    } else {
-      this.events.emit("put", entity);
-    }
+  protected emitPut(entity: Entity): void {
+    this.events.emit("put", entity);
   }
 
   /**
@@ -750,6 +745,24 @@ export class PostgresTabularStorage<
   private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
+    // Already inside an outer transaction (called via the `tx` view inside
+    // `withTransaction`)? Skip our own BEGIN/COMMIT — Postgres `BEGIN`
+    // inside an active transaction is a warning + no-op, and the inner
+    // `COMMIT` would commit the OUTER transaction prematurely. Run the
+    // inserts directly on `this.db`, which the proxy has already swapped to
+    // the transaction-bound client (real pool) or the shared session
+    // (PGlite).
+    if (this.inTransaction) {
+      const updated: Entity[] = [];
+      for (const entity of entities) {
+        const { sql, params } = this.buildPutSql(entity);
+        const result = await this.db.query(sql, params);
+        updated.push(this.hydrateRow(result.rows[0]));
+      }
+      for (const entity of updated) this.emitPut(entity);
+      return updated;
+    }
+
     const conn = await this.acquireConnection();
     const updatedEntities: Entity[] = [];
     try {
@@ -773,52 +786,36 @@ export class PostgresTabularStorage<
       conn.release();
     }
 
-    for (const entity of updatedEntities) {
-      this.emitPut(entity);
-    }
-
+    for (const entity of updatedEntities) this.emitPut(entity);
     return updatedEntities;
   }
 
   /**
-   * Runs `fn` inside a `BEGIN` / `COMMIT` on `this.db`. This is only safe
-   * when `this.db` is a single-connection wrapper (PGLitePool, raw PGlite) —
-   * see the comment on {@link acquireConnection}. With a real `pg.Pool`,
-   * subsequent `this.db.query` calls inside `fn` could be dispatched to
-   * different sessions and the surrounding `BEGIN`/`COMMIT` would not bind
-   * them together, so we throw rather than provide a false guarantee.
+   * Build a Proxy view of `this` for the `withTransaction` callback. The
+   * proxy:
    *
-   * `put` events emitted from inside `fn` are buffered and delivered after
-   * `COMMIT`; if `fn` throws, they are discarded along with the rolled-back
-   * rows.
-   *
-   * **Concurrency contract** — see {@link ITabularStorage.withTransaction}.
-   * Do not invoke methods on this storage instance from outside `fn` while a
-   * `withTransaction` call is in flight; on the supported single-connection
-   * wrappers those calls would also run through the open transaction.
+   *   - Swaps `db` for the transaction-bound handle so every query inside
+   *     `fn` runs on it: the dedicated client returned by `pool.connect()`
+   *     for a real `pg.Pool`, or the shared session for PGlite/PGLitePool.
+   *   - Routes any public method `foo` whose private sibling `_fooInternal`
+   *     exists to that sibling, so calls made through `tx` bypass the
+   *     mutex (PGlite path) and do not deadlock. The naming convention is
+   *     the only sync mechanism — adding a public method with a matching
+   *     `_fooInternal` is enough; no explicit map to keep in step.
+   *   - Reports `inTransaction === true`, which is what
+   *     {@link _putBulkInternal} keys off to skip its own BEGIN/COMMIT
+   *     and run on the swapped `db` directly.
+   *   - Overrides {@link emitPut} to queue events on a per-transaction
+   *     buffer; the outer `withTransaction` flushes that buffer after
+   *     `COMMIT` (or discards on `ROLLBACK`).
+   *   - Throws on nested `withTransaction` — Postgres has no autonomous
+   *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
-  /**
-   * Build a Proxy view of `this` that routes public-method names to their
-   * private `_*Internal` siblings, bypassing the mutex. Handed to the
-   * `withTransaction` callback so inner calls do not deadlock against the
-   * mutex held by the surrounding transaction.
-   */
-  private createTxView(): this {
+  private createTxView(
+    txDb: { query: Pool["query"] },
+    deferredPutEvents: Entity[]
+  ): this {
     const target = this;
-    const internalNameByPublic: Record<string, keyof this> = {
-      put: "_putInternal" as keyof this,
-      putBulk: "_putBulkInternal" as keyof this,
-      get: "_getInternal" as keyof this,
-      delete: "_deleteInternal" as keyof this,
-      getAll: "_getAllInternal" as keyof this,
-      deleteAll: "_deleteAllInternal" as keyof this,
-      size: "_sizeInternal" as keyof this,
-      count: "_countInternal" as keyof this,
-      getBulk: "_getBulkInternal" as keyof this,
-      deleteSearch: "_deleteSearchInternal" as keyof this,
-      query: "_queryInternal" as keyof this,
-      queryIndex: "_queryIndexInternal" as keyof this,
-    };
     return new Proxy(target, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
@@ -829,69 +826,115 @@ export class PostgresTabularStorage<
             );
           };
         }
-        if (typeof prop === "string" && prop in internalNameByPublic) {
-          const internalKey = internalNameByPublic[prop];
-          const internal = t[internalKey] as unknown;
+        if (prop === "db") return txDb;
+        if (prop === "inTransaction") return true;
+        if (prop === "emitPut") {
+          return (entity: Entity) => deferredPutEvents.push(entity);
+        }
+        if (typeof prop === "string") {
+          const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
           if (typeof internal === "function") {
-            return (internal as (...args: unknown[]) => unknown).bind(t);
+            return (...args: unknown[]) =>
+              (internal as (...a: unknown[]) => unknown).apply(receiver, args);
           }
         }
         const value = Reflect.get(t, prop, receiver);
-        return typeof value === "function" ? value.bind(t) : value;
+        return typeof value === "function" ? value.bind(receiver) : value;
       },
     }) as this;
   }
 
+  /**
+   * Runs `fn` inside a single Postgres transaction.
+   *
+   * **Real `pg.Pool`** — acquires a dedicated client via `pool.connect()`,
+   * runs `BEGIN`/`COMMIT`/`ROLLBACK` on that client, and routes every
+   * query inside `fn` through it. The parent storage instance keeps fanning
+   * external traffic across the pool, so external callers run *in parallel*
+   * with the open transaction (no per-instance mutex). This is the natural
+   * Postgres concurrency model.
+   *
+   * **PGlite / PGLitePool** — single underlying session: the parent's mutex
+   * is acquired for the duration of `fn` so external callers queue behind
+   * the transaction instead of slipping into it. `BEGIN`/`COMMIT` run on
+   * the shared `this.db`.
+   *
+   * `put` events emitted from inside `fn` (whether via `tx.put`,
+   * `tx.putBulk`, or any other writer) are buffered on a per-transaction
+   * queue and flushed to the parent's event emitter after `COMMIT`. If `fn`
+   * throws, the buffer is discarded along with the rolled-back rows so
+   * listeners never observe writes that did not actually commit.
+   *
+   * Recursive calls — either through the original instance or through `tx`
+   * — throw rather than reusing the outer transaction implicitly. Use
+   * SAVEPOINT directly for nested rollback boundaries.
+   */
   override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     const supportsConnect =
       typeof (this.db as unknown as { connect?: unknown }).connect === "function";
+
     if (supportsConnect) {
-      throw new Error(
-        "PostgresTabularStorage.withTransaction is not supported on a multi-connection pg.Pool, " +
-          "because methods on this storage dispatch each query through the pool independently. " +
-          "Use putBulk for atomic bulk inserts, or wrap the underlying pool yourself."
-      );
+      // Real pg.Pool: dedicate a client to this transaction; the parent's
+      // pool stays available for external callers, who run in parallel on
+      // other clients. We deliberately do NOT set `this.inTransaction` here
+      // — it would make external `_putBulkInternal` calls short-circuit
+      // their own BEGIN/COMMIT even though they are not actually nested.
+      // Nested calls via a captured original `this` simply acquire another
+      // pool client and run as an independent transaction; Postgres handles
+      // the concurrency, so no nesting guard is required on this path.
+      const client = await (
+        this.db as unknown as {
+          connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
+        }
+      ).connect();
+      try {
+        return await this.runInTransaction(fn, { query: client.query.bind(client) });
+      } finally {
+        client.release();
+      }
     }
 
+    // PGlite/PGLitePool: single underlying session. Serialize against
+    // external callers via the mutex, and set `inTransaction` so that a
+    // nested `withTransaction` invoked via the original (rather than `tx`)
+    // throws instead of deadlocking on its own mutex.
+    if (this.inTransaction) {
+      throw new Error(
+        "PostgresTabularStorage.withTransaction does not support nesting. " +
+          "Use SAVEPOINT directly or refactor to a single transaction."
+      );
+    }
     return this.mutex(async () => {
-      if (this.inTransaction) {
-        throw new Error(
-          "PostgresTabularStorage.withTransaction does not support nesting. " +
-            "Use SAVEPOINT directly or refactor to a single transaction."
-        );
-      }
-
-      // Flag and buffer setup wrapped in try/finally so a failing BEGIN cannot
-      // leave inTransaction stuck at true forever.
       this.inTransaction = true;
-      this.deferredPutEvents = [];
       try {
-        await this.db.query("BEGIN");
-        let result: T;
-        try {
-          result = await fn(this.createTxView());
-          await this.db.query("COMMIT");
-        } catch (err) {
-          try {
-            await this.db.query("ROLLBACK");
-          } catch {
-            // prefer the original error if rollback fails
-          }
-          throw err;
-        }
-        // Flush deferred events only on commit success.
-        const events = this.deferredPutEvents;
-        this.deferredPutEvents = [];
-        this.inTransaction = false;
-        for (const entity of events) {
-          this.events.emit("put", entity);
-        }
-        return result;
+        return await this.runInTransaction(fn, { query: this.db.query.bind(this.db) });
       } finally {
         this.inTransaction = false;
-        this.deferredPutEvents = [];
       }
     });
+  }
+
+  private async runInTransaction<T>(
+    fn: (tx: this) => Promise<T>,
+    txDb: { query: Pool["query"] }
+  ): Promise<T> {
+    const deferredPutEvents: Entity[] = [];
+    await txDb.query("BEGIN");
+    let result: T;
+    try {
+      result = await fn(this.createTxView(txDb, deferredPutEvents));
+      await txDb.query("COMMIT");
+    } catch (err) {
+      try {
+        await txDb.query("ROLLBACK");
+      } catch {
+        // prefer the original error if rollback fails
+      }
+      throw err;
+    }
+    // Flush deferred events only on commit success.
+    for (const entity of deferredPutEvents) this.events.emit("put", entity);
+    return result;
   }
 
   /**
