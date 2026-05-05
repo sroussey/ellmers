@@ -6,6 +6,9 @@
 
 import { EventParameters } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import type { PageCursor } from "./Cursor";
+
+export type { PageCursor } from "./Cursor";
 
 // Generic type for possible value types in the repository
 export type ValueOptionType = string | number | bigint | boolean | null | Uint8Array;
@@ -107,6 +110,27 @@ export interface OrderBy<Entity> {
 export interface QueryOptions<Entity> {
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
+  /**
+   * @deprecated Offset-based paging is unstable when rows are inserted or
+   * deleted between page fetches (entries can be skipped or duplicated).
+   * Use {@link ITabularStorage.getPage} / {@link ITabularStorage.queryPage}
+   * with a {@link PageCursor} instead.
+   *
+   * @example
+   * ```ts
+   * // Before (offset paging):
+   * const rows = await storage.getAll({ orderBy, limit: 50, offset: 100 });
+   *
+   * // After (cursor paging — also stable under concurrent writes):
+   * let cursor: PageCursor | undefined;
+   * for (let i = 0; i < 3; i++) {
+   *   const page = await storage.getPage({ orderBy, limit: 50, cursor });
+   *   cursor = page.nextCursor;
+   *   if (!cursor) break;
+   * }
+   * const rows = await storage.getPage({ orderBy, limit: 50, cursor });
+   * ```
+   */
   readonly offset?: number;
 }
 
@@ -115,6 +139,63 @@ export interface CoveringIndexQueryOptions<Entity, K extends keyof Entity & stri
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
   readonly offset?: number;
+}
+
+/**
+ * Request for a cursor-paginated read.
+ *
+ * Pagination is keyset-based: the next page resumes after the row encoded
+ * in `cursor`, with the primary key acting as the stable tiebreaker.
+ * This is stable under concurrent inserts and deletes — unlike offset-based
+ * paging, which can skip or duplicate rows when the underlying data
+ * shifts between calls.
+ *
+ * If `orderBy` is omitted, rows are returned in primary-key order ascending.
+ * If `orderBy` is provided, the effective ordering is `[...orderBy, ...primaryKey]`
+ * so iteration remains deterministic when sort columns contain duplicates.
+ */
+export interface PageRequest<Entity> {
+  readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
+  /** Maximum number of rows to return. Defaults to 100. */
+  readonly limit?: number;
+  /** Opaque cursor returned by a previous call; omit to start from the beginning. */
+  readonly cursor?: PageCursor;
+}
+
+/**
+ * A page of results from a cursor-paginated read.
+ *
+ * `nextCursor` is `undefined` when there are no more rows to fetch.
+ * When `nextCursor` is present, callers should pass it back via
+ * {@link PageRequest.cursor} to fetch the next page.
+ *
+ * **Termination contract.** A defined `nextCursor` does NOT guarantee
+ * additional rows exist — concurrent deletes can produce an empty page
+ * mid-iteration even though `nextCursor` was set. Loops MUST therefore
+ * terminate on either condition, not just on `nextCursor`:
+ *
+ * ```ts
+ * // CORRECT — terminates on both `nextCursor` and empty `items`:
+ * let cursor: PageCursor | undefined;
+ * do {
+ *   const page = await storage.getPage({ limit: 100, cursor });
+ *   for (const row of page.items) handle(row);
+ *   if (page.items.length === 0) break;
+ *   cursor = page.nextCursor;
+ * } while (cursor);
+ *
+ * // WRONG — can spin forever if a concurrent delete empties the next page
+ * // while leaving rows further along the cursor that get deleted in turn:
+ * while (page.nextCursor) { page = await storage.getPage({ cursor: page.nextCursor }); }
+ * ```
+ *
+ * The bundled async generators ({@link ITabularStorage.records},
+ * {@link ITabularStorage.pages}) honour this contract; reach for them
+ * instead of writing the loop manually.
+ */
+export interface Page<Entity> {
+  readonly items: ReadonlyArray<Entity>;
+  readonly nextCursor: PageCursor | undefined;
 }
 
 /**
@@ -221,8 +302,34 @@ export interface ITabularStorage<
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
+   * @deprecated Offset-based paging is unstable under concurrent writes.
+   *   Use {@link getPage} for stable, keyset-based pagination.
    */
   getBulk(offset: number, limit: number): Promise<Entity[] | undefined>;
+
+  /**
+   * Fetches a page of records using cursor-based (keyset) pagination.
+   *
+   * Stable under concurrent inserts and deletes: the cursor encodes the
+   * last seen primary key so the next page resumes from a precise position
+   * rather than a numeric offset that shifts as rows are added or removed.
+   *
+   * @param request - Optional ordering, limit, and cursor.
+   * @returns A {@link Page} with the rows for this page and a `nextCursor`
+   *   to use for the next call (or `undefined` when iteration is complete).
+   */
+  getPage(request?: PageRequest<Entity>): Promise<Page<Entity>>;
+
+  /**
+   * Cursor-paginated form of {@link query}.
+   *
+   * @param criteria - Object with column names as keys and values or SearchConditions
+   * @param request - Optional ordering, limit, and cursor.
+   */
+  queryPage(
+    criteria: SearchCriteria<Entity>,
+    request?: PageRequest<Entity>
+  ): Promise<Page<Entity>>;
 
   /**
    * Async generator that yields records one at a time.
@@ -262,6 +369,15 @@ export interface ITabularStorage<
   /**
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    * Uses optimized index paths when possible, falls back to full scan otherwise.
+   *
+   * Implementation contract for third-party backends: when binding a
+   * `SearchCondition` value into the underlying datastore, run it
+   * through the same conversion path as a row value going *into* the
+   * store (e.g. `jsToSqlValue` for SQL backends — Date → ISO string,
+   * etc.). The cursor pagination machinery in {@link getPage} relies
+   * on this round-trip to compare a row's stored representation
+   * against a cursor's decoded value; any backend that skips the
+   * conversion would silently mis-page on Date or other rich types.
    *
    * @param criteria - Object with column names as keys and values or SearchConditions
    * @param options - Optional ordering, limit, and offset options

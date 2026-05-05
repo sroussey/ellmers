@@ -243,6 +243,29 @@ describe("ScopedTabularStorage", () => {
       const total = pages.reduce((sum, p) => sum + p.length, 0);
       expect(total).toBe(3);
     });
+
+    test("rejects a cursor minted by a different KB scope", async () => {
+      // Cross-KB cursor reuse silently produced wrong pages before this
+      // guard: the inner store's cursor encodes kb_id as part of the
+      // effective ordering, but two ScopedTabularStorages over the same
+      // shared table accept structurally-identical cursors. With the
+      // [kb_id ASC, doc_id ASC] effective ordering, KB-A's cursor parked
+      // at (A, "d1") forwarded to KB-B would page from the wrong slot.
+      await scopeA.put({ doc_id: "d1", data: '{"text":"a1"}' });
+      await scopeA.put({ doc_id: "d2", data: '{"text":"a2"}' });
+      await scopeB.put({ doc_id: "d1", data: '{"text":"b1"}' });
+      await scopeB.put({ doc_id: "d2", data: '{"text":"b2"}' });
+
+      const aPage = await scopeA.getPage({ limit: 1 });
+      expect(aPage.items.length).toBe(1);
+      expect(aPage.nextCursor).toBeDefined();
+
+      // Hand A's cursor to B. The fix decodes the cursor, sees kb_id="kb-a",
+      // compares to this.kbId="kb-b", throws.
+      await expect(
+        scopeB.getPage({ limit: 1, cursor: aPage.nextCursor })
+      ).rejects.toThrow(/kb_id/);
+    });
   });
 });
 

@@ -13,17 +13,56 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
   TabularChangePayload,
   TabularSubscribeOptions,
 } from "./ITabularStorage";
-import { StorageUnsupportedError } from "./StorageError";
+import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
+import { StorageUnsupportedError, StorageValidationError } from "./StorageError";
 
 export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.huggingface"
 );
+
+/**
+ * Cursor for HuggingFace pagination. Encodes a numeric offset into the
+ * standard cursor format (so callers always see opaque strings) but uses
+ * the offset directly against the HF `/rows` endpoint, which doesn't
+ * support tuple comparisons. Stability under concurrent writes is moot
+ * because HF datasets are read-only.
+ *
+ * The synthetic `hfOffset` "column name" makes the cursor self-describing
+ * for `decodeCursor`'s n/c arity check. HF's offset paging doesn't
+ * actually reference a column, but the cursor format requires names
+ * alongside values. The chosen identifier satisfies the schema
+ * column-name regex (`^[a-zA-Z][a-zA-Z0-9_]*$`) so the cursor would pass
+ * schema-membership validation if that ever broadens.
+ */
+const HF_OFFSET_CURSOR_NAME = "hfOffset";
+
+function encodeOffsetCursor(offset: number): PageCursor {
+  return encodeCursor({ v: 1, n: [HF_OFFSET_CURSOR_NAME], c: [offset] });
+}
+
+function decodeOffsetCursor(cursor: PageCursor | string): number {
+  // Use `StorageValidationError` (not generic `Error`) so callers that
+  // surface decode failures as 4xx responses can catch one consistent
+  // error type across all backends — matches how `decodeCursor` itself
+  // and every other cursor validator in the storage package behave.
+  const payload = decodeCursor(cursor);
+  if (payload.n[0] !== HF_OFFSET_CURSOR_NAME) {
+    throw new StorageValidationError("Cursor was not produced by HuggingFaceTabularStorage");
+  }
+  const value = payload.c[0];
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new StorageValidationError("Invalid HuggingFace pagination cursor");
+  }
+  return value;
+}
 
 /**
  * HuggingFace Dataset Viewer API response types
@@ -342,6 +381,29 @@ export class HuggingFaceTabularStorage<
     }
 
     return entities;
+  }
+
+  /**
+   * HuggingFace datasets are read-only, so the concurrency-stability that
+   * keyset pagination provides is unnecessary. The HF API also doesn't
+   * expose tuple comparisons, so we drive cursor pagination from the
+   * `/rows` endpoint's offset and encode the next offset in the cursor.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    this.validatePageRequest(request);
+    const limit = request.limit ?? 100;
+    if (request.orderBy && request.orderBy.length > 0) {
+      // The HF /rows endpoint returns rows in `row_idx` order with no
+      // alternative; silently overriding the caller's choice would be a
+      // correctness bug, so reject it explicitly instead.
+      throw new StorageUnsupportedError("orderBy in getPage", "HuggingFaceTabularStorage");
+    }
+    const offset = request.cursor ? decodeOffsetCursor(request.cursor) : 0;
+    const rows = (await this.getBulk(offset, limit)) ?? [];
+    const items = rows;
+    const nextCursor =
+      items.length === limit ? encodeOffsetCursor(offset + items.length) : undefined;
+    return { items, nextCursor };
   }
 
   /**

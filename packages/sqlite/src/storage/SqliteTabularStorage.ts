@@ -22,6 +22,8 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  Page,
+  PageRequest,
   QueryOptions,
   SearchCriteria,
   SearchOperator,
@@ -951,6 +953,72 @@ export class SqliteTabularStorage<
     }
 
     return rows;
+  }
+
+  /**
+   * Cursor-paginated read with keyset predicates pushed into SQL. Uses
+   * `LIMIT N` plus a row-value-style WHERE so the database returns at most
+   * one page worth of rows regardless of table size.
+   *
+   * Goes through the per-instance mutex so a `getPage` call issued while a
+   * `withTransaction` is in flight queues behind the transaction instead of
+   * firing a `prepare`/`stmt.all` against the shared connection between the
+   * transaction's `BEGIN` and `COMMIT`. The proxy returned by
+   * {@link createTxView} routes back to {@link _getPageInternal} directly,
+   * so calls made *through* the `tx` handle bypass the mutex (which the
+   * transaction already holds) and run on the same connection.
+   */
+  override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
+    return this.mutex(() => this._getPageInternal(request));
+  }
+
+  private async _getPageInternal(request: PageRequest<Entity>): Promise<Page<Entity>> {
+    return this.runSqlPage(undefined, request, this.sqliteDialect());
+  }
+
+  override async queryPage(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity> = {}
+  ): Promise<Page<Entity>> {
+    return this.mutex(() => this._queryPageInternal(criteria, request));
+  }
+
+  private async _queryPageInternal(
+    criteria: SearchCriteria<Entity>,
+    request: PageRequest<Entity>
+  ): Promise<Page<Entity>> {
+    this.validateQueryParams(criteria, undefined);
+    return this.runSqlPage(criteria, request, this.sqliteDialect());
+  }
+
+  private sqliteDialect() {
+    return {
+      quote: "`",
+      // SQLite uses positional `?` placeholders so the index is intentionally
+      // unused. If a future contributor needs numbered placeholders (SQLite
+      // does support `?N`), update both the placeholder and any callers
+      // sharing the running paramIdx counter.
+      placeholder: (_index: number) => "?",
+      buildSearchWhere: (
+        criteria: SearchCriteria<Entity>,
+        startIndex: number
+      ): { whereClause: string; params: ValueOptionType[]; nextIndex: number } => {
+        const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
+        return { whereClause, params, nextIndex: startIndex + params.length };
+      },
+      executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
+        const stmt = this.db.prepare(sql);
+        // @ts-ignore - generic spread on prepared statement
+        const rows = stmt.all(...params) as Entity[];
+        for (const row of rows) {
+          const record = row as Record<string, unknown>;
+          for (const k in this.schema.properties) {
+            record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+          }
+        }
+        return rows;
+      },
+    };
   }
 
   /**
