@@ -74,12 +74,18 @@ function toCursorValue(value: unknown): string | number | boolean | null {
     return value;
   }
   if (value instanceof Date) return value.toISOString();
+  // Use `StorageValidationError` (not generic `Error`) so the failure
+  // mode for an unsupported key type matches the rest of the cursor
+  // codec — `decodeCursor` already throws the same class for malformed
+  // input, and downstream callers translating cursor failures into 4xx
+  // responses can catch one consistent type instead of an unclassified
+  // 500.
   if (typeof value === "bigint") {
-    throw new Error(
+    throw new StorageValidationError(
       "bigint values are not supported as cursor keys — string-encoded bigints don't sort numerically. Use a number column or override `getPage` for this storage."
     );
   }
-  throw new Error(
+  throw new StorageValidationError(
     `Cannot encode value of type ${typeof value} into a pagination cursor; use a key column with a primitive type.`
   );
 }
