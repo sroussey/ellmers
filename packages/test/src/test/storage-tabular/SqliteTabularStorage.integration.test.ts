@@ -9,6 +9,7 @@ import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -72,6 +73,25 @@ describe("SqliteTabularStorage", async () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runTabularStorageContractTests({
+    name: "SQLite",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new SqliteTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          ":memory:",
+          `sql_test_${uuid4().replace(/-/g, "_")}`,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ),
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: false },
+    // TODO(workglow): subscribeToChanges throws "not supported" today.
+    // Real polling/update_hook implementation tracked as a follow-up feature spec.
+    expectedFailures: ["subscribe.fireOncePerWrite", "subscribe.commitOrder"],
+  });
 });
 
 describe("SqliteTabularStorage.queryIndex", () => {

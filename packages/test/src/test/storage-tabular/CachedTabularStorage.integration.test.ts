@@ -8,6 +8,7 @@ import { CachedTabularStorage, InMemoryTabularStorage } from "@workglow/storage"
 import { setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   CompoundPrimaryKeyNames,
@@ -72,6 +73,28 @@ describe("CachedTabularStorage", () => {
     },
     { usesPolling: false }
   );
+
+  runTabularStorageContractTests({
+    name: "Cached (in-memory backed)",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () => {
+        const durable = new InMemoryTabularStorage<
+          typeof CompoundSchema,
+          typeof CompoundPrimaryKeyNames
+        >(CompoundSchema, CompoundPrimaryKeyNames);
+        return new CachedTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          durable,
+          undefined,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        );
+      },
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: false },
+    subscriptions: { usesPolling: false },
+  });
 
   describe("caching behavior", () => {
     let durable: InMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>;

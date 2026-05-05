@@ -9,6 +9,7 @@ import { setLogger } from "@workglow/util";
 import { mkdirSync, rmSync } from "fs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -65,6 +66,26 @@ describe("FsFolderTabularStorage", () => {
       ),
     { usesPolling: true, pollingIntervalMs: 50, supportsDeleteSearch: false }
   );
+
+  runTabularStorageContractTests({
+    name: "FsFolder",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new FsFolderTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          testDir,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ),
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: false },
+    subscriptions: { usesPolling: true, pollingIntervalMs: 50 },
+    // TODO(workglow): FsFolder polling reorders sequential puts (observed
+    // alpha/charlie/bravo when alpha/bravo/charlie was committed). Tracked
+    // as an adapter bug for the follow-up commit-order spec.
+    expectedFailures: ["subscribe.commitOrder"],
+  });
 
   // Add specific tests for search functionality
   describe("search functionality", () => {

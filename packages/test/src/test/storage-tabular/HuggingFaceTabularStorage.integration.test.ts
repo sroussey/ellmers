@@ -4,11 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ITabularStorage } from "@workglow/storage";
 import { HuggingFaceTabularStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
+import {
+  CompoundPrimaryKeyNames,
+  CompoundSchema,
+} from "./genericTabularStorageTests";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -31,6 +37,23 @@ describe("HuggingFaceTabularStorage", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  runTabularStorageContractTests({
+    name: "HuggingFace",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new HuggingFaceTabularStorage(
+          "test/dataset",
+          "default",
+          "train",
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ) as unknown as ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>,
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: false, vectorColumns: false },
   });
 
   describe("Constructor and Setup", () => {

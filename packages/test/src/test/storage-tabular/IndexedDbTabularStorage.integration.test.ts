@@ -11,6 +11,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -69,6 +70,22 @@ describe("IndexedDbTabularStorage", () => {
     },
     { usesPolling: true, pollingIntervalMs: 50 }
   );
+
+  runTabularStorageContractTests({
+    name: "IndexedDB",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new IndexedDbTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          `${dbName}_contract`,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ),
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: false },
+    subscriptions: { usesPolling: true, pollingIntervalMs: 50 },
+  });
 
   // IndexedDB-specific tests for compound index optimization
   describe("compound index optimization", () => {

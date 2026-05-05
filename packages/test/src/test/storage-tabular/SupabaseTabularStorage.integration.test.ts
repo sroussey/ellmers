@@ -8,6 +8,7 @@ import { SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterAll, describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import {
   AllTypesPrimaryKeyNames,
@@ -62,4 +63,25 @@ describe("SupabaseTabularStorage", () => {
 
   // Subscription tests skipped for Supabase because mock client doesn't support realtime
   // In production, Supabase uses realtime subscriptions which require a real Supabase instance
+
+  runTabularStorageContractTests({
+    name: "Supabase",
+    timeout: 5_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new SupabaseTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          client,
+          `supabase_test_${uuid4().replace(/-/g, "_")}`,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ),
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: false },
+    subscriptions: { usesPolling: false },
+    // TODO(workglow): the Supabase mock client used in tests does not implement
+    // realtime channels, so subscribe assertions cannot deliver INSERT events.
+    // Against a real Supabase instance these assertions are expected to pass.
+    expectedFailures: ["subscribe.fireOncePerWrite", "subscribe.commitOrder"],
+  });
 });

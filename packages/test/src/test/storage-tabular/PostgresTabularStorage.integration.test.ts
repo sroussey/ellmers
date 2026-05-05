@@ -5,11 +5,17 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite/vector";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  VectorPrimaryKeyNames,
+  VectorSchema,
+} from "../../contract/storage-tabular/fixtures";
+import { runTabularStorageContractTests } from "../../contract/storage-tabular/runTabularStorageContractTests";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -25,14 +31,48 @@ import {
   UuidSchema,
 } from "./genericTabularStorageTests";
 
-const db = new PGlite() as unknown as Pool;
+const db = new PGlite({ extensions: { vector } }) as unknown as Pool;
 
 describe("PostgresTabularStorage", () => {
   let logger = getTestingLogger();
   setLogger(logger);
 
+  beforeAll(async () => {
+    await (db as unknown as PGlite).exec("CREATE EXTENSION IF NOT EXISTS vector");
+  });
+
   afterAll(async () => {
     await (db as unknown as PGlite).close();
+  });
+
+  runTabularStorageContractTests({
+    name: "Postgres",
+    timeout: 30_000,
+    factory: async () => ({
+      createCompoundRepo: async () =>
+        new PostgresTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+          db,
+          `sql_test_${uuid4().replace(/-/g, "_")}`,
+          CompoundSchema,
+          CompoundPrimaryKeyNames
+        ),
+      createVectorRepo: async () =>
+        new PostgresTabularStorage<typeof VectorSchema, typeof VectorPrimaryKeyNames>(
+          db,
+          `vec_test_${uuid4().replace(/-/g, "_")}`,
+          VectorSchema,
+          VectorPrimaryKeyNames
+        ),
+      dispose: async () => {},
+    }),
+    capabilities: { subscriptions: true, vectorColumns: true },
+    // TODO(workglow): subscribeToChanges throws "not supported" today.
+    // Real LISTEN/NOTIFY implementation tracked as a follow-up feature spec.
+    // Discovery: vector.dimensionRoundTrip body completes without throwing
+    // (likely because the Float32Array TEXT round-trip leaves the value as
+    // an instance of Float32Array somewhere in the stack), so it is not
+    // listed here. Phase 4 will validate vector behavior end-to-end.
+    expectedFailures: ["subscribe.fireOncePerWrite", "subscribe.commitOrder"],
   });
 
   runGenericTabularStorageTests(

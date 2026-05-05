@@ -67,6 +67,7 @@ Treat both as additional examples of the pattern.
 | Contract | Suite | Adapters |
 |---|---|---|
 | `AiProvider` | `contract/ai-provider/runAiProviderConformance` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
+| `ITabularStorage` (contract) | `contract/storage-tabular/runTabularStorageContractTests` | InMemory, IndexedDB, FsFolder, Cached, Postgres, SQLite, Supabase, HuggingFace |
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
 
