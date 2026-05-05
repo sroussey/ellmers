@@ -401,10 +401,16 @@ export const AI_PROVIDER_REGISTRY = createServiceToken<AiProviderRegistry>("ai.p
 
 /**
  * Returns the AI provider registry from the given registry (defaults to global).
+ * Lazy-registers a fresh `AiProviderRegistry` if the token is absent — same
+ * pattern as `getLogger`. Makes scoped registries safe to use without an
+ * explicit `registerAiProviderDefaults(registry)` call.
  */
 export function getAiProviderRegistry(
   registry: ServiceRegistry = globalServiceRegistry
 ): AiProviderRegistry {
+  if (!registry.has(AI_PROVIDER_REGISTRY)) {
+    registerAiProviderDefaults(registry);
+  }
   return registry.get(AI_PROVIDER_REGISTRY);
 }
 

@@ -14,10 +14,17 @@ import { InMemoryCredentialStore } from "./InMemoryCredentialStore";
 
 /**
  * Gets the credential store from the given registry (defaults to global).
+ * If the registry hasn't had `registerCredentialDefaults(registry)` run yet,
+ * the default in-memory store is registered lazily — same pattern as
+ * `getLogger` / `getTelemetryProvider`. Makes scoped registries returned by
+ * `createOrchestrationContext` safe to use without an explicit bootstrap.
  */
 export function getGlobalCredentialStore(
   registry: ServiceRegistry = globalServiceRegistry
 ): ICredentialStore {
+  if (!registry.has(CREDENTIAL_STORE)) {
+    registerCredentialDefaults(registry);
+  }
   return registry.get(CREDENTIAL_STORE);
 }
 
@@ -32,8 +39,12 @@ export function setGlobalCredentialStore(
 }
 
 /**
- * Resolves a credential from the store registered in the given registry,
- * falling back to the global credential store.
+ * Resolves a credential from the store registered in the given registry.
+ *
+ * If `registry` is omitted, uses the global registry. If a `registry` is
+ * passed but doesn't yet have `CREDENTIAL_STORE`, `getGlobalCredentialStore`
+ * lazily registers the default in-memory store on it — so scoped registries
+ * stay isolated from the global one.
  *
  * Intended for use in provider `getClient` functions and tasks.
  *
@@ -45,11 +56,7 @@ export async function resolveCredential(
   key: string,
   registry?: ServiceRegistry
 ): Promise<string | undefined> {
-  const store =
-    registry && registry.has(CREDENTIAL_STORE)
-      ? registry.get<ICredentialStore>(CREDENTIAL_STORE)
-      : getGlobalCredentialStore();
-
+  const store = getGlobalCredentialStore(registry);
   return store.get(key);
 }
 

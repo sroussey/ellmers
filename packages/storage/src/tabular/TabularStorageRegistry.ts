@@ -22,45 +22,52 @@ export const TABULAR_REPOSITORIES = createServiceToken<Map<string, AnyTabularSto
 );
 
 /**
- * Gets the tabular repository registry from the given registry (defaults to global).
+ * Gets the tabular repository map from the given registry (defaults to global).
+ * Lazy-registers an empty map if absent — keeps scoped registries isolated.
  */
 export function getGlobalTabularRepositories(
   registry: ServiceRegistry = globalServiceRegistry
 ): Map<string, AnyTabularStorage> {
+  if (!registry.has(TABULAR_REPOSITORIES)) {
+    registerTabularStorageDefaults(registry);
+  }
   return registry.get(TABULAR_REPOSITORIES);
 }
 
 /**
- * Registers a tabular repository globally by ID
- * @param id The unique identifier for this repository
- * @param repository The repository instance to register
+ * Registers a tabular repository on the given registry by ID (defaults to global).
  */
-export function registerTabularRepository(id: string, repository: AnyTabularStorage): void {
-  const repos = getGlobalTabularRepositories();
+export function registerTabularRepository(
+  id: string,
+  repository: AnyTabularStorage,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  const repos = getGlobalTabularRepositories(registry);
   repos.set(id, repository);
 }
 
 /**
- * Gets a tabular repository by ID from the global registry
- * @param id The repository identifier
+ * Gets a tabular repository by ID from the given registry (defaults to global).
  * @returns The repository instance or undefined if not found
  */
-export function getTabularRepository(id: string): AnyTabularStorage | undefined {
-  return getGlobalTabularRepositories().get(id);
+export function getTabularRepository(
+  id: string,
+  registry: ServiceRegistry = globalServiceRegistry
+): AnyTabularStorage | undefined {
+  return getGlobalTabularRepositories(registry).get(id);
 }
 
 /**
  * Resolves a repository ID to an instance from the registry.
- * Used by the input resolver system.
+ * Used by the input resolver system. Always reads from the supplied registry —
+ * no fallback to global state, so scoped registries stay isolated.
  */
 function resolveRepositoryFromRegistry(
   id: string,
-  format: string,
+  _format: string,
   registry: ServiceRegistry
 ): AnyTabularStorage {
-  const repos = registry.has(TABULAR_REPOSITORIES)
-    ? registry.get(TABULAR_REPOSITORIES)
-    : getGlobalTabularRepositories();
+  const repos = getGlobalTabularRepositories(registry);
   const repo = repos.get(id);
   if (!repo) {
     throw new Error(`Tabular storage "${id}" not found in registry`);
@@ -73,10 +80,7 @@ function compactTabularRepository(
   _format: string,
   registry: ServiceRegistry
 ): string | undefined {
-  const repos = registry.has(TABULAR_REPOSITORIES)
-    ? registry.get(TABULAR_REPOSITORIES)
-    : getGlobalTabularRepositories();
-
+  const repos = getGlobalTabularRepositories(registry);
   for (const [id, repo] of repos) {
     if (repo === value) return id;
   }

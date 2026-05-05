@@ -25,15 +25,29 @@ export const MCP_SERVERS =
 export const MCP_SERVER_REPOSITORY =
   createServiceToken<McpServerRepository>("mcp-server.repository");
 
+/**
+ * Gets the MCP server map from the given registry (defaults to global).
+ * Lazy-registers defaults if absent.
+ */
 export function getGlobalMcpServers(
   registry: ServiceRegistry = globalServiceRegistry
 ): Map<string, McpServerConnection> {
+  if (!registry.has(MCP_SERVERS)) {
+    registerMcpServerDefaults(registry);
+  }
   return registry.get(MCP_SERVERS);
 }
 
+/**
+ * Gets the MCP server repository from the given registry (defaults to global).
+ * Lazy-registers defaults if absent.
+ */
 export function getGlobalMcpServerRepository(
   registry: ServiceRegistry = globalServiceRegistry
 ): McpServerRepository {
+  if (!registry.has(MCP_SERVER_REPOSITORY)) {
+    registerMcpServerDefaults(registry);
+  }
   return registry.get(MCP_SERVER_REPOSITORY);
 }
 
@@ -44,16 +58,26 @@ export function setGlobalMcpServerRepository(
   registry.registerInstance(MCP_SERVER_REPOSITORY, repository);
 }
 
-export async function registerMcpServer(config: McpServerRecord): Promise<void> {
-  const servers = getGlobalMcpServers();
+/**
+ * Registers an MCP server on the given registry (defaults to global).
+ * Adds to both the live map and the persistent repository.
+ */
+export async function registerMcpServer(
+  config: McpServerRecord,
+  registry: ServiceRegistry = globalServiceRegistry
+): Promise<void> {
+  const servers = getGlobalMcpServers(registry);
   servers.set(config.server_id, { config });
 
-  const repo = getGlobalMcpServerRepository();
+  const repo = getGlobalMcpServerRepository(registry);
   await repo.addServer(config);
 }
 
-export function getMcpServer(id: string): McpServerConnection | undefined {
-  return getGlobalMcpServers().get(id);
+export function getMcpServer(
+  id: string,
+  registry: ServiceRegistry = globalServiceRegistry
+): McpServerConnection | undefined {
+  return getGlobalMcpServers(registry).get(id);
 }
 
 async function resolveServerFromRegistry(
@@ -61,19 +85,13 @@ async function resolveServerFromRegistry(
   _format: string,
   registry: ServiceRegistry
 ): Promise<McpServerRecord> {
-  // Check scoped registry first
-  const servers = registry.has(MCP_SERVERS)
-    ? registry.get<Map<string, McpServerConnection>>(MCP_SERVERS)
-    : getGlobalMcpServers();
-
+  // Resolve from the supplied registry — the lazy-init in
+  // getGlobalMcpServers/Repository keeps scoped registries isolated.
+  const servers = getGlobalMcpServers(registry);
   const entry = servers.get(id);
   if (entry) return entry.config;
 
-  // Fall back to repository lookup
-  const repo = registry.has(MCP_SERVER_REPOSITORY)
-    ? registry.get<McpServerRepository>(MCP_SERVER_REPOSITORY)
-    : getGlobalMcpServerRepository();
-
+  const repo = getGlobalMcpServerRepository(registry);
   const record = await repo.getServer(id);
   if (!record) {
     throw new Error(`MCP server "${id}" not found in registry`);
