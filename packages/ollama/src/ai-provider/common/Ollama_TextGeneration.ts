@@ -23,12 +23,13 @@ export function createOllamaTextGeneration(
     TextGenerationTaskInput,
     TextGenerationTaskOutput,
     OllamaModelConfig
-  > = async (input, model, update_progress, _signal) => {
+  > = async (input, model, update_progress, signal) => {
+    signal?.throwIfAborted?.();
     update_progress(0, "Starting Ollama text generation");
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
-    const response = await client.chat({
+    const responsePromise = client.chat({
       model: modelName,
       messages: [{ role: "user", content: input.prompt }],
       options: {
@@ -40,8 +41,15 @@ export function createOllamaTextGeneration(
       },
     });
 
-    update_progress(100, "Completed Ollama text generation");
-    return { text: response.message.content };
+    const onAbort = () => client.abort?.();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      const response = await responsePromise;
+      update_progress(100, "Completed Ollama text generation");
+      return { text: response.message.content };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
   };
   return run;
 }

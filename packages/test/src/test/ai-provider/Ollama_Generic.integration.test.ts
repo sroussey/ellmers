@@ -69,7 +69,4 @@ runAiProviderConformance({
     structured: MODEL_ID,
     embeddings: MODEL_ID,
   },
-  // TODO(phase-4): Ollama non-streaming runFn drops signal (parameter declared `_signal`).
-  // Remove once Ollama_TextGeneration threads signal into the request.
-  expectedFailures: ["signal.nonStreaming"],
 });
