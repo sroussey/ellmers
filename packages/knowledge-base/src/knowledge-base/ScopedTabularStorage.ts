@@ -21,6 +21,7 @@ import type {
   TabularEventParameters,
   TabularSubscribeOptions,
 } from "@workglow/storage";
+import { decodeCursor, StorageValidationError } from "@workglow/storage";
 import { EventEmitter } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 
@@ -161,6 +162,24 @@ export class ScopedTabularStorage<
     criteria: SearchCriteria<Entity> | undefined,
     request: PageRequest<Entity> | undefined
   ): Promise<Page<Entity>> {
+    if (request?.cursor !== undefined) {
+      // Cursors minted by KB-A are structurally identical to cursors minted
+      // by KB-B — both encode `kb_id` as part of the inner store's effective
+      // ordering. Without an explicit check, a cursor handed across a KB
+      // boundary would still be accepted by `inner.queryPage` and produce
+      // silently-wrong results: with `[kb_id ASC, id ASC]` ordering, a
+      // foreign cursor's keyset (`kb_id > A` OR `kb_id = A AND id > X`)
+      // intersected with our `kb_id = self` filter either streams from the
+      // wrong starting position or returns an empty page that looks like
+      // iteration ended. Decode and verify before forwarding.
+      const payload = decodeCursor(request.cursor);
+      const kbIndex = payload.n.indexOf("kb_id");
+      if (kbIndex >= 0 && payload.c[kbIndex] !== this.kbId) {
+        throw new StorageValidationError(
+          `Cursor was minted for kb_id="${String(payload.c[kbIndex])}"; this scope is kb_id="${this.kbId}"`
+        );
+      }
+    }
     const scopedCriteria = { ...((criteria ?? {}) as any), kb_id: this.kbId };
     const innerPage = await this.inner.queryPage(scopedCriteria, request as any);
     const items = innerPage.items.map((row: any) => this.strip(row)) as Entity[];
