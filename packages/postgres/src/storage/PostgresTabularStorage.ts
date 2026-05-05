@@ -146,7 +146,11 @@ export class PostgresTabularStorage<
   }
 
   protected getVectorDimensions(typeDef: JsonSchema): number | undefined {
-    return undefined;
+    if (!typeDef || typeof typeDef !== "object") return undefined;
+    const fmt = (typeDef as { format?: string }).format;
+    if (!fmt) return undefined;
+    const m = /^TypedArray:[A-Za-z0-9_]+:(\d+)$/.exec(fmt);
+    return m ? Number(m[1]) : undefined;
   }
 
   /**
