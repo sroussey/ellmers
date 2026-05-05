@@ -13,10 +13,13 @@ import type {
 import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
+  getConfigKey,
+  getLlamaCppSession,
   getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
   llamaCppSeedPromptSpread,
   loadSdk,
+  setLlamaCppSession,
   streamFromSession,
 } from "./LlamaCpp_Runtime";
 
@@ -26,18 +29,32 @@ export const LlamaCpp_TextGeneration: AiProviderRunFn<
   LlamaCppModelConfig
 > = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
+  signal?.throwIfAborted?.();
 
   const { LlamaChatSession } = await loadSdk();
 
   update_progress(0, "Loading model");
-  const context = await getOrCreateTextContext(model);
+
+  const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+  const context = cached ? undefined : await getOrCreateTextContext(model);
+  const sequence = cached ? cached.sequence : context!.getSequence();
+  const session =
+    cached?.session ??
+    new LlamaChatSession({
+      contextSequence: sequence,
+      ...llamaCppChatSessionConstructorSpread(model),
+    });
+
+  if (sessionId && !cached) {
+    setLlamaCppSession(sessionId, {
+      mode: "progressive",
+      sequence,
+      session,
+      modelKey: getConfigKey(model),
+    });
+  }
 
   update_progress(10, "Generating text");
-  const sequence = context.getSequence();
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
   try {
     const text = await session.prompt(input.prompt, {
       signal,
@@ -49,8 +66,10 @@ export const LlamaCpp_TextGeneration: AiProviderRunFn<
     update_progress(100, "Text generation complete");
     return { text };
   } finally {
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    if (!sessionId) {
+      session.dispose({ disposeSequence: false });
+      sequence.dispose();
+    }
   }
 };
 
@@ -69,12 +88,25 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
 
   const { LlamaChatSession } = await loadSdk();
 
-  const context = await getOrCreateTextContext(model);
-  const sequence = context.getSequence();
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
+  const cached = sessionId ? getLlamaCppSession(sessionId) : undefined;
+  const context = cached ? undefined : await getOrCreateTextContext(model);
+  const sequence = cached ? cached.sequence : context!.getSequence();
+  const session =
+    cached?.session ??
+    new LlamaChatSession({
+      contextSequence: sequence,
+      ...llamaCppChatSessionConstructorSpread(model),
+    });
+
+  if (sessionId && !cached) {
+    setLlamaCppSession(sessionId, {
+      mode: "progressive",
+      sequence,
+      session,
+      modelKey: getConfigKey(model),
+    });
+  }
+
   try {
     yield* streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
       return session.prompt(input.prompt, {
@@ -87,7 +119,9 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
       });
     }, signal);
   } finally {
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    if (!sessionId) {
+      session.dispose({ disposeSequence: false });
+      sequence.dispose();
+    }
   }
 };

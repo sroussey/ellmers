@@ -23,25 +23,34 @@ export function createOllamaTextGeneration(
     TextGenerationTaskInput,
     TextGenerationTaskOutput,
     OllamaModelConfig
-  > = async (input, model, update_progress, _signal) => {
+  > = async (input, model, update_progress, signal) => {
+    signal?.throwIfAborted?.();
     update_progress(0, "Starting Ollama text generation");
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
-    const response = await client.chat({
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      options: {
-        temperature: input.temperature,
-        top_p: input.topP,
-        num_predict: input.maxTokens,
-        frequency_penalty: input.frequencyPenalty,
-        presence_penalty: input.presencePenalty,
-      },
-    });
-
-    update_progress(100, "Completed Ollama text generation");
-    return { text: response.message.content };
+    const onAbort = () => client.abort?.();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      // Re-check after the listener is attached to close the
+      // attach-vs-aborted race.
+      signal?.throwIfAborted?.();
+      const response = await client.chat({
+        model: modelName,
+        messages: [{ role: "user", content: input.prompt }],
+        options: {
+          temperature: input.temperature,
+          top_p: input.topP,
+          num_predict: input.maxTokens,
+          frequency_penalty: input.frequencyPenalty,
+          presence_penalty: input.presencePenalty,
+        },
+      });
+      update_progress(100, "Completed Ollama text generation");
+      return { text: response.message.content };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+    }
   };
   return run;
 }
@@ -54,6 +63,7 @@ export function createOllamaTextGenerationStream(
     model,
     signal
   ): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+    signal?.throwIfAborted?.();
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
@@ -73,6 +83,9 @@ export function createOllamaTextGenerationStream(
     const onAbort = () => stream.abort();
     signal.addEventListener("abort", onAbort, { once: true });
     try {
+      // Re-check after the listener is attached to close the
+      // attach-vs-aborted race.
+      if (signal.aborted) stream.abort();
       for await (const chunk of stream) {
         const delta = chunk.message.content;
         if (delta) {

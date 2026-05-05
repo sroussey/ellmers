@@ -9,41 +9,42 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { GOOGLE_GEMINI } from "@workglow/google-gemini/ai-provider";
-import { registerGeminiInline } from "@workglow/google-gemini/ai-provider-runtime";
+import { OLLAMA } from "@workglow/ollama/ai-provider";
+import { registerOllamaInline } from "@workglow/ollama/ai-provider-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini:gemini-2.5-flash";
+const RUN = !!process.env.OLLAMA_HOST || !!process.env.RUN_OLLAMA_TESTS;
+const MODEL_ID = "ollama:llama3.2:1b";
 
 runAiProviderConformance({
-  name: "Google Gemini",
+  name: "Ollama",
   skip: !RUN,
-  timeout: 30_000,
+  timeout: 60_000,
   factory: async () => ({
     register: async () => {
       const logger = getTestingLogger();
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerGeminiInline();
+      await registerOllamaInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Gemini 2.5 Flash",
-        description: "Google Gemini 2.5 Flash",
+        title: "Llama 3.2 1B",
+        description: "Ollama-hosted Llama 3.2 1B",
         tasks: [
           "TextGenerationTask",
           "TextRewriterTask",
           "TextSummaryTask",
           "StructuredGenerationTask",
           "ToolCallingTask",
+          "TextEmbeddingTask",
         ],
-        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-2.5-flash" },
+        provider: OLLAMA as typeof OLLAMA,
+        provider_config: { model_name: "llama3.2:1b" },
         metadata: {},
       });
     },
@@ -64,5 +65,6 @@ runAiProviderConformance({
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
+    embeddings: MODEL_ID,
   },
 });

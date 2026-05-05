@@ -9,41 +9,40 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { GOOGLE_GEMINI } from "@workglow/google-gemini/ai-provider";
-import { registerGeminiInline } from "@workglow/google-gemini/ai-provider-runtime";
+import { HF_INFERENCE } from "@workglow/huggingface-inference/ai-provider";
+import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini:gemini-2.5-flash";
+const RUN = !!process.env.HF_TOKEN;
+const MODEL_ID = "hf-inference:meta-llama/Llama-3.1-8B-Instruct";
 
 runAiProviderConformance({
-  name: "Google Gemini",
+  name: "HuggingFace Inference",
   skip: !RUN,
-  timeout: 30_000,
+  timeout: 60_000,
   factory: async () => ({
     register: async () => {
       const logger = getTestingLogger();
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerGeminiInline();
+      await registerHfInferenceInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Gemini 2.5 Flash",
-        description: "Google Gemini 2.5 Flash",
+        title: "Llama 3.1 8B Instruct (HF Inference)",
+        description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
         tasks: [
           "TextGenerationTask",
           "TextRewriterTask",
           "TextSummaryTask",
-          "StructuredGenerationTask",
           "ToolCallingTask",
         ],
-        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-2.5-flash" },
+        provider: HF_INFERENCE as typeof HF_INFERENCE,
+        provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
         metadata: {},
       });
     },
@@ -55,14 +54,13 @@ runAiProviderConformance({
   capabilities: {
     streaming: true,
     tools: true,
-    structured: true,
-    embeddings: true,
+    structured: false,
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },
   models: {
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
-    structured: MODEL_ID,
   },
 });

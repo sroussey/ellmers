@@ -15,13 +15,11 @@ import {
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-provider-runtime";
 import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
-import { runGenericAiProviderTests } from "./genericAiProviderTests";
-
-const RUN = true;
 
 const TEXT_MODEL_ID = "onnx:onnx-community/Qwen2.5-1.5B-Instruct:q4";
 const THINKING_MODEL_ID = "onnx:LiquidAI/LFM2.5-1.2B-Thinking-WebGPU:q4";
@@ -72,30 +70,40 @@ const thinkingModel: HfTransformersOnnxModelRecord = {
   metadata: {},
 };
 
-runGenericAiProviderTests({
+runAiProviderConformance({
   name: "HFT (HuggingFace Transformers)",
-  skip: !RUN,
-  setup: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
-    await registerHuggingFaceTransformersInline();
-
-    await getGlobalModelRepository().addModel(textModel);
-    await getGlobalModelRepository().addModel(thinkingModel);
-    await getGlobalModelRepository().addModel(instructModel);
+  timeout: 300_000,
+  factory: async () => ({
+    register: async () => {
+      const logger = getTestingLogger();
+      setLogger(logger);
+      await setTaskQueueRegistry(null);
+      setGlobalModelRepository(new InMemoryModelRepository());
+      clearPipelineCache();
+      await registerHuggingFaceTransformersInline();
+      await getGlobalModelRepository().addModel(textModel);
+      await getGlobalModelRepository().addModel(thinkingModel);
+      await getGlobalModelRepository().addModel(instructModel);
+    },
+    dispose: async () => {
+      await setTaskQueueRegistry(null);
+    },
+    inspect: () => ({}),
+  }),
+  capabilities: {
+    streaming: true,
+    tools: true,
+    structured: true,
+    embeddings: true,
+    sessions: false,
+    abortMidStream: true,
   },
-  teardown: async () => {
-    await getTaskQueueRegistry().stopQueues();
-    await getTaskQueueRegistry().clearQueues();
-    await setTaskQueueRegistry(null);
+  models: {
+    textGeneration: INSTRUCT_MODEL_ID,
+    toolCalling: INSTRUCT_MODEL_ID,
+    structured: INSTRUCT_MODEL_ID,
   },
-  textGenerationModel: INSTRUCT_MODEL_ID,
-  toolCallingModel: INSTRUCT_MODEL_ID,
-  structuredGenerationModel: INSTRUCT_MODEL_ID,
-  agentModel: INSTRUCT_MODEL_ID,
-  maxTokens: 2600,
-  timeout: 300000,
+  // Local ONNX inference is slow; relax the abort window so the
+  // mid-stream-abort assertion has room to fire and shut down cleanly.
+  fixture: { maxTokens: 2600, abortGraceMs: 500 },
 });

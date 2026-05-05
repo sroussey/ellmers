@@ -20,6 +20,7 @@ export const Gemini_TextGeneration: AiProviderRunFn<
   TextGenerationTaskOutput,
   GeminiModelConfig
 > = async (input, model, update_progress, signal) => {
+  signal?.throwIfAborted?.();
   const logger = getLogger();
   const timerLabel = `gemini:TextGeneration:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
@@ -36,9 +37,12 @@ export const Gemini_TextGeneration: AiProviderRunFn<
     },
   });
 
-  const result = await genModel.generateContent({
-    contents: [{ role: "user", parts: [{ text: input.prompt }] }],
-  });
+  const result = await genModel.generateContent(
+    {
+      contents: [{ role: "user", parts: [{ text: input.prompt }] }],
+    },
+    { signal }
+  );
 
   const text = result.response.text();
   update_progress(100, "Completed Gemini text generation");
@@ -51,6 +55,7 @@ export const Gemini_TextGeneration_Stream: AiProviderStreamFn<
   TextGenerationTaskOutput,
   GeminiModelConfig
 > = async function* (input, model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+  signal?.throwIfAborted?.();
   const GoogleGenerativeAI = await loadGeminiSDK();
   const genAI = new GoogleGenerativeAI(getApiKey(model));
   const genModel = genAI.getGenerativeModel({

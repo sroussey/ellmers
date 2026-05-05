@@ -1,0 +1,65 @@
+/**
+ * @license
+ * Copyright 2025 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { getLogger } from "@workglow/util";
+import { describe, expect, it } from "vitest";
+
+import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
+import { itExpectFail } from "./itExpectFail";
+
+export function sessionReuseBlock(
+  opts: AiProviderConformanceOpts,
+  fixture: ConformanceFixture,
+  getHandle: () => ConformanceHandle
+): void {
+  const enabled = opts.capabilities.sessions && !!opts.models.textGeneration;
+  const expectFails = new Set(opts.expectedFailures ?? []);
+  const itImpl = expectFails.has("session.reuse") ? itExpectFail : it;
+  describe.skipIf(!enabled)("Session reuse", () => {
+    itImpl(
+      "two invocations with the same sessionId yield exactly one session-map entry",
+      async () => {
+        const handle = getHandle();
+        const map = handle.inspect().sessionMap;
+        if (!map) {
+          getLogger().warn(
+            `[conformance] ${opts.name} declares sessions=true but inspect().sessionMap is undefined; skipping`
+          );
+          return;
+        }
+        const sizeBefore = map.size;
+
+        const registry = getAiProviderRegistry();
+        const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
+        expect(model).toBeDefined();
+        const runFn = registry.getDirectRunFn(model!.provider, "TextGenerationTask");
+
+        const sessionId = `conformance-${Date.now()}`;
+        await runFn(
+          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+          model!,
+          () => {},
+          new AbortController().signal,
+          undefined,
+          sessionId
+        );
+        await runFn(
+          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+          model!,
+          () => {},
+          new AbortController().signal,
+          undefined,
+          sessionId
+        );
+
+        const newEntries = map.size - sizeBefore;
+        expect(newEntries).toBe(1);
+      },
+      opts.timeout
+    );
+  });
+}

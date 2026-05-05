@@ -11,51 +11,58 @@ import {
 } from "@workglow/ai";
 import { OPENAI } from "@workglow/openai/ai-provider";
 import { registerOpenAiInline } from "@workglow/openai/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
-import { runGenericAiProviderTests } from "./genericAiProviderTests";
 
 const RUN = !!process.env.OPENAI_API_KEY;
-
 const MODEL_ID = "openai:gpt-4o-mini";
 
-runGenericAiProviderTests({
+runAiProviderConformance({
   name: "OpenAI",
   skip: !RUN,
-  setup: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    await registerOpenAiInline();
-
-    await getGlobalModelRepository().addModel({
-      model_id: MODEL_ID,
-      title: "GPT-4o Mini",
-      description: "OpenAI GPT-4o Mini",
-      tasks: [
-        "TextGenerationTask",
-        "TextRewriterTask",
-        "TextSummaryTask",
-        "StructuredGenerationTask",
-        "ToolCallingTask",
-      ],
-      provider: OPENAI as typeof OPENAI,
-      provider_config: { model_name: "gpt-4o-mini" },
-      metadata: {},
-    });
+  timeout: 30_000,
+  factory: async () => ({
+    register: async () => {
+      const logger = getTestingLogger();
+      setLogger(logger);
+      await setTaskQueueRegistry(null);
+      setGlobalModelRepository(new InMemoryModelRepository());
+      await registerOpenAiInline();
+      await getGlobalModelRepository().addModel({
+        model_id: MODEL_ID,
+        title: "GPT-4o Mini",
+        description: "OpenAI GPT-4o Mini",
+        tasks: [
+          "TextGenerationTask",
+          "TextRewriterTask",
+          "TextSummaryTask",
+          "StructuredGenerationTask",
+          "ToolCallingTask",
+        ],
+        provider: OPENAI as typeof OPENAI,
+        provider_config: { model_name: "gpt-4o-mini" },
+        metadata: {},
+      });
+    },
+    dispose: async () => {
+      await setTaskQueueRegistry(null);
+    },
+    inspect: () => ({}),
+  }),
+  capabilities: {
+    streaming: true,
+    tools: true,
+    structured: true,
+    embeddings: true,
+    sessions: false,
+    abortMidStream: true,
   },
-  teardown: async () => {
-    await getTaskQueueRegistry().stopQueues();
-    await getTaskQueueRegistry().clearQueues();
-    await setTaskQueueRegistry(null);
+  models: {
+    textGeneration: MODEL_ID,
+    toolCalling: MODEL_ID,
+    structured: MODEL_ID,
   },
-  textGenerationModel: MODEL_ID,
-  toolCallingModel: MODEL_ID,
-  structuredGenerationModel: MODEL_ID,
-  agentModel: MODEL_ID,
-  maxTokens: 100,
-  timeout: 30000,
 });

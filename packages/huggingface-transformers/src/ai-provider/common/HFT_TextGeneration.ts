@@ -36,6 +36,7 @@ export const HFT_TextGeneration: AiProviderRunFn<
   TextGenerationTaskOutput,
   HfTransformersOnnxModelConfig
 > = async (input, model, onProgress, signal, _outputSchema, sessionId) => {
+  signal?.throwIfAborted?.();
   const logger = getLogger();
   const timerLabel = `hft:TextGeneration:${model?.provider_config.model_path}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
