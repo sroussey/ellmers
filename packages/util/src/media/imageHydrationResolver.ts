@@ -34,9 +34,7 @@ async function resolveImage(
  * Registers the "image" input resolver on the given registry.
  * Called by `bootstrapWorkglow` and `createOrchestrationContext`.
  */
-export function registerImageDefaults(
-  registry: ServiceRegistry = globalServiceRegistry
-): void {
+export function registerImageDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
   registerInputResolver("image", resolveImage, registry);
 }
 

@@ -111,14 +111,8 @@ function compactMcpServer(value: unknown): string | undefined {
  * Registers the MCP server default factories and the "mcp-server" input resolver/compactor
  * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
  */
-export function registerMcpServerDefaults(
-  registry: ServiceRegistry = globalServiceRegistry
-): void {
-  registry.registerIfAbsent(
-    MCP_SERVERS,
-    (): Map<string, McpServerConnection> => new Map(),
-    true
-  );
+export function registerMcpServerDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
+  registry.registerIfAbsent(MCP_SERVERS, (): Map<string, McpServerConnection> => new Map(), true);
   registry.registerIfAbsent(
     MCP_SERVER_REPOSITORY,
     (): McpServerRepository => new InMemoryMcpServerRepository(),
