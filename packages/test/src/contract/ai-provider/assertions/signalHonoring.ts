@@ -8,6 +8,7 @@ import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
+import { itExpectFail } from "./itExpectFail";
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -20,12 +21,9 @@ export function signalHonoringBlock(
   fixture: ConformanceFixture
 ): void {
   const expectFails = new Set(opts.expectedFailures ?? []);
-  const itNonStreaming = expectFails.has("signal.nonStreaming") ? it.fails : it;
-  const itMidStream = !opts.capabilities.abortMidStream
-    ? it.skip
-    : expectFails.has("signal.midStream")
-      ? it.fails
-      : it;
+  const itNonStreaming = expectFails.has("signal.nonStreaming") ? itExpectFail : it;
+  const skipMid = !opts.capabilities.abortMidStream;
+  const itMidStream = expectFails.has("signal.midStream") ? itExpectFail : it;
 
   describe.skipIf(!opts.models.textGeneration)("Signal honoring", () => {
     itNonStreaming(
@@ -39,51 +37,57 @@ export function signalHonoringBlock(
         const ac = new AbortController();
         ac.abort();
 
-        await expect(
-          runFn(
+        let caught: unknown;
+        try {
+          await runFn(
             { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
             model!,
             () => {},
             ac.signal,
             undefined,
             undefined
-          )
-        ).rejects.toSatisfy(isAbortError);
-      },
-      opts.timeout
-    );
-
-    itMidStream(
-      "streaming iterator terminates within abortGraceMs * 4 when aborted mid-stream",
-      async () => {
-        const registry = getAiProviderRegistry();
-        const repo = getGlobalModelRepository();
-        const model = await repo.findByName(opts.models.textGeneration!);
-        expect(model).toBeDefined();
-        const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
-        if (!streamFn) return; // capability mismatch — covered by capabilityHonesty
-        const ac = new AbortController();
-        const start = Date.now();
-        setTimeout(() => ac.abort(), fixture.abortGraceMs);
-
-        const events: unknown[] = [];
-        try {
-          for await (const ev of streamFn(
-            { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-            model!,
-            ac.signal,
-            undefined,
-            undefined
-          )) {
-            events.push(ev);
-          }
+          );
         } catch (err) {
-          if (!isAbortError(err)) throw err;
+          caught = err;
         }
-        const elapsed = Date.now() - start;
-        expect(elapsed).toBeLessThan(fixture.abortGraceMs * 4 + 2000);
+        expect(caught).toBeDefined();
+        expect(isAbortError(caught)).toBe(true);
       },
       opts.timeout
     );
+
+    if (!skipMid) {
+      itMidStream(
+        "streaming iterator terminates within abortGraceMs * 4 when aborted mid-stream",
+        async () => {
+          const registry = getAiProviderRegistry();
+          const repo = getGlobalModelRepository();
+          const model = await repo.findByName(opts.models.textGeneration!);
+          expect(model).toBeDefined();
+          const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+          if (!streamFn) return; // capability mismatch — covered by capabilityHonesty
+          const ac = new AbortController();
+          const start = Date.now();
+          setTimeout(() => ac.abort(), fixture.abortGraceMs);
+
+          try {
+            for await (const _ev of streamFn(
+              { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+              model!,
+              ac.signal,
+              undefined,
+              undefined
+            )) {
+              void _ev;
+            }
+          } catch (err) {
+            if (!isAbortError(err)) throw err;
+          }
+          const elapsed = Date.now() - start;
+          expect(elapsed).toBeLessThan(fixture.abortGraceMs * 4 + 2000);
+        },
+        opts.timeout
+      );
+    }
   });
 }

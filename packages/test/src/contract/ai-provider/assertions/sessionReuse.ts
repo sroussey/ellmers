@@ -9,6 +9,7 @@ import { getLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
+import { itExpectFail } from "./itExpectFail";
 
 export function sessionReuseBlock(
   opts: AiProviderConformanceOpts,
@@ -17,7 +18,7 @@ export function sessionReuseBlock(
 ): void {
   const enabled = opts.capabilities.sessions && !!opts.models.textGeneration;
   const expectFails = new Set(opts.expectedFailures ?? []);
-  const itImpl = expectFails.has("session.reuse") ? it.fails : it;
+  const itImpl = expectFails.has("session.reuse") ? itExpectFail : it;
   describe.skipIf(!enabled)("Session reuse", () => {
     itImpl(
       "two invocations with the same sessionId yield exactly one session-map entry",
