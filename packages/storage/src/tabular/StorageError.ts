@@ -24,7 +24,12 @@ export class StorageEmptyCriteriaError extends StorageValidationError {
 export class StorageInvalidLimitError extends StorageValidationError {
   static override readonly type: string = "StorageInvalidLimitError";
   constructor(limit: number) {
-    super(`Query limit must be greater than 0, got ${limit}`);
+    // Message names both constraints (positive AND integer) so callers
+    // hitting the error from `runPage` (which rejects non-integer limits)
+    // see the same wording as offset paths — and a user staring at
+    // `limit: 1.5` isn't left guessing that fractional values are the
+    // problem.
+    super(`Query limit must be a positive integer, got ${limit}`);
   }
 }
 

@@ -463,6 +463,9 @@ export abstract class BaseTabularStorage<
    * Async generator that yields pages of records.
    *
    * Backed by cursor-based pagination — stable under concurrent writes.
+   * Each yielded array is a fresh copy of `Page.items`; mutating the
+   * yielded array won't affect the underlying storage or subsequent
+   * pages, at the cost of one allocation per page.
    *
    * @param pageSize - Number of records per page (default: 100)
    */

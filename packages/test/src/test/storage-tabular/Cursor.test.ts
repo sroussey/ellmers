@@ -6,12 +6,16 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  CURSOR_VERSION,
   MAX_CURSOR_LENGTH,
   decodeCursor,
   encodeCursor,
   StorageValidationError,
 } from "@workglow/storage";
+
+// Pinned in the unit test rather than imported from `@workglow/storage`:
+// the cursor format version is an implementation detail of the codec
+// (kept out of the package's public API to leave room for evolution).
+const CURSOR_FORMAT_VERSION = 1;
 
 describe("Cursor codec", () => {
   it("round-trips a payload through encode → decode", () => {
@@ -104,7 +108,7 @@ describe("Cursor codec", () => {
       .replace(/=+$/, "");
     expect(() => decodeCursor(future)).toThrow(StorageValidationError);
     expect(() => decodeCursor(future)).toThrow(
-      new RegExp(`expected v${CURSOR_VERSION}`)
+      new RegExp(`expected v${CURSOR_FORMAT_VERSION}`)
     );
   });
 
@@ -124,5 +128,20 @@ describe("Cursor codec", () => {
   it("preserves null values in the payload", () => {
     const cursor = encodeCursor({ v: 1, n: ["x", "y"], c: [null, "z"] });
     expect(decodeCursor(cursor)).toEqual({ v: 1, n: ["x", "y"], c: [null, "z"] });
+  });
+
+  it("survives a JSON.stringify → JSON.parse round-trip", () => {
+    // Cursors are designed to be safe to persist and re-load across
+    // process boundaries (URLs, durable queues, etc). The codec is pure
+    // — no in-memory state — so transport via JSON should be lossless.
+    // Pin that contract here.
+    const original = encodeCursor({
+      v: 1,
+      n: ["createdAt", "id"],
+      c: ["2026-01-02T03:04:05.000Z", "abc"],
+    });
+    const transported = JSON.parse(JSON.stringify({ cursor: original })).cursor;
+    expect(transported).toBe(original);
+    expect(decodeCursor(transported)).toEqual(decodeCursor(original));
   });
 });

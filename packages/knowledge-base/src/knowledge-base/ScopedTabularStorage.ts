@@ -183,6 +183,12 @@ export class ScopedTabularStorage<
     const scopedCriteria = { ...((criteria ?? {}) as any), kb_id: this.kbId };
     const innerPage = await this.inner.queryPage(scopedCriteria, request as any);
     const items = innerPage.items.map((row: any) => this.strip(row)) as Entity[];
+    // Emit `query` for parity with `ScopedTabularStorage.query`. Cache
+    // invalidators that listen for tabular reads need to see page reads
+    // too; otherwise switching a caller from `query` to `getPage` would
+    // silently invalidate their invalidation logic. The emitted criteria
+    // is the *user-facing* criteria (without our injected `kb_id`).
+    this.events.emit("query", (criteria ?? {}) as Partial<Entity>, items);
     return { items, nextCursor: innerPage.nextCursor };
   }
 

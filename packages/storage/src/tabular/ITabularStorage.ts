@@ -360,6 +360,15 @@ export interface ITabularStorage<
    * Queries entries matching the specified search criteria with optional ordering, limit, and offset.
    * Uses optimized index paths when possible, falls back to full scan otherwise.
    *
+   * Implementation contract for third-party backends: when binding a
+   * `SearchCondition` value into the underlying datastore, run it
+   * through the same conversion path as a row value going *into* the
+   * store (e.g. `jsToSqlValue` for SQL backends — Date → ISO string,
+   * etc.). The cursor pagination machinery in {@link getPage} relies
+   * on this round-trip to compare a row's stored representation
+   * against a cursor's decoded value; any backend that skips the
+   * conversion would silently mis-page on Date or other rich types.
+   *
    * @param criteria - Object with column names as keys and values or SearchConditions
    * @param options - Optional ordering, limit, and offset options
    * @returns Array of matching entities or undefined if no matches found
