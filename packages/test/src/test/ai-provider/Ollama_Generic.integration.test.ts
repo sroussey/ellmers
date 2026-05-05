@@ -9,41 +9,42 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { OPENAI } from "@workglow/openai/ai-provider";
-import { registerOpenAiInline } from "@workglow/openai/ai-provider-runtime";
+import { OLLAMA } from "@workglow/ollama/ai-provider";
+import { registerOllamaInline } from "@workglow/ollama/ai-provider-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const RUN = !!process.env.OPENAI_API_KEY;
-const MODEL_ID = "openai:gpt-4o-mini";
+const RUN = !!process.env.OLLAMA_HOST || !!process.env.RUN_OLLAMA_TESTS;
+const MODEL_ID = "ollama:llama3.2:1b";
 
 runAiProviderConformance({
-  name: "OpenAI",
+  name: "Ollama",
   skip: !RUN,
-  timeout: 30_000,
+  timeout: 60_000,
   factory: async () => ({
     register: async () => {
       const logger = getTestingLogger();
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerOpenAiInline();
+      await registerOllamaInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "GPT-4o Mini",
-        description: "OpenAI GPT-4o Mini",
+        title: "Llama 3.2 1B",
+        description: "Ollama-hosted Llama 3.2 1B",
         tasks: [
           "TextGenerationTask",
           "TextRewriterTask",
           "TextSummaryTask",
           "StructuredGenerationTask",
           "ToolCallingTask",
+          "TextEmbeddingTask",
         ],
-        provider: OPENAI as typeof OPENAI,
-        provider_config: { model_name: "gpt-4o-mini" },
+        provider: OLLAMA as typeof OLLAMA,
+        provider_config: { model_name: "llama3.2:1b" },
         metadata: {},
       });
     },
@@ -66,5 +67,9 @@ runAiProviderConformance({
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
+    embeddings: MODEL_ID,
   },
+  // TODO(phase-4): Ollama non-streaming runFn drops signal (parameter declared `_signal`).
+  // Remove once Ollama_TextGeneration threads signal into the request.
+  expectedFailures: ["signal.nonStreaming"],
 });

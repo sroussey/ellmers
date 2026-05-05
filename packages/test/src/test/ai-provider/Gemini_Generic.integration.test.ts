@@ -14,48 +14,60 @@ import { registerGeminiInline } from "@workglow/google-gemini/ai-provider-runtim
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
-import { runGenericAiProviderTests } from "./genericAiProviderTests";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-
 const MODEL_ID = "gemini:gemini-2.5-flash";
 
-runGenericAiProviderTests({
+runAiProviderConformance({
   name: "Google Gemini",
   skip: !RUN,
-  setup: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    await registerGeminiInline();
-
-    await getGlobalModelRepository().addModel({
-      model_id: MODEL_ID,
-      title: "Gemini 2.5 Flash",
-      description: "Google Gemini 2.5 Flash",
-      tasks: [
-        "TextGenerationTask",
-        "TextRewriterTask",
-        "TextSummaryTask",
-        "StructuredGenerationTask",
-        "ToolCallingTask",
-      ],
-      provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-      provider_config: { model_name: "gemini-2.5-flash" },
-      metadata: {},
-    });
+  timeout: 30_000,
+  factory: async () => ({
+    register: async () => {
+      const logger = getTestingLogger();
+      setLogger(logger);
+      await setTaskQueueRegistry(null);
+      setGlobalModelRepository(new InMemoryModelRepository());
+      await registerGeminiInline();
+      await getGlobalModelRepository().addModel({
+        model_id: MODEL_ID,
+        title: "Gemini 2.5 Flash",
+        description: "Google Gemini 2.5 Flash",
+        tasks: [
+          "TextGenerationTask",
+          "TextRewriterTask",
+          "TextSummaryTask",
+          "StructuredGenerationTask",
+          "ToolCallingTask",
+        ],
+        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
+        provider_config: { model_name: "gemini-2.5-flash" },
+        metadata: {},
+      });
+    },
+    dispose: async () => {
+      await getTaskQueueRegistry().stopQueues();
+      await getTaskQueueRegistry().clearQueues();
+      await setTaskQueueRegistry(null);
+    },
+    inspect: () => ({}),
+  }),
+  capabilities: {
+    streaming: true,
+    tools: true,
+    structured: true,
+    embeddings: true,
+    sessions: false,
+    abortMidStream: true,
   },
-  teardown: async () => {
-    await getTaskQueueRegistry().stopQueues();
-    await getTaskQueueRegistry().clearQueues();
-    await setTaskQueueRegistry(null);
+  models: {
+    textGeneration: MODEL_ID,
+    toolCalling: MODEL_ID,
+    structured: MODEL_ID,
   },
-  textGenerationModel: MODEL_ID,
-  toolCallingModel: MODEL_ID,
-  structuredGenerationModel: MODEL_ID,
-  agentModel: MODEL_ID,
-  maxTokens: 200,
-  timeout: 30000,
+  // TODO(phase-4): Gemini non-streaming runFn drops signal. Remove once
+  // Gemini_TextGeneration threads signal into generateContent.
+  expectedFailures: ["signal.nonStreaming"],
 });

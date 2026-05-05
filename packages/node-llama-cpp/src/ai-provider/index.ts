@@ -6,4 +6,5 @@
 
 export * from "./common/LlamaCpp_Constants";
 export * from "./common/LlamaCpp_ModelSchema";
+export { llamaCppSessions } from "./common/LlamaCpp_Runtime";
 export * from "./registerLlamaCpp";

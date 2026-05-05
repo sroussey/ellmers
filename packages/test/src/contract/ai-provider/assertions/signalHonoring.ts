@@ -19,11 +19,16 @@ export function signalHonoringBlock(
   opts: AiProviderConformanceOpts,
   fixture: ConformanceFixture
 ): void {
-  const itImpl = opts.capabilities.abortMidStream ? it : it.skip;
-  const itStrict = it; // Phase 4 may flip to it.fails; the caller controls via opts later.
+  const expectFails = new Set(opts.expectedFailures ?? []);
+  const itNonStreaming = expectFails.has("signal.nonStreaming") ? it.fails : it;
+  const itMidStream = !opts.capabilities.abortMidStream
+    ? it.skip
+    : expectFails.has("signal.midStream")
+      ? it.fails
+      : it;
 
   describe.skipIf(!opts.models.textGeneration)("Signal honoring", () => {
-    itStrict(
+    itNonStreaming(
       "non-streaming runFn rejects with AbortError when aborted before invocation",
       async () => {
         const registry = getAiProviderRegistry();
@@ -48,7 +53,7 @@ export function signalHonoringBlock(
       opts.timeout
     );
 
-    itImpl(
+    itMidStream(
       "streaming iterator terminates within abortGraceMs * 4 when aborted mid-stream",
       async () => {
         const registry = getAiProviderRegistry();

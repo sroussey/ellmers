@@ -16,8 +16,10 @@ export function sessionReuseBlock(
   getHandle: () => ConformanceHandle
 ): void {
   const enabled = opts.capabilities.sessions && !!opts.models.textGeneration;
+  const expectFails = new Set(opts.expectedFailures ?? []);
+  const itImpl = expectFails.has("session.reuse") ? it.fails : it;
   describe.skipIf(!enabled)("Session reuse", () => {
-    it(
+    itImpl(
       "two invocations with the same sessionId yield exactly one session-map entry",
       async () => {
         const handle = getHandle();

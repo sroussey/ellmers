@@ -9,41 +9,40 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { OPENAI } from "@workglow/openai/ai-provider";
-import { registerOpenAiInline } from "@workglow/openai/ai-provider-runtime";
+import { HF_INFERENCE } from "@workglow/huggingface-inference/ai-provider";
+import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const RUN = !!process.env.OPENAI_API_KEY;
-const MODEL_ID = "openai:gpt-4o-mini";
+const RUN = !!process.env.HF_TOKEN;
+const MODEL_ID = "hf-inference:meta-llama/Llama-3.1-8B-Instruct";
 
 runAiProviderConformance({
-  name: "OpenAI",
+  name: "HuggingFace Inference",
   skip: !RUN,
-  timeout: 30_000,
+  timeout: 60_000,
   factory: async () => ({
     register: async () => {
       const logger = getTestingLogger();
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerOpenAiInline();
+      await registerHfInferenceInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "GPT-4o Mini",
-        description: "OpenAI GPT-4o Mini",
+        title: "Llama 3.1 8B Instruct (HF Inference)",
+        description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
         tasks: [
           "TextGenerationTask",
           "TextRewriterTask",
           "TextSummaryTask",
-          "StructuredGenerationTask",
           "ToolCallingTask",
         ],
-        provider: OPENAI as typeof OPENAI,
-        provider_config: { model_name: "gpt-4o-mini" },
+        provider: HF_INFERENCE as typeof HF_INFERENCE,
+        provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
         metadata: {},
       });
     },
@@ -57,14 +56,13 @@ runAiProviderConformance({
   capabilities: {
     streaming: true,
     tools: true,
-    structured: true,
-    embeddings: true,
+    structured: false,
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },
   models: {
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
-    structured: MODEL_ID,
   },
 });

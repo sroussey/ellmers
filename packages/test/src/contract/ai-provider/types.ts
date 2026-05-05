@@ -14,6 +14,17 @@ export interface AiProviderConformanceOpts {
   readonly capabilities: AiProviderCapabilities;
   readonly models: AiProviderConformanceModels;
   readonly fixture?: Partial<ConformanceFixture>;
+  /**
+   * Names of conformance assertions that are currently broken in this
+   * adapter. Each named assertion is wrapped in `it.fails` instead of `it`.
+   * Remove the entry once the adapter bug is fixed.
+   *
+   * Known names:
+   *   "signal.nonStreaming"
+   *   "signal.midStream"
+   *   "session.reuse"
+   */
+  readonly expectedFailures?: ReadonlyArray<string>;
 }
 
 export interface ConformanceHandle {
