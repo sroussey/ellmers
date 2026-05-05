@@ -42,9 +42,16 @@ export function indexedDbRateLimiterExecutionMigrations(
 /**
  * Initial migrations for the IndexedDB rate-limiter `next_available` table.
  *
- * Schema: object store keyed by `queue_name` (the natural primary key) plus a
- * compound index that includes prefix columns when present so per-tenant
- * lookups are still index-served.
+ * Schema: object store keyed by a single synthetic field whose name is
+ * `prefixCols.concat(["queue_name"]).join("_")`. The storage layer writes
+ * a record where this field holds `prefixValues.concat([queueName]).join("_")`
+ * — i.e. tenant-qualified — so the same physical store can hold rows for
+ * multiple tenants without collisions. Without this, two tenants with the
+ * same queue name would silently overwrite each other's row (the
+ * `next_available_at` of one would be returned for the other).
+ *
+ * No `queue_name = "myqueue"` index is created because the storage's read
+ * path (`store.get(syntheticKey)`) goes through the primary key directly.
  */
 export function indexedDbRateLimiterNextAvailableMigrations(
   nextAvailableTableName: string,
@@ -52,17 +59,19 @@ export function indexedDbRateLimiterNextAvailableMigrations(
 ): IndexedDbMigration[] {
   const component = `rate-limiter:indexeddb:${nextAvailableTableName}`;
   const prefixCols = prefixes.map((p) => p.name);
-  const k = (cols: string[]): string[] => [...prefixCols, ...cols];
+  // The keyPath is a single field whose name encodes the prefix-qualified
+  // identifier. With no prefixes this collapses to `"queue_name"`, matching
+  // the legacy single-tenant layout.
+  const keyField = [...prefixCols, "queue_name"].join("_");
 
   return [
     {
       component,
       version: 1,
-      description: "Create rate-limiter next_available object store + index",
+      description: "Create rate-limiter next_available object store",
       up({ db }) {
         if (!db.objectStoreNames.contains(nextAvailableTableName)) {
-          const store = db.createObjectStore(nextAvailableTableName, { keyPath: "queue_name" });
-          store.createIndex("queue_name_idx", k(["queue_name"]), { unique: true });
+          db.createObjectStore(nextAvailableTableName, { keyPath: keyField });
         }
       },
     },

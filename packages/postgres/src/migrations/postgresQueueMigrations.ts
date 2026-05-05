@@ -144,8 +144,17 @@ export function postgresQueueMigrations(
         // Postgres-compatible engines like PGLite may not implement pg_notify
         // or plpgsql. Skip trigger installation in that case — the queue's
         // subscribeToChanges throws synchronously for those engines anyway.
+        //
+        // Wrapped in a SAVEPOINT because this migration runs inside the
+        // runner's BEGIN/COMMIT. Without the savepoint, any error in the
+        // trigger DDL would put the outer transaction into aborted state
+        // (Postgres 25P02), poisoning the runner's bookkeeping INSERT and
+        // failing the whole migration — even though the trigger itself is
+        // optional. ROLLBACK TO SAVEPOINT lets us discard just the failed
+        // trigger work and keep the rest of the migration committable.
         const fnName = `${tableName}_notify`;
         const trgName = `${tableName}_notify_trg`;
+        await db.query("SAVEPOINT install_notify_trigger");
         try {
           await db.query(`
             CREATE OR REPLACE FUNCTION ${fnName}() RETURNS trigger AS $fn$
@@ -170,9 +179,13 @@ export function postgresQueueMigrations(
               AFTER INSERT OR UPDATE ON ${tableName}
               FOR EACH ROW EXECUTE FUNCTION ${fnName}();
           `);
+          await db.query("RELEASE SAVEPOINT install_notify_trigger");
         } catch {
-          // Engine doesn't support LISTEN/NOTIFY; subscribers will fall back
-          // to polling.
+          // Engine doesn't support LISTEN/NOTIFY; rewind to the savepoint so
+          // the outer transaction stays usable, and let subscribers fall
+          // back to polling.
+          await db.query("ROLLBACK TO SAVEPOINT install_notify_trigger").catch(() => undefined);
+          await db.query("RELEASE SAVEPOINT install_notify_trigger").catch(() => undefined);
         }
       },
     },
