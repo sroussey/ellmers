@@ -21,52 +21,53 @@ export const TABULAR_REPOSITORIES = createServiceToken<Map<string, AnyTabularSto
   "storage.tabular.repositories"
 );
 
-// Register default factory if not already registered
-globalServiceRegistry.registerIfAbsent(
-  TABULAR_REPOSITORIES,
-  (): Map<string, AnyTabularStorage> => new Map(),
-  true
-);
-
 /**
- * Gets the global tabular repository registry
- * @returns Map of tabular repository ID to instance
+ * Gets the tabular repository map from the given registry (defaults to global).
+ * Lazy-registers an empty map if absent — keeps scoped registries isolated.
  */
-export function getGlobalTabularRepositories(): Map<string, AnyTabularStorage> {
-  return globalServiceRegistry.get(TABULAR_REPOSITORIES);
+export function getGlobalTabularRepositories(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, AnyTabularStorage> {
+  if (!registry.has(TABULAR_REPOSITORIES)) {
+    registerTabularStorageDefaults(registry);
+  }
+  return registry.get(TABULAR_REPOSITORIES);
 }
 
 /**
- * Registers a tabular repository globally by ID
- * @param id The unique identifier for this repository
- * @param repository The repository instance to register
+ * Registers a tabular repository on the given registry by ID (defaults to global).
  */
-export function registerTabularRepository(id: string, repository: AnyTabularStorage): void {
-  const repos = getGlobalTabularRepositories();
+export function registerTabularRepository(
+  id: string,
+  repository: AnyTabularStorage,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  const repos = getGlobalTabularRepositories(registry);
   repos.set(id, repository);
 }
 
 /**
- * Gets a tabular repository by ID from the global registry
- * @param id The repository identifier
+ * Gets a tabular repository by ID from the given registry (defaults to global).
  * @returns The repository instance or undefined if not found
  */
-export function getTabularRepository(id: string): AnyTabularStorage | undefined {
-  return getGlobalTabularRepositories().get(id);
+export function getTabularRepository(
+  id: string,
+  registry: ServiceRegistry = globalServiceRegistry
+): AnyTabularStorage | undefined {
+  return getGlobalTabularRepositories(registry).get(id);
 }
 
 /**
  * Resolves a repository ID to an instance from the registry.
- * Used by the input resolver system.
+ * Used by the input resolver system. Always reads from the supplied registry —
+ * no fallback to global state, so scoped registries stay isolated.
  */
 function resolveRepositoryFromRegistry(
   id: string,
-  format: string,
+  _format: string,
   registry: ServiceRegistry
 ): AnyTabularStorage {
-  const repos = registry.has(TABULAR_REPOSITORIES)
-    ? registry.get(TABULAR_REPOSITORIES)
-    : getGlobalTabularRepositories();
+  const repos = getGlobalTabularRepositories(registry);
   const repo = repos.get(id);
   if (!repo) {
     throw new Error(`Tabular storage "${id}" not found in registry`);
@@ -74,17 +75,33 @@ function resolveRepositoryFromRegistry(
   return repo;
 }
 
-// Register the repository resolver for format: "storage:tabular"
-registerInputResolver("storage:tabular", resolveRepositoryFromRegistry);
-
-// Register the compactor — reverse map lookup by identity
-registerInputCompactor("storage:tabular", (value, _format, registry) => {
-  const repos = registry.has(TABULAR_REPOSITORIES)
-    ? registry.get(TABULAR_REPOSITORIES)
-    : getGlobalTabularRepositories();
-
+function compactTabularRepository(
+  value: unknown,
+  _format: string,
+  registry: ServiceRegistry
+): string | undefined {
+  const repos = getGlobalTabularRepositories(registry);
   for (const [id, repo] of repos) {
     if (repo === value) return id;
   }
   return undefined;
-});
+}
+
+/**
+ * Registers the tabular storage default factory and the "storage:tabular" input resolver/compactor
+ * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ */
+export function registerTabularStorageDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(
+    TABULAR_REPOSITORIES,
+    (): Map<string, AnyTabularStorage> => new Map(),
+    true
+  );
+  registerInputResolver("storage:tabular", resolveRepositoryFromRegistry, registry);
+  registerInputCompactor("storage:tabular", compactTabularRepository, registry);
+}
+
+// Self-register on the global registry. Idempotent.
+registerTabularStorageDefaults();

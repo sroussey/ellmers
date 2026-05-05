@@ -9,6 +9,7 @@ import { getGpuDevice as _getGpuDevice } from "./media/gpuDevice.browser";
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
 import "./media/imageCacheCodec";
 import "./media/imageHydrationResolver";
+export { registerImageDefaults } from "./media/imageHydrationResolver";
 import type { ImageValue as _ImageValue } from "./media/imageValue";
 import type { EncodeRawPixelsOptions } from "./media/sharpImage.server";
 import { WebGpuImage as _WebGpuImage } from "./media/webGpuImage.browser";

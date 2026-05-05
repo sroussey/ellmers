@@ -147,13 +147,23 @@
       },
       "types": "./dist/worker-browser.d.ts",
       "import": "./dist/worker-node.js"
+    },
+    "./bootstrap": {
+      "types": "./dist/bootstrap.d.ts",
+      "import": "./dist/bootstrap.js"
+    },
+    "./auto-bootstrap": {
+      "types": "./dist/auto-bootstrap.d.ts",
+      "import": "./dist/auto-bootstrap.js"
     }
   },
   "files": [
     "dist",
     "src/**/*.md"
   ],
-  "sideEffects": true,
+  "sideEffects": [
+    "./dist/auto-bootstrap.js"
+  ],
   "publishConfig": {
     "access": "public"
   },

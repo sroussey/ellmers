@@ -29,19 +29,29 @@ export type InputResolverFn = (
 export const INPUT_RESOLVERS =
   createServiceToken<Map<string, InputResolverFn>>("task.input.resolvers");
 
-// Register default factory if not already registered
-globalServiceRegistry.registerIfAbsent(
-  INPUT_RESOLVERS,
-  (): Map<string, InputResolverFn> => new Map(),
-  true
-);
+/**
+ * Registers an empty resolver map on the given registry if absent.
+ * Called as part of `bootstrapWorkglow` / `createOrchestrationContext`.
+ */
+export function registerInputResolverDefaults(
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  registry.registerIfAbsent(INPUT_RESOLVERS, (): Map<string, InputResolverFn> => new Map(), true);
+}
+
+// Self-register on the global registry. Idempotent.
+registerInputResolverDefaults();
 
 /**
- * Gets the global input resolver registry
- * @returns Map of format prefix to resolver function
+ * Gets the input resolver registry from the given registry (defaults to global).
  */
-export function getInputResolvers(): Map<string, InputResolverFn> {
-  return globalServiceRegistry.get(INPUT_RESOLVERS);
+export function getInputResolvers(
+  registry: ServiceRegistry = globalServiceRegistry
+): Map<string, InputResolverFn> {
+  if (!registry.has(INPUT_RESOLVERS)) {
+    registerInputResolverDefaults(registry);
+  }
+  return registry.get(INPUT_RESOLVERS);
 }
 
 /**
@@ -74,7 +84,11 @@ export function getInputResolvers(): Map<string, InputResolverFn> {
  * });
  * ```
  */
-export function registerInputResolver(formatPrefix: string, resolver: InputResolverFn): void {
-  const resolvers = getInputResolvers();
+export function registerInputResolver(
+  formatPrefix: string,
+  resolver: InputResolverFn,
+  registry: ServiceRegistry = globalServiceRegistry
+): void {
+  const resolvers = getInputResolvers(registry);
   resolvers.set(formatPrefix, resolver);
 }
