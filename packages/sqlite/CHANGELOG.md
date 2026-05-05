@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.31
+
+### Chores
+
+- fixup sqlite related packages
+
 ## 0.2.30
 
 ### Chores

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.31
+
+### Chores
+
+- no electron in browser control just yet
+
 ## 0.2.30
 
 ### Chores

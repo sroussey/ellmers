@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.31
+
+### Refactors
+
+#### ai-provider
+
+- replace WebBrowserQueuedProvider with WebBrowserProvider
+
 ## 0.2.30
 
 ### Refactors

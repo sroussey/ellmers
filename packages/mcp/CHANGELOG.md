@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.31
+
+### Refactors
+
+- introduce bootstrapWorkglow and createOrchestrationContext (#460)
+
 ## 0.2.30
 
 ### Chores

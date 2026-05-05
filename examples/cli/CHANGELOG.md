@@ -1,5 +1,11 @@
 # @workglow/cli
 
+## 0.2.31
+
+### Updated Dependencies
+
+- `ink`: ^7.0.2
+
 ## 0.2.30
 
 ## 0.2.29
