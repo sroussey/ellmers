@@ -106,7 +106,4 @@ runAiProviderConformance({
     structured: toolModel.model_id,
   },
   fixture: { maxTokens: 200 },
-  // TODO(phase-4): LlamaCpp_TextGeneration declares sessionId but does not
-  // wire it through to llamaCppSessions. Remove once wired.
-  expectedFailures: ["session.reuse"],
 });
