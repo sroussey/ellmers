@@ -36,9 +36,13 @@ export const Gemini_TextGeneration: AiProviderRunFn<
     },
   });
 
-  const result = await genModel.generateContent({
-    contents: [{ role: "user", parts: [{ text: input.prompt }] }],
-  });
+  signal?.throwIfAborted?.();
+  const result = await genModel.generateContent(
+    {
+      contents: [{ role: "user", parts: [{ text: input.prompt }] }],
+    },
+    { signal }
+  );
 
   const text = result.response.text();
   update_progress(100, "Completed Gemini text generation");

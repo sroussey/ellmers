@@ -67,7 +67,4 @@ runAiProviderConformance({
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
   },
-  // TODO(phase-4): Gemini non-streaming runFn drops signal. Remove once
-  // Gemini_TextGeneration threads signal into generateContent.
-  expectedFailures: ["signal.nonStreaming"],
 });
