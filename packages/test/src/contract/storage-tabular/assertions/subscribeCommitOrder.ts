@@ -7,7 +7,7 @@
 import type { TabularChangePayload } from "@workglow/storage";
 import { sleep } from "@workglow/util";
 import type { FromSchema } from "@workglow/util/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { itExpectFail } from "../../itExpectFail";
 import type { CompoundSchema } from "../../../test/storage-tabular/genericTabularStorageTests";
@@ -30,12 +30,12 @@ export function subscribeCommitOrderBlock(
   describe.skipIf(!enabled)("Subscribe commit order", () => {
     let repo: Awaited<ReturnType<TabularContractHandle["createCompoundRepo"]>>;
 
-    beforeEach(async () => {
+    beforeAll(async () => {
       repo = await getHandle().createCompoundRepo();
       await repo.setupDatabase?.();
-    });
+    }, opts.timeout);
 
-    afterEach(async () => {
+    afterAll(async () => {
       await repo.deleteAll();
       repo.destroy();
     });
@@ -45,10 +45,9 @@ export function subscribeCommitOrderBlock(
       async () => {
         const observedNames: string[] = [];
         const unsubscribe = repo.subscribeToChanges(
-          (change) => {
-            const c = change as TabularChangePayload<CompoundEntity>;
-            if (c.type === "INSERT" && c.new) {
-              observedNames.push(c.new.name);
+          (change: TabularChangePayload<CompoundEntity>) => {
+            if (change.type === "INSERT" && change.new) {
+              observedNames.push(change.new.name);
             }
           },
           opts.subscriptions

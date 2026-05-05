@@ -68,11 +68,35 @@ describe("PostgresTabularStorage", () => {
     capabilities: { subscriptions: true, vectorColumns: true },
     // TODO(workglow): subscribeToChanges throws "not supported" today.
     // Real LISTEN/NOTIFY implementation tracked as a follow-up feature spec.
-    // Discovery: vector.dimensionRoundTrip body completes without throwing
-    // (likely because the Float32Array TEXT round-trip leaves the value as
-    // an instance of Float32Array somewhere in the stack), so it is not
-    // listed here. Phase 4 will validate vector behavior end-to-end.
     expectedFailures: ["subscribe.fireOncePerWrite", "subscribe.commitOrder"],
+  });
+
+  // Postgres-specific: verify the vector column is actually pgvector-typed.
+  // The contract suite's vector.dimensionRoundTrip assertion alone is not
+  // sufficient because the Float32Array round-trip works even when the
+  // column degrades to TEXT (sqlToJsValue hard-codes Float32Array on read).
+  // This test ensures getVectorDimensions correctly parses the dimension
+  // suffix and that the column type is `vector`, not `text`.
+  describe("Postgres pgvector column-type introspection", () => {
+    it("creates vector(N) columns when schema declares TypedArray:Float32Array:N", async () => {
+      const tableName = `pgtype_test_${uuid4().replace(/-/g, "_")}`;
+      const repo = new PostgresTabularStorage<
+        typeof VectorSchema,
+        typeof VectorPrimaryKeyNames
+      >(db, tableName, VectorSchema, VectorPrimaryKeyNames);
+      await repo.setupDatabase();
+
+      const result = await (db as unknown as PGlite).query<{ data_type: string }>(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = 'embedding'`,
+        [tableName]
+      );
+      expect(result.rows).toHaveLength(1);
+      // pgvector columns report `USER-DEFINED` as the standard data_type.
+      // For a TEXT fallback this would be `text`.
+      expect(result.rows[0].data_type).toBe("USER-DEFINED");
+
+      repo.destroy();
+    });
   });
 
   runGenericTabularStorageTests(

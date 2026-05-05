@@ -5,12 +5,18 @@
  */
 
 import type { ITabularStorage } from "@workglow/storage";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { itExpectFail } from "../../itExpectFail";
 import { DEFAULT_VECTOR_DIMENSION, VectorPrimaryKeyNames, VectorSchema } from "../fixtures";
 import type { TabularContractHandle, TabularStorageContractOpts } from "../types";
 
+// VectorSchema declares `embedding` as `type: "string"` (Postgres requirement
+// for vector format detection). Adapters serialize/deserialize between
+// Float32Array and the wire format at runtime, but the static FromSchema
+// derivation does not currently model this so casts via `unknown` are
+// required at the put/get sites. Tracked: extend TypedArraySchemaOptions to
+// recognize `type: "string"` + TypedArray:N format.
 export function vectorDimensionRoundTripBlock(
   opts: TabularStorageContractOpts,
   getHandle: () => TabularContractHandle
@@ -22,7 +28,7 @@ export function vectorDimensionRoundTripBlock(
   describe.skipIf(!enabled)("Vector column round-trip", () => {
     let repo: ITabularStorage<typeof VectorSchema, typeof VectorPrimaryKeyNames>;
 
-    beforeEach(async () => {
+    beforeAll(async () => {
       const handle = getHandle();
       if (!handle.createVectorRepo) {
         throw new Error(
@@ -31,9 +37,9 @@ export function vectorDimensionRoundTripBlock(
       }
       repo = await handle.createVectorRepo();
       await repo.setupDatabase?.();
-    });
+    }, opts.timeout);
 
-    afterEach(async () => {
+    afterAll(async () => {
       await repo.deleteAll();
       repo.destroy();
     });
@@ -49,13 +55,10 @@ export function vectorDimensionRoundTripBlock(
 
         const fetched = await repo.get({ id: "v1" });
         expect(fetched).toBeDefined();
-        expect(fetched!.embedding).toBeInstanceOf(Float32Array);
-        expect((fetched!.embedding as unknown as Float32Array).length).toBe(
-          DEFAULT_VECTOR_DIMENSION
-        );
-
-        // Spot-check a few values to confirm element-level fidelity.
         const round = fetched!.embedding as unknown as Float32Array;
+        expect(round).toBeInstanceOf(Float32Array);
+        expect(round.length).toBe(DEFAULT_VECTOR_DIMENSION);
+        // Spot-check a few values to confirm element-level fidelity.
         expect(round[0]).toBeCloseTo(0.001, 5);
         expect(round[round.length - 1]).toBeCloseTo(DEFAULT_VECTOR_DIMENSION / 1000, 5);
       },

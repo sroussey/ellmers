@@ -22,3 +22,4 @@ export const VectorSchema = {
   required: ["id", "embedding"],
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
+
