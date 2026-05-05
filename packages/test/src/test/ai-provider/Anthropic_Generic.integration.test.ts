@@ -11,7 +11,7 @@ import {
 } from "@workglow/ai";
 import { ANTHROPIC } from "@workglow/anthropic/ai-provider";
 import { registerAnthropicInline } from "@workglow/anthropic/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
@@ -48,8 +48,6 @@ runAiProviderConformance({
       });
     },
     dispose: async () => {
-      await getTaskQueueRegistry().stopQueues();
-      await getTaskQueueRegistry().clearQueues();
       await setTaskQueueRegistry(null);
     },
     inspect: () => ({}),

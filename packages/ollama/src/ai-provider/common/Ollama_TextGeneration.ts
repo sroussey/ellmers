@@ -29,22 +29,23 @@ export function createOllamaTextGeneration(
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
-    const responsePromise = client.chat({
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      options: {
-        temperature: input.temperature,
-        top_p: input.topP,
-        num_predict: input.maxTokens,
-        frequency_penalty: input.frequencyPenalty,
-        presence_penalty: input.presencePenalty,
-      },
-    });
-
     const onAbort = () => client.abort?.();
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      const response = await responsePromise;
+      // Re-check after the listener is attached to close the
+      // attach-vs-aborted race.
+      signal?.throwIfAborted?.();
+      const response = await client.chat({
+        model: modelName,
+        messages: [{ role: "user", content: input.prompt }],
+        options: {
+          temperature: input.temperature,
+          top_p: input.topP,
+          num_predict: input.maxTokens,
+          frequency_penalty: input.frequencyPenalty,
+          presence_penalty: input.presencePenalty,
+        },
+      });
       update_progress(100, "Completed Ollama text generation");
       return { text: response.message.content };
     } finally {

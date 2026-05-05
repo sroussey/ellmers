@@ -55,6 +55,7 @@ export const Gemini_TextGeneration_Stream: AiProviderStreamFn<
   TextGenerationTaskOutput,
   GeminiModelConfig
 > = async function* (input, model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+  signal?.throwIfAborted?.();
   const GoogleGenerativeAI = await loadGeminiSDK();
   const genAI = new GoogleGenerativeAI(getApiKey(model));
   const genModel = genAI.getGenerativeModel({

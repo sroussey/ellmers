@@ -15,7 +15,7 @@ import {
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-provider-runtime";
 import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
@@ -86,12 +86,8 @@ runAiProviderConformance({
       await getGlobalModelRepository().addModel(instructModel);
     },
     dispose: async () => {
-      await getTaskQueueRegistry().stopQueues();
-      await getTaskQueueRegistry().clearQueues();
       await setTaskQueueRegistry(null);
     },
-    // hftSessions is internal to HFT_Pipeline.ts; not exported. The session-reuse
-    // assertion will log-warn-skip when sessionMap is undefined.
     inspect: () => ({}),
   }),
   capabilities: {

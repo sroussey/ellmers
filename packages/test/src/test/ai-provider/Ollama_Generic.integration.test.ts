@@ -11,7 +11,7 @@ import {
 } from "@workglow/ai";
 import { OLLAMA } from "@workglow/ollama/ai-provider";
 import { registerOllamaInline } from "@workglow/ollama/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
@@ -49,8 +49,6 @@ runAiProviderConformance({
       });
     },
     dispose: async () => {
-      await getTaskQueueRegistry().stopQueues();
-      await getTaskQueueRegistry().clearQueues();
       await setTaskQueueRegistry(null);
     },
     inspect: () => ({}),

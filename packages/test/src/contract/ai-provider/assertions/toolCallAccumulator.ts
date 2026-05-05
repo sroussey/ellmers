@@ -18,8 +18,12 @@ export function toolCallAccumulatorBlock(
   const enabled = opts.capabilities.tools && !!opts.models.toolCalling;
   describe.skipIf(!enabled)("Tool-call accumulator", () => {
     it(
-      "produces ≥1 call with stable id and parsable partial args",
+      "produces ≥1 call with non-empty id, expected name, and parsable final args",
       async () => {
+        // NOTE: This test only inspects the *final* tool-call result. Validating
+        // intermediate stream-delta stability (id constant across object-deltas,
+        // parsePartialJson at every intermediate step) requires driving the
+        // streamFn directly and is tracked as a follow-up enhancement.
         const tool: ToolDefinition = {
           name: fixture.weatherTool.name,
           description: fixture.weatherTool.description,
@@ -36,7 +40,7 @@ export function toolCallAccumulatorBlock(
         const calls: ToolCalls = result.toolCalls;
         expect(calls.length).toBeGreaterThan(0);
         const call = calls[0];
-        expect(call.name).toBe("get_weather");
+        expect(call.name).toBe(fixture.weatherTool.name);
         expect(call.id).toBeTruthy();
         expect(call.input).toBeDefined();
 

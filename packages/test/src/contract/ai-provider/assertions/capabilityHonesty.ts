@@ -48,5 +48,18 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
       },
       opts.timeout
     );
+
+    it.skipIf(opts.capabilities.structured || !opts.models.textGeneration)(
+      "declares structured=false → registry rejects StructuredGenerationTask lookup",
+      async () => {
+        const registry = getAiProviderRegistry();
+        const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
+        expect(model).toBeDefined();
+        expect(() =>
+          registry.getDirectRunFn(model!.provider, "StructuredGenerationTask")
+        ).toThrow();
+      },
+      opts.timeout
+    );
   });
 }

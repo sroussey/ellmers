@@ -11,7 +11,7 @@ import {
 } from "@workglow/ai";
 import { HF_INFERENCE } from "@workglow/huggingface-inference/ai-provider";
 import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
@@ -47,8 +47,6 @@ runAiProviderConformance({
       });
     },
     dispose: async () => {
-      await getTaskQueueRegistry().stopQueues();
-      await getTaskQueueRegistry().clearQueues();
       await setTaskQueueRegistry(null);
     },
     inspect: () => ({}),
