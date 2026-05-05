@@ -306,32 +306,44 @@ export interface ITabularStorage<
    *
    * Backends differ in how strong the guarantee is:
    *   - **SQLite**: real `BEGIN` / `COMMIT` / `ROLLBACK`.
-   *   - **PostgreSQL**: real `BEGIN` / `COMMIT` / `ROLLBACK` only when the
-   *     underlying handle is a single-connection wrapper (PGLitePool, raw
-   *     PGlite). On a multi-connection `pg.Pool` the call throws, because
-   *     methods on this storage dispatch each query through the pool
-   *     independently and the surrounding `BEGIN`/`COMMIT` cannot bracket
-   *     them. Use {@link putBulk} for atomic bulk inserts on a real pool, or
-   *     wrap the pool yourself.
+   *   - **PostgreSQL**: real `BEGIN` / `COMMIT` / `ROLLBACK`. On a real
+   *     `pg.Pool` (anything exposing `connect()`) the implementation
+   *     dedicates a client via `pool.connect()` and runs the transaction on
+   *     that client, leaving the parent's pool free for external traffic
+   *     in parallel. On single-connection wrappers (PGLitePool, raw PGlite)
+   *     the transaction runs on the shared session and concurrent calls on
+   *     the same instance are serialized behind a per-instance mutex so
+   *     they cannot slip into the open transaction.
    *   - **Supabase, in-memory, file system, IndexedDB**: best-effort. The
    *     callback runs to completion and rejection propagates, but partial
    *     writes are not rolled back because the backend does not expose a
    *     transaction surface usable by this API.
    *
-   * **Concurrency contract:** `withTransaction` does not isolate the storage
-   * instance from concurrent callers. While `fn` is awaiting, any unrelated
-   * operation invoked on the same storage instance from concurrent code will
-   * run on the same underlying connection (for SQLite and single-connection
-   * Postgres wrappers) and become part of this transaction. Do not invoke
-   * other methods on the same storage instance from outside `fn` while a
-   * `withTransaction` call is in flight; serialize that work yourself, or
-   * use a separate storage instance for the concurrent work.
+   * **Concurrency contract:**
+   *   - On backends with native transaction support (SQLite, PostgreSQL),
+   *     concurrent calls on the same storage instance are isolated from the
+   *     open transaction: SQLite and the single-connection Postgres path
+   *     serialize them through a per-instance mutex; the real-pool Postgres
+   *     path runs them on independent pool clients in parallel. Either way,
+   *     unrelated writes never accidentally commit or roll back along with
+   *     `fn`.
+   *   - On best-effort backends concurrent writes have no atomicity barrier
+   *     to begin with — the contract on those backends is "runs `fn`", not
+   *     "isolates `fn`".
    *
-   * The storage instance passed to `fn` is the same instance (`this`) for
-   * every backend in this codebase. The `tx` parameter is provided so the
-   * callback signature stays forward-compatible with a future backend that
-   * returns a transaction-scoped clone — callers should use the handle and
-   * not capture `this` directly.
+   * The `tx` handle passed to `fn` is **not** the same object as `this` for
+   * backends with native transaction support — it is a Proxy that routes
+   * writes through the transaction-bound resources (the dedicated client on
+   * real `pg.Pool`, the bypass-mutex internal methods on SQLite/PGlite) and
+   * routes events through the transaction's deferred-emit queue. Callers
+   * MUST use `tx` for everything inside `fn`. Capturing the outer `this` and
+   * calling methods on it from inside `fn` will deadlock against the held
+   * mutex (single-connection backends) or run on the wrong connection
+   * (`pg.Pool`), and is unsupported.
+   *
+   * Nested `withTransaction` calls — either via the original instance or
+   * via `tx` — throw rather than reusing the outer transaction implicitly.
+   * Use SAVEPOINT directly if you need nested rollback boundaries.
    */
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
 

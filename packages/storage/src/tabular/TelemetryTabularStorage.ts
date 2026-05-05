@@ -137,8 +137,20 @@ export class TelemetryTabularStorage<
   }
 
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    // Construct a tx-bound telemetry wrapper that forwards to the inner's
+    // transaction handle (`innerTx`) — the proxy from the inner's
+    // `createTxView`. Passing the outer `this` would re-enter `inner.put()`
+    // through the public, mutex-acquiring path and deadlock against the held
+    // mutex on single-connection backends, or run on the wrong connection on
+    // real `pg.Pool`.
     return traced("workglow.storage.tabular.withTransaction", this.storageName, () =>
-      this.inner.withTransaction(() => fn(this))
+      this.inner.withTransaction((innerTx) => {
+        const txWrapper = new TelemetryTabularStorage(
+          this.storageName,
+          innerTx as ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, InsertType>
+        ) as this;
+        return fn(txWrapper);
+      })
     );
   }
 

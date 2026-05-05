@@ -227,7 +227,42 @@ export class ScopedTabularStorage<
   }
 
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
-    return this.inner.withTransaction(() => fn(this));
+    // Two responsibilities here:
+    //  1. Forward the inner's `tx` proxy into `fn`, so writes from the
+    //     callback go through the transaction-bound resources rather than
+    //     re-entering the public mutex path on the parent (which would
+    //     deadlock on single-connection backends, or run on the wrong
+    //     connection on real `pg.Pool`).
+    //  2. Defer events emitted by the scoped wrapper until the inner
+    //     transaction actually commits — Scoped emits on its own emitter
+    //     (separate from the inner's `put` events), so the inner's
+    //     deferred-event flush does not cover them.
+    const deferred: Array<[TabularEventName, unknown[]]> = [];
+    return this.inner
+      .withTransaction((innerTx: AnyTabularStorage) => {
+        const txWrapper = new ScopedTabularStorage<
+          Schema,
+          PrimaryKeyNames,
+          Entity,
+          PrimaryKey,
+          InsertType
+        >(innerTx, this.kbId);
+        // Override the tx wrapper's emitter to buffer instead of fan out;
+        // listeners on the original wrapper see events only after COMMIT.
+        (txWrapper as unknown as { events: { emit: (n: string, ...a: unknown[]) => void } }).events =
+          {
+            emit: (name: string, ...args: unknown[]) => {
+              deferred.push([name as TabularEventName, args]);
+            },
+          };
+        return fn(txWrapper as unknown as this);
+      })
+      .then((result) => {
+        for (const [name, args] of deferred) {
+          (this.events.emit as (n: TabularEventName, ...a: unknown[]) => void)(name, ...args);
+        }
+        return result;
+      });
   }
 
   // Lifecycle — no-op for shared storage

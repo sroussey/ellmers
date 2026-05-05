@@ -657,18 +657,26 @@ export class PostgresTabularStorage<
   }
 
   /**
-   * Per-instance promise-chain mutex. Every public read/write method awaits
-   * the previous holder before running and yields the lock when it settles;
-   * `withTransaction` holds it for the duration of the user's callback so
-   * concurrent calls from outside `fn` queue behind the transaction instead
-   * of slipping into it.
+   * Per-instance promise-chain mutex. Only meaningful on single-connection
+   * backends (PGlite / PGLitePool) — there `withTransaction` runs on the
+   * shared session and we need to keep external callers from slipping into
+   * the open transaction. On a real `pg.Pool` (anything exposing
+   * `connect()`) the mutex would serialize independent reads/writes that
+   * Postgres is happy to fan across separate pool clients, turning the
+   * pool's main benefit into a per-instance bottleneck — so we short-circuit
+   * to a no-op on that path. Real-pool isolation comes from
+   * `withTransaction` dedicating its own client via `pool.connect()`.
    *
    * The Proxy returned by {@link createTxView} routes back to the private
    * `_*Internal` methods directly, so calls made *through* the `tx` handle
    * inside `fn` do not deadlock against the mutex held by `withTransaction`.
    */
   private mutexChain: Promise<void> = Promise.resolve();
+  private get serializeOps(): boolean {
+    return typeof (this.db as unknown as { connect?: unknown }).connect !== "function";
+  }
   private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.serializeOps) return fn();
     const prev = this.mutexChain;
     let release!: () => void;
     this.mutexChain = new Promise<void>((resolve) => {

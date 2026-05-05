@@ -329,6 +329,31 @@ export class CachedTabularStorage<
   }
 
   /**
+   * Runs `fn` inside the durable store's transaction. The cache layer is
+   * intentionally bypassed for the transaction's duration — coordinating
+   * two-phase commit between the durable store and an in-memory cache is
+   * out of scope, and callers asking for `withTransaction` are asking for
+   * atomicity, which only the durable can provide. Inside `fn`, reads and
+   * writes go straight through the durable's transaction handle.
+   *
+   * After `fn` resolves and the durable commits, the cache may hold stale
+   * rows for any keys the transaction mutated; subsequent reads through
+   * this wrapper repopulate the cache on miss, so callers who need the
+   * cache hot for those rows should issue a read-through after the
+   * transaction resolves. Inheriting `BaseTabularStorage`'s no-op default
+   * here would silently lose the rollback / atomicity guarantee, since the
+   * default just runs `fn(this)` against the cached wrapper itself.
+   */
+  override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    await this.initializeCache();
+    return this.durable.withTransaction(
+      fn as unknown as (
+        tx: ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>
+      ) => Promise<T>
+    );
+  }
+
+  /**
    * Invalidates the cache by clearing it and resetting initialization flag
    */
   async invalidateCache(): Promise<void> {
