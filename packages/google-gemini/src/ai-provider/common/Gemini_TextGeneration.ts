@@ -20,6 +20,7 @@ export const Gemini_TextGeneration: AiProviderRunFn<
   TextGenerationTaskOutput,
   GeminiModelConfig
 > = async (input, model, update_progress, signal) => {
+  signal?.throwIfAborted?.();
   const logger = getLogger();
   const timerLabel = `gemini:TextGeneration:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
@@ -36,7 +37,6 @@ export const Gemini_TextGeneration: AiProviderRunFn<
     },
   });
 
-  signal?.throwIfAborted?.();
   const result = await genModel.generateContent(
     {
       contents: [{ role: "user", parts: [{ text: input.prompt }] }],
