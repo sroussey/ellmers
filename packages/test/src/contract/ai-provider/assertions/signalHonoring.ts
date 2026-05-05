@@ -8,7 +8,7 @@ import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
-import { itExpectFail } from "./itExpectFail";
+import { itExpectFail } from "../../itExpectFail";
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;

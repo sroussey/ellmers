@@ -9,7 +9,7 @@ import { getLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
-import { itExpectFail } from "./itExpectFail";
+import { itExpectFail } from "../../itExpectFail";
 
 export function sessionReuseBlock(
   opts: AiProviderConformanceOpts,
