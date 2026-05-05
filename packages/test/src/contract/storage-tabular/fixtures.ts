@@ -13,7 +13,11 @@ export const VectorSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
-    embedding: { type: "string", format: "TypedArray:Float32:384" },
+    // Canonical TypedArray format with optional dimension suffix; matches the
+    // TypedArrayString convention in @workglow/util/schema with a numeric suffix
+    // that PostgresTabularStorage.getVectorDimensions parses to size pgvector
+    // vector(N) columns.
+    embedding: { type: "string", format: "TypedArray:Float32Array:384" },
   },
   required: ["id", "embedding"],
   additionalProperties: false,
