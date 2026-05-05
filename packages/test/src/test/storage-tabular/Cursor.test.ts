@@ -22,6 +22,7 @@ describe("Cursor codec", () => {
     const payload = {
       v: 1 as const,
       n: ["id", "createdAt"],
+      d: ["a", "d"] as Array<"a" | "d">,
       c: ["abc", "2026-01-02T03:04:05.000Z"],
     };
     const cursor = encodeCursor(payload);
@@ -37,6 +38,7 @@ describe("Cursor codec", () => {
     const payload = {
       v: 1 as const,
       n: ["c"],
+      d: ["a"] as Array<"a" | "d">,
       // Lots of high-bit characters → base64 with `+` and `/`.
       c: ["ÿ".repeat(50)],
     };
@@ -65,7 +67,7 @@ describe("Cursor codec", () => {
     // length check. We append junk *after* a real cursor so the JSON
     // parse will fail (proving we got past the length gate); a real
     // cap-length cursor would be a giant payload.
-    const realCursor = encodeCursor({ v: 1, n: ["id"], c: ["x"] });
+    const realCursor = encodeCursor({ v: 1, n: ["id"], d: ["a"], c: ["x"] });
     if (realCursor.length >= MAX_CURSOR_LENGTH) return; // sanity; should be tiny
     const padded = realCursor + "a".repeat(MAX_CURSOR_LENGTH - realCursor.length);
     // Length is exactly at the cap — it shouldn't trip the size guard.
@@ -88,11 +90,11 @@ describe("Cursor codec", () => {
   });
 
   it("rejects payloads whose JSON parses but is the wrong shape", () => {
-    // Valid base64url + JSON, but missing `n` / `c`.
-    const garbage = encodeCursor({ v: 1, n: [], c: [] });
+    // Valid base64url + JSON, but missing `n` / `d` / `c`.
+    const garbage = encodeCursor({ v: 1, n: [], d: [], c: [] });
     expect(() => decodeCursor(garbage)).not.toThrow();
     // But a payload without `c` is rejected.
-    const bad = Buffer.from(JSON.stringify({ v: 1, n: ["id"] }), "utf8")
+    const bad = Buffer.from(JSON.stringify({ v: 1, n: ["id"], d: ["a"] }), "utf8")
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
@@ -101,7 +103,7 @@ describe("Cursor codec", () => {
   });
 
   it("rejects payloads with an unknown format version", () => {
-    const future = Buffer.from(JSON.stringify({ v: 99, n: [], c: [] }), "utf8")
+    const future = Buffer.from(JSON.stringify({ v: 99, n: [], d: [], c: [] }), "utf8")
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
@@ -112,10 +114,22 @@ describe("Cursor codec", () => {
     );
   });
 
-  it("rejects payloads whose n and c arrays disagree in length", () => {
+  it("rejects payloads whose n, d, c arrays disagree in length", () => {
     // Encode a mismatched payload by hand (encodeCursor no longer guards).
     const bad = Buffer.from(
-      JSON.stringify({ v: 1, n: ["a", "b"], c: ["only-one"] }),
+      JSON.stringify({ v: 1, n: ["a", "b"], d: ["a", "a"], c: ["only-one"] }),
+      "utf8"
+    )
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    expect(() => decodeCursor(bad)).toThrow(StorageValidationError);
+  });
+
+  it("rejects payloads whose direction array contains an unknown value", () => {
+    const bad = Buffer.from(
+      JSON.stringify({ v: 1, n: ["a"], d: ["x"], c: ["v"] }),
       "utf8"
     )
       .toString("base64")
@@ -126,8 +140,13 @@ describe("Cursor codec", () => {
   });
 
   it("preserves null values in the payload", () => {
-    const cursor = encodeCursor({ v: 1, n: ["x", "y"], c: [null, "z"] });
-    expect(decodeCursor(cursor)).toEqual({ v: 1, n: ["x", "y"], c: [null, "z"] });
+    const cursor = encodeCursor({ v: 1, n: ["x", "y"], d: ["a", "d"], c: [null, "z"] });
+    expect(decodeCursor(cursor)).toEqual({
+      v: 1,
+      n: ["x", "y"],
+      d: ["a", "d"],
+      c: [null, "z"],
+    });
   });
 
   it("survives a JSON.stringify → JSON.parse round-trip", () => {
@@ -138,6 +157,7 @@ describe("Cursor codec", () => {
     const original = encodeCursor({
       v: 1,
       n: ["createdAt", "id"],
+      d: ["d", "a"],
       c: ["2026-01-02T03:04:05.000Z", "abc"],
     });
     const transported = JSON.parse(JSON.stringify({ cursor: original })).cursor;

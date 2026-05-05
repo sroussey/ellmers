@@ -481,12 +481,15 @@ export abstract class BaseSqlTabularStorage<
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
     const orderBy = request.orderBy;
     const effectiveOrderBy = this.buildEffectiveOrderBy(orderBy, pkColumns);
-    const effectiveColumns = effectiveOrderBy.map((o) => String(o.column));
+    const effectiveOrderForCursor = effectiveOrderBy.map((o) => ({
+      column: String(o.column),
+      direction: o.direction,
+    }));
 
     let cursorPayload;
     if (request.cursor !== undefined) {
       cursorPayload = decodeCursor(request.cursor);
-      assertCursorMatches(cursorPayload, effectiveColumns);
+      assertCursorMatches(cursorPayload, effectiveOrderForCursor);
     }
 
     const params: ValueOptionType[] = [];

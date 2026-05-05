@@ -292,14 +292,17 @@ export class ScopedTabularStorage<
           PrimaryKey,
           InsertType
         >(innerTx, this.kbId);
-        // Override the tx wrapper's emitter to buffer instead of fan out;
-        // listeners on the original wrapper see events only after COMMIT.
-        (txWrapper as unknown as { events: { emit: (n: string, ...a: unknown[]) => void } }).events =
-          {
-            emit: (name: string, ...args: unknown[]) => {
-              deferred.push([name as TabularEventName, args]);
-            },
-          };
+        // Buffer emits on the tx wrapper instead of fanning them out — listeners
+        // on the original wrapper see events only after COMMIT. Replace just
+        // `emit` rather than the whole emitter so `tx.on/off/once/waitOn` keep
+        // delegating to a real EventEmitter (otherwise calling them inside `fn`
+        // would throw on a stub object that only implements `emit`).
+        const txEmitter = (txWrapper as unknown as {
+          events: EventEmitter<TabularEventListeners<PrimaryKey, Entity>>;
+        }).events;
+        txEmitter.emit = ((name: TabularEventName, ...args: unknown[]) => {
+          deferred.push([name, args]);
+        }) as typeof txEmitter.emit;
         return fn(txWrapper as unknown as this);
       })
       .then((result) => {

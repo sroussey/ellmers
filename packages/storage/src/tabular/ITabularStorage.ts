@@ -123,12 +123,13 @@ export interface QueryOptions<Entity> {
    *
    * // After (cursor paging — also stable under concurrent writes):
    * let cursor: PageCursor | undefined;
-   * for (let i = 0; i < 3; i++) {
-   *   const page = await storage.getPage({ orderBy, limit: 50, cursor });
-   *   cursor = page.nextCursor;
+   * for (let i = 0; i < 2; i++) {
+   *   const skip = await storage.getPage({ orderBy, limit: 50, cursor });
+   *   cursor = skip.nextCursor;
    *   if (!cursor) break;
    * }
-   * const rows = await storage.getPage({ orderBy, limit: 50, cursor });
+   * const page = await storage.getPage({ orderBy, limit: 50, cursor });
+   * const rows = page.items;
    * ```
    */
   readonly offset?: number;
@@ -265,6 +266,16 @@ export interface ITabularStorage<
    * embeddings). Backends are responsible for preserving the order even when
    * the underlying engine does not formally guarantee it (see each backend's
    * implementation).
+   *
+   * **Caveat for integer auto-generated keys on remote backends.** Supplying
+   * inputs that omit a backend-assigned integer-autoincrement primary key
+   * leaves the wrapper with no key to match a returned row to a request row
+   * (UUIDs are filled in client-side, so they don't have this problem). Such
+   * inputs fall back to the server's response order, which Postgres does not
+   * formally contract for `INSERT ... RETURNING`. The fallback is reliable in
+   * practice but if `result[i] === values[i]` matters for correctness, supply
+   * the primary key on every input — for example by minting it client-side
+   * — or split the call into per-row `put`s.
    */
   putBulk(values: InsertType[]): Promise<Entity[]>;
   get(key: PrimaryKey): Promise<Entity | undefined>;
@@ -457,9 +468,21 @@ export interface ITabularStorage<
    * mutex (single-connection backends) or run on the wrong connection
    * (`pg.Pool`), and is unsupported.
    *
-   * Nested `withTransaction` calls — either via the original instance or
-   * via `tx` — throw rather than reusing the outer transaction implicitly.
-   * Use SAVEPOINT directly if you need nested rollback boundaries.
+   * **Nested calls.** Calls made through the `tx` handle always throw —
+   * `tx.withTransaction(...)` is a hard error on every backend. Calls made
+   * through the *original* (captured `this`) handle behave per backend:
+   *   - **SQLite, single-connection Postgres** (PGlite, PGLitePool): throw,
+   *     because the backend has no autonomous `BEGIN` and reusing the open
+   *     transaction implicitly would be ambiguous.
+   *   - **Real `pg.Pool` Postgres**: acquire an *independent* client and run
+   *     as an *independent* transaction with its own commit/rollback boundary.
+   *     This is the natural Postgres concurrency model on a pool — nothing
+   *     ties the two transactions together. If you want the inner work to
+   *     roll back when the outer throws, do not use a captured `this`; use
+   *     `tx` (which throws) and a SAVEPOINT instead.
+   *
+   * Use SAVEPOINT directly if you need nested rollback boundaries within a
+   * single logical transaction.
    */
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
 

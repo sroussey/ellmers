@@ -944,12 +944,15 @@ export class SupabaseTabularStorage<
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
     const orderBy = request.orderBy;
     const effectiveOrderBy = this.buildEffectiveOrderBy(orderBy, pkColumns);
-    const effectiveColumns = effectiveOrderBy.map((o) => String(o.column));
+    const effectiveOrderForCursor = effectiveOrderBy.map((o) => ({
+      column: String(o.column),
+      direction: o.direction,
+    }));
 
     let cursorPayload;
     if (request.cursor !== undefined) {
       cursorPayload = decodeCursor(request.cursor);
-      assertCursorMatches(cursorPayload, effectiveColumns);
+      assertCursorMatches(cursorPayload, effectiveOrderForCursor);
     }
 
     let query: any = this.client.from(this.table).select("*");
@@ -1175,6 +1178,19 @@ export class SupabaseTabularStorage<
         this.realtimeChannel = null;
       }
     };
+  }
+
+  /**
+   * **Best-effort, non-atomic.** Supabase exposes PostgREST, not a session-
+   * level transaction surface this client can drive — there is no
+   * `BEGIN`/`COMMIT`/`ROLLBACK` over the wire. The override exists only to
+   * make the no-rollback semantics explicit instead of inheriting the base
+   * default silently: `fn` runs to completion against `this`, the result
+   * propagates, and any partial writes survive a thrown `fn`. Use a
+   * stored-procedure / RPC if you need true atomicity on Supabase.
+   */
+  public override async withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
+    return fn(this);
   }
 
   /**

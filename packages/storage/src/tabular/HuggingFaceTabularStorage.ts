@@ -45,7 +45,7 @@ export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 const HF_OFFSET_CURSOR_NAME = "hfOffset";
 
 function encodeOffsetCursor(offset: number): PageCursor {
-  return encodeCursor({ v: 1, n: [HF_OFFSET_CURSOR_NAME], c: [offset] });
+  return encodeCursor({ v: 1, n: [HF_OFFSET_CURSOR_NAME], d: ["a"], c: [offset] });
 }
 
 function decodeOffsetCursor(cursor: PageCursor | string): number {
@@ -388,6 +388,13 @@ export class HuggingFaceTabularStorage<
    * keyset pagination provides is unnecessary. The HF API also doesn't
    * expose tuple comparisons, so we drive cursor pagination from the
    * `/rows` endpoint's offset and encode the next offset in the cursor.
+   *
+   * The HF `/rows` endpoint caps each fetch at 100 rows, but the
+   * {@link ITabularStorage.getPage} contract lets callers ask for any
+   * positive limit. Loop in 100-row chunks until we either fill the
+   * caller's `limit` or hit the end of the dataset, so a `getPage({ limit:
+   * 200 })` doesn't silently return only 100 rows with a `nextCursor` of
+   * `undefined` (which would terminate iteration despite more data).
    */
   override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
     this.validatePageRequest(request);
@@ -398,11 +405,28 @@ export class HuggingFaceTabularStorage<
       // correctness bug, so reject it explicitly instead.
       throw new StorageUnsupportedError("orderBy in getPage", "HuggingFaceTabularStorage");
     }
-    const offset = request.cursor ? decodeOffsetCursor(request.cursor) : 0;
-    const rows = (await this.getBulk(offset, limit)) ?? [];
-    const items = rows;
-    const nextCursor =
-      items.length === limit ? encodeOffsetCursor(offset + items.length) : undefined;
+    const HF_PAGE_CAP = 100;
+    let offset = request.cursor ? decodeOffsetCursor(request.cursor) : 0;
+    const items: Entity[] = [];
+    let endOfDataset = false;
+    while (items.length < limit) {
+      const remaining = limit - items.length;
+      const chunkSize = Math.min(remaining, HF_PAGE_CAP);
+      const rows = (await this.getBulk(offset, chunkSize)) ?? [];
+      if (rows.length === 0) {
+        endOfDataset = true;
+        break;
+      }
+      items.push(...rows);
+      offset += rows.length;
+      // A short response from the HF API means the dataset has no more
+      // rows for this offset window — bail out rather than spinning.
+      if (rows.length < chunkSize) {
+        endOfDataset = true;
+        break;
+      }
+    }
+    const nextCursor = endOfDataset ? undefined : encodeOffsetCursor(offset);
     return { items, nextCursor };
   }
 

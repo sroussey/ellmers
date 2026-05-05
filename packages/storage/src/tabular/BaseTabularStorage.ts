@@ -528,12 +528,15 @@ export abstract class BaseTabularStorage<
     const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
     const orderBy = request.orderBy;
     const effectiveOrderBy = this.buildEffectiveOrderBy(orderBy, pkColumns);
-    const effectiveColumns = effectiveOrderBy.map((o) => String(o.column));
+    const effectiveOrderForCursor = effectiveOrderBy.map((o) => ({
+      column: String(o.column),
+      direction: o.direction,
+    }));
 
     let cursorPayload: CursorPayload | undefined;
     if (request.cursor !== undefined) {
       cursorPayload = decodeCursor(request.cursor);
-      assertCursorMatches(cursorPayload, effectiveColumns);
+      assertCursorMatches(cursorPayload, effectiveOrderForCursor);
     }
 
     const pkCol = pkColumns[0];
@@ -781,8 +784,11 @@ export abstract class BaseTabularStorage<
     effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>
   ): PageCursor {
     const n = effectiveOrderBy.map((spec) => String(spec.column));
+    const d = effectiveOrderBy.map(
+      (spec): "a" | "d" => (spec.direction === "ASC" ? "a" : "d")
+    );
     const c = effectiveOrderBy.map((spec) => toCursorValue(row[spec.column]));
-    return encodeCursor({ v: 1, n, c });
+    return encodeCursor({ v: 1, n, d, c });
   }
 
   /**

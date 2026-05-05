@@ -23,19 +23,21 @@ export type PageCursor = string & { readonly __pageCursorBrand: unique symbol };
  *
  * - `v` is a format version (currently 1) so older cursors can be rejected
  *   if the encoding ever changes.
- * - `n` (names) and `c` (column values) are parallel arrays describing
- *   the effective ordering of the row the cursor is parked on:
- *   caller-supplied `orderBy` columns first, then any primary-key columns
- *   not already covered by `orderBy` as a tiebreaker. The flat layout
- *   means columns that appear in both the user's `orderBy` and the
- *   primary key are stored exactly once (avoids double-encoding the
- *   value in DESC-by-PK pagination). Storing column names lets us
- *   detect cursors handed back from a different orderBy shape — pure
- *   arity matching can't catch swaps between same-arity orderings.
+ * - `n` (names), `d` (directions, `"a"` ASC / `"d"` DESC), and `c` (column
+ *   values) are parallel arrays describing the effective ordering of the
+ *   row the cursor is parked on: caller-supplied `orderBy` columns first,
+ *   then any primary-key columns not already covered by `orderBy` as a
+ *   tiebreaker. The flat layout means columns that appear in both the
+ *   user's `orderBy` and the primary key are stored exactly once (avoids
+ *   double-encoding the value in DESC-by-PK pagination). Storing column
+ *   names AND directions lets us reject cursors handed back with a
+ *   different ordering — same-name + flipped direction would otherwise
+ *   compute the next page with the wrong comparison operators.
  */
 export interface CursorPayload {
   readonly v: 1;
   readonly n: ReadonlyArray<string>;
+  readonly d: ReadonlyArray<"a" | "d">;
   readonly c: ReadonlyArray<string | number | boolean | null>;
 }
 
@@ -91,6 +93,15 @@ export function encodeCursor(payload: CursorPayload): PageCursor {
     .slice(0, trimEnd)
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
+  // A server-emitted cursor must round-trip through `decodeCursor`. If a
+  // row's sort key encodes large enough to push past the cap, fail loudly
+  // here rather than minting a `nextCursor` that the very next request
+  // would reject as oversized.
+  if (urlSafe.length > MAX_CURSOR_LENGTH) {
+    throw new StorageValidationError(
+      `Encoded cursor exceeds maximum length (${urlSafe.length} > ${MAX_CURSOR_LENGTH})`
+    );
+  }
   return urlSafe as PageCursor;
 }
 
@@ -146,8 +157,11 @@ export function decodeCursor(cursor: PageCursor | string): CursorPayload {
     p.v !== CURSOR_VERSION ||
     !Array.isArray(p.c) ||
     !Array.isArray(p.n) ||
+    !Array.isArray(p.d) ||
     p.n.length !== p.c.length ||
+    p.n.length !== p.d.length ||
     !p.n.every((name) => typeof name === "string") ||
+    !p.d.every((dir) => dir === "a" || dir === "d") ||
     !p.c.every(
       (v) =>
         v === null ||
@@ -164,25 +178,33 @@ export function decodeCursor(cursor: PageCursor | string): CursorPayload {
 
 /**
  * Validates that a decoded cursor matches the effective ordering the
- * current request would use, by exact column-name sequence. A mismatch
- * usually means the caller switched ordering mid-iteration — e.g. asked
- * for `orderBy: [a]` on page 1 and `orderBy: [b]` on page 2, both with
- * arity 1 — which would produce nonsensical results that arity matching
- * alone can't catch.
+ * current request would use, by exact column-name AND direction sequence.
+ * A mismatch usually means the caller switched ordering mid-iteration —
+ * e.g. asked for `orderBy: [a ASC]` on page 1 and `orderBy: [a DESC]` on
+ * page 2, or swapped to a different column entirely — both of which would
+ * produce nonsensical results that arity matching alone can't catch.
  */
 export function assertCursorMatches(
   payload: CursorPayload,
-  effectiveOrderColumns: ReadonlyArray<string>
+  effectiveOrder: ReadonlyArray<{ readonly column: string; readonly direction: "ASC" | "DESC" }>
 ): void {
-  if (payload.n.length !== effectiveOrderColumns.length) {
+  if (payload.n.length !== effectiveOrder.length) {
     throw new StorageValidationError(
-      `Cursor has ${payload.n.length} component(s); request expects ${effectiveOrderColumns.length}`
+      `Cursor has ${payload.n.length} component(s); request expects ${effectiveOrder.length}`
     );
   }
-  for (let i = 0; i < effectiveOrderColumns.length; i++) {
-    if (payload.n[i] !== effectiveOrderColumns[i]) {
+  for (let i = 0; i < effectiveOrder.length; i++) {
+    if (payload.n[i] !== effectiveOrder[i].column) {
       throw new StorageValidationError(
-        `Cursor column ${i} is "${payload.n[i]}"; request expects "${effectiveOrderColumns[i]}"`
+        `Cursor column ${i} is "${payload.n[i]}"; request expects "${effectiveOrder[i].column}"`
+      );
+    }
+    const expected = effectiveOrder[i].direction === "ASC" ? "a" : "d";
+    if (payload.d[i] !== expected) {
+      throw new StorageValidationError(
+        `Cursor column "${effectiveOrder[i].column}" was minted for ${
+          payload.d[i] === "a" ? "ASC" : "DESC"
+        }; request expects ${effectiveOrder[i].direction}`
       );
     }
   }
