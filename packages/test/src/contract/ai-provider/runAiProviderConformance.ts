@@ -37,9 +37,9 @@ export function runAiProviderConformance(opts: AiProviderConformanceOpts): void 
 
     const fixture = resolveFixture(opts.fixture);
 
-    registryCoverageBlock(opts, opts.name);
+    registryCoverageBlock(opts);
     textGenerationSmokeBlock(opts, fixture);
-    signalHonoringBlock(opts, fixture, opts.name);
+    signalHonoringBlock(opts, fixture);
     toolCallAccumulatorBlock(opts, fixture);
     toolCallMultiTurnBlock(opts, fixture);
     structuredGenerationBlock(opts, fixture);

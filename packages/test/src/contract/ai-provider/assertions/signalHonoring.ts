@@ -17,8 +17,7 @@ function isAbortError(err: unknown): boolean {
 
 export function signalHonoringBlock(
   opts: AiProviderConformanceOpts,
-  fixture: ConformanceFixture,
-  providerName: string
+  fixture: ConformanceFixture
 ): void {
   const itImpl = opts.capabilities.abortMidStream ? it : it.skip;
   const itStrict = it; // Phase 4 may flip to it.fails; the caller controls via opts later.
@@ -82,7 +81,4 @@ export function signalHonoringBlock(
       opts.timeout
     );
   });
-
-  // Suppress unused-name warning when no provider-name-keyed assertions are needed yet.
-  void providerName;
 }
