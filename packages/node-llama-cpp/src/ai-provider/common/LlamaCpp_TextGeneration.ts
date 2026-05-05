@@ -29,6 +29,7 @@ export const LlamaCpp_TextGeneration: AiProviderRunFn<
   LlamaCppModelConfig
 > = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
+  signal?.throwIfAborted?.();
 
   const { LlamaChatSession } = await loadSdk();
 

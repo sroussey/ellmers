@@ -98,7 +98,7 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: false,
+    embeddings: true,
     sessions: false,
     abortMidStream: true,
   },
@@ -107,5 +107,7 @@ runAiProviderConformance({
     toolCalling: INSTRUCT_MODEL_ID,
     structured: INSTRUCT_MODEL_ID,
   },
-  fixture: { maxTokens: 2600 },
+  // Local ONNX inference is slow; relax the abort window so the
+  // mid-stream-abort assertion has room to fire and shut down cleanly.
+  fixture: { maxTokens: 2600, abortGraceMs: 500 },
 });
