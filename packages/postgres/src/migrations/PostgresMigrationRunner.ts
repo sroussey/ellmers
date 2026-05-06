@@ -8,6 +8,7 @@ import type { Pool } from "../storage/_postgres/node-bun";
 import {
   type IMigration,
   type IMigrationRunner,
+  type RunMigrationsOptions,
   MIGRATIONS_TABLE,
   sortMigrations,
 } from "@workglow/storage";
@@ -87,11 +88,15 @@ export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
     return { client: this.db as unknown as PgQueryable, release: () => undefined };
   }
 
-  async run(migrations: ReadonlyArray<IMigration<Pool>>): Promise<ReadonlyArray<IMigration<Pool>>> {
+  async run(
+    migrations: ReadonlyArray<IMigration<Pool>>,
+    options: RunMigrationsOptions = {}
+  ): Promise<ReadonlyArray<IMigration<Pool>>> {
     await this.ensureBookkeepingTable();
     const sorted = sortMigrations(migrations);
     const applied: IMigration<Pool>[] = [];
     const cache = new Map<string, Set<number>>();
+    const onProgress = options.onProgress;
 
     for (const m of sorted) {
       let seen = cache.get(m.component);
@@ -101,13 +106,28 @@ export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
       }
       if (seen.has(m.version)) continue;
 
+      onProgress?.({
+        component: m.component,
+        version: m.version,
+        phase: "starting",
+        description: m.description,
+      });
+
       const { client, release } = await this.acquireClient();
       try {
         await client.query("BEGIN");
         // Migrations are written against the `Pool` type but only need a
         // queryable surface. Casting keeps the public signature stable while
         // routing the migration's queries through the dedicated client.
-        await m.up(client as unknown as Pool);
+        await m.up(client as unknown as Pool, (fraction) => {
+          onProgress?.({
+            component: m.component,
+            version: m.version,
+            phase: "running",
+            description: m.description,
+            fraction,
+          });
+        });
         await client.query(
           `INSERT INTO ${MIGRATIONS_TABLE}(component, version, description) VALUES ($1, $2, $3)`,
           [m.component, m.version, m.description ?? null]
@@ -115,13 +135,34 @@ export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
         await client.query("COMMIT");
         seen.add(m.version);
         applied.push(m);
+        onProgress?.({
+          component: m.component,
+          version: m.version,
+          phase: "completed",
+          description: m.description,
+          fraction: 1,
+        });
       } catch (err: unknown) {
         await client.query("ROLLBACK").catch(() => undefined);
         // Concurrent runner already inserted — treat as success.
         if ((err as { code?: string })?.code === "23505") {
           seen.add(m.version);
+          onProgress?.({
+            component: m.component,
+            version: m.version,
+            phase: "completed",
+            description: m.description,
+            fraction: 1,
+          });
           continue;
         }
+        onProgress?.({
+          component: m.component,
+          version: m.version,
+          phase: "failed",
+          description: m.description,
+          error: err,
+        });
         throw err;
       } finally {
         release();

@@ -73,9 +73,8 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
 
   /**
    * Returns the versioned migrations that this storage's tables depend on.
-   * Production code should run these via {@link PostgresMigrationRunner} as
-   * part of an explicit migration step rather than calling
-   * {@link setupDatabase}.
+   * Callers can compose them with other storages' migrations under a shared
+   * {@link PostgresMigrationRunner}; otherwise call {@link migrate}.
    */
   public getMigrations() {
     return postgresRateLimiterMigrations(
@@ -88,14 +87,6 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
   /** Applies any pending migrations for this rate limiter's tables. */
   public async migrate(): Promise<void> {
     await new PostgresMigrationRunner(this.db).run(this.getMigrations());
-  }
-
-  /**
-   * @deprecated Use {@link migrate} in production. Kept for tests and ad-hoc
-   * scripts that relied on idempotent CREATE-IF-NOT-EXISTS DDL.
-   */
-  public async setupDatabase(): Promise<void> {
-    await this.migrate();
   }
 
   public async tryReserveExecution(

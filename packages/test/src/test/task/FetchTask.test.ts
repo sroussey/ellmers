@@ -109,7 +109,7 @@ describe("FetchUrlTask", () => {
 
     // Create storage
     const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     // Create server with the FetchUrlJob class
     const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {

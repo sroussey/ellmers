@@ -38,12 +38,6 @@ function openIndexedDbConnection(dbName: string): Promise<IDBDatabase> {
 
 /**
  * Extended options for IndexedDB rate limiter storage including prefix support.
- *
- * NOTE: this used to extend `MigrationOptions` (data-transformer +
- * `allowDestructiveMigration` + progress callbacks honoured by the
- * legacy {@link ensureIndexedDbTable} path). Once `migrate()` switched
- * to the versioned runner those callbacks were no longer plumbed through,
- * so the extension was dropped to avoid a misleading contract.
  */
 export interface IndexedDbRateLimiterStorageOptions extends RateLimiterStorageOptions {}
 
@@ -134,13 +128,13 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
 
   private async getExecutionDb(): Promise<IDBDatabase> {
     if (this.executionDb) return this.executionDb;
-    await this.setupDatabase();
+    await this.migrate();
     return this.executionDb!;
   }
 
   private async getNextAvailableDb(): Promise<IDBDatabase> {
     if (this.nextAvailableDb) return this.nextAvailableDb;
-    await this.setupDatabase();
+    await this.migrate();
     return this.nextAvailableDb!;
   }
 
@@ -160,12 +154,11 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
   /**
    * Applies any pending migrations for the rate limiter's two IndexedDB
    * databases, then opens long-lived connections at the migrated versions.
-   * Idempotent.
+   * Idempotent — a second call closes any prior handles (so they don't pin
+   * the pre-migration versions or block another tab's upgrade), reruns the
+   * runner (no-op if everything is recorded as applied), and reopens.
    */
   public async migrate(): Promise<void> {
-    // Close any prior connections before reopening — repeated migrate() /
-    // setupDatabase() calls would otherwise leak IDB handles and pin the
-    // pre-migration versions of both databases.
     if (this.executionDb) {
       try {
         this.executionDb.close();
@@ -185,16 +178,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     await runIndexedDbMigrationGroups(this.getMigrations());
     this.executionDb = await openIndexedDbConnection(this.executionTableName);
     this.nextAvailableDb = await openIndexedDbConnection(this.nextAvailableTableName);
-  }
-
-  /**
-   * @deprecated Use {@link migrate} (or run {@link getMigrations} via
-   * {@link IndexedDbMigrationRunner} groups). Kept as the canonical
-   * schema-setup entry point for tests and ad-hoc scripts; delegates to
-   * {@link migrate}.
-   */
-  public async setupDatabase(): Promise<void> {
-    await this.migrate();
   }
 
   /**

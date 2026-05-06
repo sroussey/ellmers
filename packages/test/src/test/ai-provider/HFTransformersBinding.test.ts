@@ -76,7 +76,7 @@ describe("HFTransformersBinding", () => {
       const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(
         HF_TRANSFORMERS_ONNX_CPU
       );
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
         AiJob<AiJobInput<TaskInput>, TaskOutput>,
@@ -142,9 +142,9 @@ describe("HFTransformersBinding", () => {
     it("Should use the pre-registered queue", async () => {
       const queueRegistry = getTaskQueueRegistry();
       const storage = new SqliteQueueStorage<AiJobInput<TaskInput>, TaskOutput>(db, "test");
-      await storage.setupDatabase();
+      await storage.migrate();
       const limiterStorage = new SqliteRateLimiterStorage(db);
-      await limiterStorage.setupDatabase();
+      await limiterStorage.migrate();
       const limiter = new RateLimiter(limiterStorage, "test", {
         maxExecutions: 4,
         windowSizeInSeconds: 1,

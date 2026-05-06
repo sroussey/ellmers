@@ -20,7 +20,7 @@ describe("IndexedDbJobQueue", () => {
     (queueName: string) => new IndexedDbQueueStorage(queueName),
     async (queueName: string, maxExecutions: number, windowSizeInSeconds: number) => {
       const storage = new IndexedDbRateLimiterStorage();
-      await storage.setupDatabase();
+      await storage.migrate();
       return new RateLimiter(storage, queueName, {
         maxExecutions,
         windowSizeInSeconds,

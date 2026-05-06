@@ -40,7 +40,7 @@ describe("AiProviderRegistry", () => {
 
   beforeEach(async () => {
     storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(TEST_PROVIDER);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
       AiJob<AiJobInput<TaskInput>, TaskOutput>,

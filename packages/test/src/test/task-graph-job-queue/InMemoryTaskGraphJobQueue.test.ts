@@ -18,7 +18,7 @@ describe("InMemoryTaskGraphJobQueue", () => {
   runGenericTaskGraphJobQueueTests(async () => {
     const queueName = `inMemory_test_queue_${uuid4()}`;
     const storage = new InMemoryQueueStorage<TaskInput, TaskOutput>(queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
       storage,

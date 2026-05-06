@@ -79,8 +79,8 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
 
   /**
    * Returns the versioned migrations that this storage's tables depend on.
-   * Production code should run these via {@link SqliteMigrationRunner} as part
-   * of an explicit migration step rather than calling {@link setupDatabase}.
+   * Callers can compose them with other storages' migrations under a shared
+   * {@link SqliteMigrationRunner}; otherwise call {@link migrate}.
    */
   public getMigrations() {
     return sqliteRateLimiterMigrations(
@@ -92,16 +92,8 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
 
   /** Applies any pending migrations for this rate limiter's tables. */
   public async migrate(): Promise<void> {
-    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
-  }
-
-  /**
-   * @deprecated Use {@link migrate} in production. Kept for tests and ad-hoc
-   * scripts that relied on idempotent CREATE-IF-NOT-EXISTS DDL.
-   */
-  public async setupDatabase(): Promise<void> {
     await sleep(0);
-    await this.migrate();
+    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
   }
 
   public async tryReserveExecution(

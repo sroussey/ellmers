@@ -64,8 +64,14 @@ export class InMemoryRateLimiterStorage implements IRateLimiterStorage {
     return prefixPart ? `${prefixPart}|${queueName}` : queueName;
   }
 
-  public async setupDatabase(): Promise<void> {
-    // No-op for in-memory storage
+  /** No-op — in-memory storage has no schema to migrate. */
+  public async migrate(): Promise<void> {
+    // intentional no-op
+  }
+
+  /** No versioned schema for in-memory storage. */
+  public getMigrations(): ReadonlyArray<unknown> {
+    return [];
   }
 
   /**

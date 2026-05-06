@@ -205,7 +205,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
     }
 
     const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(this.queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     this.limiter = new ConcurrencyLimiter(this.concurrency);
     const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
