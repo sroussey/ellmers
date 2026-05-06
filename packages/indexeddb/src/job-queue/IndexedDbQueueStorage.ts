@@ -6,6 +6,7 @@
 
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 import { HybridSubscriptionManager } from "@workglow/storage";
+import { openIdb } from "../storage/openIdb";
 import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
 import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
 import { JobStatus } from "@workglow/job-queue";
@@ -129,19 +130,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     }
     const runner = new IndexedDbMigrationRunner(this.tableName);
     await runner.run(this.getMigrations());
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(this.tableName);
-      req.onsuccess = () => {
-        const db = req.result;
-        // Close on `versionchange` so a future schema bump in another tab
-        // doesn't block forever.
-        db.onversionchange = () => db.close();
-        resolve(db);
-      };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () =>
-        reject(new Error(`IndexedDB ${this.tableName} blocked while opening for queue use`));
-    });
+    this.db = await openIdb(this.tableName);
   }
 
   /**

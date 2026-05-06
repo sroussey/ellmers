@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export * from "./openIdb";
 export * from "./IndexedDbTable";
 export * from "./IndexedDbKvStorage";
 export * from "./IndexedDbTabularStorage";

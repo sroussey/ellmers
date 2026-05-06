@@ -9,6 +9,7 @@
 // structure and transforming existing data as needed.
 
 import { deepEqual } from "@workglow/util";
+import { openIdb } from "./openIdb";
 
 export interface ExpectedIndexDefinition {
   name: string;
@@ -73,53 +74,12 @@ async function saveSchemaMetadata(
   });
 }
 
-/**
- * Opens an IndexedDB database with proper error handling
- */
-async function openIndexedDbTable(
+function openIndexedDbTable(
   tableName: string,
   version?: number,
   upgradeNeededCallback?: (event: IDBVersionChangeEvent) => void
 ): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const openRequest = indexedDB.open(tableName, version);
-
-    openRequest.onsuccess = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-
-      // Handle unexpected close
-      db.onversionchange = () => {
-        db.close();
-      };
-
-      resolve(db);
-    };
-
-    openRequest.onupgradeneeded = (event) => {
-      if (upgradeNeededCallback) {
-        upgradeNeededCallback(event);
-      }
-    };
-
-    openRequest.onerror = () => {
-      const error = openRequest.error;
-      // Check if it's a VersionError - this means the database exists at a higher version
-      if (error && error.name === "VersionError") {
-        reject(
-          new Error(
-            `Database ${tableName} exists at a higher version. Cannot open at version ${version || "current"}.`
-          )
-        );
-      } else {
-        reject(error);
-      }
-    };
-    openRequest.onblocked = () => {
-      reject(
-        new Error(`Database ${tableName} is blocked. Close all other tabs using this database.`)
-      );
-    };
-  });
+  return openIdb(tableName, { version, onUpgradeNeeded: upgradeNeededCallback });
 }
 
 /**
