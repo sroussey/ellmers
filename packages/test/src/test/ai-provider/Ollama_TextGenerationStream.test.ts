@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { createOllamaTextGenerationStream } from "./Ollama_TextGeneration";
+import { createOllamaTextGenerationStream } from "../../../../ollama/src/ai-provider/common/Ollama_TextGeneration";
 
 type FakeStream = {
   abort: ReturnType<typeof vi.fn>;
@@ -26,6 +26,13 @@ function makeFakeStream(chunks: string[]): FakeStream {
       }
     },
   };
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: unknown; message?: unknown };
+  if (e.name === "AbortError") return true;
+  return typeof e.message === "string" && e.message.toLowerCase().includes("abort");
 }
 
 describe("createOllamaTextGenerationStream abort behavior", () => {
@@ -49,20 +56,20 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
     const streamFn = createOllamaTextGenerationStream(getClient);
 
     const events: any[] = [];
-    let threw = false;
+    let caught: unknown;
     try {
       for await (const ev of streamFn(input, model, controller.signal)) {
         events.push(ev);
       }
-    } catch {
-      threw = true;
+    } catch (err) {
+      caught = err;
     }
 
     const deltas = events.filter((e) => e.type === "text-delta");
     expect(deltas).toHaveLength(0);
     expect(fakeStream.abort).toHaveBeenCalledTimes(1);
-    // post-attach throwIfAborted should propagate the abort
-    expect(threw).toBe(true);
+    // post-attach throwIfAborted should propagate the abort as an AbortError
+    expect(isAbortError(caught)).toBe(true);
   });
 
   it("does not throw when signal is undefined", async () => {
