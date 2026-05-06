@@ -117,10 +117,15 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
           text: "hello",
         });
 
-        expect(result.vector).toBeInstanceOf(Float32Array);
-        const vector = result.vector as Float32Array;
-        expect(vector.length).toBeGreaterThan(0);
-        for (const v of vector) {
+        const vector = result.vector;
+        // TextEmbeddingTaskOutput.vector is TypedArraySchema — accept any
+        // typed-array view (Float32Array, Float64Array, etc.). DataView is
+        // explicitly excluded since it's not a numeric typed array.
+        const isTypedArray = ArrayBuffer.isView(vector) && !(vector instanceof DataView);
+        expect(isTypedArray, "vector must be a numeric typed array").toBe(true);
+        const values = Array.from(vector as ArrayLike<number>);
+        expect(values.length).toBeGreaterThan(0);
+        for (const v of values) {
           expect(Number.isFinite(v)).toBe(true);
         }
       },

@@ -20,14 +20,22 @@ import type { AiProviderConformanceOpts, ConformanceHandle } from "./types";
 
 export function runAiProviderConformance(opts: AiProviderConformanceOpts): void {
   // Capability invariants: a positive capability claim must be backed by a
-  // model the conformance suite can exercise. Without this, "embeddings: true"
-  // would silently pass when no embedding model is wired up, defeating the
-  // whole point of capabilityHonestyBlock's positive assertions.
-  if (opts.capabilities.embeddings && !opts.models.embeddings) {
-    throw new Error(
-      `AiProvider conformance "${opts.name}": capabilities.embeddings is true but models.embeddings is not set. ` +
-        `Either provide an embedding model id or set capabilities.embeddings to false.`
-    );
+  // model the conformance suite can exercise. Without these, a true capability
+  // would silently pass when no model is wired up, defeating the whole point
+  // of capabilityHonestyBlock's positive assertions.
+  const requiredModels: ReadonlyArray<readonly [boolean, string, string]> = [
+    [opts.capabilities.streaming, "streaming", "textGeneration"],
+    [opts.capabilities.tools, "tools", "toolCalling"],
+    [opts.capabilities.structured, "structured", "structured"],
+    [opts.capabilities.embeddings, "embeddings", "embeddings"],
+  ];
+  for (const [claimed, capabilityKey, modelKey] of requiredModels) {
+    if (claimed && !opts.models[modelKey as keyof typeof opts.models]) {
+      throw new Error(
+        `AiProvider conformance "${opts.name}": capabilities.${capabilityKey} is true but models.${modelKey} is not set. ` +
+          `Either provide a model id or set capabilities.${capabilityKey} to false.`
+      );
+    }
   }
 
   describe.skipIf(opts.skip)(`AiProvider conformance: ${opts.name}`, () => {
