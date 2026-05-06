@@ -99,8 +99,16 @@ export function releaseLlamaCppTransientSessions(): void {
  * `modelKey` accepts either the config key (typically `model_url`) or the
  * resolved on-disk path; both spellings are tried so callers don't have to
  * know which form ended up in the context cache.
+ *
+ * If `reloadModel` is true the cached `LlamaModel` is disposed as well, so the
+ * next request reloads weights from disk. Use this when prior runs may have
+ * leaked sequence-pool slots at the C level — disposing the context alone may
+ * not be sufficient to reclaim them inside the same model lifetime.
  */
-export async function recycleLlamaCppTextContext(modelKey: string): Promise<void> {
+export async function recycleLlamaCppTextContext(
+  modelKey: string,
+  options: { readonly reloadModel?: boolean } = {}
+): Promise<void> {
   disposeLlamaCppSessionsForModel(modelKey);
   const resolved = resolvedPaths.get(modelKey);
   const candidates = resolved && resolved !== modelKey ? [modelKey, resolved] : [modelKey];
@@ -109,6 +117,15 @@ export async function recycleLlamaCppTextContext(modelKey: string): Promise<void
     if (context) {
       llamaCppTextContexts.delete(key);
       await (context as unknown as { dispose?: () => Promise<void> }).dispose?.().catch(() => {});
+    }
+  }
+  if (options.reloadModel) {
+    for (const key of candidates) {
+      const loadedModel = llamaCppModels.get(key);
+      if (loadedModel) {
+        llamaCppModels.delete(key);
+        await loadedModel.dispose().catch(() => {});
+      }
     }
   }
 }

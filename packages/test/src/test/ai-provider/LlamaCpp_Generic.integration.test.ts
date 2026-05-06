@@ -94,9 +94,12 @@ runAiProviderConformance({
     releaseTransients: async () => {
       releaseLlamaCppTransientSessions();
       // Earlier conformance blocks (signal mid-stream abort in particular)
-      // can leak sequence-pool slots on the shared text-generation context.
-      // Recycle the context so session.reuse starts with a fresh pool.
-      await recycleLlamaCppTextContext(llmModel.provider_config.model_url!);
+      // can leak sequence-pool slots that aren't reclaimed by disposing the
+      // LlamaContext alone. Reload the LlamaModel so session.reuse starts
+      // with a truly fresh sequence pool.
+      await recycleLlamaCppTextContext(llmModel.provider_config.model_url!, {
+        reloadModel: true,
+      });
     },
   }),
   capabilities: {
