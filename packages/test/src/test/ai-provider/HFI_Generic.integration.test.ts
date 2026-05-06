@@ -19,6 +19,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 
 const RUN = !!process.env.HF_TOKEN;
 const MODEL_ID = "hf-inference:meta-llama/Llama-3.1-8B-Instruct";
+const EMBED_MODEL_ID = "hf-inference:sentence-transformers/all-MiniLM-L6-v2";
 
 runAiProviderConformance({
   name: "HuggingFace Inference",
@@ -45,6 +46,15 @@ runAiProviderConformance({
         provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
         metadata: {},
       });
+      await getGlobalModelRepository().addModel({
+        model_id: EMBED_MODEL_ID,
+        title: "All-MiniLM-L6-v2 (HF Inference)",
+        description: "sentence-transformers/all-MiniLM-L6-v2 via HF Inference",
+        tasks: ["TextEmbeddingTask"],
+        provider: HF_INFERENCE as typeof HF_INFERENCE,
+        provider_config: { model_name: "sentence-transformers/all-MiniLM-L6-v2" },
+        metadata: {},
+      });
     },
     dispose: async () => {
       await setTaskQueueRegistry(null);
@@ -55,12 +65,13 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: false,
-    embeddings: false,
+    embeddings: true,
     sessions: false,
     abortMidStream: true,
   },
   models: {
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
+    embeddings: EMBED_MODEL_ID,
   },
 });

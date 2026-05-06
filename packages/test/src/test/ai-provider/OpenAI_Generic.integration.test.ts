@@ -19,6 +19,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 
 const RUN = !!process.env.OPENAI_API_KEY;
 const MODEL_ID = "openai:gpt-4o-mini";
+const EMBED_MODEL_ID = "openai:text-embedding-3-small";
 
 runAiProviderConformance({
   name: "OpenAI",
@@ -46,6 +47,15 @@ runAiProviderConformance({
         provider_config: { model_name: "gpt-4o-mini" },
         metadata: {},
       });
+      await getGlobalModelRepository().addModel({
+        model_id: EMBED_MODEL_ID,
+        title: "Text Embedding 3 Small",
+        description: "OpenAI text-embedding-3-small (1536D)",
+        tasks: ["TextEmbeddingTask"],
+        provider: OPENAI as typeof OPENAI,
+        provider_config: { model_name: "text-embedding-3-small" },
+        metadata: {},
+      });
     },
     dispose: async () => {
       await setTaskQueueRegistry(null);
@@ -64,5 +74,6 @@ runAiProviderConformance({
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
+    embeddings: EMBED_MODEL_ID,
   },
 });
