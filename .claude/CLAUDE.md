@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+Use Node.js 24 or newer for all commands in this repository. Native dependencies such as
+`better-sqlite3` are built against the active Node ABI, so running Vitest or `npx` with Node 20
+can produce misleading SQLite failures.
+
 ```sh
 bun run build              # Full build (all packages + examples, via Turbo)
 bun run build:packages     # Build packages only
