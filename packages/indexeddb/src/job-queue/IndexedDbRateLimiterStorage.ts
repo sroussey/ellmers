@@ -5,6 +5,7 @@
  */
 
 import { createServiceToken } from "@workglow/util";
+import { openIdb } from "../storage/openIdb";
 import { runIndexedDbMigrationGroups } from "../migrations/IndexedDbMigrationRunner";
 import { indexedDbRateLimiterMigrationGroups } from "../migrations/indexedDbRateLimiterMigrations";
 import type { PrefixColumn } from "@workglow/job-queue";
@@ -17,24 +18,6 @@ import type {
 export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.indexedDb"
 );
-
-/**
- * Opens an IDB connection at the database's current version (no schema
- * change) and wires `onversionchange` so a future upgrade in another tab
- * doesn't deadlock this connection.
- */
-function openIndexedDbConnection(dbName: string): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(dbName);
-    req.onsuccess = () => {
-      const db = req.result;
-      db.onversionchange = () => db.close();
-      resolve(db);
-    };
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error(`IndexedDB ${dbName} blocked while opening for use`));
-  });
-}
 
 /**
  * Extended options for IndexedDB rate limiter storage including prefix support.
@@ -176,8 +159,8 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       this.nextAvailableDb = undefined;
     }
     await runIndexedDbMigrationGroups(this.getMigrations());
-    this.executionDb = await openIndexedDbConnection(this.executionTableName);
-    this.nextAvailableDb = await openIndexedDbConnection(this.nextAvailableTableName);
+    this.executionDb = await openIdb(this.executionTableName);
+    this.nextAvailableDb = await openIdb(this.nextAvailableTableName);
   }
 
   /**
