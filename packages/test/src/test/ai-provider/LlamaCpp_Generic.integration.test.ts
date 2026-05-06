@@ -10,10 +10,11 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP, llamaCppSessions } from "@workglow/node-llama-cpp/ai-provider";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai-provider";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
 import {
   disposeLlamaCppResources,
+  llamaCppSessions,
   recycleLlamaCppTextContext,
   registerLlamaCppInline,
   releaseLlamaCppTransientSessions,
