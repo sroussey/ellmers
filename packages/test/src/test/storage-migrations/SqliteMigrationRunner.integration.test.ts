@@ -1,0 +1,50 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { Sqlite, SqliteMigrationRunner } from "@workglow/sqlite/storage";
+import { setLogger } from "@workglow/util";
+import { describe } from "vitest";
+
+import { runMigrationRunnerContract } from "../../contract/storage-migrations/runMigrationRunnerContract";
+import type { BuildMigrationFn } from "../../contract/storage-migrations/runMigrationRunnerContract";
+import { getTestingLogger } from "../../binding/TestingLogger";
+
+const buildMigration: BuildMigrationFn<Sqlite.Database> = (
+  component,
+  version,
+  recorder,
+  options
+) => ({
+  component,
+  version,
+  description: `sqlite migration v${version}`,
+  up: async () => {
+    if (options?.fail) throw new Error(`sqlite migration v${version} failed (synthetic)`);
+    recorder.record(component, version);
+  },
+});
+
+describe("SqliteMigrationRunner", async () => {
+  await Sqlite.init();
+  setLogger(getTestingLogger());
+
+  // Each contract suite invocation owns its own in-memory database so the
+  // bookkeeping table starts clean.
+  runMigrationRunnerContract<Sqlite.Database>({
+    name: "SQLite",
+    timeout: 5_000,
+    factory: async () => {
+      const db = new Sqlite.Database(":memory:");
+      return {
+        createRunner: async () => new SqliteMigrationRunner(db),
+        buildMigration,
+        dispose: async () => {
+          db.close();
+        },
+      };
+    },
+  });
+});
