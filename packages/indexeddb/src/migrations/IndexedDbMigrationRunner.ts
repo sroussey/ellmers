@@ -46,6 +46,31 @@ function getIndexedDb(): IDBFactory {
 }
 
 /**
+ * Thrown when an in-flight migration is interrupted by another tab opening
+ * the same database at a higher version. Surfaces as the `run()` rejection
+ * so callers can distinguish a tab-coordination failure from a programming
+ * error in `up()`.
+ */
+export class MigrationAbortedByOtherTabError extends Error {
+  constructor(dbName: string) {
+    super(`IndexedDB ${dbName} migration aborted: another tab requested a higher version`);
+    this.name = "MigrationAbortedByOtherTabError";
+  }
+}
+
+/**
+ * Per-DB serialization for `run()`. IDB's open-with-higher-version semantics
+ * mean two concurrent migrations of the same database can deadlock each other
+ * (each holds an open connection that blocks the other's upgrade). We
+ * serialize at the JS layer per-dbName so back-to-back `runIndexedDbMigrationGroups`
+ * calls (which construct fresh runner instances) cooperate.
+ *
+ * Module-scoped so it spans runner instances; safe because the only state is
+ * a Promise chain keyed by `dbName`.
+ */
+const RUN_LOCKS = new Map<string, Promise<unknown>>();
+
+/**
  * Runs versioned migrations against a single IndexedDB database.
  *
  * Bookkeeping-driven dispatch (NOT IDB-version-ordinal driven). The runner:
@@ -63,6 +88,10 @@ function getIndexedDb(): IDBFactory {
  *   4. Otherwise reopens at `currentVersion + 1` and runs every pending
  *      migration inside the upgrade transaction, recording each in the
  *      bookkeeping store as it goes.
+ *
+ * Concurrent `run()` calls against the same dbName (across instances) are
+ * serialized via {@link RUN_LOCKS} so that two callers don't deadlock each
+ * other on the open-at-higher-version handshake.
  *
  * The IDB database version is treated purely as a monotonic trigger for
  * `onupgradeneeded`; we never use it to decide which migrations to apply.
@@ -150,6 +179,26 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
     migrations: ReadonlyArray<IndexedDbMigration>,
     options: RunMigrationsOptions = {}
   ): Promise<ReadonlyArray<IndexedDbMigration>> {
+    const prev = RUN_LOCKS.get(this.dbName) ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(() => this.runLocked(migrations, options));
+    RUN_LOCKS.set(this.dbName, next);
+    try {
+      return await next;
+    } finally {
+      if (RUN_LOCKS.get(this.dbName) === next) RUN_LOCKS.delete(this.dbName);
+    }
+  }
+
+  /**
+   * Body of `run()` that executes under the per-dbName lock. Probes the
+   * bookkeeping store *after* acquiring the lock so each serialized caller
+   * sees rows committed by the previous one — without re-probing, a queued
+   * caller would re-run already-applied migrations from a stale snapshot.
+   */
+  private async runLocked(
+    migrations: ReadonlyArray<IndexedDbMigration>,
+    options: RunMigrationsOptions
+  ): Promise<ReadonlyArray<IndexedDbMigration>> {
     const sorted = sortMigrations(migrations);
     if (sorted.length === 0) return [];
 
@@ -179,6 +228,22 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
           const tx = upreq.transaction!;
           const oldVersion = ev.oldVersion;
           const newVersion = ev.newVersion ?? targetVersion;
+
+          // Another tab opening at a still-higher version mid-upgrade: abort
+          // our work and surface a typed error rather than blocking forever.
+          db.onversionchange = () => {
+            try {
+              tx.abort();
+            } catch {
+              // ignore — tx may already be settling
+            }
+            try {
+              db.close();
+            } catch {
+              // ignore
+            }
+            reject(new MigrationAbortedByOtherTabError(this.dbName));
+          };
 
           if (!db.objectStoreNames.contains(MIGRATIONS_TABLE)) {
             db.createObjectStore(MIGRATIONS_TABLE, { keyPath: ["component", "version"] });
