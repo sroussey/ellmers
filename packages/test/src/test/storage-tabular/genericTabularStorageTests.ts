@@ -4,9 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ITabularStorage, PageCursor, StorageUnsupportedError } from "@workglow/storage";
+import {
+  ITabularStorage,
+  PageCursor,
+  StorageUnsupportedError,
+  StorageValidationError,
+} from "@workglow/storage";
 import { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+export const PAYLOADS = [
+  "id); DROP TABLE x;--",
+  "id;--",
+  "id,id",
+  "(SELECT 1)",
+  "id--",
+  "1=1",
+  'id")"',
+  "id\\",
+  "id.x",
+  "",
+  " ",
+];
 
 export const CompoundPrimaryKeyNames = ["name", "type"] as const;
 export const CompoundSchema = {
@@ -882,6 +901,47 @@ export function runGenericTabularStorageTests(
         repository.destroy();
       });
 
+      it("rejects adversarial orderBy columns before executing reads", async () => {
+        for (const payload of PAYLOADS) {
+          const orderBy = [{ column: payload as any, direction: "ASC" as const }];
+
+          await expect(repository.getPage({ orderBy })).rejects.toThrow(StorageValidationError);
+          await expect(
+            repository.queryPage({ category: "electronics" }, { orderBy })
+          ).rejects.toThrow(StorageValidationError);
+          await expect(repository.getAll({ orderBy })).rejects.toThrow(StorageValidationError);
+          await expect(repository.query({ category: "electronics" }, { orderBy })).rejects.toThrow(
+            StorageValidationError
+          );
+        }
+      });
+
+      it("rejects adversarial orderBy directions before executing reads", async () => {
+        const orderBy = [{ column: "id" as const, direction: "ASC; DROP--" as any }];
+
+        await expect(repository.getPage({ orderBy })).rejects.toThrow(StorageValidationError);
+        await expect(
+          repository.queryPage({ category: "electronics" }, { orderBy })
+        ).rejects.toThrow(StorageValidationError);
+        await expect(repository.getAll({ orderBy })).rejects.toThrow(StorageValidationError);
+        await expect(repository.query({ category: "electronics" }, { orderBy })).rejects.toThrow(
+          StorageValidationError
+        );
+      });
+
+      it("rejects non-string orderBy columns before executing reads", async () => {
+        const orderBy = [{ column: 1 as any, direction: "ASC" as const }];
+
+        await expect(repository.getPage({ orderBy })).rejects.toThrow(StorageValidationError);
+        await expect(
+          repository.queryPage({ category: "electronics" }, { orderBy })
+        ).rejects.toThrow(StorageValidationError);
+        await expect(repository.getAll({ orderBy })).rejects.toThrow(StorageValidationError);
+        await expect(repository.query({ category: "electronics" }, { orderBy })).rejects.toThrow(
+          StorageValidationError
+        );
+      });
+
       it("should return matching entries with equality criteria", async () => {
         const now = new Date().toISOString();
         await repository.put({
@@ -1589,10 +1649,7 @@ export function runGenericTabularStorageTests(
         const seen: string[] = [];
         let cursor: PageCursor | undefined;
         do {
-          const page = await repository.queryPage(
-            { category: "even" },
-            { limit: 2, cursor }
-          );
+          const page = await repository.queryPage({ category: "even" }, { limit: 2, cursor });
           for (const row of page.items) seen.push(row.id);
           cursor = page.nextCursor;
         } while (cursor);

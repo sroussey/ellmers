@@ -242,6 +242,7 @@ export class CachedTabularStorage<
    * @returns Array of all entries in the repository
    */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
+    this.validateGetAllOptions(options);
     await this.initializeCache();
 
     // Try cache first (without options for population check)
