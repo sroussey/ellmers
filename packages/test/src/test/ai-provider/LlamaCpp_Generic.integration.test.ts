@@ -92,7 +92,7 @@ runAiProviderConformance({
     },
     inspect: () => ({ sessionMap: llamaCppSessions }),
     releaseTransients: async () => {
-      releaseLlamaCppTransientSessions();
+      await releaseLlamaCppTransientSessions();
       // Earlier conformance blocks (signal mid-stream abort in particular)
       // can leak sequence-pool slots that aren't reclaimed by disposing the
       // LlamaContext alone. Reload the LlamaModel so session.reuse starts

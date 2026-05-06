@@ -48,10 +48,10 @@ export const LlamaCpp_TextRewriter: AiProviderRunFn<
     return { text };
   } finally {
     try {
-      session.dispose({ disposeSequence: false });
+      await session.dispose({ disposeSequence: false });
     } catch {}
     try {
-      sequence.dispose();
+      await sequence.dispose();
     } catch {}
   }
 };
@@ -82,10 +82,10 @@ export const LlamaCpp_TextRewriter_Stream: AiProviderStreamFn<
     }, signal);
   } finally {
     try {
-      session.dispose({ disposeSequence: false });
+      await session.dispose({ disposeSequence: false });
     } catch {}
     try {
-      sequence.dispose();
+      await sequence.dispose();
     } catch {}
   }
 };

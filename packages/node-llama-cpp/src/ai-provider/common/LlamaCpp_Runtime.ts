@@ -63,14 +63,14 @@ export function setLlamaCppSession(sessionId: string, state: LlamaCppSessionStat
   llamaCppSessions.set(sessionId, state);
 }
 
-export function deleteLlamaCppSession(sessionId: string): boolean {
+export async function deleteLlamaCppSession(sessionId: string): Promise<boolean> {
   const session = llamaCppSessions.get(sessionId);
   if (session) {
     try {
-      session.session?.dispose?.({ disposeSequence: false });
+      await session.session?.dispose?.({ disposeSequence: false });
     } catch {}
     try {
-      session.sequence?.dispose?.();
+      await session.sequence?.dispose?.();
     } catch {}
   }
   return llamaCppSessions.delete(sessionId);
@@ -83,9 +83,9 @@ export function deleteLlamaCppSession(sessionId: string): boolean {
  * (or long-lived runtimes) where leftover sessions would otherwise exhaust
  * the per-context sequence pool.
  */
-export function releaseLlamaCppTransientSessions(): void {
+export async function releaseLlamaCppTransientSessions(): Promise<void> {
   for (const id of Array.from(llamaCppSessions.keys())) {
-    deleteLlamaCppSession(id);
+    await deleteLlamaCppSession(id);
   }
   llamaCppSessions.clear();
 }
@@ -109,7 +109,7 @@ export async function recycleLlamaCppTextContext(
   modelKey: string,
   options: { readonly reloadModel?: boolean } = {}
 ): Promise<void> {
-  disposeLlamaCppSessionsForModel(modelKey);
+  await disposeLlamaCppSessionsForModel(modelKey);
   const resolved = resolvedPaths.get(modelKey);
   const candidates = resolved && resolved !== modelKey ? [modelKey, resolved] : [modelKey];
   for (const key of candidates) {
@@ -130,14 +130,14 @@ export async function recycleLlamaCppTextContext(
   }
 }
 
-export function disposeLlamaCppSessionsForModel(modelKey: string): void {
+export async function disposeLlamaCppSessionsForModel(modelKey: string): Promise<void> {
   for (const [id, state] of llamaCppSessions) {
     if (state.modelKey === modelKey) {
       try {
-        state.session?.dispose?.({ disposeSequence: false });
+        await state.session?.dispose?.({ disposeSequence: false });
       } catch {}
       try {
-        state.sequence?.dispose?.();
+        await state.sequence?.dispose?.();
       } catch {}
       llamaCppSessions.delete(id);
     }
@@ -309,8 +309,8 @@ export async function* streamFromSession<T extends Record<string, unknown>>(
 
 export async function disposeLlamaCppResources(): Promise<void> {
   // Dispose all sessions before contexts/models they reference
-  for (const [id] of llamaCppSessions) {
-    deleteLlamaCppSession(id);
+  for (const id of Array.from(llamaCppSessions.keys())) {
+    await deleteLlamaCppSession(id);
   }
 
   const disposeAll = async (map: Map<string, { dispose(): Promise<void> }>) => {

@@ -68,10 +68,10 @@ export const LlamaCpp_TextGeneration: AiProviderRunFn<
   } finally {
     if (!sessionId) {
       try {
-        session.dispose({ disposeSequence: false });
+        await session.dispose({ disposeSequence: false });
       } catch {}
       try {
-        sequence.dispose();
+        await sequence.dispose();
       } catch {}
     }
   }
@@ -125,10 +125,10 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
   } finally {
     if (!sessionId) {
       try {
-        session.dispose({ disposeSequence: false });
+        await session.dispose({ disposeSequence: false });
       } catch {}
       try {
-        sequence.dispose();
+        await sequence.dispose();
       } catch {}
     }
   }

@@ -108,10 +108,10 @@ export const LlamaCpp_Chat: AiProviderRunFn<
     // For ephemeral sessions (no sessionId), dispose resources immediately.
     if (!sessionId) {
       try {
-        session.dispose({ disposeSequence: false });
+        await session.dispose({ disposeSequence: false });
       } catch {}
       try {
-        sequence.dispose();
+        await sequence.dispose();
       } catch {}
     }
   }
@@ -153,15 +153,15 @@ export const LlamaCpp_Chat_Stream: AiProviderStreamFn<
         resolver?.();
       },
     })
-    .finally(() => {
+    .finally(async () => {
       done = true;
       resolver?.();
       if (!sessionId) {
         try {
-          session.dispose({ disposeSequence: false });
+          await session.dispose({ disposeSequence: false });
         } catch {}
         try {
-          sequence.dispose();
+          await sequence.dispose();
         } catch {}
       }
     });

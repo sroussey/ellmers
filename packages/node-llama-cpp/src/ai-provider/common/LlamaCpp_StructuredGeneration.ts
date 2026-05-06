@@ -64,10 +64,10 @@ export const LlamaCpp_StructuredGeneration: AiProviderRunFn<
     return { object };
   } finally {
     try {
-      session.dispose({ disposeSequence: false });
+      await session.dispose({ disposeSequence: false });
     } catch {}
     try {
-      sequence.dispose();
+      await sequence.dispose();
     } catch {}
   }
 };
@@ -155,10 +155,10 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
   } finally {
     await promptPromise.catch(() => {});
     try {
-      session.dispose({ disposeSequence: false });
+      await session.dispose({ disposeSequence: false });
     } catch {}
     try {
-      sequence.dispose();
+      await sequence.dispose();
     } catch {}
   }
 
