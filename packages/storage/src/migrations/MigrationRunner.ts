@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IMigration } from "./IMigration";
+import type { IMigration, MigrationProgressListener } from "./IMigration";
 
 /**
  * Name of the bookkeeping table used by every runner. The leading underscore
@@ -12,6 +12,19 @@ import type { IMigration } from "./IMigration";
  * "system table, don't touch".
  */
 export const MIGRATIONS_TABLE = "_storage_migrations";
+
+/**
+ * Optional knobs accepted by {@link IMigrationRunner.run}.
+ *
+ * `onProgress` is invoked synchronously from inside the migration's
+ * transaction (or upgrade callback for IndexedDB), so listeners must NOT
+ * await IO that touches the same database — they would deadlock against
+ * the open transaction. Use them for logging, telemetry, or in-memory
+ * progress UI updates.
+ */
+export interface RunMigrationsOptions {
+  readonly onProgress?: MigrationProgressListener;
+}
 
 /**
  * Common runner contract — runs the supplied migrations in (component, version)
@@ -25,7 +38,10 @@ export const MIGRATIONS_TABLE = "_storage_migrations";
 export interface IMigrationRunner<DB> {
   ensureBookkeepingTable(): Promise<void>;
   appliedVersions(component: string): Promise<Set<number>>;
-  run(migrations: ReadonlyArray<IMigration<DB>>): Promise<ReadonlyArray<IMigration<DB>>>;
+  run(
+    migrations: ReadonlyArray<IMigration<DB>>,
+    options?: RunMigrationsOptions
+  ): Promise<ReadonlyArray<IMigration<DB>>>;
 }
 
 /**

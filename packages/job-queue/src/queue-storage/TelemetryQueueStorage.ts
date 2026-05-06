@@ -89,8 +89,11 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       this.inner.deleteJobsByStatusAndAge(status, olderThanMs)
     );
   }
-  setupDatabase(): Promise<void> {
-    return this.inner.setupDatabase();
+  migrate(): Promise<void> {
+    return this.inner.migrate();
+  }
+  getMigrations(): ReadonlyArray<unknown> {
+    return this.inner.getMigrations();
   }
   subscribeToChanges(
     callback: (change: QueueChangePayload<Input, Output>) => void,

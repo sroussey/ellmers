@@ -250,7 +250,7 @@ describe("IndexedDB Hybrid Subscription Integration", () => {
         backupPollingIntervalMs: 5000,
       });
 
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const changes: any[] = [];
       const unsubscribe = storage.subscribeToChanges((change) => {
@@ -282,7 +282,7 @@ describe("IndexedDB Hybrid Subscription Integration", () => {
         backupPollingIntervalMs: 10000, // Long interval to ensure we're using local events
       });
 
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const changes: any[] = [];
       const startTime = Date.now();
@@ -333,7 +333,7 @@ describe("IndexedDB Hybrid Subscription Integration", () => {
         backupPollingIntervalMs: 0,
       });
 
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const jobId = await storage.add({
         input: "test-input",
@@ -371,7 +371,7 @@ describe("IndexedDB Hybrid Subscription Integration", () => {
         backupPollingIntervalMs: 0,
       });
 
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const changes: any[] = [];
       const unsubscribe = storage.subscribeToChanges((change) => {

@@ -59,26 +59,18 @@ export interface IRateLimiterStorage {
   readonly scope: RateLimiterStorageScope;
 
   /**
-   * Sets up the database schema and tables.
-   *
-   * @deprecated Production code should run versioned migrations instead — call
-   * {@link migrate} on backends that expose it (or run {@link getMigrations}
-   * through a `MigrationRunner` from `@workglow/postgres` /
-   * `@workglow/sqlite`). Kept for tests and ad-hoc scripts.
+   * Applies any pending migrations for this rate limiter's tables. The
+   * single schema-setup entry point for every backend; in-memory backends
+   * implement it as a no-op.
    */
-  setupDatabase(): Promise<void>;
-
-  /**
-   * Applies any pending migrations for this rate limiter's tables.
-   * Optional — only SQL backends implement it.
-   */
-  migrate?(): Promise<void>;
+  migrate(): Promise<void>;
 
   /**
    * Returns this storage's versioned migrations for composition with other
-   * storages' migrations under a single `MigrationRunner`. Optional.
+   * storages' migrations under a single `MigrationRunner`. Returns an empty
+   * array on backends without a versioned schema (in-memory).
    */
-  getMigrations?(): ReadonlyArray<unknown>;
+  getMigrations(): ReadonlyArray<unknown>;
 
   /**
    * Atomic check-and-record. Inserts an execution row and returns the

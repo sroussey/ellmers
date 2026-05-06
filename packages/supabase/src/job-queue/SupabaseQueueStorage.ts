@@ -156,7 +156,17 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     return value.replace(/'/g, "''");
   }
 
-  public async setupDatabase(): Promise<void> {
+  /**
+   * Schema setup for Supabase queues.
+   *
+   * Supabase exposes the SQL surface via a side-installed `exec_sql` RPC
+   * rather than the `pg.Pool` shape the {@link PostgresMigrationRunner} is
+   * built against, so this storage doesn't share the runner's bookkeeping
+   * table — it runs idempotent CREATE-IF-NOT-EXISTS statements directly via
+   * the RPC. {@link getMigrations} returns an empty array for the same
+   * reason.
+   */
+  public async migrate(): Promise<void> {
     // Note: For Supabase, table creation should typically be done through migrations
     // This setup assumes the table already exists or uses exec_sql RPC function
     const createTypeSql = `CREATE TYPE job_status AS ENUM (${Object.values(JobStatus)
@@ -218,6 +228,11 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       await this.client.rpc("exec_sql", { query: indexSql });
       // Ignore index creation errors
     }
+  }
+
+  /** Supabase queue runs DDL via `exec_sql`, not via the migration runner. */
+  public getMigrations(): ReadonlyArray<unknown> {
+    return [];
   }
 
   /**

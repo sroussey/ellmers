@@ -51,8 +51,8 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: singlePrefix,
         prefixValues: { user_id: userId2 },
       });
-      await storage1.setupDatabase();
-      await storage2.setupDatabase();
+      await storage1.migrate();
+      await storage2.migrate();
     });
 
     afterEach(async () => {
@@ -164,9 +164,9 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: twoPrefix,
         prefixValues: { user_id: userId2, project_id: 100 },
       });
-      await storage1.setupDatabase();
-      await storage2.setupDatabase();
-      await storage3.setupDatabase();
+      await storage1.migrate();
+      await storage2.migrate();
+      await storage3.migrate();
     });
 
     afterEach(async () => {
@@ -250,8 +250,8 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: twoPrefix,
         prefixValues: { user_id: userId, project_id: 100 },
       });
-      await storageQueueA.setupDatabase();
-      await storageQueueB.setupDatabase();
+      await storageQueueA.migrate();
+      await storageQueueB.migrate();
     });
 
     afterEach(async () => {
@@ -302,9 +302,9 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: singlePrefix,
         prefixValues: { user_id: userId1 },
       });
-      await queue1.setupDatabase();
-      await queue2.setupDatabase();
-      await queue3.setupDatabase();
+      await queue1.migrate();
+      await queue2.migrate();
+      await queue3.migrate();
     });
 
     afterEach(async () => {
@@ -472,9 +472,9 @@ export function runGenericPrefixedQueueStorageTests(
       queueA = storageFactory("queue-a-no-prefix");
       queueB = storageFactory("queue-b-no-prefix");
       queueC = storageFactory("queue-c-no-prefix");
-      await queueA.setupDatabase();
-      await queueB.setupDatabase();
-      await queueC.setupDatabase();
+      await queueA.migrate();
+      await queueB.migrate();
+      await queueC.migrate();
     });
 
     afterEach(async () => {
@@ -566,7 +566,7 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: singlePrefix,
         prefixValues: { user_id: userId },
       });
-      await storage.setupDatabase();
+      await storage.migrate();
     });
 
     afterEach(async () => {
@@ -663,9 +663,9 @@ export function runGenericPrefixedQueueStorageTests(
         prefixes: twoPrefix,
         prefixValues: { user_id: userId, project_id: 100 },
       });
-      await queueNoPrefix.setupDatabase();
-      await queueSinglePrefix.setupDatabase();
-      await queueTwoPrefixes.setupDatabase();
+      await queueNoPrefix.migrate();
+      await queueSinglePrefix.migrate();
+      await queueTwoPrefixes.migrate();
     });
 
     afterEach(async () => {

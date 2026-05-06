@@ -7,6 +7,7 @@
 import {
   type IMigration,
   type IMigrationRunner,
+  type RunMigrationsOptions,
   MIGRATIONS_TABLE,
   sortMigrations,
 } from "@workglow/storage";
@@ -146,7 +147,8 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
   }
 
   async run(
-    migrations: ReadonlyArray<IndexedDbMigration>
+    migrations: ReadonlyArray<IndexedDbMigration>,
+    options: RunMigrationsOptions = {}
   ): Promise<ReadonlyArray<IndexedDbMigration>> {
     const sorted = sortMigrations(migrations);
     if (sorted.length === 0) return [];
@@ -159,6 +161,15 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
     // onupgradeneeded. The bookkeeping store decides what actually runs.
     const targetVersion = currentVersion + 1;
     const applied: IndexedDbMigration[] = [];
+    // Buffer events emitted from inside `onupgradeneeded` and flush after the
+    // open request settles. Calling user code (the listener) inside the IDB
+    // upgrade transaction can let microtasks slip in and auto-commit the
+    // transaction before our migrations are done.
+    const onProgress = options.onProgress;
+    const buffered: Parameters<NonNullable<typeof onProgress>>[0][] = [];
+    const emitLater = onProgress
+      ? (ev: Parameters<NonNullable<typeof onProgress>>[0]) => buffered.push(ev)
+      : undefined;
 
     await new Promise<void>((resolve, reject) => {
       const upreq = this.idb.open(this.dbName, targetVersion);
@@ -175,8 +186,22 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
           const meta = tx.objectStore(MIGRATIONS_TABLE);
 
           for (const m of pending) {
+            emitLater?.({
+              component: m.component,
+              version: m.version,
+              phase: "starting",
+              description: m.description,
+            });
             const ctx: IndexedDbUpgradeContext = { db, tx, oldVersion, newVersion };
-            const result = m.up(ctx);
+            const result = m.up(ctx, (fraction) => {
+              emitLater?.({
+                component: m.component,
+                version: m.version,
+                phase: "running",
+                description: m.description,
+                fraction,
+              });
+            });
             if (result instanceof Promise) {
               throw new Error(
                 `IndexedDB migration "${m.component}@${m.version}" returned a Promise; ` +
@@ -190,6 +215,13 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
               applied_at: new Date().toISOString(),
             });
             applied.push(m);
+            emitLater?.({
+              component: m.component,
+              version: m.version,
+              phase: "completed",
+              description: m.description,
+              fraction: 1,
+            });
           }
         } catch (err) {
           // Force the open request to fail by aborting the upgrade transaction.
@@ -198,6 +230,18 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
             upreq.transaction?.abort();
           } catch {
             // ignore
+          }
+          // Tag which migration failed (best-effort: the one whose `starting`
+          // we last buffered without a matching `completed`).
+          const lastStart = [...buffered].reverse().find((e) => e.phase === "starting");
+          if (lastStart) {
+            emitLater?.({
+              component: lastStart.component,
+              version: lastStart.version,
+              phase: "failed",
+              description: lastStart.description,
+              error: err,
+            });
           }
           reject(err);
         }
@@ -209,6 +253,13 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
       upreq.onerror = () => reject(upreq.error);
       upreq.onblocked = () =>
         reject(new Error(`IndexedDB ${this.dbName} upgrade blocked — close other tabs.`));
+    }).finally(() => {
+      // Flush buffered events after the upgrade settles, regardless of
+      // success/failure. Listeners always see a consistent "starting →
+      // {completed | failed}" sequence.
+      if (onProgress) {
+        for (const ev of buffered) onProgress(ev);
+      }
     });
 
     return applied;
@@ -231,14 +282,15 @@ export interface IndexedDbMigrationGroup {
 
 export async function runIndexedDbMigrationGroups(
   groups: ReadonlyArray<IndexedDbMigrationGroup>,
-  idb?: IDBFactory
+  options: RunMigrationsOptions & { idb?: IDBFactory } = {}
 ): Promise<ReadonlyArray<IndexedDbMigration>> {
+  const { idb, onProgress } = options;
   const all: IndexedDbMigration[] = [];
   for (const group of groups) {
     const runner = idb
       ? new IndexedDbMigrationRunner(group.dbName, idb)
       : new IndexedDbMigrationRunner(group.dbName);
-    const applied = await runner.run(group.migrations);
+    const applied = await runner.run(group.migrations, { onProgress });
     all.push(...applied);
   }
   return all;

@@ -23,7 +23,7 @@ describe("TelemetryQueueStorage", () => {
     startSpanSpy = vi.spyOn(provider, "startSpan");
 
     inner = new InMemoryQueueStorage("test-queue");
-    await inner.setupDatabase();
+    await inner.migrate();
     wrapped = new TelemetryQueueStorage("test-queue", inner);
 
     vi.spyOn(console, "debug").mockImplementation(() => {});

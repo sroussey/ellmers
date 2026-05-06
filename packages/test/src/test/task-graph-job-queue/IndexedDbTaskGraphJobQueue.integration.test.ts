@@ -20,7 +20,7 @@ describe("IndexedDbTaskGraphJobQueue", () => {
   runGenericTaskGraphJobQueueTests(async () => {
     const queueName = `idx_test_queue_${uuid4()}`;
     const storage = new IndexedDbQueueStorage<TaskInput, TaskOutput>(queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
       storage,

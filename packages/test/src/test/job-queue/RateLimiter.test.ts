@@ -24,7 +24,8 @@ function createMockStorage(): MockRateLimiterStorage {
 
   return {
     scope: "process" as const,
-    setupDatabase: vi.fn(async () => {}),
+    migrate: vi.fn(async () => {}),
+    getMigrations: vi.fn(() => [] as ReadonlyArray<unknown>),
     getExecutionCount: vi.fn(async () => executionCount),
     recordExecution: vi.fn(async () => {
       executionCount++;
