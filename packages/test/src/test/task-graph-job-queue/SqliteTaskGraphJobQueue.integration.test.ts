@@ -21,7 +21,7 @@ describe("SqliteTaskGraphJobQueue", async () => {
     const db = new Sqlite.Database(":memory:");
     const queueName = `sqlite_test_queue_${uuid4()}`;
     const storage = new SqliteQueueStorage<TaskInput, TaskOutput>(db, queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
       storage,

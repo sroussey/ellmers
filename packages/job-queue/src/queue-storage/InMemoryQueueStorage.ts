@@ -362,11 +362,15 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Sets up the database schema and tables.
-   * No-op for in-memory storage as it doesn't require database setup.
+   * No-op — in-memory storage has no schema to migrate.
    */
-  public async setupDatabase(): Promise<void> {
-    // No-op for in-memory storage
+  public async migrate(): Promise<void> {
+    // intentional no-op
+  }
+
+  /** No versioned schema for in-memory storage. */
+  public getMigrations(): ReadonlyArray<unknown> {
+    return [];
   }
 
   /**

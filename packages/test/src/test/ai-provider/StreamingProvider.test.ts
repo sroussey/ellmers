@@ -41,7 +41,7 @@ describe("Streaming Provider", () => {
 
   beforeEach(async () => {
     storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(MOCK_PROVIDER);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
       AiJob<AiJobInput<TaskInput>, TaskOutput>,

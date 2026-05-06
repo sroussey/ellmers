@@ -93,30 +93,22 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
-   * Returns the versioned migrations that this storage's table layout depends on.
-   * Production code should run these via {@link SqliteMigrationRunner} as part
-   * of an explicit migration step rather than calling {@link setupDatabase}.
+   * Returns the versioned migrations that this storage's table layout depends
+   * on. Callers can compose them with other storages' migrations under a
+   * shared {@link SqliteMigrationRunner}; otherwise call {@link migrate}.
    */
   public getMigrations() {
     return sqliteQueueMigrations(this.tableName, this.prefixes);
   }
 
   /**
-   * Applies any pending migrations for this queue's table.
-   * Safe to call repeatedly — already-applied versions are skipped.
+   * Applies any pending migrations for this queue's table. Idempotent —
+   * already-applied versions are recorded in `_storage_migrations` and
+   * skipped on subsequent calls.
    */
   public async migrate(): Promise<void> {
-    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
-  }
-
-  /**
-   * @deprecated Use {@link migrate} (or run {@link getMigrations} via your own
-   * {@link SqliteMigrationRunner}) in production. Kept for tests and ad-hoc
-   * scripts that previously relied on idempotent CREATE-IF-NOT-EXISTS DDL.
-   */
-  public async setupDatabase(): Promise<void> {
     await sleep(0);
-    await this.migrate();
+    await new SqliteMigrationRunner(this.db).run(this.getMigrations());
   }
 
   /**

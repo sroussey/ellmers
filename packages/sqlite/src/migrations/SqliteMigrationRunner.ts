@@ -8,6 +8,7 @@ import type { Sqlite } from "@workglow/sqlite/storage";
 import {
   type IMigration,
   type IMigrationRunner,
+  type RunMigrationsOptions,
   MIGRATIONS_TABLE,
   sortMigrations,
 } from "@workglow/storage";
@@ -45,11 +46,13 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
   }
 
   async run(
-    migrations: ReadonlyArray<IMigration<Sqlite.Database>>
+    migrations: ReadonlyArray<IMigration<Sqlite.Database>>,
+    options: RunMigrationsOptions = {}
   ): Promise<ReadonlyArray<IMigration<Sqlite.Database>>> {
     await this.ensureBookkeepingTable();
     const sorted = sortMigrations(migrations);
     const applied: IMigration<Sqlite.Database>[] = [];
+    const onProgress = options.onProgress;
 
     // Cache applied versions per component so we don't requery for every migration.
     const cache = new Map<string, Set<number>>();
@@ -65,11 +68,43 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
       }
       if (seen.has(m.version)) continue;
 
-      const result = m.up(this.db);
-      if (result instanceof Promise) await result;
-      insert.run(m.component, m.version, m.description ?? null);
-      seen.add(m.version);
-      applied.push(m);
+      onProgress?.({
+        component: m.component,
+        version: m.version,
+        phase: "starting",
+        description: m.description,
+      });
+      try {
+        const result = m.up(this.db, (fraction) => {
+          onProgress?.({
+            component: m.component,
+            version: m.version,
+            phase: "running",
+            description: m.description,
+            fraction,
+          });
+        });
+        if (result instanceof Promise) await result;
+        insert.run(m.component, m.version, m.description ?? null);
+        seen.add(m.version);
+        applied.push(m);
+        onProgress?.({
+          component: m.component,
+          version: m.version,
+          phase: "completed",
+          description: m.description,
+          fraction: 1,
+        });
+      } catch (err) {
+        onProgress?.({
+          component: m.component,
+          version: m.version,
+          phase: "failed",
+          description: m.description,
+          error: err,
+        });
+        throw err;
+      }
     }
 
     return applied;

@@ -93,7 +93,12 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     return values;
   }
 
-  public async setupDatabase(): Promise<void> {
+  /**
+   * Schema setup for Supabase rate-limiter. See
+   * {@link SupabaseQueueStorage.migrate} for why this storage doesn't share
+   * the {@link PostgresMigrationRunner} bookkeeping table.
+   */
+  public async migrate(): Promise<void> {
     const prefixColumnsSql = this.buildPrefixColumnsSql();
     const prefixColumnNames = this.getPrefixColumnNames();
     const prefixIndexPrefix =
@@ -194,6 +199,11 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     if (fnError) {
       throw fnError;
     }
+  }
+
+  /** Supabase rate-limiter runs DDL via `exec_sql`, not via the migration runner. */
+  public getMigrations(): ReadonlyArray<unknown> {
+    return [];
   }
 
   /** Stable function name derived from table name (Postgres identifiers ≤63 chars). */

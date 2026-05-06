@@ -62,7 +62,7 @@ const defaultJobQueueFactory: JobQueueFactory = async <
   const storage =
     (options?.storage as IQueueStorage<Input, Output>) ??
     new InMemoryQueueStorage<Input, Output>(queueName);
-  await storage.setupDatabase();
+  await storage.migrate();
 
   const server = new JobQueueServer<Input, Output>(jobClass as JobClassConstructor<any, any>, {
     storage,
@@ -111,7 +111,7 @@ export function createJobQueueFactoryWithOptions(
     const storage =
       (mergedOptions.storage as IQueueStorage<Input, Output>) ??
       new InMemoryQueueStorage<Input, Output>(queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     const server = new JobQueueServer<Input, Output>(jobClass as JobClassConstructor<any, any>, {
       storage,

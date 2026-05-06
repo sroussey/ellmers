@@ -24,14 +24,6 @@ export const INDEXED_DB_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, an
 
 /**
  * Extended options for IndexedDB queue storage including prefix support.
- *
- * NOTE: this used to extend `MigrationOptions` (data-transformer +
- * `allowDestructiveMigration` + progress callbacks honoured by the
- * legacy {@link ensureIndexedDbTable} path). Once `migrate()` switched
- * to the versioned runner those callbacks were no longer plumbed through,
- * so the extension was dropped to avoid a misleading "you can pass these
- * and they will run" contract. If a future migration genuinely needs
- * progress reporting, expose the relevant subset explicitly instead.
  */
 export interface IndexedDbQueueStorageOptions extends QueueStorageOptions {
   /** Enable BroadcastChannel notifications (default: true) */
@@ -104,14 +96,15 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
   private async getDb(): Promise<IDBDatabase> {
     if (this.db) return this.db;
-    await this.setupDatabase();
+    await this.migrate();
     return this.db!;
   }
 
   /**
-   * Returns the versioned migrations that this storage's object store + indexes
-   * depend on. Production code should run these via {@link IndexedDbMigrationRunner}
-   * (or the convenience {@link migrate}) rather than {@link setupDatabase}.
+   * Returns the versioned migrations that this storage's object store +
+   * indexes depend on. Callers can compose them with other storages'
+   * migrations under a shared {@link IndexedDbMigrationRunner}; otherwise
+   * call {@link migrate}.
    */
   public getMigrations() {
     return indexedDbQueueMigrations(this.tableName, this.prefixes);
@@ -119,15 +112,13 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
   /**
    * Applies any pending migrations for this queue's IndexedDB database, then
-   * opens a long-lived connection at the migrated version that subsequent
-   * operations reuse. Idempotent — re-running on an already-migrated DB only
-   * opens the connection.
+   * opens a long-lived connection at the migrated version. Idempotent — a
+   * second call closes any prior handle (so it doesn't pin the
+   * pre-migration version or block another tab's upgrade), reruns the
+   * runner (no-op if the bookkeeping store says everything is applied), and
+   * reopens the connection.
    */
   public async migrate(): Promise<void> {
-    // Close any prior connection before reopening — repeated migrate() /
-    // setupDatabase() calls would otherwise leak IDB handles and keep the
-    // pre-migration version alive, which can also block subsequent schema
-    // bumps from a second tab.
     if (this.db) {
       try {
         this.db.close();
@@ -142,9 +133,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       const req = indexedDB.open(this.tableName);
       req.onsuccess = () => {
         const db = req.result;
-        // Mirror the original setupDatabase behaviour: close on
-        // `versionchange` so a future schema bump (in another tab) doesn't
-        // block forever.
+        // Close on `versionchange` so a future schema bump in another tab
+        // doesn't block forever.
         db.onversionchange = () => db.close();
         resolve(db);
       };
@@ -152,18 +142,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       req.onblocked = () =>
         reject(new Error(`IndexedDB ${this.tableName} blocked while opening for queue use`));
     });
-  }
-
-  /**
-   * Sets up the IndexedDB database table with the required schema and indexes.
-   *
-   * @deprecated Production code should run versioned migrations instead — call
-   * {@link migrate} (or run {@link getMigrations} through an
-   * {@link IndexedDbMigrationRunner}). Kept as the public schema-setup entry
-   * point for tests and ad-hoc scripts; delegates to {@link migrate}.
-   */
-  public async setupDatabase(): Promise<void> {
-    await this.migrate();
   }
 
   /**

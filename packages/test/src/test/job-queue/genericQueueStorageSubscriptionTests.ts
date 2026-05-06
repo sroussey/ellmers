@@ -69,7 +69,7 @@ export function runGenericQueueStorageSubscriptionTests(
         prefixValues: { user_id: uuid4() }, // Fresh UUID per test
       });
       testCounter++;
-      await storage.setupDatabase();
+      await storage.migrate();
     });
 
     afterEach(async () => {
@@ -339,7 +339,7 @@ export function runGenericQueueStorageSubscriptionTests(
         prefixes: singlePrefix,
         prefixValues: { user_id: userId2 },
       });
-      await storage2.setupDatabase();
+      await storage2.migrate();
 
       try {
         const changes1: QueueChangePayload<TestInput, TestOutput>[] = [];
@@ -469,9 +469,9 @@ export function runGenericQueueStorageSubscriptionTests(
           prefixValues: { user_id: userId2, project_id: projectId1 },
         });
 
-        await storage1.setupDatabase();
-        await storage2.setupDatabase();
-        await storage3.setupDatabase();
+        await storage1.migrate();
+        await storage2.migrate();
+        await storage3.migrate();
       });
 
       afterEach(async () => {

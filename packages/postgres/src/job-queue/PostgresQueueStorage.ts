@@ -86,29 +86,21 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Returns the versioned migrations that this storage's table layout depends on.
-   * Production code should run these via {@link PostgresMigrationRunner} as part
-   * of an explicit migration step rather than calling {@link setupDatabase}.
+   * Returns the versioned migrations that this storage's table layout depends
+   * on. Callers can compose them with other storages' migrations under a
+   * shared {@link PostgresMigrationRunner}; otherwise call {@link migrate}.
    */
   public getMigrations() {
     return postgresQueueMigrations(this.tableName, this.prefixes);
   }
 
   /**
-   * Applies any pending migrations for this queue's table.
-   * Safe to call repeatedly — already-applied versions are skipped.
+   * Applies any pending migrations for this queue's table. Idempotent —
+   * already-applied versions are recorded in `_storage_migrations` and
+   * skipped on subsequent calls.
    */
   public async migrate(): Promise<void> {
     await new PostgresMigrationRunner(this.db).run(this.getMigrations());
-  }
-
-  /**
-   * @deprecated Use {@link migrate} (or run {@link getMigrations} via your own
-   * {@link PostgresMigrationRunner}) in production. Kept for tests and ad-hoc
-   * scripts that previously relied on idempotent CREATE-IF-NOT-EXISTS DDL.
-   */
-  public async setupDatabase(): Promise<void> {
-    await this.migrate();
   }
 
   /**

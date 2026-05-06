@@ -27,7 +27,7 @@ describe("PostgresJobQueue", () => {
     (queueName: string) => new PostgresQueueStorage(db, queueName),
     async (queueName: string, maxExecutions: number, windowSizeInSeconds: number) => {
       const storage = new PostgresRateLimiterStorage(db);
-      await storage.setupDatabase();
+      await storage.migrate();
       return new RateLimiter(storage, queueName, {
         maxExecutions,
         windowSizeInSeconds,

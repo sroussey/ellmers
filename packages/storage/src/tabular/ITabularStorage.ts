@@ -484,15 +484,15 @@ export interface ITabularStorage<
   withTransaction<T>(fn: (tx: this) => Promise<T>): Promise<T>;
 
   /**
-   * Sets up the database/storage for the repository.
+   * Creates the underlying table/object store. Idempotent: a second call on
+   * an already-set-up storage adapts the schema to any new indexes if the
+   * backend supports it (SQL `CREATE INDEX IF NOT EXISTS`, IndexedDB
+   * version bump for new indexes), and is a no-op otherwise.
    *
-   * @deprecated Tabular storage tables are dynamically generated from a schema,
-   * so this method remains supported as a "create if missing" entry point.
-   * Production code that owns the schema lifecycle should drive table creation
-   * through versioned migrations (see `@workglow/storage` migrations module +
-   * the `MigrationRunner` exported from `@workglow/postgres` /
-   * `@workglow/sqlite`) and treat this call only as a fallback in tests /
-   * in-memory cases.
+   * Tabular schemas are derived from the JSON Schema passed at construction
+   * rather than from versioned migrations, so this is the schema-setup
+   * primitive — there is no `migrate()` to defer to.
+   *
    * @returns Promise that resolves when setup is complete
    */
   setupDatabase(): Promise<void>;

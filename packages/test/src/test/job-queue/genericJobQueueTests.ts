@@ -182,7 +182,7 @@ export function runGenericJobQueueTests(
     setTelemetryProvider(new NoopTelemetryProvider());
     queueName = `test-queue-${uuid4()}`;
     storage = storageFactory(queueName);
-    await storage.setupDatabase();
+    await storage.migrate();
 
     const limiter = await limiterFactory?.(queueName, 4, 60);
     server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
@@ -509,8 +509,8 @@ export function runGenericJobQueueTests(
       const queueName2 = `test-queue-2-${uuid4()}`;
       const storage1 = storageFactory(queueName1);
       const storage2 = storageFactory(queueName2);
-      await storage1.setupDatabase();
-      await storage2.setupDatabase();
+      await storage1.migrate();
+      await storage2.migrate();
 
       const limiter1 = await limiterFactory?.(queueName1, 4, 60);
       const limiter2 = await limiterFactory?.(queueName2, 4, 60);

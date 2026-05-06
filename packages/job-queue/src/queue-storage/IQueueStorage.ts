@@ -246,33 +246,27 @@ export interface IQueueStorage<Input, Output> {
   deleteJobsByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void>;
 
   /**
-   * Sets up the database schema and tables.
-   *
-   * @deprecated Production code should run versioned migrations instead — call
-   * {@link migrate} (or run {@link getMigrations} through a `MigrationRunner`
-   * from `@workglow/postgres` / `@workglow/sqlite`). This method is kept for
-   * tests and ad-hoc scripts that previously relied on idempotent
-   * CREATE-IF-NOT-EXISTS DDL.
-   */
-  setupDatabase(): Promise<void>;
-
-  /**
    * Applies any pending migrations for this queue's tables.
    *
-   * Optional because backends without a real schema (in-memory, IndexedDB)
-   * have nothing to migrate. SQL backends (Postgres, SQLite, Supabase)
-   * implement this and it is the recommended production entry point.
+   * The single schema-setup entry point for every queue backend. SQL
+   * backends run real DDL through their `MigrationRunner`; in-memory and
+   * IndexedDB backends do whatever lazy initialisation they need (object
+   * stores for IDB, no-op for in-memory).
+   *
+   * For progress reporting, telemetry, or composing migrations across
+   * multiple storages under a single transaction, drive a `MigrationRunner`
+   * directly with {@link getMigrations}.
    */
-  migrate?(): Promise<void>;
+  migrate(): Promise<void>;
 
   /**
-   * Returns this storage's versioned migrations as opaque, runnable units.
-   *
-   * Callers can pass them to `SqliteMigrationRunner` / `PostgresMigrationRunner`
-   * to compose migrations across multiple storages into a single deployment
-   * step. Optional for the same reason as {@link migrate}.
+   * Returns this storage's versioned migrations as opaque, runnable units
+   * so callers can compose migrations across storages under a single
+   * `MigrationRunner` (and pass `{ onProgress }` when they need it).
+   * Returns an empty array on backends that don't have a versioned schema
+   * (in-memory).
    */
-  getMigrations?(): ReadonlyArray<unknown>;
+  getMigrations(): ReadonlyArray<unknown>;
 
   /**
    * Subscribes to changes in the queue (including remote changes).

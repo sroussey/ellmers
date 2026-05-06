@@ -51,7 +51,7 @@ describe("Zero-Shot Classification Tasks", () => {
       const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(
         HF_TRANSFORMERS_ONNX_CPU
       );
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
         storage,
@@ -113,7 +113,7 @@ describe("Zero-Shot Classification Tasks", () => {
       const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(
         HF_TRANSFORMERS_ONNX_CPU
       );
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
         storage,
@@ -170,7 +170,7 @@ describe("Zero-Shot Classification Tasks", () => {
       const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(
         HF_TRANSFORMERS_ONNX_CPU
       );
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
         storage,
@@ -237,7 +237,7 @@ describe("Zero-Shot Classification Tasks", () => {
       const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(
         HF_TRANSFORMERS_ONNX_CPU
       );
-      await storage.setupDatabase();
+      await storage.migrate();
 
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
         storage,

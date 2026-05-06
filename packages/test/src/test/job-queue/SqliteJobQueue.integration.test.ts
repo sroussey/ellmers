@@ -21,7 +21,7 @@ describe("SqliteJobQueue", async () => {
     (queueName: string) => new SqliteQueueStorage(db, queueName),
     async (queueName: string, maxExecutions: number, windowSizeInSeconds: number) => {
       const storage = new SqliteRateLimiterStorage(db);
-      await storage.setupDatabase();
+      await storage.migrate();
       return new RateLimiter(storage, queueName, {
         maxExecutions,
         windowSizeInSeconds,
