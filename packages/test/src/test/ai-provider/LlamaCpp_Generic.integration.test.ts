@@ -14,6 +14,7 @@ import { LOCAL_LLAMACPP, llamaCppSessions } from "@workglow/node-llama-cpp/ai-pr
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
 import {
   disposeLlamaCppResources,
+  recycleLlamaCppTextContext,
   registerLlamaCppInline,
   releaseLlamaCppTransientSessions,
 } from "@workglow/node-llama-cpp/ai-provider-runtime";
@@ -92,6 +93,10 @@ runAiProviderConformance({
     inspect: () => ({ sessionMap: llamaCppSessions }),
     releaseTransients: async () => {
       releaseLlamaCppTransientSessions();
+      // Earlier conformance blocks (signal mid-stream abort in particular)
+      // can leak sequence-pool slots on the shared text-generation context.
+      // Recycle the context so session.reuse starts with a fresh pool.
+      await recycleLlamaCppTextContext(llmModel.provider_config.model_url!);
     },
   }),
   capabilities: {

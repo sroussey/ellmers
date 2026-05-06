@@ -95,13 +95,21 @@ export function releaseLlamaCppTransientSessions(): void {
  * model key (its sequences are released along with it) and drop it from the
  * cache so the next request rebuilds a fresh context. Sessions that referenced
  * the context are released first.
+ *
+ * `modelKey` accepts either the config key (typically `model_url`) or the
+ * resolved on-disk path; both spellings are tried so callers don't have to
+ * know which form ended up in the context cache.
  */
 export async function recycleLlamaCppTextContext(modelKey: string): Promise<void> {
   disposeLlamaCppSessionsForModel(modelKey);
-  const context = llamaCppTextContexts.get(modelKey);
-  if (context) {
-    llamaCppTextContexts.delete(modelKey);
-    await (context as unknown as { dispose?: () => Promise<void> }).dispose?.().catch(() => {});
+  const resolved = resolvedPaths.get(modelKey);
+  const candidates = resolved && resolved !== modelKey ? [modelKey, resolved] : [modelKey];
+  for (const key of candidates) {
+    const context = llamaCppTextContexts.get(key);
+    if (context) {
+      llamaCppTextContexts.delete(key);
+      await (context as unknown as { dispose?: () => Promise<void> }).dispose?.().catch(() => {});
+    }
   }
 }
 
