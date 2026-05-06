@@ -63,8 +63,12 @@ export const LlamaCpp_StructuredGeneration: AiProviderRunFn<
     update_progress(100, "Structured generation complete");
     return { object };
   } finally {
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      session.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      sequence.dispose();
+    } catch {}
   }
 };
 
@@ -150,8 +154,12 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
     }
   } finally {
     await promptPromise.catch(() => {});
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      session.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      sequence.dispose();
+    } catch {}
   }
 
   if (completionError) {

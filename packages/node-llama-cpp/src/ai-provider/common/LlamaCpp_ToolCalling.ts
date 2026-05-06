@@ -262,8 +262,12 @@ export const LlamaCpp_ToolCalling: AiProviderRunFn<
     update_progress(100, "Tool calling complete");
     return { text, toolCalls: filterValidToolCalls(toolCalls, input.tools) };
   } finally {
-    llamaChat.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      llamaChat.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      sequence.dispose();
+    } catch {}
   }
 };
 
@@ -387,8 +391,12 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
       }),
     signal,
     () => {
-      llamaChat.dispose({ disposeSequence: false });
-      sequence.dispose();
+      try {
+        llamaChat.dispose({ disposeSequence: false });
+      } catch {}
+      try {
+        sequence.dispose();
+      } catch {}
     }
   );
 

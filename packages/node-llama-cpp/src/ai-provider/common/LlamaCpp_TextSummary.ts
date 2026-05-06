@@ -47,8 +47,12 @@ export const LlamaCpp_TextSummary: AiProviderRunFn<
     update_progress(100, "Summarization complete");
     return { text };
   } finally {
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      session.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      sequence.dispose();
+    } catch {}
   }
 };
 
@@ -77,7 +81,11 @@ export const LlamaCpp_TextSummary_Stream: AiProviderStreamFn<
       });
     }, signal);
   } finally {
-    session.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      session.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      sequence.dispose();
+    } catch {}
   }
 };
