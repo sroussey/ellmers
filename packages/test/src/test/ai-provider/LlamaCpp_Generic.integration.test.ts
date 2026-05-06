@@ -15,6 +15,7 @@ import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
 import {
   disposeLlamaCppResources,
   registerLlamaCppInline,
+  releaseLlamaCppTransientSessions,
 } from "@workglow/node-llama-cpp/ai-provider-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
@@ -89,6 +90,9 @@ runAiProviderConformance({
       await setTaskQueueRegistry(null);
     },
     inspect: () => ({ sessionMap: llamaCppSessions }),
+    releaseTransients: async () => {
+      releaseLlamaCppTransientSessions();
+    },
   }),
   capabilities: {
     streaming: true,
@@ -104,11 +108,4 @@ runAiProviderConformance({
     structured: toolModel.model_id,
   },
   fixture: { maxTokens: 200, abortGraceMs: 500 },
-  // TODO(workglow): Sessions test fails because earlier suite tests
-  // exhaust the shared LlamaContext sequence pool before sessionReuse
-  // runs (see CI run 25388949190). Phase 4.3 wired sessionId correctly,
-  // but sequence-pool exhaustion is a separate concurrency issue across
-  // unrelated runFns. Re-mark as expected-fail until the pool is bounded
-  // per-test or sequences are released eagerly between conformance blocks.
-  expectedFailures: ["session.reuse"],
 });

@@ -31,6 +31,13 @@ export interface ConformanceHandle {
   readonly register: () => Promise<void>;
   readonly dispose: () => Promise<void>;
   readonly inspect: () => ProviderInspectionHandle;
+  /**
+   * Optional hook the conformance harness calls before the session-reuse
+   * block to release transient state (e.g. cached chat sessions) that prior
+   * blocks may have accumulated. Implementations must NOT tear down models
+   * or contexts — only short-lived per-call resources.
+   */
+  readonly releaseTransients?: () => Promise<void>;
 }
 
 export interface AiProviderCapabilities {

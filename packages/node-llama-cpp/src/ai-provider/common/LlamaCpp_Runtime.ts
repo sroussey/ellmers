@@ -76,6 +76,35 @@ export function deleteLlamaCppSession(sessionId: string): boolean {
   return llamaCppSessions.delete(sessionId);
 }
 
+/**
+ * Eagerly dispose every cached chat session and its sequence, freeing the
+ * underlying `LlamaContext` sequence-pool slots without tearing down the
+ * shared contexts or models. Intended for use between unrelated test blocks
+ * (or long-lived runtimes) where leftover sessions would otherwise exhaust
+ * the per-context sequence pool.
+ */
+export function releaseLlamaCppTransientSessions(): void {
+  for (const id of Array.from(llamaCppSessions.keys())) {
+    deleteLlamaCppSession(id);
+  }
+  llamaCppSessions.clear();
+}
+
+/**
+ * Last-resort recovery: dispose the cached text `LlamaContext` for a given
+ * model key (its sequences are released along with it) and drop it from the
+ * cache so the next request rebuilds a fresh context. Sessions that referenced
+ * the context are released first.
+ */
+export async function recycleLlamaCppTextContext(modelKey: string): Promise<void> {
+  disposeLlamaCppSessionsForModel(modelKey);
+  const context = llamaCppTextContexts.get(modelKey);
+  if (context) {
+    llamaCppTextContexts.delete(modelKey);
+    await (context as unknown as { dispose?: () => Promise<void> }).dispose?.().catch(() => {});
+  }
+}
+
 export function disposeLlamaCppSessionsForModel(modelKey: string): void {
   for (const [id, state] of llamaCppSessions) {
     if (state.modelKey === modelKey) {
