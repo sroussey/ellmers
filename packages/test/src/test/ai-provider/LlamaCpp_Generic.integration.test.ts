@@ -62,6 +62,21 @@ const toolModel: LlamaCppModelRecord = {
   metadata: {},
 };
 
+const embeddingModel: LlamaCppModelRecord = {
+  model_id: "llamacpp:bge-small-en-v1.5:Q8_0",
+  title: "BGE Small EN v1.5",
+  description: "A small English text embedding model, quantized Q8_0 (~34 MB)",
+  tasks: ["DownloadModelTask", "TextEmbeddingTask"],
+  provider: LOCAL_LLAMACPP,
+  provider_config: {
+    model_path: "./models/bge-small-en-v1.5-Q8_0.gguf",
+    model_url: "hf:CompendiumLabs/bge-small-en-v1.5-gguf:Q8_0",
+    models_dir: "./models",
+    embedding: true,
+  },
+  metadata: {},
+};
+
 runAiProviderConformance({
   name: "LlamaCpp (node-llama-cpp)",
   timeout: 10 * 60 * 1000,
@@ -74,7 +89,8 @@ runAiProviderConformance({
       await registerLlamaCppInline();
       await getGlobalModelRepository().addModel(llmModel);
       await getGlobalModelRepository().addModel(toolModel);
-      for (const modelId of [llmModel.model_id, toolModel.model_id]) {
+      await getGlobalModelRepository().addModel(embeddingModel);
+      for (const modelId of [llmModel.model_id, toolModel.model_id, embeddingModel.model_id]) {
         const download = new DownloadModelTask({ defaults: { model: modelId } });
         download.on("progress", (progress, _message, details) => {
           logger.info(
@@ -94,11 +110,7 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    // Embeddings would require loading a separate embeddings model — defer to
-    // a dedicated suite. SmolLM2 is decoder-only and has no pooled embedding
-    // head, so claiming embeddings=true here is dishonest. Flip back once an
-    // embedding-only model is registered alongside the generation models.
-    embeddings: false,
+    embeddings: true,
     sessions: true,
     abortMidStream: true,
   },
@@ -106,6 +118,7 @@ runAiProviderConformance({
     textGeneration: llmModel.model_id,
     toolCalling: toolModel.model_id,
     structured: toolModel.model_id,
+    embeddings: embeddingModel.model_id,
   },
   fixture: { maxTokens: 200, abortGraceMs: 500 },
   // TODO(workglow): Sessions test fails because earlier suite tests

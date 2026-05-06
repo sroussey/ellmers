@@ -19,6 +19,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 
 const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
 const MODEL_ID = "gemini:gemini-2.5-flash";
+const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 
 runAiProviderConformance({
   name: "Google Gemini",
@@ -46,6 +47,15 @@ runAiProviderConformance({
         provider_config: { model_name: "gemini-2.5-flash" },
         metadata: {},
       });
+      await getGlobalModelRepository().addModel({
+        model_id: EMBED_MODEL_ID,
+        title: "Gemini Embedding 001",
+        description: "Google Gemini embedding model",
+        tasks: ["TextEmbeddingTask"],
+        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
+        provider_config: { model_name: "gemini-embedding-001" },
+        metadata: {},
+      });
     },
     dispose: async () => {
       await setTaskQueueRegistry(null);
@@ -56,11 +66,7 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    // Embeddings would require registering a separate embedding model
-    // (e.g. text-embedding-004) — defer to a dedicated suite. The chat
-    // model wired up here (gemini-2.5-flash) does not advertise
-    // TextEmbeddingTask, so claiming embeddings=true was dishonest.
-    embeddings: false,
+    embeddings: true,
     sessions: false,
     abortMidStream: true,
   },
@@ -68,5 +74,6 @@ runAiProviderConformance({
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
+    embeddings: EMBED_MODEL_ID,
   },
 });

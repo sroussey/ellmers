@@ -24,6 +24,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 const TEXT_MODEL_ID = "onnx:onnx-community/Qwen2.5-1.5B-Instruct:q4";
 const THINKING_MODEL_ID = "onnx:LiquidAI/LFM2.5-1.2B-Thinking-WebGPU:q4";
 const INSTRUCT_MODEL_ID = "onnx:LiquidAI/LFM2.5-1.2B-Instruct-WebGPU:q4";
+const EMBED_MODEL_ID = "onnx:Xenova/all-MiniLM-L6-v2:q8";
 
 const textModel: HfTransformersOnnxModelRecord = {
   model_id: TEXT_MODEL_ID,
@@ -70,6 +71,21 @@ const thinkingModel: HfTransformersOnnxModelRecord = {
   metadata: {},
 };
 
+const embeddingModel: HfTransformersOnnxModelRecord = {
+  model_id: EMBED_MODEL_ID,
+  title: "All-MiniLM-L6-v2 (384D)",
+  description: "Sentence embedding model for the embeddings conformance assertion",
+  tasks: ["TextEmbeddingTask"],
+  provider: HF_TRANSFORMERS_ONNX,
+  provider_config: {
+    pipeline: "feature-extraction",
+    model_path: "Xenova/all-MiniLM-L6-v2",
+    native_dimensions: 384,
+    dtype: "q8",
+  },
+  metadata: {},
+};
+
 runAiProviderConformance({
   name: "HFT (HuggingFace Transformers)",
   timeout: 300_000,
@@ -84,6 +100,7 @@ runAiProviderConformance({
       await getGlobalModelRepository().addModel(textModel);
       await getGlobalModelRepository().addModel(thinkingModel);
       await getGlobalModelRepository().addModel(instructModel);
+      await getGlobalModelRepository().addModel(embeddingModel);
     },
     dispose: async () => {
       await setTaskQueueRegistry(null);
@@ -94,11 +111,7 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    // Embeddings would require loading a separate embeddings model — defer to
-    // a dedicated suite. The decoder-only LFM2.5 / Qwen2.5-Instruct models
-    // wired up here have no pooled embedding head, so claiming embeddings=true
-    // here is dishonest. Flip back once an embedding-only model is registered.
-    embeddings: false,
+    embeddings: true,
     sessions: false,
     abortMidStream: true,
   },
@@ -106,6 +119,7 @@ runAiProviderConformance({
     textGeneration: INSTRUCT_MODEL_ID,
     toolCalling: INSTRUCT_MODEL_ID,
     structured: INSTRUCT_MODEL_ID,
+    embeddings: EMBED_MODEL_ID,
   },
   // Local ONNX inference is slow; relax the abort window so the
   // mid-stream-abort assertion has room to fire and shut down cleanly.
