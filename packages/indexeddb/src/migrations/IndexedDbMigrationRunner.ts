@@ -116,8 +116,35 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
    */
   private async probe(): Promise<{ currentVersion: number; applied: Set<string> }> {
     return new Promise((resolve, reject) => {
+      // Multiple IDB callbacks (onupgradeneeded, onsuccess + nested getAll
+      // success/error, onerror, onblocked) can fire in surprising orders —
+      // e.g. an orphaned `onerror` after we've already returned a result.
+      // Gate every settlement through `finalize` so the Promise resolves or
+      // rejects exactly once, and so the open connection is closed exactly
+      // once on the way out.
+      let settled = false;
+      const finalize = (
+        db: IDBDatabase | undefined,
+        outcome:
+          | { ok: true; value: { currentVersion: number; applied: Set<string> } }
+          | { ok: false; error: unknown }
+      ): void => {
+        if (settled) return;
+        settled = true;
+        if (db) {
+          try {
+            db.close();
+          } catch {
+            // ignore — close is best-effort
+          }
+        }
+        if (outcome.ok) resolve(outcome.value);
+        else reject(outcome.error);
+      };
+
       const req = this.idb.open(this.dbName);
       req.onupgradeneeded = () => {
+        if (settled) return;
         // Fires only when the DB doesn't already exist (oldVersion = 0).
         // We seed the bookkeeping store atomically with DB creation so a
         // fresh DB never lacks it.
@@ -127,33 +154,44 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
         }
       };
       req.onsuccess = () => {
+        if (settled) return;
         const db = req.result;
         const currentVersion = db.version;
         if (!db.objectStoreNames.contains(MIGRATIONS_TABLE)) {
           // Existed prior to this runner ever being used — no bookkeeping yet.
-          db.close();
-          resolve({ currentVersion, applied: new Set() });
+          finalize(db, { ok: true, value: { currentVersion, applied: new Set() } });
           return;
         }
         const tx = db.transaction(MIGRATIONS_TABLE, "readonly");
         const store = tx.objectStore(MIGRATIONS_TABLE);
         const getAll = store.getAll();
         getAll.onsuccess = () => {
+          if (settled) return;
           const rows = getAll.result as Array<{ component: string; version: number }>;
-          db.close();
-          resolve({
-            currentVersion,
-            applied: new Set(rows.map((r) => `${r.component}@${r.version}`)),
+          finalize(db, {
+            ok: true,
+            value: {
+              currentVersion,
+              applied: new Set(rows.map((r) => `${r.component}@${r.version}`)),
+            },
           });
         };
         getAll.onerror = () => {
-          db.close();
-          reject(getAll.error);
+          if (settled) return;
+          finalize(db, { ok: false, error: getAll.error });
         };
       };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () =>
-        reject(new Error(`IndexedDB ${this.dbName} blocked while probing for bookkeeping store`));
+      req.onerror = () => {
+        if (settled) return;
+        finalize(undefined, { ok: false, error: req.error });
+      };
+      req.onblocked = () => {
+        if (settled) return;
+        finalize(undefined, {
+          ok: false,
+          error: new Error(`IndexedDB ${this.dbName} blocked while probing for bookkeeping store`),
+        });
+      };
     });
   }
 
@@ -221,10 +259,32 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
       : undefined;
 
     await new Promise<void>((resolve, reject) => {
+      // Same orphan-callback hazard as `probe()`, plus an extra one: aborting
+      // the upgrade transaction in our catch path queues an `onerror` that
+      // would otherwise re-reject after we've already settled with the real
+      // cause. Funnel everything through `finalize`.
+      let settled = false;
+      let upgradeDb: IDBDatabase | undefined;
+      const finalize = (outcome: { ok: true } | { ok: false; error: unknown }): void => {
+        if (settled) return;
+        settled = true;
+        if (upgradeDb) {
+          try {
+            upgradeDb.close();
+          } catch {
+            // ignore — close is best-effort
+          }
+        }
+        if (outcome.ok) resolve();
+        else reject(outcome.error);
+      };
+
       const upreq = this.idb.open(this.dbName, targetVersion);
       upreq.onupgradeneeded = (ev) => {
+        if (settled) return;
         try {
           const db = upreq.result;
+          upgradeDb = db;
           const tx = upreq.transaction!;
           const oldVersion = ev.oldVersion;
           const newVersion = ev.newVersion ?? targetVersion;
@@ -237,12 +297,7 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
             } catch {
               // ignore — tx may already be settling
             }
-            try {
-              db.close();
-            } catch {
-              // ignore
-            }
-            reject(new MigrationAbortedByOtherTabError(this.dbName));
+            finalize({ ok: false, error: new MigrationAbortedByOtherTabError(this.dbName) });
           };
 
           if (!db.objectStoreNames.contains(MIGRATIONS_TABLE)) {
@@ -290,7 +345,7 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
           }
         } catch (err) {
           // Force the open request to fail by aborting the upgrade transaction.
-          // The error gets surfaced via `onerror` below.
+          // The orphan `onerror` it triggers will see `settled` and bail.
           try {
             upreq.transaction?.abort();
           } catch {
@@ -308,16 +363,25 @@ export class IndexedDbMigrationRunner implements IMigrationRunner<IndexedDbUpgra
               error: err,
             });
           }
-          reject(err);
+          finalize({ ok: false, error: err });
         }
       };
       upreq.onsuccess = () => {
-        upreq.result.close();
-        resolve();
+        if (settled) return;
+        upgradeDb = upreq.result;
+        finalize({ ok: true });
       };
-      upreq.onerror = () => reject(upreq.error);
-      upreq.onblocked = () =>
-        reject(new Error(`IndexedDB ${this.dbName} upgrade blocked — close other tabs.`));
+      upreq.onerror = () => {
+        if (settled) return;
+        finalize({ ok: false, error: upreq.error });
+      };
+      upreq.onblocked = () => {
+        if (settled) return;
+        finalize({
+          ok: false,
+          error: new Error(`IndexedDB ${this.dbName} upgrade blocked — close other tabs.`),
+        });
+      };
     }).finally(() => {
       // Flush buffered events after the upgrade settles, regardless of
       // success/failure. Listeners always see a consistent "starting →
