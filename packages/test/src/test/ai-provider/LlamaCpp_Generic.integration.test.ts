@@ -94,7 +94,11 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: true,
+    // Embeddings would require loading a separate embeddings model — defer to
+    // a dedicated suite. SmolLM2 is decoder-only and has no pooled embedding
+    // head, so claiming embeddings=true here is dishonest. Flip back once an
+    // embedding-only model is registered alongside the generation models.
+    embeddings: false,
     sessions: true,
     abortMidStream: true,
   },

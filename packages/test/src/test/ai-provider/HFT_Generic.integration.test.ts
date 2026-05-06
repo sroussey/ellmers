@@ -94,7 +94,11 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: true,
+    // Embeddings would require loading a separate embeddings model — defer to
+    // a dedicated suite. The decoder-only LFM2.5 / Qwen2.5-Instruct models
+    // wired up here have no pooled embedding head, so claiming embeddings=true
+    // here is dishonest. Flip back once an embedding-only model is registered.
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },
