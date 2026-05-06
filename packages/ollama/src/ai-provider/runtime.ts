@@ -12,5 +12,6 @@
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */
 export * from "./common/Ollama_Client";
+export * from "./common/Ollama_TextGeneration";
 export * from "./registerOllamaInline";
 export * from "./registerOllamaWorker";

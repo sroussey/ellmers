@@ -81,11 +81,12 @@ export function createOllamaTextGenerationStream(
     });
 
     const onAbort = () => stream.abort();
-    signal.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
     try {
       // Re-check after the listener is attached to close the
       // attach-vs-aborted race.
-      if (signal.aborted) stream.abort();
+      if (signal?.aborted) stream.abort();
+      signal?.throwIfAborted?.();
       for await (const chunk of stream) {
         const delta = chunk.message.content;
         if (delta) {
@@ -94,7 +95,7 @@ export function createOllamaTextGenerationStream(
       }
       yield { type: "finish", data: {} as TextGenerationTaskOutput };
     } finally {
-      signal.removeEventListener("abort", onAbort);
+      signal?.removeEventListener("abort", onAbort);
     }
   };
 }
