@@ -67,8 +67,12 @@ export const LlamaCpp_TextGeneration: AiProviderRunFn<
     return { text };
   } finally {
     if (!sessionId) {
-      session.dispose({ disposeSequence: false });
-      sequence.dispose();
+      try {
+        await session.dispose({ disposeSequence: false });
+      } catch {}
+      try {
+        await sequence.dispose();
+      } catch {}
     }
   }
 };
@@ -120,8 +124,12 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
     }, signal);
   } finally {
     if (!sessionId) {
-      session.dispose({ disposeSequence: false });
-      sequence.dispose();
+      try {
+        await session.dispose({ disposeSequence: false });
+      } catch {}
+      try {
+        await sequence.dispose();
+      } catch {}
     }
   }
 };

@@ -262,8 +262,12 @@ export const LlamaCpp_ToolCalling: AiProviderRunFn<
     update_progress(100, "Tool calling complete");
     return { text, toolCalls: filterValidToolCalls(toolCalls, input.tools) };
   } finally {
-    llamaChat.dispose({ disposeSequence: false });
-    sequence.dispose();
+    try {
+      await llamaChat.dispose({ disposeSequence: false });
+    } catch {}
+    try {
+      await sequence.dispose();
+    } catch {}
   }
 };
 
@@ -279,7 +283,7 @@ export const LlamaCpp_ToolCalling: AiProviderRunFn<
 async function* streamTextChunks<T>(
   startGeneration: (onTextChunk: (chunk: string) => void) => Promise<T>,
   signal: AbortSignal,
-  cleanup: () => void
+  cleanup: () => void | Promise<void>
 ): AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, { text: string; result: T | undefined }> {
   const queue: string[] = [];
   let isComplete = false;
@@ -327,7 +331,7 @@ async function* streamTextChunks<T>(
     }
   } finally {
     await generationPromise.catch(() => {});
-    cleanup();
+    await cleanup();
   }
 
   if (completionError) {
@@ -386,9 +390,13 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
         onTextChunk,
       }),
     signal,
-    () => {
-      llamaChat.dispose({ disposeSequence: false });
-      sequence.dispose();
+    async () => {
+      try {
+        await llamaChat.dispose({ disposeSequence: false });
+      } catch {}
+      try {
+        await sequence.dispose();
+      } catch {}
     }
   );
 

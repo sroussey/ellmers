@@ -6,7 +6,7 @@
 
 import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import { getLogger } from "@workglow/util";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
 import { itExpectFail } from "./itExpectFail";
@@ -20,6 +20,9 @@ export function sessionReuseBlock(
   const expectFails = new Set(opts.expectedFailures ?? []);
   const itImpl = expectFails.has("session.reuse") ? itExpectFail : it;
   describe.skipIf(!enabled)("Session reuse", () => {
+    beforeAll(async () => {
+      await getHandle().releaseTransients?.();
+    });
     itImpl(
       "two invocations with the same sessionId yield exactly one session-map entry",
       async () => {

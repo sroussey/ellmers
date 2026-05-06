@@ -60,6 +60,6 @@ export class LlamaCppProvider extends AiProvider<LlamaCppModelConfig> {
   }
 
   override async disposeSession(sessionId: string): Promise<void> {
-    deleteLlamaCppSession(sessionId);
+    await deleteLlamaCppSession(sessionId);
   }
 }

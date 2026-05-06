@@ -45,6 +45,6 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
   }
 
   override async disposeSession(sessionId: string): Promise<void> {
-    deleteLlamaCppSession(sessionId);
+    await deleteLlamaCppSession(sessionId);
   }
 }

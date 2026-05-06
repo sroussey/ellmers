@@ -63,27 +63,81 @@ export function setLlamaCppSession(sessionId: string, state: LlamaCppSessionStat
   llamaCppSessions.set(sessionId, state);
 }
 
-export function deleteLlamaCppSession(sessionId: string): boolean {
+export async function deleteLlamaCppSession(sessionId: string): Promise<boolean> {
   const session = llamaCppSessions.get(sessionId);
   if (session) {
     try {
-      session.session?.dispose?.({ disposeSequence: false });
+      await session.session?.dispose?.({ disposeSequence: false });
     } catch {}
     try {
-      session.sequence?.dispose?.();
+      await session.sequence?.dispose?.();
     } catch {}
   }
   return llamaCppSessions.delete(sessionId);
 }
 
-export function disposeLlamaCppSessionsForModel(modelKey: string): void {
+/**
+ * Eagerly dispose every cached chat session and its sequence, freeing the
+ * underlying `LlamaContext` sequence-pool slots without tearing down the
+ * shared contexts or models. Intended for use between unrelated test blocks
+ * (or long-lived runtimes) where leftover sessions would otherwise exhaust
+ * the per-context sequence pool.
+ */
+export async function releaseLlamaCppTransientSessions(): Promise<void> {
+  for (const id of Array.from(llamaCppSessions.keys())) {
+    await deleteLlamaCppSession(id);
+  }
+  llamaCppSessions.clear();
+}
+
+/**
+ * Last-resort recovery: dispose the cached text `LlamaContext` for a given
+ * model key (its sequences are released along with it) and drop it from the
+ * cache so the next request rebuilds a fresh context. Sessions that referenced
+ * the context are released first.
+ *
+ * `modelKey` accepts either the config key (typically `model_url`) or the
+ * resolved on-disk path; both spellings are tried so callers don't have to
+ * know which form ended up in the context cache.
+ *
+ * If `reloadModel` is true the cached `LlamaModel` is disposed as well, so the
+ * next request reloads weights from disk. Use this when prior runs may have
+ * leaked sequence-pool slots at the C level — disposing the context alone may
+ * not be sufficient to reclaim them inside the same model lifetime.
+ */
+export async function recycleLlamaCppTextContext(
+  modelKey: string,
+  options: { readonly reloadModel?: boolean } = {}
+): Promise<void> {
+  await disposeLlamaCppSessionsForModel(modelKey);
+  const resolved = resolvedPaths.get(modelKey);
+  const candidates = resolved && resolved !== modelKey ? [modelKey, resolved] : [modelKey];
+  for (const key of candidates) {
+    const context = llamaCppTextContexts.get(key);
+    if (context) {
+      llamaCppTextContexts.delete(key);
+      await (context as unknown as { dispose?: () => Promise<void> }).dispose?.().catch(() => {});
+    }
+  }
+  if (options.reloadModel) {
+    for (const key of candidates) {
+      const loadedModel = llamaCppModels.get(key);
+      if (loadedModel) {
+        llamaCppModels.delete(key);
+        await loadedModel.dispose().catch(() => {});
+      }
+    }
+  }
+}
+
+export async function disposeLlamaCppSessionsForModel(modelKey: string): Promise<void> {
   for (const [id, state] of llamaCppSessions) {
     if (state.modelKey === modelKey) {
       try {
-        state.session?.dispose?.({ disposeSequence: false });
+        await state.session?.dispose?.({ disposeSequence: false });
       } catch {}
       try {
-        state.sequence?.dispose?.();
+        await state.sequence?.dispose?.();
       } catch {}
       llamaCppSessions.delete(id);
     }
@@ -255,8 +309,8 @@ export async function* streamFromSession<T extends Record<string, unknown>>(
 
 export async function disposeLlamaCppResources(): Promise<void> {
   // Dispose all sessions before contexts/models they reference
-  for (const [id] of llamaCppSessions) {
-    deleteLlamaCppSession(id);
+  for (const id of Array.from(llamaCppSessions.keys())) {
+    await deleteLlamaCppSession(id);
   }
 
   const disposeAll = async (map: Map<string, { dispose(): Promise<void> }>) => {

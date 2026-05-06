@@ -28,7 +28,7 @@ export const LlamaCpp_Unload: AiProviderRunFn<
   const modelPath = getActualModelPath(model);
 
   // Dispose any sessions tied to this model before releasing contexts
-  disposeLlamaCppSessionsForModel(modelPath);
+  await disposeLlamaCppSessionsForModel(modelPath);
 
   const ctx = llamaCppTextContexts.get(modelPath);
   if (ctx) {
