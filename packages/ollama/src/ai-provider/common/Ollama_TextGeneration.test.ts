@@ -1,0 +1,112 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { describe, expect, it, vi } from "vitest";
+import { createOllamaTextGenerationStream } from "./Ollama_TextGeneration";
+
+type FakeStream = {
+  abort: ReturnType<typeof vi.fn>;
+  [Symbol.asyncIterator](): AsyncIterator<{ message: { content: string } }>;
+};
+
+function makeFakeStream(chunks: string[]): FakeStream {
+  let aborted = false;
+  const abort = vi.fn(() => {
+    aborted = true;
+  });
+  return {
+    abort,
+    async *[Symbol.asyncIterator]() {
+      for (const c of chunks) {
+        if (aborted) return;
+        yield { message: { content: c } };
+      }
+    },
+  };
+}
+
+describe("createOllamaTextGenerationStream abort behavior", () => {
+  const model = {
+    model_id: "ollama:test",
+    provider_config: { model_name: "llama3.2" },
+  } as any;
+  const input = { prompt: "hi" } as any;
+
+  it("yields zero deltas and aborts the stream when signal aborts during chat() (pre-attach race)", async () => {
+    const fakeStream = makeFakeStream(["a", "b", "c"]);
+    const controller = new AbortController();
+    const getClient = vi.fn().mockResolvedValue({
+      chat: vi.fn().mockImplementation(async () => {
+        // Simulate the signal aborting after the pre-call throwIfAborted check
+        // but before the abort listener is attached — the bug class this fix targets.
+        controller.abort();
+        return fakeStream;
+      }),
+    });
+    const streamFn = createOllamaTextGenerationStream(getClient);
+
+    const events: any[] = [];
+    let threw = false;
+    try {
+      for await (const ev of streamFn(input, model, controller.signal)) {
+        events.push(ev);
+      }
+    } catch {
+      threw = true;
+    }
+
+    const deltas = events.filter((e) => e.type === "text-delta");
+    expect(deltas).toHaveLength(0);
+    expect(fakeStream.abort).toHaveBeenCalledTimes(1);
+    // post-attach throwIfAborted should propagate the abort
+    expect(threw).toBe(true);
+  });
+
+  it("does not throw when signal is undefined", async () => {
+    const fakeStream = makeFakeStream(["hello", " world"]);
+    const getClient = vi.fn().mockResolvedValue({
+      chat: vi.fn().mockResolvedValue(fakeStream),
+    });
+    const streamFn = createOllamaTextGenerationStream(getClient);
+
+    const events: any[] = [];
+    for await (const ev of streamFn(input, model, undefined as any)) {
+      events.push(ev);
+    }
+
+    const deltas = events
+      .filter((e) => e.type === "text-delta")
+      .map((e) => (e as any).textDelta);
+    expect(deltas).toEqual(["hello", " world"]);
+    expect(events[events.length - 1]).toEqual({ type: "finish", data: {} });
+    expect(fakeStream.abort).not.toHaveBeenCalled();
+  });
+
+  it("calls fakeStream.abort exactly once when signal is aborted mid-iteration", async () => {
+    const chunks = ["one", "two", "three", "four", "five"];
+    const fakeStream = makeFakeStream(chunks);
+    const getClient = vi.fn().mockResolvedValue({
+      chat: vi.fn().mockResolvedValue(fakeStream),
+    });
+    const streamFn = createOllamaTextGenerationStream(getClient);
+
+    const controller = new AbortController();
+    const deltas: string[] = [];
+
+    for await (const ev of streamFn(input, model, controller.signal)) {
+      if (ev.type === "text-delta") {
+        deltas.push(ev.textDelta);
+        if (deltas.length === 2) {
+          controller.abort();
+        }
+      }
+    }
+
+    expect(fakeStream.abort).toHaveBeenCalledTimes(1);
+    expect(deltas.length).toBeLessThan(chunks.length);
+    expect(deltas.length).toBeGreaterThanOrEqual(2);
+  });
+});
