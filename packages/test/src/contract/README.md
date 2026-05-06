@@ -25,42 +25,42 @@ Treat both as additional examples of the pattern.
 
 ## Conventions
 
-1. **Entrypoint shape.**
+1.  **Entrypoint shape.**
 
-       export function runXxxConformance(opts: {
-         readonly name: string;
-         readonly skip?: boolean;
-         readonly timeout: number;
-         readonly factory: () => Promise<{ register, dispose, inspect }>;
-         readonly capabilities: Record<string, boolean>;
-         // ...contract-specific fields
-       }): void;
+        export function runXxxConformance(opts: {
+          readonly name: string;
+          readonly skip?: boolean;
+          readonly timeout: number;
+          readonly factory: () => Promise<{ register, dispose, inspect }>;
+          readonly capabilities: Record<string, boolean>;
+          // ...contract-specific fields
+        }): void;
 
-   Defines a single top-level `describe.skipIf(opts.skip)`.
+    Defines a single top-level `describe.skipIf(opts.skip)`.
 
-2. **Factory shape.** `factory()` returns a fresh handle per top-level
-   `beforeAll`. The handle exposes:
-   - `register()` — install the provider/storage/queue and any model records.
-   - `dispose()` — release resources; called in `afterAll`.
-   - `inspect()` — optional whitebox handle for assertions that need to
-     observe internal state (session maps, disposable refs). Adapters that
-     don't expose internals return `{}`; assertions skip with a logged
-     warning instead of passing silently.
+2.  **Factory shape.** `factory()` returns a fresh handle per top-level
+    `beforeAll`. The handle exposes:
+    - `register()` — install the provider/storage/queue and any model records.
+    - `dispose()` — release resources; called in `afterAll`.
+    - `inspect()` — optional whitebox handle for assertions that need to
+      observe internal state (session maps, disposable refs). Adapters that
+      don't expose internals return `{}`; assertions skip with a logged
+      warning instead of passing silently.
 
-3. **Capability flags drive `describe.skipIf(!cap)` blocks.** Never silently
-   skip on missing capability without a flag — the absence of a flag
-   indicates a contract gap, not a permitted variation.
+3.  **Capability flags drive `describe.skipIf(!cap)` blocks.** Never silently
+    skip on missing capability without a flag — the absence of a flag
+    indicates a contract gap, not a permitted variation.
 
-4. **Live-API tests honor existing preload + retry/timeout settings.** Do
-   not introduce new env vars from a contract suite.
+4.  **Live-API tests honor existing preload + retry/timeout settings.** Do
+    not introduce new env vars from a contract suite.
 
-5. **Adapter shims are short.** A new adapter joining a contract suite
-   should be ~30 lines: imports, factory, capability flags, model IDs.
+5.  **Adapter shims are short.** A new adapter joining a contract suite
+    should be ~30 lines: imports, factory, capability flags, model IDs.
 
-6. **`dispose()` must be idempotent.** Conformance suites may call dispose
-   multiple times (once for the dispose assertion, once in `afterAll`).
-   Adapters whose underlying resource doesn't natively support repeated
-   dispose should guard with a flag.
+6.  **`dispose()` must be idempotent.** Conformance suites may call dispose
+    multiple times (once for the dispose assertion, once in `afterAll`).
+    Adapters whose underlying resource doesn't natively support repeated
+    dispose should guard with a flag.
 
 ### Factory shape variants
 
@@ -97,6 +97,7 @@ worker-only assertions (dispose terminates worker, worker-side throw
 surfaces with stack, postMessage handles concurrent streams independently).
 
 Capability flags:
+
 - `browserOnly: true` — entire boundary block emits a single skipped test.
   Used for TF-MediaPipe until browser test infra arrives.
 - `errorPropagation: false` — relaxes the throw-surfaces assertion to skip
@@ -104,15 +105,16 @@ Capability flags:
 
 ## Available suites
 
-| Contract | Suite | Adapters |
-|---|---|---|
-| `AiProvider` | `contract/ai-provider/runAiProviderConformance` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
-| Worker-proxy parity | `contract/worker-proxy/runWorkerProxyBoundary` | _harness only — no adapters wired yet_ |
-| `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
-| `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
-| `IEntitlementProfile` | `contract/entitlement-profile/runEntitlementProfileConformance` | Browser, Desktop, Server, Custom |
-| `IBrowserContext` | `contract/browser-context/runIBrowserContextConformance` | Mock, Playwright, BunWebView, Electron |
-| `IHumanConnector` | `contract/human-connector/runHumanConnectorConformance` | MockHumanConnector, McpElicitationConnector |
+| Contract                                | Suite                                                           | Adapters                                                                   |
+| --------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `AiProvider`                            | `contract/ai-provider/runAiProviderConformance`                 | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
+| `IMigrationRunner`                      | `contract/storage-migrations/runMigrationRunnerContract`        | Postgres, SQLite, IndexedDB                                                |
+| `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests`                           | InMemory, IndexedDB, Postgres, SQLite, Supabase                            |
+| `ITabularStorage`                       | `test/storage-tabular/genericTabularStorageTests`               | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace     |
+| `IEntitlementProfile`                   | `contract/entitlement-profile/runEntitlementProfileConformance` | Browser, Desktop, Server, Custom                                           |
+| `IBrowserContext`                       | `contract/browser-context/runIBrowserContextConformance`        | Mock, Playwright, BunWebView, Electron                                     |
+| `IHumanConnector`                       | `contract/human-connector/runHumanConnectorConformance`         | MockHumanConnector, McpElicitationConnector                                |
+| Worker-proxy parity                     | `contract/worker-proxy/runWorkerProxyBoundary`                  | _harness only — no adapters wired yet_                                     |
 
 ## How to add a new contract suite
 
