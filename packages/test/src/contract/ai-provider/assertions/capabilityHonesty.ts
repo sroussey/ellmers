@@ -5,7 +5,6 @@
  */
 
 import { getAiProviderRegistry, getGlobalModelRepository, textEmbedding } from "@workglow/ai";
-import { TaskRegistry } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts } from "../types";
@@ -81,18 +80,26 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
       opts.timeout
     );
 
-    it.skipIf(!opts.capabilities.tools)(
-      "declares tools=true → ToolCallingTask is registered globally",
-      () => {
-        expect(TaskRegistry.all.has("ToolCallingTask")).toBe(true);
+    it.skipIf(!opts.capabilities.tools || !opts.models.toolCalling)(
+      "declares tools=true → registry has a ToolCallingTask run function",
+      async () => {
+        const registry = getAiProviderRegistry();
+        const model = await getGlobalModelRepository().findByName(opts.models.toolCalling!);
+        expect(model).toBeDefined();
+        expect(() => registry.getDirectRunFn(model!.provider, "ToolCallingTask")).not.toThrow();
       },
       opts.timeout
     );
 
-    it.skipIf(!opts.capabilities.structured)(
-      "declares structured=true → StructuredGenerationTask is registered globally",
-      () => {
-        expect(TaskRegistry.all.has("StructuredGenerationTask")).toBe(true);
+    it.skipIf(!opts.capabilities.structured || !opts.models.structured)(
+      "declares structured=true → registry has a StructuredGenerationTask run function",
+      async () => {
+        const registry = getAiProviderRegistry();
+        const model = await getGlobalModelRepository().findByName(opts.models.structured!);
+        expect(model).toBeDefined();
+        expect(() =>
+          registry.getDirectRunFn(model!.provider, "StructuredGenerationTask")
+        ).not.toThrow();
       },
       opts.timeout
     );

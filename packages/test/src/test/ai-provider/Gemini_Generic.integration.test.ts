@@ -56,7 +56,11 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: true,
+    // Embeddings would require registering a separate embedding model
+    // (e.g. text-embedding-004) — defer to a dedicated suite. The chat
+    // model wired up here (gemini-2.5-flash) does not advertise
+    // TextEmbeddingTask, so claiming embeddings=true was dishonest.
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },

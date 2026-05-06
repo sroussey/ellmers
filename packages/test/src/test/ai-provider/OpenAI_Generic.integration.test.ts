@@ -56,7 +56,11 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: true,
+    // Embeddings would require registering a separate embedding model
+    // (e.g. text-embedding-3-small) — defer to a dedicated suite. The
+    // chat model wired up here (gpt-4o-mini) does not advertise
+    // TextEmbeddingTask, so claiming embeddings=true was dishonest.
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },
