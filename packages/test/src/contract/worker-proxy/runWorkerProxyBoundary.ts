@@ -11,6 +11,7 @@ import type { WorkerProxyBoundaryOpts } from "./types";
 import type { ConformanceHandle } from "../ai-provider/types";
 import { disposeTerminatesWorkerBlock } from "./assertions/disposeTerminatesWorker";
 import { errorPropagationBlock } from "./assertions/errorPropagation";
+import { backlogOrderingBlock } from "./assertions/backlogOrdering";
 
 export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
   if (opts.capabilities.browserOnly) {
@@ -36,5 +37,6 @@ export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
 
     disposeTerminatesWorkerBlock(opts, getHandle);
     errorPropagationBlock(opts);
+    backlogOrderingBlock(opts);
   });
 }
