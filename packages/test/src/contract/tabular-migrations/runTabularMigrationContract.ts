@@ -39,8 +39,10 @@ export function runTabularMigrationContract(opts: TabularMigrationContractOpts):
     }
     backfillBlock(opts, getHandle);
     freshDbFastPathBlock(opts, getHandle);
-    incrementalApplicationBlock(opts, getHandle);
-    failedMigrationNotRecordedBlock(opts, getHandle);
+    if (opts.persistentBookkeeping !== false) {
+      incrementalApplicationBlock(opts, getHandle);
+      failedMigrationNotRecordedBlock(opts, getHandle);
+    }
   });
 }
 

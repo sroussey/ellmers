@@ -284,7 +284,8 @@ export class FsFolderTabularStorage<
     await this.setupDirectory();
     try {
       const files = await readdir(this.folderPath);
-      const jsonFiles = files.filter((file) => file.endsWith(".json"));
+      // Exclude internal bookkeeping files (prefixed with "_").
+      const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
       if (jsonFiles.length === 0) {
         return undefined;
       }
@@ -330,9 +331,9 @@ export class FsFolderTabularStorage<
    */
   async size(): Promise<number> {
     await this.setupDirectory();
-    // Count all files in the folder ending in .json
+    // Count data files only; exclude internal bookkeeping files (prefixed with "_").
     const files = await readdir(this.folderPath);
-    const jsonFiles = files.filter((file) => file.endsWith(".json"));
+    const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
     return jsonFiles.length;
   }
 
@@ -345,7 +346,8 @@ export class FsFolderTabularStorage<
   async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
     await this.setupDirectory();
     const files = await readdir(this.folderPath);
-    const jsonFiles = files.filter((file) => file.endsWith(".json"));
+    // Exclude internal bookkeeping files (prefixed with "_").
+    const jsonFiles = files.filter((file) => file.endsWith(".json") && !file.startsWith("_"));
 
     if (jsonFiles.length === 0) {
       return undefined;
