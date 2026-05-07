@@ -38,7 +38,7 @@ export function capabilityHonestyBlock(
         if (!ctx) throw new Error("context not created");
         // The contract says: when the capability is false, the method must
         // be strictly undefined — NOT a no-op stub returning [].
-        expect(typeof (ctx as Record<string, unknown>)[methodName]).toBe("undefined");
+        expect(typeof (ctx as unknown as Record<string, unknown>)[methodName]).toBe("undefined");
       };
       const title = `declares ${methodName}=false → ctx.${methodName} is undefined`;
       if (expectFail(assertionName)) {
