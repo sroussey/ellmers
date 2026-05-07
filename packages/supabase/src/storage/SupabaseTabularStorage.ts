@@ -536,10 +536,7 @@ export class SupabaseTabularStorage<
     // auto-generated key omitted from the input, we have no key to match on,
     // so trust the response order (Postgres's INSERT ... RETURNING preserves
     // VALUES order in practice).
-    const orderedEntities = this.alignBulkResponseToInputOrder(
-      normalizedEntities,
-      returnedRows
-    );
+    const orderedEntities = this.alignBulkResponseToInputOrder(normalizedEntities, returnedRows);
 
     for (const entity of orderedEntities) {
       this.events.emit("put", entity);

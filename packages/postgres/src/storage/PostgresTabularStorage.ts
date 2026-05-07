@@ -821,10 +821,7 @@ export class PostgresTabularStorage<
    *   - Throws on nested `withTransaction` — Postgres has no autonomous
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
-  private createTxView(
-    txDb: { query: Pool["query"] },
-    deferredPutEvents: Entity[]
-  ): this {
+  private createTxView(txDb: { query: Pool["query"] }, deferredPutEvents: Entity[]): this {
     const target = this;
     return new Proxy(target, {
       get(t, prop, receiver) {

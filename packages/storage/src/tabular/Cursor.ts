@@ -89,10 +89,7 @@ export function encodeCursor(payload: CursorPayload): PageCursor {
   while (trimEnd > 0 && base64.charCodeAt(trimEnd - 1) === 0x3d /* '=' */) {
     trimEnd--;
   }
-  const urlSafe = base64
-    .slice(0, trimEnd)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
+  const urlSafe = base64.slice(0, trimEnd).replace(/\+/g, "-").replace(/\//g, "_");
   // A server-emitted cursor must round-trip through `decodeCursor`. If a
   // row's sort key encodes large enough to push past the cap, fail loudly
   // here rather than minting a `nextCursor` that the very next request
@@ -163,11 +160,7 @@ export function decodeCursor(cursor: PageCursor | string): CursorPayload {
     !p.n.every((name) => typeof name === "string") ||
     !p.d.every((dir) => dir === "a" || dir === "d") ||
     !p.c.every(
-      (v) =>
-        v === null ||
-        typeof v === "string" ||
-        typeof v === "number" ||
-        typeof v === "boolean"
+      (v) => v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean"
     )
   ) {
     throw new StorageValidationError(`Cursor format is unsupported (expected v${CURSOR_VERSION})`);
