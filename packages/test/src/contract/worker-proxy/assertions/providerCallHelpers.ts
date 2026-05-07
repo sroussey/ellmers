@@ -25,19 +25,15 @@ export async function runProviderTextGeneration(
   prompt: string,
   callOpts: CallOpts
 ): Promise<CallResult> {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(new Error("timeout")), callOpts.timeoutMs);
-  // textGeneration does not accept a signal field; abort happens implicitly when the worker is gone.
-  try {
-    const result = await textGeneration({
-      model: modelId,
-      prompt,
-      maxTokens: callOpts.maxTokens,
-    });
-    return { text: (result as { text?: string }).text ?? "" };
-  } finally {
-    clearTimeout(t);
-  }
+  // textGeneration does not accept a signal; vitest's per-test timeout
+  // enforces the upper bound. callOpts.timeoutMs and callOpts.signal are
+  // accepted for symmetry with streamProviderTextGeneration but unused here.
+  const result = await textGeneration({
+    model: modelId,
+    prompt,
+    maxTokens: callOpts.maxTokens,
+  });
+  return { text: (result as { text?: string }).text ?? "" };
 }
 
 export async function* streamProviderTextGeneration(

@@ -71,7 +71,7 @@ assertions must also hold when a provider is registered via
 
 1. `runAiProviderConformance({ name: "<Adapter> (inline)", factory: inlineFactory, ... })`
 2. `runAiProviderConformance({ name: "<Adapter> (worker)", factory: workerFactory, ... })`
-3. `runWorkerProxyBoundary({ name: "<Adapter> worker boundary", factory: workerFactory, ... })`
+3. `runWorkerProxyBoundary({ name: "<Adapter>", factory: workerFactory, ... })`
 
 The worker factory's `inspect()` returns `{}` — workers are opaque by
 design. The inherited session-reuse and dispose blocks skip with their
