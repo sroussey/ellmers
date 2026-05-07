@@ -15,10 +15,12 @@ import {
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-provider-runtime";
 import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
+import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai-provider";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
+import { runWorkerProxyBoundary } from "../../contract/worker-proxy/runWorkerProxyBoundary";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 const TEXT_MODEL_ID = "onnx:onnx-community/Qwen2.5-1.5B-Instruct:q4";
@@ -87,7 +89,7 @@ const embeddingModel: HfTransformersOnnxModelRecord = {
 };
 
 runAiProviderConformance({
-  name: "HFT (HuggingFace Transformers)",
+  name: "HFT (HuggingFace Transformers) (inline)",
   timeout: 300_000,
   factory: async () => ({
     register: async () => {
@@ -124,4 +126,54 @@ runAiProviderConformance({
   // Local ONNX inference is slow; relax the abort window so the
   // mid-stream-abort assertion has room to fire and shut down cleanly.
   fixture: { maxTokens: 2600, abortGraceMs: 500 },
+});
+
+const hftWorkerFactory = async () => ({
+  register: async () => {
+    const logger = getTestingLogger();
+    setLogger(logger);
+    await setTaskQueueRegistry(null);
+    setGlobalModelRepository(new InMemoryModelRepository());
+    await registerHuggingFaceTransformers({
+      worker: () =>
+        new Worker(new URL("./worker_hft_test.ts", import.meta.url), { type: "module" }),
+    });
+    await getGlobalModelRepository().addModel(textModel);
+    await getGlobalModelRepository().addModel(thinkingModel);
+    await getGlobalModelRepository().addModel(instructModel);
+    await getGlobalModelRepository().addModel(embeddingModel);
+  },
+  dispose: async () => {
+    await setTaskQueueRegistry(null);
+  },
+  inspect: () => ({}),
+});
+
+runAiProviderConformance({
+  name: "HFT (HuggingFace Transformers) (worker)",
+  timeout: 600_000,
+  factory: hftWorkerFactory,
+  capabilities: {
+    streaming: true,
+    tools: true,
+    structured: true,
+    embeddings: true,
+    sessions: false,
+    abortMidStream: true,
+  },
+  models: {
+    textGeneration: INSTRUCT_MODEL_ID,
+    toolCalling: INSTRUCT_MODEL_ID,
+    structured: INSTRUCT_MODEL_ID,
+    embeddings: EMBED_MODEL_ID,
+  },
+  fixture: { maxTokens: 2600, abortGraceMs: 500 },
+});
+
+runWorkerProxyBoundary({
+  name: "HFT (HuggingFace Transformers)",
+  timeout: 600_000,
+  factory: hftWorkerFactory,
+  capabilities: { browserOnly: false, errorPropagation: true },
+  models: { textGeneration: INSTRUCT_MODEL_ID, toolCalling: INSTRUCT_MODEL_ID },
 });
