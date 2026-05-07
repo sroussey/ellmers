@@ -9,7 +9,10 @@
  * signal observation to a pluggable IEntitlementSignalSource.
  */
 
+import { createPolicyEnforcer } from "./EntitlementEnforcer";
 import type { EntitlementDenial, IEntitlementEnforcer } from "./EntitlementEnforcer";
+import type { EntitlementPolicy } from "./EntitlementPolicy";
+import type { IEntitlementResolver } from "./EntitlementResolver";
 import type { EntitlementGrant, TaskEntitlement } from "./TaskEntitlements";
 
 // ========================================================================
@@ -112,4 +115,122 @@ export interface IEntitlementProfile extends IEntitlementEnforcer {
   subscribe(listener: (event: EntitlementChangeEvent) => void): () => void;
   /** Idempotent teardown. */
   dispose(): Promise<void>;
+}
+
+// ========================================================================
+// Profile Constructor
+// ========================================================================
+
+export interface CreateProfileOptions {
+  readonly resolver?: IEntitlementResolver;
+  /** Defaults to `STATIC_SIGNAL_SOURCE`. */
+  readonly signalSource?: IEntitlementSignalSource;
+}
+
+/**
+ * Build an `IEntitlementProfile` from a policy.
+ *
+ * Wraps `createPolicyEnforcer` and adds:
+ * - `surface()` returning the policy's grants
+ * - `requestEntitlement()` reusing `checkAll` for a single entitlement
+ * - signal-source subscription with verdict-flip change events
+ * - idempotent `dispose()`
+ *
+ * The "previously queried" set used to scope `reload` events is private to
+ * the profile and cleared on `dispose`.
+ */
+export function createPolicyProfile(
+  name: string,
+  policy: EntitlementPolicy,
+  options: CreateProfileOptions = {}
+): IEntitlementProfile {
+  const enforcer = createPolicyEnforcer(policy, options.resolver);
+  const signalSource = options.signalSource ?? STATIC_SIGNAL_SOURCE;
+  const listeners = new Set<(event: EntitlementChangeEvent) => void>();
+  /**
+   * Map from entitlement-id|resources-key → last observed outcome.
+   * Used to compute verdict flips for change-event emission and to scope
+   * `reload`-triggered re-evaluation.
+   */
+  const lastOutcome = new Map<string, "granted" | "denied">();
+  /** Reference to the original entitlement object so reload can re-query. */
+  const lastEntitlement = new Map<string, TaskEntitlement>();
+  let disposed = false;
+
+  function key(e: TaskEntitlement): string {
+    const resources = e.resources ? [...e.resources].sort().join(",") : "";
+    return `${e.id}|${resources}`;
+  }
+
+  async function evaluate(e: TaskEntitlement): Promise<"granted" | "denied"> {
+    if (e.optional) return "granted";
+    const denials = await enforcer.checkAll({ entitlements: [e] });
+    return denials.length === 0 ? "granted" : "denied";
+  }
+
+  async function emitFlipFor(e: TaskEntitlement): Promise<void> {
+    const k = key(e);
+    const previous = lastOutcome.get(k);
+    if (previous === undefined) return; // never queried; nothing to flip
+    const current = await evaluate(e);
+    if (current === previous) return;
+    lastOutcome.set(k, current);
+    const event: EntitlementChangeEvent = {
+      kind: current === "granted" ? "granted" : "revoked",
+      entitlement: e,
+    };
+    for (const l of listeners) l(event);
+  }
+
+  const sourceUnsub = signalSource.subscribe((signal) => {
+    if (disposed) return;
+    if (signal.kind === "reload") {
+      // Re-evaluate every previously-queried entitlement.
+      for (const [, e] of lastEntitlement) {
+        void emitFlipFor(e);
+      }
+    } else {
+      // revoke or grant: re-evaluate the targeted entitlement.
+      void emitFlipFor(signal.entitlement);
+    }
+  });
+
+  const profile: IEntitlementProfile = {
+    name,
+    checkAll: enforcer.checkAll.bind(enforcer),
+    checkTask: enforcer.checkTask.bind(enforcer),
+    surface: () => policy.grant,
+    async requestEntitlement(required) {
+      if (required.optional) {
+        return { outcome: "granted", entitlement: required };
+      }
+      const denials = await enforcer.checkAll({ entitlements: [required] });
+      const k = key(required);
+      lastEntitlement.set(k, required);
+      if (denials.length === 0) {
+        lastOutcome.set(k, "granted");
+        return { outcome: "granted", entitlement: required };
+      }
+      lastOutcome.set(k, "denied");
+      return { outcome: "denied", denial: denials[0]! };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      let unsubbed = false;
+      return () => {
+        if (unsubbed) return;
+        unsubbed = true;
+        listeners.delete(listener);
+      };
+    },
+    async dispose() {
+      if (disposed) return;
+      disposed = true;
+      sourceUnsub();
+      listeners.clear();
+      lastOutcome.clear();
+      lastEntitlement.clear();
+    },
+  };
+  return profile;
 }
