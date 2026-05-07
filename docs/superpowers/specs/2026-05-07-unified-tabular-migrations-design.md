@@ -95,7 +95,7 @@ export type TabularMigrationOp =
   | {
       readonly kind: "backfill";
       readonly batchSize?: number;
-      readonly transform: (row: any, tx: AnyTabularStorage) =>
+      readonly transform: (row: Record<string, unknown>) =>
         | Promise<Record<string, unknown> | undefined>
         | Record<string, unknown>
         | undefined;
@@ -160,17 +160,17 @@ Defaults to `tabular:${name}` to match existing conventions
 ### `backfill` semantics
 
 - `transform` is invoked once per row in pages of `batchSize` rows
-  (default 500).
+  (default 500). The runner passes the row only — there is no `tx`
+  parameter in v1; backfills run against the storage's own transaction
+  (or normal API on backends without one) and the orchestrator handles
+  the iteration. If a future use case needs sibling-table access during
+  a backfill, adding a second parameter is purely additive.
 - Iteration uses cursor-based `getPage` so it is stable under concurrent
   writes (in practice the migration holds a schema lock and there are no
   concurrent writes — but the cursor is correct regardless).
-- Returning a new row writes via `tx.put`. Returning `undefined` deletes the
-  row via `tx.delete`. Returning the row unchanged (referential equality with
+- Returning a new row writes via the storage's `put`. Returning `undefined`
+  deletes the row. Returning the row unchanged (referential equality with
   the input) is a no-op (skipped, no write).
-- `tx` is the storage handle for the migration's transaction. On SQL
-  backends this is the proxy returned by `withTransaction`; on IndexedDB it
-  is the storage view bound to the upgrade transaction; on schemaless
-  backends it is the storage itself.
 
 ### Atomicity
 

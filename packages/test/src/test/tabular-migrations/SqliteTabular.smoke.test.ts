@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { Sqlite } from "@workglow/sqlite/storage";
 import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 import type { ITabularMigration } from "@workglow/storage";
 
-describe("SqliteTabular migration smoke", async () => {
-  await Sqlite.init();
+describe("SqliteTabular migration smoke", () => {
+  beforeAll(async () => {
+    await Sqlite.init();
+  });
 
   it("applies an addColumn migration to an existing table", async () => {
     const db = new Sqlite.Database(":memory:");
