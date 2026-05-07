@@ -171,3 +171,15 @@ describe("createProfileEnforcer (refactored)", () => {
     expect(profile.name).toBe("browser");
   });
 });
+
+import { ENTITLEMENT_PROFILE } from "@workglow/task-graph";
+import { ServiceRegistry } from "@workglow/util";
+
+describe("ENTITLEMENT_PROFILE service token", () => {
+  it("registers and resolves a profile through ServiceRegistry", () => {
+    const registry = new ServiceRegistry();
+    const profile = createProfileEnforcer("browser");
+    registry.registerInstance(ENTITLEMENT_PROFILE, profile);
+    expect(registry.get(ENTITLEMENT_PROFILE)).toBe(profile);
+  });
+});

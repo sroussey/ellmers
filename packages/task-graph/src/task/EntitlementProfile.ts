@@ -9,6 +9,7 @@
  * signal observation to a pluggable IEntitlementSignalSource.
  */
 
+import { createServiceToken } from "@workglow/util";
 import { createPolicyEnforcer } from "./EntitlementEnforcer";
 import type { EntitlementDenial, IEntitlementEnforcer } from "./EntitlementEnforcer";
 import type { EntitlementPolicy } from "./EntitlementPolicy";
@@ -234,3 +235,18 @@ export function createPolicyProfile(
   };
   return profile;
 }
+
+// ========================================================================
+// Service Token
+// ========================================================================
+
+/**
+ * Service token for registering an `IEntitlementProfile`.
+ * Distinct from `ENTITLEMENT_ENFORCER`: a profile is a richer surface
+ * (subscribe + dispose + surface). Registering a profile also satisfies
+ * any consumer that resolves `ENTITLEMENT_ENFORCER` because
+ * `IEntitlementProfile extends IEntitlementEnforcer`.
+ */
+export const ENTITLEMENT_PROFILE = createServiceToken<IEntitlementProfile>(
+  "workglow.entitlementProfile"
+);
