@@ -8,6 +8,7 @@ export * from "./ConditionalTask";
 export * from "./ConditionUtils";
 export * from "./EntitlementEnforcer";
 export * from "./EntitlementPolicy";
+export * from "./EntitlementProfile";
 export * from "./EntitlementProfiles";
 export * from "./EntitlementResolver";
 export * from "./FallbackTask";

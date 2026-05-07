@@ -62,6 +62,23 @@ Treat both as additional examples of the pattern.
    Adapters whose underlying resource doesn't natively support repeated
    dispose should guard with a flag.
 
+### Factory shape variants
+
+The `register/dispose/inspect` factory documented above is one of two
+legitimate shapes — used when an adapter is a long-lived global registration
+(e.g. an AI provider). For contracts whose subject is heavyweight but
+per-test state (e.g. browser contexts), prefer a `create/dispose` factory
+where each top-level block instantiates its own subject:
+
+    factory: () => Promise<{
+      create: () => Promise<TSubject>;
+      dispose: (subject: TSubject) => Promise<void>;
+    }>
+
+The principle is the same: a fresh handle per block, with no shared state
+that block N can leak into block N+1. The methods on the handle are
+contract-specific.
+
 ## Worker-proxy pattern
 
 Workers cross a `postMessage` boundary; the inline AiProvider conformance
@@ -93,6 +110,8 @@ Capability flags:
 | Worker-proxy parity | `contract/worker-proxy/runWorkerProxyBoundary` | _harness only — no adapters wired yet_ |
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
+| `IEntitlementProfile` | `contract/entitlement-profile/runEntitlementProfileConformance` | Browser, Desktop, Server, Custom |
+| `IBrowserContext` | `contract/browser-context/runIBrowserContextConformance` | Mock, Playwright, BunWebView, Electron |
 
 ## How to add a new contract suite
 
@@ -120,5 +139,4 @@ Future contract suites in priority order:
    `WorkerManager` unregister-on-dispose required before HFT/LlamaCpp can
    register inline + worker in the same test file).
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
-4. `EntitlementProfile` — desktop / web / server profiles.
-5. `IHumanConnector` — App + Electron elicitation backends.
+4. `IHumanConnector` — App + Electron elicitation backends.
