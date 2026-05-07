@@ -48,23 +48,41 @@ export async function idbObjectStoreExists(dbName: string, storeName: string): P
 }
 
 /**
- * IndexedDB applier for tabular migrations. Order of operations:
+ * IndexedDB applier for tabular migrations.
  *
- *   1. **Backfills** run first on a normal readwrite transaction. They
- *      iterate via `storage.getPage` and rewrite rows. If a backfill
- *      throws, no bookkeeping has been written yet, so the next run
- *      retries the migration — matching the contract that failed
- *      migrations are NOT recorded as applied.
- *   2. **DDL ops** (`addIndex` / `dropIndex`) run inside an upgrade
- *      transaction issued by {@link IndexedDbMigrationRunner}. The runner
- *      writes `_storage_migrations` inside that same transaction, so the
- *      DDL + bookkeeping pair commit atomically.
+ * Op handling matches `InMemoryTabularMigrationApplier`'s schemaless model
+ * (column ops are no-ops) and `SqlTabularMigrationApplier`'s SQL-backed
+ * model (DDL is real) where each makes sense:
  *
- * `createIndex` / `deleteIndex` are guarded with `objectStore.indexNames.contains`
- * so a re-run (or a fresh-DB pass that wasn't intercepted by the
- * orchestrator's fast path) does not throw on already-existing /
- * already-deleted indexes — mirroring SQL's `IF NOT EXISTS` / `IF EXISTS`
- * semantics.
+ *   - `addColumn` / `dropColumn` / `renameColumn` — **no-ops.** IDB stores
+ *     arbitrary JS objects, so there is no schema to evolve. Authors who
+ *     need to populate or rewrite a property on existing rows must pair
+ *     the column op with an explicit `backfill` op (which runs on every
+ *     backend, including SQL, where the backfill is in addition to the
+ *     real ALTER TABLE). This keeps a single migration spec portable
+ *     across backends.
+ *   - `addIndex` / `dropIndex` — **real DDL.** Run inside an upgrade
+ *     transaction issued by {@link IndexedDbMigrationRunner}, which writes
+ *     the `_storage_migrations` row in the same transaction so DDL +
+ *     bookkeeping commit atomically. `createIndex` / `deleteIndex` are
+ *     guarded by `objectStore.indexNames.contains` so a re-run does not
+ *     throw on already-existing / already-deleted indexes — mirroring
+ *     SQL's `IF NOT EXISTS` / `IF EXISTS` semantics.
+ *   - `backfill` — runs on a **separate** readwrite transaction *before*
+ *     the upgrade tx, because IDB upgrade transactions cannot span async
+ *     work. This means the backfill and the bookkeeping write are NOT
+ *     atomic on this backend: if the upgrade tx fails after a partial
+ *     backfill, the row mutations persist while no `(component, version)`
+ *     row is written, and the next run re-invokes `transform()` on the
+ *     already-mutated rows. **Backfill `transform`s on this applier MUST
+ *     therefore be idempotent.** SQL backends wrap everything in
+ *     `withTransaction` and do not have this requirement.
+ *
+ * Order of execution within a single migration: backfill first, then DDL.
+ * This means a `[backfill, addIndex]` pair sees the new index applied to
+ * the rewritten rows; the reverse order (`[addIndex, backfill]`) would
+ * still execute backfill first because the runner buffers DDL until the
+ * upgrade tx.
  */
 export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplier {
   private readonly runner: IndexedDbMigrationRunner;
@@ -111,16 +129,43 @@ export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplie
     ops: ReadonlyArray<TabularMigrationOp>,
     onProgress?: (fraction: number) => void
   ): Promise<void> {
-    const ddlOps = ops.filter(
-      (o): o is Extract<TabularMigrationOp, { kind: "addIndex" } | { kind: "dropIndex" }> =>
-        o.kind === "addIndex" || o.kind === "dropIndex"
-    );
-    const backfills = ops.filter(
-      (o): o is Extract<TabularMigrationOp, { kind: "backfill" }> => o.kind === "backfill"
-    );
+    // Exhaustive partition. The `never` default makes adding a new op
+    // kind to TabularMigrationOp a TS error here rather than a silent
+    // drop into one of two filters, which is how the previous version
+    // of this code lost addColumn / dropColumn / renameColumn ops.
+    type AddIndexOp = Extract<TabularMigrationOp, { kind: "addIndex" }>;
+    type DropIndexOp = Extract<TabularMigrationOp, { kind: "dropIndex" }>;
+    type BackfillOp = Extract<TabularMigrationOp, { kind: "backfill" }>;
+    const ddlOps: Array<AddIndexOp | DropIndexOp> = [];
+    const backfills: BackfillOp[] = [];
+    for (const op of ops) {
+      switch (op.kind) {
+        case "addIndex":
+        case "dropIndex":
+          ddlOps.push(op);
+          break;
+        case "backfill":
+          backfills.push(op);
+          break;
+        case "addColumn":
+        case "dropColumn":
+        case "renameColumn":
+          // Schemaless backend — no schema to evolve. Pair with `backfill`
+          // when row data needs to change. See class JSDoc.
+          break;
+        default: {
+          const _exhaustive: never = op;
+          throw new Error(
+            `IndexedDbTabularMigrationApplier: unhandled op kind ${(_exhaustive as { kind: string }).kind}`
+          );
+        }
+      }
+    }
 
     // Run backfills FIRST on a normal readwrite tx. If any throws, no
-    // bookkeeping is written, so the migration is retried on the next run.
+    // bookkeeping is written, so the migration is retried on the next run
+    // — which is why backfill transforms must be idempotent on this
+    // backend (see class JSDoc).
     let processed = 0;
     const total = Math.max(ops.length, 1);
     for (const op of backfills) {
@@ -148,7 +193,8 @@ export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplie
     // The runner.run() writes the `_storage_migrations` row inside the same
     // upgrade tx as our `up` callback, so DDL failure = no bookkeeping.
     // We always invoke runner.run() (even when ddlOps is empty) so that
-    // bookkeeping is recorded for backfill-only migrations.
+    // bookkeeping is recorded for backfill-only and column-op-only
+    // migrations.
     const storeName = this.storeName;
     await this.runner.run([
       {
