@@ -87,6 +87,7 @@ contract-specific.
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
 | `IBrowserContext` | `contract/browser-context/runIBrowserContextConformance` | Mock, Playwright, BunWebView, Electron |
+| `IHumanConnector` | `contract/human-connector/runHumanConnectorConformance` | MockHumanConnector, McpElicitationConnector |
 
 ## How to add a new contract suite
 
@@ -113,4 +114,4 @@ Future contract suites in priority order:
    identical assertions to direct mode.
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
 4. `EntitlementProfile` — desktop / web / server profiles.
-5. `IHumanConnector` — App + Electron elicitation backends.
+5. `IHumanConnector` — IN PROGRESS — `MockHumanConnector` + `McpElicitationConnector`. App / Electron adapters add their own shim when introduced.
