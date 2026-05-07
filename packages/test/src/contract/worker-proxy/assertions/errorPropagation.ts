@@ -18,12 +18,22 @@ export function errorPropagationBlock(opts: WorkerProxyBoundaryOpts): void {
 
   describe("Worker-side throw surfaces on main thread", () => {
     test(
-      "invalid model id rejects with a non-empty error",
+      "provider rejection from inside the worker surfaces as a thrown error",
       async () => {
-        const bogus = `${opts.name.toLowerCase()}:__force_error__${Date.now()}`;
+        const modelId = opts.models.textGeneration;
+        if (!modelId) {
+          throw new Error(
+            `${opts.name}: models.textGeneration is required for boundary tests`
+          );
+        }
+        // Use a registered model so resolution succeeds and the call is
+        // dispatched into the worker. The provider's run fn rejects when
+        // asked for an absurd token budget — the rejection therefore
+        // originates inside the worker and must cross the postMessage
+        // boundary to surface here.
         await expect(
-          runProviderTextGeneration(bogus, "ignored", {
-            maxTokens: 4,
+          runProviderTextGeneration(modelId, "ignored", {
+            maxTokens: 1_000_000_000,
             timeoutMs: opts.timeout / 4,
           })
         ).rejects.toThrow(/.+/);
@@ -35,11 +45,16 @@ export function errorPropagationBlock(opts: WorkerProxyBoundaryOpts): void {
       test(
         "rejected error preserves a stack frame referencing worker code",
         async () => {
-          const bogus = `${opts.name.toLowerCase()}:__force_error__${Date.now()}`;
+          const modelId = opts.models.textGeneration;
+          if (!modelId) {
+            throw new Error(
+              `${opts.name}: models.textGeneration is required for boundary tests`
+            );
+          }
           let captured: unknown;
           try {
-            await runProviderTextGeneration(bogus, "ignored", {
-              maxTokens: 4,
+            await runProviderTextGeneration(modelId, "ignored", {
+              maxTokens: 1_000_000_000,
               timeoutMs: opts.timeout / 4,
             });
           } catch (err) {

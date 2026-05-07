@@ -25,14 +25,14 @@ export async function runProviderTextGeneration(
   prompt: string,
   callOpts: CallOpts
 ): Promise<CallResult> {
-  // textGeneration does not accept a signal; vitest's per-test timeout
-  // enforces the upper bound. callOpts.timeoutMs and callOpts.signal are
-  // accepted for symmetry with streamProviderTextGeneration but unused here.
-  const result = await textGeneration({
-    model: modelId,
-    prompt,
-    maxTokens: callOpts.maxTokens,
-  });
+  const result = await textGeneration(
+    {
+      model: modelId,
+      prompt,
+      maxTokens: callOpts.maxTokens,
+    },
+    { timeout: callOpts.timeoutMs }
+  );
   return { text: (result as { text?: string }).text ?? "" };
 }
 
@@ -49,17 +49,26 @@ export async function* streamProviderTextGeneration(
     throw new Error(`No stream fn for ${model.provider}/TextGenerationTask`);
   }
   const ac = new AbortController();
+  const onCallerAbort = (): void => ac.abort(callOpts.signal?.reason);
   const t = setTimeout(() => ac.abort(new Error("timeout")), callOpts.timeoutMs);
-  const signal = callOpts.signal ?? ac.signal;
+  if (callOpts.signal) {
+    if (callOpts.signal.aborted) {
+      clearTimeout(t);
+      ac.abort(callOpts.signal.reason);
+    } else {
+      callOpts.signal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+  }
   try {
     yield* streamFn(
       { prompt, maxTokens: callOpts.maxTokens },
       model,
-      signal,
+      ac.signal,
       undefined,
       undefined
     );
   } finally {
     clearTimeout(t);
+    callOpts.signal?.removeEventListener("abort", onCallerAbort);
   }
 }

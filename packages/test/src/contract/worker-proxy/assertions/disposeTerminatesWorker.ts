@@ -15,7 +15,8 @@ const FAIL_KEY = "boundary.disposeTerminatesWorker";
 
 export function disposeTerminatesWorkerBlock(
   opts: WorkerProxyBoundaryOpts,
-  getHandle: () => ConformanceHandle
+  getHandle: () => ConformanceHandle,
+  markDisposed: () => void
 ): void {
   const failing = opts.expectedFailures?.includes(FAIL_KEY) ?? false;
   const test = failing ? itExpectFail : it;
@@ -41,6 +42,7 @@ export function disposeTerminatesWorkerBlock(
         expect(before.text.length).toBeGreaterThan(0);
 
         await handle.dispose();
+        markDisposed();
 
         const after = runProviderTextGeneration(
           modelId,

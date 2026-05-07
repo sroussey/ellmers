@@ -21,9 +21,13 @@ export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
 
   describe.skipIf(opts.skip)(`Worker-proxy boundary: ${opts.name}`, () => {
     let handle: ConformanceHandle | undefined;
+    let disposed = false;
     const getHandle = (): ConformanceHandle => {
       if (!handle) throw new Error("worker-proxy handle not initialized");
       return handle;
+    };
+    const markDisposed = (): void => {
+      disposed = true;
     };
 
     beforeAll(async () => {
@@ -32,11 +36,14 @@ export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
     }, opts.timeout);
 
     afterAll(async () => {
-      if (handle) await handle.dispose();
+      if (handle && !disposed) await handle.dispose();
     });
 
-    disposeTerminatesWorkerBlock(opts, getHandle);
+    // Order matters: dispose runs last so the live-worker assertions above
+    // execute against an undisposed handle. `markDisposed` flips the shared
+    // flag so afterAll skips a second dispose.
     errorPropagationBlock(opts);
     backlogOrderingBlock(opts);
+    disposeTerminatesWorkerBlock(opts, getHandle, markDisposed);
   });
 }
