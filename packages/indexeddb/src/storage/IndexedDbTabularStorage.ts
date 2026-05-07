@@ -27,7 +27,10 @@ import {
   type ITabularMigration,
   type ITabularMigrationApplier,
 } from "@workglow/storage";
-import { IndexedDbTabularMigrationApplier } from "./IndexedDbTabularMigrationApplier";
+import {
+  IndexedDbTabularMigrationApplier,
+  idbObjectStoreExists,
+} from "./IndexedDbTabularMigrationApplier";
 import { ensureIndexedDbTable, ExpectedIndexDefinition, MigrationOptions } from "./IndexedDbTable";
 
 export const IDB_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
@@ -78,6 +81,15 @@ export class IndexedDbTabularStorage<
 > extends BaseTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey, Value, InsertType> {
   /** Promise that resolves to the IndexedDB database instance */
   private db: IDBDatabase | undefined;
+  /**
+   * True between `setupDatabase`'s call to `applyTabularMigrations` and its
+   * completion. Backfill ops inside the orchestrator may close `this.db`
+   * (via `onversionchange` from the next migration's upgrade) and trigger
+   * a re-entrant `setupDatabase` call from `getDb()`. The re-entrant call
+   * must only re-open the IDB connection — it MUST NOT recurse into the
+   * orchestrator, or migrations will be replayed mid-flight.
+   */
+  private applyingMigrations = false;
   /** Promise to track ongoing database setup to prevent concurrent setup calls */
   private setupPromise: Promise<IDBDatabase> | null = null;
   /** Migration options for database schema changes */
@@ -153,6 +165,22 @@ export class IndexedDbTabularStorage<
       return;
     }
 
+    // Re-entrant guard: when called from inside an in-flight migration
+    // (typically because a backfill's `getPage` hit a closed connection
+    // after the previous migration's upgrade-tx version bump), only
+    // re-open the IDB connection. Re-running `applyTabularMigrations`
+    // here would replay the orchestrator and double-apply migrations.
+    if (this.applyingMigrations) {
+      this.setupPromise = this.performSetup();
+      try {
+        this.db = await this.setupPromise;
+        this.rewireOnVersionChange();
+      } finally {
+        this.setupPromise = null;
+      }
+      return;
+    }
+
     // Probe whether the object store already exists BEFORE performSetup
     // creates it. The orchestrator needs this signal to take the
     // mark-all-applied fast path on a brand-new DB; otherwise it would
@@ -171,16 +199,13 @@ export class IndexedDbTabularStorage<
     }
 
     if (this.tabularMigrations && this.tabularMigrations.length > 0) {
-      // Wire onversionchange so that when the migration runner bumps the IDB
-      // version (currentVersion + 1 to trigger onupgradeneeded), the current
-      // open connection is both closed AND cleared from `this.db`. Without
-      // the clear, getDb() would return a stale closed connection and throw
-      // InvalidStateError on the next transaction attempt (e.g. during backfill).
-      this.db.onversionchange = () => {
-        this.db?.close();
-        this.db = undefined;
-      };
-      await this.applyTabularMigrations({ freshTable });
+      this.rewireOnVersionChange();
+      this.applyingMigrations = true;
+      try {
+        await this.applyTabularMigrations({ freshTable });
+      } finally {
+        this.applyingMigrations = false;
+      }
       // After migrations, this.db may be undefined (closed by onversionchange).
       // Reopen so the storage is ready for use.
       if (!this.db) {
@@ -190,25 +215,28 @@ export class IndexedDbTabularStorage<
   }
 
   /**
+   * Wires `onversionchange` so that when the migration runner bumps the IDB
+   * version (currentVersion + 1 to trigger onupgradeneeded), the current
+   * open connection is both closed AND cleared from `this.db`. Without the
+   * clear, getDb() would return a stale closed connection and throw
+   * InvalidStateError on the next transaction attempt (e.g. during backfill).
+   */
+  private rewireOnVersionChange(): void {
+    if (!this.db) return;
+    this.db.onversionchange = () => {
+      this.db?.close();
+      this.db = undefined;
+    };
+  }
+
+  /**
    * Read-only probe: does the object store already exist in the IDB
    * database? Used by `setupDatabase` to decide between the orchestrator's
    * fresh-DB fast path (mark-all-applied) and the run-pending path.
+   * Delegates to the shared `idbObjectStoreExists` helper.
    */
   private async probeObjectStoreExists(): Promise<boolean> {
-    const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
-    if (!idb) return false;
-    return new Promise<boolean>((resolve, reject) => {
-      const req = idb.open(this.table);
-      req.onsuccess = () => {
-        const db = req.result;
-        const exists = db.objectStoreNames.contains(this.table);
-        db.close();
-        resolve(exists);
-      };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () =>
-        reject(new Error(`IndexedDB ${this.table} blocked while probing for object store`));
-    });
+    return idbObjectStoreExists(this.table, this.table);
   }
 
   /**
