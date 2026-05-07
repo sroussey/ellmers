@@ -125,7 +125,7 @@ interface MutableAccessibilityNode {
 function parseAriaYaml(
   yaml: string,
   refCounter: { count: number },
-  refMap: Map<string, string>
+  refMap: Map<string, Descriptor>
 ): AccessibilityNode {
   const lines = yaml.split("\n");
 
@@ -141,9 +141,9 @@ function parseAriaYaml(
 
     const ref = `e${++refCounter.count}`;
 
-    // Build locator string for this node
-    const locatorStr = buildLocatorString(parsed.role, parsed.name);
-    refMap.set(ref, locatorStr);
+    // Build descriptor for this node
+    const descriptor = buildDescriptor(parsed.role, parsed.name);
+    refMap.set(ref, descriptor);
 
     const node: MutableAccessibilityNode = {
       ref,
@@ -198,27 +198,30 @@ function parseAriaYaml(
   if (!root) {
     // Return a synthetic root if parsing fails
     const ref = `e${++refCounter.count}`;
-    refMap.set(ref, 'locator("body")');
+    refMap.set(ref, { kind: "css", selector: "body" });
     return { ref, role: "document", name: "" };
   }
 
   return root as AccessibilityNode;
 }
 
-/**
- * Build a Playwright locator descriptor string from ARIA role/name.
- * These strings are stored in the refMap and interpreted by resolveRef().
- */
-function buildLocatorString(role: string, name: string): string {
-  // Roles that are typically text nodes — check before the generic name check
+/** Build a structured Descriptor from ARIA role/name. */
+function buildDescriptor(role: string, name: string): Descriptor {
   if (role === "text" || role === "StaticText") {
-    return `getByText:${name}`;
+    return { kind: "text", text: name };
   }
-  if (name) {
-    return `getByRole:${role}:${name}`;
-  }
-  return `getByRole:${role}:`;
+  return { kind: "role", role, name };
 }
+
+// ---------------------------------------------------------------------------
+// Structured element descriptor (replaces ad-hoc string encoding)
+// ---------------------------------------------------------------------------
+
+type Descriptor =
+  | { readonly kind: "role"; readonly role: string; readonly name: string }
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "css"; readonly selector: string }
+  | { readonly kind: "nth"; readonly inner: Descriptor; readonly index: number };
 
 // ---------------------------------------------------------------------------
 // PlaywrightBackend
@@ -253,7 +256,7 @@ export class PlaywrightBackend implements IBrowserContext {
   }
 
   // Ref management
-  private _refMap = new Map<string, string>();
+  private _refMap = new Map<string, Descriptor>();
   private _refCounter = { count: 0 };
 
   // Dialog handler
@@ -385,14 +388,6 @@ export class PlaywrightBackend implements IBrowserContext {
     return this._context;
   }
 
-  /**
-   * Resolve an ElementRef to a Playwright Locator.
-   * The refMap stores descriptor strings like:
-   *   "getByRole:button:Sign In"
-   *   "getByText:some text"
-   *   "css:.my-class"
-   *   "nth:getByRole:listitem::2"
-   */
   private resolveRef(ref: ElementRef): AnyLocator {
     const descriptor = this._refMap.get(ref);
     if (!descriptor) {
@@ -401,42 +396,20 @@ export class PlaywrightBackend implements IBrowserContext {
     return this.descriptorToLocator(descriptor);
   }
 
-  private descriptorToLocator(descriptor: string): AnyLocator {
+  private descriptorToLocator(descriptor: Descriptor): AnyLocator {
     const page = this.page;
-
-    if (descriptor.startsWith("getByRole:")) {
-      const rest = descriptor.slice("getByRole:".length);
-      const colonIdx = rest.indexOf(":");
-      const role = rest.slice(0, colonIdx);
-      const name = rest.slice(colonIdx + 1);
-      if (name) {
-        return page.getByRole(role, { name });
-      }
-      return page.getByRole(role);
+    switch (descriptor.kind) {
+      case "role":
+        return descriptor.name
+          ? page.getByRole(descriptor.role, { name: descriptor.name })
+          : page.getByRole(descriptor.role);
+      case "text":
+        return page.getByText(descriptor.text);
+      case "css":
+        return page.locator(descriptor.selector);
+      case "nth":
+        return this.descriptorToLocator(descriptor.inner).nth(descriptor.index);
     }
-
-    if (descriptor.startsWith("getByText:")) {
-      const text = descriptor.slice("getByText:".length);
-      return page.getByText(text);
-    }
-
-    if (descriptor.startsWith("css:")) {
-      const selector = descriptor.slice("css:".length);
-      return page.locator(selector);
-    }
-
-    if (descriptor.startsWith("nth:")) {
-      // Format: "nth:<inner-descriptor>:<index>"
-      // We need to split off the trailing ":<number>"
-      const withoutPrefix = descriptor.slice("nth:".length);
-      const lastColon = withoutPrefix.lastIndexOf(":");
-      const inner = withoutPrefix.slice(0, lastColon);
-      const idx = parseInt(withoutPrefix.slice(lastColon + 1), 10);
-      return this.descriptorToLocator(inner).nth(idx);
-    }
-
-    // Fallback: treat as CSS selector
-    return page.locator(descriptor);
   }
 
   // ---------------------------------------------------------------------------
@@ -582,7 +555,7 @@ export class PlaywrightBackend implements IBrowserContext {
     if (count === 0) return null;
 
     const ref = `e${++this._refCounter.count}`;
-    this._refMap.set(ref, `css:${selector}`);
+    this._refMap.set(ref, { kind: "css", selector });
     return ref;
   }
 
@@ -593,7 +566,7 @@ export class PlaywrightBackend implements IBrowserContext {
 
     for (let i = 0; i < count; i++) {
       const ref = `e${++this._refCounter.count}`;
-      this._refMap.set(ref, `nth:css:${selector}:${i}`);
+      this._refMap.set(ref, { kind: "nth", inner: { kind: "css", selector }, index: i });
       refs.push(ref);
     }
 
@@ -754,7 +727,7 @@ export class PlaywrightBackend implements IBrowserContext {
     await this.page.waitForSelector(selector, ...(timeout !== undefined ? [{ timeout }] : []));
 
     const ref = `e${++this._refCounter.count}`;
-    this._refMap.set(ref, `css:${selector}`);
+    this._refMap.set(ref, { kind: "css", selector });
     return ref;
   }
 

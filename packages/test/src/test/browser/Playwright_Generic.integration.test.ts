@@ -37,8 +37,5 @@ runIBrowserContextConformance({
     consoleMessages: false,
     ariaSnapshot: true,
   },
-  expectedFailures: [
-    // PlaywrightBackend.ts:419-426 — lastIndexOf(":") parser.
-    "aria.colonInName",
-  ],
+  expectedFailures: [],
 });
