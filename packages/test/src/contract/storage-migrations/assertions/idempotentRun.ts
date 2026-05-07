@@ -28,23 +28,34 @@ export function idempotentRunBlock<DB>(
         const runner = await handle.createRunner();
         const recorder = createMigrationCallRecorder();
         const component = `contract-idempotent-${Date.now()}`;
-        const migrations = [
+
+        // Build a fresh batch for each run so the assertion exercises the
+        // bookkeeping lookup, not migration-object identity. A runner that
+        // (incorrectly) cached "already applied" by object identity would
+        // pass with reused references but fail here.
+        const firstBatch = [
           handle.buildMigration(component, 1, recorder),
           handle.buildMigration(component, 2, recorder),
         ];
-
-        const firstApplied = await runner.run(migrations);
-        expect(firstApplied.length).toBe(2);
-        expect(recorder.calls.length).toBe(2);
+        const firstApplied = await runner.run(firstBatch);
+        expect(firstApplied.length, "first run applies all pending migrations").toBe(2);
+        expect(recorder.calls.length, "first run invokes up() for each pending migration").toBe(2);
 
         recorder.clear();
-        const secondApplied = await runner.run(migrations);
-        expect(secondApplied.length).toBe(0);
-        expect(recorder.calls.length).toBe(0);
+        const secondBatch = [
+          handle.buildMigration(component, 1, recorder),
+          handle.buildMigration(component, 2, recorder),
+        ];
+        const secondApplied = await runner.run(secondBatch);
+        expect(secondApplied.length, "second run skips already-applied migrations").toBe(0);
+        expect(recorder.calls.length, "second run invokes no up() callbacks").toBe(0);
 
         // Bookkeeping table still reports both versions.
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2]);
+        expect(
+          [...recordedVersions].sort((a, b) => a - b),
+          "appliedVersions persists across the no-op rerun"
+        ).toEqual([1, 2]);
       },
       opts.timeout
     );

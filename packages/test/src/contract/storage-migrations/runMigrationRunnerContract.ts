@@ -45,6 +45,7 @@ export type {
   BuildMigrationFn,
   BuildMigrationOptions,
   MigrationCallRecorder,
+  MigrationContractAssertion,
   MigrationContractHandle,
   MigrationRunnerContractOpts,
 } from "./types";

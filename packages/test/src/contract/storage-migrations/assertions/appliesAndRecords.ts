@@ -36,11 +36,20 @@ export function appliesAndRecordsBlock<DB>(
 
         const applied = await runner.run(migrations);
 
-        expect(applied.length).toBe(3);
-        expect(applied.map((m) => m.version)).toEqual([1, 2, 3]);
-        expect(recorder.calls.map((c) => c.version)).toEqual([1, 2, 3]);
+        expect(applied.length, "all three migrations are reported as applied").toBe(3);
+        expect(
+          applied.map((m) => m.version),
+          "applied[] is returned in (component, version) order"
+        ).toEqual([1, 2, 3]);
+        expect(
+          recorder.calls.map((c) => c.version),
+          "up() is invoked in (component, version) order"
+        ).toEqual([1, 2, 3]);
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+        expect(
+          [...recordedVersions].sort((a, b) => a - b),
+          "every applied version is recorded in the bookkeeping table"
+        ).toEqual([1, 2, 3]);
       },
       opts.timeout
     );
@@ -72,16 +81,28 @@ export function appliesAndRecordsBlock<DB>(
           [b, 1],
           [b, 2],
         ];
-        expect(applied.map((m) => [m.component, m.version])).toEqual(expected);
+        expect(
+          applied.map((m) => [m.component, m.version]),
+          "interleaved multi-component input is sorted (component asc, version asc) before applying"
+        ).toEqual(expected);
         // Recorder agrees with the runner loop order, not just `applied` —
         // catches a runner that returns the right `applied` array but
         // invokes `up()` in input order.
-        expect(recorder.calls.map((c) => [c.component, c.version])).toEqual(expected);
+        expect(
+          recorder.calls.map((c) => [c.component, c.version]),
+          "up() invocation order matches sorted (component, version)"
+        ).toEqual(expected);
 
         const aVersions = await runner.appliedVersions(a);
         const bVersions = await runner.appliedVersions(b);
-        expect([...aVersions].sort((x, y) => x - y)).toEqual([1, 2]);
-        expect([...bVersions].sort((x, y) => x - y)).toEqual([1, 2]);
+        expect(
+          [...aVersions].sort((x, y) => x - y),
+          "appliedVersions(a) reports both versions"
+        ).toEqual([1, 2]);
+        expect(
+          [...bVersions].sort((x, y) => x - y),
+          "appliedVersions(b) reports both versions"
+        ).toEqual([1, 2]);
       },
       opts.timeout
     );

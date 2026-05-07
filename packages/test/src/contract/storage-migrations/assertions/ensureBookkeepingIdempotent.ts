@@ -7,7 +7,11 @@
 import { describe, expect, it } from "vitest";
 
 import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
-import type { MigrationContractHandle, MigrationRunnerContractOpts } from "../types";
+import {
+  createMigrationCallRecorder,
+  type MigrationContractHandle,
+  type MigrationRunnerContractOpts,
+} from "../types";
 
 export function ensureBookkeepingIdempotentBlock<DB>(
   opts: MigrationRunnerContractOpts<DB>,
@@ -33,7 +37,40 @@ export function ensureBookkeepingIdempotentBlock<DB>(
         const runner = await getHandle().createRunner();
         await runner.ensureBookkeepingTable();
         const seen = await runner.appliedVersions(`never-touched-${Date.now()}`);
-        expect(seen.size).toBe(0);
+        expect(seen.size, "untouched component has no applied versions").toBe(0);
+      },
+      opts.timeout
+    );
+
+    itImpl(
+      "ensureBookkeepingTable does not contaminate sibling components",
+      async () => {
+        const handle = getHandle();
+        const runner = await handle.createRunner();
+        const recorder = createMigrationCallRecorder();
+        const suffix = Date.now();
+        const owner = `contract-bookkeeping-owner-${suffix}`;
+        const sibling = `contract-bookkeeping-sibling-${suffix}`;
+
+        // Seed `owner` with one applied migration.
+        await runner.run([handle.buildMigration(owner, 1, recorder)]);
+
+        // Re-running ensureBookkeepingTable on an already-initialised store
+        // must not drop, duplicate, or leak rows across components.
+        await runner.ensureBookkeepingTable();
+        await runner.ensureBookkeepingTable();
+
+        const ownerVersions = await runner.appliedVersions(owner);
+        expect(
+          [...ownerVersions].sort((a, b) => a - b),
+          "ensureBookkeepingTable preserves prior applied versions for the seeded component"
+        ).toEqual([1]);
+
+        const siblingVersions = await runner.appliedVersions(sibling);
+        expect(
+          siblingVersions.size,
+          "ensureBookkeepingTable does not leak rows into a sibling component"
+        ).toBe(0);
       },
       opts.timeout
     );

@@ -33,7 +33,7 @@ export function incrementalApplicationBlock<DB>(
           handle.buildMigration(component, 1, recorder),
           handle.buildMigration(component, 2, recorder),
         ]);
-        expect(recorder.calls.length).toBe(2);
+        expect(recorder.calls.length, "seed run applies v1 and v2").toBe(2);
 
         recorder.clear();
         const applied = await runner.run([
@@ -42,13 +42,16 @@ export function incrementalApplicationBlock<DB>(
           handle.buildMigration(component, 3, recorder),
         ]);
 
-        expect(applied.length).toBe(1);
-        expect(applied[0].version).toBe(3);
-        expect(recorder.calls.length).toBe(1);
-        expect(recorder.calls[0].version).toBe(3);
+        expect(applied.length, "only the newly-added version is applied").toBe(1);
+        expect(applied[0].version, "the applied version is v3").toBe(3);
+        expect(recorder.calls.length, "up() runs once for the incremental version").toBe(1);
+        expect(recorder.calls[0].version, "the up() that ran was v3").toBe(3);
 
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+        expect(
+          [...recordedVersions].sort((a, b) => a - b),
+          "all three versions are recorded after the incremental run"
+        ).toEqual([1, 2, 3]);
       },
       opts.timeout
     );
@@ -71,10 +74,19 @@ export function incrementalApplicationBlock<DB>(
           handle.buildMigration(component, 2, recorder),
         ]);
 
-        expect(applied.map((m) => m.version)).toEqual([1, 2, 10]);
-        expect(recorder.calls.map((c) => c.version)).toEqual([1, 2, 10]);
+        expect(
+          applied.map((m) => m.version),
+          "applied[] is sorted numerically across the 1↔10 boundary"
+        ).toEqual([1, 2, 10]);
+        expect(
+          recorder.calls.map((c) => c.version),
+          "up() invocation order is sorted numerically"
+        ).toEqual([1, 2, 10]);
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 10]);
+        expect(
+          [...recordedVersions].sort((a, b) => a - b),
+          "appliedVersions enumerates all three versions"
+        ).toEqual([1, 2, 10]);
       },
       opts.timeout
     );

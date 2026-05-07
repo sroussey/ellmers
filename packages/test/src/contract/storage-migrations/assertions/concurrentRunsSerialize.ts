@@ -49,9 +49,15 @@ export function concurrentRunsSerializeBlock<DB>(
         // appliedVersions, not via which call rejected.
         await Promise.allSettled([r1.run([migration]), r2.run([migration]), r3.run([migration])]);
 
-        expect(recorder.calls.filter((c) => c.component === component)).toHaveLength(1);
+        expect(
+          recorder.calls.filter((c) => c.component === component),
+          "exactly one of the three racing runners executed up()"
+        ).toHaveLength(1);
         const versions = await (await handle.createRunner()).appliedVersions(component);
-        expect([...versions].sort((a, b) => a - b)).toEqual([1]);
+        expect(
+          [...versions].sort((a, b) => a - b),
+          "appliedVersions converges on a single (component, version) row"
+        ).toEqual([1]);
       },
       opts.timeout
     );

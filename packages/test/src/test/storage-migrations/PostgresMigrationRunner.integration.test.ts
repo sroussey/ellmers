@@ -8,13 +8,11 @@ import { PGlite } from "@electric-sql/pglite";
 import { PostgresMigrationRunner } from "@workglow/postgres/storage";
 import type { Pool } from "@workglow/postgres/storage";
 import { setLogger } from "@workglow/util";
-import { afterAll, describe } from "vitest";
+import { describe } from "vitest";
 
 import { runMigrationRunnerContract } from "../../contract/storage-migrations/runMigrationRunnerContract";
 import type { BuildMigrationFn } from "../../contract/storage-migrations/runMigrationRunnerContract";
 import { getTestingLogger } from "../../binding/TestingLogger";
-
-const db = new PGlite() as unknown as Pool;
 
 const buildMigration: BuildMigrationFn<Pool> = (component, version, recorder, options) => ({
   component,
@@ -33,10 +31,9 @@ const buildMigration: BuildMigrationFn<Pool> = (component, version, recorder, op
 describe("PostgresMigrationRunner", () => {
   setLogger(getTestingLogger());
 
-  afterAll(async () => {
-    await (db as unknown as PGlite).close();
-  });
-
+  // Each contract suite invocation owns its own PGlite instance — matches
+  // the SQLite shim's "fresh DB per factory() call" pattern so the
+  // bookkeeping table starts empty and no state bleeds between describes.
   runMigrationRunnerContract<Pool>({
     name: "Postgres",
     timeout: 30_000,
@@ -45,17 +42,23 @@ describe("PostgresMigrationRunner", () => {
     // but their up() has already executed. Mark concurrent serialization
     // as expected failure until a JS-layer mutex is added.
     expectedFailures: ["concurrentRunsSerialize"],
-    factory: async () => ({
-      createRunner: async () => new PostgresMigrationRunner(db),
-      buildMigration,
-      probeExists: async (name: string) => {
-        const result = await db.query<{ exists: boolean }, [string]>(
-          `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`,
-          [name]
-        );
-        return result.rows[0]?.exists === true;
-      },
-      dispose: async () => {},
-    }),
+    factory: async () => {
+      const pglite = new PGlite();
+      const db = pglite as unknown as Pool;
+      return {
+        createRunner: async () => new PostgresMigrationRunner(db),
+        buildMigration,
+        probeExists: async (name: string) => {
+          const result = await db.query<{ exists: boolean }, [string]>(
+            `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1) AS exists`,
+            [name]
+          );
+          return result.rows[0]?.exists === true;
+        },
+        dispose: async () => {
+          await pglite.close();
+        },
+      };
+    },
   });
 });
