@@ -6,3 +6,6 @@
 
 export * from "./IMigration";
 export * from "./MigrationRunner";
+export * from "./TabularMigration";
+export * from "./TabularMigrationOrchestrator";
+export * from "./runBackfill";
