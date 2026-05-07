@@ -15,6 +15,7 @@ import { roundtripBlock } from "./assertions/roundtrip";
 import { abortBlock } from "./assertions/abort";
 import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
 import { notifyDisplayFastResolveBlock } from "./assertions/notifyDisplayFastResolve";
+import { multiTurnFollowUpBlock } from "./assertions/multiTurnFollowUp";
 
 export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
@@ -46,5 +47,6 @@ export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts
     abortBlock(opts, fixture, getHandle);
     concurrentIsolationBlock(opts, fixture, getHandle);
     notifyDisplayFastResolveBlock(opts, fixture, getHandle);
+    multiTurnFollowUpBlock(opts, fixture, getHandle);
   });
 }
