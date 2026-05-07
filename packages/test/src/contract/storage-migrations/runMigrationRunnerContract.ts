@@ -7,7 +7,9 @@
 import { afterAll, beforeAll, describe } from "vitest";
 
 import { appliesAndRecordsBlock } from "./assertions/appliesAndRecords";
+import { concurrentRunsSerializeBlock } from "./assertions/concurrentRunsSerialize";
 import { ensureBookkeepingIdempotentBlock } from "./assertions/ensureBookkeepingIdempotent";
+import { failedMigrationLeavesNoPartialSchemaBlock } from "./assertions/failedMigrationLeavesNoPartialSchema";
 import { failedMigrationNotRecordedBlock } from "./assertions/failedMigrationNotRecorded";
 import { idempotentRunBlock } from "./assertions/idempotentRun";
 import { incrementalApplicationBlock } from "./assertions/incrementalApplication";
@@ -34,6 +36,8 @@ export function runMigrationRunnerContract<DB>(opts: MigrationRunnerContractOpts
     idempotentRunBlock(opts, getHandle);
     incrementalApplicationBlock(opts, getHandle);
     failedMigrationNotRecordedBlock(opts, getHandle);
+    concurrentRunsSerializeBlock(opts, getHandle);
+    failedMigrationLeavesNoPartialSchemaBlock(opts, getHandle);
   });
 }
 
