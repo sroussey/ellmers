@@ -7,6 +7,7 @@
 import { afterAll, beforeAll, describe } from "vitest";
 
 import { hierarchyHonoringBlock } from "./assertions/hierarchyHonoring";
+import { resourceScopingBlock } from "./assertions/resourceScoping";
 import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
 import type {
   EntitlementProfileConformanceHandle,
@@ -35,5 +36,6 @@ export function runEntitlementProfileConformance(
     // invoked here as each one is added.
     surfaceCoverageBlock(opts, getHandle);
     hierarchyHonoringBlock(opts, getHandle);
+    resourceScopingBlock(opts, getHandle);
   });
 }
