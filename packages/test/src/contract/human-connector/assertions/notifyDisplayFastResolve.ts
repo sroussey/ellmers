@@ -49,17 +49,14 @@ function block(
     itFn(
       `${kind} resolves with action=accept, done=true, no script consumption`,
       async () => {
-        const { connector, script } = getHandle();
-        const beforeQueueLen = script.received.length;
+        const { connector } = getHandle();
+        // No script entry is pushed. A connector that requires a scripted
+        // response for this kind would block here and time out via opts.timeout.
         const ac = new AbortController();
         const res = await connector.send(buildReq(fixture, kind, `${kind}-1`), ac.signal);
         expect(res.action).toBe("accept");
         expect(res.done).toBe(true);
         expect(res.content).toBeUndefined();
-        // The connector should not have required a scripted entry. We assert
-        // received did not shrink (it may grow if the connector still records
-        // the request through the script handle).
-        expect(script.received.length).toBeGreaterThanOrEqual(beforeQueueLen);
       },
       opts.timeout
     );

@@ -66,7 +66,9 @@ export function roundtripBlock(
         script.push({ requestId: "x", action: "decline", content: undefined, done: true });
         const ac = new AbortController();
         const res = await connector.send(elicitReq(fixture, "rt-dec-1"), ac.signal);
+        expect(res.requestId).toBe("rt-dec-1");
         expect(res.action).toBe("decline");
+        expect(res.done).toBe(true);
         expect(res.content).toBeUndefined();
       },
       opts.timeout
@@ -79,7 +81,9 @@ export function roundtripBlock(
         script.push({ requestId: "x", action: "cancel", content: undefined, done: true });
         const ac = new AbortController();
         const res = await connector.send(elicitReq(fixture, "rt-can-1"), ac.signal);
+        expect(res.requestId).toBe("rt-can-1");
         expect(res.action).toBe("cancel");
+        expect(res.done).toBe(true);
         expect(res.content).toBeUndefined();
       },
       opts.timeout
