@@ -210,13 +210,25 @@ export class ConformanceMockContext implements IBrowserContext {
   }
   async attribute(ref: ElementRef, name: string): Promise<string | null> {
     if (name === "data-clicked") {
+      // sentinel refs are formatted as "sentinel-<tabId>"
+      if (ref.startsWith("sentinel-")) {
+        const tabId = ref.slice("sentinel-".length);
+        const page = this.pages.find((p) => p.tabId === tabId);
+        return page ? page.sentinelClicked : null;
+      }
       const entry = this.refMap.get(ref);
       const page = entry && this.pages.find((p) => p.tabId === entry.tabId);
       return page ? page.sentinelClicked : null;
     }
     return null;
   }
-  async querySelector(_selector: string): Promise<ElementRef | null> {
+  async querySelector(selector: string): Promise<ElementRef | null> {
+    if (selector === "#sentinel") {
+      // Return a stable sentinel ref scoped to the active tab so that
+      // attribute() can resolve the page's sentinelClicked value.
+      const page = this.active();
+      return `sentinel-${page.tabId}` as ElementRef;
+    }
     return null;
   }
   async querySelectorAll(_selector: string): Promise<readonly ElementRef[]> {

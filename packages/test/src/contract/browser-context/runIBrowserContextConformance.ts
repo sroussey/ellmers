@@ -6,6 +6,7 @@
 
 import { describe } from "vitest";
 
+import { ariaRoundTripBlock } from "./assertions/ariaRoundTrip";
 import { capabilityHonestyBlock } from "./assertions/capabilityHonesty";
 import { tabsLifecycleBlock } from "./assertions/tabsLifecycle";
 import { resolveFixture } from "./fixtures";
@@ -17,7 +18,7 @@ export function runIBrowserContextConformance(opts: IBrowserContextConformanceOp
 
     capabilityHonestyBlock(opts, fixture);
     tabsLifecycleBlock(opts, fixture);
-    // ariaRoundTripBlock, networkIntrospectionBlock
-    // are wired in subsequent tasks.
+    ariaRoundTripBlock(opts, fixture);
+    // networkIntrospectionBlock is wired in a subsequent task.
   });
 }
