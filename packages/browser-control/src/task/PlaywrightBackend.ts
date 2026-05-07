@@ -240,6 +240,18 @@ export class PlaywrightBackend implements IBrowserContext {
   /** True when this backend launched Chromium locally (owns full process tree). */
   private _launchedLocalChromium = false;
 
+  // Stable per-page tab ids. Surviving across concurrent close.
+  private _pageIds: WeakMap<AnyPage, string> = new WeakMap();
+  private _pageIdSeq = 0;
+  private idForPage(page: AnyPage): string {
+    let id = this._pageIds.get(page);
+    if (!id) {
+      id = `t${++this._pageIdSeq}`;
+      this._pageIds.set(page, id);
+    }
+    return id;
+  }
+
   // Ref management
   private _refMap = new Map<string, string>();
   private _refCounter = { count: 0 };
@@ -683,8 +695,8 @@ export class PlaywrightBackend implements IBrowserContext {
   async tabs(): Promise<readonly TabInfo[]> {
     const pages: AnyPage[] = this.context.pages();
     return Promise.all(
-      pages.map(async (p: AnyPage, idx: number) => ({
-        tabId: String(idx),
+      pages.map(async (p: AnyPage) => ({
+        tabId: this.idForPage(p),
         url: p.url(),
         title: await p.title(),
       }))
@@ -693,12 +705,12 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async switchTab(tabId: string): Promise<void> {
     const pages: AnyPage[] = this.context.pages();
-    const idx = parseInt(tabId, 10);
-    if (isNaN(idx) || idx < 0 || idx >= pages.length) {
+    const target = pages.find((p) => this._pageIds.get(p) === tabId);
+    if (!target) {
       throw new Error(`PlaywrightBackend: no tab with id "${tabId}"`);
     }
-    this._page = pages[idx];
-    await this._page.bringToFront();
+    this._page = target;
+    await target.bringToFront();
   }
 
   async newTab(url?: string): Promise<TabInfo> {
@@ -706,11 +718,8 @@ export class PlaywrightBackend implements IBrowserContext {
     if (url) {
       await newPage.goto(url, { waitUntil: "load" });
     }
-    const pages: AnyPage[] = this.context.pages();
-    const idx = pages.indexOf(newPage);
-    const tabId = String(idx >= 0 ? idx : pages.length - 1);
     return {
-      tabId,
+      tabId: this.idForPage(newPage),
       url: newPage.url(),
       title: await newPage.title(),
     };
@@ -718,11 +727,10 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async closeTab(tabId: string): Promise<void> {
     const pages: AnyPage[] = this.context.pages();
-    const idx = parseInt(tabId, 10);
-    if (isNaN(idx) || idx < 0 || idx >= pages.length) {
+    const target = pages.find((p) => this._pageIds.get(p) === tabId);
+    if (!target) {
       throw new Error(`PlaywrightBackend: no tab with id "${tabId}"`);
     }
-    const target = pages[idx];
     await target.close();
 
     // If we closed the active page, switch to the last remaining page

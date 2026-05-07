@@ -38,8 +38,6 @@ runIBrowserContextConformance({
     ariaSnapshot: true,
   },
   expectedFailures: [
-    // PlaywrightBackend.ts:686-736 — array-index tabId race.
-    "tabs.concurrentCloseStable",
     // PlaywrightBackend.ts:419-426 — lastIndexOf(":") parser.
     "aria.colonInName",
   ],
