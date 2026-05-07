@@ -17,6 +17,10 @@ export function runIBrowserContextConformance(opts: IBrowserContextConformanceOp
   describe.skipIf(opts.skip)(`IBrowserContext conformance: ${opts.name}`, () => {
     const fixture = resolveFixture(opts.fixture);
 
+    // Each block creates its own context via opts.factory() in beforeAll —
+    // a fresh handle per block so block N's tab churn / navigation can't
+    // taint block N+1. This is intentional even though it means real-browser
+    // shims pay one launch cost per block.
     capabilityHonestyBlock(opts, fixture);
     tabsLifecycleBlock(opts, fixture);
     ariaRoundTripBlock(opts, fixture);

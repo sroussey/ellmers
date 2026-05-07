@@ -6,6 +6,9 @@
 
 import type { BrowserContextFixture } from "./types";
 
+// Empty-name buttons are excluded — clickByRole(role, name) requires a
+// non-empty accessible name on every adapter, and an empty aria-label is
+// invalid per ARIA spec. Use "a" (single char) as the lower-bound stress.
 const ARIA_EDGE_CASE_NAMES: ReadonlyArray<string> = [
   "Sign in", // baseline ASCII
   "foo:bar", // colon mid-name
