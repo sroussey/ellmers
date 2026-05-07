@@ -12,6 +12,7 @@ import type {
   HumanConnectorConformanceOpts,
 } from "./types";
 import { roundtripBlock } from "./assertions/roundtrip";
+import { abortBlock } from "./assertions/abort";
 
 export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
@@ -40,5 +41,6 @@ export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts
     const fixture = resolveHumanConformanceFixture(opts.fixture);
 
     roundtripBlock(opts, fixture, getHandle);
+    abortBlock(opts, fixture, getHandle);
   });
 }
