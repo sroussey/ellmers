@@ -18,7 +18,6 @@ import type {
   ElementRef,
   IBrowserContext,
   NavigateOptions,
-  NetworkFilter,
   NetworkRequest,
   ScreenshotOptions,
   SnapshotOptions,
