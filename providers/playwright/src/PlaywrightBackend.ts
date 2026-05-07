@@ -21,7 +21,7 @@ import type {
   SnapshotOptions,
   TabInfo,
   WaitOptions,
-} from "./IBrowserContext";
+} from "@workglow/browser-control/task";
 
 // ---------------------------------------------------------------------------
 // Playwright types (not imported at module level — lazy optional dependency)
@@ -42,8 +42,7 @@ type AnyBrowser = any;
 
 let playwrightModule: typeof import("playwright");
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getPlaywright(): Promise<Record<string, any>> {
+async function getPlaywright(): Promise<typeof import("playwright")> {
   if (!playwrightModule) {
     playwrightModule = await import("playwright");
   }

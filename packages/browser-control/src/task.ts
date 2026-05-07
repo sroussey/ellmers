@@ -6,5 +6,3 @@
 
 export * from "./task/index";
 export * from "./task/BrowserTaskDeps";
-export * from "./task/ElectronBackend";
-export * from "./task/PlaywrightBackend";

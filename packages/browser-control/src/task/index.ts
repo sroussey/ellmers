@@ -5,7 +5,6 @@
  */
 
 export * from "./BrowserSessionRegistry";
-export * from "./BunWebViewBackend";
 export * from "./CDPBrowserBackend";
 export * from "./IBrowserContext";
 export * from "./tasks";

@@ -29,9 +29,9 @@
   ],
   "exports": {
     ".": {
-      "bun": "./src/lib.ts",
-      "types": "./src/lib.ts",
-      "import": "./src/lib.ts"
+      "bun": "./dist/lib.js",
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
     }
   },
   "dependencies": {
@@ -44,9 +44,11 @@
     "@workglow/node-llama-cpp": "workspace:*",
     "@workglow/ollama": "workspace:*",
     "@workglow/openai": "workspace:*",
+    "@workglow/playwright": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/browser-control": "workspace:*",
+    "@workglow/bun-webview": "workspace:*",
     "@workglow/mcp": "workspace:*",
     "@workglow/tasks": "workspace:*",
     "@workglow/util": "workspace:*",

@@ -57,6 +57,7 @@
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-genai": "^0.10.27",
     "@anthropic-ai/sdk": "^0.95.1",
+    "electron": "^33.0.0",
     "@google/generative-ai": "^0.24.1",
     "node-llama-cpp": "^3.18.1",
     "@huggingface/inference": "^4.13.15",

@@ -1,38 +1,41 @@
 {
-  "name": "@workglow/browser-control",
+  "name": "@workglow/electron",
   "type": "module",
+  "sideEffects": false,
   "version": "0.2.31",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
-    "directory": "packages/browser-control"
+    "directory": "providers/electron"
   },
-  "description": "Browser-control tasks for Workglow (CDP base + IBrowserContext abstraction). Backends ship as separate provider packages: @workglow/playwright, @workglow/electron, @workglow/bun-webview.",
+  "description": "Electron native-webContents browser backend for @workglow/browser-control.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "bun run watch-task",
-    "watch-task": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build-package": "bun run build-js && bun run build-types",
-    "build-js": "bun run build-task",
-    "build-task": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/task.ts",
+    "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",
+    "build-js": "bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "exports": {
-    "./task": {
-      "types": "./dist/task.d.ts",
-      "import": "./dist/task.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
+  "dependencies": {
+    "electron": "catalog:"
+  },
   "peerDependencies": {
-    "@workglow/task-graph": "workspace:*",
+    "@workglow/browser-control": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@workglow/task-graph": {
+    "@workglow/browser-control": {
       "optional": false
     },
     "@workglow/util": {
@@ -40,7 +43,7 @@
     }
   },
   "devDependencies": {
-    "@workglow/task-graph": "workspace:*",
+    "@workglow/browser-control": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "files": [

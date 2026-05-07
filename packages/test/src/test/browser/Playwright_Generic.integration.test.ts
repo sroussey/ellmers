@@ -19,7 +19,7 @@ runIBrowserContextConformance({
   skip: !playwrightAvailable,
   timeout: 60_000,
   factory: async () => {
-    const { PlaywrightBackend } = await import("@workglow/browser-control/task");
+    const { PlaywrightBackend } = await import("@workglow/playwright");
     return {
       create: async () => {
         const ctx = new PlaywrightBackend();

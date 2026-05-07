@@ -13,7 +13,7 @@ runIBrowserContextConformance({
   skip: !RUN_ELECTRON,
   timeout: 60_000,
   factory: async () => {
-    const { ElectronBackend } = await import("@workglow/browser-control/task");
+    const { ElectronBackend } = await import("@workglow/electron");
     return {
       create: async () => {
         const ctx = new ElectronBackend();

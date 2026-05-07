@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { PlaywrightBackend } from "@workglow/browser-control/task";
+import { PlaywrightBackend } from "@workglow/playwright";
 import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe } from "vitest";
 import { runGenericBrowserTaskTests } from "./genericBrowserTaskTests";

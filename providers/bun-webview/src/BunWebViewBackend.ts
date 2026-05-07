@@ -5,7 +5,7 @@
  */
 
 import { sleep } from "@workglow/util";
-import { CDPBrowserBackend } from "./CDPBrowserBackend";
+import { CDPBrowserBackend } from "@workglow/browser-control/task";
 import type {
   BrowserConnectOptions,
   DialogAction,
@@ -18,7 +18,7 @@ import type {
   ScreenshotOptions,
   TabInfo,
   WaitOptions,
-} from "./IBrowserContext";
+} from "@workglow/browser-control/task";
 
 // ---------------------------------------------------------------------------
 // Bun.WebView type (not imported — accessed via globalThis at runtime)

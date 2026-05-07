@@ -15,7 +15,7 @@ runIBrowserContextConformance({
   skip: !bunWebViewAvailable,
   timeout: 60_000,
   factory: async () => {
-    const { BunWebViewBackend } = await import("@workglow/browser-control/task");
+    const { BunWebViewBackend } = await import("@workglow/bun-webview");
     return {
       create: async () => {
         const ctx = new BunWebViewBackend();
