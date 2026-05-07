@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  ConformanceFixture,
-  ConformanceHandle,
-} from "../ai-provider/types";
+import type { ConformanceFixture, ConformanceHandle } from "../ai-provider/types";
 
 export interface WorkerProxyBoundaryOpts {
   readonly name: string;

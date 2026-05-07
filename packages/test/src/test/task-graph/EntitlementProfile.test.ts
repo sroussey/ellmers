@@ -80,9 +80,12 @@ describe("createPolicyProfile", () => {
   it("builds a profile whose surface() reflects the policy grants", () => {
     const profile = createPolicyProfile("test", policy);
     expect(profile.name).toBe("test");
-    expect(profile.surface().map((g) => g.id).sort()).toEqual(
-      [Entitlements.AI, Entitlements.NETWORK_HTTP].sort()
-    );
+    expect(
+      profile
+        .surface()
+        .map((g) => g.id)
+        .sort()
+    ).toEqual([Entitlements.AI, Entitlements.NETWORK_HTTP].sort());
   });
 
   it("requestEntitlement returns granted for covered, denied for uncovered", async () => {

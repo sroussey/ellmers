@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
+import { itExpectFail } from "../../itExpectFail";
 import {
   createMigrationCallRecorder,
   type MigrationContractHandle,

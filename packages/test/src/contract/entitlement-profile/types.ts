@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  EntitlementId,
-  EntitlementSignal,
-  IEntitlementProfile,
-} from "@workglow/task-graph";
+import type { EntitlementId, EntitlementSignal, IEntitlementProfile } from "@workglow/task-graph";
 
 export interface EntitlementProfileConformanceOpts {
   readonly name: string;

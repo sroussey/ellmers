@@ -22,9 +22,7 @@ import type {
   EntitlementProfileConformanceOpts,
 } from "./types";
 
-export function runEntitlementProfileConformance(
-  opts: EntitlementProfileConformanceOpts
-): void {
+export function runEntitlementProfileConformance(opts: EntitlementProfileConformanceOpts): void {
   describe.skipIf(opts.skip)(`EntitlementProfile conformance: ${opts.name}`, () => {
     let handle: EntitlementProfileConformanceHandle | undefined;
     const getHandle = (): EntitlementProfileConformanceHandle => {

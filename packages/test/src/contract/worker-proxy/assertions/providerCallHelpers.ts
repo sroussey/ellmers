@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  getAiProviderRegistry,
-  getGlobalModelRepository,
-  textGeneration,
-} from "@workglow/ai";
+import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
 
 export interface CallOpts {
   readonly maxTokens: number;

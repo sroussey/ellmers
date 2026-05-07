@@ -30,10 +30,7 @@ interface BackfillCapableStorage {
  * must be prepared to handle that — `ensureIndexedDbTable` already does, by
  * deleting and recreating the empty DB before bumping its version.
  */
-export async function idbObjectStoreExists(
-  dbName: string,
-  storeName: string
-): Promise<boolean> {
+export async function idbObjectStoreExists(dbName: string, storeName: string): Promise<boolean> {
   const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
   if (!idb) throw new Error("indexedDB is not available in this environment");
   return new Promise<boolean>((resolve, reject) => {
