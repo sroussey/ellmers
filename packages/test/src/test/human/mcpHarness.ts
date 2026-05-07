@@ -128,9 +128,12 @@ export async function createPairedMcpHarness(): Promise<PairedMcpHarness> {
     };
     script.recordReceived(synthetic);
     const res = await script.takeNext(synthetic);
+    // Zod v4 (used by the MCP SDK's ElicitResultSchema) requires the `content` key to be
+    // explicitly present (even as undefined) for the schema to parse successfully. Omitting
+    // the key entirely triggers "expected nonoptional, received undefined" for decline/cancel.
     return {
       action: res.action,
-      ...(res.action === "accept" && res.content ? { content: res.content } : {}),
+      content: res.action === "accept" ? res.content : undefined,
     };
   });
 
