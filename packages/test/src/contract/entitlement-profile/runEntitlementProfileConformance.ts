@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe } from "vitest";
 
+import { hierarchyHonoringBlock } from "./assertions/hierarchyHonoring";
 import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
 import type {
   EntitlementProfileConformanceHandle,
@@ -33,5 +34,6 @@ export function runEntitlementProfileConformance(
     // Assertion blocks are wired up in Phase 3 tasks. They are imported and
     // invoked here as each one is added.
     surfaceCoverageBlock(opts, getHandle);
+    hierarchyHonoringBlock(opts, getHandle);
   });
 }
