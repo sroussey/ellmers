@@ -149,13 +149,21 @@ export abstract class SqlTabularMigrationApplier implements ITabularMigrationApp
 
   /**
    * Renders a JS literal as SQL. Strings are quoted with `'` doubling;
-   * numbers / booleans / null are rendered raw. Objects throw — defaults
-   * must be primitives.
+   * numbers / booleans / null are rendered raw. NaN / ±Infinity throw
+   * rather than silently splicing as `"NaN"` / `"Infinity"` (neither is
+   * valid SQL). Objects throw — defaults must be finite primitives.
    */
   protected literalSql(value: unknown): string {
     if (value === null) return "NULL";
     if (typeof value === "string") return `'${value.replace(/'/g, "''")}'`;
-    if (typeof value === "number") return String(value);
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) {
+        throw new Error(
+          `Unsupported numeric default for tabular migration: ${value} (must be finite)`
+        );
+      }
+      return String(value);
+    }
     if (typeof value === "boolean") {
       return this.dialectName() === "sqlite" ? (value ? "1" : "0") : value ? "TRUE" : "FALSE";
     }

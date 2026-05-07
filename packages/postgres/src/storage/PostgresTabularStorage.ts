@@ -592,16 +592,19 @@ export class PostgresTabularStorage<
           ? "vector_ip_ops"
           : "vector_cosine_ops";
 
+    const tableId = PostgresDialect.quoteId(this.table);
+
     if (opts.ivfflat) {
       // IVFFlat path — explicit `lists` is required.
       const { lists } = opts.ivfflat;
       for (const { column } of vectorColumns) {
-        const indexName = `${this.table}_${column}_ivfflat_idx`;
+        const indexId = PostgresDialect.quoteId(`${this.table}_${column}_ivfflat_idx`);
+        const columnId = PostgresDialect.quoteId(column);
         try {
           await this.db.query(`
-            CREATE INDEX IF NOT EXISTS "${indexName}"
-            ON "${this.table}"
-            USING ivfflat ("${column}" ${opClass})
+            CREATE INDEX IF NOT EXISTS ${indexId}
+            ON ${tableId}
+            USING ivfflat (${columnId} ${opClass})
             WITH (lists = ${lists})
           `);
         } catch (error) {
@@ -622,12 +625,13 @@ export class PostgresTabularStorage<
     const withClause = buildParams.length > 0 ? ` WITH (${buildParams.join(", ")})` : "";
 
     for (const { column } of vectorColumns) {
-      const indexName = `${this.table}_${column}_hnsw_idx`;
+      const indexId = PostgresDialect.quoteId(`${this.table}_${column}_hnsw_idx`);
+      const columnId = PostgresDialect.quoteId(column);
       try {
         await this.db.query(`
-          CREATE INDEX IF NOT EXISTS "${indexName}"
-          ON "${this.table}"
-          USING hnsw ("${column}" ${opClass})${withClause}
+          CREATE INDEX IF NOT EXISTS ${indexId}
+          ON ${tableId}
+          USING hnsw (${columnId} ${opClass})${withClause}
         `);
       } catch (error) {
         console.warn(`Failed to create HNSW index on ${column}:`, error);
