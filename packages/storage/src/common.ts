@@ -19,7 +19,12 @@ export type {
 // payload shape and version constant are implementation details —
 // keep them out of `@workglow/storage`'s public API so callers can't
 // depend on the encoding format and we stay free to evolve it.
-export { encodeCursor, decodeCursor, assertCursorMatches, MAX_CURSOR_LENGTH } from "./tabular/Cursor";
+export {
+  encodeCursor,
+  decodeCursor,
+  assertCursorMatches,
+  MAX_CURSOR_LENGTH,
+} from "./tabular/Cursor";
 export type { PageCursor } from "./tabular/Cursor";
 export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularStorage";

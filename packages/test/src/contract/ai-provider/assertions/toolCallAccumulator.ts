@@ -45,8 +45,7 @@ export function toolCallAccumulatorBlock(
         expect(call.input).toBeDefined();
 
         // Final args, when serialized, must round-trip through parsePartialJson.
-        const serialized =
-          typeof call.input === "string" ? call.input : JSON.stringify(call.input);
+        const serialized = typeof call.input === "string" ? call.input : JSON.stringify(call.input);
         const parsed = parsePartialJson(serialized);
         expect(parsed).toBeDefined();
       },

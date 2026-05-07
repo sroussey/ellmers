@@ -262,9 +262,7 @@ describe("ScopedTabularStorage", () => {
 
       // Hand A's cursor to B. The fix decodes the cursor, sees kb_id="kb-a",
       // compares to this.kbId="kb-b", throws.
-      await expect(
-        scopeB.getPage({ limit: 1, cursor: aPage.nextCursor })
-      ).rejects.toThrow(/kb_id/);
+      await expect(scopeB.getPage({ limit: 1, cursor: aPage.nextCursor })).rejects.toThrow(/kb_id/);
     });
   });
 });

@@ -337,10 +337,7 @@ export interface ITabularStorage<
    * @param criteria - Object with column names as keys and values or SearchConditions
    * @param request - Optional ordering, limit, and cursor.
    */
-  queryPage(
-    criteria: SearchCriteria<Entity>,
-    request?: PageRequest<Entity>
-  ): Promise<Page<Entity>>;
+  queryPage(criteria: SearchCriteria<Entity>, request?: PageRequest<Entity>): Promise<Page<Entity>>;
 
   /**
    * Async generator that yields records one at a time.

@@ -84,9 +84,7 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
       events.push(ev);
     }
 
-    const deltas = events
-      .filter((e) => e.type === "text-delta")
-      .map((e) => (e as any).textDelta);
+    const deltas = events.filter((e) => e.type === "text-delta").map((e) => (e as any).textDelta);
     expect(deltas).toEqual(["hello", " world"]);
     expect(events[events.length - 1]).toEqual({ type: "finish", data: {} });
     expect(fakeStream.abort).not.toHaveBeenCalled();

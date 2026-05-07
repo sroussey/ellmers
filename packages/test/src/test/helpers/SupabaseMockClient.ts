@@ -137,7 +137,9 @@ function translatePostgrestFilter(filter: string): string {
     const col = atom.slice(0, firstDot);
     const op = atom.slice(firstDot + 1, secondDot);
     const valueRaw = atom.slice(secondDot + 1);
-    const sqlOp = ({ eq: "=", gt: ">", lt: "<", gte: ">=", lte: "<=" } as Record<string, string>)[op];
+    const sqlOp = ({ eq: "=", gt: ">", lt: "<", gte: ">=", lte: "<=" } as Record<string, string>)[
+      op
+    ];
     if (!sqlOp) throw new Error(`Unsupported PostgREST op in mock: ${op}`);
     let sqlValue: string;
     if (valueRaw.startsWith('"') && valueRaw.endsWith('"')) {
@@ -587,10 +589,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           return queryBuilder;
         },
 
-        order: (
-          column: string,
-          options?: { ascending?: boolean; nullsFirst?: boolean }
-        ) => {
+        order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => {
           queryBuilder._order.push({
             column,
             ascending: options?.ascending ?? true,
@@ -742,11 +741,7 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
             const orderParts = queryBuilder._order.map((o) => {
               const dir = o.ascending ? "ASC" : "DESC";
               const nulls =
-                o.nullsFirst === undefined
-                  ? ""
-                  : o.nullsFirst
-                    ? " NULLS FIRST"
-                    : " NULLS LAST";
+                o.nullsFirst === undefined ? "" : o.nullsFirst ? " NULLS FIRST" : " NULLS LAST";
               return `"${o.column}" ${dir}${nulls}`;
             });
             query += ` ORDER BY ${orderParts.join(", ")}`;
