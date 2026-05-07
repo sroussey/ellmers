@@ -46,7 +46,4 @@ export function runTabularMigrationContract(opts: TabularMigrationContractOpts):
   });
 }
 
-export type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "./types";
+export type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "./types";

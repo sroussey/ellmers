@@ -35,12 +35,7 @@ runAiProviderConformance({
         model_id: MODEL_ID,
         title: "Llama 3.1 8B Instruct (HF Inference)",
         description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
-        tasks: [
-          "TextGenerationTask",
-          "TextRewriterTask",
-          "TextSummaryTask",
-          "ToolCallingTask",
-        ],
+        tasks: ["TextGenerationTask", "TextRewriterTask", "TextSummaryTask", "ToolCallingTask"],
         provider: HF_INFERENCE as typeof HF_INFERENCE,
         provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
         metadata: {},

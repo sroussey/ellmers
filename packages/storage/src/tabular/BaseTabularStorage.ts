@@ -646,15 +646,8 @@ export abstract class BaseTabularStorage<
       const leading = effectiveOrderBy[0];
       const leadingCol = leading.column;
       const leadingCursor = cursorPayload.c[0];
-      const userTouchesLeading = Object.prototype.hasOwnProperty.call(
-        userCriteria,
-        leadingCol
-      );
-      if (
-        leading.direction === "ASC" &&
-        leadingCursor !== null &&
-        !userTouchesLeading
-      ) {
+      const userTouchesLeading = Object.prototype.hasOwnProperty.call(userCriteria, leadingCol);
+      if (leading.direction === "ASC" && leadingCursor !== null && !userTouchesLeading) {
         const leadingCondition: SearchCondition<Entity[keyof Entity]> = {
           value: leadingCursor as Entity[keyof Entity],
           operator: ">=",
@@ -693,8 +686,7 @@ export abstract class BaseTabularStorage<
         // and filter in memory ourselves. User-supplied criteria still
         // need to fail loudly, so we only swallow the error when we'd
         // added our own pushdown criterion AND the user passed none.
-        const userHadNoCriteria =
-          !criteria || Object.keys(criteria).length === 0;
+        const userHadNoCriteria = !criteria || Object.keys(criteria).length === 0;
         if (err instanceof StorageUnsupportedError && userHadNoCriteria) {
           rows = await this.getAll({ orderBy: effectiveOrderBy });
           forcedFallback = true;
@@ -753,10 +745,7 @@ export abstract class BaseTabularStorage<
    * Sorts rows in place by the given order spec, using the same null-first
    * comparison rules as the cursor filter so results are consistent.
    */
-  protected sortInMemory(
-    rows: Entity[],
-    orderBy: ReadonlyArray<OrderBy<Entity>>
-  ): Entity[] {
+  protected sortInMemory(rows: Entity[], orderBy: ReadonlyArray<OrderBy<Entity>>): Entity[] {
     rows.sort((a, b) => {
       for (const { column, direction } of orderBy) {
         // `compareKeyValues` runs each side through `toCursorValue`, so
@@ -805,14 +794,9 @@ export abstract class BaseTabularStorage<
    * Computing that ordering is the caller's responsibility because they
    * already have it in hand and we don't want to recompute it here.
    */
-  protected buildCursor(
-    row: Entity,
-    effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>
-  ): PageCursor {
+  protected buildCursor(row: Entity, effectiveOrderBy: ReadonlyArray<OrderBy<Entity>>): PageCursor {
     const n = effectiveOrderBy.map((spec) => String(spec.column));
-    const d = effectiveOrderBy.map(
-      (spec): "a" | "d" => (spec.direction === "ASC" ? "a" : "d")
-    );
+    const d = effectiveOrderBy.map((spec): "a" | "d" => (spec.direction === "ASC" ? "a" : "d"));
     const c = effectiveOrderBy.map((spec) => toCursorValue(row[spec.column]));
     return encodeCursor({ v: 1, n, d, c });
   }
@@ -922,9 +906,7 @@ export abstract class BaseTabularStorage<
    * trigger a backend SQL error or, worse, allow SQL injection on backends
    * that emit unquoted identifiers.
    */
-  protected validateOrderBy(
-    orderBy: ReadonlyArray<OrderBy<Entity>> | undefined
-  ): void {
+  protected validateOrderBy(orderBy: ReadonlyArray<OrderBy<Entity>> | undefined): void {
     if (!orderBy) return;
     const validDirections = ["ASC", "DESC"];
     for (const { column, direction } of orderBy) {
@@ -1181,9 +1163,7 @@ export abstract class BaseTabularStorage<
    * backend-supplied applier. Idempotent (no-op when no migrations are
    * declared, or when all are already applied).
    */
-  protected async applyTabularMigrations(
-    options?: RunTabularMigrationsOptions
-  ): Promise<void> {
+  protected async applyTabularMigrations(options?: RunTabularMigrationsOptions): Promise<void> {
     if (!this.tabularMigrations || this.tabularMigrations.length === 0) return;
     const applier = this.getMigrationApplier();
     if (!applier) {
@@ -1191,12 +1171,7 @@ export abstract class BaseTabularStorage<
         `${this.constructor.name} declared migrations but has no migration applier wired up.`
       );
     }
-    await runTabularMigrations(
-      applier,
-      this.migrationComponent,
-      this.tabularMigrations,
-      options
-    );
+    await runTabularMigrations(applier, this.migrationComponent, this.tabularMigrations, options);
   }
 
   /**

@@ -113,10 +113,7 @@ export abstract class SqlTabularMigrationApplier implements ITabularMigrationApp
         return;
       }
       case "dropColumn": {
-        await this.executeSqlTx(
-          buildDropColumnSql(this.dialectName(), this.table(), op.name),
-          tx
-        );
+        await this.executeSqlTx(buildDropColumnSql(this.dialectName(), this.table(), op.name), tx);
         return;
       }
       case "renameColumn": {

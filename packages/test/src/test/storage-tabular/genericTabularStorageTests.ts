@@ -1589,10 +1589,7 @@ export function runGenericTabularStorageTests(
         const seen: string[] = [];
         let cursor: PageCursor | undefined;
         do {
-          const page = await repository.queryPage(
-            { category: "even" },
-            { limit: 2, cursor }
-          );
+          const page = await repository.queryPage({ category: "even" }, { limit: 2, cursor });
           for (const row of page.items) seen.push(row.id);
           cursor = page.nextCursor;
         } while (cursor);

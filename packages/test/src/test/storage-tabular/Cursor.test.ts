@@ -109,9 +109,7 @@ describe("Cursor codec", () => {
       .replace(/\//g, "_")
       .replace(/=+$/, "");
     expect(() => decodeCursor(future)).toThrow(StorageValidationError);
-    expect(() => decodeCursor(future)).toThrow(
-      new RegExp(`expected v${CURSOR_FORMAT_VERSION}`)
-    );
+    expect(() => decodeCursor(future)).toThrow(new RegExp(`expected v${CURSOR_FORMAT_VERSION}`));
   });
 
   it("rejects payloads whose n, d, c arrays disagree in length", () => {
@@ -128,10 +126,7 @@ describe("Cursor codec", () => {
   });
 
   it("rejects payloads whose direction array contains an unknown value", () => {
-    const bad = Buffer.from(
-      JSON.stringify({ v: 1, n: ["a"], d: ["x"], c: ["v"] }),
-      "utf8"
-    )
+    const bad = Buffer.from(JSON.stringify({ v: 1, n: ["a"], d: ["x"], c: ["v"] }), "utf8")
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")

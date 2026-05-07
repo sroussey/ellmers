@@ -88,12 +88,7 @@ describe("PostgresTabularStorage", () => {
       const storage = new PostgresTabularStorage<
         typeof CompoundSchema,
         typeof CompoundPrimaryKeyNames
-      >(
-        db,
-        `tx_test_${uuid4().replace(/-/g, "_")}`,
-        CompoundSchema,
-        CompoundPrimaryKeyNames
-      );
+      >(db, `tx_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
       await storage.setupDatabase();
       return storage;
     }

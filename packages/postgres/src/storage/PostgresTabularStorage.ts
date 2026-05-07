@@ -954,10 +954,7 @@ export class PostgresTabularStorage<
    *   - Throws on nested `withTransaction` — Postgres has no autonomous
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
-  private createTxView(
-    txDb: { query: Pool["query"] },
-    deferredPutEvents: Entity[]
-  ): this {
+  private createTxView(txDb: { query: Pool["query"] }, deferredPutEvents: Entity[]): this {
     const target = this;
     return new Proxy(target, {
       get(t, prop, receiver) {
@@ -1566,9 +1563,7 @@ class PostgresTabularMigrationApplierImpl extends SqlTabularMigrationApplier {
     );
   }
   protected override async executeSqlTx(sql: string, tx: AnyTabularStorage): Promise<void> {
-    await (
-      tx as unknown as { runMigrationDdl: (s: string) => Promise<void> }
-    ).runMigrationDdl(sql);
+    await (tx as unknown as { runMigrationDdl: (s: string) => Promise<void> }).runMigrationDdl(sql);
   }
   protected override async recordAppliedTx(
     component: string,
@@ -1602,10 +1597,7 @@ class PostgresTabularMigrationApplierImpl extends SqlTabularMigrationApplier {
     const r = await (
       this.host as unknown as {
         db: {
-          query: (
-            sql: string,
-            params: unknown[]
-          ) => Promise<{ rows: Array<{ version: number }> }>;
+          query: (sql: string, params: unknown[]) => Promise<{ rows: Array<{ version: number }> }>;
         };
       }
     ).db.query(`SELECT version FROM ${MIGRATIONS_TABLE} WHERE component = $1`, [component]);
@@ -1618,10 +1610,9 @@ class PostgresTabularMigrationApplierImpl extends SqlTabularMigrationApplier {
           query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }>;
         };
       }
-    ).db.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1`,
-      [(this.host as unknown as { table: string }).table]
-    );
+    ).db.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1`, [
+      (this.host as unknown as { table: string }).table,
+    ]);
     return r.rows.length > 0;
   }
 }

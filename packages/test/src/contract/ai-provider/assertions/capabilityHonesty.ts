@@ -29,9 +29,7 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        expect(() =>
-          registry.getDirectRunFn(model!.provider, "ToolCallingTask")
-        ).toThrow();
+        expect(() => registry.getDirectRunFn(model!.provider, "ToolCallingTask")).toThrow();
       },
       opts.timeout
     );
@@ -42,9 +40,7 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        expect(() =>
-          registry.getDirectRunFn(model!.provider, "TextEmbeddingTask")
-        ).toThrow();
+        expect(() => registry.getDirectRunFn(model!.provider, "TextEmbeddingTask")).toThrow();
       },
       opts.timeout
     );

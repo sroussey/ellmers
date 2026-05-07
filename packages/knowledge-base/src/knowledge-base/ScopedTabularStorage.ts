@@ -297,9 +297,11 @@ export class ScopedTabularStorage<
         // `emit` rather than the whole emitter so `tx.on/off/once/waitOn` keep
         // delegating to a real EventEmitter (otherwise calling them inside `fn`
         // would throw on a stub object that only implements `emit`).
-        const txEmitter = (txWrapper as unknown as {
-          events: EventEmitter<TabularEventListeners<PrimaryKey, Entity>>;
-        }).events;
+        const txEmitter = (
+          txWrapper as unknown as {
+            events: EventEmitter<TabularEventListeners<PrimaryKey, Entity>>;
+          }
+        ).events;
         txEmitter.emit = ((name: TabularEventName, ...args: unknown[]) => {
           deferred.push([name, args]);
         }) as typeof txEmitter.emit;

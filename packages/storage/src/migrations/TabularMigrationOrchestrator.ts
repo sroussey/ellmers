@@ -82,21 +82,15 @@ export async function runTabularMigrations(
         description: m.description,
       });
       try {
-        await applier.applyMigration(
-          component,
-          m.version,
-          m.description,
-          m.ops,
-          (fraction) => {
-            options.onProgress?.({
-              component,
-              version: m.version,
-              phase: "running",
-              description: m.description,
-              fraction,
-            });
-          }
-        );
+        await applier.applyMigration(component, m.version, m.description, m.ops, (fraction) => {
+          options.onProgress?.({
+            component,
+            version: m.version,
+            phase: "running",
+            description: m.description,
+            fraction,
+          });
+        });
         options.onProgress?.({
           component,
           version: m.version,
