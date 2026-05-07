@@ -16,6 +16,7 @@ import { abortBlock } from "./assertions/abort";
 import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
 import { notifyDisplayFastResolveBlock } from "./assertions/notifyDisplayFastResolve";
 import { multiTurnFollowUpBlock } from "./assertions/multiTurnFollowUp";
+import { capabilityHonestyBlock } from "./assertions/capabilityHonesty";
 
 export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
@@ -48,5 +49,6 @@ export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts
     concurrentIsolationBlock(opts, fixture, getHandle);
     notifyDisplayFastResolveBlock(opts, fixture, getHandle);
     multiTurnFollowUpBlock(opts, fixture, getHandle);
+    capabilityHonestyBlock(opts, fixture, getHandle);
   });
 }
