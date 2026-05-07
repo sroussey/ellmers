@@ -14,6 +14,11 @@ import {
 } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  type ITabularMigration,
+  type ITabularMigrationApplier,
+} from "../migrations";
+import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 import path from "node:path";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
 import {
@@ -38,6 +43,40 @@ import { StorageUnsupportedError } from "./StorageError";
 export const FS_FOLDER_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.fsFolder"
 );
+
+class FsFolderMigrationApplier extends InMemoryTabularMigrationApplier {
+  private loaded = false;
+  constructor(storage: AnyTabularStorage, private readonly folderPath: string) {
+    super(storage, "fsfolder");
+  }
+  override async ensureBookkeeping(): Promise<void> {
+    await this.load();
+  }
+  override async appliedVersions(component: string): Promise<Set<number>> {
+    await this.load();
+    return new Set(this.applied.get(component) ?? []);
+  }
+  private async load(): Promise<void> {
+    if (this.loaded) return;
+    const file = `${this.folderPath}/_storage_migrations.json`;
+    try {
+      const text = await readFile(file, "utf8");
+      const parsed = JSON.parse(text) as Record<string, number[]>;
+      for (const [c, vs] of Object.entries(parsed)) {
+        this.applied.set(c, new Set(vs));
+      }
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code !== "ENOENT") throw err;
+    }
+    this.loaded = true;
+  }
+  protected override async persist(): Promise<void> {
+    const file = `${this.folderPath}/_storage_migrations.json`;
+    const out: Record<string, number[]> = {};
+    for (const [c, vs] of this.applied) out[c] = [...vs].sort((a, b) => a - b);
+    await writeFile(file, JSON.stringify(out, null, 2));
+  }
+}
 
 /**
  * A tabular repository implementation that uses the filesystem for storage.
@@ -73,15 +112,17 @@ export class FsFolderTabularStorage<
    * @param primaryKeyNames - Array of property names that form the primary key
    * @param indexes - Note: indexes are not supported in this implementation.
    * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
+   * @param tabularMigrations - Optional declarative migrations to run on setup
    */
   constructor(
     folderPath: string,
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
-    clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
+    clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
+    tabularMigrations?: ReadonlyArray<ITabularMigration>
   ) {
-    super(schema, primaryKeyNames, indexes, clientProvidedKeys);
+    super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, "fsfolder");
     this.folderPath = path.join(folderPath);
   }
 
@@ -100,6 +141,17 @@ export class FsFolderTabularStorage<
         // Ignore error if directory already exists
       }
     }
+  }
+
+  override async setupDatabase(): Promise<void> {
+    await this.setupDirectory();
+    if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      await this.applyTabularMigrations();
+    }
+  }
+
+  public override getMigrationApplier(): ITabularMigrationApplier | null {
+    return new FsFolderMigrationApplier(this as unknown as AnyTabularStorage, this.folderPath);
   }
 
   /**
