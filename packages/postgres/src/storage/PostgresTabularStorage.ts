@@ -111,11 +111,15 @@ export class PostgresTabularStorage<
    */
   public override async setupDatabase(): Promise<void> {
     if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      // Probe BEFORE creating so we can tell the orchestrator whether the
+      // table existed beforehand. We always create the table at the target
+      // schema (idempotent via CREATE TABLE IF NOT EXISTS); the `freshTable`
+      // flag lets the orchestrator take the mark-all-applied fast path on a
+      // brand-new DB instead of running migration ops against a schema that
+      // already matches them.
       const exists = await this.tableExistsAsync();
-      if (!exists) {
-        await this.createTableAndIndexes();
-      }
-      await this.applyTabularMigrations();
+      await this.createTableAndIndexes();
+      await this.applyTabularMigrations({ freshTable: !exists });
       // After migrations, ensure declared indexes are present (idempotent).
       await this.createDeclaredIndexes();
       return;

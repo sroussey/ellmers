@@ -20,21 +20,23 @@ interface BackfillCapableStorage {
 }
 
 /**
- * IndexedDB applier for tabular migrations. Each migration's DDL ops
- * (`addIndex` / `dropIndex`) run inside an upgrade transaction issued by
- * {@link IndexedDbMigrationRunner}; the runner writes `_storage_migrations`
- * inside that same transaction, giving us all-or-nothing atomicity for the
- * DDL + bookkeeping pair.
+ * IndexedDB applier for tabular migrations. Order of operations:
  *
- * Backfills cannot run inside the upgrade transaction — IDB upgrade
- * transactions auto-commit as soon as control returns to the event loop
- * and cannot span async work. So `applyMigration` runs DDL through the
- * runner first, then performs `backfill` ops on a normal readwrite
- * transaction. A backfill that fails after the DDL has already committed
- * leaves the storage in a partial state; bookkeeping has already been
- * written, so the next run will not retry. Callers needing strict
- * atomicity should split DDL and backfill into separate migration
- * versions.
+ *   1. **Backfills** run first on a normal readwrite transaction. They
+ *      iterate via `storage.getPage` and rewrite rows. If a backfill
+ *      throws, no bookkeeping has been written yet, so the next run
+ *      retries the migration — matching the contract that failed
+ *      migrations are NOT recorded as applied.
+ *   2. **DDL ops** (`addIndex` / `dropIndex`) run inside an upgrade
+ *      transaction issued by {@link IndexedDbMigrationRunner}. The runner
+ *      writes `_storage_migrations` inside that same transaction, so the
+ *      DDL + bookkeeping pair commit atomically.
+ *
+ * `createIndex` / `deleteIndex` are guarded with `objectStore.indexNames.contains`
+ * so a re-run (or a fresh-DB pass that wasn't intercepted by the
+ * orchestrator's fast path) does not throw on already-existing /
+ * already-deleted indexes — mirroring SQL's `IF NOT EXISTS` / `IF EXISTS`
+ * semantics.
  */
 export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplier {
   private readonly runner: IndexedDbMigrationRunner;
@@ -102,28 +104,9 @@ export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplie
       (o): o is Extract<TabularMigrationOp, { kind: "backfill" }> => o.kind === "backfill"
     );
 
-    const storeName = this.storeName;
-    await this.runner.run([
-      {
-        component,
-        version,
-        description,
-        up: (ctx: IndexedDbUpgradeContext) => {
-          if (!ctx.db.objectStoreNames.contains(storeName)) return;
-          const store = ctx.tx.objectStore(storeName);
-          for (const op of ddlOps) {
-            if (op.kind === "addIndex") {
-              const keyPath = op.columns.length === 1 ? op.columns[0] : [...op.columns];
-              store.createIndex(op.name, keyPath, { unique: op.unique ?? false });
-            } else {
-              store.deleteIndex(op.name);
-            }
-          }
-        },
-      },
-    ]);
-
-    let processed = ddlOps.length;
+    // Run backfills FIRST on a normal readwrite tx. If any throws, no
+    // bookkeeping is written, so the migration is retried on the next run.
+    let processed = 0;
     const total = Math.max(ops.length, 1);
     for (const op of backfills) {
       const batchSize = op.batchSize ?? 500;
@@ -145,5 +128,35 @@ export class IndexedDbTabularMigrationApplier implements ITabularMigrationApplie
       processed++;
       onProgress?.(processed / total);
     }
+
+    // Then run DDL + bookkeeping atomically inside an upgrade transaction.
+    // The runner.run() writes the `_storage_migrations` row inside the same
+    // upgrade tx as our `up` callback, so DDL failure = no bookkeeping.
+    // We always invoke runner.run() (even when ddlOps is empty) so that
+    // bookkeeping is recorded for backfill-only migrations.
+    const storeName = this.storeName;
+    await this.runner.run([
+      {
+        component,
+        version,
+        description,
+        up: (ctx: IndexedDbUpgradeContext) => {
+          if (!ctx.db.objectStoreNames.contains(storeName)) return;
+          const store = ctx.tx.objectStore(storeName);
+          for (const op of ddlOps) {
+            if (op.kind === "addIndex") {
+              if (store.indexNames.contains(op.name)) continue;
+              const keyPath = op.columns.length === 1 ? op.columns[0] : [...op.columns];
+              store.createIndex(op.name, keyPath, { unique: op.unique ?? false });
+            } else {
+              if (!store.indexNames.contains(op.name)) continue;
+              store.deleteIndex(op.name);
+            }
+          }
+        },
+      },
+    ]);
+    processed += ddlOps.length;
+    onProgress?.(processed / total);
   }
 }

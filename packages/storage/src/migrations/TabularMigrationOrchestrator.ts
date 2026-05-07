@@ -15,18 +15,26 @@ import type {
  * {@link ITabularMigrationApplier}.
  *
  * Two paths:
- *   - **fresh-DB fast path** — applied is empty AND `tableExists()` is false.
- *     Caller has already (or will) create the table at the target schema;
- *     the orchestrator records every declared migration as already-applied
+ *   - **fresh-DB fast path** — applied is empty AND the caller signaled (via
+ *     `freshTable: true`) that the underlying table/store did not exist
+ *     before this run, OR `applier.tableExists()` returns false. The
+ *     orchestrator records every declared migration as already-applied
  *     without running its ops.
  *   - **run-pending path** — sorted-by-version, skip already-applied,
  *     call `applyMigration` for each remaining one.
  *
  * Bookkeeping is owned by the applier (one row per `(component, version)`
  * in the existing `_storage_migrations` table).
+ *
+ * The `freshTable` option exists because `setupDatabase()` typically creates
+ * the table at the target schema *before* invoking the orchestrator, which
+ * defeats the `tableExists()` probe (the store always looks "existing" by
+ * the time the orchestrator runs). Callers should pass the freshness probe
+ * they took *before* creating the table.
  */
 export interface RunTabularMigrationsOptions {
   readonly onProgress?: TabularMigrationProgressListener;
+  readonly freshTable?: boolean;
 }
 
 export async function runTabularMigrations(
@@ -55,7 +63,8 @@ export async function runTabularMigrations(
     const sorted = [...group].sort((a, b) => a.version - b.version);
     const applied = await applier.appliedVersions(component);
 
-    if (applied.size === 0 && !(await applier.tableExists())) {
+    const fresh = options.freshTable ?? !(await applier.tableExists());
+    if (applied.size === 0 && fresh) {
       // Fresh-DB fast path: caller created the table at target; skip ops.
       await applier.markAllApplied(
         component,

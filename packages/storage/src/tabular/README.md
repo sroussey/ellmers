@@ -498,7 +498,7 @@ await repo.setupDatabase(); // applies pending migrations
 
 **Fresh-DB fast path:** when a storage is constructed at the target schema and the underlying table/store is empty, the orchestrator records every declared migration as already-applied without running its ops. This keeps backfills from running against zero rows on a fresh deployment.
 
-**Adoption:** existing storages without `tabularMigrations` continue unchanged — the migration system is fully opt-in. The first migration on an already-deployed table should use idempotent ops (`addColumn` + `addIndex` SQL DDL is `IF NOT EXISTS`-style under the hood).
+**Adoption:** existing storages without `tabularMigrations` continue unchanged — the migration system is fully opt-in. The orchestrator's fresh-DB fast path detects a brand-new database (no prior bookkeeping AND no pre-existing table) and records every declared migration as already-applied without running its ops, so a fresh deployment never executes `addColumn` against a table that was just created at the target schema. Migration ops on existing data still run normally; for `addIndex` / `dropIndex` the SQL DDL is emitted with `IF NOT EXISTS` / `IF EXISTS` and the IndexedDB applier guards `createIndex` / `deleteIndex` with `objectStore.indexNames.contains` for safe retries. `addColumn` / `dropColumn` / `renameColumn` are NOT idempotent — re-running a successful migration is prevented by the bookkeeping table rather than by the DDL itself.
 
 See `docs/superpowers/specs/2026-05-07-unified-tabular-migrations-design.md` for the full design and `docs/superpowers/plans/2026-05-07-unified-tabular-migrations.md` for implementation notes.
 

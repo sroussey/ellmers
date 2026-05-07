@@ -153,6 +153,16 @@ export class IndexedDbTabularStorage<
       return;
     }
 
+    // Probe whether the object store already exists BEFORE performSetup
+    // creates it. The orchestrator needs this signal to take the
+    // mark-all-applied fast path on a brand-new DB; otherwise it would
+    // see the (just-created) store and try to apply ops against the
+    // already-current target schema.
+    const freshTable =
+      this.tabularMigrations && this.tabularMigrations.length > 0
+        ? !(await this.probeObjectStoreExists())
+        : false;
+
     this.setupPromise = this.performSetup();
     try {
       this.db = await this.setupPromise;
@@ -170,13 +180,35 @@ export class IndexedDbTabularStorage<
         this.db?.close();
         this.db = undefined;
       };
-      await this.applyTabularMigrations();
+      await this.applyTabularMigrations({ freshTable });
       // After migrations, this.db may be undefined (closed by onversionchange).
       // Reopen so the storage is ready for use.
       if (!this.db) {
         this.db = await this.performSetup();
       }
     }
+  }
+
+  /**
+   * Read-only probe: does the object store already exist in the IDB
+   * database? Used by `setupDatabase` to decide between the orchestrator's
+   * fresh-DB fast path (mark-all-applied) and the run-pending path.
+   */
+  private async probeObjectStoreExists(): Promise<boolean> {
+    const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+    if (!idb) return false;
+    return new Promise<boolean>((resolve, reject) => {
+      const req = idb.open(this.table);
+      req.onsuccess = () => {
+        const db = req.result;
+        const exists = db.objectStoreNames.contains(this.table);
+        db.close();
+        resolve(exists);
+      };
+      req.onerror = () => reject(req.error);
+      req.onblocked = () =>
+        reject(new Error(`IndexedDB ${this.table} blocked while probing for object store`));
+    });
   }
 
   /**
