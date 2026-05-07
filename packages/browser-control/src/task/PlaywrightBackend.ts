@@ -10,7 +10,6 @@ import type {
   AriaRole,
   BrowserConnectOptions,
   ClickOptions,
-  ConsoleMessage,
   DialogAction,
   DialogInfo,
   DownloadOptions,
@@ -18,8 +17,6 @@ import type {
   ElementRef,
   IBrowserContext,
   NavigateOptions,
-  NetworkFilter,
-  NetworkRequest,
   ScreenshotOptions,
   SnapshotOptions,
   TabInfo,
@@ -128,7 +125,7 @@ interface MutableAccessibilityNode {
 function parseAriaYaml(
   yaml: string,
   refCounter: { count: number },
-  refMap: Map<string, string>
+  refMap: Map<string, Descriptor>
 ): AccessibilityNode {
   const lines = yaml.split("\n");
 
@@ -144,9 +141,9 @@ function parseAriaYaml(
 
     const ref = `e${++refCounter.count}`;
 
-    // Build locator string for this node
-    const locatorStr = buildLocatorString(parsed.role, parsed.name);
-    refMap.set(ref, locatorStr);
+    // Build descriptor for this node
+    const descriptor = buildDescriptor(parsed.role, parsed.name);
+    refMap.set(ref, descriptor);
 
     const node: MutableAccessibilityNode = {
       ref,
@@ -201,27 +198,30 @@ function parseAriaYaml(
   if (!root) {
     // Return a synthetic root if parsing fails
     const ref = `e${++refCounter.count}`;
-    refMap.set(ref, 'locator("body")');
+    refMap.set(ref, { kind: "css", selector: "body" });
     return { ref, role: "document", name: "" };
   }
 
   return root as AccessibilityNode;
 }
 
-/**
- * Build a Playwright locator descriptor string from ARIA role/name.
- * These strings are stored in the refMap and interpreted by resolveRef().
- */
-function buildLocatorString(role: string, name: string): string {
-  // Roles that are typically text nodes — check before the generic name check
+/** Build a structured Descriptor from ARIA role/name. */
+function buildDescriptor(role: string, name: string): Descriptor {
   if (role === "text" || role === "StaticText") {
-    return `getByText:${name}`;
+    return { kind: "text", text: name };
   }
-  if (name) {
-    return `getByRole:${role}:${name}`;
-  }
-  return `getByRole:${role}:`;
+  return { kind: "role", role, name };
 }
+
+// ---------------------------------------------------------------------------
+// Structured element descriptor (replaces ad-hoc string encoding)
+// ---------------------------------------------------------------------------
+
+type Descriptor =
+  | { readonly kind: "role"; readonly role: string; readonly name: string }
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "css"; readonly selector: string }
+  | { readonly kind: "nth"; readonly inner: Descriptor; readonly index: number };
 
 // ---------------------------------------------------------------------------
 // PlaywrightBackend
@@ -243,8 +243,20 @@ export class PlaywrightBackend implements IBrowserContext {
   /** True when this backend launched Chromium locally (owns full process tree). */
   private _launchedLocalChromium = false;
 
+  // Stable per-page tab ids. Surviving across concurrent close.
+  private _pageIds: WeakMap<AnyPage, string> = new WeakMap();
+  private _pageIdSeq = 0;
+  private idForPage(page: AnyPage): string {
+    let id = this._pageIds.get(page);
+    if (!id) {
+      id = `t${++this._pageIdSeq}`;
+      this._pageIds.set(page, id);
+    }
+    return id;
+  }
+
   // Ref management
-  private _refMap = new Map<string, string>();
+  private _refMap = new Map<string, Descriptor>();
   private _refCounter = { count: 0 };
 
   // Dialog handler
@@ -376,14 +388,6 @@ export class PlaywrightBackend implements IBrowserContext {
     return this._context;
   }
 
-  /**
-   * Resolve an ElementRef to a Playwright Locator.
-   * The refMap stores descriptor strings like:
-   *   "getByRole:button:Sign In"
-   *   "getByText:some text"
-   *   "css:.my-class"
-   *   "nth:getByRole:listitem::2"
-   */
   private resolveRef(ref: ElementRef): AnyLocator {
     const descriptor = this._refMap.get(ref);
     if (!descriptor) {
@@ -392,42 +396,20 @@ export class PlaywrightBackend implements IBrowserContext {
     return this.descriptorToLocator(descriptor);
   }
 
-  private descriptorToLocator(descriptor: string): AnyLocator {
+  private descriptorToLocator(descriptor: Descriptor): AnyLocator {
     const page = this.page;
-
-    if (descriptor.startsWith("getByRole:")) {
-      const rest = descriptor.slice("getByRole:".length);
-      const colonIdx = rest.indexOf(":");
-      const role = rest.slice(0, colonIdx);
-      const name = rest.slice(colonIdx + 1);
-      if (name) {
-        return page.getByRole(role, { name });
-      }
-      return page.getByRole(role);
+    switch (descriptor.kind) {
+      case "role":
+        return descriptor.name
+          ? page.getByRole(descriptor.role, { name: descriptor.name })
+          : page.getByRole(descriptor.role);
+      case "text":
+        return page.getByText(descriptor.text);
+      case "css":
+        return page.locator(descriptor.selector);
+      case "nth":
+        return this.descriptorToLocator(descriptor.inner).nth(descriptor.index);
     }
-
-    if (descriptor.startsWith("getByText:")) {
-      const text = descriptor.slice("getByText:".length);
-      return page.getByText(text);
-    }
-
-    if (descriptor.startsWith("css:")) {
-      const selector = descriptor.slice("css:".length);
-      return page.locator(selector);
-    }
-
-    if (descriptor.startsWith("nth:")) {
-      // Format: "nth:<inner-descriptor>:<index>"
-      // We need to split off the trailing ":<number>"
-      const withoutPrefix = descriptor.slice("nth:".length);
-      const lastColon = withoutPrefix.lastIndexOf(":");
-      const inner = withoutPrefix.slice(0, lastColon);
-      const idx = parseInt(withoutPrefix.slice(lastColon + 1), 10);
-      return this.descriptorToLocator(inner).nth(idx);
-    }
-
-    // Fallback: treat as CSS selector
-    return page.locator(descriptor);
   }
 
   // ---------------------------------------------------------------------------
@@ -573,7 +555,7 @@ export class PlaywrightBackend implements IBrowserContext {
     if (count === 0) return null;
 
     const ref = `e${++this._refCounter.count}`;
-    this._refMap.set(ref, `css:${selector}`);
+    this._refMap.set(ref, { kind: "css", selector });
     return ref;
   }
 
@@ -584,7 +566,7 @@ export class PlaywrightBackend implements IBrowserContext {
 
     for (let i = 0; i < count; i++) {
       const ref = `e${++this._refCounter.count}`;
-      this._refMap.set(ref, `nth:css:${selector}:${i}`);
+      this._refMap.set(ref, { kind: "nth", inner: { kind: "css", selector }, index: i });
       refs.push(ref);
     }
 
@@ -686,8 +668,8 @@ export class PlaywrightBackend implements IBrowserContext {
   async tabs(): Promise<readonly TabInfo[]> {
     const pages: AnyPage[] = this.context.pages();
     return Promise.all(
-      pages.map(async (p: AnyPage, idx: number) => ({
-        tabId: String(idx),
+      pages.map(async (p: AnyPage) => ({
+        tabId: this.idForPage(p),
         url: p.url(),
         title: await p.title(),
       }))
@@ -696,12 +678,12 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async switchTab(tabId: string): Promise<void> {
     const pages: AnyPage[] = this.context.pages();
-    const idx = parseInt(tabId, 10);
-    if (isNaN(idx) || idx < 0 || idx >= pages.length) {
+    const target = pages.find((p) => this._pageIds.get(p) === tabId);
+    if (!target) {
       throw new Error(`PlaywrightBackend: no tab with id "${tabId}"`);
     }
-    this._page = pages[idx];
-    await this._page.bringToFront();
+    this._page = target;
+    await target.bringToFront();
   }
 
   async newTab(url?: string): Promise<TabInfo> {
@@ -709,11 +691,8 @@ export class PlaywrightBackend implements IBrowserContext {
     if (url) {
       await newPage.goto(url, { waitUntil: "load" });
     }
-    const pages: AnyPage[] = this.context.pages();
-    const idx = pages.indexOf(newPage);
-    const tabId = String(idx >= 0 ? idx : pages.length - 1);
     return {
-      tabId,
+      tabId: this.idForPage(newPage),
       url: newPage.url(),
       title: await newPage.title(),
     };
@@ -721,11 +700,10 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async closeTab(tabId: string): Promise<void> {
     const pages: AnyPage[] = this.context.pages();
-    const idx = parseInt(tabId, 10);
-    if (isNaN(idx) || idx < 0 || idx >= pages.length) {
+    const target = pages.find((p) => this._pageIds.get(p) === tabId);
+    if (!target) {
       throw new Error(`PlaywrightBackend: no tab with id "${tabId}"`);
     }
-    const target = pages[idx];
     await target.close();
 
     // If we closed the active page, switch to the last remaining page
@@ -749,7 +727,7 @@ export class PlaywrightBackend implements IBrowserContext {
     await this.page.waitForSelector(selector, ...(timeout !== undefined ? [{ timeout }] : []));
 
     const ref = `e${++this._refCounter.count}`;
-    this._refMap.set(ref, `css:${selector}`);
+    this._refMap.set(ref, { kind: "css", selector });
     return ref;
   }
 
@@ -762,14 +740,11 @@ export class PlaywrightBackend implements IBrowserContext {
   }
 
   // ---------------------------------------------------------------------------
-  // Optional capabilities (simplified)
+  // Optional capabilities
   // ---------------------------------------------------------------------------
-
-  readonly networkRequests = (_filter?: NetworkFilter): Promise<readonly NetworkRequest[]> => {
-    return Promise.resolve([]);
-  };
-
-  readonly consoleMessages = (): Promise<readonly ConsoleMessage[]> => {
-    return Promise.resolve([]);
-  };
+  //
+  // networkRequests and consoleMessages are intentionally undefined: this
+  // backend does not implement them. The IBrowserContext contract is that
+  // optional methods are either fully implemented or undefined — never
+  // empty-stub functions that defeat feature detection.
 }
