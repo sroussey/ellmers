@@ -11,6 +11,7 @@ import type {
   HumanConnectorConformanceHandle,
   HumanConnectorConformanceOpts,
 } from "./types";
+import { roundtripBlock } from "./assertions/roundtrip";
 
 export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
@@ -38,10 +39,6 @@ export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts
 
     const fixture = resolveHumanConformanceFixture(opts.fixture);
 
-    // Assertion blocks wired in subsequent tasks. Until a block is wired in,
-    // the suite passes vacuously for that capability — keeping the runner
-    // skeleton committable on its own.
-    void fixture;
-    void getHandle;
+    roundtripBlock(opts, fixture, getHandle);
   });
 }
