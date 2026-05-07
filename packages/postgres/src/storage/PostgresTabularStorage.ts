@@ -22,12 +22,16 @@ import {
   CoveringIndexQueryOptions,
   DeleteSearchCriteria,
   InsertEntity,
+  ITabularMigration,
+  ITabularMigrationApplier,
+  MIGRATIONS_TABLE,
   Page,
   PageRequest,
   PostgresDialect,
   QueryOptions,
   SearchCriteria,
   SimplifyPrimaryKey,
+  SqlTabularMigrationApplier,
   TabularChangePayload,
   TabularSubscribeOptions,
   ValueOptionType,
@@ -93,9 +97,10 @@ export class PostgresTabularStorage<
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
-    clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
+    clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
+    tabularMigrations?: ReadonlyArray<ITabularMigration>
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys);
+    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
     this.db = db;
   }
 
@@ -105,40 +110,60 @@ export class PostgresTabularStorage<
    * Must be called before using any other methods.
    */
   public override async setupDatabase(): Promise<void> {
+    if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      const exists = await this.tableExistsAsync();
+      if (!exists) {
+        await this.createTableAndIndexes();
+      }
+      await this.applyTabularMigrations();
+      // After migrations, ensure declared indexes are present (idempotent).
+      await this.createDeclaredIndexes();
+      return;
+    }
+    await this.createTableAndIndexes();
+  }
+
+  private async tableExistsAsync(): Promise<boolean> {
+    const r = await this.db.query<{ x: number }, [string]>(
+      `SELECT 1 AS x FROM information_schema.tables WHERE table_name = $1 LIMIT 1`,
+      [this.table]
+    );
+    return r.rows.length > 0;
+  }
+
+  /**
+   * Original setupDatabase behavior, extracted so the migrations branch
+   * can call it conditionally on a fresh DB.
+   */
+  private async createTableAndIndexes(): Promise<void> {
     const sql = `
       CREATE TABLE IF NOT EXISTS "${this.table}" (
         ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
-        PRIMARY KEY (${this.primaryKeyColumnList()}) 
+        PRIMARY KEY (${this.primaryKeyColumnList()})
       )
     `;
     await this.db.query(sql);
-
-    // Create vector indexes if there are vector columns
     await this.createVectorIndexes();
+    await this.createDeclaredIndexes();
+  }
 
-    // Get primary key columns to avoid creating redundant indexes
+  /**
+   * Index-creation loop extracted so the migration path can re-run it after
+   * migrations to ensure idempotence.
+   */
+  private async createDeclaredIndexes(): Promise<void> {
     const pkColumns = this.primaryKeyColumns();
-
-    // Track created indexes to avoid duplicates and redundant indexes
     const createdIndexes = new Set<string>();
-
     for (const columns of this.indexes) {
-      // Skip if this is just the primary key or a prefix of it
       if (columns.length <= pkColumns.length) {
         // @ts-ignore
         const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
         if (isPkPrefix) continue;
       }
-
-      // Create index name and column list
       const indexName = `${this.table}_${columns.join("_")}`;
       const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
-
-      // Skip if we've already created this index or if it's redundant
       const columnKey = columns.join(",");
       if (createdIndexes.has(columnKey)) continue;
-
-      // Check if this index would be redundant with an existing one
       const isRedundant = Array.from(createdIndexes).some((existing) => {
         const existingCols = existing.split(",");
         return (
@@ -146,7 +171,6 @@ export class PostgresTabularStorage<
           columns.every((col, idx) => col === existingCols[idx])
         );
       });
-
       if (!isRedundant) {
         await this.db.query(
           `CREATE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`
@@ -154,6 +178,35 @@ export class PostgresTabularStorage<
         createdIndexes.add(columnKey);
       }
     }
+  }
+
+  /**
+   * Runs DDL inside the current transaction. Public so the `withTransaction`
+   * proxy can route the call to the tx-bound client by overriding `this.db`.
+   * Do not call directly; only via the applier's `executeSqlTx`.
+   */
+  public async runMigrationDdl(sql: string): Promise<void> {
+    await this.db.query(sql);
+  }
+
+  /**
+   * Inserts a `(component, version)` row into the bookkeeping table on the
+   * current transaction's client. Public for the same reason as
+   * {@link runMigrationDdl}.
+   */
+  public async recordMigrationApplied(
+    component: string,
+    version: number,
+    description: string | null
+  ): Promise<void> {
+    await this.db.query(
+      `INSERT INTO ${MIGRATIONS_TABLE}(component, version, description) VALUES ($1, $2, $3)`,
+      [component, version, description]
+    );
+  }
+
+  public override getMigrationApplier(): ITabularMigrationApplier | null {
+    return new PostgresTabularMigrationApplierImpl(this);
   }
 
   protected isVectorFormat(format?: string): boolean {
@@ -1480,5 +1533,92 @@ export class PostgresTabularStorage<
    */
   public override destroy(): void {
     super.destroy();
+  }
+}
+
+class PostgresTabularMigrationApplierImpl extends SqlTabularMigrationApplier {
+  constructor(private readonly host: PostgresTabularStorage<any, any, any, any, any, any>) {
+    super();
+  }
+  protected override dialectName(): "sqlite" | "postgres" {
+    return "postgres";
+  }
+  protected override table(): string {
+    return (this.host as unknown as { table: string }).table;
+  }
+  protected override storage(): AnyTabularStorage {
+    return this.host as unknown as AnyTabularStorage;
+  }
+  protected override mapTypeToSQL(typeDef: JsonSchema): string {
+    return (this.host as unknown as { mapTypeToSQL: (t: JsonSchema) => string }).mapTypeToSQL(
+      typeDef
+    );
+  }
+  protected override isNullableSchema(typeDef: JsonSchema): boolean {
+    return (this.host as unknown as { isNullable: (t: JsonSchema) => boolean }).isNullable(typeDef);
+  }
+  protected override async executeSql(sql: string): Promise<void> {
+    await (this.host as unknown as { db: { query: (sql: string) => Promise<unknown> } }).db.query(
+      sql
+    );
+  }
+  protected override async executeSqlTx(sql: string, tx: AnyTabularStorage): Promise<void> {
+    await (
+      tx as unknown as { runMigrationDdl: (s: string) => Promise<void> }
+    ).runMigrationDdl(sql);
+  }
+  protected override async recordAppliedTx(
+    component: string,
+    version: number,
+    description: string | undefined,
+    tx: AnyTabularStorage
+  ): Promise<void> {
+    await (
+      tx as unknown as {
+        recordMigrationApplied: (c: string, v: number, d: string | null) => Promise<void>;
+      }
+    ).recordMigrationApplied(component, version, description ?? null);
+  }
+  protected override async recordApplied(
+    component: string,
+    version: number,
+    description: string | undefined
+  ): Promise<void> {
+    await (
+      this.host as unknown as {
+        db: {
+          query: (sql: string, params: unknown[]) => Promise<unknown>;
+        };
+      }
+    ).db.query(
+      `INSERT INTO ${MIGRATIONS_TABLE}(component, version, description) VALUES ($1, $2, $3)`,
+      [component, version, description ?? null]
+    );
+  }
+  protected override async queryAppliedVersions(component: string): Promise<Set<number>> {
+    const r = await (
+      this.host as unknown as {
+        db: {
+          query: (
+            sql: string,
+            params: unknown[]
+          ) => Promise<{ rows: Array<{ version: number }> }>;
+        };
+      }
+    ).db.query(`SELECT version FROM ${MIGRATIONS_TABLE} WHERE component = $1`, [component]);
+    return new Set(r.rows.map((row) => Number(row.version)));
+  }
+  protected override async probeTableExists(): Promise<boolean> {
+    const r = await (
+      this.host as unknown as {
+        db: {
+          query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }>;
+        };
+      }
+    ).db.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1`,
+      [(this.host as unknown as { table: string }).table]
+    );
+    return r.rows.length > 0;
   }
 }
