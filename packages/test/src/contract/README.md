@@ -69,6 +69,7 @@ Treat both as additional examples of the pattern.
 | `AiProvider` | `contract/ai-provider/runAiProviderConformance` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
+| `IEntitlementProfile` | `contract/entitlement-profile/runEntitlementProfileConformance` | Browser, Desktop, Server, Custom |
 
 ## How to add a new contract suite
 
@@ -94,5 +95,4 @@ Future contract suites in priority order:
 2. Worker-proxy contract — every provider in worker mode round-trips
    identical assertions to direct mode.
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
-4. `EntitlementProfile` — desktop / web / server profiles.
-5. `IHumanConnector` — App + Electron elicitation backends.
+4. `IHumanConnector` — App + Electron elicitation backends.
