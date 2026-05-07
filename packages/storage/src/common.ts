@@ -27,6 +27,7 @@ export {
 } from "./tabular/Cursor";
 export type { PageCursor } from "./tabular/Cursor";
 export * from "./tabular/HuggingFaceTabularStorage";
+export * from "./tabular/InMemoryTabularMigrationApplier";
 export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
 export * from "./tabular/StorageError";
