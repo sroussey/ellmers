@@ -7,6 +7,7 @@
 import { afterAll, beforeAll, describe } from "vitest";
 
 import { denialShapeBlock } from "./assertions/denialShape";
+import { disposeBlock } from "./assertions/dispose";
 import { hierarchyHonoringBlock } from "./assertions/hierarchyHonoring";
 import { optionalNeverDeniedBlock } from "./assertions/optionalNeverDenied";
 import { requestEntitlementShapeBlock } from "./assertions/requestEntitlementShape";
@@ -51,5 +52,6 @@ export function runEntitlementProfileConformance(
     subscribeGrantBlock(opts, getHandle);
     subscribeReloadBlock(opts, getHandle);
     unsubscribeIdempotentBlock(opts, getHandle);
+    disposeBlock(opts, getHandle);
   });
 }
