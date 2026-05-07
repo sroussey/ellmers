@@ -19,6 +19,11 @@ import {
   TabularSubscribeOptions,
 } from "./ITabularStorage";
 import { InMemoryTabularStorage } from "./InMemoryTabularStorage";
+import {
+  type ITabularMigration,
+  type ITabularMigrationApplier,
+} from "../migrations";
+import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 
 export const SHARED_IN_MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.sharedInMemory"
@@ -74,16 +79,20 @@ export class SharedInMemoryTabularStorage<
    * @param indexes - Array of columns or column arrays to make searchable. Each string or single column creates a single-column index,
    *                    while each array creates a compound index with columns in the specified order.
    * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
+   * @param tabularMigrations - Optional declarative migrations to run on setup
    */
   constructor(
     channelName: string = "tabular_store",
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
-    clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
+    clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
+    tabularMigrations?: ReadonlyArray<ITabularMigration>
   ) {
-    super(schema, primaryKeyNames, indexes, clientProvidedKeys);
+    super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, channelName);
     this.channelName = channelName;
+    // Don't pass migrations to the inner repo — migrations are owned by the
+    // outer Shared wrapper which delegates them through getMigrationApplier.
     this.inMemoryRepo = new InMemoryTabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>(
       schema,
       primaryKeyNames,
@@ -273,6 +282,16 @@ export class SharedInMemoryTabularStorage<
     if (this.isInitialized) return;
     this.isInitialized = true;
     await this.syncFromOtherTabs();
+    if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      await this.applyTabularMigrations();
+    }
+  }
+
+  public override getMigrationApplier(): ITabularMigrationApplier | null {
+    return new InMemoryTabularMigrationApplier(
+      this as unknown as AnyTabularStorage,
+      this.channelName
+    );
   }
 
   /**

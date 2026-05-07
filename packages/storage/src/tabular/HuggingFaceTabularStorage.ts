@@ -23,6 +23,11 @@ import {
 } from "./ITabularStorage";
 import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
 import { StorageUnsupportedError, StorageValidationError } from "./StorageError";
+import {
+  type ITabularMigration,
+  type ITabularMigrationApplier,
+} from "../migrations";
+import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 
 export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.huggingface"
@@ -147,6 +152,7 @@ export class HuggingFaceTabularStorage<
    * @param schema - Schema defining the structure of the entity
    * @param primaryKeyNames - Array of property names that form the primary key
    * @param options - Optional configuration including token, baseUrl, and indexes
+   * @param tabularMigrations - Optional declarative migrations to run on setup
    */
   constructor(
     dataset: string,
@@ -154,7 +160,8 @@ export class HuggingFaceTabularStorage<
     split: string,
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
-    options?: HuggingFaceTabularStorageOptions
+    options?: HuggingFaceTabularStorageOptions,
+    tabularMigrations?: ReadonlyArray<ITabularMigration>
   ) {
     super(
       schema,
@@ -163,7 +170,9 @@ export class HuggingFaceTabularStorage<
         | keyof NoInfer<Entity>
         | readonly (keyof NoInfer<Entity>)[]
       )[],
-      "never" // HF datasets don't support client-provided keys
+      "never", // HF datasets don't support client-provided keys
+      tabularMigrations,
+      `hf:${dataset}/${config}/${split}`
     );
     this.dataset = dataset;
     this.config = config;
@@ -267,6 +276,24 @@ export class HuggingFaceTabularStorage<
         }
       }
     }
+
+    if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      await this.applyTabularMigrations();
+    }
+  }
+
+  /**
+   * Returns an in-memory applier for HF tabular storage. NOTE: HF datasets
+   * are read-only; backfill ops will throw because `put` is unsupported.
+   * DDL ops are no-ops (records are JS objects). Migrations on HF storages
+   * are useful only for advancing bookkeeping in lockstep with a producer
+   * that re-publishes datasets.
+   */
+  public override getMigrationApplier(): ITabularMigrationApplier | null {
+    return new InMemoryTabularMigrationApplier(
+      this as unknown as AnyTabularStorage,
+      `hf:${this.dataset}/${this.config}/${this.split}`
+    );
   }
 
   /**
