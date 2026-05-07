@@ -91,7 +91,9 @@ export function capabilityHonestyBlock(
           await ctx.waitForIdle({ timeout: 5_000 });
           const entries = await ctx.consoleMessages();
           const found = entries.some((m) => m.text.includes(fixture.consoleMarker));
-          expect(found, `expected a console message containing ${fixture.consoleMarker}`).toBe(true);
+          expect(found, `expected a console message containing ${fixture.consoleMarker}`).toBe(
+            true
+          );
         },
         opts.timeout
       );

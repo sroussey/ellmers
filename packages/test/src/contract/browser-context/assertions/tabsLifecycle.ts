@@ -59,8 +59,7 @@ export function tabsLifecycleBlock(
     // -- Concurrent close stability ----------------------------------------
 
     if (opts.capabilities.multipleTabs) {
-      const title =
-        "tabId remains valid for surviving tabs across concurrent close()";
+      const title = "tabId remains valid for surviving tabs across concurrent close()";
       const body = async () => {
         if (!ctx) throw new Error("context not created");
         // Set up four tabs with distinguishable urls.

@@ -57,7 +57,10 @@ export function ariaRoundTripBlock(
         const tree = await ctx.snapshot();
         const buttons = collectButtons(tree.root);
         const target = buttons.find((b) => b.name === name);
-        expect(target, `snapshot must include button with name ${JSON.stringify(name)}`).toBeDefined();
+        expect(
+          target,
+          `snapshot must include button with name ${JSON.stringify(name)}`
+        ).toBeDefined();
 
         await ctx.clickByRole("button", name);
 

@@ -33,10 +33,7 @@ function buildCustomProfile(): {
   readonly profile: IEntitlementProfile;
   simulateSignal(signal: EntitlementSignal): void;
 } {
-  let grants: EntitlementGrant[] = [
-    { id: Entitlements.NETWORK_HTTP },
-    { id: Entitlements.AI },
-  ];
+  let grants: EntitlementGrant[] = [{ id: Entitlements.NETWORK_HTTP }, { id: Entitlements.AI }];
   // The policy's `grant` array is read each time the underlying enforcer
   // calls `evaluatePolicy`, so we wrap it in a getter via Object.defineProperty.
   const policy = {

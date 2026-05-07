@@ -28,9 +28,9 @@ export function resourceScopingBlock(
   describe.skipIf(!opts.capabilities.resourceScoping)("Resource scoping", () => {
     it("scoped read succeeds when the profile broadly grants filesystem", async () => {
       const profile = getHandle().profile;
-      const hasBroadFilesystem = profile.surface().some(
-        (g) => g.id === "filesystem" && !g.resources
-      );
+      const hasBroadFilesystem = profile
+        .surface()
+        .some((g) => g.id === "filesystem" && !g.resources);
       if (!hasBroadFilesystem) {
         // Profile does not broadly grant filesystem; this assertion is vacuous.
         return;
@@ -41,9 +41,9 @@ export function resourceScopingBlock(
 
     it("scoped read fails when the profile does not grant filesystem at all", async () => {
       const profile = getHandle().profile;
-      const hasFilesystem = profile.surface().some(
-        (g) => g.id === "filesystem" || g.id === "filesystem:read"
-      );
+      const hasFilesystem = profile
+        .surface()
+        .some((g) => g.id === "filesystem" || g.id === "filesystem:read");
       if (hasFilesystem) {
         return; // not the negative case
       }

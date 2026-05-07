@@ -7,9 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import { NETWORK_HTTP_REQUIRED, UNCOVERED_FOO } from "../fixtures";
-import type {
-  EntitlementChangeEvent,
-} from "@workglow/task-graph";
+import type { EntitlementChangeEvent } from "@workglow/task-graph";
 import type {
   EntitlementProfileConformanceHandle,
   EntitlementProfileConformanceOpts,

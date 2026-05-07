@@ -8,7 +8,11 @@
  * only capability profiles expressed as entitlement policies.
  */
 
-import { createPolicyProfile, type CreateProfileOptions, type IEntitlementProfile } from "./EntitlementProfile";
+import {
+  createPolicyProfile,
+  type CreateProfileOptions,
+  type IEntitlementProfile,
+} from "./EntitlementProfile";
 import type { EntitlementPolicy } from "./EntitlementPolicy";
 import type { EntitlementGrant } from "./TaskEntitlements";
 import { Entitlements } from "./TaskEntitlements";
