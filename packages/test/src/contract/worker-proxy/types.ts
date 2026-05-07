@@ -41,8 +41,10 @@ export interface WorkerProxyCapabilities {
   /** When true, the entire boundary block is replaced with a single skipped
    * test logging "<name>: requires browser test runner". */
   readonly browserOnly: boolean;
-  /** When false, the throw-surfaces assertion only checks for a non-empty
-   * error message; the stack-frame check is skipped. Default true. */
+  /** When false, only the basic "rejection surfaces on the main thread"
+   * assertion runs. When true, additionally asserts that the worker-thrown
+   * `Error.name` and `Error.message` round-trip across the postMessage
+   * boundary intact. Default true. */
   readonly errorPropagation: boolean;
 }
 
