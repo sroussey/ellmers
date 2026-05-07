@@ -242,6 +242,15 @@ cannot be exercised in CI until at least Anthropic is wired.
 None at this time. Mode-switching, `inspect()` posture, scope, asserted
 blocks, and TF-MediaPipe handling confirmed during brainstorming.
 
+## Measured CI overhead (Phase 3)
+
+Deferred to the first real CI run on the merged branch — the implementation
+environment has no API keys configured and the pre-existing
+`@workglow/ai/worker` package-resolution issue in `vitest.setup.ts` blocks
+local vitest execution. Update this section with the baseline / post-merge
+delta after the first green CI run; the success criterion is ≤ ~45 s
+overhead.
+
 ## References
 
 - `docs/superpowers/specs/2026-05-04-aiprovider-contract-conformance-design.md` —
