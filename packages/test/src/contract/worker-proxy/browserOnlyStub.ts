@@ -9,7 +9,7 @@ import { describe, it } from "vitest";
 import type { WorkerProxyBoundaryOpts } from "./types";
 
 export function browserOnlyStubBlock(opts: WorkerProxyBoundaryOpts): void {
-  describe(`Worker-proxy boundary: ${opts.name}`, () => {
+  describe.skipIf(opts.skip)(`Worker-proxy boundary: ${opts.name}`, () => {
     it.skip(
       `${opts.name}: requires browser test runner (browserOnly: true)`,
       () => {}
