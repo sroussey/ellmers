@@ -12,6 +12,7 @@ import { optionalNeverDeniedBlock } from "./assertions/optionalNeverDenied";
 import { requestEntitlementShapeBlock } from "./assertions/requestEntitlementShape";
 import { resourceScopingBlock } from "./assertions/resourceScoping";
 import { subscribeGrantBlock } from "./assertions/subscribeGrant";
+import { subscribeReloadBlock } from "./assertions/subscribeReload";
 import { subscribeRevocationBlock } from "./assertions/subscribeRevocation";
 import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
 import type {
@@ -47,5 +48,6 @@ export function runEntitlementProfileConformance(
     requestEntitlementShapeBlock(opts, getHandle);
     subscribeRevocationBlock(opts, getHandle);
     subscribeGrantBlock(opts, getHandle);
+    subscribeReloadBlock(opts, getHandle);
   });
 }
