@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  IHumanConnector,
-  IHumanRequest,
-  IHumanResponse,
-} from "@workglow/util";
+import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 
 /**

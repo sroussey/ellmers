@@ -142,8 +142,7 @@ export class MockHumanConnector implements IHumanConnector {
       const res = await awaitDeferred(entry, signal);
       return { ...res, requestId: request.requestId };
     }
-    const resolved =
-      typeof entry.entry === "function" ? await entry.entry(request) : entry.entry;
+    const resolved = typeof entry.entry === "function" ? await entry.entry(request) : entry.entry;
     return { ...resolved, requestId: request.requestId };
   }
 }

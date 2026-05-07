@@ -76,8 +76,7 @@ class HarnessScript implements MockResponseScript {
       return { requestId: req.requestId, action: "accept", content: undefined, done: true };
     }
     if (next.kind === "immediate") {
-      const resolved =
-        typeof next.entry === "function" ? await next.entry(req) : next.entry;
+      const resolved = typeof next.entry === "function" ? await next.entry(req) : next.entry;
       return { ...resolved, requestId: req.requestId };
     }
     const resolved = await next.promise;
@@ -108,7 +107,9 @@ export async function createPairedMcpHarness(): Promise<PairedMcpHarness> {
   client.setRequestHandler(ElicitRequestSchema, async (mcpReq) => {
     // Only form-mode elicitation carries requestedSchema; URL-mode has a `url` field instead.
     // The harness only ever processes form-mode requests (the connector always sends mode:"form").
-    type FormParams = { requestedSchema: { properties: Record<string, unknown>; required?: string[] } };
+    type FormParams = {
+      requestedSchema: { properties: Record<string, unknown>; required?: string[] };
+    };
     const params = mcpReq.params as typeof mcpReq.params & Partial<FormParams>;
     const requestedSchema = params.requestedSchema;
     const synthetic: IHumanRequest = {

@@ -7,10 +7,7 @@
 import { afterAll, beforeAll, beforeEach, describe } from "vitest";
 
 import { resolveHumanConformanceFixture } from "./fixtures";
-import type {
-  HumanConnectorConformanceHandle,
-  HumanConnectorConformanceOpts,
-} from "./types";
+import type { HumanConnectorConformanceHandle, HumanConnectorConformanceOpts } from "./types";
 import { roundtripBlock } from "./assertions/roundtrip";
 import { abortBlock } from "./assertions/abort";
 import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
