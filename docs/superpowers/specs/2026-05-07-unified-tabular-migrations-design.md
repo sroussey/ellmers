@@ -177,8 +177,20 @@ Defaults to `tabular:${name}` to match existing conventions
 - **SQLite, Postgres, Supabase**: each migration's ops run inside a single
   `withTransaction`; on failure the transaction rolls back and the
   `_storage_migrations` row is not written.
-- **IndexedDB**: each migration runs inside the single upgrade transaction
-  IndexedDB requires for structural changes; same all-or-nothing semantics.
+- **IndexedDB**: a single migration is split across two transactions
+  because IDB upgrade transactions cannot span async work (so backfills
+  cannot live inside them):
+  1. **Backfill ops** run first on a normal readwrite transaction. If a
+     backfill throws, no bookkeeping has been written yet, so the next run
+     retries the migration.
+  2. **DDL ops** (`addIndex` / `dropIndex`) plus the `_storage_migrations`
+     INSERT then commit together inside one upgrade transaction.
+  This means a migration that mixes a successful backfill with a failing
+  DDL op leaves the data already transformed in storage but no bookkeeping;
+  the next run will re-execute the backfill against already-transformed
+  rows. **Backfill `transform` callbacks must therefore be idempotent**.
+  Authors needing strict atomicity should split DDL and backfill into
+  separate migration versions.
 - **InMemory, FsFolder, HuggingFace, SharedInMemory**: best-effort. Partial
   application is possible on crash. Documented; user retry safe because the
   bookkeeping write is the last step of the migration.
@@ -239,8 +251,8 @@ same surface via the existing `Dialect` abstraction:
   dialects.
 - `addIndex` → `CREATE [UNIQUE] INDEX [IF NOT EXISTS] <name> ON <table>(<cols>)`.
 - `dropIndex` → `DROP INDEX [IF EXISTS] <name>`.
-- `backfill` → iterates `tx.getPage(...)` in batches and applies
-  `tx.put`/`tx.delete`.
+- `backfill` → iterates `storage.getPage(...)` in batches inside the same
+  `withTransaction` and applies `storage.put` / `storage.delete`.
 
 The shared SQL builder added in `6bcd1fa` is reused for column definitions
 and index DDL.
