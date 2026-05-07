@@ -22,6 +22,7 @@ export interface MockHumanConnectorOpts {
 
 class Script implements MockResponseScript {
   private readonly _received: IHumanRequest[] = [];
+  private readonly _queue: MockResponseEntry[] = [];
 
   get received(): ReadonlyArray<IHumanRequest> {
     return this._received;
@@ -31,16 +32,21 @@ class Script implements MockResponseScript {
     this._received.push(req);
   }
 
-  push(_entry: MockResponseEntry): void {
-    throw new Error("not yet implemented");
+  push(entry: MockResponseEntry): void {
+    this._queue.push(entry);
   }
 
   pushDeferred(): { release(response: IHumanResponse): void } {
     throw new Error("not yet implemented");
   }
 
+  shift(): MockResponseEntry | undefined {
+    return this._queue.shift();
+  }
+
   clear(): void {
     this._received.length = 0;
+    this._queue.length = 0;
   }
 }
 
@@ -59,11 +65,18 @@ export class MockHumanConnector implements IHumanConnector {
 
   async send(request: IHumanRequest, _signal: AbortSignal): Promise<IHumanResponse> {
     this._script.recordReceived(request);
-    return {
-      requestId: request.requestId,
-      action: this.defaultAction,
-      content: undefined,
-      done: true,
-    };
+    const entry = this._script.shift();
+    if (entry === undefined) {
+      return {
+        requestId: request.requestId,
+        action: this.defaultAction,
+        content: undefined,
+        done: true,
+      };
+    }
+    const resolved = typeof entry === "function" ? await entry(request) : entry;
+    // Always echo the actual request's requestId so adapters cannot accidentally
+    // route responses to the wrong caller via a stale id.
+    return { ...resolved, requestId: request.requestId };
   }
 }
