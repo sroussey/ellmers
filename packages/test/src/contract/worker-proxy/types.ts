@@ -13,6 +13,14 @@ export interface WorkerProxyBoundaryOpts {
   readonly name: string;
   readonly skip?: boolean;
   readonly timeout: number;
+  /**
+   * Returns a handle whose `register()` installs the worker as the active
+   * route for every model named in `opts.models`. The boundary assertions
+   * dispatch via `getAiProviderRegistry()` / `textGeneration()` and rely on
+   * this to ensure traffic actually crosses the worker postMessage boundary
+   * — without it the assertions would pass against an inline provider for
+   * the wrong reason. Adapter shims must guarantee this invariant.
+   */
   readonly factory: () => Promise<ConformanceHandle>;
   readonly capabilities: WorkerProxyCapabilities;
   readonly models: WorkerProxyModels;

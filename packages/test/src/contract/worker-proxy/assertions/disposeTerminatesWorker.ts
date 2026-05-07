@@ -47,7 +47,7 @@ export function disposeTerminatesWorkerBlock(
           "Reply with the single word LATE.",
           { maxTokens: 8, timeoutMs: opts.timeout / 4 }
         );
-        await expect(after).rejects.toBeDefined();
+        await expect(after).rejects.toThrow(/.+/);
       },
       opts.timeout
     );

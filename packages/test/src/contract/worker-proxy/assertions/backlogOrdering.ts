@@ -39,9 +39,9 @@ export function backlogOrderingBlock(opts: WorkerProxyBoundaryOpts): void {
   const failing = opts.expectedFailures?.includes(FAIL_KEY) ?? false;
   const test = failing ? itExpectFail : it;
 
-  describe("PostMessage backlog drains in order under concurrent load", () => {
+  describe("PostMessage handles concurrent streams independently", () => {
     test(
-      "three concurrent streams each terminate with exactly one finish event",
+      "three concurrent streams each deliver deltas before exactly one finish event",
       async () => {
         const modelId = opts.models.textGeneration;
         if (!modelId) {

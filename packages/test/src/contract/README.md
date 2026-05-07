@@ -77,7 +77,7 @@ The worker factory's `inspect()` returns `{}` — workers are opaque by
 design. The inherited session-reuse and dispose blocks skip with their
 existing logged-warning behavior; the boundary block adds three
 worker-only assertions (dispose terminates worker, worker-side throw
-surfaces with stack, postMessage backlog drains in order).
+surfaces with stack, postMessage handles concurrent streams independently).
 
 Capability flags:
 - `browserOnly: true` — entire boundary block emits a single skipped test.
