@@ -42,7 +42,7 @@ function buildCustomProfile(): {
   const policy = {
     deny: [] as never[],
     ask: [] as never[],
-  } as EntitlementPolicy as { deny: readonly never[]; grant: readonly EntitlementGrant[]; ask: readonly never[] };
+  } as unknown as EntitlementPolicy;
   Object.defineProperty(policy, "grant", {
     get: () => grants,
     enumerable: true,
