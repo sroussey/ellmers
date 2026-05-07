@@ -11,6 +11,7 @@ import { hierarchyHonoringBlock } from "./assertions/hierarchyHonoring";
 import { optionalNeverDeniedBlock } from "./assertions/optionalNeverDenied";
 import { requestEntitlementShapeBlock } from "./assertions/requestEntitlementShape";
 import { resourceScopingBlock } from "./assertions/resourceScoping";
+import { subscribeGrantBlock } from "./assertions/subscribeGrant";
 import { subscribeRevocationBlock } from "./assertions/subscribeRevocation";
 import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
 import type {
@@ -45,5 +46,6 @@ export function runEntitlementProfileConformance(
     denialShapeBlock(opts, getHandle);
     requestEntitlementShapeBlock(opts, getHandle);
     subscribeRevocationBlock(opts, getHandle);
+    subscribeGrantBlock(opts, getHandle);
   });
 }
