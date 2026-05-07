@@ -161,7 +161,21 @@ export class IndexedDbTabularStorage<
     }
 
     if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      // Wire onversionchange so that when the migration runner bumps the IDB
+      // version (currentVersion + 1 to trigger onupgradeneeded), the current
+      // open connection is both closed AND cleared from `this.db`. Without
+      // the clear, getDb() would return a stale closed connection and throw
+      // InvalidStateError on the next transaction attempt (e.g. during backfill).
+      this.db.onversionchange = () => {
+        this.db?.close();
+        this.db = undefined;
+      };
       await this.applyTabularMigrations();
+      // After migrations, this.db may be undefined (closed by onversionchange).
+      // Reopen so the storage is ready for use.
+      if (!this.db) {
+        this.db = await this.performSetup();
+      }
     }
   }
 
