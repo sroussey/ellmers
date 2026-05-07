@@ -209,15 +209,12 @@ export class ConformanceMockContext implements IBrowserContext {
     return entry ? entry.name : null;
   }
   async attribute(ref: ElementRef, name: string): Promise<string | null> {
-    if (name === "data-clicked") {
-      // sentinel refs are formatted as "sentinel-<tabId>"
-      if (ref.startsWith("sentinel-")) {
-        const tabId = ref.slice("sentinel-".length);
-        const page = this.pages.find((p) => p.tabId === tabId);
-        return page ? page.sentinelClicked : null;
-      }
-      const entry = this.refMap.get(ref);
-      const page = entry && this.pages.find((p) => p.tabId === entry.tabId);
+    // Only the synthetic sentinel ref carries data-clicked. Button refs and
+    // other refs do not have per-element attributes modeled — they get null,
+    // matching what a real backend would return for an unrelated attribute.
+    if (name === "data-clicked" && ref.startsWith("sentinel-")) {
+      const tabId = ref.slice("sentinel-".length);
+      const page = this.pages.find((p) => p.tabId === tabId);
       return page ? page.sentinelClicked : null;
     }
     return null;
