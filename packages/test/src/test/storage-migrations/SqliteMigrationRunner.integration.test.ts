@@ -21,7 +21,11 @@ const buildMigration: BuildMigrationFn<Sqlite.Database> = (
   component,
   version,
   description: `sqlite migration v${version}`,
-  up: async () => {
+  up: async (sqliteDb) => {
+    if (options?.probeName) {
+      sqliteDb.exec(`CREATE TABLE ${options.probeName} (id INTEGER)`);
+      throw new Error(`sqlite migration v${version} failed (synthetic, after probe creation)`);
+    }
     if (options?.fail) throw new Error(`sqlite migration v${version} failed (synthetic)`);
     recorder.record(component, version);
   },
@@ -36,11 +40,22 @@ describe("SqliteMigrationRunner", async () => {
   runMigrationRunnerContract<Sqlite.Database>({
     name: "SQLite",
     timeout: 5_000,
+    // SqliteMigrationRunner does not serialize across run() callers and
+    // does not wrap up() in a transaction (better-sqlite3's transaction()
+    // can't span async). Both contract assertions are expected failures
+    // until those limitations change.
+    expectedFailures: ["concurrentRunsSerialize", "failedMigrationLeavesNoPartialSchema"],
     factory: async () => {
       const db = new Sqlite.Database(":memory:");
       return {
         createRunner: async () => new SqliteMigrationRunner(db),
         buildMigration,
+        probeExists: async (name: string) => {
+          const stmt = db.prepare<[string], { name: string }>(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+          );
+          return stmt.get(name) !== undefined;
+        },
         dispose: async () => {
           db.close();
         },
