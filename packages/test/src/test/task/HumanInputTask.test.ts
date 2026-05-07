@@ -593,7 +593,7 @@ describe("McpElicitationConnector", () => {
       elicitInput: vi.fn(),
     } as any;
 
-    const connector = new McpElicitationConnector(mockServer);
+    const connector: IHumanConnector = new McpElicitationConnector(mockServer);
     expect(connector.followUp).toBeUndefined();
   });
 });
