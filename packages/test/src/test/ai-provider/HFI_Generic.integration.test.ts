@@ -9,13 +9,12 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { HF_INFERENCE, registerHfInference } from "@workglow/huggingface-inference/ai-provider";
+import { HF_INFERENCE } from "@workglow/huggingface-inference/ai-provider";
 import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
-import { runWorkerProxyBoundary } from "../../contract/worker-proxy/runWorkerProxyBoundary";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 const RUN = !!process.env.HF_TOKEN;
@@ -23,7 +22,7 @@ const MODEL_ID = "hf-inference:meta-llama/Llama-3.1-8B-Instruct";
 const EMBED_MODEL_ID = "hf-inference:sentence-transformers/all-MiniLM-L6-v2";
 
 runAiProviderConformance({
-  name: "HuggingFace Inference (inline)",
+  name: "HuggingFace Inference",
   skip: !RUN,
   timeout: 60_000,
   factory: async () => ({
@@ -37,7 +36,12 @@ runAiProviderConformance({
         model_id: MODEL_ID,
         title: "Llama 3.1 8B Instruct (HF Inference)",
         description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
-        tasks: ["TextGenerationTask", "TextRewriterTask", "TextSummaryTask", "ToolCallingTask"],
+        tasks: [
+          "TextGenerationTask",
+          "TextRewriterTask",
+          "TextSummaryTask",
+          "ToolCallingTask",
+        ],
         provider: HF_INFERENCE as typeof HF_INFERENCE,
         provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
         metadata: {},
@@ -70,70 +74,4 @@ runAiProviderConformance({
     toolCalling: MODEL_ID,
     embeddings: EMBED_MODEL_ID,
   },
-});
-
-const hfiWorkerFactory = async () => ({
-  register: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    await registerHfInference({
-      worker: () =>
-        new Worker(new URL("./worker_hfi_test.ts", import.meta.url), { type: "module" }),
-    });
-    await getGlobalModelRepository().addModel({
-      model_id: MODEL_ID,
-      title: "Llama 3.1 8B Instruct (HF Inference)",
-      description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
-      tasks: ["TextGenerationTask", "TextRewriterTask", "TextSummaryTask", "ToolCallingTask"],
-      provider: HF_INFERENCE as typeof HF_INFERENCE,
-      provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
-      metadata: {},
-    });
-    await getGlobalModelRepository().addModel({
-      model_id: EMBED_MODEL_ID,
-      title: "All-MiniLM-L6-v2 (HF Inference)",
-      description: "sentence-transformers/all-MiniLM-L6-v2 via HF Inference",
-      tasks: ["TextEmbeddingTask"],
-      provider: HF_INFERENCE as typeof HF_INFERENCE,
-      provider_config: { model_name: "sentence-transformers/all-MiniLM-L6-v2" },
-      metadata: {},
-    });
-  },
-  dispose: async () => {
-    await setTaskQueueRegistry(null);
-  },
-  inspect: () => ({}),
-});
-
-runAiProviderConformance({
-  name: "HuggingFace Inference (worker)",
-  skip: !RUN,
-  timeout: 60_000,
-  factory: hfiWorkerFactory,
-  capabilities: {
-    streaming: true,
-    tools: true,
-    structured: false,
-    embeddings: true,
-    sessions: false,
-    abortMidStream: true,
-  },
-  models: {
-    textGeneration: MODEL_ID,
-    toolCalling: MODEL_ID,
-    embeddings: EMBED_MODEL_ID,
-  },
-});
-
-runWorkerProxyBoundary({
-  name: "HuggingFace Inference",
-  skip: !RUN,
-  timeout: 60_000,
-  factory: hfiWorkerFactory,
-  capabilities: { browserOnly: false, errorPropagation: true },
-  models: { textGeneration: MODEL_ID, toolCalling: MODEL_ID },
-  // TODO(phase-4): see Anthropic_Generic.integration.test.ts for rationale.
-  expectedFailures: ["boundary.disposeTerminatesWorker", "boundary.errorPropagation"],
 });

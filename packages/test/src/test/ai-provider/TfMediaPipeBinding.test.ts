@@ -40,7 +40,6 @@
 import { setLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
-import { runWorkerProxyBoundary } from "../../contract/worker-proxy/runWorkerProxyBoundary";
 
 // const db = new Sqlite.Database(":memory:");
 
@@ -176,16 +175,4 @@ describe("TfMediaPipeBinding", async () => {
   //     await getTaskQueueRegistry().clearQueues();
   //     await setTaskQueueRegistry(null);
   //   });
-});
-
-runWorkerProxyBoundary({
-  name: "TfMediaPipe",
-  timeout: 30_000,
-  factory: async () => ({
-    register: async () => {},
-    dispose: async () => {},
-    inspect: () => ({}),
-  }),
-  capabilities: { browserOnly: true, errorPropagation: false },
-  models: {},
 });

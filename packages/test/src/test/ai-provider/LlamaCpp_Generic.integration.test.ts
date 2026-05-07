@@ -10,7 +10,7 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP, registerLlamaCpp } from "@workglow/node-llama-cpp/ai-provider";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai-provider";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
 import {
   disposeLlamaCppResources,
@@ -23,7 +23,6 @@ import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
-import { runWorkerProxyBoundary } from "../../contract/worker-proxy/runWorkerProxyBoundary";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 const llmModel: LlamaCppModelRecord = {
@@ -82,7 +81,7 @@ const embeddingModel: LlamaCppModelRecord = {
 };
 
 runAiProviderConformance({
-  name: "LlamaCpp (node-llama-cpp) (inline)",
+  name: "LlamaCpp (node-llama-cpp)",
   timeout: 10 * 60 * 1000,
   factory: async () => ({
     register: async () => {
@@ -135,64 +134,4 @@ runAiProviderConformance({
     embeddings: embeddingModel.model_id,
   },
   fixture: { maxTokens: 200, abortGraceMs: 500 },
-});
-
-const llamaCppWorkerFactory = async () => ({
-  register: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    await registerLlamaCpp({
-      worker: () =>
-        new Worker(new URL("./worker_llamacpp_test.ts", import.meta.url), { type: "module" }),
-    });
-    await getGlobalModelRepository().addModel(llmModel);
-    await getGlobalModelRepository().addModel(toolModel);
-    await getGlobalModelRepository().addModel(embeddingModel);
-    for (const modelId of [llmModel.model_id, toolModel.model_id, embeddingModel.model_id]) {
-      const download = new DownloadModelTask({ defaults: { model: modelId } });
-      download.on("progress", (progress, _message, details) => {
-        logger.info(
-          `Download ${modelId}: ${progress}% | ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`
-        );
-      });
-      await download.run();
-    }
-  },
-  dispose: async () => {
-    await setTaskQueueRegistry(null);
-  },
-  inspect: () => ({}),
-});
-
-runAiProviderConformance({
-  name: "LlamaCpp (node-llama-cpp) (worker)",
-  timeout: 10 * 60 * 1000,
-  factory: llamaCppWorkerFactory,
-  capabilities: {
-    streaming: true,
-    tools: true,
-    structured: true,
-    embeddings: true,
-    sessions: true,
-    abortMidStream: true,
-  },
-  models: {
-    textGeneration: llmModel.model_id,
-    toolCalling: toolModel.model_id,
-    structured: toolModel.model_id,
-    embeddings: embeddingModel.model_id,
-  },
-  fixture: { maxTokens: 200, abortGraceMs: 500 },
-});
-
-runWorkerProxyBoundary({
-  name: "LlamaCpp (node-llama-cpp)",
-  timeout: 10 * 60 * 1000,
-  factory: llamaCppWorkerFactory,
-  capabilities: { browserOnly: false, errorPropagation: true },
-  models: { textGeneration: llmModel.model_id, toolCalling: toolModel.model_id },
-  // TODO(phase-4): see Anthropic_Generic.integration.test.ts for rationale.
-  expectedFailures: ["boundary.disposeTerminatesWorker", "boundary.errorPropagation"],
 });

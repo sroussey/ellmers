@@ -242,14 +242,39 @@ cannot be exercised in CI until at least Anthropic is wired.
 None at this time. Mode-switching, `inspect()` posture, scope, asserted
 blocks, and TF-MediaPipe handling confirmed during brainstorming.
 
+## Phase 3 deferred
+
+The first CI run on the merged Phase 3 wiring surfaced two architectural
+issues that this spec did not anticipate:
+
+1. **`Worker is not defined` under vitest.** Vitest's Node test environment
+   has no global `Worker`; bun does. HFT and LlamaCpp shims (which run
+   unconditionally — no `RUN` gate) try to construct a Worker in their
+   factory and crash. Cloud adapters dodge this because they're API-key
+   gated, but only because the bun-api job is the only place they actually
+   run; under vitest they'd fail the same way once keys were present.
+2. **`Worker LOCAL_LLAMACPP is already registered`.** Inline factory
+   registers via `WorkerManager.registerWorker(LOCAL_LLAMACPP)`; the worker
+   factory in the same file tries to register the same slot. The inline
+   `dispose` path doesn't unregister. Same-file describes share registry
+   state.
+
+Phase 3 was reverted in this PR. The harness (Phase 1–2) ships standalone.
+A follow-up PR must address both before re-wiring the eight adapter shims:
+
+- Polyfill `Worker` for vitest-Node (likely import from
+  `node:worker_threads` and pass to `registerXxx({ worker: () => new
+  WorkerThreads(...) })`, or bump vitest config to a Worker-providing
+  pool / environment).
+- Add `WorkerManager.unregisterWorker(name)` on the dispose path of
+  `registerLlamaCppInline` (and other inline registrations that touch the
+  WorkerManager) so the slot is freed for the worker-mode register call.
+
+Until those land, the harness exists but exercises nothing in CI.
+
 ## Measured CI overhead (Phase 3)
 
-Deferred to the first real CI run on the merged branch — the implementation
-environment has no API keys configured and the pre-existing
-`@workglow/ai/worker` package-resolution issue in `vitest.setup.ts` blocks
-local vitest execution. Update this section with the baseline / post-merge
-delta after the first green CI run; the success criterion is ≤ ~45 s
-overhead.
+Not measurable until Phase 3 is re-wired in a follow-up PR.
 
 ## References
 

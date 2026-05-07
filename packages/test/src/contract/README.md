@@ -90,7 +90,7 @@ Capability flags:
 | Contract | Suite | Adapters |
 |---|---|---|
 | `AiProvider` | `contract/ai-provider/runAiProviderConformance` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
-| Worker-proxy parity | `contract/worker-proxy/runWorkerProxyBoundary` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp (TF-MediaPipe stub-skip) |
+| Worker-proxy parity | `contract/worker-proxy/runWorkerProxyBoundary` | _harness only — no adapters wired yet_ |
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
 
@@ -115,7 +115,10 @@ Future contract suites in priority order:
 1. Storage extensions (subscribeToChanges ordering, vector-dimension format,
    putBulk round-trip count, deleteSearch streaming) — additions to the
    existing `genericTabularStorageTests.ts`.
-2. Worker-proxy contract — shipped (see Available suites).
+2. Worker-proxy contract — harness shipped; per-adapter wiring deferred to a
+   follow-up PR (vitest-Node `Worker` polyfill + per-adapter
+   `WorkerManager` unregister-on-dispose required before HFT/LlamaCpp can
+   register inline + worker in the same test file).
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
 4. `EntitlementProfile` — desktop / web / server profiles.
 5. `IHumanConnector` — App + Electron elicitation backends.

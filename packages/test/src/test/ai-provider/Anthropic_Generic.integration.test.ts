@@ -9,20 +9,19 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { ANTHROPIC, registerAnthropic } from "@workglow/anthropic/ai-provider";
+import { ANTHROPIC } from "@workglow/anthropic/ai-provider";
 import { registerAnthropicInline } from "@workglow/anthropic/ai-provider-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
 import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
-import { runWorkerProxyBoundary } from "../../contract/worker-proxy/runWorkerProxyBoundary";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 const RUN = !!process.env.ANTHROPIC_API_KEY;
 const MODEL_ID = "anthropic:claude-haiku";
 
 runAiProviderConformance({
-  name: "Anthropic (inline)",
+  name: "Anthropic",
   skip: !RUN,
   timeout: 30_000,
   factory: async () => ({
@@ -66,75 +65,4 @@ runAiProviderConformance({
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
   },
-});
-
-const anthropicWorkerFactory = async () => ({
-  register: async () => {
-    const logger = getTestingLogger();
-    setLogger(logger);
-    await setTaskQueueRegistry(null);
-    setGlobalModelRepository(new InMemoryModelRepository());
-    await registerAnthropic({
-      worker: () =>
-        new Worker(new URL("./worker_anthropic_test.ts", import.meta.url), { type: "module" }),
-    });
-    await getGlobalModelRepository().addModel({
-      model_id: MODEL_ID,
-      title: "Claude Haiku",
-      description: "Anthropic Claude Haiku",
-      tasks: [
-        "TextGenerationTask",
-        "TextRewriterTask",
-        "TextSummaryTask",
-        "StructuredGenerationTask",
-        "ToolCallingTask",
-      ],
-      provider: ANTHROPIC as typeof ANTHROPIC,
-      provider_config: { model_name: "claude-haiku-4-5-20251001" },
-      metadata: {},
-    });
-  },
-  dispose: async () => {
-    await setTaskQueueRegistry(null);
-  },
-  inspect: () => ({}),
-});
-
-runAiProviderConformance({
-  name: "Anthropic (worker)",
-  skip: !RUN,
-  timeout: 60_000,
-  factory: anthropicWorkerFactory,
-  capabilities: {
-    streaming: true,
-    tools: true,
-    structured: true,
-    embeddings: false,
-    sessions: false,
-    abortMidStream: true,
-  },
-  models: {
-    textGeneration: MODEL_ID,
-    toolCalling: MODEL_ID,
-    structured: MODEL_ID,
-  },
-});
-
-runWorkerProxyBoundary({
-  name: "Anthropic",
-  skip: !RUN,
-  timeout: 60_000,
-  factory: anthropicWorkerFactory,
-  capabilities: { browserOnly: false, errorPropagation: true },
-  models: { textGeneration: MODEL_ID, toolCalling: MODEL_ID },
-  // TODO(phase-4): both assertions need real implementations.
-  //   disposeTerminatesWorker — dispose() must actually terminate the
-  //     Worker thread (currently only clears the task queue registry,
-  //     which doesn't gate worker-routed run/stream functions).
-  //   errorPropagation — needs a body-level forced error so the throw
-  //     actually crosses the postMessage boundary (a bogus model id
-  //     fails main-side in resolveModelFromRegistry before reaching the
-  //     worker, so the rejected Error has no JobRunFns/WorkerServer
-  //     stack frame).
-  expectedFailures: ["boundary.disposeTerminatesWorker", "boundary.errorPropagation"],
 });
