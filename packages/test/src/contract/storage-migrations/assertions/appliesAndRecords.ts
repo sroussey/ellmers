@@ -40,7 +40,48 @@ export function appliesAndRecordsBlock<DB>(
         expect(applied.map((m) => m.version)).toEqual([1, 2, 3]);
         expect(recorder.calls.map((c) => c.version)).toEqual([1, 2, 3]);
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort()).toEqual([1, 2, 3]);
+        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+      },
+      opts.timeout
+    );
+
+    itImpl(
+      "interleaved multi-component input is applied in (component, version) order",
+      async () => {
+        const handle = getHandle();
+        const runner = await handle.createRunner();
+        const recorder = createMigrationCallRecorder();
+        const suffix = Date.now();
+        const a = `contract-applies-a-${suffix}`;
+        const b = `contract-applies-b-${suffix}`;
+
+        // Interleaved input across two components in not-already-sorted
+        // order. `sortMigrations` is documented to stably sort by
+        // (component asc, version asc), and every concrete runner calls
+        // it before iterating; this assertion locks that invariant in.
+        const applied = await runner.run([
+          handle.buildMigration(b, 2, recorder),
+          handle.buildMigration(a, 1, recorder),
+          handle.buildMigration(b, 1, recorder),
+          handle.buildMigration(a, 2, recorder),
+        ]);
+
+        const expected = [
+          [a, 1],
+          [a, 2],
+          [b, 1],
+          [b, 2],
+        ];
+        expect(applied.map((m) => [m.component, m.version])).toEqual(expected);
+        // Recorder agrees with the runner loop order, not just `applied` —
+        // catches a runner that returns the right `applied` array but
+        // invokes `up()` in input order.
+        expect(recorder.calls.map((c) => [c.component, c.version])).toEqual(expected);
+
+        const aVersions = await runner.appliedVersions(a);
+        const bVersions = await runner.appliedVersions(b);
+        expect([...aVersions].sort((x, y) => x - y)).toEqual([1, 2]);
+        expect([...bVersions].sort((x, y) => x - y)).toEqual([1, 2]);
       },
       opts.timeout
     );
