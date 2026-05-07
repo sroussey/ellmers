@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe } from "vitest";
 import { browserOnlyStubBlock } from "./browserOnlyStub";
 import type { WorkerProxyBoundaryOpts } from "./types";
 import type { ConformanceHandle } from "../ai-provider/types";
+import { disposeTerminatesWorkerBlock } from "./assertions/disposeTerminatesWorker";
 
 export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
   if (opts.capabilities.browserOnly) {
@@ -32,7 +33,6 @@ export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
       if (handle) await handle.dispose();
     });
 
-    // Assertion blocks land in Phase 2 (Tasks 4–6).
-    void getHandle;
+    disposeTerminatesWorkerBlock(opts, getHandle);
   });
 }
