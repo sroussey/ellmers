@@ -15,6 +15,7 @@ import { subscribeGrantBlock } from "./assertions/subscribeGrant";
 import { subscribeReloadBlock } from "./assertions/subscribeReload";
 import { subscribeRevocationBlock } from "./assertions/subscribeRevocation";
 import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
+import { unsubscribeIdempotentBlock } from "./assertions/unsubscribeIdempotent";
 import type {
   EntitlementProfileConformanceHandle,
   EntitlementProfileConformanceOpts,
@@ -49,5 +50,6 @@ export function runEntitlementProfileConformance(
     subscribeRevocationBlock(opts, getHandle);
     subscribeGrantBlock(opts, getHandle);
     subscribeReloadBlock(opts, getHandle);
+    unsubscribeIdempotentBlock(opts, getHandle);
   });
 }
