@@ -460,6 +460,81 @@ import { ENTITLEMENT_ENFORCER, createProfileEnforcer } from "@workglow/task-grap
 globalServiceRegistry.registerInstance(ENTITLEMENT_ENFORCER, createProfileEnforcer("browser"));
 ```
 
+## IEntitlementProfile
+
+`createProfileEnforcer` returns an `IEntitlementProfile`, a richer surface
+than the bare `IEntitlementEnforcer`:
+
+```ts
+interface IEntitlementProfile extends IEntitlementEnforcer {
+  readonly name: string;
+  surface(): readonly EntitlementGrant[];
+  requestEntitlement(required: TaskEntitlement): Promise<EntitlementRequestResult>;
+  subscribe(listener: (event: EntitlementChangeEvent) => void): () => void;
+  dispose(): Promise<void>;
+}
+
+type EntitlementRequestResult =
+  | { readonly outcome: "granted"; readonly entitlement: TaskEntitlement }
+  | { readonly outcome: "denied"; readonly denial: EntitlementDenial };
+
+type EntitlementChangeEvent = {
+  readonly kind: "revoked" | "granted";
+  readonly entitlement: TaskEntitlement;
+};
+```
+
+- `surface()` returns the maximum set of grants the profile may issue.
+- `requestEntitlement(e)` is the single-key form of `checkAll`. Optional
+  entitlements always map to `{ outcome: "granted" }`. `"ask"` policy
+  verdicts are resolved internally before returning.
+- `subscribe(listener)` returns events when previously-observed
+  entitlements transition between granted and denied. Built-in profiles
+  with the default `STATIC_SIGNAL_SOURCE` never emit. Downstream profiles
+  plug in a platform signal source (Electron permission events,
+  browser Permissions API onchange, etc.).
+- `dispose()` is idempotent and unsubscribes from the signal source.
+
+### Pluggable signal source
+
+```ts
+interface IEntitlementSignalSource {
+  subscribe(listener: (signal: EntitlementSignal) => void): () => void;
+}
+
+type EntitlementSignal =
+  | { readonly kind: "revoke"; readonly entitlement: TaskEntitlement }
+  | { readonly kind: "grant"; readonly entitlement: TaskEntitlement }
+  | { readonly kind: "reload" };
+```
+
+Pass a custom source to `createProfileEnforcer`:
+
+```ts
+const profile = createProfileEnforcer("desktop", {
+  signalSource: myElectronPermissionsSource,
+});
+```
+
+The default is `STATIC_SIGNAL_SOURCE` (no-op). On `revoke`/`grant`, the
+profile re-evaluates the targeted entitlement and emits a change event
+only if the verdict actually flipped. On `reload`, the profile
+re-evaluates every entitlement it has previously been queried about.
+
+### ENTITLEMENT_PROFILE service token
+
+A separate service token registers profiles in the global registry.
+It coexists with `ENTITLEMENT_ENFORCER`; consumers that only need the
+basic enforcer surface can register the profile under that token too,
+since `IEntitlementProfile extends IEntitlementEnforcer`.
+
+```ts
+import { globalServiceRegistry } from "@workglow/util";
+import { ENTITLEMENT_PROFILE, createProfileEnforcer } from "@workglow/task-graph";
+
+globalServiceRegistry.registerInstance(ENTITLEMENT_PROFILE, createProfileEnforcer("browser"));
+```
+
 ## Graph-Level Entitlement Analysis
 
 The `computeGraphEntitlements()` function aggregates entitlements across all
@@ -562,6 +637,12 @@ without needing to instantiate task classes.
 | `EntitlementDenial`       | Denied entitlement: `{ entitlement, reason, matchedRule? }` (discriminated) |
 | `EntitlementDenialReason` | `"policy-deny" \| "default-deny" \| "user-deny"`                            |
 | `IEntitlementEnforcer`    | Interface with async `checkAll(required)` and `checkTask(task)` methods     |
+| `IEntitlementProfile`     | Profile interface — extends `IEntitlementEnforcer` with surface, requestEntitlement, subscribe, dispose |
+| `EntitlementRequestResult`| Discriminated union returned by `requestEntitlement`                                                    |
+| `EntitlementChangeEvent`  | `{ kind: "revoked" \| "granted", entitlement }`                                                          |
+| `EntitlementSignal`       | `{ kind: "revoke" \| "grant", entitlement } \| { kind: "reload" }`                                       |
+| `IEntitlementSignalSource`| Pluggable port that emits `EntitlementSignal`                                                            |
+| `CreateProfileOptions`    | `{ resolver?, signalSource? }`                                                                           |
 
 ### Functions
 
@@ -573,7 +654,8 @@ without needing to instantiate task classes.
 | `mergeEntitlements`        | `(a: TaskEntitlements, b: TaskEntitlements) => TaskEntitlements`  | Merge two entitlement sets into their union                         |
 | `createGrantListEnforcer`  | `(grants: readonly string[]) => IEntitlementEnforcer`             | Create an enforcer from a list of broad grant IDs                   |
 | `createScopedEnforcer`     | `(grants: readonly EntitlementGrant[]) => IEntitlementEnforcer`   | Create an enforcer with resource-level scoping                      |
-| `createProfileEnforcer`    | `(profile: EntitlementProfile) => IEntitlementEnforcer`           | Create an enforcer for a standard runtime profile                   |
+| `createProfileEnforcer`    | `(profile: EntitlementProfile, options?: CreateProfileOptions) => IEntitlementProfile` | Create a profile for a standard runtime configuration |
+| `createPolicyProfile`      | `(name: string, policy: EntitlementPolicy, options?: CreateProfileOptions) => IEntitlementProfile` | Create a profile from an arbitrary policy |
 | `getProfileGrants`         | `(profile: EntitlementProfile) => readonly EntitlementGrant[]`    | Get the grant list for a profile                                    |
 | `computeGraphEntitlements` | `(graph: TaskGraph, options?) => TaskEntitlements`                | Aggregate entitlements across all tasks in a graph                  |
 | `formatEntitlementDenial`  | `(denial: EntitlementDenial) => string`                           | Render a denial as a human-readable error-message fragment          |
@@ -589,3 +671,5 @@ without needing to instantiate task classes.
 | `BROWSER_GRANTS`       | Grant array for browser environments                      |
 | `DESKTOP_GRANTS`       | Grant array for desktop environments                      |
 | `SERVER_GRANTS`        | Grant array for server environments                       |
+| `STATIC_SIGNAL_SOURCE` | No-op `IEntitlementSignalSource` (built-in profile default) |
+| `ENTITLEMENT_PROFILE`  | Service token for registering an `IEntitlementProfile`      |
