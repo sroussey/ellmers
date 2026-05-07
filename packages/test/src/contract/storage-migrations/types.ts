@@ -35,6 +35,13 @@ export function createMigrationCallRecorder(): MigrationCallRecorder {
 export interface BuildMigrationOptions {
   /** When set, the migration's `up()` throws synchronously. */
   readonly fail?: boolean;
+  /**
+   * When set, `up()` first creates a probe schema element with this name
+   * (a table for SQL backends, an object store for IDB) and then throws.
+   * Used by the partial-schema assertion to check whether the runner rolls
+   * DDL back on failure.
+   */
+  readonly probeName?: string;
 }
 
 /**
@@ -53,6 +60,14 @@ export type BuildMigrationFn<DB> = (
 export interface MigrationContractHandle<DB> {
   readonly createRunner: () => Promise<IMigrationRunner<DB>>;
   readonly buildMigration: BuildMigrationFn<DB>;
+  /**
+   * Returns true iff a probe schema element with the given name currently
+   * exists in the backing database. Required by the
+   * `failedMigrationLeavesNoPartialSchema` assertion. Implementations
+   * inspect the relevant catalog (`information_schema.tables`,
+   * `sqlite_master`, `db.objectStoreNames`).
+   */
+  readonly probeExists: (name: string) => Promise<boolean>;
   readonly dispose: () => Promise<void>;
 }
 
@@ -69,6 +84,8 @@ export interface MigrationRunnerContractOpts<DB> {
    *   "incrementalApplication"
    *   "failedMigrationNotRecorded"
    *   "ensureBookkeepingIdempotent"
+   *   "concurrentRunsSerialize"
+   *   "failedMigrationLeavesNoPartialSchema"
    */
   readonly expectedFailures?: ReadonlyArray<string>;
 }

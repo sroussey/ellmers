@@ -28,7 +28,11 @@ const buildMigration: BuildMigrationFn<IndexedDbUpgradeContext> = (
   component,
   version,
   description: `idb migration v${version}`,
-  up: (_ctx) => {
+  up: (ctx) => {
+    if (options?.probeName) {
+      ctx.db.createObjectStore(options.probeName);
+      throw new Error(`idb migration v${version} failed (synthetic, after probe creation)`);
+    }
     if (options?.fail) throw new Error(`idb migration v${version} failed (synthetic)`);
     recorder.record(component, version);
   },
@@ -45,6 +49,18 @@ describe("IndexedDbMigrationRunner", () => {
       return {
         createRunner: async () => new IndexedDbMigrationRunner(dbName),
         buildMigration,
+        probeExists: async (name: string) => {
+          return new Promise<boolean>((resolve, reject) => {
+            const req = indexedDB.open(dbName);
+            req.onsuccess = () => {
+              const db = req.result;
+              const exists = db.objectStoreNames.contains(name);
+              db.close();
+              resolve(exists);
+            };
+            req.onerror = () => reject(req.error);
+          });
+        },
         dispose: async () => {
           await new Promise<void>((resolve, reject) => {
             const req = indexedDB.deleteDatabase(dbName);
