@@ -62,11 +62,35 @@ Treat both as additional examples of the pattern.
    Adapters whose underlying resource doesn't natively support repeated
    dispose should guard with a flag.
 
+## Worker-proxy pattern
+
+Workers cross a `postMessage` boundary; the inline AiProvider conformance
+assertions must also hold when a provider is registered via
+`register({ worker })`. Each worker-capable adapter's shim invokes the suite
+**three times**:
+
+1. `runAiProviderConformance({ name: "<Adapter> (inline)", factory: inlineFactory, ... })`
+2. `runAiProviderConformance({ name: "<Adapter> (worker)", factory: workerFactory, ... })`
+3. `runWorkerProxyBoundary({ name: "<Adapter> worker boundary", factory: workerFactory, ... })`
+
+The worker factory's `inspect()` returns `{}` — workers are opaque by
+design. The inherited session-reuse and dispose blocks skip with their
+existing logged-warning behavior; the boundary block adds three
+worker-only assertions (dispose terminates worker, worker-side throw
+surfaces with stack, postMessage backlog drains in order).
+
+Capability flags:
+- `browserOnly: true` — entire boundary block emits a single skipped test.
+  Used for TF-MediaPipe until browser test infra arrives.
+- `errorPropagation: false` — relaxes the throw-surfaces assertion to skip
+  the stack-frame check, asserting only a non-empty message.
+
 ## Available suites
 
 | Contract | Suite | Adapters |
 |---|---|---|
 | `AiProvider` | `contract/ai-provider/runAiProviderConformance` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp |
+| Worker-proxy parity | `contract/worker-proxy/runWorkerProxyBoundary` | Anthropic, OpenAI, Gemini, Ollama, HF Inference, HF Transformers, LlamaCpp (TF-MediaPipe stub-skip) |
 | `IQueueStorage` + `IRateLimiterStorage` | `test/job-queue/genericJobQueueTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase |
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
 
@@ -91,8 +115,7 @@ Future contract suites in priority order:
 1. Storage extensions (subscribeToChanges ordering, vector-dimension format,
    putBulk round-trip count, deleteSearch streaming) — additions to the
    existing `genericTabularStorageTests.ts`.
-2. Worker-proxy contract — every provider in worker mode round-trips
-   identical assertions to direct mode.
+2. Worker-proxy contract — shipped (see Available suites).
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
 4. `EntitlementProfile` — desktop / web / server profiles.
 5. `IHumanConnector` — App + Electron elicitation backends.
