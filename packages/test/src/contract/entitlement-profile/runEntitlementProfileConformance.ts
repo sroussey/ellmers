@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe } from "vitest";
 
+import { surfaceCoverageBlock } from "./assertions/surfaceCoverage";
 import type {
   EntitlementProfileConformanceHandle,
   EntitlementProfileConformanceOpts,
@@ -31,6 +32,6 @@ export function runEntitlementProfileConformance(
 
     // Assertion blocks are wired up in Phase 3 tasks. They are imported and
     // invoked here as each one is added.
-    void getHandle; // silence "unused" until Phase 3 wires the blocks
+    surfaceCoverageBlock(opts, getHandle);
   });
 }
