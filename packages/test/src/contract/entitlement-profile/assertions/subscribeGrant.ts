@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { UNCOVERED_FOO } from "../fixtures";
+import { NETWORK_HTTP_REQUIRED, UNCOVERED_FOO } from "../fixtures";
 import type {
   EntitlementChangeEvent,
 } from "@workglow/task-graph";
@@ -41,6 +41,23 @@ export function subscribeGrantBlock(
         const granted = events.find((e) => e.kind === "granted");
         expect(granted).toBeDefined();
         expect(granted?.entitlement.id).toBe(UNCOVERED_FOO.id);
+      } finally {
+        unsub();
+      }
+    });
+
+    it("does not emit when grant signal arrives for already-granted entitlement", async () => {
+      const handle = getHandle();
+      if (!handle.simulateSignal) return;
+      const events: EntitlementChangeEvent[] = [];
+      const unsub = handle.profile.subscribe((e) => events.push(e));
+      try {
+        // Seed: query an entitlement currently granted by the policy.
+        const before = await handle.profile.requestEntitlement(NETWORK_HTTP_REQUIRED);
+        if (before.outcome !== "granted") return; // not the case for this profile
+        handle.simulateSignal({ kind: "grant", entitlement: NETWORK_HTTP_REQUIRED });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(events).toEqual([]);
       } finally {
         unsub();
       }

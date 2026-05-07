@@ -42,6 +42,13 @@ export function requestEntitlementShapeBlock(
       expect(all).toHaveLength(1);
       if (single.outcome === "denied") {
         expect(all[0]!.reason).toBe(single.denial.reason);
+        // Spec parity: when reason is policy-deny / user-deny, both calls must
+        // return the same matchedRule. default-deny carries no matchedRule.
+        if (single.denial.reason !== "default-deny") {
+          expect((all[0]! as { matchedRule?: unknown }).matchedRule).toEqual(
+            (single.denial as { matchedRule?: unknown }).matchedRule
+          );
+        }
       }
     });
   });

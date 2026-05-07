@@ -108,7 +108,14 @@ export type EntitlementChangeEvent = {
 export interface IEntitlementProfile extends IEntitlementEnforcer {
   /** Free-form identifier (e.g. "browser", "desktop", "server"). */
   readonly name: string;
-  /** The maximum set of grants this profile may issue. */
+  /**
+   * The maximum set of grants this profile may issue.
+   *
+   * Implementations MAY return a live view of the underlying policy's
+   * grant array — callers must not mutate the returned array. Treat the
+   * return value as `Readonly<readonly EntitlementGrant[]>` even though
+   * `Object.freeze` is not guaranteed.
+   */
   surface(): readonly EntitlementGrant[];
   /** Single-key request. See `EntitlementRequestResult`. */
   requestEntitlement(required: TaskEntitlement): Promise<EntitlementRequestResult>;
@@ -177,13 +184,23 @@ export function createPolicyProfile(
     const previous = lastOutcome.get(k);
     if (previous === undefined) return; // never queried; nothing to flip
     const current = await evaluate(e);
+    if (disposed) return; // dispose() was called while we were awaiting evaluate
     if (current === previous) return;
     lastOutcome.set(k, current);
     const event: EntitlementChangeEvent = {
       kind: current === "granted" ? "granted" : "revoked",
       entitlement: e,
     };
-    for (const l of listeners) l(event);
+    for (const l of listeners) {
+      try {
+        l(event);
+      } catch (err) {
+        // L2 fix: isolate listener failures so one bad listener doesn't
+        // prevent later listeners from receiving the event.
+        // eslint-disable-next-line no-console
+        console.error(`[EntitlementProfile:${name}] listener threw:`, err);
+      }
+    }
   }
 
   function safeEmitFlipFor(e: TaskEntitlement): void {

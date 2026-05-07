@@ -64,13 +64,17 @@ that any profile implementation — built-in or downstream — must pass.
 All additions live in `@workglow/task-graph`. Existing exports are unchanged
 in shape; one return type widens additively.
 
-### `EntitlementVerdict`
+### `EntitlementRequestResult`
+
+> **Implementation note:** The implementation uses `EntitlementRequestResult`
+> (not `EntitlementVerdict`) to avoid shadowing the existing
+> `evaluatePolicy`-style verdict terminology already present in the codebase.
 
 A discriminated union that mirrors `checkAll` semantics for a single
 required entitlement.
 
 ```ts
-export type EntitlementVerdict =
+export type EntitlementRequestResult =
   | { readonly outcome: "granted"; readonly entitlement: TaskEntitlement }
   | { readonly outcome: "denied"; readonly denial: EntitlementDenial };
 ```
@@ -129,7 +133,7 @@ export type EntitlementChangeEvent = {
 export interface IEntitlementProfile extends IEntitlementEnforcer {
   readonly name: string;
   surface(): readonly EntitlementGrant[];
-  requestEntitlement(required: TaskEntitlement): Promise<EntitlementVerdict>;
+  requestEntitlement(required: TaskEntitlement): Promise<EntitlementRequestResult>;
   subscribe(listener: (event: EntitlementChangeEvent) => void): () => void;
   dispose(): Promise<void>;
 }

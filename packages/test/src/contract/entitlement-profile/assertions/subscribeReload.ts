@@ -37,12 +37,11 @@ export function subscribeReloadBlock(
         // exactly one of the two seeded entitlements before emitting reload.
         handle.simulateSignal({ kind: "reload" });
         await new Promise((r) => setTimeout(r, 0));
-        // We expect exactly one change event corresponding to the flipped
-        // entitlement. The shim controls which one.
-        expect(events.length).toBeGreaterThanOrEqual(1);
-        for (const e of events) {
-          expect([NETWORK_HTTP_REQUIRED.id, UNCOVERED_FOO.id]).toContain(e.entitlement.id);
-        }
+        // The shim's simulateSignal stages a policy mutation that flips exactly
+        // one of the two seeded entitlements (NETWORK_HTTP) before emitting reload.
+        // A conforming profile emits change events ONLY for entitlements that
+        // actually flipped — never for entitlements whose verdict is unchanged.
+        expect(events.map((e) => e.entitlement.id)).toEqual([NETWORK_HTTP_REQUIRED.id]);
       } finally {
         unsub();
       }
