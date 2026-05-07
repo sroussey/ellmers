@@ -184,3 +184,103 @@ describe("MockHumanConnector — followUp", () => {
     expect(second.content).toEqual({ step: 2 });
   });
 });
+
+function notifyReq(requestId: string): IHumanRequest {
+  return {
+    requestId,
+    targetHumanId: "default",
+    kind: "notify",
+    message: "ping",
+    contentSchema: { type: "object", properties: {}, additionalProperties: true },
+    contentData: undefined,
+    expectsResponse: false,
+    mode: "single",
+    metadata: undefined,
+  };
+}
+
+function displayReq(requestId: string): IHumanRequest {
+  return {
+    requestId,
+    targetHumanId: "default",
+    kind: "display",
+    message: "view",
+    contentSchema: { type: "object", properties: {}, additionalProperties: true },
+    contentData: { x: 1 },
+    expectsResponse: false,
+    mode: "single",
+    metadata: undefined,
+  };
+}
+
+describe("MockHumanConnector — notify/display fast-resolve", () => {
+  it("notify fast-resolves and does not consume a queued elicit response", async () => {
+    const c = new MockHumanConnector();
+    c.script.push({
+      requestId: "queued",
+      action: "accept",
+      content: { tag: "queued" },
+      done: true,
+    });
+
+    const ac = new AbortController();
+    const notifyRes = await c.send(notifyReq("n1"), ac.signal);
+    expect(notifyRes.action).toBe("accept");
+    expect(notifyRes.done).toBe(true);
+    expect(notifyRes.content).toBeUndefined();
+
+    const elicitRes = await c.send(elicitReq("e1"), ac.signal);
+    expect(elicitRes.requestId).toBe("e1");
+    expect(elicitRes.content).toEqual({ tag: "queued" });
+  });
+
+  it("display fast-resolves and does not consume a queued elicit response", async () => {
+    const c = new MockHumanConnector();
+    c.script.push({
+      requestId: "queued",
+      action: "accept",
+      content: { tag: "queued" },
+      done: true,
+    });
+
+    const ac = new AbortController();
+    const displayRes = await c.send(displayReq("d1"), ac.signal);
+    expect(displayRes.action).toBe("accept");
+    expect(displayRes.done).toBe(true);
+    expect(displayRes.content).toBeUndefined();
+
+    const elicitRes = await c.send(elicitReq("e1"), ac.signal);
+    expect(elicitRes.requestId).toBe("e1");
+    expect(elicitRes.content).toEqual({ tag: "queued" });
+  });
+
+  it("notify and display still record received requests", async () => {
+    const c = new MockHumanConnector();
+    const ac = new AbortController();
+    await c.send(notifyReq("n1"), ac.signal);
+    await c.send(displayReq("d1"), ac.signal);
+    expect(c.script.received.map((r) => r.requestId)).toEqual(["n1", "d1"]);
+  });
+});
+
+describe("MockHumanConnector — clear() rejects pending deferreds", () => {
+  it("clear() unblocks an in-flight send() awaiting a deferred", async () => {
+    const c = new MockHumanConnector();
+    c.script.pushDeferred();
+    const ac = new AbortController();
+    const promise = c.send(elicitReq("r1"), ac.signal);
+
+    // Allow send() to shift and start awaiting before we clear.
+    await Promise.resolve();
+    c.script.clear();
+
+    let caught: unknown;
+    try {
+      await promise;
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(isAbortError(caught)).toBe(true);
+  });
+});

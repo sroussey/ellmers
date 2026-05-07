@@ -34,6 +34,20 @@ function buildReq(
   };
 }
 
+function elicitReq(fixture: ConformanceFixture, requestId: string): IHumanRequest {
+  return {
+    requestId,
+    targetHumanId: "default",
+    kind: "elicit",
+    message: "Follow-up after fast-resolve.",
+    contentSchema: fixture.elicitContentSchema,
+    contentData: undefined,
+    expectsResponse: true,
+    mode: "single",
+    metadata: undefined,
+  };
+}
+
 function block(
   kind: "notify" | "display",
   enabled: boolean,
@@ -45,18 +59,29 @@ function block(
   const expectFails = new Set(opts.expectedFailures ?? []);
   const itFn = expectFails.has(failId) ? itExpectFail : it;
 
-  describe.skipIf(!enabled)(`${kind} fast-resolve`, () => {
+  describe.skipIf(!enabled || !opts.capabilities.elicit)(`${kind} fast-resolve`, () => {
     itFn(
-      `${kind} resolves with action=accept, done=true, no script consumption`,
+      `${kind} resolves with action=accept, done=true, and does not consume scripted elicit responses`,
       async () => {
-        const { connector } = getHandle();
-        // No script entry is pushed. A connector that requires a scripted
-        // response for this kind would block here and time out via opts.timeout.
+        const { connector, script } = getHandle();
+        // Preload an elicit response; if the connector incorrectly consumes
+        // the queue on a notify/display request, the next elicit would fall
+        // through to the connector's default and the assertion below would
+        // surface the regression.
+        const sentinel = { approved: true, reason: "sentinel" };
+        script.push({ requestId: "ignored", action: "accept", content: sentinel, done: true });
+
         const ac = new AbortController();
         const res = await connector.send(buildReq(fixture, kind, `${kind}-1`), ac.signal);
         expect(res.action).toBe("accept");
         expect(res.done).toBe(true);
         expect(res.content).toBeUndefined();
+
+        // The elicit response queued before should still be consumable.
+        const elicitRes = await connector.send(elicitReq(fixture, `${kind}-elicit-1`), ac.signal);
+        expect(elicitRes.action).toBe("accept");
+        expect(elicitRes.content).toEqual(sentinel);
+        expect(elicitRes.requestId).toBe(`${kind}-elicit-1`);
       },
       opts.timeout
     );

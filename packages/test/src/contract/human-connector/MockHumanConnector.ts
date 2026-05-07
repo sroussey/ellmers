@@ -25,6 +25,8 @@ type DeferredEntry = {
   readonly resolved: { value: IHumanResponse | undefined };
   readonly settled: { done: boolean };
   readonly waiters: Array<(res: IHumanResponse) => void>;
+  /** Reject hooks for awaiters when clear() runs while still pending. */
+  readonly rejecters: Array<(err: Error) => void>;
 };
 
 type ImmediateEntry = { readonly kind: "immediate"; readonly entry: MockResponseEntry };
@@ -34,6 +36,12 @@ type QueueEntry = ImmediateEntry | DeferredEntry;
 class Script implements MockResponseScript {
   private readonly _received: IHumanRequest[] = [];
   private readonly _queue: QueueEntry[] = [];
+  /**
+   * All deferreds that have been pushed but not yet settled. Tracked
+   * separately so clear() can reject pending awaiters even after the entry
+   * has been shifted out of the queue by send().
+   */
+  private readonly _pendingDeferreds: DeferredEntry[] = [];
 
   get received(): ReadonlyArray<IHumanRequest> {
     return this._received;
@@ -53,8 +61,10 @@ class Script implements MockResponseScript {
       resolved: { value: undefined },
       settled: { done: false },
       waiters: [],
+      rejecters: [],
     };
     this._queue.push(def);
+    this._pendingDeferreds.push(def);
     return {
       release: (response) => {
         if (def.settled.done) return;
@@ -62,6 +72,7 @@ class Script implements MockResponseScript {
         def.resolved.value = response;
         for (const w of def.waiters) w(response);
         def.waiters.length = 0;
+        def.rejecters.length = 0;
       },
     };
   }
@@ -71,6 +82,16 @@ class Script implements MockResponseScript {
   }
 
   clear(): void {
+    for (const def of this._pendingDeferreds) {
+      if (def.settled.done) continue;
+      def.settled.done = true;
+      const err = new Error("MockHumanConnector script cleared while deferred was pending");
+      err.name = "AbortError";
+      for (const r of def.rejecters) r(err);
+      def.rejecters.length = 0;
+      def.waiters.length = 0;
+    }
+    this._pendingDeferreds.length = 0;
     this._received.length = 0;
     this._queue.length = 0;
   }
@@ -102,6 +123,10 @@ function awaitDeferred(def: DeferredEntry, signal: AbortSignal): Promise<IHumanR
       signal.removeEventListener("abort", onAbort);
       resolve(res);
     });
+    def.rejecters.push((err) => {
+      signal.removeEventListener("abort", onAbort);
+      reject(err);
+    });
   });
 }
 
@@ -129,6 +154,20 @@ export class MockHumanConnector implements IHumanConnector {
   async send(request: IHumanRequest, signal: AbortSignal): Promise<IHumanResponse> {
     if (signal.aborted) throw defaultAbortError(signal);
     this._script.recordReceived(request);
+
+    // notify/display fast-resolve without consuming the script queue.
+    // The queue is for elicit responses; consuming an entry on a notify or
+    // display request would corrupt deterministic scripting for any later
+    // elicit prompt.
+    if (request.kind === "notify" || request.kind === "display") {
+      return {
+        requestId: request.requestId,
+        action: this.defaultAction,
+        content: undefined,
+        done: true,
+      };
+    }
+
     const entry = this._script.shift();
     if (entry === undefined) {
       return {
