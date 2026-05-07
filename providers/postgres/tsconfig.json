@@ -7,5 +7,9 @@
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../util" }, { "path": "../task-graph" }, { "path": "../storage" }]
+  "references": [
+    { "path": "../../packages/util" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/job-queue" }
+  ]
 }

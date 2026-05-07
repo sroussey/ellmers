@@ -47,75 +47,75 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "browser": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
+        "types": "./src/bun.ts",
+        "import": "./src/bun.ts"
       },
-      "types": "./dist/node.d.ts",
-      "import": "./dist/node.js"
+      "types": "./src/node.ts",
+      "import": "./src/node.ts"
     },
     "./schema": {
-      "types": "./dist/schema-entry.d.ts",
-      "import": "./dist/schema-entry.js"
+      "types": "./src/schema-entry.ts",
+      "import": "./src/schema-entry.ts"
     },
     "./graph": {
-      "types": "./dist/graph-entry.d.ts",
-      "import": "./dist/graph-entry.js"
+      "types": "./src/graph-entry.ts",
+      "import": "./src/graph-entry.ts"
     },
     "./media": {
       "react-native": {
-        "types": "./dist/media-browser.d.ts",
-        "import": "./dist/media-browser.js"
+        "types": "./src/media-browser.ts",
+        "import": "./src/media-browser.ts"
       },
       "browser": {
-        "types": "./dist/media-browser.d.ts",
-        "import": "./dist/media-browser.js"
+        "types": "./src/media-browser.ts",
+        "import": "./src/media-browser.ts"
       },
       "bun": {
-        "types": "./dist/media-node.d.ts",
-        "import": "./dist/media-node.js"
+        "types": "./src/media-node.ts",
+        "import": "./src/media-node.ts"
       },
-      "types": "./dist/media-node.d.ts",
-      "import": "./dist/media-node.js"
+      "types": "./src/media-node.ts",
+      "import": "./src/media-node.ts"
     },
     "./compress": {
       "react-native": {
-        "types": "./dist/compress-browser.d.ts",
-        "import": "./dist/compress-browser.js"
+        "types": "./src/compress-browser.ts",
+        "import": "./src/compress-browser.ts"
       },
       "browser": {
-        "types": "./dist/compress-browser.d.ts",
-        "import": "./dist/compress-browser.js"
+        "types": "./src/compress-browser.ts",
+        "import": "./src/compress-browser.ts"
       },
       "bun": {
-        "types": "./dist/compress-node.d.ts",
-        "import": "./dist/compress-node.js"
+        "types": "./src/compress-node.ts",
+        "import": "./src/compress-node.ts"
       },
-      "types": "./dist/compress-node.d.ts",
-      "import": "./dist/compress-node.js"
+      "types": "./src/compress-node.ts",
+      "import": "./src/compress-node.ts"
     },
     "./worker": {
       "react-native": {
-        "types": "./dist/worker-browser.d.ts",
-        "import": "./dist/worker-browser.js"
+        "types": "./src/worker-browser.ts",
+        "import": "./src/worker-browser.ts"
       },
       "browser": {
-        "types": "./dist/worker-browser.d.ts",
-        "import": "./dist/worker-browser.js"
+        "types": "./src/worker-browser.ts",
+        "import": "./src/worker-browser.ts"
       },
       "bun": {
-        "types": "./dist/worker-bun.d.ts",
-        "import": "./dist/worker-bun.js"
+        "types": "./src/worker-bun.ts",
+        "import": "./src/worker-bun.ts"
       },
-      "types": "./dist/worker-entry.d.ts",
-      "import": "./dist/worker-node.js"
+      "types": "./src/worker-entry.ts",
+      "import": "./src/worker-node.ts"
     }
   },
   "files": [

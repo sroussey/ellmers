@@ -27,16 +27,16 @@
   },
   "exports": {
     "./task": {
-      "types": "./dist/task.d.ts",
-      "import": "./dist/task.js"
+      "types": "./src/task.ts",
+      "import": "./src/task.ts"
     },
     "./task-server": {
-      "types": "./dist/task-server.d.ts",
-      "import": "./dist/task-server.js"
+      "types": "./src/task-server.ts",
+      "import": "./src/task-server.ts"
     },
     "./task-electron": {
-      "types": "./dist/task-electron.d.ts",
-      "import": "./dist/task-electron.js"
+      "types": "./src/task-electron.ts",
+      "import": "./src/task-electron.ts"
     }
   },
   "peerDependencies": {

@@ -22,139 +22,139 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "browser": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
+        "types": "./src/bun.ts",
+        "import": "./src/bun.ts"
       },
-      "types": "./dist/node.d.ts",
-      "import": "./dist/node.js"
+      "types": "./src/node.ts",
+      "import": "./src/node.ts"
     },
     "./anthropic": {
       "browser": {
-        "types": "./dist/anthropic.d.ts",
-        "import": "./dist/anthropic.browser.js"
+        "types": "./src/anthropic.ts",
+        "import": "./src/anthropic.browser.ts"
       },
       "bun": {
-        "types": "./dist/anthropic.d.ts",
-        "import": "./dist/anthropic.bun.js"
+        "types": "./src/anthropic.ts",
+        "import": "./src/anthropic.bun.ts"
       },
-      "types": "./dist/anthropic.d.ts",
-      "import": "./dist/anthropic.js"
+      "types": "./src/anthropic.ts",
+      "import": "./src/anthropic.ts"
     },
     "./anthropic/runtime": {
-      "types": "./dist/anthropic-runtime.d.ts",
-      "import": "./dist/anthropic-runtime.js"
+      "types": "./src/anthropic-runtime.ts",
+      "import": "./src/anthropic-runtime.ts"
     },
     "./gemini": {
       "browser": {
-        "types": "./dist/google-gemini.d.ts",
-        "import": "./dist/google-gemini.browser.js"
+        "types": "./src/google-gemini.ts",
+        "import": "./src/google-gemini.browser.ts"
       },
       "bun": {
-        "types": "./dist/google-gemini.d.ts",
-        "import": "./dist/google-gemini.bun.js"
+        "types": "./src/google-gemini.ts",
+        "import": "./src/google-gemini.bun.ts"
       },
-      "types": "./dist/google-gemini.d.ts",
-      "import": "./dist/google-gemini.js"
+      "types": "./src/google-gemini.ts",
+      "import": "./src/google-gemini.ts"
     },
     "./gemini/runtime": {
-      "types": "./dist/google-gemini-runtime.d.ts",
-      "import": "./dist/google-gemini-runtime.js"
+      "types": "./src/google-gemini-runtime.ts",
+      "import": "./src/google-gemini-runtime.ts"
     },
     "./hf-transformers": {
       "browser": {
-        "types": "./dist/hf-transformers.d.ts",
-        "import": "./dist/hf-transformers.browser.js"
+        "types": "./src/hf-transformers.ts",
+        "import": "./src/hf-transformers.browser.ts"
       },
       "bun": {
-        "types": "./dist/hf-transformers.d.ts",
-        "import": "./dist/hf-transformers.bun.js"
+        "types": "./src/hf-transformers.ts",
+        "import": "./src/hf-transformers.bun.ts"
       },
-      "types": "./dist/hf-transformers.d.ts",
-      "import": "./dist/hf-transformers.js"
+      "types": "./src/hf-transformers.ts",
+      "import": "./src/hf-transformers.ts"
     },
     "./hf-transformers/runtime": {
-      "types": "./dist/hf-transformers-runtime.d.ts",
-      "import": "./dist/hf-transformers-runtime.js"
+      "types": "./src/hf-transformers-runtime.ts",
+      "import": "./src/hf-transformers-runtime.ts"
     },
     "./ollama": {
       "browser": {
-        "types": "./dist/ollama.d.ts",
-        "import": "./dist/ollama.browser.js"
+        "types": "./src/ollama.ts",
+        "import": "./src/ollama.browser.ts"
       },
       "bun": {
-        "types": "./dist/ollama.d.ts",
-        "import": "./dist/ollama.bun.js"
+        "types": "./src/ollama.ts",
+        "import": "./src/ollama.bun.ts"
       },
-      "types": "./dist/ollama.d.ts",
-      "import": "./dist/ollama.js"
+      "types": "./src/ollama.ts",
+      "import": "./src/ollama.ts"
     },
     "./ollama/runtime": {
-      "types": "./dist/ollama-runtime.d.ts",
-      "import": "./dist/ollama-runtime.js"
+      "types": "./src/ollama-runtime.ts",
+      "import": "./src/ollama-runtime.ts"
     },
     "./openai": {
       "browser": {
-        "types": "./dist/openai.d.ts",
-        "import": "./dist/openai.browser.js"
+        "types": "./src/openai.ts",
+        "import": "./src/openai.browser.ts"
       },
       "bun": {
-        "types": "./dist/openai.d.ts",
-        "import": "./dist/openai.bun.js"
+        "types": "./src/openai.ts",
+        "import": "./src/openai.bun.ts"
       },
-      "types": "./dist/openai.d.ts",
-      "import": "./dist/openai.js"
+      "types": "./src/openai.ts",
+      "import": "./src/openai.ts"
     },
     "./openai/runtime": {
-      "types": "./dist/openai-runtime.d.ts",
-      "import": "./dist/openai-runtime.js"
+      "types": "./src/openai-runtime.ts",
+      "import": "./src/openai-runtime.ts"
     },
     "./tf-mediapipe": {
-      "types": "./dist/tf-mediapipe.d.ts",
-      "import": "./dist/tf-mediapipe.js"
+      "types": "./src/tf-mediapipe.ts",
+      "import": "./src/tf-mediapipe.ts"
     },
     "./tf-mediapipe/runtime": {
-      "types": "./dist/tf-mediapipe-runtime.d.ts",
-      "import": "./dist/tf-mediapipe-runtime.js"
+      "types": "./src/tf-mediapipe-runtime.ts",
+      "import": "./src/tf-mediapipe-runtime.ts"
     },
     "./chrome-ai": {
-      "types": "./dist/chrome-ai.d.ts",
-      "import": "./dist/chrome-ai.js"
+      "types": "./src/chrome-ai.ts",
+      "import": "./src/chrome-ai.ts"
     },
     "./chrome-ai/runtime": {
-      "types": "./dist/chrome-ai-runtime.d.ts",
-      "import": "./dist/chrome-ai-runtime.js"
+      "types": "./src/chrome-ai-runtime.ts",
+      "import": "./src/chrome-ai-runtime.ts"
     },
     "./worker": {
       "react-native": {
-        "types": "./dist/worker-browser.d.ts",
-        "import": "./dist/worker-browser.js"
+        "types": "./src/worker-browser.ts",
+        "import": "./src/worker-browser.ts"
       },
       "browser": {
-        "types": "./dist/worker-browser.d.ts",
-        "import": "./dist/worker-browser.js"
+        "types": "./src/worker-browser.ts",
+        "import": "./src/worker-browser.ts"
       },
       "bun": {
-        "types": "./dist/worker-bun.d.ts",
-        "import": "./dist/worker-bun.js"
+        "types": "./src/worker-bun.ts",
+        "import": "./src/worker-bun.ts"
       },
-      "types": "./dist/worker-browser.d.ts",
-      "import": "./dist/worker-node.js"
+      "types": "./src/worker-browser.ts",
+      "import": "./src/worker-node.ts"
     },
     "./bootstrap": {
-      "types": "./dist/bootstrap.d.ts",
-      "import": "./dist/bootstrap.js"
+      "types": "./src/bootstrap.ts",
+      "import": "./src/bootstrap.ts"
     },
     "./auto-bootstrap": {
-      "types": "./dist/auto-bootstrap.d.ts",
-      "import": "./dist/auto-bootstrap.js"
+      "types": "./src/auto-bootstrap.ts",
+      "import": "./src/auto-bootstrap.ts"
     }
   },
   "files": [

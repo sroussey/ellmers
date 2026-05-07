@@ -56,6 +56,8 @@ async function main(): Promise<void> {
 
   // Process all packages
   await processPackages("packages", operation);
+  // Process all providers
+  await processPackages("providers", operation);
 
   // Process all examples
   console.log(`\n${operation === "link" ? "Linking" : "Unlinking"} examples...`);

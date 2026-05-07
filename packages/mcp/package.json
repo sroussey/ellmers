@@ -30,19 +30,19 @@
   "exports": {
     "./tasks": {
       "browser": {
-        "types": "./dist/tasks/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/tasks/browser.ts",
+        "import": "./src/browser.ts"
       },
       "bun": {
-        "types": "./dist/tasks/bun.d.ts",
-        "import": "./dist/bun.js"
+        "types": "./src/tasks/bun.ts",
+        "import": "./src/bun.ts"
       },
-      "types": "./dist/tasks/node.d.ts",
-      "import": "./dist/node.js"
+      "types": "./src/tasks/node.ts",
+      "import": "./src/node.ts"
     },
     "./util": {
-      "types": "./dist/util.d.ts",
-      "import": "./dist/util.js"
+      "types": "./src/util.ts",
+      "import": "./src/util.ts"
     }
   },
   "dependencies": {

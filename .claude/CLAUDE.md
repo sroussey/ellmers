@@ -9,7 +9,7 @@ Use Node.js 24 or newer for all commands in this repository. Native dependencies
 can produce misleading SQLite failures.
 
 ```sh
-bun run build              # Full build (all packages + examples, via Turbo)
+bun run build              # Full build (all packages + integrations + examples, via Turbo)
 bun run build:packages     # Build packages only
 bun run build:types        # Build type declarations only
 bun run watch              # Watch mode (Turbo, concurrency 15)

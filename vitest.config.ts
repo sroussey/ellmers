@@ -7,11 +7,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      // Resolve from source instead of dist for better mocking support (path relative to config for CI)
-      "@workglow/ai-provider/ollama": path.resolve(
-        __dirname,
-        "packages/ai-provider/src/provider-ollama/index.browser.ts"
-      ),
       // Resolve mcp subpaths from source so that module identity is preserved across entries.
       // Without this, the bundled dist/node.js and dist/util.js each inline a separate copy of
       // McpClientUtil, breaking mock patterns that mutate the exported mcpClientFactory object.

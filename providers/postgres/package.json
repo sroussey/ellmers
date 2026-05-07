@@ -1,13 +1,13 @@
 {
-  "name": "@workglow/indexeddb",
+  "name": "@workglow/postgres",
   "type": "module",
   "version": "0.2.31",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
-    "directory": "packages/indexeddb"
+    "directory": "packages/postgres"
   },
-  "description": "IndexedDB backends for @workglow/storage and @workglow/job-queue.",
+  "description": "Postgres backends for @workglow/storage and @workglow/job-queue.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun'",
@@ -54,11 +54,19 @@
     }
   },
   "peerDependencies": {
+    "@electric-sql/pglite": "catalog:",
+    "pg": "catalog:",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
     "@workglow/job-queue": {
       "optional": false
     },
@@ -70,7 +78,7 @@
     }
   },
   "devDependencies": {
-    "fake-indexeddb": "^6.2.4",
+    "@types/pg": "^8.18.0",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/util": "workspace:*"

@@ -1,45 +1,42 @@
 {
-  "name": "@workglow/ai-provider",
+  "name": "@workglow/google-gemini",
   "type": "module",
   "sideEffects": false,
   "version": "0.2.31",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/workglow.git",
-    "directory": "packages/ai-provider"
+    "directory": "packages/google-gemini"
   },
-  "description": "AI provider integrations for Workglow, supporting OpenAI, Hugging Face Transformers, MediaPipe, and GGML models.",
+  "description": "Google Gemini provider for @workglow/ai-provider.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/test.ts ./src/common.ts",
+    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",
     "build-js": "bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/test.ts ./src/common.ts",
+    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "exports": {
-    "./test": {
-      "types": "./src/test.ts",
-      "import": "./src/test.ts"
+    "./ai-provider": {
+      "types": "./src/ai-provider.ts",
+      "import": "./src/ai-provider.ts"
     },
-    "./common": {
-      "types": "./src/common.ts",
-      "import": "./src/common.ts"
+    "./ai-provider-runtime": {
+      "types": "./src/ai-provider-runtime.ts",
+      "import": "./src/ai-provider-runtime.ts"
     }
   },
-  "files": [
-    "dist",
-    "src/**/*.md"
-  ],
-  "publishConfig": {
-    "access": "public"
+  "dependencies": {
+    "@google/generative-ai": "catalog:"
   },
   "peerDependencies": {
     "@workglow/ai": "workspace:*",
+    "@workglow/ai-provider": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
@@ -47,6 +44,9 @@
   },
   "peerDependenciesMeta": {
     "@workglow/ai": {
+      "optional": false
+    },
+    "@workglow/ai-provider": {
       "optional": false
     },
     "@workglow/job-queue": {
@@ -64,9 +64,17 @@
   },
   "devDependencies": {
     "@workglow/ai": "workspace:*",
+    "@workglow/ai-provider": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

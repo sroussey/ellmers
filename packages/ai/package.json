@@ -30,23 +30,23 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "browser": {
-        "types": "./dist/browser.d.ts",
-        "import": "./dist/browser.js"
+        "types": "./src/browser.ts",
+        "import": "./src/browser.ts"
       },
       "bun": {
-        "types": "./dist/bun.d.ts",
-        "import": "./dist/bun.js"
+        "types": "./src/bun.ts",
+        "import": "./src/bun.ts"
       },
-      "types": "./dist/node.d.ts",
-      "import": "./dist/node.js"
+      "types": "./src/node.ts",
+      "import": "./src/node.ts"
     },
     "./worker": {
-      "types": "./dist/worker.d.ts",
-      "import": "./dist/worker.js"
+      "types": "./src/worker.ts",
+      "import": "./src/worker.ts"
     }
   },
   "sideEffects": false,
