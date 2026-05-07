@@ -159,8 +159,11 @@ export function createPolicyProfile(
   let disposed = false;
 
   function key(e: TaskEntitlement): string {
-    const resources = e.resources ? [...e.resources].sort().join(",") : "";
-    return `${e.id}|${resources}`;
+    // JSON.stringify with a sentinel for `undefined` so that we don't conflate
+    // `resources: undefined` (broad) with `resources: []` (narrowly empty),
+    // and so that resource strings containing commas don't collide.
+    const resources = e.resources === undefined ? null : [...e.resources].sort();
+    return `${e.id}|${JSON.stringify(resources)}`;
   }
 
   async function evaluate(e: TaskEntitlement): Promise<"granted" | "denied"> {
@@ -183,16 +186,26 @@ export function createPolicyProfile(
     for (const l of listeners) l(event);
   }
 
+  function safeEmitFlipFor(e: TaskEntitlement): void {
+    // Signal callbacks run synchronously from the source, so we can't await.
+    // Surface evaluation errors via console.error rather than letting them
+    // become unhandled promise rejections that may crash the host.
+    emitFlipFor(e).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[EntitlementProfile:${name}] error evaluating signal:`, err);
+    });
+  }
+
   const sourceUnsub = signalSource.subscribe((signal) => {
     if (disposed) return;
     if (signal.kind === "reload") {
       // Re-evaluate every previously-queried entitlement.
       for (const [, e] of lastEntitlement) {
-        void emitFlipFor(e);
+        safeEmitFlipFor(e);
       }
     } else {
       // revoke or grant: re-evaluate the targeted entitlement.
-      void emitFlipFor(signal.entitlement);
+      safeEmitFlipFor(signal.entitlement);
     }
   });
 
@@ -242,10 +255,15 @@ export function createPolicyProfile(
 
 /**
  * Service token for registering an `IEntitlementProfile`.
- * Distinct from `ENTITLEMENT_ENFORCER`: a profile is a richer surface
- * (subscribe + dispose + surface). Registering a profile also satisfies
- * any consumer that resolves `ENTITLEMENT_ENFORCER` because
- * `IEntitlementProfile extends IEntitlementEnforcer`.
+ *
+ * Distinct from `ENTITLEMENT_ENFORCER`: a profile exposes a richer surface
+ * (subscribe + dispose + surface). `ServiceRegistry` resolves by token
+ * identity, so a registration under `ENTITLEMENT_PROFILE` is NOT
+ * automatically visible to consumers resolving `ENTITLEMENT_ENFORCER`.
+ *
+ * Because `IEntitlementProfile extends IEntitlementEnforcer`, the same
+ * profile instance can be registered under both tokens if both consumer
+ * styles need to resolve it.
  */
 export const ENTITLEMENT_PROFILE = createServiceToken<IEntitlementProfile>(
   "workglow.entitlementProfile"

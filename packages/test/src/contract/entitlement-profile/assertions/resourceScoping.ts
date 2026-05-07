@@ -18,7 +18,8 @@ import type {
  * exercise the policy with a known-scoped fixture only when the profile
  * already grants filesystem broadly. When `filesystem` is broadly granted,
  * a scoped read of any resource succeeds. This block additionally verifies
- * that profiles which DO NOT grant filesystem deny a /tmp read.
+ * that profiles which DO NOT grant filesystem deny a scoped read of
+ * `/etc/passwd`.
  */
 export function resourceScopingBlock(
   opts: EntitlementProfileConformanceOpts,
