@@ -11,10 +11,7 @@ import {
   ClientProvidedKeysOption,
   KeyGenerationStrategy,
 } from "./BaseTabularStorage";
-import {
-  type ITabularMigration,
-  type ITabularMigrationApplier,
-} from "../migrations";
+import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 import {
   AnyTabularStorage,

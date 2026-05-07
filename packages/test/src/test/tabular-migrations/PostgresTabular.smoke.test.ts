@@ -64,10 +64,9 @@ describe("PostgresTabular migration smoke", () => {
     );
     await v1.setupDatabase();
 
-    const r = await pgl.query(
-      "SELECT version FROM _storage_migrations WHERE component = $1",
-      ["tabular:users"]
-    );
+    const r = await pgl.query("SELECT version FROM _storage_migrations WHERE component = $1", [
+      "tabular:users",
+    ]);
     expect((r.rows as Array<{ version: number }>).map((x) => Number(x.version))).toEqual([1]);
 
     const row = (await v1.get({ id: "u1" })) as

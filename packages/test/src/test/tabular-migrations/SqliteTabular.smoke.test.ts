@@ -38,7 +38,13 @@ describe("SqliteTabular migration smoke", async () => {
         description: "add archived",
         // Use a nullable schema so SQLite can ADD COLUMN to a populated table
         // without a DEFAULT — existing rows get NULL for the new column.
-        ops: [{ kind: "addColumn", name: "archived", schema: { anyOf: [{ type: "boolean" }, { type: "null" }] } }],
+        ops: [
+          {
+            kind: "addColumn",
+            name: "archived",
+            schema: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+          },
+        ],
       },
     ];
     const v1 = new SqliteTabularStorage(

@@ -1153,9 +1153,7 @@ export abstract class BaseTabularStorage<
    * backend-supplied applier. Idempotent (no-op when no migrations are
    * declared, or when all are already applied).
    */
-  protected async applyTabularMigrations(
-    options?: RunTabularMigrationsOptions
-  ): Promise<void> {
+  protected async applyTabularMigrations(options?: RunTabularMigrationsOptions): Promise<void> {
     if (!this.tabularMigrations || this.tabularMigrations.length === 0) return;
     const applier = this.getMigrationApplier();
     if (!applier) {
@@ -1163,12 +1161,7 @@ export abstract class BaseTabularStorage<
         `${this.constructor.name} declared migrations but has no migration applier wired up.`
       );
     }
-    await runTabularMigrations(
-      applier,
-      this.migrationComponent,
-      this.tabularMigrations,
-      options
-    );
+    await runTabularMigrations(applier, this.migrationComponent, this.tabularMigrations, options);
   }
 
   /**

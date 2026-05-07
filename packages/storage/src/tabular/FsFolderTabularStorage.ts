@@ -14,10 +14,7 @@ import {
 } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import {
-  type ITabularMigration,
-  type ITabularMigrationApplier,
-} from "../migrations";
+import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 import path from "node:path";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
@@ -46,7 +43,10 @@ export const FS_FOLDER_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage
 
 class FsFolderMigrationApplier extends InMemoryTabularMigrationApplier {
   private loaded = false;
-  constructor(storage: AnyTabularStorage, private readonly folderPath: string) {
+  constructor(
+    storage: AnyTabularStorage,
+    private readonly folderPath: string
+  ) {
     super(storage, "fsfolder");
   }
   override async ensureBookkeeping(): Promise<void> {

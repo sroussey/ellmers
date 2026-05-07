@@ -23,10 +23,7 @@ import {
 } from "./ITabularStorage";
 import { decodeCursor, encodeCursor, PageCursor } from "./Cursor";
 import { StorageUnsupportedError, StorageValidationError } from "./StorageError";
-import {
-  type ITabularMigration,
-  type ITabularMigrationApplier,
-} from "../migrations";
+import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 
 export const HF_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(

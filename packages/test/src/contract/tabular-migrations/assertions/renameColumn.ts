@@ -5,10 +5,7 @@
  */
 
 import { expect, it } from "vitest";
-import type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "../types";
+import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "../types";
 
 export function renameColumnBlock(
   _opts: TabularMigrationContractOpts,
@@ -25,9 +22,7 @@ export function renameColumnBlock(
       ],
       [{ id: "u1", status: "active" }]
     );
-    const row = (await storage.get({ id: "u1" })) as
-      | { id: string; state: string }
-      | undefined;
+    const row = (await storage.get({ id: "u1" })) as { id: string; state: string } | undefined;
     expect(row).toBeDefined();
     expect(row!.state).toBe("active");
   });

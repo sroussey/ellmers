@@ -5,10 +5,7 @@
  */
 
 import { expect, it } from "vitest";
-import type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "../types";
+import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "../types";
 
 export function incrementalApplicationBlock(
   _opts: TabularMigrationContractOpts,
@@ -30,17 +27,13 @@ export function incrementalApplicationBlock(
         ],
       },
     ];
-    await getHandle().makeStorage(
-      { id: { type: "string" }, n: { type: "integer" } },
-      migrations,
-      [{ id: "r1", n: 1 }]
-    );
+    await getHandle().makeStorage({ id: { type: "string" }, n: { type: "integer" } }, migrations, [
+      { id: "r1", n: 1 },
+    ]);
     const firstCount = backfillCalls;
-    await getHandle().makeStorage(
-      { id: { type: "string" }, n: { type: "integer" } },
-      migrations,
-      [{ id: "r1", n: 1 }]
-    );
+    await getHandle().makeStorage({ id: { type: "string" }, n: { type: "integer" } }, migrations, [
+      { id: "r1", n: 1 },
+    ]);
     expect(backfillCalls).toBe(firstCount);
   });
 }

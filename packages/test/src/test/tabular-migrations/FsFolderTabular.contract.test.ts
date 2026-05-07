@@ -57,11 +57,7 @@ runTabularMigrationContract({
 
         // Pre-populate once per directory so the migrator sees "old" data on first run.
         if (!prePopulatedForCurrentDir && preExistingRows && preExistingRows.length > 0) {
-          const v0 = new FsFolderTabularStorage(
-            currentDir,
-            schema as any,
-            ["id"] as const
-          );
+          const v0 = new FsFolderTabularStorage(currentDir, schema as any, ["id"] as const);
           await v0.setupDatabase();
           for (const r of preExistingRows) {
             await (v0 as any).put(r);
