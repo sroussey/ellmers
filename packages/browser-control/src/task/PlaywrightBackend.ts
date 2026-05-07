@@ -10,7 +10,6 @@ import type {
   AriaRole,
   BrowserConnectOptions,
   ClickOptions,
-  ConsoleMessage,
   DialogAction,
   DialogInfo,
   DownloadOptions,
@@ -18,8 +17,6 @@ import type {
   ElementRef,
   IBrowserContext,
   NavigateOptions,
-  NetworkFilter,
-  NetworkRequest,
   ScreenshotOptions,
   SnapshotOptions,
   TabInfo,
@@ -762,14 +759,11 @@ export class PlaywrightBackend implements IBrowserContext {
   }
 
   // ---------------------------------------------------------------------------
-  // Optional capabilities (simplified)
+  // Optional capabilities
   // ---------------------------------------------------------------------------
-
-  readonly networkRequests = (_filter?: NetworkFilter): Promise<readonly NetworkRequest[]> => {
-    return Promise.resolve([]);
-  };
-
-  readonly consoleMessages = (): Promise<readonly ConsoleMessage[]> => {
-    return Promise.resolve([]);
-  };
+  //
+  // networkRequests and consoleMessages are intentionally undefined: this
+  // backend does not implement them. The IBrowserContext contract is that
+  // optional methods are either fully implemented or undefined — never
+  // empty-stub functions that defeat feature detection.
 }

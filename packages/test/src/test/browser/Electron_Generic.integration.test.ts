@@ -31,14 +31,5 @@ runIBrowserContextConformance({
     consoleMessages: false,
     ariaSnapshot: true,
   },
-  // ElectronBackend.ts:440-446 declares empty-array stubs for both
-  // networkRequests and consoleMessages (inherited behaviour from the
-  // single-window model). The contract requires these to be strictly
-  // undefined when the capability is false, so these assertions are
-  // expected to fail until the stubs are removed or the capabilities
-  // flags are flipped to true.
-  expectedFailures: [
-    "capability.networkRequests.undefinedWhenFalse",
-    "capability.consoleMessages.undefinedWhenFalse",
-  ],
+  expectedFailures: [],
 });

@@ -33,8 +33,8 @@ runIBrowserContextConformance({
   },
   capabilities: {
     multipleTabs: true,
-    networkRequests: false, // currently a no-op stub returning []; flips after Phase 4
-    consoleMessages: false, // currently a no-op stub returning []; flips after Phase 4
+    networkRequests: false,
+    consoleMessages: false,
     ariaSnapshot: true,
   },
   expectedFailures: [
@@ -42,11 +42,5 @@ runIBrowserContextConformance({
     "tabs.concurrentCloseStable",
     // PlaywrightBackend.ts:419-426 — lastIndexOf(":") parser.
     "aria.colonInName",
-    // PlaywrightBackend.ts:768-774 — networkRequests/consoleMessages declared
-    // as concrete arrow functions returning []. The negative-direction
-    // capability honesty block requires `typeof ctx.networkRequests ===
-    // "undefined"` when capabilities.networkRequests is false.
-    "capability.networkRequests.undefinedWhenFalse",
-    "capability.consoleMessages.undefinedWhenFalse",
   ],
 });

@@ -33,9 +33,5 @@ runIBrowserContextConformance({
     consoleMessages: false,
     ariaSnapshot: true,
   },
-  expectedFailures: [
-    // BunWebViewBackend.ts:403-409 — empty-array stubs.
-    "capability.networkRequests.undefinedWhenFalse",
-    "capability.consoleMessages.undefinedWhenFalse",
-  ],
+  expectedFailures: [],
 });
