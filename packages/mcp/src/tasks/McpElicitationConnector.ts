@@ -72,18 +72,6 @@ export class McpElicitationConnector implements IHumanConnector {
   }
 
   /**
-   * Multi-turn follow-up via MCP elicitation.
-   * Each follow-up is a separate elicitInput() call.
-   */
-  async followUp(
-    request: IHumanRequest,
-    _previousResponse: IHumanResponse,
-    signal: AbortSignal
-  ): Promise<IHumanResponse> {
-    return this.send(request, signal);
-  }
-
-  /**
    * Handle "notify" kind — fire-and-forget notification.
    * Uses MCP logging notification to send the message to the client.
    */

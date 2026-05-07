@@ -112,6 +112,7 @@ Capability flags:
 | `ITabularStorage` | `test/storage-tabular/genericTabularStorageTests` | InMemory, IndexedDB, Postgres, SQLite, Supabase, FsFolder, HuggingFace |
 | `IEntitlementProfile` | `contract/entitlement-profile/runEntitlementProfileConformance` | Browser, Desktop, Server, Custom |
 | `IBrowserContext` | `contract/browser-context/runIBrowserContextConformance` | Mock, Playwright, BunWebView, Electron |
+| `IHumanConnector` | `contract/human-connector/runHumanConnectorConformance` | MockHumanConnector, McpElicitationConnector |
 
 ## How to add a new contract suite
 
@@ -139,4 +140,5 @@ Future contract suites in priority order:
    `WorkerManager` unregister-on-dispose required before HFT/LlamaCpp can
    register inline + worker in the same test file).
 3. `IBrowserContext` — Playwright / Electron / BunWebView / CDP backends.
-4. `IHumanConnector` — App + Electron elicitation backends.
+4. `EntitlementProfile` — desktop / web / server profiles.
+5. `IHumanConnector` — IN PROGRESS — `MockHumanConnector` + `McpElicitationConnector`. App / Electron adapters add their own shim when introduced.

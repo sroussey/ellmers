@@ -588,32 +588,13 @@ describe("McpElicitationConnector", () => {
     expect(response.content).toBeUndefined();
   });
 
-  test("followUp delegates to another send call", async () => {
+  test("followUp is not defined (MCP elicit/create is single-round-trip)", () => {
     const mockServer = {
-      elicitInput: vi
-        .fn()
-        .mockResolvedValueOnce({ action: "accept", content: { step: 1 } })
-        .mockResolvedValueOnce({ action: "accept", content: { step: 2 } }),
+      elicitInput: vi.fn(),
     } as any;
 
-    const connector = new McpElicitationConnector(mockServer);
-    const request: IHumanRequest = {
-      requestId: "req-3",
-      targetHumanId: "default",
-      kind: "elicit",
-      message: "Continue?",
-      contentSchema: { type: "object", properties: {} },
-      contentData: undefined,
-      expectsResponse: true,
-      mode: "multi-turn",
-      metadata: undefined,
-    };
-
-    const first = await connector.send(request, new AbortController().signal);
-    const second = await connector.followUp(request, first, new AbortController().signal);
-
-    expect(mockServer.elicitInput).toHaveBeenCalledTimes(2);
-    expect(second.content).toEqual({ step: 2 });
+    const connector: IHumanConnector = new McpElicitationConnector(mockServer);
+    expect(connector.followUp).toBeUndefined();
   });
 });
 
