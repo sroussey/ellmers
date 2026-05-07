@@ -64,6 +64,7 @@ describe("IEntitlementProfile types", () => {
 
 import {
   createPolicyProfile,
+  createProfileEnforcer,
   Entitlements,
   type EntitlementPolicy,
   type IEntitlementSignalSource,
@@ -150,5 +151,23 @@ describe("createPolicyProfile", () => {
     await profile.dispose();
     await profile.dispose(); // idempotent
     expect(unsubCalls).toBe(1);
+  });
+});
+
+describe("createProfileEnforcer (refactored)", () => {
+  it("returns an IEntitlementProfile (has name, surface, requestEntitlement, subscribe, dispose)", () => {
+    const profile = createProfileEnforcer("browser");
+    expect(profile.name).toBe("browser");
+    expect(typeof profile.surface).toBe("function");
+    expect(typeof profile.requestEntitlement).toBe("function");
+    expect(typeof profile.subscribe).toBe("function");
+    expect(typeof profile.dispose).toBe("function");
+  });
+
+  it("accepts an options bag with resolver and signalSource", () => {
+    const profile = createProfileEnforcer("browser", {
+      resolver: { lookup: () => undefined, prompt: async () => "grant", save: () => {} },
+    });
+    expect(profile.name).toBe("browser");
   });
 });

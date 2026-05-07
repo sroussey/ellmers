@@ -8,9 +8,8 @@
  * only capability profiles expressed as entitlement policies.
  */
 
-import { createPolicyEnforcer, type IEntitlementEnforcer } from "./EntitlementEnforcer";
+import { createPolicyProfile, type CreateProfileOptions, type IEntitlementProfile } from "./EntitlementProfile";
 import type { EntitlementPolicy } from "./EntitlementPolicy";
-import type { IEntitlementResolver } from "./EntitlementResolver";
 import type { EntitlementGrant } from "./TaskEntitlements";
 import { Entitlements } from "./TaskEntitlements";
 
@@ -87,17 +86,18 @@ export function createProfilePolicy(profile: EntitlementProfile): EntitlementPol
 }
 
 /**
- * Creates an entitlement enforcer for the given runtime profile.
- * Tasks requiring entitlements not in the profile will be denied.
+ * Creates an entitlement profile for the given runtime profile.
+ * The profile's grants become the policy's grant rules.
+ * Deny and ask arrays are empty by default — callers can extend the returned profile.
  *
  * @param profile - The runtime profile to use
- * @param resolver - Optional resolver for handling "ask" verdicts
+ * @param options - Optional resolver (for "ask" verdicts) and signal source
  */
 export function createProfileEnforcer(
   profile: EntitlementProfile,
-  resolver?: IEntitlementResolver
-): IEntitlementEnforcer {
-  return createPolicyEnforcer(createProfilePolicy(profile), resolver);
+  options?: CreateProfileOptions
+): IEntitlementProfile {
+  return createPolicyProfile(profile, createProfilePolicy(profile), options);
 }
 
 /**
