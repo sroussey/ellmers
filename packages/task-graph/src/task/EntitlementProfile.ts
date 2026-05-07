@@ -9,7 +9,8 @@
  * signal observation to a pluggable IEntitlementSignalSource.
  */
 
-import type { TaskEntitlement } from "./TaskEntitlements";
+import type { EntitlementDenial, IEntitlementEnforcer } from "./EntitlementEnforcer";
+import type { EntitlementGrant, TaskEntitlement } from "./TaskEntitlements";
 
 // ========================================================================
 // Signal Source (port)
@@ -52,3 +53,63 @@ export const STATIC_SIGNAL_SOURCE: IEntitlementSignalSource = Object.freeze({
     };
   },
 });
+
+// ========================================================================
+// Request / Verdict
+// ========================================================================
+
+/**
+ * Result of `requestEntitlement(required)`. Discriminated union on `outcome`.
+ *
+ * Optional entitlements always map to `outcome: "granted"` regardless of the
+ * underlying policy verdict — matching the rule that optional entitlements
+ * are filtered out of `IEntitlementEnforcer.checkAll`.
+ *
+ * `"ask"` policy verdicts are resolved internally via the registered
+ * `IEntitlementResolver` before this function returns; callers only ever
+ * see `"granted"` or `"denied"`.
+ */
+export type EntitlementRequestResult =
+  | { readonly outcome: "granted"; readonly entitlement: TaskEntitlement }
+  | { readonly outcome: "denied"; readonly denial: EntitlementDenial };
+
+// ========================================================================
+// Change Events
+// ========================================================================
+
+/**
+ * Emitted by an `IEntitlementProfile` when a previously-observed entitlement
+ * verdict transitions. Profiles only emit events for entitlements whose
+ * verdict actually flipped between two queries.
+ */
+export type EntitlementChangeEvent = {
+  readonly kind: "revoked" | "granted";
+  readonly entitlement: TaskEntitlement;
+};
+
+// ========================================================================
+// Profile Interface
+// ========================================================================
+
+/**
+ * Runtime-environment view of an entitlement system.
+ *
+ * Extends `IEntitlementEnforcer` with:
+ * - `name`: free-form identifier for diagnostics.
+ * - `surface()`: maximum set of entitlements this profile may grant.
+ * - `requestEntitlement()`: single-key request returning a discriminated verdict.
+ * - `subscribe()`: observe change events from the bound signal source.
+ * - `dispose()`: idempotent teardown including signal-source unsubscribe.
+ */
+export interface IEntitlementProfile extends IEntitlementEnforcer {
+  /** Free-form identifier (e.g. "browser", "desktop", "server"). */
+  readonly name: string;
+  /** The maximum set of grants this profile may issue. */
+  surface(): readonly EntitlementGrant[];
+  /** Single-key request. See `EntitlementRequestResult`. */
+  requestEntitlement(required: TaskEntitlement): Promise<EntitlementRequestResult>;
+  /** Subscribe to change events. The returned unsubscribe must be idempotent. */
+  subscribe(listener: (event: EntitlementChangeEvent) => void): () => void;
+  /** Idempotent teardown. */
+  dispose(): Promise<void>;
+}
