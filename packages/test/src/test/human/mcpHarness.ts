@@ -5,10 +5,10 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server";
-import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types";
+import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { IHumanRequest, IHumanResponse } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 
