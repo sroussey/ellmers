@@ -5,10 +5,7 @@
  */
 
 import { expect, it } from "vitest";
-import type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "../types";
+import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "../types";
 
 export function freshDbFastPathBlock(
   _opts: TabularMigrationContractOpts,

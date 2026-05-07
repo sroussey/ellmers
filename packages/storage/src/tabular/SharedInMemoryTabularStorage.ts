@@ -19,10 +19,7 @@ import {
   TabularSubscribeOptions,
 } from "./ITabularStorage";
 import { InMemoryTabularStorage } from "./InMemoryTabularStorage";
-import {
-  type ITabularMigration,
-  type ITabularMigrationApplier,
-} from "../migrations";
+import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 
 export const SHARED_IN_MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(

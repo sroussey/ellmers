@@ -22,10 +22,7 @@ export async function runBackfill(
   batchSize: number,
   transform: (
     row: Record<string, unknown>
-  ) =>
-    | Promise<Record<string, unknown> | undefined>
-    | Record<string, unknown>
-    | undefined
+  ) => Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined
 ): Promise<void> {
   let cursor: PageCursor | undefined;
   while (true) {

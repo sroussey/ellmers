@@ -32,9 +32,7 @@ describe("runBackfill", () => {
     const storage = new InMemoryTabularStorage(schema, ["id"] as const);
     await storage.setupDatabase();
     for (let i = 0; i < 5; i++) await storage.put({ id: `r${i}`, n: i });
-    await runBackfill(storage as any, 10, (row) =>
-      (row.n as number) % 2 === 0 ? undefined : row
-    );
+    await runBackfill(storage as any, 10, (row) => ((row.n as number) % 2 === 0 ? undefined : row));
     expect(await storage.size()).toBe(2);
   });
 

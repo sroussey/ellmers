@@ -62,10 +62,7 @@ export function buildAddIndexSql(
   );
 }
 
-export function buildDropIndexSql(
-  dialect: "sqlite" | "postgres",
-  indexName: string
-): string {
+export function buildDropIndexSql(dialect: "sqlite" | "postgres", indexName: string): string {
   const d = selectDialect(dialect);
   return `DROP INDEX IF EXISTS ${d.quoteId(indexName)}`;
 }

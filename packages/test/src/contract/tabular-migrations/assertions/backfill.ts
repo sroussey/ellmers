@@ -5,10 +5,7 @@
  */
 
 import { expect, it } from "vitest";
-import type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "../types";
+import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "../types";
 
 export function backfillBlock(
   _opts: TabularMigrationContractOpts,
@@ -33,9 +30,7 @@ export function backfillBlock(
       rows
     );
     const all = (await storage.getAll()) ?? [];
-    const r3 = all.find((r) => (r as { id: string }).id === "r3") as
-      | { n: number }
-      | undefined;
+    const r3 = all.find((r) => (r as { id: string }).id === "r3") as { n: number } | undefined;
     expect(r3).toBeDefined();
     expect(r3!.n).toBe(6);
     expect(all.length).toBe(30);

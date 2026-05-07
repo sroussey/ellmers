@@ -1309,20 +1309,18 @@ class SqliteTabularMigrationApplierImpl extends SqlTabularMigrationApplier {
     stmt.run(component, version, description ?? null);
   }
   protected override async queryAppliedVersions(component: string): Promise<Set<number>> {
-    const stmt = (
-      this.host as unknown as { database: Sqlite.Database }
-    ).database.prepare<[string], { version: number }>(
-      `SELECT version FROM ${MIGRATIONS_TABLE} WHERE component = ?`
-    );
+    const stmt = (this.host as unknown as { database: Sqlite.Database }).database.prepare<
+      [string],
+      { version: number }
+    >(`SELECT version FROM ${MIGRATIONS_TABLE} WHERE component = ?`);
     const rows = stmt.all(component);
     return new Set(rows.map((r) => r.version));
   }
   protected override async probeTableExists(): Promise<boolean> {
-    const stmt = (
-      this.host as unknown as { database: Sqlite.Database }
-    ).database.prepare<[string], { name: string }>(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`
-    );
+    const stmt = (this.host as unknown as { database: Sqlite.Database }).database.prepare<
+      [string],
+      { name: string }
+    >(`SELECT name FROM sqlite_master WHERE type='table' AND name = ?`);
     const row = stmt.get((this.host as unknown as { table: string }).table);
     return !!row;
   }

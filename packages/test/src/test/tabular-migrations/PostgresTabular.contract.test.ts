@@ -63,8 +63,7 @@ runTabularMigrationContract({
           // column being dropped or renamed), fall back to TEXT / string.
           const v0Properties: Record<string, unknown> = {};
           for (const k of Object.keys(preExistingRows[0])) {
-            v0Properties[k] =
-              (properties as Record<string, unknown>)[k] ?? { type: "string" };
+            v0Properties[k] = (properties as Record<string, unknown>)[k] ?? { type: "string" };
           }
           const v0 = new PostgresTabularStorage(
             pool,
@@ -74,7 +73,7 @@ runTabularMigrationContract({
               properties: v0Properties,
               required: Object.keys(v0Properties),
               additionalProperties: false,
-            } as const,
+            } as any,
             ["id"] as const
           );
           await v0.setupDatabase();
@@ -92,7 +91,7 @@ runTabularMigrationContract({
             properties,
             required: Object.keys(properties),
             additionalProperties: false,
-          } as const,
+          } as any,
           ["id"] as const,
           [],
           "if-missing",

@@ -54,11 +54,7 @@ runTabularMigrationContract({
 
         // Pre-populate once per DB so the migrator sees "old" data on first run.
         if (!prePopulatedForCurrentDb && preExistingRows && preExistingRows.length > 0) {
-          const v0 = new IndexedDbTabularStorage(
-            currentDbName,
-            schema as any,
-            ["id"] as const
-          );
+          const v0 = new IndexedDbTabularStorage(currentDbName, schema as any, ["id"] as const);
           await v0.setupDatabase();
           for (const r of preExistingRows) {
             await (v0 as any).put(r);

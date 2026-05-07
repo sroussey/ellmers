@@ -37,10 +37,7 @@ export type TabularMigrationOp =
       readonly batchSize?: number;
       readonly transform: (
         row: Record<string, unknown>
-      ) =>
-        | Promise<Record<string, unknown> | undefined>
-        | Record<string, unknown>
-        | undefined;
+      ) => Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;
     };
 
 /**

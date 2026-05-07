@@ -58,9 +58,7 @@ describe("IndexedDbTabular migration smoke", () => {
     await v1.setupDatabase();
 
     const all = (await v1.getAll()) ?? [];
-    const u2 = all.find((r) => (r as { id: string }).id === "u2") as
-      | { name: string }
-      | undefined;
+    const u2 = all.find((r) => (r as { id: string }).id === "u2") as { name: string } | undefined;
     expect(u2).toBeDefined();
     expect(u2!.name).toBe("bob");
   });

@@ -5,10 +5,7 @@
  */
 
 import { expect, it } from "vitest";
-import type {
-  TabularMigrationContractHandle,
-  TabularMigrationContractOpts,
-} from "../types";
+import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "../types";
 
 export function failedMigrationNotRecordedBlock(
   _opts: TabularMigrationContractOpts,
@@ -34,18 +31,12 @@ export function failedMigrationNotRecordedBlock(
       },
     ];
     await expect(
-      getHandle().makeStorage(
-        { id: { type: "string" } },
-        migrations,
-        [{ id: "u1" }]
-      )
+      getHandle().makeStorage({ id: { type: "string" } }, migrations, [{ id: "u1" }])
     ).rejects.toThrow(/boom/);
 
-    const storage = await getHandle().makeStorage(
-      { id: { type: "string" } },
-      migrations,
-      [{ id: "u1" }]
-    );
+    const storage = await getHandle().makeStorage({ id: { type: "string" } }, migrations, [
+      { id: "u1" },
+    ]);
     expect(await storage.size()).toBe(1);
   });
 }

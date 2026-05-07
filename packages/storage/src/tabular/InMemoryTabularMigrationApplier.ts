@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  type ITabularMigrationApplier,
-  type TabularMigrationOp,
-  runBackfill,
-} from "../migrations";
+import { type ITabularMigrationApplier, type TabularMigrationOp, runBackfill } from "../migrations";
 import { type AnyTabularStorage } from "./ITabularStorage";
 
 /**

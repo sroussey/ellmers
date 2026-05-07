@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  type ITabularMigrationApplier,
-  type TabularMigrationOp,
-} from "@workglow/storage";
+import { type ITabularMigrationApplier, type TabularMigrationOp } from "@workglow/storage";
 import {
   IndexedDbMigrationRunner,
   type IndexedDbUpgradeContext,

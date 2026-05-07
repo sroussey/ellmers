@@ -81,6 +81,8 @@ const SECTION_DIRS: Record<Section, string[]> = {
     join(TEST_BASE, "storage-kv"),
     join(TEST_BASE, "storage-tabular"),
     join(TEST_BASE, "storage-util"),
+    join(TEST_BASE, "storage-migrations"),
+    join(TEST_BASE, "tabular-migrations"),
     join(TEST_BASE, "vector"),
   ],
   queue: [join(TEST_BASE, "job-queue")],
