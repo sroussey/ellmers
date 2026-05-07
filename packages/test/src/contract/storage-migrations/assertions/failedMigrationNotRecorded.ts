@@ -53,8 +53,20 @@ export function failedMigrationNotRecordedBlock<DB>(
         expect(applied.length).toBeGreaterThanOrEqual(1);
         expect(applied.some((m) => m.version === 2)).toBe(true);
 
+        // Recorder converges with `applied` regardless of atomicity style:
+        //   - Per-migration-atomic (Postgres / SQLite) — v1 was already
+        //     committed, only v2 re-runs: applied = [v2], recorder = [v2].
+        //   - Per-batch-atomic (IndexedDB rolls back the whole upgrade)
+        //     — both re-run: applied = [v1, v2], recorder = [v1, v2].
+        // Either way, every entry the runner reports as applied this call
+        // corresponds to exactly one `up()` invocation. A future regression
+        // that double-invokes `up()` would break the strict-equality check.
+        expect(recorder.calls.length).toBeGreaterThanOrEqual(1);
+        expect(recorder.calls.some((c) => c.component === component && c.version === 2)).toBe(true);
+        expect(recorder.calls.length).toBe(applied.length);
+
         const finalVersions = await runner.appliedVersions(component);
-        expect([...finalVersions].sort()).toEqual([1, 2]);
+        expect([...finalVersions].sort((a, b) => a - b)).toEqual([1, 2]);
       },
       opts.timeout
     );

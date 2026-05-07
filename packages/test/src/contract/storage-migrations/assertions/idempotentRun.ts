@@ -44,7 +44,7 @@ export function idempotentRunBlock<DB>(
 
         // Bookkeeping table still reports both versions.
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort()).toEqual([1, 2]);
+        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2]);
       },
       opts.timeout
     );

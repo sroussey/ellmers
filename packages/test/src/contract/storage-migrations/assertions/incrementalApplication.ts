@@ -48,7 +48,33 @@ export function incrementalApplicationBlock<DB>(
         expect(recorder.calls[0].version).toBe(3);
 
         const recordedVersions = await runner.appliedVersions(component);
-        expect([...recordedVersions].sort()).toEqual([1, 2, 3]);
+        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+      },
+      opts.timeout
+    );
+
+    itImpl(
+      "appliedVersions returns numerically-sorted versions even past version 9",
+      async () => {
+        const handle = getHandle();
+        const runner = await handle.createRunner();
+        const recorder = createMigrationCallRecorder();
+        const component = `contract-numeric-sort-${Date.now()}`;
+
+        // Interleaved input — exercises both `sortMigrations` (which must
+        // order numerically across the 1↔10 boundary) and the contract's
+        // own assertion sort (which previously used the default
+        // lexicographic comparator and silently allowed [1, 10, 2]).
+        const applied = await runner.run([
+          handle.buildMigration(component, 10, recorder),
+          handle.buildMigration(component, 1, recorder),
+          handle.buildMigration(component, 2, recorder),
+        ]);
+
+        expect(applied.map((m) => m.version)).toEqual([1, 2, 10]);
+        expect(recorder.calls.map((c) => c.version)).toEqual([1, 2, 10]);
+        const recordedVersions = await runner.appliedVersions(component);
+        expect([...recordedVersions].sort((a, b) => a - b)).toEqual([1, 2, 10]);
       },
       opts.timeout
     );
