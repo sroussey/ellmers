@@ -120,8 +120,11 @@ export class PostgresTabularStorage<
       const exists = await this.tableExistsAsync();
       await this.createTableAndIndexes();
       await this.applyTabularMigrations({ freshTable: !exists });
-      // After migrations, ensure declared indexes are present (idempotent).
-      await this.createDeclaredIndexes();
+      // For pre-existing DBs that ran migrations, re-assert declared indexes
+      // (idempotent). On fresh DBs we already did this in createTableAndIndexes.
+      if (exists) {
+        await this.createDeclaredIndexes();
+      }
       return;
     }
     await this.createTableAndIndexes();
