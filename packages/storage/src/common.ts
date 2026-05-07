@@ -31,6 +31,7 @@ export * from "./tabular/InMemoryTabularStorage";
 export * from "./tabular/ITabularStorage";
 export * from "./tabular/StorageError";
 export * from "./tabular/TabularStorageRegistry";
+export * from "./tabular/sqlMigrationDdl";
 export * from "./tabular/TelemetryTabularStorage";
 
 export * from "./kv/IKvStorage";
