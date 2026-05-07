@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
 import type { WorkerProxyBoundaryOpts } from "../types";
 import { streamProviderTextGeneration } from "./providerCallHelpers";
 
@@ -36,7 +37,7 @@ async function collectStream(
 
 export function backlogOrderingBlock(opts: WorkerProxyBoundaryOpts): void {
   const failing = opts.expectedFailures?.includes(FAIL_KEY) ?? false;
-  const test = failing ? it.fails : it;
+  const test = failing ? itExpectFail : it;
 
   describe("PostMessage backlog drains in order under concurrent load", () => {
     test(
