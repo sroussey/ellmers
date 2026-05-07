@@ -24,7 +24,10 @@ import {
   TabularChangePayload,
   TabularSubscribeOptions,
   pickCoveringIndex,
+  type ITabularMigration,
+  type ITabularMigrationApplier,
 } from "@workglow/storage";
+import { IndexedDbTabularMigrationApplier } from "./IndexedDbTabularMigrationApplier";
 import { ensureIndexedDbTable, ExpectedIndexDefinition, MigrationOptions } from "./IndexedDbTable";
 
 export const IDB_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
@@ -118,9 +121,10 @@ export class IndexedDbTabularStorage<
       readonly useBroadcastChannel?: boolean;
       readonly backupPollingIntervalMs?: number;
     } = {},
-    clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
+    clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
+    tabularMigrations?: ReadonlyArray<ITabularMigration>
   ) {
-    super(schema, primaryKeyNames, indexes, clientProvidedKeys);
+    super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
     this.migrationOptions = migrationOptions;
     this.hybridOptions = {
       useBroadcastChannel: migrationOptions.useBroadcastChannel ?? true,
@@ -154,6 +158,10 @@ export class IndexedDbTabularStorage<
       this.db = await this.setupPromise;
     } finally {
       this.setupPromise = null;
+    }
+
+    if (this.tabularMigrations && this.tabularMigrations.length > 0) {
+      await this.applyTabularMigrations();
     }
   }
 
@@ -202,6 +210,23 @@ export class IndexedDbTabularStorage<
       this.migrationOptions,
       useAutoIncrement
     );
+  }
+
+  public override getMigrationApplier(): ITabularMigrationApplier | null {
+    // The IDB tabular storage uses `this.table` as both the database name
+    // and the object store name (see `ensureIndexedDbTable`'s call to
+    // `openIdb(tableName, ...)`).
+    return new IndexedDbTabularMigrationApplier(this.table, this.table, {
+      getPage: (req) =>
+        // The applier types `cursor` as `unknown` to avoid coupling to the
+        // PageCursor branded type; cast at the boundary.
+        this.getPage(req as Parameters<typeof this.getPage>[0]) as Promise<{
+          items: Array<Record<string, unknown>>;
+          nextCursor?: unknown;
+        }>,
+      put: (row) => this.put(row as Parameters<typeof this.put>[0]),
+      delete: (row) => this.delete(row as Parameters<typeof this.delete>[0]),
+    });
   }
 
   /**
