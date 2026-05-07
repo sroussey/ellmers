@@ -41,7 +41,7 @@ export function failedMigrationLeavesNoPartialSchemaBlock<DB>(
         await expect(runner.run([migration])).rejects.toBeDefined();
 
         const exists = await handle.probeExists(probeName);
-        expect(exists).toBe(false);
+        expect(exists, "probe schema element does not persist after up() throws").toBe(false);
       },
       opts.timeout
     );

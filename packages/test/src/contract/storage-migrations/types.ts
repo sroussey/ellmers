@@ -10,6 +10,14 @@ import type { IMigration, IMigrationRunner } from "@workglow/storage";
  * Records each invocation of a migration's `up()` callback. The contract
  * suite uses this to verify which migrations actually ran (orthogonal to
  * the runner's own bookkeeping table).
+ *
+ * Caveat: the recorder reflects whether `up()` *executed*, not whether
+ * its effects *persisted*. For backends that wrap `up()` in a transaction
+ * (Postgres BEGIN/ROLLBACK; IndexedDB upgrade tx.abort), a migration whose
+ * `up()` records and then throws has `recorder.calls` containing that
+ * version even though the bookkeeping insert and any DDL were rolled back.
+ * Use `runner.appliedVersions(component)` to check what *persisted*; use
+ * the recorder to check what *ran*.
  */
 export interface MigrationCallRecorder {
   readonly calls: ReadonlyArray<{ readonly component: string; readonly version: number }>;
@@ -71,6 +79,21 @@ export interface MigrationContractHandle<DB> {
   readonly dispose: () => Promise<void>;
 }
 
+/**
+ * Closed string-literal union of contract assertions adapters can mark as
+ * known failing. Adding a new assertion to the suite must extend this
+ * union — that way a typo in `expectedFailures` becomes a TS error rather
+ * than a silently-ignored entry.
+ */
+export type MigrationContractAssertion =
+  | "appliesAndRecords"
+  | "idempotentRun"
+  | "incrementalApplication"
+  | "failedMigrationNotRecorded"
+  | "ensureBookkeepingIdempotent"
+  | "concurrentRunsSerialize"
+  | "failedMigrationLeavesNoPartialSchema";
+
 export interface MigrationRunnerContractOpts<DB> {
   readonly name: string;
   readonly skip?: boolean;
@@ -78,14 +101,8 @@ export interface MigrationRunnerContractOpts<DB> {
   readonly factory: () => Promise<MigrationContractHandle<DB>>;
   /**
    * Names of contract assertions currently broken in this adapter; each
-   * named test wraps with itExpectFail. Known names:
-   *   "appliesAndRecords"
-   *   "idempotentRun"
-   *   "incrementalApplication"
-   *   "failedMigrationNotRecorded"
-   *   "ensureBookkeepingIdempotent"
-   *   "concurrentRunsSerialize"
-   *   "failedMigrationLeavesNoPartialSchema"
+   * named test wraps with `itExpectFail`. The string-literal union catches
+   * typos at compile time.
    */
-  readonly expectedFailures?: ReadonlyArray<string>;
+  readonly expectedFailures?: ReadonlyArray<MigrationContractAssertion>;
 }

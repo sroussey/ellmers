@@ -42,7 +42,7 @@ export function failedMigrationNotRecordedBlock<DB>(
         // transaction. Both behaviors are spec-compliant; the contract
         // only requires that the failed version stays absent.
         const afterFailure = await runner.appliedVersions(component);
-        expect(afterFailure.has(2)).toBe(false);
+        expect(afterFailure.has(2), "failed migration is not recorded as applied").toBe(false);
 
         // Re-running with a non-failing v2 must converge to the full
         // applied set [1, 2] regardless of which atomicity style the
@@ -50,8 +50,14 @@ export function failedMigrationNotRecordedBlock<DB>(
         recorder.clear();
         const v2Recovered = handle.buildMigration(component, 2, recorder);
         const applied = await runner.run([v1, v2Recovered]);
-        expect(applied.length).toBeGreaterThanOrEqual(1);
-        expect(applied.some((m) => m.version === 2)).toBe(true);
+        expect(
+          applied.length,
+          "recovery run applies at least one migration"
+        ).toBeGreaterThanOrEqual(1);
+        expect(
+          applied.some((m) => m.version === 2),
+          "recovery run applies v2"
+        ).toBe(true);
 
         // Recorder converges with `applied` regardless of atomicity style:
         //   - Per-migration-atomic (Postgres / SQLite) — v1 was already
@@ -61,12 +67,24 @@ export function failedMigrationNotRecordedBlock<DB>(
         // Either way, every entry the runner reports as applied this call
         // corresponds to exactly one `up()` invocation. A future regression
         // that double-invokes `up()` would break the strict-equality check.
-        expect(recorder.calls.length).toBeGreaterThanOrEqual(1);
-        expect(recorder.calls.some((c) => c.component === component && c.version === 2)).toBe(true);
-        expect(recorder.calls.length).toBe(applied.length);
+        expect(
+          recorder.calls.length,
+          "recovery run invokes up() at least once"
+        ).toBeGreaterThanOrEqual(1);
+        expect(
+          recorder.calls.some((c) => c.component === component && c.version === 2),
+          "recovery run invokes up() for v2"
+        ).toBe(true);
+        expect(
+          recorder.calls.length,
+          "recovery up() invocations match `applied` exactly (no double-invocation)"
+        ).toBe(applied.length);
 
         const finalVersions = await runner.appliedVersions(component);
-        expect([...finalVersions].sort((a, b) => a - b)).toEqual([1, 2]);
+        expect(
+          [...finalVersions].sort((a, b) => a - b),
+          "after recovery the bookkeeping table reports the full set"
+        ).toEqual([1, 2]);
       },
       opts.timeout
     );
