@@ -183,3 +183,31 @@ describe("ENTITLEMENT_PROFILE service token", () => {
     expect(registry.get(ENTITLEMENT_PROFILE)).toBe(profile);
   });
 });
+
+import { BROWSER_GRANTS, DESKTOP_GRANTS, SERVER_GRANTS } from "@workglow/task-graph";
+
+describe("Built-in profile inclusion lattice", () => {
+  function ids(grants: ReadonlyArray<{ id: string }>): ReadonlySet<string> {
+    return new Set(grants.map((g) => g.id));
+  }
+
+  it("BROWSER_GRANTS ⊆ DESKTOP_GRANTS", () => {
+    const browser = ids(BROWSER_GRANTS);
+    const desktop = ids(DESKTOP_GRANTS);
+    for (const id of browser) {
+      expect(desktop.has(id)).toBe(true);
+    }
+  });
+
+  it("DESKTOP_GRANTS ⊆ SERVER_GRANTS", () => {
+    const desktop = ids(DESKTOP_GRANTS);
+    const server = ids(SERVER_GRANTS);
+    for (const id of desktop) {
+      expect(server.has(id)).toBe(true);
+    }
+  });
+
+  it("DESKTOP grants are a strict superset of BROWSER", () => {
+    expect(DESKTOP_GRANTS.length).toBeGreaterThan(BROWSER_GRANTS.length);
+  });
+});
