@@ -24,15 +24,27 @@ type ImmediateQueueEntry = { readonly kind: "immediate"; readonly entry: MockRes
 
 type DeferredQueueEntry = {
   readonly kind: "deferred";
-  /** Resolves when release() is called (or pre-resolved if release ran first). */
+  /** Resolves when release() is called, or rejects when clear() runs. */
   readonly promise: Promise<IHumanResponse>;
 };
 
 type HarnessQueueEntry = ImmediateQueueEntry | DeferredQueueEntry;
 
+type DeferredHandle = {
+  readonly settled: { done: boolean };
+  readonly reject: (err: Error) => void;
+};
+
 class HarnessScript implements MockResponseScript {
   private readonly _received: IHumanRequest[] = [];
   private readonly _queue: HarnessQueueEntry[] = [];
+  /**
+   * All deferreds that have been pushed but not yet settled. clear() rejects
+   * each so any parked client.setRequestHandler `await next.promise` unblocks
+   * deterministically — otherwise the SDK callback frame leaks until
+   * client.close() at dispose.
+   */
+  private readonly _pendingDeferreds: DeferredHandle[] = [];
 
   get received(): ReadonlyArray<IHumanRequest> {
     return this._received;
@@ -48,15 +60,19 @@ class HarnessScript implements MockResponseScript {
 
   pushDeferred(): { release(response: IHumanResponse): void } {
     let resolveFn: (res: IHumanResponse) => void = () => {};
-    let settled = false;
-    const promise = new Promise<IHumanResponse>((resolve) => {
+    let rejectFn: (err: Error) => void = () => {};
+    const settled = { done: false };
+    const promise = new Promise<IHumanResponse>((resolve, reject) => {
       resolveFn = resolve;
+      rejectFn = reject;
     });
     this._queue.push({ kind: "deferred", promise });
+    const handle: DeferredHandle = { settled, reject: rejectFn };
+    this._pendingDeferreds.push(handle);
     return {
       release: (response) => {
-        if (settled) return;
-        settled = true;
+        if (settled.done) return;
+        settled.done = true;
         resolveFn(response);
       },
     };
@@ -66,9 +82,11 @@ class HarnessScript implements MockResponseScript {
    * Consumed by the elicit handler to resolve the next outgoing prompt.
    *
    * If a deferred entry is awaiting release, this awaits the deferred promise.
-   * The conformance suite's abort-mid-elicit test aborts the upstream signal
-   * BEFORE release is called — `Server.elicitInput` rejects on the connector
-   * side and the dangling promise is GC'd at dispose time. No leak.
+   * abort-mid-elicit aborts the upstream signal first, but the parked
+   * `await next.promise` here only unblocks when either `release()` runs or
+   * `clear()` rejects the deferred. clear() rejects pending deferreds so the
+   * handler frame unblocks deterministically between tests rather than
+   * leaking until dispose.
    */
   async takeNext(req: IHumanRequest): Promise<IHumanResponse> {
     const next = this._queue.shift();
@@ -84,6 +102,14 @@ class HarnessScript implements MockResponseScript {
   }
 
   clear(): void {
+    for (const handle of this._pendingDeferreds) {
+      if (handle.settled.done) continue;
+      handle.settled.done = true;
+      const err = new Error("MCP harness cleared while deferred was pending");
+      err.name = "AbortError";
+      handle.reject(err);
+    }
+    this._pendingDeferreds.length = 0;
     this._received.length = 0;
     this._queue.length = 0;
   }
