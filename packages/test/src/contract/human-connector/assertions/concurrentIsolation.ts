@@ -19,7 +19,10 @@ function elicitReq(fixture: ConformanceFixture, requestId: string): IHumanReques
     requestId,
     targetHumanId: "default",
     kind: "elicit",
-    message: "Please confirm.",
+    // The message embeds the requestId so adapters that don't expose
+    // upstream requestIds across their transport (e.g. the MCP harness)
+    // can still discriminate concurrent requests.
+    message: `Please confirm ${requestId}.`,
     contentSchema: fixture.elicitContentSchema,
     contentData: undefined,
     expectsResponse: true,
@@ -43,19 +46,28 @@ export function concurrentIsolationBlock(
         "two concurrent send() calls each receive their own scripted response",
         async () => {
           const { connector, script } = getHandle();
+          // Messages are of the form "Please confirm <requestId>." — extract the id so
+          // adapters that synthesise their own requestIds (e.g. the MCP harness) can
+          // still echo the upstream id back through the content.reason field.
+          const tagFromMessage = (message: string): string => {
+            const m = message.match(/Please confirm (.+)\./);
+            return m ? m[1] : "unknown";
+          };
           script.push((req): IHumanResponse => {
+            const tag = tagFromMessage(req.message);
             return {
               requestId: req.requestId,
               action: "accept",
-              content: { tag: req.requestId },
+              content: { approved: true, reason: tag },
               done: true,
             };
           });
           script.push((req): IHumanResponse => {
+            const tag = tagFromMessage(req.message);
             return {
               requestId: req.requestId,
               action: "accept",
-              content: { tag: req.requestId },
+              content: { approved: true, reason: tag },
               done: true,
             };
           });
@@ -66,9 +78,9 @@ export function concurrentIsolationBlock(
           const [a, b] = await Promise.all([p1, p2]);
 
           expect(a.requestId).toBe("conc-A");
-          expect((a.content as { tag: string }).tag).toBe("conc-A");
+          expect((a.content as { reason: string }).reason).toBe("conc-A");
           expect(b.requestId).toBe("conc-B");
-          expect((b.content as { tag: string }).tag).toBe("conc-B");
+          expect((b.content as { reason: string }).reason).toBe("conc-B");
         },
         opts.timeout
       );

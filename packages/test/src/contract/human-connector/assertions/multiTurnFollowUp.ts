@@ -56,13 +56,13 @@ export function multiTurnFollowUpBlock(
           script.push({
             requestId: "x",
             action: "accept",
-            content: { step: 1 },
+            content: { approved: false, reason: "step1" },
             done: false,
           });
           script.push({
             requestId: "x",
             action: "accept",
-            content: { step: 2 },
+            content: { approved: true, reason: "step2" },
             done: true,
           });
 
@@ -74,7 +74,7 @@ export function multiTurnFollowUpBlock(
           expect(typeof connector.followUp).toBe("function");
           const second = await connector.followUp!(req, first, ac.signal);
           expect(second.done).toBe(true);
-          expect(second.content).toEqual({ step: 2 });
+          expect(second.content).toEqual({ approved: true, reason: "step2" });
         },
         opts.timeout
       );
@@ -87,7 +87,7 @@ export function multiTurnFollowUpBlock(
             script.push({
               requestId: "x",
               action: "accept",
-              content: { step: 1 },
+              content: { approved: false, reason: "step1" },
               done: false,
             });
             script.pushDeferred();

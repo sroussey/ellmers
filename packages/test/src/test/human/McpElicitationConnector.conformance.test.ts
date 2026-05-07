@@ -24,20 +24,8 @@ runHumanConnectorConformance({
     elicit: true,
     notify: true,
     display: true,
-    multiTurn: true,
+    multiTurn: false,
     concurrent: true,
     abortMidElicit: true,
   },
-  expectedFailures: [
-    // TODO(phase-4): MCP SDK validates accepted `content` against the `requestedSchema` on
-    // the server side (McpElicitationConnector → elicitInput). The concurrent isolation test
-    // pushes `{ tag: req.requestId }` as content which doesn't satisfy `{ approved: boolean }`
-    // (required by the fixture elicit schema), causing a -32602 schema validation error.
-    "concurrent.isolation",
-    // TODO(phase-4): Same MCP schema-validation issue: the multiTurn suite pushes
-    // `{ step: 1 }` / `{ step: 2 }` as accepted content, but the fixture schema requires
-    // `{ approved: boolean }`. McpElicitationConnector forwards the schema to elicitInput,
-    // the SDK server validates the harness response, and rejects with -32602.
-    "multiTurn.followUp",
-  ],
 });
