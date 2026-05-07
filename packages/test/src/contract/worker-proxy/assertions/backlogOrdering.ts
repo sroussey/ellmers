@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
+import { itExpectFail } from "../../itExpectFail";
 import type { WorkerProxyBoundaryOpts } from "../types";
 import { streamProviderTextGeneration } from "./providerCallHelpers";
 
@@ -45,9 +45,7 @@ export function backlogOrderingBlock(opts: WorkerProxyBoundaryOpts): void {
       async () => {
         const modelId = opts.models.textGeneration;
         if (!modelId) {
-          throw new Error(
-            `${opts.name}: models.textGeneration is required for boundary tests`
-          );
+          throw new Error(`${opts.name}: models.textGeneration is required for boundary tests`);
         }
         const prompts = [
           "Reply with the single word ALPHA.",

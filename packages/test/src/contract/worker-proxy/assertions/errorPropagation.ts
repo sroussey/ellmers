@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
+import { itExpectFail } from "../../itExpectFail";
 import type { WorkerProxyBoundaryOpts } from "../types";
 import { runProviderTextGeneration } from "./providerCallHelpers";
 
@@ -22,9 +22,7 @@ export function errorPropagationBlock(opts: WorkerProxyBoundaryOpts): void {
       async () => {
         const modelId = opts.models.textGeneration;
         if (!modelId) {
-          throw new Error(
-            `${opts.name}: models.textGeneration is required for boundary tests`
-          );
+          throw new Error(`${opts.name}: models.textGeneration is required for boundary tests`);
         }
         // Use a registered model so resolution succeeds and the call is
         // dispatched into the worker. The provider's run fn rejects when
@@ -47,9 +45,7 @@ export function errorPropagationBlock(opts: WorkerProxyBoundaryOpts): void {
         async () => {
           const modelId = opts.models.textGeneration;
           if (!modelId) {
-            throw new Error(
-              `${opts.name}: models.textGeneration is required for boundary tests`
-            );
+            throw new Error(`${opts.name}: models.textGeneration is required for boundary tests`);
           }
           let captured: unknown;
           try {

@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { itExpectFail } from "../../ai-provider/assertions/itExpectFail";
 import type { ConformanceHandle } from "../../ai-provider/types";
+import { itExpectFail } from "../../itExpectFail";
 import type { WorkerProxyBoundaryOpts } from "../types";
 import { runProviderTextGeneration } from "./providerCallHelpers";
 
@@ -28,9 +28,7 @@ export function disposeTerminatesWorkerBlock(
         const handle = getHandle();
         const modelId = opts.models.textGeneration;
         if (!modelId) {
-          throw new Error(
-            `${opts.name}: models.textGeneration is required for boundary tests`
-          );
+          throw new Error(`${opts.name}: models.textGeneration is required for boundary tests`);
         }
 
         // Sanity request — must succeed before dispose.
@@ -44,11 +42,10 @@ export function disposeTerminatesWorkerBlock(
         await handle.dispose();
         markDisposed();
 
-        const after = runProviderTextGeneration(
-          modelId,
-          "Reply with the single word LATE.",
-          { maxTokens: 8, timeoutMs: opts.timeout / 4 }
-        );
+        const after = runProviderTextGeneration(modelId, "Reply with the single word LATE.", {
+          maxTokens: 8,
+          timeoutMs: opts.timeout / 4,
+        });
         await expect(after).rejects.toThrow(/.+/);
       },
       opts.timeout
