@@ -489,9 +489,11 @@ export interface ITabularStorage<
    * backend supports it (SQL `CREATE INDEX IF NOT EXISTS`, IndexedDB
    * version bump for new indexes), and is a no-op otherwise.
    *
-   * Tabular schemas are derived from the JSON Schema passed at construction
-   * rather than from versioned migrations, so this is the schema-setup
-   * primitive — there is no `migrate()` to defer to.
+   * When the storage was constructed with `tabularMigrations`, this method
+   * also applies any pending migrations through the unified tabular
+   * migration runner (see `TabularMigrationOrchestrator`). Otherwise it is
+   * a pure DDL setup primitive — tabular schemas are derived from the JSON
+   * Schema passed at construction rather than from versioned migrations.
    *
    * @returns Promise that resolves when setup is complete
    */

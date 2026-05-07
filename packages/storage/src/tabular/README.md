@@ -21,6 +21,7 @@ A collection of storage implementations for tabular data with multiple backend s
   - [PostgresTabularStorage](#postgrestabularstorage)
   - [IndexedDbTabularStorage](#indexeddbtabularstorage)
   - [FsFolderTabularStorage](#fsfoldertabularstorage)
+- [Migrations](#migrations)
 - [Events](#events)
 - [Testing](#testing)
 - [License](#license)
@@ -433,6 +434,73 @@ const repo = new FsFolderTabularStorage<
   ValueEntity // should be automatically created
 >("./data/users", schema, primaryKeys);
 ```
+
+## Migrations
+
+Tabular storages accept an optional `tabularMigrations` constructor parameter — a versioned, ordered list of declarative ops that evolve older deployments to the current target schema. Migrations work uniformly across all backends (SQL, IndexedDB, schemaless) and reuse the `_storage_migrations` bookkeeping table the rest of the migration system already uses.
+
+```typescript
+import { SqliteTabularStorage } from "@workglow/sqlite/storage";
+import type { ITabularMigration } from "@workglow/storage";
+
+const migrations: ITabularMigration[] = [
+  {
+    version: 1,
+    description: "add archived flag",
+    ops: [
+      // Note: ALTER TABLE ADD COLUMN NOT NULL fails on populated tables in
+      // SQL backends without a DEFAULT, so use a nullable schema.
+      {
+        kind: "addColumn",
+        name: "archived",
+        schema: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+      },
+      { kind: "addIndex", name: "idx_archived", columns: ["archived"] },
+    ],
+  },
+  {
+    version: 2,
+    description: "rename status -> state",
+    ops: [{ kind: "renameColumn", from: "status", to: "state" }],
+  },
+  {
+    version: 3,
+    description: "lowercase emails",
+    ops: [
+      {
+        kind: "backfill",
+        batchSize: 500,
+        transform: (row) => ({ ...row, email: (row.email as string).toLowerCase() }),
+      },
+    ],
+  },
+];
+
+const repo = new SqliteTabularStorage(
+  db,
+  "users",
+  schema,
+  ["id"] as const,
+  [],
+  "if-missing",
+  migrations
+);
+await repo.setupDatabase(); // applies pending migrations
+```
+
+**Op coverage:** `addColumn`, `dropColumn`, `renameColumn`, `addIndex`, `dropIndex`, `backfill`.
+
+**Backend behavior:**
+
+- **SQL backends** (SQLite, Postgres, Supabase): DDL ops translate to native `ALTER TABLE` / `CREATE INDEX`. Each migration runs inside a single `withTransaction` so DDL + backfill + bookkeeping commit atomically.
+- **IndexedDB**: `addIndex` / `dropIndex` run inside an upgrade transaction. `backfill` runs on a normal readwrite transaction afterward (IDB upgrade transactions cannot span async work).
+- **InMemory / SharedInMemory / FsFolder / HuggingFace**: DDL ops are no-ops (records are JS objects). `backfill` runs through the normal `getPage` / `put` / `delete` API. FsFolder persists bookkeeping to `_storage_migrations.json` beside the data; others hold it in process.
+
+**Fresh-DB fast path:** when a storage is constructed at the target schema and the underlying table/store is empty, the orchestrator records every declared migration as already-applied without running its ops. This keeps backfills from running against zero rows on a fresh deployment.
+
+**Adoption:** existing storages without `tabularMigrations` continue unchanged — the migration system is fully opt-in. The first migration on an already-deployed table should use idempotent ops (`addColumn` + `addIndex` SQL DDL is `IF NOT EXISTS`-style under the hood).
+
+See `docs/superpowers/specs/2026-05-07-unified-tabular-migrations-design.md` for the full design and `docs/superpowers/plans/2026-05-07-unified-tabular-migrations.md` for implementation notes.
 
 ## Events
 
