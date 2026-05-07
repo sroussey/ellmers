@@ -160,3 +160,27 @@ describe("MockHumanConnector — deferred + abort", () => {
     expect(res.action).toBe("accept");
   });
 });
+
+describe("MockHumanConnector — followUp", () => {
+  it("exposes followUp when supportsFollowUp is true (default)", () => {
+    const c = new MockHumanConnector();
+    expect(typeof c.followUp).toBe("function");
+  });
+
+  it("does NOT expose followUp when supportsFollowUp is false", () => {
+    const c = new MockHumanConnector({ supportsFollowUp: false });
+    expect(c.followUp).toBeUndefined();
+  });
+
+  it("followUp consumes the next scripted entry like send()", async () => {
+    const c = new MockHumanConnector();
+    c.script.push({ requestId: "x", action: "accept", content: { step: 1 }, done: false });
+    c.script.push({ requestId: "x", action: "accept", content: { step: 2 }, done: true });
+    const ac = new AbortController();
+    const first = await c.send(elicitReq("r1"), ac.signal);
+    expect(first.done).toBe(false);
+    const second = await c.followUp!(elicitReq("r1"), first, ac.signal);
+    expect(second.done).toBe(true);
+    expect(second.content).toEqual({ step: 2 });
+  });
+});

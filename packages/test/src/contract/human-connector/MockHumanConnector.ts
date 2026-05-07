@@ -108,10 +108,18 @@ function awaitDeferred(def: DeferredEntry, signal: AbortSignal): Promise<IHumanR
 export class MockHumanConnector implements IHumanConnector {
   private readonly defaultAction: HumanResponseAction;
   private readonly _script: Script;
+  readonly followUp?: (
+    request: IHumanRequest,
+    previous: IHumanResponse,
+    signal: AbortSignal
+  ) => Promise<IHumanResponse>;
 
   constructor(opts: MockHumanConnectorOpts = {}) {
     this.defaultAction = opts.defaultAction ?? "accept";
     this._script = new Script();
+    if (opts.supportsFollowUp ?? true) {
+      this.followUp = (request, _previous, signal) => this.send(request, signal);
+    }
   }
 
   get script(): MockResponseScript {
