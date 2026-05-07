@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { roundtripBlock } from "./assertions/roundtrip";
 import { abortBlock } from "./assertions/abort";
+import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
 
 export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
@@ -42,5 +43,6 @@ export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts
 
     roundtripBlock(opts, fixture, getHandle);
     abortBlock(opts, fixture, getHandle);
+    concurrentIsolationBlock(opts, fixture, getHandle);
   });
 }
