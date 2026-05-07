@@ -20,9 +20,20 @@ export interface MockHumanConnectorOpts {
   readonly supportsFollowUp?: boolean;
 }
 
+type DeferredEntry = {
+  readonly kind: "deferred";
+  readonly resolved: { value: IHumanResponse | undefined };
+  readonly settled: { done: boolean };
+  readonly waiters: Array<(res: IHumanResponse) => void>;
+};
+
+type ImmediateEntry = { readonly kind: "immediate"; readonly entry: MockResponseEntry };
+
+type QueueEntry = ImmediateEntry | DeferredEntry;
+
 class Script implements MockResponseScript {
   private readonly _received: IHumanRequest[] = [];
-  private readonly _queue: MockResponseEntry[] = [];
+  private readonly _queue: QueueEntry[] = [];
 
   get received(): ReadonlyArray<IHumanRequest> {
     return this._received;
@@ -33,14 +44,29 @@ class Script implements MockResponseScript {
   }
 
   push(entry: MockResponseEntry): void {
-    this._queue.push(entry);
+    this._queue.push({ kind: "immediate", entry });
   }
 
   pushDeferred(): { release(response: IHumanResponse): void } {
-    throw new Error("not yet implemented");
+    const def: DeferredEntry = {
+      kind: "deferred",
+      resolved: { value: undefined },
+      settled: { done: false },
+      waiters: [],
+    };
+    this._queue.push(def);
+    return {
+      release: (response) => {
+        if (def.settled.done) return;
+        def.settled.done = true;
+        def.resolved.value = response;
+        for (const w of def.waiters) w(response);
+        def.waiters.length = 0;
+      },
+    };
   }
 
-  shift(): MockResponseEntry | undefined {
+  shift(): QueueEntry | undefined {
     return this._queue.shift();
   }
 
@@ -48,6 +74,35 @@ class Script implements MockResponseScript {
     this._received.length = 0;
     this._queue.length = 0;
   }
+}
+
+function defaultAbortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const err = new Error("The operation was aborted");
+  err.name = "AbortError";
+  return err;
+}
+
+function awaitDeferred(def: DeferredEntry, signal: AbortSignal): Promise<IHumanResponse> {
+  return new Promise<IHumanResponse>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(defaultAbortError(signal));
+      return;
+    }
+    if (def.settled.done && def.resolved.value !== undefined) {
+      resolve(def.resolved.value);
+      return;
+    }
+    const onAbort = (): void => {
+      signal.removeEventListener("abort", onAbort);
+      reject(defaultAbortError(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    def.waiters.push((res) => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(res);
+    });
+  });
 }
 
 export class MockHumanConnector implements IHumanConnector {
@@ -63,7 +118,8 @@ export class MockHumanConnector implements IHumanConnector {
     return this._script;
   }
 
-  async send(request: IHumanRequest, _signal: AbortSignal): Promise<IHumanResponse> {
+  async send(request: IHumanRequest, signal: AbortSignal): Promise<IHumanResponse> {
+    if (signal.aborted) throw defaultAbortError(signal);
     this._script.recordReceived(request);
     const entry = this._script.shift();
     if (entry === undefined) {
@@ -74,9 +130,12 @@ export class MockHumanConnector implements IHumanConnector {
         done: true,
       };
     }
-    const resolved = typeof entry === "function" ? await entry(request) : entry;
-    // Always echo the actual request's requestId so adapters cannot accidentally
-    // route responses to the wrong caller via a stale id.
+    if (entry.kind === "deferred") {
+      const res = await awaitDeferred(entry, signal);
+      return { ...res, requestId: request.requestId };
+    }
+    const resolved =
+      typeof entry.entry === "function" ? await entry.entry(request) : entry.entry;
     return { ...resolved, requestId: request.requestId };
   }
 }

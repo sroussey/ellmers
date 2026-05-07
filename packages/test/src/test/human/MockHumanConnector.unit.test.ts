@@ -87,3 +87,76 @@ describe("MockHumanConnector — scripted", () => {
     expect(after.action).toBe("accept");
   });
 });
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; message?: string };
+  return e.name === "AbortError" || /abort/i.test(e.message ?? "");
+}
+
+describe("MockHumanConnector — deferred + abort", () => {
+  it("blocks send() until release()", async () => {
+    const c = new MockHumanConnector();
+    const handle = c.script.pushDeferred();
+    const ac = new AbortController();
+    const promise = c.send(elicitReq("r1"), ac.signal);
+    let resolved = false;
+    promise.then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    handle.release({ requestId: "x", action: "accept", content: { ok: 1 }, done: true });
+    const res = await promise;
+    expect(res.action).toBe("accept");
+    expect(res.content).toEqual({ ok: 1 });
+  });
+
+  it("rejects with AbortError when signal is already aborted before send", async () => {
+    const c = new MockHumanConnector();
+    const ac = new AbortController();
+    ac.abort();
+    let caught: unknown;
+    try {
+      await c.send(elicitReq("r1"), ac.signal);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(isAbortError(caught)).toBe(true);
+  });
+
+  it("rejects with AbortError when signal aborts during a deferred wait", async () => {
+    const c = new MockHumanConnector();
+    c.script.pushDeferred();
+    const ac = new AbortController();
+    const promise = c.send(elicitReq("r1"), ac.signal);
+    setTimeout(() => ac.abort(), 10);
+    let caught: unknown;
+    try {
+      await promise;
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(isAbortError(caught)).toBe(true);
+  });
+
+  it("releasing after rejection is a no-op (does not throw, does not affect later sends)", async () => {
+    const c = new MockHumanConnector();
+    const handle = c.script.pushDeferred();
+    const ac = new AbortController();
+    const promise = c.send(elicitReq("r1"), ac.signal);
+    setTimeout(() => ac.abort(), 5);
+    try {
+      await promise;
+    } catch {
+      // expected abort
+    }
+    expect(() =>
+      handle.release({ requestId: "x", action: "accept", content: undefined, done: true })
+    ).not.toThrow();
+    const res = await c.send(elicitReq("r2"), new AbortController().signal);
+    expect(res.action).toBe("accept");
+  });
+});
