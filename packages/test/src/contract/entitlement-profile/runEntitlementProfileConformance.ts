@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe } from "vitest";
 
+import { denialShapeBlock } from "./assertions/denialShape";
 import { hierarchyHonoringBlock } from "./assertions/hierarchyHonoring";
 import { optionalNeverDeniedBlock } from "./assertions/optionalNeverDenied";
 import { resourceScopingBlock } from "./assertions/resourceScoping";
@@ -39,5 +40,6 @@ export function runEntitlementProfileConformance(
     hierarchyHonoringBlock(opts, getHandle);
     resourceScopingBlock(opts, getHandle);
     optionalNeverDeniedBlock(opts, getHandle);
+    denialShapeBlock(opts, getHandle);
   });
 }
