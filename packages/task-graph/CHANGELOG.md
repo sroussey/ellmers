@@ -1,5 +1,27 @@
 # @workglow/task-graph
 
+## 0.2.32
+
+### Features
+
+- introduce IEntitlementProfile with signal-source port and conformance suite (#469)
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+- remove setupDatabase() from queue/rate-limiter, plumb migration progress
+
+### Chores
+
+- fix merge issues after rebase and do a format
+- format
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors

@@ -1,5 +1,89 @@
 # @workglow/storage
 
+## 0.2.32
+
+### Features
+
+#### storage
+
+- wrappers passthrough tabular migrations to inner
+- tabular migrations on SharedInMemory/HF/FsFolder
+- wire tabular migrations into InMemoryTabularStorage
+- InMemoryTabularMigrationApplier for schemaless backends
+- SqlTabularMigrationApplier base
+- SQL DDL builders for tabular migrations
+- tabular migration plumbing on BaseTabularStorage
+- TabularMigrationOrchestrator (fast-path + sequential apply)
+- runBackfill helper for tabular migrations
+- re-export tabular migration types
+- TabularMigrationOp + ITabularMigration + applier types
+- cursor-based pagination for stable iteration under writes
+
+#### sqlite
+
+- tabular migration applier + constructor option
+
+### Bug Fixes
+
+#### tabular-migrations
+
+- address Copilot review feedback
+
+#### storage
+
+- address Copilot review feedback on cursor pagination + transactions
+- wrapper tx-handle forwarding + real-pool mutex bypass
+- toCursorValue throws StorageValidationError, not generic Error
+- address Copilot review on bigint/Date and mock parser
+- NULL handling in compound keyset paths + new tests
+- CI build + Copilot review feedback
+- address code-review follow-ups on cursor pagination
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+- remove setupDatabase() from queue/rate-limiter, plumb migration progress
+
+#### storage
+
+- real migrations + shared SQL builder + vector index tuning
+- streamline validation and error handling for orderBy criteria
+- address Copilot review on withTransaction semantics
+- address review feedback on putBulk + withTransaction
+- restore real putBulk + add withTransaction
+
+### Tests
+
+#### tabular
+
+- per-backend contract conformance tests (Phase 9)
+
+#### contract
+
+- implement worker-proxy contract conformance suite (#468)
+
+### Documentation
+
+#### storage
+
+- tabular migrations usage + ITabularStorage JSDoc
+
+### Chores
+
+#### tabular-migrations
+
+- final formatting + scripts/test.ts wiring
+
+#### storage
+
+- pre-merge polish from final review (easy minors)
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors

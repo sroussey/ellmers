@@ -1,5 +1,22 @@
 # @workglow/job-queue
 
+## 0.2.32
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+- remove setupDatabase() from queue/rate-limiter, plumb migration progress
+
+#### storage
+
+- real migrations + shared SQL builder + vector index tuning
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ## 0.2.30

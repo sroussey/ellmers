@@ -1,5 +1,26 @@
 # @workglow/web
 
+## 0.2.32
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+
+### Chores
+
+- update deps
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
+### Updated Dependencies
+
+- `react`: ^19.2.6
+- `react-dom`: ^19.2.6
+- `vite`: ^8.0.11
+
 ## 0.2.31
 
 ## 0.2.30

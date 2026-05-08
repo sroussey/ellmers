@@ -1,5 +1,21 @@
 # workglow
 
+## 0.2.32
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+
+#### browser-control
+
+- split backends into per-vendor provider packages
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors

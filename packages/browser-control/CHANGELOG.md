@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.32
+
+### Refactors
+
+- move packages with big third party libraries from packages to providers
+
+#### browser-control
+
+- split backends into per-vendor provider packages
+
+### Tests
+
+#### browser-context
+
+- add IBrowserContext contract conformance suite (#470)
+
+### Documentation
+
+- add README files for new packages
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Chores

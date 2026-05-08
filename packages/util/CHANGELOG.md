@@ -1,5 +1,33 @@
 # @workglow/util
 
+## 0.2.32
+
+### Features
+
+#### storage
+
+- mutex-serialize SQLite + Postgres tabular ops to close withTransaction concurrency hole
+
+### Bug Fixes
+
+#### storage
+
+- inline mutex into SQLite + Postgres storages instead of exporting from util
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+
+### Chores
+
+- format
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors

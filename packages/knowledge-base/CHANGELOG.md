@@ -1,5 +1,45 @@
 # @workglow/knowledge-base
 
+## 0.2.32
+
+### Bug Fixes
+
+#### storage
+
+- address Copilot review feedback on cursor pagination + transactions
+- wrapper tx-handle forwarding + real-pool mutex bypass
+- CI build + Copilot review feedback
+
+#### knowledge-base
+
+- reject cursors minted by a different KB scope
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- move packages with big third party libraries from packages to providers
+
+#### storage
+
+- restore real putBulk + add withTransaction
+
+### Tests
+
+#### contract
+
+- implement worker-proxy contract conformance suite (#468)
+
+### Chores
+
+#### storage
+
+- pre-merge polish from final review (easy minors)
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors

@@ -4,11 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isHfInpaintingModel, resolveHfImageDims } from "@workglow/huggingface-inference/ai";
 import { describe, expect, it } from "vitest";
-import {
-  resolveHfImageDims,
-  isHfInpaintingModel,
-} from "@workglow/huggingface-inference/ai";
 
 describe("HFI aspect-ratio table", () => {
   it("Flux 1:1 → 1024x1024", () => {

@@ -1,5 +1,123 @@
 # @workglow/test
 
+## 0.2.32
+
+### Features
+
+- introduce IEntitlementProfile with signal-source port and conformance suite (#469)
+
+#### storage
+
+- SQL DDL builders for tabular migrations
+- runBackfill helper for tabular migrations
+- real-pool path for Postgres withTransaction + reflection-based createTxView
+- cursor-based pagination for stable iteration under writes
+- mutex-serialize SQLite + Postgres tabular ops to close withTransaction concurrency hole
+
+#### test
+
+- IHumanConnector contract conformance suite (#471)
+
+### Bug Fixes
+
+- merge issues with tests
+
+#### tabular-migrations
+
+- address Copilot review feedback
+
+#### ollama
+
+- make streaming AbortSignal optional and harden race window (#466)
+
+#### llamacpp
+
+- release transient chat sessions before session-reuse test (#467)
+
+#### storage
+
+- address Copilot review feedback on cursor pagination + transactions
+- address Copilot review on bigint/Date and mock parser
+- NULL handling in compound keyset paths + new tests
+- CI build + Copilot review feedback
+- address code-review follow-ups on cursor pagination
+
+#### knowledge-base
+
+- reject cursors minted by a different KB scope
+
+### Refactors
+
+- finish renaming stuff for ai-provider now that ai-provider is in ai
+- remove setupDatabase() from queue/rate-limiter, plumb migration progress
+
+#### browser-control
+
+- split backends into per-vendor provider packages
+
+#### storage
+
+- streamline validation and error handling for orderBy criteria
+- address Copilot review on withTransaction semantics
+- address review feedback on putBulk + withTransaction
+
+### Tests
+
+- implement AiProvider contract conformance suite (#461)
+
+#### tabular
+
+- per-backend contract conformance tests (Phase 9)
+- contract suite (10 files)
+
+#### indexeddb
+
+- smoke test for tabular backfill migration
+
+#### postgres
+
+- smoke test for tabular addColumn migration
+
+#### sqlite
+
+- smoke test for tabular addColumn migration
+
+#### storage-migrations
+
+- tighten contract MEDIUMs
+- numeric sort + multi-component ordering + recorder convergence
+- add concurrentRunsSerialize + failedMigrationLeavesNoPartialSchema
+- contract conformance suite for IMigrationRunner (#464)
+
+#### contract
+
+- implement worker-proxy contract conformance suite (#468)
+
+#### browser-context
+
+- add IBrowserContext contract conformance suite (#470)
+
+#### ai-provider
+
+- add positive capability honesty assertions (#465)
+
+### Chores
+
+- fix merge issues after rebase and do a format
+
+#### tabular-migrations
+
+- final formatting + scripts/test.ts wiring
+
+#### storage
+
+- pre-merge polish from final review (easy minors)
+
+### CI
+
+- retrigger build
+- retrigger after transient @sqlite.org/sqlite-wasm resolution failure
+
 ## 0.2.31
 
 ### Refactors
