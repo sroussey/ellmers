@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isBrowserLike, loadProviderSdk, resolveApiKey } from "@workglow/ai/provider-utils";
+import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _OpenAIClass: (new (config: any) => any) | undefined;
 
 export async function loadOpenAISDK() {
-  if (!_OpenAIClass) {
+  if (_OpenAIClass) return _OpenAIClass;
+  try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sdk = await loadProviderSdk<{ default: new (config: any) => any }>("openai", "OpenAI");
-    _OpenAIClass = sdk.default;
+    _OpenAIClass = ((await import(/* @vite-ignore */ "openai")) as {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      default: new (config: any) => any;
+    }).default;
+  } catch {
+    throw new Error("openai is required for OpenAI tasks. Install it with: bun add openai");
   }
-  return _OpenAIClass;
+  return _OpenAIClass!;
 }
 
 interface ResolvedProviderConfig {

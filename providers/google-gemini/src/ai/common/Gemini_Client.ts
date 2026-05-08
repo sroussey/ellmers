@@ -4,19 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { loadProviderSdk, resolveApiKey } from "@workglow/ai/provider-utils";
+import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 let _sdk: typeof import("@google/generative-ai") | undefined;
 
 export async function loadGeminiSDK() {
-  if (!_sdk) {
-    _sdk = await loadProviderSdk<typeof import("@google/generative-ai")>(
-      "@google/generative-ai",
-      "Gemini"
+  if (_sdk) return _sdk.GoogleGenerativeAI;
+  try {
+    _sdk = (await import(
+      /* @vite-ignore */ "@google/generative-ai"
+    )) as typeof import("@google/generative-ai");
+  } catch {
+    throw new Error(
+      "@google/generative-ai is required for Gemini tasks. Install it with: bun add @google/generative-ai"
     );
   }
-  return _sdk.GoogleGenerativeAI;
+  return _sdk!.GoogleGenerativeAI;
 }
 
 interface ResolvedProviderConfig {

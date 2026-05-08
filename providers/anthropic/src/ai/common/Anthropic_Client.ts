@@ -4,19 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isBrowserLike, loadProviderSdk, resolveApiKey } from "@workglow/ai/provider-utils";
+import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
 let _sdk: typeof import("@anthropic-ai/sdk") | undefined;
 
 export async function loadAnthropicSDK() {
-  if (!_sdk) {
-    _sdk = await loadProviderSdk<typeof import("@anthropic-ai/sdk")>(
-      "@anthropic-ai/sdk",
-      "Anthropic"
+  if (_sdk) return _sdk.default;
+  try {
+    _sdk = (await import(
+      /* @vite-ignore */ "@anthropic-ai/sdk"
+    )) as typeof import("@anthropic-ai/sdk");
+  } catch {
+    throw new Error(
+      "@anthropic-ai/sdk is required for Anthropic tasks. Install it with: bun add @anthropic-ai/sdk"
     );
   }
-  return _sdk.default;
+  return _sdk!.default;
 }
 
 interface ResolvedProviderConfig {

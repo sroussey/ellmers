@@ -5,10 +5,9 @@
  */
 
 /**
- * Shared cloud-provider client utilities: API-key resolution and lazy SDK
- * loading. Used by each provider's `*_Client.ts` so the same fallback chain
- * (provider_config → env var) and the same "package missing" error message
- * live in one place.
+ * Shared cloud-provider client utilities: API-key resolution and browser-env
+ * detection. Used by each provider's `*_Client.ts` so the same fallback chain
+ * (provider_config → env var) lives in one place.
  */
 
 export interface CloudCredentialConfig {
@@ -46,24 +45,6 @@ export function resolveApiKey(args: ResolveApiKeyArgs): string {
   throw new Error(
     `Missing ${args.providerLabel} API key: set provider_config.credential_key or the ${envList} environment variable.`
   );
-}
-
-/**
- * Dynamically import a provider SDK package, throwing a uniform install hint
- * if the package isn't present.
- */
-export async function loadProviderSdk<T = unknown>(
-  packageName: string,
-  friendlyName?: string
-): Promise<T> {
-  try {
-    return (await import(/* @vite-ignore */ packageName)) as T;
-  } catch {
-    const label = friendlyName ?? packageName;
-    throw new Error(
-      `${packageName} is required for ${label} tasks. Install it with: bun add ${packageName}`
-    );
-  }
 }
 
 /**

@@ -4,20 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { loadProviderSdk, resolveApiKey } from "@workglow/ai/provider-utils";
+import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { InferenceProviderOrPolicy } from "@huggingface/inference";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 let _sdk: typeof import("@huggingface/inference") | undefined;
 
 export async function loadHfInferenceSDK() {
-  if (!_sdk) {
-    _sdk = await loadProviderSdk<typeof import("@huggingface/inference")>(
-      "@huggingface/inference",
-      "Hugging Face Inference"
+  if (_sdk) return _sdk;
+  try {
+    _sdk = (await import(
+      /* @vite-ignore */ "@huggingface/inference"
+    )) as typeof import("@huggingface/inference");
+  } catch {
+    throw new Error(
+      "@huggingface/inference is required for Hugging Face Inference tasks. Install it with: bun add @huggingface/inference"
     );
   }
-  return _sdk;
+  return _sdk!;
 }
 
 interface ResolvedProviderConfig {
