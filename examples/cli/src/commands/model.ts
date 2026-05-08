@@ -6,16 +6,16 @@
 
 import type { ModelRecord, ModelSearchResultItem } from "@workglow/ai";
 import { ModelRecordSchema, modelSearch } from "@workglow/ai";
-import { AnthropicModelRecordSchema } from "@workglow/anthropic/ai-provider";
-import { GeminiModelRecordSchema } from "@workglow/google-gemini/ai-provider";
-import { HfInferenceModelRecordSchema } from "@workglow/huggingface-inference/ai-provider";
+import { AnthropicModelRecordSchema } from "@workglow/anthropic/ai";
+import { GeminiModelRecordSchema } from "@workglow/google-gemini/ai";
+import { HfInferenceModelRecordSchema } from "@workglow/huggingface-inference/ai";
 import {
   HfTransformersOnnxModelRecordSchema,
   parseOnnxQuantizations,
-} from "@workglow/huggingface-transformers/ai-provider";
-import { LlamaCppModelRecordSchema } from "@workglow/node-llama-cpp/ai-provider";
-import { OllamaModelRecordSchema } from "@workglow/ollama/ai-provider";
-import { OpenAiModelRecordSchema } from "@workglow/openai/ai-provider";
+} from "@workglow/huggingface-transformers/ai";
+import { LlamaCppModelRecordSchema } from "@workglow/node-llama-cpp/ai";
+import { OllamaModelRecordSchema } from "@workglow/ollama/ai";
+import { OpenAiModelRecordSchema } from "@workglow/openai/ai";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import type { Command } from "commander";
 import { loadConfig } from "../config";

@@ -4,6 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerTensorFlowMediaPipeWorker } from "@workglow/tf-mediapipe/ai-provider-runtime";
+import { registerTensorFlowMediaPipeWorker } from "@workglow/tf-mediapipe/ai-runtime";
 
 registerTensorFlowMediaPipeWorker();

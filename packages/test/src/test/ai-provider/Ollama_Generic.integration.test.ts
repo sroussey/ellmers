@@ -9,8 +9,8 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { OLLAMA } from "@workglow/ollama/ai-provider";
-import { registerOllamaInline } from "@workglow/ollama/ai-provider-runtime";
+import { OLLAMA } from "@workglow/ollama/ai";
+import { registerOllamaInline } from "@workglow/ollama/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 

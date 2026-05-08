@@ -24,8 +24,8 @@ import {
   HF_TRANSFORMERS_ONNX,
   HF_TRANSFORMERS_ONNX_CPU,
   registerHuggingFaceTransformersInline,
-} from "@workglow/huggingface-transformers/ai-provider-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
+} from "@workglow/huggingface-transformers/ai-runtime";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
 import { InMemoryQueueStorage } from "@workglow/job-queue";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";

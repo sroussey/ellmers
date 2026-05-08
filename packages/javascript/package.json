@@ -22,8 +22,8 @@
   },
   "exports": {
     "./task": {
-      "types": "./src/task.ts",
-      "import": "./src/task.ts"
+      "types": "./dist/task.d.ts",
+      "import": "./dist/task.js"
     }
   },
   "peerDependencies": {

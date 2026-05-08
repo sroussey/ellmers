@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerHfImageValidator } from "@workglow/huggingface-inference/ai-provider";
+import { registerHfImageValidator } from "@workglow/huggingface-inference/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
 
 const HF_INFERENCE = "HF_INFERENCE";

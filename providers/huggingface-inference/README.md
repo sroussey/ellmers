@@ -1,6 +1,6 @@
 # @workglow/huggingface-inference
 
-HuggingFace Inference API provider for @workglow/ai-provider.
+HuggingFace Inference API provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/huggingface-inference
 ## Usage
 
 ```typescript
-import { registerHuggingfaceInference } from "@workglow/huggingface-inference/ai-provider-runtime";
+import { registerHuggingfaceInference } from "@workglow/huggingface-inference/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

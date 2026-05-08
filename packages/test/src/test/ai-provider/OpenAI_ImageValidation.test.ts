@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerOpenAiImageValidator } from "@workglow/openai/ai-provider";
+import { registerOpenAiImageValidator } from "@workglow/openai/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
 
 describe("OpenAI image validator", () => {

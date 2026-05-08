@@ -1,0 +1,145 @@
+/**
+ * @license
+ * Copyright 2025 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type {
+  AiProviderRunFn,
+  ModelSearchResultItem,
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput,
+} from "@workglow/ai";
+import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
+import { GOOGLE_GEMINI } from "./Gemini_Constants";
+
+interface GeminiModelEntry {
+  readonly label: string;
+  readonly value: string;
+  readonly tasks?: readonly string[];
+}
+
+const GEMINI_MODELS: readonly GeminiModelEntry[] = [
+  { label: "gemini-3.1-pro-preview", value: "gemini-3.1-pro-preview" },
+  { label: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
+  { label: "gemini-3.1-flash-lite-preview", value: "gemini-3.1-flash-lite-preview" },
+  { label: "gemini-2.5-flash", value: "gemini-2.5-flash" },
+  { label: "gemini-2.5-pro", value: "gemini-2.5-pro" },
+  // Embedding models
+  {
+    label: "gemini-embedding-2",
+    value: "gemini-embedding-2",
+    tasks: ["TextEmbeddingTask"],
+  },
+  {
+    label: "gemini-embedding-001",
+    value: "gemini-embedding-001",
+    tasks: ["TextEmbeddingTask"],
+  },
+  // Image-output models
+  {
+    label: "gemini-3.1-flash-image-preview",
+    value: "gemini-3.1-flash-image-preview",
+    tasks: ["ImageGenerateTask", "ImageEditTask"],
+  },
+  {
+    label: "gemini-3-pro-image-preview",
+    value: "gemini-3-pro-image-preview",
+    tasks: ["ImageGenerateTask", "ImageEditTask"],
+  },
+  {
+    label: "imagen-4.0-generate-001",
+    value: "imagen-4.0-generate-001",
+    tasks: ["ImageGenerateTask"],
+  },
+];
+
+interface GeminiApiModel {
+  readonly name: string;
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly supportedGenerationMethods?: readonly string[];
+}
+
+function tasksForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
+  const staticEntry = GEMINI_MODELS.find((m) => m.value === id);
+  if (staticEntry?.tasks) return [...staticEntry.tasks];
+
+  const methods = model.supportedGenerationMethods ?? [];
+  if (methods.some((method) => method.toLowerCase().includes("embed"))) {
+    return ["TextEmbeddingTask"];
+  }
+  return [];
+}
+
+function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
+  const id = model.name.startsWith("models/") ? model.name.slice("models/".length) : model.name;
+  const title = model.displayName || id;
+  return {
+    id,
+    label: title,
+    description: model.displayName ? id : (model.description ?? ""),
+    record: {
+      model_id: id,
+      provider: GOOGLE_GEMINI,
+      title,
+      description: model.description ?? "",
+      tasks: tasksForGeminiApiModel(model, id),
+      provider_config: { model_name: id },
+      metadata: {},
+    },
+    raw: model,
+  };
+}
+
+async function listGeminiModels(
+  credentialKey: string,
+  signal?: AbortSignal
+): Promise<ModelSearchResultItem[]> {
+  const params = new URLSearchParams({ key: credentialKey });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?${params}`,
+    {
+      signal,
+    }
+  );
+  if (!response.ok) throw new Error(`Gemini API returned ${response.status}`);
+  const body = (await response.json()) as { models?: GeminiApiModel[] };
+  return (body.models ?? []).map(mapGeminiModel);
+}
+
+export const Gemini_ModelSearch: AiProviderRunFn<
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput
+> = async (input, _model, _onProgress, signal) => {
+  const q = normalizedModelSearchQuery(input.query);
+  if (input.credential_key) {
+    const models = await listGeminiModels(input.credential_key, signal);
+    const results = q
+      ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
+      : models;
+    return { results };
+  }
+
+  const filtered = q
+    ? GEMINI_MODELS.filter(
+        (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+      )
+    : GEMINI_MODELS;
+  const results: ModelSearchResultItem[] = filtered.map((m) => ({
+    id: m.value,
+    label: m.label,
+    description: "",
+    record: {
+      model_id: m.value,
+      provider: GOOGLE_GEMINI,
+      title: m.value,
+      description: "",
+      tasks: m.tasks ? [...m.tasks] : [],
+      provider_config: { model_name: m.value },
+      metadata: {},
+    },
+    raw: m,
+  }));
+  return { results };
+};

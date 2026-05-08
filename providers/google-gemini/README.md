@@ -1,6 +1,6 @@
 # @workglow/google-gemini
 
-Google Gemini provider for @workglow/ai-provider.
+Google Gemini provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/google-gemini
 ## Usage
 
 ```typescript
-import { registerGoogleGemini } from "@workglow/google-gemini/ai-provider-runtime";
+import { registerGoogleGemini } from "@workglow/google-gemini/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

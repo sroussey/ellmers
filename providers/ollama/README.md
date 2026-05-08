@@ -1,6 +1,6 @@
 # @workglow/ollama
 
-Ollama provider for @workglow/ai-provider.
+Ollama provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/ollama
 ## Usage
 
 ```typescript
-import { registerOllama } from "@workglow/ollama/ai-provider-runtime";
+import { registerOllama } from "@workglow/ollama/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

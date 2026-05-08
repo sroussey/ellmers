@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/anthropic/ai-provider";
+export * from "@workglow/anthropic/ai";

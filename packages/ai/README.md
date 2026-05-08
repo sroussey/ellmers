@@ -22,7 +22,7 @@ bun add @workglow/ai
 
 ## Quick Start
 
-Here's a complete example of setting up and using the AI package with the Hugging Face Transformers ONNX provider from `@workglow/ai-provider`:
+Here's a complete example of setting up and using the AI package with the Hugging Face Transformers ONNX provider from `@workglow/ai`:
 
 ```typescript
 import {
@@ -41,8 +41,8 @@ import {
   JobQueueClient,
   JobQueueServer,
 } from "@workglow/job-queue";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
-import { registerHuggingFaceTransformersInline } from "@workglow/ai-provider/hf-transformers/runtime";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
+import { registerHuggingFaceTransformersInline } from "@workglow/huggingface-transformers/ai-runtime";
 
 // 1. Set up a model repository
 const modelRepo = new InMemoryModelRepository();
@@ -111,7 +111,7 @@ Generates text based on prompts using language models.
 
 ```typescript
 import { TextGenerationTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -137,7 +137,7 @@ Generates vector embeddings for text using embedding models.
 
 ```typescript
 import { TextEmbeddingTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const embeddingModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -182,7 +182,7 @@ Generates summaries of longer text content.
 
 ```typescript
 import { TextSummaryTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const summarizationModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -209,7 +209,7 @@ Rewrites text in different styles or tones.
 
 ```typescript
 import { TextRewriterTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const laMiniModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -236,7 +236,7 @@ Answers questions based on provided context.
 
 ```typescript
 import { TextQuestionAnswerTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const squadModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -276,7 +276,7 @@ Computes similarity between texts or embeddings.
 
 ```typescript
 import { VectorSimilarityTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gteSmallConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -306,7 +306,7 @@ Downloads and prepares AI models for use.
 
 ```typescript
 import { DownloadModelTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const task = new DownloadModelTask({
   model: {
@@ -380,7 +380,7 @@ setGlobalModelRepository(modelRepo);
 
 ```typescript
 import { getGlobalModelRepository } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const modelRepo = getGlobalModelRepository();
 
@@ -417,7 +417,7 @@ AI providers handle the actual execution of AI tasks. You need to register provi
 ### Basic Provider Registration
 
 ```typescript
-import { registerHuggingFaceTransformersInline } from "@workglow/ai-provider/hf-transformers/runtime";
+import { registerHuggingFaceTransformersInline } from "@workglow/huggingface-transformers/ai-runtime";
 
 // Inline: run functions registered on the current thread (tasks wired inside the provider)
 await registerHuggingFaceTransformersInline();
@@ -428,12 +428,12 @@ await registerHuggingFaceTransformersInline();
 For compute-intensive tasks that should run in workers:
 
 ```typescript
-import { registerHuggingFaceTransformers } from "@workglow/ai-provider/hf-transformers";
+import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
 
 await registerHuggingFaceTransformers({
   worker: () => new Worker(new URL("./worker_hft.ts", import.meta.url), { type: "module" }),
 });
-// Worker file must call registerHuggingFaceTransformersWorker() from @workglow/ai-provider/hf-transformers/runtime
+// Worker file must call registerHuggingFaceTransformersWorker() from @workglow/huggingface-transformers/ai-runtime
 ```
 
 ### Job Queue Setup
@@ -449,7 +449,7 @@ import {
   JobQueueServer,
 } from "@workglow/job-queue";
 import { AiJob, AiJobInput } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const queueName = HF_TRANSFORMERS_ONNX;
 const storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(queueName);
@@ -476,7 +476,7 @@ AI tasks integrate seamlessly with Workglow workflows:
 
 ```typescript
 import { Workflow } from "@workglow/task-graph";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -555,7 +555,7 @@ The AI package provides a comprehensive set of tasks for building RAG pipelines.
 ```typescript
 import { Workflow } from "@workglow/task-graph";
 import { createKnowledgeBase } from "@workglow/knowledge-base";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 // 1. Set up a model repository
 const modelRepo = new InMemoryModelRepository();
@@ -713,7 +713,7 @@ AI tasks accept model inputs as either string identifiers or direct `ModelConfig
 
 ```typescript
 import { TextGenerationTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -752,7 +752,7 @@ Tasks automatically validate that specified models exist and are compatible:
 
 ```typescript
 import { TextGenerationTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -778,7 +778,7 @@ Monitor AI task progress:
 
 ```typescript
 import { TextGenerationTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,
@@ -807,7 +807,7 @@ All AI tasks support cancellation via AbortSignal:
 
 ```typescript
 import { TextGenerationTask } from "@workglow/ai";
-import { HF_TRANSFORMERS_ONNX } from "@workglow/ai-provider/hf-transformers";
+import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
 const gpt2ModelConfig = {
   provider: HF_TRANSFORMERS_ONNX,

@@ -43,13 +43,13 @@ const result = await workflow.run();
 | `@workglow/job-queue`      | Job queue management and task scheduling                                                                                      |
 | `@workglow/task-graph`     | DAG task graph construction and execution; browser build also exports DevTools formatters (`installDevToolsFormatters`, etc.) |
 | `@workglow/knowledge-base` | Knowledge base, document management, and RAG infrastructure                                                                   |
-| `@workglow/ai`             | Core AI functionality, tasks, and model management                                                                            |
-| `@workglow/ai-provider/*`  | AI provider integrations (use subpath imports, e.g. `/hf-transformers`)                                                       |
+| `@workglow/ai`             | Core AI functionality, tasks, model management, and provider helpers (`/provider-utils`)                                      |
+| `@workglow/<vendor>`       | Standalone provider packages (Anthropic, OpenAI, Gemini, Ollama, HuggingFace, llama.cpp, MediaPipe, Chrome AI)                 |
 | `@workglow/tasks`          | Pre-built utility tasks (arrays, scalars, vectors, etc.)                                                                      |
 
 ## Provider Subpath Exports
 
-SDK-dependent code is isolated behind subpath exports. Each `workglow/*` provider entry mirrors the corresponding `@workglow/ai-provider/*` package subpath (there is no root barrel on `@workglow/ai-provider`):
+SDK-dependent code is isolated behind separate vendor packages, each exposing `/ai` (main thread) and `/ai-runtime` (worker / inline runtime). Each `workglow/<vendor>` entry mirrors the corresponding standalone provider package:
 
 ```typescript
 // Anthropic (requires: @anthropic-ai/sdk)

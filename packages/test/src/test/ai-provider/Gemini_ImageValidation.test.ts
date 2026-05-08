@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerGeminiImageValidator } from "@workglow/google-gemini/ai-provider";
+import { registerGeminiImageValidator } from "@workglow/google-gemini/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
 
 describe("Gemini image validator", () => {

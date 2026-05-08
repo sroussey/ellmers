@@ -41,9 +41,9 @@ task-graph                            (core DAG pipeline engine)
     ↓
 dataset, tasks                        (KnowledgeBase, documents, chunks; utility tasks)
     ↓
-ai                                    (AI task base classes, model registry)
+ai                                    (AI task base classes, model registry, provider helpers)
     ↓
-ai-provider                           (concrete provider implementations)
+providers/*                           (concrete provider implementations: anthropic, openai, gemini, ollama, ...)
     ↓
 test                                  (integration tests across all packages)
 workglow                              (meta-package re-exporting everything)
@@ -61,7 +61,7 @@ Each package builds three runtime targets via `bun build --target=X`:
 
 Types built with `tsc` (composite + incremental). Conditional exports in `package.json` resolve automatically per runtime.
 
-Exception: `ai-provider` builds per-provider sub-paths (`./anthropic`, `./openai`, `./google-gemini`, etc.) instead of browser/node/bun.
+Exception: vendor packages under `providers/*` (e.g. `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`) ship `./ai` and `./ai-runtime` sub-paths instead of browser/node/bun.
 
 Exception: `util` has multiple named exports beyond `"."`:
 
@@ -178,18 +178,21 @@ Task categories: text generation/embedding/summary/translation/rewriting/classif
 
 RAG tasks: `ChunkVectorUpsertTask` (input: `knowledgeBase` + `chunks` + `vector`, optional `doc_title`), `ChunkRetrievalTask` (input: `knowledgeBase` + `query` + `model`, with `method: "similarity" | "hybrid"`), `HierarchyJoinTask`, `RerankerTask`, `QueryExpanderTask`, `TextChunkerTask`, `HierarchicalChunkerTask`.
 
-### `@workglow/ai-provider` — provider implementations
+### `providers/*` — provider implementations
 
-Each provider is a separate sub-export with optional peer dependencies:
+Each provider is a standalone package with optional third-party peer dependencies. They each expose `./ai` (main-thread shell) and `./ai-runtime` (worker / inline runtime):
 
-- `@workglow/ai-provider/anthropic` — Claude
-- `@workglow/ai-provider/openai` — OpenAI
-- `@workglow/ai-provider/gemini` — Gemini
-- `@workglow/ai-provider/ollama` — Ollama (browser + node)
-- `@workglow/ai-provider/hf-transformers` — HuggingFace Transformers.js
-- `@workglow/ai-provider/hf-inference` — HuggingFace Inference API
-- `@workglow/ai-provider/llamacpp` — node-llama-cpp
-- `@workglow/ai-provider/tf-mediapipe` — TensorFlow MediaPipe (browser)
+- `@workglow/anthropic` — Claude
+- `@workglow/openai` — OpenAI
+- `@workglow/google-gemini` — Gemini
+- `@workglow/ollama` — Ollama (browser + node)
+- `@workglow/huggingface-transformers` — HuggingFace Transformers.js
+- `@workglow/huggingface-inference` — HuggingFace Inference API
+- `@workglow/node-llama-cpp` — node-llama-cpp
+- `@workglow/tf-mediapipe` — TensorFlow MediaPipe (browser)
+- `@workglow/chrome-ai` — built-in Chrome / WebBrowser AI
+
+Shared cloud-provider helpers (base classes, registration, model search, OpenAI-shape chat, image-output conversion, tool-call parsing) live in `@workglow/ai/provider-utils` and are imported by every vendor package.
 
 **Important: `*_JobRunFns.ts` files execute inside workers.** Workers have an isolated runtime with a separate `globalServiceRegistry`. Do not access main-thread-only state (e.g., credential stores, service registries) from run functions. Instead, resolve such state in the task class on the main thread (e.g., `AiTask.getJobInput()`) and pass the resolved values through the serialized job input.
 

@@ -34,27 +34,27 @@
   "exports": {
     "./storage": {
       "browser": {
-        "types": "./src/storage/browser.ts",
-        "import": "./src/storage/browser.ts"
+        "types": "./dist/storage/browser.d.ts",
+        "import": "./dist/storage/browser.js"
       },
       "bun": {
-        "types": "./src/storage/bun.ts",
-        "import": "./src/storage/bun.ts"
+        "types": "./dist/storage/bun.d.ts",
+        "import": "./dist/storage/bun.js"
       },
-      "types": "./src/storage/node.ts",
-      "import": "./src/storage/node.ts"
+      "types": "./dist/storage/node.d.ts",
+      "import": "./dist/storage/node.js"
     },
     "./job-queue": {
       "browser": {
-        "types": "./src/job-queue/browser.ts",
-        "import": "./src/job-queue/browser.ts"
+        "types": "./dist/job-queue/browser.d.ts",
+        "import": "./dist/job-queue/browser.js"
       },
       "bun": {
-        "types": "./src/job-queue/bun.ts",
-        "import": "./src/job-queue/bun.ts"
+        "types": "./dist/job-queue/bun.d.ts",
+        "import": "./dist/job-queue/bun.js"
       },
-      "types": "./src/job-queue/node.ts",
-      "import": "./src/job-queue/node.ts"
+      "types": "./dist/job-queue/node.d.ts",
+      "import": "./dist/job-queue/node.js"
     }
   },
   "peerDependencies": {

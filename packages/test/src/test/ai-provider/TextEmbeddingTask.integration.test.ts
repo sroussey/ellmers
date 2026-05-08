@@ -11,13 +11,13 @@ import {
   setGlobalModelRepository,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
-} from "@workglow/huggingface-transformers/ai-provider-runtime";
-// import { TFMP_TASKS } from "@workglow/tf-mediapipe/ai-provider";
+} from "@workglow/huggingface-transformers/ai-runtime";
+// import { TFMP_TASKS } from "@workglow/tf-mediapipe/ai";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";

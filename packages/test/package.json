@@ -28,7 +28,6 @@
     "@supabase/supabase-js": "catalog:",
     "@types/pg": "^8.18.0",
     "@workglow/ai": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
     "@workglow/anthropic": "workspace:*",
     "@workglow/browser-control": "workspace:*",
     "@workglow/bun-webview": "workspace:*",

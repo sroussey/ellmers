@@ -376,8 +376,8 @@ the `onExpiry` callback is invoked -- typically used to lock a
 - The Web Crypto API (`crypto.subtle`) is available natively -- no polyfills needed.
 - Provider clients (Anthropic, OpenAI) set `dangerouslyAllowBrowser: true`
   when they detect a browser or web worker context (see
-  `packages/ai-provider/src/provider-anthropic/common/Anthropic_Client.ts:48`
-  and `packages/ai-provider/src/provider-openai/common/OpenAI_Client.ts:49`).
+  `providers/anthropic/src/ai/common/Anthropic_Client.ts`
+  and `providers/openai/src/ai/common/OpenAI_Client.ts`).
   This is **not** automatically safe: any API key loaded into a browser
   context — even one decrypted from `EncryptedKvCredentialStore` at runtime —
   is reachable from the page and should be treated as exposed to the end user.

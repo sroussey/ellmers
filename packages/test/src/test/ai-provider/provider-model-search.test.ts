@@ -5,11 +5,11 @@
  */
 
 import { ModelSearchTask } from "@workglow/ai";
-import { Anthropic_ModelSearch } from "@workglow/anthropic/ai-provider";
-import { Gemini_ModelSearch } from "@workglow/google-gemini/ai-provider";
-import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai-provider";
-import { OpenAI_ModelSearch } from "@workglow/openai/ai-provider";
-import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai-provider";
+import { Anthropic_ModelSearch } from "@workglow/anthropic/ai";
+import { Gemini_ModelSearch } from "@workglow/google-gemini/ai";
+import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
+import { OpenAI_ModelSearch } from "@workglow/openai/ai";
+import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;

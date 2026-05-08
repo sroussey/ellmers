@@ -1,6 +1,6 @@
 # @workglow/anthropic
 
-Anthropic Claude provider for @workglow/ai-provider.
+Anthropic Claude provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/anthropic
 ## Usage
 
 ```typescript
-import { registerAnthropic } from "@workglow/anthropic/ai-provider-runtime";
+import { registerAnthropic } from "@workglow/anthropic/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

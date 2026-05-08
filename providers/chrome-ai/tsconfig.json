@@ -6,13 +6,24 @@
     "outDir": "dist",
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
   "references": [
-    { "path": "../../packages/util" },
-    { "path": "../../packages/task-graph" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/job-queue" },
-    { "path": "../../packages/ai" },
-    { "path": "../../packages/ai-provider" }
+    {
+      "path": "../../packages/util"
+    },
+    {
+      "path": "../../packages/task-graph"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/job-queue"
+    },
+    {
+      "path": "../../packages/ai"
+    }
   ]
 }

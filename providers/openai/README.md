@@ -1,6 +1,6 @@
 # @workglow/openai
 
-OpenAI provider for @workglow/ai-provider.
+OpenAI provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/openai
 ## Usage
 
 ```typescript
-import { registerOpenai } from "@workglow/openai/ai-provider-runtime";
+import { registerOpenai } from "@workglow/openai/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

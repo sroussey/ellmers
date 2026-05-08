@@ -383,8 +383,9 @@ important implications:
    keeping the worker bundle small.
 
 4. **Provider run functions execute in workers.** Files named `*_JobRunFns.ts`
-   in the `ai-provider` package contain the actual inference logic that runs
-   inside workers. These functions must not import main-thread-only modules.
+   in each vendor provider package (under `providers/*`) contain the actual
+   inference logic that runs inside workers. These functions must not import
+   main-thread-only modules.
 
 ## Provider Integration
 

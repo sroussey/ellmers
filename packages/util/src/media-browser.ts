@@ -79,7 +79,7 @@ export { WebGpuImage } from "./media/webGpuImage.browser";
 export type { ApplyParams } from "./media/webGpuImage.browser";
 
 // Throwing stubs for server-only sharp helpers. These exist so cross-platform
-// consumers (e.g. `@workglow/ai-provider/common/imageOutputHelpers`) can
+// consumers (e.g. `@workglow/ai/provider-utils/imageOutputHelpers`) can
 // statically import the helpers without browser bundlers tripping on missing
 // exports.
 export async function probeImageDimensions(_: any): Promise<any> {

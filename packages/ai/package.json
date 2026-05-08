@@ -10,19 +10,21 @@
   "description": "Core AI functionality for Workglow, including task execution, model management, and AI pipeline orchestration.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker'",
+    "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,provider-utils' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-provider-utils'",
     "watch-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "watch-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "watch-worker": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/worker.ts",
+    "watch-provider-utils": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/provider-utils.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
-    "build-package": "concurrently -c 'auto' -n 'browser,node,bun,worker,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,worker' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker'",
+    "build-package": "concurrently -c 'auto' -n 'browser,node,bun,worker,provider-utils,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-provider-utils' 'bun run build-types'",
+    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,provider-utils' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-provider-utils'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
     "build-bun": "bun build --target=bun --sourcemap=external --packages=external --outdir ./dist ./src/bun.ts",
     "build-worker": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/worker.ts",
+    "build-provider-utils": "bun build --sourcemap=external --packages=external --outdir ./dist ./src/provider-utils.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -30,23 +32,27 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./src/browser.ts",
-        "import": "./src/browser.ts"
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
       },
       "browser": {
-        "types": "./src/browser.ts",
-        "import": "./src/browser.ts"
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
       },
       "bun": {
-        "types": "./src/bun.ts",
-        "import": "./src/bun.ts"
+        "types": "./dist/bun.d.ts",
+        "import": "./dist/bun.js"
       },
-      "types": "./src/node.ts",
-      "import": "./src/node.ts"
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     },
     "./worker": {
-      "types": "./src/worker.ts",
-      "import": "./src/worker.ts"
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
+    "./provider-utils": {
+      "types": "./dist/provider-utils.d.ts",
+      "import": "./dist/provider-utils.js"
     }
   },
   "sideEffects": false,

@@ -64,7 +64,7 @@ Packages:
 - **[packages/job-queue](packages/job-queue/README.md)**
 - **[packages/tasks](packages/tasks/README.md)**
 - **[packages/ai](packages/ai/README.md)**
-- **[packages/ai-provider](packages/ai-provider/README.md)**
+- **[providers/*](providers/) — vendor provider packages (Anthropic, OpenAI, Gemini, Ollama, HuggingFace, llama.cpp, MediaPipe, Chrome AI, Playwright, Electron, SQLite, Postgres, Supabase, bun-webview)**
 - **[packages/util](packages/util/README.md)**
 - **[packages/test](packages/test/README.md)**
 

@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/huggingface-transformers/ai-provider";
+export * from "@workglow/huggingface-transformers/ai";

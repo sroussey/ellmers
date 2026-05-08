@@ -10,8 +10,8 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai-provider";
-import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
+import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
   getOrCreateTextContext,
@@ -19,7 +19,7 @@ import {
   loadSdk,
   llamaCppChatSessionConstructorSpread,
   registerLlamaCppInline,
-} from "@workglow/node-llama-cpp/ai-provider-runtime";
+} from "@workglow/node-llama-cpp/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { afterAll, beforeAll, describe, it } from "vitest";

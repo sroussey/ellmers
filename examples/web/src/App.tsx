@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai-provider";
-import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai-provider";
+import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
+import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
 import { getTaskQueueRegistry, JsonTaskItem, TaskGraph, Workflow } from "@workglow/task-graph";
 import { JsonTask } from "@workglow/tasks";
 import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";

@@ -11,13 +11,13 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-provider-runtime";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   HF_TRANSFORMERS_ONNX_CPU,
   registerHuggingFaceTransformersInline,
-} from "@workglow/huggingface-transformers/ai-provider-runtime";
+} from "@workglow/huggingface-transformers/ai-runtime";
 import {
   ConcurrencyLimiter,
   JobQueueClient,

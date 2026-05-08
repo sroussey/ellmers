@@ -382,27 +382,29 @@ yields a single `finish` event so GPU serialization is still respected.
 
 ---
 
-## Sub-Path Exports
+## Vendor Provider Packages
 
-Unlike other packages that build per-runtime targets (`browser.ts`, `node.ts`, `bun.ts`), the
-`@workglow/ai-provider` package builds per-provider sub-paths. Each provider is a separate import
-with optional peer dependencies:
+Unlike core packages that build per-runtime targets (`browser.ts`, `node.ts`, `bun.ts`), each
+provider lives in its own package under `providers/*` with optional peer dependencies on the
+underlying vendor SDK. Providers import shared base classes and helpers from
+`@workglow/ai/provider-utils`.
 
 ```typescript
-import "@workglow/ai-provider/anthropic"; // Claude (requires @anthropic-ai/sdk)
-import "@workglow/ai-provider/openai"; // OpenAI (requires openai)
-import "@workglow/ai-provider/gemini"; // Google Gemini (requires @google/generative-ai)
-import "@workglow/ai-provider/ollama"; // Ollama (requires ollama)
-import "@workglow/ai-provider/hf-transformers"; // HuggingFace Transformers.js
-import "@workglow/ai-provider/hf-inference"; // HuggingFace Inference API
-import "@workglow/ai-provider/llamacpp"; // node-llama-cpp
-import "@workglow/ai-provider/tf-mediapipe"; // TensorFlow MediaPipe (browser)
-import "@workglow/ai-provider/chrome"; // Chrome Built-in AI
+import "@workglow/anthropic/ai";              // Claude (requires @anthropic-ai/sdk)
+import "@workglow/openai/ai";                 // OpenAI (requires openai)
+import "@workglow/google-gemini/ai";          // Google Gemini (requires @google/generative-ai)
+import "@workglow/ollama/ai";                 // Ollama (requires ollama)
+import "@workglow/huggingface-transformers/ai"; // HuggingFace Transformers.js
+import "@workglow/huggingface-inference/ai";  // HuggingFace Inference API
+import "@workglow/node-llama-cpp/ai";         // node-llama-cpp
+import "@workglow/tf-mediapipe/ai";           // TensorFlow MediaPipe (browser)
+import "@workglow/chrome-ai/ai";              // Chrome Built-in AI
 ```
 
-Each sub-path also has a `/runtime` variant (e.g., `@workglow/ai-provider/anthropic/runtime`) that
-exports the heavy run function implementations and worker registration helpers. The main sub-path
-exports only the lightweight provider class, constants, and the worker-backed registration function.
+Each vendor package also exposes an `/ai-runtime` entry (e.g.
+`@workglow/anthropic/ai-runtime`) that exports the heavy run function implementations
+and worker registration helpers. The `/ai` entry exports only the lightweight provider
+class, constants, and the worker-backed registration function.
 
 Some providers (Ollama, OpenAI) also have browser-specific conditional exports in `package.json`.
 

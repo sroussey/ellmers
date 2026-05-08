@@ -4,4 +4,4 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export * from "@workglow/chrome-ai/ai-provider-runtime";
+export * from "@workglow/chrome-ai/ai-runtime";

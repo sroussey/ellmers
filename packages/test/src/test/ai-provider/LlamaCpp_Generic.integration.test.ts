@@ -10,15 +10,15 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai-provider";
-import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai-provider";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
+import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
   llamaCppSessions,
   recycleLlamaCppTextContext,
   registerLlamaCppInline,
   releaseLlamaCppTransientSessions,
-} from "@workglow/node-llama-cpp/ai-provider-runtime";
+} from "@workglow/node-llama-cpp/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 

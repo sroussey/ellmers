@@ -1,6 +1,6 @@
 # @workglow/chrome-ai
 
-Chrome built-in AI provider for @workglow/ai-provider.
+Chrome built-in AI provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/chrome-ai
 ## Usage
 
 ```typescript
-import { registerChromeAi } from "@workglow/chrome-ai/ai-provider-runtime";
+import { registerChromeAi } from "@workglow/chrome-ai/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

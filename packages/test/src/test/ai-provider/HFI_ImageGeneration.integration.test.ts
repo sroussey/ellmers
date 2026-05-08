@@ -6,7 +6,7 @@
 
 import { describe, expect, it, beforeAll } from "vitest";
 import { ImageGenerateTask, ImageEditTask } from "@workglow/ai";
-import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
+import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-runtime";
 
 const RUN = !!process.env.HF_TOKEN;
 

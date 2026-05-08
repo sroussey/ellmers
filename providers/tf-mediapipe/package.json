@@ -8,35 +8,35 @@
     "url": "https://github.com/workglow-dev/workglow.git",
     "directory": "packages/tf-mediapipe"
   },
-  "description": "TensorFlow MediaPipe provider for @workglow/ai-provider (browser only).",
+  "description": "TensorFlow MediaPipe provider for @workglow/ai (browser only).",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
+    "watch-code": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",
     "build-js": "bun run build-code",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
-    "build-code": "bun build --target=browser --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai-provider.ts ./src/ai-provider-runtime.ts",
+    "build-code": "bun build --target=browser --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
   },
   "exports": {
-    "./ai-provider": {
+    "./ai": {
       "browser": {
-        "types": "./src/ai-provider.ts",
-        "import": "./src/ai-provider.ts"
+        "types": "./dist/ai.d.ts",
+        "import": "./dist/ai.js"
       },
-      "types": "./src/ai-provider.ts",
-      "import": "./src/ai-provider.ts"
+      "types": "./dist/ai.d.ts",
+      "import": "./dist/ai.js"
     },
-    "./ai-provider-runtime": {
+    "./ai-runtime": {
       "browser": {
-        "types": "./src/ai-provider-runtime.ts",
-        "import": "./src/ai-provider-runtime.ts"
+        "types": "./dist/ai-runtime.d.ts",
+        "import": "./dist/ai-runtime.js"
       },
-      "types": "./src/ai-provider-runtime.ts",
-      "import": "./src/ai-provider-runtime.ts"
+      "types": "./dist/ai-runtime.d.ts",
+      "import": "./dist/ai-runtime.js"
     }
   },
   "dependencies": {
@@ -47,7 +47,6 @@
   },
   "peerDependencies": {
     "@workglow/ai": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",
@@ -55,9 +54,6 @@
   },
   "peerDependenciesMeta": {
     "@workglow/ai": {
-      "optional": false
-    },
-    "@workglow/ai-provider": {
       "optional": false
     },
     "@workglow/job-queue": {
@@ -75,7 +71,6 @@
   },
   "devDependencies": {
     "@workglow/ai": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",
     "@workglow/task-graph": "workspace:*",

@@ -46,7 +46,7 @@ await registerMediaPipeTfJsLocalModels();
 ### AI Provider Setup
 
 ```typescript
-import { registerHuggingFaceTransformersInline } from "@workglow/ai-provider/hf-transformers/runtime";
+import { registerHuggingFaceTransformersInline } from "@workglow/huggingface-transformers/ai-runtime";
 
 // Set up HuggingFace Transformers inline for testing
 await registerHuggingFaceTransformersInline();
@@ -71,7 +71,6 @@ await registerHuggingFaceTransformersInline();
 This package depends on other Workglow packages:
 
 - `@workglow/ai`
-- `@workglow/ai-provider`
 - `@workglow/job-queue`
 - `@workglow/storage`
 - `@workglow/task-graph`

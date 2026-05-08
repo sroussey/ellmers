@@ -9,8 +9,8 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { ANTHROPIC } from "@workglow/anthropic/ai-provider";
-import { registerAnthropicInline } from "@workglow/anthropic/ai-provider-runtime";
+import { ANTHROPIC } from "@workglow/anthropic/ai";
+import { registerAnthropicInline } from "@workglow/anthropic/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 

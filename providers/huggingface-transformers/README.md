@@ -1,6 +1,6 @@
 # @workglow/huggingface-transformers
 
-HuggingFace Transformers.js provider for @workglow/ai-provider.
+HuggingFace Transformers.js provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/huggingface-transformers
 ## Usage
 
 ```typescript
-import { registerHuggingfaceTransformers } from "@workglow/huggingface-transformers/ai-provider-runtime";
+import { registerHuggingfaceTransformers } from "@workglow/huggingface-transformers/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

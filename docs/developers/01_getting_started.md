@@ -17,7 +17,7 @@
   - [`packages/job-queue`](#packagesjob-queue)
   - [`packages/task-graph`](#packagestask-graph)
   - [`packages/ai`](#packagesai)
-  - [`packages/ai-provider`](#packagesai-provider)
+  - [`providers/*`](#providers)
   - [`packages/util`](#packagesutil)
   - [`examples/cli`](#examplescli)
   - [`examples/web`](#examplesweb)
@@ -559,9 +559,9 @@ This is the main task handling library, with tasks, compound tasks, data flows, 
 
 These are the LLM tasks, models, etc. These tasks are agnostic to the provider and thus are like abstract versions. AI providers contribute the concrete implementations. Which implementation is used is determined by the model repository.
 
-### `packages/ai-provider`
+### `providers/*`
 
-This is the Huggingface Transformers JS (using ONNX) and TensorFlow MediaPipe providers.
+Each AI provider lives in its own package under `providers/`: `@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`, `@workglow/ollama`, `@workglow/huggingface-transformers`, `@workglow/huggingface-inference`, `@workglow/node-llama-cpp`, `@workglow/tf-mediapipe`, and `@workglow/chrome-ai`. Each ships an `./ai` and `./ai-runtime` subpath. Shared helpers (cloud client base classes, registration utilities, OpenAI-shape chat plumbing) live in `@workglow/ai/provider-utils`. Non-AI vendor packages (Playwright, Electron, SQLite, Postgres, Supabase, bun-webview) also live under `providers/`.
 
 ### `packages/util`
 

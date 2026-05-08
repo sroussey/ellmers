@@ -38,7 +38,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-output
-          path: packages/*/dist/**
+          path: |
+            packages/*/dist/**
+            providers/*/dist/**
+            examples/*/dist/**
           retention-days: 1
 
   test-bun-unit:
@@ -57,7 +60,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run unit tests via bun
         run: bun run test:bun:unit
 
@@ -81,7 +84,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run integration tests via bun
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -109,7 +112,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run rag tests via bun
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -137,7 +140,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run HuggingFace Transformers provider tests via bun
         run: bun run test:bun:ai-provider-hft
 
@@ -161,7 +164,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run LlamaCpp provider tests via bun
         run: bun run test:bun:ai-provider-llamacpp
 
@@ -185,7 +188,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run API provider tests via bun
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -213,7 +216,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run unit tests via vitest
         run: bun run test:vitest:unit
       - name: Copy Vitest coverage fragment
@@ -245,7 +248,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run integration tests via vitest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -281,7 +284,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run rag tests via vitest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -317,7 +320,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run HuggingFace Transformers provider tests via vitest
         run: bun run test:vitest:ai-provider-hft
       - name: Copy Vitest coverage fragment
@@ -349,7 +352,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run LlamaCpp provider tests via vitest
         run: bun run test:vitest:ai-provider-llamacpp
       - name: Copy Vitest coverage fragment
@@ -381,7 +384,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-output
-          path: packages
+          path: .
       - name: Run API provider tests via vitest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

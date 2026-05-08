@@ -30,23 +30,23 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./src/browser.ts",
-        "import": "./src/browser.ts"
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
       },
       "browser": {
-        "types": "./src/browser.ts",
-        "import": "./src/browser.ts"
+        "types": "./dist/browser.d.ts",
+        "import": "./dist/browser.js"
       },
       "bun": {
-        "types": "./src/bun.ts",
-        "import": "./src/bun.ts"
+        "types": "./dist/bun.d.ts",
+        "import": "./dist/bun.js"
       },
-      "types": "./src/node.ts",
-      "import": "./src/node.ts"
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     },
     "./electron": {
-      "types": "./src/electron.ts",
-      "import": "./src/electron.ts"
+      "types": "./dist/electron.d.ts",
+      "import": "./dist/electron.js"
     }
   },
   "files": [

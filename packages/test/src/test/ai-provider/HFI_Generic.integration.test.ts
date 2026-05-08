@@ -9,8 +9,8 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { HF_INFERENCE } from "@workglow/huggingface-inference/ai-provider";
-import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-provider-runtime";
+import { HF_INFERENCE } from "@workglow/huggingface-inference/ai";
+import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 

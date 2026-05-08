@@ -1,6 +1,6 @@
 # @workglow/node-llama-cpp
 
-node-llama-cpp provider for @workglow/ai-provider.
+node-llama-cpp provider for @workglow/ai.
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/node-llama-cpp
 ## Usage
 
 ```typescript
-import { registerNodeLlamaCpp } from "@workglow/node-llama-cpp/ai-provider-runtime";
+import { registerNodeLlamaCpp } from "@workglow/node-llama-cpp/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

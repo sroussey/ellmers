@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { parseToolCallsFromText } from "@workglow/ai-provider/test";
-import { createToolCallMarkupFilter } from "@workglow/huggingface-transformers/ai-provider-runtime";
+import { parseToolCallsFromText } from "@workglow/ai/provider-utils";
+import { createToolCallMarkupFilter } from "@workglow/huggingface-transformers/ai-runtime";
 import { describe, expect, it } from "vitest";
 
 // ========================================================================

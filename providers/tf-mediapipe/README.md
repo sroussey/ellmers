@@ -1,6 +1,6 @@
 # @workglow/tf-mediapipe
 
-TensorFlow MediaPipe provider for @workglow/ai-provider (browser only).
+TensorFlow MediaPipe provider for @workglow/ai (browser only).
 
 ## Features
 
@@ -22,7 +22,7 @@ yarn add @workglow/tf-mediapipe
 ## Usage
 
 ```typescript
-import { registerTfMediapipe } from "@workglow/tf-mediapipe/ai-provider-runtime";
+import { registerTfMediapipe } from "@workglow/tf-mediapipe/ai-runtime";
 import { TextGenerationTask } from "@workglow/ai";
 import { Workflow } from "@workglow/task-graph";
 

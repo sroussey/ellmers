@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { createOllamaTextGenerationStream } from "@workglow/ollama/ai-provider-runtime";
+import { createOllamaTextGenerationStream } from "@workglow/ollama/ai-runtime";
 
 type FakeStream = {
   abort: ReturnType<typeof vi.fn>;

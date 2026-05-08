@@ -17,7 +17,6 @@
     "@codemirror/lang-json": "^6.0.2",
     "@workglow/ai": "workspace:*",
     "@workglow/knowledge-base": "workspace:*",
-    "@workglow/ai-provider": "workspace:*",
     "@workglow/huggingface-transformers": "workspace:*",
     "@workglow/indexeddb": "workspace:*",
     "@workglow/tf-mediapipe": "workspace:*",

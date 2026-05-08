@@ -171,18 +171,18 @@ Here, `build-js` itself expands into many concurrent builds (browser, node, bun,
 graph, media, compress), and `build-types` runs after all JS builds complete. The sequential
 ordering (`&&`) ensures that type generation can reference the built artifacts.
 
-**Provider package (`@workglow/ai-provider`):**
+**Vendor provider packages (`providers/*`):**
 
 ```json
 {
-  "build-package": "concurrently -c 'auto' -n 'code,browser,types' 'bun run build-code' 'bun run build-browser' 'bun run build-types'"
+  "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'"
 }
 ```
 
-The ai-provider package does not follow the standard browser/node/bun entry point pattern.
-Instead, it builds per-provider sub-paths (anthropic, openai, gemini, etc.) with `--root ./src`
-to preserve directory structure, plus a separate browser-specific build for providers that support
-browser environments (ollama, openai, tf-mediapipe).
+Each vendor package (`@workglow/anthropic`, `@workglow/openai`, `@workglow/google-gemini`, ...)
+ships two entry points — `./ai` (main thread) and `./ai-runtime` (worker /
+inline runtime) — built with `--root ./src` to preserve directory structure. Browser-capable
+providers (ollama, openai) add `*.browser.ts` variants with `--target=browser`.
 
 ### `build-js` — JavaScript Only
 
@@ -268,18 +268,16 @@ Platform-agnostic sub-paths (schema, graph) are built with `--target=browser` si
 code runs everywhere. Platform-specific sub-paths (media, compress, worker) are built with the
 matching target for each variant.
 
-### Provider Pattern (ai-provider)
+### Provider Pattern (vendor packages under `providers/*`)
 
-`@workglow/ai-provider` uses `--root ./src` to build multiple entry points in a single invocation
-while preserving their subdirectory structure in the output:
+Each vendor provider package (e.g. `@workglow/anthropic`, `@workglow/openai`) uses `--root ./src`
+to build the `ai` and `ai-runtime` entry points in a single invocation while
+preserving their subdirectory structure in the output:
 
 ```bash
 bun build --sourcemap=external --packages=external --root ./src --outdir ./dist \
-  ./src/provider-anthropic/index.ts \
-  ./src/provider-anthropic/runtime.ts \
-  ./src/provider-gemini/index.ts \
-  ./src/provider-gemini/runtime.ts \
-  # ... more providers
+  ./src/ai.ts \
+  ./src/ai-runtime.ts
 ```
 
 This produces output like:
