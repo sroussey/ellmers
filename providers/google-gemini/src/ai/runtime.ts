@@ -7,7 +7,7 @@
 /**
  * Worker server and main-thread inline Gemini registration (pulls in `Gemini_JobRunFns`),
  * plus SDK client helpers (`Gemini_Client`).
- * Import from `@workglow/google-gemini/ai-provider-runtime` — not from the main `gemini` barrel.
+ * Import from `@workglow/google-gemini/ai-runtime` — not from the main `gemini` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */

@@ -7,7 +7,7 @@
 /**
  * Worker server and main-thread inline Hugging Face Inference registration (pulls in `HFI_JobRunFns`),
  * plus API client helpers (`HFI_Client`).
- * Import from `@workglow/huggingface-inference/ai-provider-runtime` — not from the main `hf-inference` barrel.
+ * Import from `@workglow/huggingface-inference/ai-runtime` — not from the main `hf-inference` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */

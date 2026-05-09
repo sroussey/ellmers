@@ -6,14 +6,14 @@
 
 /**
  * Worker-only entry: registers HuggingFace Transformers task run functions on the worker server.
- * Re-exported from `@workglow/huggingface-transformers/ai-provider-runtime` so the main bundle does not resolve
+ * Re-exported from `@workglow/huggingface-transformers/ai-runtime` so the main bundle does not resolve
  * `HFT_JobRunFns` / full task implementations.
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
 import { HFT_PREVIEW_TASKS, HFT_STREAM_TASKS, HFT_TASKS } from "./common/HFT_JobRunFns";
-import { HuggingFaceTransformersProvider } from "./HuggingFaceTransformersProvider";
 import { loadTransformersSDK } from "./common/HFT_Pipeline";
+import { HuggingFaceTransformersProvider } from "./HuggingFaceTransformersProvider";
 
 export async function registerHuggingFaceTransformersWorker(): Promise<void> {
   const sdk = await loadTransformersSDK();

@@ -6,7 +6,7 @@
 
 /**
  * Worker server and main-thread inline WebBrowser provider registration (pulls in `WebBrowser_JobRunFns`).
- * Import from `@workglow/chrome-ai/ai-provider-runtime` — not from the main `chrome-ai` barrel.
+ * Import from `@workglow/chrome-ai/ai-runtime` — not from the main `chrome-ai` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */

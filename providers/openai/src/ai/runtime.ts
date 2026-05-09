@@ -7,7 +7,7 @@
 /**
  * Worker server and main-thread inline OpenAI registration (pulls in `OpenAI_JobRunFns`),
  * plus SDK client helpers (`OpenAI_Client`).
- * Import from `@workglow/openai/ai-provider-runtime` — not from the main `openai` barrel.
+ * Import from `@workglow/openai/ai-runtime` — not from the main `openai` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */

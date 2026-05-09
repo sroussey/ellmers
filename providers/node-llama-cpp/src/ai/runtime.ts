@@ -7,7 +7,7 @@
 /**
  * Worker server and main-thread inline LlamaCpp registration (pulls in `LlamaCpp_JobRunFns`),
  * plus runtime helpers (`LlamaCpp_Runtime`, e.g. `disposeLlamaCppResources`).
- * Import from `@workglow/node-llama-cpp/ai-provider-runtime` — not from the main `llamacpp` barrel.
+ * Import from `@workglow/node-llama-cpp/ai-runtime` — not from the main `llamacpp` barrel.
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */
