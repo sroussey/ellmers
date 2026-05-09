@@ -8,20 +8,20 @@ import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _OpenAIClass: (new (config: any) => any) | undefined;
+type OpenAIClientClass = new (config: any) => any;
 
-export async function loadOpenAISDK() {
-  if (_OpenAIClass) return _OpenAIClass;
-  try {
+let _loadPromise: Promise<OpenAIClientClass> | undefined;
+
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadOpenAISDK(): Promise<OpenAIClientClass> {
+  _loadPromise ??= import(/* @vite-ignore */ "openai")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _OpenAIClass = ((await import(/* @vite-ignore */ "openai")) as {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      default: new (config: any) => any;
-    }).default;
-  } catch {
-    throw new Error("openai is required for OpenAI tasks. Install it with: bun add openai");
-  }
-  return _OpenAIClass!;
+    .then((mod) => mod.default as OpenAIClientClass)
+    .catch(() => {
+      _loadPromise = undefined;
+      throw new Error("openai is required for OpenAI tasks. Install it with: bun add openai");
+    });
+  return _loadPromise;
 }
 
 interface ResolvedProviderConfig {

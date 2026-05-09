@@ -8,8 +8,11 @@ import type { DynamicCache, PretrainedModelOptions, ProgressInfo } from "@huggin
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
-let _transformersSdk: typeof import("@huggingface/transformers") | undefined;
+type TransformersSDKModule = typeof import("@huggingface/transformers");
+
+let _transformersSdk: TransformersSDKModule | undefined;
 let _cacheDir: string | undefined;
+let _loadPromise: Promise<TransformersSDKModule> | undefined;
 
 /**
  * Set the filesystem cache directory for downloaded transformers.js models.
@@ -22,21 +25,24 @@ export function setHftCacheDir(dir: string): void {
   }
 }
 
-export async function loadTransformersSDK() {
-  if (!_transformersSdk) {
-    try {
-      _transformersSdk = await import("@huggingface/transformers");
-      _transformersSdk.env.fetch = abortableFetch as typeof fetch;
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadTransformersSDK(): Promise<TransformersSDKModule> {
+  _loadPromise ??= import("@huggingface/transformers")
+    .then((mod) => {
+      mod.env.fetch = abortableFetch as typeof fetch;
       if (_cacheDir) {
-        _transformersSdk.env.cacheDir = _cacheDir;
+        mod.env.cacheDir = _cacheDir;
       }
-    } catch {
+      _transformersSdk = mod;
+      return mod;
+    })
+    .catch(() => {
+      _loadPromise = undefined;
       throw new Error(
         "@huggingface/transformers is required for HuggingFace Transformers tasks. Install it with: bun add @huggingface/transformers"
       );
-    }
-  }
-  return _transformersSdk;
+    });
+  return _loadPromise;
 }
 
 /** Per-model AbortControllers used by abortableFetch; keyed by model_path. */

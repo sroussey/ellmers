@@ -4,24 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { InferenceProviderOrPolicy } from "@huggingface/inference";
+import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
+type HfInferenceSDKModule = typeof import("@huggingface/inference");
 
-let _sdk: typeof import("@huggingface/inference") | undefined;
+let _loadPromise: Promise<HfInferenceSDKModule> | undefined;
 
-export async function loadHfInferenceSDK() {
-  if (_sdk) return _sdk;
-  try {
-    _sdk = (await import(
-      /* @vite-ignore */ "@huggingface/inference"
-    )) as typeof import("@huggingface/inference");
-  } catch {
-    throw new Error(
-      "@huggingface/inference is required for Hugging Face Inference tasks. Install it with: bun add @huggingface/inference"
-    );
-  }
-  return _sdk!;
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadHfInferenceSDK(): Promise<HfInferenceSDKModule> {
+  _loadPromise ??= import(/* @vite-ignore */ "@huggingface/inference")
+    .then((mod) => mod as HfInferenceSDKModule)
+    .catch(() => {
+      _loadPromise = undefined;
+      throw new Error(
+        "@huggingface/inference is required for Hugging Face Inference tasks. Install it with: bun add @huggingface/inference"
+      );
+    });
+  return _loadPromise;
 }
 
 interface ResolvedProviderConfig {

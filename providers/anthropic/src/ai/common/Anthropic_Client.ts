@@ -7,20 +7,22 @@
 import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
-let _sdk: typeof import("@anthropic-ai/sdk") | undefined;
+type AnthropicSDKModule = typeof import("@anthropic-ai/sdk");
+type AnthropicClientClass = AnthropicSDKModule["default"];
 
-export async function loadAnthropicSDK() {
-  if (_sdk) return _sdk.default;
-  try {
-    _sdk = (await import(
-      /* @vite-ignore */ "@anthropic-ai/sdk"
-    )) as typeof import("@anthropic-ai/sdk");
-  } catch {
-    throw new Error(
-      "@anthropic-ai/sdk is required for Anthropic tasks. Install it with: bun add @anthropic-ai/sdk"
-    );
-  }
-  return _sdk!.default;
+let _loadPromise: Promise<AnthropicClientClass> | undefined;
+
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadAnthropicSDK(): Promise<AnthropicClientClass> {
+  _loadPromise ??= import("@anthropic-ai/sdk")
+    .then((mod) => mod.default)
+    .catch(() => {
+      _loadPromise = undefined;
+      throw new Error(
+        "@anthropic-ai/sdk is required for Anthropic tasks. Install it with: bun add @anthropic-ai/sdk"
+      );
+    });
+  return _loadPromise;
 }
 
 interface ResolvedProviderConfig {

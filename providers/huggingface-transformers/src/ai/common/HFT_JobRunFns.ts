@@ -37,7 +37,7 @@ import { HFT_Unload } from "./HFT_Unload";
 
 /**
  * All HuggingFace Transformers task run functions, keyed by task type name.
- * Used by `@workglow/huggingface-transformers/ai-provider-runtime` (inline + worker registration) and custom worker scripts when the
+ * Used by `@workglow/huggingface-transformers/ai-runtime` (inline + worker registration) and custom worker scripts when the
  * actual run function implementations are needed (inline mode, worker server).
  */
 export const HFT_TASKS: Record<string, AiProviderRunFn<any, any, HfTransformersOnnxModelConfig>> = {

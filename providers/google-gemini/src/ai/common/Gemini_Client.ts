@@ -7,20 +7,22 @@
 import { resolveApiKey } from "@workglow/ai/provider-utils";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
-let _sdk: typeof import("@google/generative-ai") | undefined;
+type GeminiSDKModule = typeof import("@google/generative-ai");
+type GoogleGenerativeAIConstructor = GeminiSDKModule["GoogleGenerativeAI"];
 
-export async function loadGeminiSDK() {
-  if (_sdk) return _sdk.GoogleGenerativeAI;
-  try {
-    _sdk = (await import(
-      /* @vite-ignore */ "@google/generative-ai"
-    )) as typeof import("@google/generative-ai");
-  } catch {
-    throw new Error(
-      "@google/generative-ai is required for Gemini tasks. Install it with: bun add @google/generative-ai"
-    );
-  }
-  return _sdk!.GoogleGenerativeAI;
+let _loadPromise: Promise<GoogleGenerativeAIConstructor> | undefined;
+
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadGeminiSDK(): Promise<GoogleGenerativeAIConstructor> {
+  _loadPromise ??= import("@google/generative-ai")
+    .then((mod) => mod.GoogleGenerativeAI)
+    .catch(() => {
+      _loadPromise = undefined;
+      throw new Error(
+        "@google/generative-ai is required for Gemini tasks. Install it with: bun add @google/generative-ai"
+      );
+    });
+  return _loadPromise;
 }
 
 interface ResolvedProviderConfig {

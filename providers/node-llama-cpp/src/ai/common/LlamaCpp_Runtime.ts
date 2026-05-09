@@ -5,23 +5,34 @@
  */
 
 import type { StreamEvent } from "@workglow/task-graph";
+import type {
+  LlamaContext,
+  LlamaEmbeddingContext,
+  Llama as LlamaInstance,
+  LlamaModel,
+} from "node-llama-cpp";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
-import type { Llama as LlamaInstance } from "node-llama-cpp";
-import type { LlamaModel, LlamaContext, LlamaEmbeddingContext } from "node-llama-cpp";
 
-let _sdk: typeof import("node-llama-cpp") | undefined;
+type LlamaCppSDKModule = typeof import("node-llama-cpp");
 
-export async function loadSdk() {
-  if (!_sdk) {
-    try {
-      _sdk = await import("node-llama-cpp");
-    } catch {
+let _sdk: LlamaCppSDKModule | undefined;
+let _loadPromise: Promise<LlamaCppSDKModule> | undefined;
+
+// NOTE: we do not want to de-dup this in the provider-utils, vite wants direct import with string literals.
+export async function loadSdk(): Promise<LlamaCppSDKModule> {
+  _loadPromise ??= import("node-llama-cpp")
+    .then((mod) => {
+      _sdk = mod;
+      return mod;
+    })
+    .catch(() => {
+      _loadPromise = undefined;
+      _sdk = undefined;
       throw new Error(
         "node-llama-cpp is required for LOCAL_LLAMACPP tasks. Install it with: bun add node-llama-cpp"
       );
-    }
-  }
-  return _sdk;
+    });
+  return _loadPromise;
 }
 
 export function getLlamaCppSdk() {
