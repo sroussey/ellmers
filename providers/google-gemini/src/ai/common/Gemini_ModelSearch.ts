@@ -16,7 +16,7 @@ import { GOOGLE_GEMINI } from "./Gemini_Constants";
 interface GeminiModelEntry {
   readonly label: string;
   readonly value: string;
-  readonly tasks?: readonly string[];
+  readonly capabilities?: readonly string[];
 }
 
 const GEMINI_MODELS: readonly GeminiModelEntry[] = [
@@ -29,28 +29,28 @@ const GEMINI_MODELS: readonly GeminiModelEntry[] = [
   {
     label: "gemini-embedding-2",
     value: "gemini-embedding-2",
-    tasks: ["TextEmbeddingTask"],
+    capabilities: ["text.embedding"],
   },
   {
     label: "gemini-embedding-001",
     value: "gemini-embedding-001",
-    tasks: ["TextEmbeddingTask"],
+    capabilities: ["text.embedding"],
   },
   // Image-output models
   {
     label: "gemini-3.1-flash-image-preview",
     value: "gemini-3.1-flash-image-preview",
-    tasks: ["ImageGenerateTask", "ImageEditTask"],
+    capabilities: ["image.generation", "image.editing"],
   },
   {
     label: "gemini-3-pro-image-preview",
     value: "gemini-3-pro-image-preview",
-    tasks: ["ImageGenerateTask", "ImageEditTask"],
+    capabilities: ["image.generation", "image.editing"],
   },
   {
     label: "imagen-4.0-generate-001",
     value: "imagen-4.0-generate-001",
-    tasks: ["ImageGenerateTask"],
+    capabilities: ["image.generation"],
   },
 ];
 
@@ -61,13 +61,13 @@ interface GeminiApiModel {
   readonly supportedGenerationMethods?: readonly string[];
 }
 
-function tasksForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
+function capabilitiesForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
   const staticEntry = GEMINI_MODELS.find((m) => m.value === id);
-  if (staticEntry?.tasks) return [...staticEntry.tasks];
+  if (staticEntry?.capabilities) return [...staticEntry.capabilities];
 
   const methods = model.supportedGenerationMethods ?? [];
   if (methods.some((method) => method.toLowerCase().includes("embed"))) {
-    return ["TextEmbeddingTask"];
+    return ["text.embedding"];
   }
   return [];
 }
@@ -84,7 +84,7 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
       provider: GOOGLE_GEMINI,
       title,
       description: model.description ?? "",
-      tasks: tasksForGeminiApiModel(model, id),
+      capabilities: capabilitiesForGeminiApiModel(model, id),
       provider_config: { model_name: id },
       metadata: {},
     },
@@ -135,7 +135,7 @@ export const Gemini_ModelSearch: AiProviderRunFn<
       provider: GOOGLE_GEMINI,
       title: m.value,
       description: "",
-      tasks: m.tasks ? [...m.tasks] : [],
+      capabilities: m.capabilities ? [...m.capabilities] : [],
       provider_config: { model_name: m.value },
       metadata: {},
     },

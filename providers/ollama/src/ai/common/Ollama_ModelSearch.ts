@@ -27,7 +27,7 @@ export function createOllamaModelSearch(
           provider: OLLAMA,
           title: m.name,
           description: `${m.details.parameter_size}  ${m.details.quantization_level}`,
-          tasks: [],
+          capabilities: [],
           provider_config: { model_name: m.name },
           metadata: {},
         },

@@ -109,7 +109,7 @@ describe("StreamingAiTask default phase emissions", () => {
     model_id: `${MOCK_PROVIDER}:test-model:v1`,
     title: "test-model",
     description: "test",
-    tasks: [taskType],
+    capabilities: [taskType],
     provider: MOCK_PROVIDER,
     provider_config: {},
     metadata: {},
@@ -124,7 +124,7 @@ describe("StreamingAiTask default phase emissions", () => {
     };
     registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
 
-    const model = buildModel("TextSummaryTask");
+    const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p1" });
     const messages: Array<string | undefined> = [];
     task.subscribe("progress", (_progress, message) => messages.push(message));
@@ -153,7 +153,7 @@ describe("StreamingAiTask default phase emissions", () => {
     };
     registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
 
-    const model = buildModel("TextSummaryTask");
+    const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p2" });
     const events: Array<{ progress: number | undefined; message: string | undefined }> = [];
     task.subscribe("progress", (progress, message) => events.push({ progress, message }));
@@ -174,7 +174,7 @@ describe("StreamingAiTask default phase emissions", () => {
     };
     registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
 
-    const model = buildModel("TextSummaryTask");
+    const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p3" });
     const messages: Array<string | undefined> = [];
     task.subscribe("progress", (_progress, message) => messages.push(message));

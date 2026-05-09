@@ -9,7 +9,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Universal Sentence Encoder",
       title: "Universal Sentence Encoder",
       description: "Universal Sentence Encoder",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "text",
@@ -23,7 +23,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:BERT Text Classifier",
       title: "BERT Text Classifier",
       description: "BERT-based text classification model",
-      tasks: ["TextClassificationTask"],
+      capabilities: ["text.classification"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "text",
@@ -37,7 +37,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Language Detector",
       title: "Language Detector",
       description: "Language detection model",
-      tasks: ["TextLanguageDetectionTask"],
+      capabilities: ["text.language-detection"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "text",
@@ -52,7 +52,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:EfficientNet Lite0 Image Classifier",
       title: "EfficientNet Lite0",
       description: "Lightweight image classification model",
-      tasks: ["ImageClassificationTask"],
+      capabilities: ["image.classification"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -66,7 +66,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:MobileNet V3 Image Embedder",
       title: "MobileNet V3 Small",
       description: "Lightweight image embedding model",
-      tasks: ["ImageEmbeddingTask"],
+      capabilities: ["image.embedding"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -80,7 +80,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:EfficientDet Lite0 Object Detector",
       title: "EfficientDet Lite0",
       description: "Lightweight object detection model",
-      tasks: ["ObjectDetectionTask"],
+      capabilities: ["image.object-detection"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -94,7 +94,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:DeepLab V3 Image Segmenter",
       title: "DeepLab V3",
       description: "Image segmentation model",
-      tasks: ["ImageSegmentationTask"],
+      capabilities: ["image.segmentation"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -109,7 +109,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:YAMNet Audio Classifier",
       title: "YAMNet",
       description: "Audio event classification model",
-      tasks: ["AudioClassificationTask"],
+      capabilities: ["audio.classification"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "audio",
@@ -123,7 +123,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Gesture Recognizer",
       title: "Gesture Recognizer",
       description: "Recognizes hand gestures (thumbs up, victory, etc.)",
-      tasks: ["GestureRecognizerTask"],
+      capabilities: ["vision.gesture"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -137,7 +137,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Hand Landmarker",
       title: "Hand Landmarker",
       description: "Detects 21 hand landmarks",
-      tasks: ["HandLandmarkerTask"],
+      capabilities: ["vision.hand-landmarks"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -151,7 +151,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Face Detector",
       title: "Face Detector",
       description: "Detects faces with bounding boxes and keypoints",
-      tasks: ["FaceDetectorTask"],
+      capabilities: ["vision.face-detection"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -165,7 +165,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Face Landmarker",
       title: "Face Landmarker",
       description: "Detects 478 facial landmarks with blendshapes",
-      tasks: ["FaceLandmarkerTask"],
+      capabilities: ["vision.face-landmarks"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",
@@ -179,7 +179,7 @@ export async function registerMediaPipeTfJsLocalModels(): Promise<void> {
       model_id: "media-pipe:Pose Landmarker",
       title: "Pose Landmarker",
       description: "Detects 33 body pose landmarks",
-      tasks: ["PoseLandmarkerTask"],
+      capabilities: ["vision.pose-landmarks"],
       provider: TENSORFLOW_MEDIAPIPE,
       provider_config: {
         task_engine: "vision",

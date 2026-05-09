@@ -8,7 +8,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/all-MiniLM-L6-v2:q8",
       title: "All MiniLM L6 V2 384D",
       description: "Xenova/all-MiniLM-L6-v2",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -22,7 +22,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/bge-base-en-v1.5:q8",
       title: "BGE Base English V1.5 768D",
       description: "Xenova/bge-base-en-v1.5",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -36,7 +36,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/gte-small:q8",
       title: "GTE Small 384D",
       description: "Xenova/gte-small",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -50,7 +50,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:onnx-community/bert_uncased_L-2_H-128_A-2-ONNX:q8",
       title: "BERT Uncased 128D",
       description: "onnx-community/bert_uncased_L-2_H-128_A-2-ONNX",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -64,7 +64,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/paraphrase-albert-base-v2:q8",
       title: "Paraphrase ALBERT Base V2 768D",
       description: "Xenova/paraphrase-albert-base-v2",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -78,7 +78,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Qwen3-Embedding-0.6B:auto",
       title: "Qwen3 Embedding 0.6B",
       description: "onnx-community/Qwen3-Embedding-0.6B-ONNX",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",
@@ -93,7 +93,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:onnx-community/NeuroBERT-NER-ONNX:q8",
       title: "NeuroBERT NER",
       description: "onnx-community/NeuroBERT-NER-ONNX",
-      tasks: ["TextNamedEntityRecognitionTask"],
+      capabilities: ["text.ner"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "token-classification",
@@ -106,7 +106,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/distilbert-base-uncased-distilled-squad:q8",
       title: "distilbert-base-uncased-distilled-squad",
       description: "Xenova/distilbert-base-uncased-distilled-squad quantized to 8bit",
-      tasks: ["TextQuestionAnswerTask"],
+      capabilities: ["text.question-answering"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "question-answering",
@@ -119,7 +119,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:onnx-community/ModernBERT-finetuned-squad-ONNX",
       title: "ModernBERT-finetuned-squad-ONNX",
       description: "onnx-community/ModernBERT-finetuned-squad-ONNX quantized to int8",
-      tasks: ["TextQuestionAnswerTask"],
+      capabilities: ["text.question-answering"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "question-answering",
@@ -132,7 +132,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/gpt2:q8",
       title: "gpt2",
       description: "Xenova/gpt2 quantized to 8bit",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text-generation",
@@ -145,7 +145,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/Phi-3-mini-4k-instruct:q8",
       title: "Phi-3-mini-4k-instruct:q8",
       description: "Xenova/Phi-3-mini-4k-instruct quantized to q8",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text-generation",
@@ -159,7 +159,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/distilgpt2:q8",
       title: "distilgpt2",
       description: "Xenova/distilgpt2 quantized to 8bit",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text-generation",
@@ -172,7 +172,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "Xenova/LaMini-Flan-T5-783M quantized to 8bit",
-      tasks: ["TextGenerationTask", "TextRewriterTask"],
+      capabilities: ["text.generation", "text.rewriter"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -185,7 +185,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Falconsai/text_summarization:fp32",
       title: "text_summarization",
       description: "Falconsai/text_summarization",
-      tasks: ["TextSummaryTask"],
+      capabilities: ["text.summary"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "summarization",
@@ -198,7 +198,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/nllb-200-distilled-600M:q8",
       title: "nllb-200-distilled-600M",
       description: "Xenova/nllb-200-distilled-600M quantized to 8bit",
-      tasks: ["TextTranslationTask"],
+      capabilities: ["text.translation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "translation",
@@ -212,7 +212,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/m2m100_418M:q8",
       title: "m2m100_418M",
       description: "Xenova/m2m100_418M quantized to 8bit",
-      tasks: ["TextTranslationTask"],
+      capabilities: ["text.translation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "translation",
@@ -226,7 +226,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/mbart-large-50-many-to-many-mmt:q8",
       title: "mbart-large-50-many-to-many-mmt",
       description: "Xenova/mbart-large-50-many-to-many-mmt quantized to 8bit",
-      tasks: ["TextTranslationTask"],
+      capabilities: ["text.translation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "translation",
@@ -241,7 +241,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/vit-base-patch16-224:q8",
       title: "ViT Base Patch16 224",
       description: "Vision Transformer for image classification",
-      tasks: ["ImageClassificationTask"],
+      capabilities: ["image.classification"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "image-classification",
@@ -254,7 +254,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/clip-vit-base-patch32:q8",
       title: "CLIP ViT Base Patch32",
       description: "CLIP model for zero-shot image classification and embeddings",
-      tasks: ["ImageClassificationTask", "ImageEmbeddingTask"],
+      capabilities: ["image.classification", "image.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "zero-shot-image-classification",
@@ -267,7 +267,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/detr-resnet-50:q8",
       title: "DETR ResNet-50",
       description: "Object detection model",
-      tasks: ["ObjectDetectionTask"],
+      capabilities: ["image.object-detection"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "object-detection",
@@ -280,7 +280,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/owlvit-base-patch32:q8",
       title: "OWL-ViT Base Patch32",
       description: "Zero-shot object detection model",
-      tasks: ["ObjectDetectionTask"],
+      capabilities: ["image.object-detection"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "zero-shot-object-detection",
@@ -293,7 +293,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/segformer-b0-finetuned-ade-512-512:q8",
       title: "Segformer B0 ADE",
       description: "Image segmentation model trained on ADE20K dataset",
-      tasks: ["ImageSegmentationTask"],
+      capabilities: ["image.segmentation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "image-segmentation",
@@ -306,7 +306,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/vit-gpt2-image-captioning:q8",
       title: "ViT GPT2 Image Captioning",
       description: "Image to text captioning model",
-      tasks: ["ImageToTextTask"],
+      capabilities: ["image.to-text"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "image-to-text",
@@ -319,7 +319,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/modnet:q8",
       title: "MODNet Background Removal",
       description: "Background removal model",
-      tasks: ["BackgroundRemovalTask"],
+      capabilities: ["image.background-removal"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "background-removal",
@@ -332,7 +332,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/mobilebert-uncased-mnli:q8",
       title: "MobileBERT MNLI",
       description: "Zero-shot text classification model",
-      tasks: ["TextClassificationTask"],
+      capabilities: ["text.classification"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "zero-shot-classification",
@@ -345,7 +345,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/bge-reranker-base:q8",
       title: "BGE Reranker Base",
       description: "Cross-encoder reranker model for relevance scoring",
-      tasks: ["TextClassificationTask", "RerankerTask"],
+      capabilities: ["text.classification", "text.reranking"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text-classification",

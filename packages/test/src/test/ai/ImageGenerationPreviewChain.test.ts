@@ -69,7 +69,7 @@ describe("Image generation preview chain", () => {
       provider: MOCK_PROVIDER,
       title: "",
       description: "",
-      tasks: ["ImageGenerateTask"],
+      capabilities: ["image.generation"],
       provider_config: {},
       metadata: {},
     };

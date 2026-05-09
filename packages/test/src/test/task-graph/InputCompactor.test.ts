@@ -298,7 +298,7 @@ describe("InputCompactor", () => {
             provider: "HF_TRANSFORMERS_ONNX",
             provider_config: { pipeline: "text-generation" },
             metadata: { fromSuggestion: true, modelInfo: { file_sizes: {} } },
-            tasks: ["TextGenerationTask"],
+            capabilities: ["text.generation"],
           },
         ],
       };

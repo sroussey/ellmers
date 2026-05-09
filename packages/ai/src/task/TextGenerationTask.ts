@@ -7,6 +7,7 @@
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 
@@ -92,6 +93,8 @@ export class TextGenerationTask extends StreamingAiTask<
   TextGenerationTaskConfig
 > {
   public static override type = "TextGenerationTask";
+  /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
+  public static override readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Text Generation";

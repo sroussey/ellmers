@@ -54,7 +54,7 @@ describe("DownloadModelTask abort behavior", () => {
       model_id: modelId,
       title: "gte-small",
       description: "Supabase/gte-small quantized to 8bit",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "feature-extraction",

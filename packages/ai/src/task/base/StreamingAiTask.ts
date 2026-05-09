@@ -81,6 +81,10 @@ export class StreamingAiTask<
         "StreamingAiTask: Model was not resolved to ModelConfig - this indicates a bug in the resolution system"
       );
     }
+
+    // Strict gating: mirrors AiTask.execute — both paths must check before dispatch.
+    this.gateOrThrow(model);
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 

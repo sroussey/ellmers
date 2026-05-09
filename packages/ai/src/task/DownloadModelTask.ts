@@ -7,6 +7,7 @@
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -46,6 +47,8 @@ export class DownloadModelTask extends AiTask<
   DownloadModelTaskConfig
 > {
   public static override type = "DownloadModelTask";
+  /** Provider lifecycle — handled outside dispatch; no capability gate. */
+  public static override readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Download Model";
   public static override description =

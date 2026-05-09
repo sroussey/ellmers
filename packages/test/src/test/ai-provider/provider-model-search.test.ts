@@ -168,7 +168,7 @@ describe("provider model search samples", () => {
         record: expect.objectContaining({
           provider: TENSORFLOW_MEDIAPIPE,
           title: "Pose Landmarker",
-          tasks: ["PoseLandmarkerTask"],
+          capabilities: ["vision.pose-landmarks"],
           provider_config: expect.objectContaining({
             task_engine: "vision",
             pipeline: "vision-pose-landmarker",

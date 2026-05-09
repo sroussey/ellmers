@@ -29,6 +29,7 @@ import {
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
+import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
 import type { ModelRepository } from "../../model/ModelRepository";
@@ -40,6 +41,17 @@ function schemaFormat(schema: JsonSchema): string | undefined {
     ? schema.format
     : undefined;
 }
+
+/**
+ * Returns true when a capability string is a legacy task class name (PascalCase ending in "Task",
+ * e.g. "TextGenerationTask"). New-style capability strings use dot-notation or hyphen-notation
+ * (e.g. "text.generation", "tool-use", "json-mode", "vision-input") and do NOT match this predicate.
+ *
+ * Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use capability
+ * strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy incompatibility
+ * check only while old fixtures remain. Phase 4 removes both call sites.
+ */
+const isLegacyTaskClassName = (c: string): boolean => /^[A-Z][A-Za-z0-9]*Task$/.test(c);
 
 const aiTaskConfigSchema = {
   type: "object",
@@ -67,6 +79,18 @@ export class AiTask<
 > extends Task<Input, Output, Config> {
   public static override type: string = "AiTask";
   public static override hasDynamicEntitlements: boolean = true;
+
+  /**
+   * Capabilities this task requires from the model selected at execution time.
+   * The dispatcher (Phase 3) gates strictly: it throws unless
+   * `model.capabilities ⊇ task.requires`. An empty array passes vacuously.
+   *
+   * Concrete subclasses MUST override with the relevant `Capability` values from
+   * {@link CAPABILITIES}; pure-compute subclasses (no provider dispatch) keep `[]`.
+   * Phase 4 populates the 44 concrete tasks; the test in `task/index.test.ts`
+   * audits coverage.
+   */
+  public static readonly requires: readonly Capability[] = [];
 
   public static override entitlements(): TaskEntitlements {
     return {
@@ -104,6 +128,24 @@ export class AiTask<
   // Execution
   // ========================================================================
 
+  /**
+   * Throws TaskConfigurationError if the model lacks any capability listed in
+   * the task class's static `requires`. Both execute() and executeStream() must
+   * call this before dispatch — gating is task-side, not strategy-side.
+   */
+  protected gateOrThrow(model: ModelConfig): void {
+    const taskClass = this.constructor as typeof AiTask;
+    const requires = taskClass.requires;
+    const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
+    const missing = requires.filter((r) => !modelCaps.includes(r));
+    if (missing.length > 0) {
+      throw new TaskConfigurationError(
+        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
+          `${taskClass.type}: ${missing.join(", ")}.`
+      );
+    }
+  }
+
   override async execute(
     input: Input,
     executeContext: IExecuteContext
@@ -115,21 +157,41 @@ export class AiTask<
       );
     }
 
+    // Strict gating: the model must declare every capability this task requires.
+    this.gateOrThrow(model);
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
     const output = await strategy.execute(jobInput, executeContext, this.runConfig.runnerId);
 
-    // Register a disposer so the caller can unload the model when done.
+    // Register a disposer so the caller can unload the model when done. The
+    // unload path is wired via the "model.unload" capability so providers opt
+    // in by registering a run-fn whose `serves` set contains it; bypasses the
+    // task's own `requires` so we don't gate the lifecycle hook on the task.
+    //
+    // Phase 5 contract: providers opt into the unload lifecycle by registering
+    // a run-fn whose `serves` set contains "model.unload". Without such a
+    // registration, this lookup returns undefined and the disposer is a no-op.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const provider = registry.getProvider(model.provider);
-      const unloadFn = provider?.getRunFn("UnloadModelTask");
+      const unloadFn = registry.getRunFnFor(model.provider, ["model.unload"]);
       if (unloadFn) {
-        const modelPath = model.provider_config?.model_path ?? model.model;
+        const modelPath =
+          (model as ModelConfig & { model?: string }).model ??
+          (model.provider_config as Record<string, unknown> | undefined)?.["model_path"] ??
+          model.model_id;
         const resourceKey = `ai:${model.provider}:${modelPath}`;
         executeContext.resourceScope.register(resourceKey, async () => {
-          await unloadFn({ model }, model, () => {}, AbortSignal.timeout(30_000));
+          // Drain the unload generator to completion so any cleanup steps run.
+          for await (const _evt of unloadFn(
+            { model } as TaskInput,
+            model,
+            AbortSignal.timeout(30_000)
+          )) {
+            // ignore events; we only care about completion
+            void _evt;
+          }
         });
       }
     }
@@ -149,9 +211,11 @@ export class AiTask<
     const model = input.model as ModelConfig;
 
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
+    const taskClass = this.constructor as typeof AiTask;
 
     const jobInput: AiJobInput<Input> = {
       taskType: runtype,
+      requires: taskClass.requires,
       aiProvider: model.provider,
       taskInput: input as Input & { model: ModelConfig },
     };
@@ -259,12 +323,18 @@ export class AiTask<
     for (const [key] of modelTaskProperties) {
       const model = input[key];
       if (typeof model === "object" && model !== null) {
-        const tasks = (model as ModelConfig).tasks;
-        if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
+        const capabilities = (model as ModelConfig).capabilities;
+        // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
+        // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
+        // This guard preserves the legacy incompatibility check only while old fixtures remain.
+        // Phase 4 removes both call sites.
+        const usesTaskClassNames =
+          Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
+        if (usesTaskClassNames && !capabilities!.includes(this.type)) {
           const modelId = (model as ModelConfig).model_id ?? "(inline config)";
           throw new TaskConfigurationError(
             `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
-              `Model supports: [${tasks.join(", ")}]`
+              `Model supports: [${capabilities!.join(", ")}]`
           );
         }
       } else if (model !== undefined && model !== null) {
@@ -321,8 +391,14 @@ export class AiTask<
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           const model = requestedModel as ModelConfig;
-          const tasks = model.tasks;
-          if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
+          const capabilities = model.capabilities;
+          // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
+          // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
+          // This guard preserves the legacy incompatibility check only while old fixtures remain.
+          // Phase 4 removes both call sites.
+          const usesTaskClassNames =
+            Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
+          if (usesTaskClassNames && !capabilities!.includes(this.type)) {
             (input as any)[key] = undefined;
           }
         }

@@ -10,6 +10,7 @@ import type { IExecuteContext, StreamEvent, TaskConfig, IRunConfig } from "@work
 import { makeFingerprint, ServiceRegistry } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { AiJobInput } from "../job/AiJob";
+import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -274,6 +275,8 @@ export class ToolCallingTask extends StreamingAiTask<
   ToolCallingTaskConfig
 > {
   public static override type = "ToolCallingTask";
+  /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
+  public static override readonly requires: readonly Capability[] = ["text.generation", "tool-use"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Tool Calling";
