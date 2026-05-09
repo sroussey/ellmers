@@ -17,6 +17,8 @@ import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { JsonSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
+import { collectStream } from "../capability/collectStream";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import {
@@ -42,10 +44,21 @@ function resolveAiJobTimeoutMs(aiProvider: string, explicitMs: number | undefine
 }
 
 /**
- * Input data for the AiJob
+ * Input data for the AiJob.
+ *
+ * `taskType` is retained as observability / queue-key metadata only — dispatch
+ * resolves the run function via `requires` against the provider's capability-set
+ * registrations. Both fields travel together so logs and queue keys remain stable
+ * even though the registry is now keyed by capability sets.
  */
 export interface AiJobInput<Input extends TaskInput = TaskInput> {
   taskType: string;
+  /**
+   * Capability set the job requires from the provider. The dispatcher passes
+   * this to {@link AiProviderRegistry.getRunFnFor} to resolve a streaming run
+   * function. An empty array matches the smallest registration available.
+   */
+  requires: readonly Capability[];
   aiProvider: string;
   taskInput: Input & { model: ModelConfig };
   /** JSON Schema for structured output, when the task declares x-structured-output. */
@@ -218,10 +231,16 @@ export class AiJob<
       });
 
       const runFn = async () => {
-        const fn = getAiProviderRegistry().getDirectRunFn<Input["taskInput"], Output>(
+        const fn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
           input.aiProvider,
-          input.taskType
+          input.requires
         );
+        if (!fn) {
+          throw new Error(
+            `No run function found for provider "${input.aiProvider}" serving capabilities ` +
+              `[${input.requires.join(", ")}] (task: ${input.taskType}).`
+          );
+        }
         const model = input.taskInput.model;
         // Second abort check after resolving run function (covers async gap)
         if (context.signal.aborted) {
@@ -233,14 +252,17 @@ export class AiJob<
         const timeoutSignal = AbortSignal.timeout(timeoutMs);
         const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
 
-        return await fn(
+        // Streaming-only world: invoke the generator and collect via collectStream.
+        // Non-streaming consumers (this method) get a single materialised Output;
+        // streaming consumers go through executeStream() and bypass collectStream.
+        const stream = fn(
           input.taskInput,
           model,
-          context.updateProgress,
           combinedSignal,
           input.outputSchema,
           input.sessionId
         );
+        return await collectStream<Output>(stream);
       };
       const runFnPromise = runFn();
 
@@ -271,9 +293,9 @@ export class AiJob<
       throw new AbortSignalJobError("Abort signal aborted before streaming execution of job");
     }
 
-    const streamFn = getAiProviderRegistry().getStreamFn<Input["taskInput"], Output>(
+    const streamFn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
       input.aiProvider,
-      input.taskType
+      input.requires
     );
 
     if (!streamFn) {

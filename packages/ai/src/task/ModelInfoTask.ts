@@ -8,6 +8,8 @@ import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 
 import type { IExecuteContext, TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { collectStream } from "../capability/collectStream";
+import type { Capability } from "../capability/Capabilities";
 import { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { AiTask } from "./base/AiTask";
@@ -83,6 +85,8 @@ export class ModelInfoTask extends AiTask<
   ModelInfoTaskConfig
 > {
   public static override type = "ModelInfoTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["provider.model-info"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override cacheable = false;
   public static override title = "Model Info";
@@ -101,12 +105,16 @@ export class ModelInfoTask extends AiTask<
   ): Promise<ModelInfoTaskOutput> {
     const model = input.model as ModelConfig;
     const registry = getAiProviderRegistry();
-    const noop = () => {};
-    const runFn = registry.getDirectRunFn<ModelInfoTaskInput, ModelInfoTaskOutput>(
+    const runFn = registry.getRunFnFor<ModelInfoTaskInput, ModelInfoTaskOutput>(
       model.provider,
-      "ModelInfoTask"
+      ["provider.model-info"]
     );
-    return runFn(input, model, noop, context.signal);
+    if (!runFn) {
+      throw new Error(
+        `Provider "${model.provider}" has no run function serving "provider.model-info".`
+      );
+    }
+    return collectStream<ModelInfoTaskOutput>(runFn(input, model, context.signal));
   }
 }
 

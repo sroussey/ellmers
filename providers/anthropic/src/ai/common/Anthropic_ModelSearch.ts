@@ -52,7 +52,7 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
       provider: ANTHROPIC,
       title: m.value,
       description: "",
-      tasks: [],
+      capabilities: [],
       provider_config: { model_name: m.value },
       metadata: {},
     },

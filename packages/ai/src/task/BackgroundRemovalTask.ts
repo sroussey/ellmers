@@ -8,6 +8,7 @@ import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -48,6 +49,8 @@ export class BackgroundRemovalTask extends AiVisionTask<
   BackgroundRemovalTaskConfig
 > {
   public static override type = "BackgroundRemovalTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["image.background-removal"] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Background Removal";
   public static override description =

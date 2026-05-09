@@ -62,7 +62,7 @@ export function mapHfModelResult(entry: HfModelEntry, provider: string): ModelSe
       description: [entry.pipeline_tag, `${formatDownloads(entry.downloads)} downloads`]
         .filter(Boolean)
         .join(" \u2014 "),
-      tasks: entry.pipeline_tag ? pipelineToTaskTypes(entry.pipeline_tag) : [],
+      capabilities: entry.pipeline_tag ? pipelineToTaskTypes(entry.pipeline_tag) : [],
       provider_config: mapHfProviderConfig(entry, provider),
       metadata: {},
     },

@@ -7,6 +7,7 @@
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -171,6 +172,8 @@ export interface AiChatProviderOutput {
 
 export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutput> {
   public static override type = "AiChatTask";
+  /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
+  public static override readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat";
@@ -205,12 +208,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     if (!this._sessionId) {
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
-    return {
-      taskType: "AiChatTask",
-      aiProvider: model.provider,
-      taskInput: input as AiChatTaskInput & { model: ModelConfig },
-      sessionId: this._sessionId,
-    };
+    // Delegate to base so timeoutMs, outputSchema, and any future base fields
+    // are always populated. The base reads (input as any).sessionId and
+    // forwards it into jobInput.sessionId, so we inject the session id here.
+    return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
+      sessionId: string;
+    });
   }
 
   override async *executeStream(
@@ -224,6 +227,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     if (!model || typeof model !== "object") {
       throw new Error("AiChatTask: model was not resolved to ModelConfig");
     }
+
+    // Strict gating: this override doesn't call super.executeStream, so we
+    // must gate here to match the contract AiTask.execute and
+    // StreamingAiTask.executeStream both enforce.
+    this.gateOrThrow(model);
+
     const connector = resolveHumanConnector(context);
 
     // Build initial history.

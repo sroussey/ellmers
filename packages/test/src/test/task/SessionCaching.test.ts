@@ -168,7 +168,7 @@ describe("SessionCaching", () => {
         model_id: "test:test-model:v1",
         title: "test-model",
         description: "test-model",
-        tasks: ["text-generation"],
+        capabilities: ["text.generation"],
         provider: TEST_PROVIDER,
         provider_config: {
           pipeline: "text-generation",
@@ -220,7 +220,7 @@ describe("SessionCaching", () => {
         model_id: "test:test-model:v1",
         title: "test-model",
         description: "test-model",
-        tasks: ["text-generation"],
+        capabilities: ["text.generation"],
         provider: TEST_PROVIDER,
         provider_config: {
           pipeline: "text-generation",
@@ -270,7 +270,7 @@ describe("SessionCaching", () => {
         model_id: "test:test-model:v1",
         title: "test-model",
         description: "test-model",
-        tasks: ["text-generation"],
+        capabilities: ["text.generation"],
         provider: TEST_PROVIDER,
         provider_config: {
           pipeline: "text-generation",

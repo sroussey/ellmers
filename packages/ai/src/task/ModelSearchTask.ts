@@ -8,6 +8,8 @@ import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-
 
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { collectStream } from "../capability/collectStream";
+import type { Capability } from "../capability/Capabilities";
 import type { ModelRecord } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -54,7 +56,7 @@ const ModelSearchInputSchema = {
 
 function buildModelSearchInputSchemaDynamic(): DataPortSchema {
   const registry = getAiProviderRegistry();
-  const ids = registry.getProviderIdsForTask("ModelSearchTask");
+  const ids = registry.getProviderIdsForCapabilities(["provider.model-search"]);
   const enumLabels: Record<string, string> = {};
   for (const id of ids) {
     enumLabels[id] = registry.getProvider(id)?.displayName ?? id;
@@ -114,6 +116,13 @@ export class ModelSearchTask extends Task<
   ModelSearchTaskConfig
 > {
   public static override type = "ModelSearchTask";
+  /**
+   * Informational: capability this task uses. NOT enforced by the dispatcher —
+   * ModelSearchTask extends `Task` (not `AiTask`) and implements its own
+   * `execute()`, so `gateOrThrow` is never called against this value. The audit
+   * test in `task/index.test.ts` validates the value is a known {@link Capability}.
+   */
+  public static readonly requires: readonly Capability[] = ["provider.model-search"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Model Search";
   public static override description = "Search for models using provider-specific search functions";
@@ -136,12 +145,16 @@ export class ModelSearchTask extends Task<
     context: IExecuteContext
   ): Promise<ModelSearchTaskOutput> {
     const registry = getAiProviderRegistry();
-    const noop = () => {};
-    const runFn = registry.getDirectRunFn<ModelSearchTaskInput, ModelSearchTaskOutput>(
+    const runFn = registry.getRunFnFor<ModelSearchTaskInput, ModelSearchTaskOutput>(
       input.provider,
-      "ModelSearchTask"
+      ["provider.model-search"]
     );
-    return runFn(input, undefined, noop, context.signal);
+    if (!runFn) {
+      throw new Error(
+        `Provider "${input.provider}" has no run function serving "provider.model-search".`
+      );
+    }
+    return collectStream<ModelSearchTaskOutput>(runFn(input, undefined, context.signal));
   }
 }
 

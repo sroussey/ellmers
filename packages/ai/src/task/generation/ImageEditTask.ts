@@ -9,6 +9,7 @@ import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
+import type { Capability } from "../../capability/Capabilities";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
 import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import { TypeModel } from "../base/AiTaskSchemas";
@@ -55,6 +56,8 @@ export type ImageEditTaskConfig = TaskConfig<ImageEditTaskInput>;
 
 export class ImageEditTask extends AiImageOutputTask<ImageEditTaskInput, ImageEditTaskConfig> {
   public static override type = "ImageEditTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["image.editing"] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Edit Image";
   public static override description =
