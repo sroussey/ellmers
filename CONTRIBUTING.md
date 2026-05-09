@@ -5,8 +5,8 @@ Thanks for your interest in contributing to **Workglow**! We welcome bug reports
 ## Get involved
 
 - **Ask questions / propose ideas**: https://github.com/orgs/workglow-dev/discussions
-- **Report bugs / request features**: https://github.com/workglow-dev/workglow/issues
-- **Good first issues**: https://github.com/workglow-dev/workglow/labels/good%20first%20issue
+- **Report bugs / request features**: https://github.com/workglow-dev/libs/issues
+- **Good first issues**: https://github.com/workglow-dev/libs/labels/good%20first%20issue
 
 ## Legal (required): Contributor License Agreement (CLA)
 

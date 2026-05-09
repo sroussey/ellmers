@@ -28,7 +28,7 @@
 This project is not yet ready to be published on npm. So for now, use the source Luke.
 
 ```bash
-git clone https://github.com/workglow-dev/workglow.git
+git clone https://github.com/workglow-dev/libs.git
 cd workglow
 bun install
 bun run build
@@ -138,13 +138,7 @@ await graph.run();
 And unrolling the helpers, we get the following equivalent code:
 
 ```ts
-import {
-  Dataflow,
-  TaskGraph,
-  getTaskQueueRegistry,
-  TaskInput,
-  TaskOutput,
-} from "workglow";
+import { Dataflow, TaskGraph, getTaskQueueRegistry, TaskInput, TaskOutput } from "workglow";
 import {
   DownloadModelTask,
   TextRewriterTask,

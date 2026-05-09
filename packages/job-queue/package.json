@@ -5,7 +5,7 @@
   "version": "0.2.32",
   "repository": {
     "type": "git",
-    "url": "https://github.com/workglow-dev/workglow.git",
+    "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/job-queue"
   },
   "description": "Job queue management for Workglow, handling task scheduling, execution, and distributed processing.",

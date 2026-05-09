@@ -5,7 +5,7 @@
   "version": "0.2.32",
   "repository": {
     "type": "git",
-    "url": "https://github.com/workglow-dev/workglow.git",
+    "url": "https://github.com/workglow-dev/libs.git",
     "directory": "providers/playwright"
   },
   "description": "Playwright browser backend for @workglow/browser-control.",

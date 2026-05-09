@@ -4,7 +4,7 @@
   "version": "0.2.32",
   "repository": {
     "type": "git",
-    "url": "https://github.com/workglow-dev/workglow.git",
+    "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/browser-control"
   },
   "description": "Browser-control tasks for Workglow (CDP base + IBrowserContext abstraction). Backends ship as separate provider packages: @workglow/playwright, @workglow/electron, @workglow/bun-webview.",
