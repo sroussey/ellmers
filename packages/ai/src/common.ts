@@ -24,3 +24,5 @@ export * from "./provider/AiProviderRegistry";
 export * from "./provider/QueuedAiProvider";
 
 export * from "./task";
+
+export * from "./capability";
