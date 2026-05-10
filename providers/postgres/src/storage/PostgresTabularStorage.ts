@@ -1125,6 +1125,60 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Fetch multiple rows by primary key in a single statement. Single-column
+   * keys emit `WHERE pk IN ($1,$2,...)`. Compound keys emit
+   * `WHERE (pk1,pk2,...) IN (($1,$2,...),($3,$4,...),...)`. Values bind
+   * through `jsToSqlValue` for parity with `query()` and `get()`.
+   */
+  override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    return this.mutex(() => this._getBulkInternal(keys));
+  }
+
+  private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    const db = this.db;
+    const pkCols = this.primaryKeyColumns() as string[];
+
+    const params: ValueOptionType[] = [];
+    const tuples: string[] = [];
+    let p = 1;
+    for (const key of keys) {
+      const ordered = this.getPrimaryKeyAsOrderedArray(key);
+      const slots: string[] = [];
+      for (let i = 0; i < pkCols.length; i++) {
+        params.push(this.jsToSqlValue(pkCols[i], ordered[i] as Entity[keyof Entity]));
+        slots.push(`$${p++}`);
+      }
+      tuples.push(`(${slots.join(", ")})`);
+    }
+
+    const lhs =
+      pkCols.length === 1
+        ? `"${pkCols[0]}"`
+        : `(${pkCols.map((c) => `"${c}"`).join(", ")})`;
+
+    // Single-column LHS uses a flat list of placeholders for idiomatic SQL.
+    // Compound LHS uses row-value tuples.
+    const rhs =
+      pkCols.length === 1
+        ? params.map((_, i) => `$${i + 1}`).join(", ")
+        : tuples.join(", ");
+
+    const sql = `SELECT * FROM "${this.table}" WHERE ${lhs} IN (${rhs})`;
+    const result = await db.query(sql, params);
+
+    for (const row of result.rows) {
+      const record = row as Record<string, unknown>;
+      for (const key in this.schema.properties) {
+        record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
+      }
+    }
+    const rows = result.rows as Entity[];
+    this.events.emit("getBulk", keys, rows);
+    return rows;
+  }
+
+  /**
    * Deletes a row from the database.
    *
    * @param key - The primary key object to delete
