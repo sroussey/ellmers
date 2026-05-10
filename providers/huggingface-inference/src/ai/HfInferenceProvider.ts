@@ -5,29 +5,31 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { HF_INFERENCE } from "./common/HFI_Constants";
+import {
+  hfInferenceWorkerRunFnSpecs,
+  inferHfInferenceCapabilities,
+} from "./common/HFI_Capabilities";
 import type { HfInferenceModelConfig } from "./common/HFI_ModelSchema";
-
-const HFI_WORKER_TASK_TYPES = [
-  "ModelInfoTask",
-  "TextGenerationTask",
-  "TextEmbeddingTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-] as const;
 
 /**
  * Worker-server registration for Hugging Face Inference. Imports `AiProvider`
  * from `@workglow/ai/worker` so the SDK is only loaded in the worker.
  */
-export class HfInferenceProvider extends createCloudProviderClass<
-  HfInferenceModelConfig,
-  typeof HFI_WORKER_TASK_TYPES
->(AiProvider, {
-  name: HF_INFERENCE,
-  displayName: "Hugging Face Inference",
-  taskTypes: HFI_WORKER_TASK_TYPES,
-}) {}
+export class HfInferenceProvider extends createCloudProviderClass<HfInferenceModelConfig>(
+  AiProvider,
+  {
+    name: HF_INFERENCE,
+    displayName: "Hugging Face Inference",
+  }
+) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferHfInferenceCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return hfInferenceWorkerRunFnSpecs();
+  }
+}

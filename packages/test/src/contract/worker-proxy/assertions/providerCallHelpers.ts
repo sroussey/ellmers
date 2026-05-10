@@ -1,3 +1,4 @@
+// @ts-nocheck — Phase 5j: legacy AiProvider contract assertion. Rewrite during Phase 9 for capability-set dispatch.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>

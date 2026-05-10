@@ -5,11 +5,12 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
 import { getClient } from "./OpenAI_Client";
 import { OPENAI } from "./OpenAI_Constants";
@@ -80,10 +81,15 @@ function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
   });
 }
 
-export const OpenAI_ModelSearch: AiProviderRunFn<
+/**
+ * One-shot streaming run-fn for `["provider.model-search"]`. Yields a
+ * single `finish` event with the search results. When no credential key is
+ * provided, falls back to a curated static list of well-known OpenAI models.
+ */
+export const OpenAI_ModelSearch_Stream: AiProviderStreamFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   let models: OpenAiModelListItem[];
   if (!input.credential_key) {
     models = OPENAI_FALLBACK;
@@ -91,5 +97,5 @@ export const OpenAI_ModelSearch: AiProviderRunFn<
     models = await listOpenAiModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
-  return { results: mapModelList(models) };
+  yield { type: "finish", data: { results: mapModelList(models) } };
 };

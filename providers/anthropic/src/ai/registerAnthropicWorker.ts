@@ -5,21 +5,13 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import {
-  ANTHROPIC_PREVIEW_TASKS,
-  ANTHROPIC_STREAM_TASKS,
-  ANTHROPIC_TASKS,
-} from "./common/Anthropic_JobRunFns";
+import { ANTHROPIC_PREVIEW_TASKS, ANTHROPIC_RUN_FNS } from "./common/Anthropic_JobRunFns";
 import { AnthropicProvider } from "./AnthropicProvider";
 
 export async function registerAnthropicWorker(): Promise<void> {
   await registerProviderWorker(
     (ws) =>
-      new AnthropicProvider(
-        ANTHROPIC_TASKS,
-        ANTHROPIC_STREAM_TASKS,
-        ANTHROPIC_PREVIEW_TASKS
-      ).registerOnWorkerServer(ws),
+      new AnthropicProvider(ANTHROPIC_RUN_FNS, ANTHROPIC_PREVIEW_TASKS).registerOnWorkerServer(ws),
     "Anthropic"
   );
 }

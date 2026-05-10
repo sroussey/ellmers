@@ -5,11 +5,12 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 
@@ -108,17 +109,18 @@ async function listGeminiModels(
   return (body.models ?? []).map(mapGeminiModel);
 }
 
-export const Gemini_ModelSearch: AiProviderRunFn<
+export const Gemini_ModelSearch_Stream: AiProviderStreamFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input, _model, _onProgress, signal) => {
+> = async function* (input, _model, signal): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   const q = normalizedModelSearchQuery(input.query);
   if (input.credential_key) {
     const models = await listGeminiModels(input.credential_key, signal);
     const results = q
       ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
       : models;
-    return { results };
+    yield { type: "finish", data: { results } };
+    return;
   }
 
   const filtered = q
@@ -141,5 +143,8 @@ export const Gemini_ModelSearch: AiProviderRunFn<
     },
     raw: m,
   }));
-  return { results };
+  yield { type: "finish", data: { results } };
 };
+
+/** @deprecated — use {@link Gemini_ModelSearch_Stream} */
+export const GEMINI_FALLBACK_MODELS = GEMINI_MODELS;

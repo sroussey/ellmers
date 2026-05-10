@@ -5,8 +5,14 @@
  */
 
 import { AiProvider } from "@workglow/ai";
-import type { AiProviderPreviewRunFn, AiProviderRunFn } from "@workglow/ai";
-import { TENSORFLOW_MEDIAPIPE, TFMP_DEFAULT_TASK_TYPES } from "./common/TFMP_Constants";
+import type {
+  AiProviderPreviewRunFn,
+  AiProviderRunFnRegistration,
+  Capability,
+  ModelRecord,
+} from "@workglow/ai";
+import { TENSORFLOW_MEDIAPIPE } from "./common/TFMP_Constants";
+import { inferTfmpCapabilities, tfmpWorkerRunFnSpecs } from "./common/TFMP_Capabilities";
 import type { TFMPModelConfig } from "./common/TFMP_ModelSchema";
 
 /** Main-thread registration (inline or worker-backed). WASM-only — uses direct execution. */
@@ -16,12 +22,28 @@ export class TensorFlowMediaPipeQueuedProvider extends AiProvider<TFMPModelConfi
   readonly isLocal = true;
   readonly supportsBrowser = true;
 
-  readonly taskTypes: readonly string[] = TFMP_DEFAULT_TASK_TYPES;
-
   constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, TFMPModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TFMPModelConfig>>
+    runFns?: readonly AiProviderRunFnRegistration<
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      TFMPModelConfig
+    >[],
+    previewTasks?: Record<
+      string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      AiProviderPreviewRunFn<any, any, TFMPModelConfig>
+    >
   ) {
-    super(tasks, undefined, previewTasks);
+    super(runFns, previewTasks);
+  }
+
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferTfmpCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return tfmpWorkerRunFnSpecs();
   }
 }

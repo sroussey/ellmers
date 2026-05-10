@@ -5,54 +5,54 @@
  */
 
 import { toTextFlatMessages } from "@workglow/ai/worker";
-import type { AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai/worker";
+import type { AiProviderRunFnRegistration } from "@workglow/ai";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getClient } from "./Ollama_Client";
-import { createOllamaModelInfo } from "./Ollama_ModelInfo";
-import { createOllamaModelSearch } from "./Ollama_ModelSearch";
-import { createOllamaTextEmbedding } from "./Ollama_TextEmbedding";
 import {
-  createOllamaTextGeneration,
-  createOllamaTextGenerationStream,
-} from "./Ollama_TextGeneration";
-import { createOllamaTextRewriter, createOllamaTextRewriterStream } from "./Ollama_TextRewriter";
-import { createOllamaTextSummary, createOllamaTextSummaryStream } from "./Ollama_TextSummary";
-import { createOllamaToolCalling, createOllamaToolCallingStream } from "./Ollama_ToolCalling";
-
-export const Ollama_TextGeneration = createOllamaTextGeneration(getClient);
-export const Ollama_TextEmbedding = createOllamaTextEmbedding(getClient);
-export const Ollama_TextRewriter = createOllamaTextRewriter(getClient);
-export const Ollama_TextSummary = createOllamaTextSummary(getClient);
+  OLLAMA_MODEL_INFO,
+  OLLAMA_MODEL_SEARCH,
+  OLLAMA_TEXT_EMBEDDING,
+  OLLAMA_TEXT_GENERATION,
+  OLLAMA_TEXT_REWRITER,
+  OLLAMA_TEXT_SUMMARY,
+  OLLAMA_TOOL_USE,
+} from "./Ollama_CapabilitySets";
+import { createOllamaModelInfoStream } from "./Ollama_ModelInfo";
+import { createOllamaModelSearchStream } from "./Ollama_ModelSearch";
+import { createOllamaTextEmbeddingStream } from "./Ollama_TextEmbedding";
+import { createOllamaTextGenerationStream } from "./Ollama_TextGeneration";
+import { createOllamaTextRewriterStream } from "./Ollama_TextRewriter";
+import { createOllamaTextSummaryStream } from "./Ollama_TextSummary";
+import { createOllamaToolCallingStream } from "./Ollama_ToolCalling";
 
 export const Ollama_TextGeneration_Stream = createOllamaTextGenerationStream(getClient);
 export const Ollama_TextRewriter_Stream = createOllamaTextRewriterStream(getClient);
 export const Ollama_TextSummary_Stream = createOllamaTextSummaryStream(getClient);
+export const Ollama_TextEmbedding_Stream = createOllamaTextEmbeddingStream(getClient);
+export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(getClient, toTextFlatMessages);
+export const Ollama_ModelInfo_Stream = createOllamaModelInfoStream(getClient);
+export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient);
 
-export const Ollama_ToolCalling = createOllamaToolCalling(getClient, toTextFlatMessages);
-export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(
-  getClient,
-  toTextFlatMessages
-);
-
-export const Ollama_ModelInfo = createOllamaModelInfo(getClient);
-export const Ollama_ModelSearch = createOllamaModelSearch(getClient);
-
-export const OLLAMA_TASKS: Record<string, AiProviderRunFn<any, any, OllamaModelConfig>> = {
-  ModelInfoTask: Ollama_ModelInfo,
-  TextGenerationTask: Ollama_TextGeneration,
-  TextEmbeddingTask: Ollama_TextEmbedding,
-  TextRewriterTask: Ollama_TextRewriter,
-  TextSummaryTask: Ollama_TextSummary,
-  ToolCallingTask: Ollama_ToolCalling,
-  ModelSearchTask: Ollama_ModelSearch,
-};
-
-export const OLLAMA_STREAM_TASKS: Record<
-  string,
-  AiProviderStreamFn<any, any, OllamaModelConfig>
-> = {
-  TextGenerationTask: Ollama_TextGeneration_Stream,
-  TextRewriterTask: Ollama_TextRewriter_Stream,
-  TextSummaryTask: Ollama_TextSummary_Stream,
-  ToolCallingTask: Ollama_ToolCalling_Stream,
-};
+/**
+ * Capability-set run-fn registrations for Ollama (Node runtime). Order is
+ * significant only as a tiebreaker — the dispatcher prefers the smallest
+ * `serves` set that is a superset of the task's `requires`, so plain
+ * `["text.generation"]` wins for {@link TextGenerationTask} / {@link
+ * AiChatTask} and `["text.generation", "tool-use"]` wins for
+ * {@link ToolCallingTask}.
+ */
+export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  OllamaModelConfig
+>[] = [
+  { serves: OLLAMA_TEXT_GENERATION, runFn: Ollama_TextGeneration_Stream },
+  { serves: OLLAMA_TOOL_USE, runFn: Ollama_ToolCalling_Stream },
+  { serves: OLLAMA_TEXT_REWRITER, runFn: Ollama_TextRewriter_Stream },
+  { serves: OLLAMA_TEXT_SUMMARY, runFn: Ollama_TextSummary_Stream },
+  { serves: OLLAMA_TEXT_EMBEDDING, runFn: Ollama_TextEmbedding_Stream },
+  { serves: OLLAMA_MODEL_SEARCH, runFn: Ollama_ModelSearch_Stream },
+  { serves: OLLAMA_MODEL_INFO, runFn: Ollama_ModelInfo_Stream },
+];
