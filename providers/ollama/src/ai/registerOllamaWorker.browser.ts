@@ -5,12 +5,12 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import { OLLAMA_STREAM_TASKS, OLLAMA_TASKS } from "./common/Ollama_JobRunFns.browser";
+import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns.browser";
 import { OllamaProvider } from "./OllamaProvider";
 
 export async function registerOllamaWorker(): Promise<void> {
   await registerProviderWorker(
-    (ws) => new OllamaProvider(OLLAMA_TASKS, OLLAMA_STREAM_TASKS).registerOnWorkerServer(ws),
+    (ws) => new OllamaProvider(OLLAMA_RUN_FNS).registerOnWorkerServer(ws),
     "Ollama"
   );
 }

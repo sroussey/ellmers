@@ -5,27 +5,26 @@
  */
 
 import { AiProvider } from "@workglow/ai";
+import type { Capability, ModelRecord } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { OLLAMA } from "./common/Ollama_Constants";
+import { inferOllamaCapabilities, ollamaWorkerRunFnSpecs } from "./common/Ollama_Capabilities";
 import type { OllamaModelConfig } from "./common/Ollama_ModelSchema";
 
-const OLLAMA_TASK_TYPES = [
-  "ModelInfoTask",
-  "TextGenerationTask",
-  "TextEmbeddingTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-] as const;
-
 /** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class OllamaQueuedProvider extends createCloudProviderClass<
-  OllamaModelConfig,
-  typeof OLLAMA_TASK_TYPES
->(AiProvider, {
-  name: OLLAMA,
-  displayName: "Ollama",
-  isLocal: true,
-  taskTypes: OLLAMA_TASK_TYPES,
-}) {}
+export class OllamaQueuedProvider extends createCloudProviderClass<OllamaModelConfig>(
+  AiProvider,
+  {
+    name: OLLAMA,
+    displayName: "Ollama",
+    isLocal: true,
+  }
+) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferOllamaCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return ollamaWorkerRunFnSpecs();
+  }
+}
