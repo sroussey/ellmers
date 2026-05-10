@@ -29,6 +29,7 @@ import {
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
+import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
 import type { ModelRepository } from "../../model/ModelRepository";
@@ -78,6 +79,9 @@ export class AiTask<
 > extends Task<Input, Output, Config> {
   public static override type: string = "AiTask";
   public static override hasDynamicEntitlements: boolean = true;
+
+  /** Capabilities this task requires from a model. Phase 4 fills in concrete values. */
+  static readonly requires: readonly Capability[] = [];
 
   public static override entitlements(): TaskEntitlements {
     return {

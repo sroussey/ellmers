@@ -12,6 +12,7 @@
 import { getStreamingPorts, TaskConfigurationError } from "@workglow/task-graph";
 import type { TaskConfig, IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
 
+import type { Capability } from "../../capability/Capabilities";
 import { AiTask } from "./AiTask";
 import type { AiTaskInput } from "./AiTask";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
@@ -49,6 +50,9 @@ export class StreamingAiTask<
   Config extends TaskConfig<Input> = TaskConfig<Input>,
 > extends AiTask<Input, Output, Config> {
   public static override type: string = "StreamingAiTask";
+
+  /** Capabilities this task requires from a model. Phase 4 fills in concrete values. */
+  static override readonly requires: readonly Capability[] = [];
 
   /**
    * Phase label emitted before the underlying provider stream begins
