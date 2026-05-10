@@ -44,7 +44,7 @@ function schemaFormat(schema: JsonSchema): string | undefined {
 /**
  * Returns true when a capability string is a legacy task class name (PascalCase ending in "Task",
  * e.g. "TextGenerationTask"). New-style capability strings use dot-notation or hyphen-notation
- * (e.g. "text.generation", "tool-use") and do NOT match this predicate.
+ * (e.g. "text.generation", "tool-use", "json-mode", "vision-input") and do NOT match this predicate.
  *
  * Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use capability
  * strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy incompatibility
@@ -272,8 +272,9 @@ export class AiTask<
       if (typeof model === "object" && model !== null) {
         const capabilities = (model as ModelConfig).capabilities;
         // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
-        // capability strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy
-        // incompatibility check only while old fixtures remain. Phase 4 removes both call sites.
+        // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
+        // This guard preserves the legacy incompatibility check only while old fixtures remain.
+        // Phase 4 removes both call sites.
         const usesTaskClassNames =
           Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
         if (usesTaskClassNames && !capabilities!.includes(this.type)) {
@@ -339,8 +340,9 @@ export class AiTask<
           const model = requestedModel as ModelConfig;
           const capabilities = model.capabilities;
           // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
-          // capability strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy
-          // incompatibility check only while old fixtures remain. Phase 4 removes both call sites.
+          // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
+          // This guard preserves the legacy incompatibility check only while old fixtures remain.
+          // Phase 4 removes both call sites.
           const usesTaskClassNames =
             Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
           if (usesTaskClassNames && !capabilities!.includes(this.type)) {
