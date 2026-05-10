@@ -8,6 +8,7 @@ import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
+import type { Capability } from "../../capability/Capabilities";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
 import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import { TypeModel } from "../base/AiTaskSchemas";
@@ -41,6 +42,8 @@ export class ImageGenerateTask extends AiImageOutputTask<
   ImageGenerateTaskConfig
 > {
   public static override type = "ImageGenerateTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["image.generation"] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Generate Image";
   public static override description =

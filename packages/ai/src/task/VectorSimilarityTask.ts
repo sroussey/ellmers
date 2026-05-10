@@ -6,6 +6,7 @@
 
 import { CreateWorkflow, GraphAsTask, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import type { Capability } from "../capability/Capabilities";
 import {
   cosineSimilarity,
   DataPortSchema,
@@ -102,6 +103,8 @@ export class VectorSimilarityTask extends GraphAsTask<
   VectorSimilarityTaskConfig
 > {
   static override readonly type = "VectorSimilarityTask";
+  /** Pure-compute vector similarity — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   static override readonly category = "Vector";
   static override readonly title = "Vector Similarity";
   public static override description =

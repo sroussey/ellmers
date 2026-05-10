@@ -7,6 +7,7 @@
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -168,6 +169,8 @@ export class GestureRecognizerTask extends AiVisionTask<
   GestureRecognizerTaskConfig
 > {
   public static override type = "GestureRecognizerTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["vision.gesture"] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Gesture Recognizer";
   public static override description =

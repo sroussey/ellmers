@@ -8,6 +8,7 @@ import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-
 
 import type { TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 export const SegmentationMethod = {
   HEURISTIC: "heuristic",
@@ -101,6 +102,8 @@ export class TopicSegmenterTask extends Task<
   TopicSegmenterTaskConfig
 > {
   public static override type = "TopicSegmenterTask";
+  /** Pure-compute segmentation task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Topic Segmenter";
   public static override description =

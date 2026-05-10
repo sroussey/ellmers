@@ -8,6 +8,7 @@ import type { IExecuteContext, StreamEvent, TaskConfig } from "@workglow/task-gr
 import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 
@@ -133,6 +134,8 @@ export class StructuredGenerationTask extends StreamingAiTask<
   StructuredGenerationTaskConfig
 > {
   public static override type = "StructuredGenerationTask";
+  /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
+  public static override readonly requires: readonly Capability[] = ["text.generation", "json-mode"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Structured Generation";

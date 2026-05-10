@@ -7,6 +7,7 @@
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -140,6 +141,8 @@ export class HandLandmarkerTask extends AiVisionTask<
   HandLandmarkerTaskConfig
 > {
   public static override type = "HandLandmarkerTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["vision.hand-landmarks"] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Hand Landmarker";
   public static override description =

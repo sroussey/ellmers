@@ -8,6 +8,7 @@ import { DocumentNode, KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowle
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
   type: "object",
@@ -70,6 +71,8 @@ export class KbToDocumentsTask extends Task<
   KbToDocumentsTaskConfig
 > {
   public static override type = "KbToDocumentsTask";
+  /** Storage task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Knowledge Base to Documents";
   public static override description =

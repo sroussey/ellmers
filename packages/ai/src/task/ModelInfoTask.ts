@@ -9,6 +9,7 @@ import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { collectStream } from "../capability/collectStream";
+import type { Capability } from "../capability/Capabilities";
 import { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { AiTask } from "./base/AiTask";
@@ -84,6 +85,8 @@ export class ModelInfoTask extends AiTask<
   ModelInfoTaskConfig
 > {
   public static override type = "ModelInfoTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["provider.model-info"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override cacheable = false;
   public static override title = "Model Info";

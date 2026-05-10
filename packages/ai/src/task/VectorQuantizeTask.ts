@@ -6,6 +6,7 @@
 
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import type { Capability } from "../capability/Capabilities";
 import {
   DataPortSchema,
   FromSchema,
@@ -105,6 +106,8 @@ export class VectorQuantizeTask extends Task<
   VectorQuantizeTaskConfig
 > {
   public static override type = "VectorQuantizeTask";
+  /** Pure-compute vector quantization — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "Vector";
   public static override title = "Quantize";
   public static override description = "Quantize vectors to reduce storage and improve performance";

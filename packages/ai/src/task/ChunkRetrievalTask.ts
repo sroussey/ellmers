@@ -8,6 +8,7 @@ import { KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { ChunkRecord } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
+import type { Capability } from "../capability/Capabilities";
 import {
   DataPortSchema,
   FromSchema,
@@ -175,6 +176,8 @@ export class ChunkRetrievalTask extends Task<
   ChunkRetrievalTaskConfig
 > {
   public static override type = "ChunkRetrievalTask";
+  /** Pure-compute retrieval task — uses storage, not a provider capability. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Chunk Retrieval";
   public static override description =

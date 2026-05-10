@@ -14,6 +14,7 @@ import {
 } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { CountTokensTask } from "./CountTokensTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -143,6 +144,8 @@ export class ContextBuilderTask extends Task<
   ContextBuilderTaskConfig
 > {
   public static override type = "ContextBuilderTask";
+  /** Pure-compute formatting task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Context Builder";
   public static override description = "Format retrieved chunks into context for LLM prompts";

@@ -8,6 +8,7 @@ import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-
 
 import type { TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 export const QueryExpansionMethod = {
   MULTI_QUERY: "multi-query",
@@ -89,6 +90,8 @@ export class QueryExpanderTask extends Task<
   QueryExpanderTaskConfig
 > {
   public static override type = "QueryExpanderTask";
+  /** Capabilities required; used by the audit test to verify coverage. */
+  public static readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Query Expander";
   public static override description = "Expand queries to improve retrieval coverage";

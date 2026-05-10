@@ -7,6 +7,7 @@
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -74,6 +75,8 @@ export class TextFillMaskTask extends AiTask<
   TextFillMaskTaskConfig
 > {
   public static override type = "TextFillMaskTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires: readonly Capability[] = ["text.fill-mask"] as const satisfies readonly Capability[];
   public static override category = "AI Text";
   public static override title = "Fill Mask";
   public static override description = "Fills masked tokens in text";
