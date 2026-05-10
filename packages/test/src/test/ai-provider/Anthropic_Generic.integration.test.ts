@@ -39,7 +39,6 @@ runAiProviderConformance({
           "text.generation",
           "text.rewriter",
           "text.summary",
-          "text.generation",
           "tool-use",
           "json-mode",
         ],

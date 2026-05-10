@@ -41,6 +41,17 @@ function schemaFormat(schema: JsonSchema): string | undefined {
     : undefined;
 }
 
+/**
+ * Returns true when a capability string is a legacy task class name (PascalCase ending in "Task",
+ * e.g. "TextGenerationTask"). New-style capability strings use dot-notation or hyphen-notation
+ * (e.g. "text.generation", "tool-use") and do NOT match this predicate.
+ *
+ * Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use capability
+ * strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy incompatibility
+ * check only while old fixtures remain. Phase 4 removes both call sites.
+ */
+const isLegacyTaskClassName = (c: string): boolean => /^[A-Z][A-Za-z0-9]*Task$/.test(c);
+
 const aiTaskConfigSchema = {
   type: "object",
   properties: {
@@ -260,10 +271,11 @@ export class AiTask<
       const model = input[key];
       if (typeof model === "object" && model !== null) {
         const capabilities = (model as ModelConfig).capabilities;
-        // Phase 4 will add a task-type → capability mapping; until then, skip the
-        // incompatibility check when capabilities use the new dot-notation strings.
+        // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
+        // capability strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy
+        // incompatibility check only while old fixtures remain. Phase 4 removes both call sites.
         const usesTaskClassNames =
-          Array.isArray(capabilities) && capabilities.some((c) => !c.includes("."));
+          Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
         if (usesTaskClassNames && !capabilities!.includes(this.type)) {
           const modelId = (model as ModelConfig).model_id ?? "(inline config)";
           throw new TaskConfigurationError(
@@ -326,10 +338,11 @@ export class AiTask<
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           const model = requestedModel as ModelConfig;
           const capabilities = model.capabilities;
-          // Phase 4 will add a task-type → capability mapping; until then, skip the
-          // filtering when capabilities use the new dot-notation strings.
+          // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
+          // capability strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy
+          // incompatibility check only while old fixtures remain. Phase 4 removes both call sites.
           const usesTaskClassNames =
-            Array.isArray(capabilities) && capabilities.some((c) => !c.includes("."));
+            Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
           if (usesTaskClassNames && !capabilities!.includes(this.type)) {
             (input as any)[key] = undefined;
           }

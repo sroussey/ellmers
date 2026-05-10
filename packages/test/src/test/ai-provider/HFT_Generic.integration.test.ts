@@ -30,7 +30,7 @@ const textModel: HfTransformersOnnxModelRecord = {
   model_id: TEXT_MODEL_ID,
   title: "Qwen2.5-1.5B-Instruct",
   description: "Instruction-tuned model with native tool calling support",
-  capabilities: ["text.generation", "json-mode", "text.generation"],
+  capabilities: ["text.generation", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
@@ -45,7 +45,7 @@ const instructModel: HfTransformersOnnxModelRecord = {
   model_id: INSTRUCT_MODEL_ID,
   title: "LFM2.5-1.2B-Instruct-WebGPU",
   description: "Liquid 1.2B Instruct WebGPU",
-  capabilities: ["text.generation", "tool-use", "json-mode", "text.generation"],
+  capabilities: ["text.generation", "tool-use", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
@@ -60,7 +60,7 @@ const thinkingModel: HfTransformersOnnxModelRecord = {
   model_id: THINKING_MODEL_ID,
   title: "LFM2.5-1.2B-Thinking-WebGPU",
   description: "Liquid 1.2B Thinking WebGPU",
-  capabilities: ["text.generation", "tool-use", "json-mode", "text.generation"],
+  capabilities: ["text.generation", "tool-use", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
