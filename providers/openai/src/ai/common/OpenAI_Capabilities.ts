@@ -5,29 +5,21 @@
  */
 
 import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import { OPENAI_CAPABILITY_SETS } from "./OpenAI_CapabilitySets";
+
+// ---------------------------------------------------------------------------
+// Worker-proxy spec list (derived from the single source of truth)
+// ---------------------------------------------------------------------------
 
 /**
- * Closed list of capability-set specs the OpenAI provider serves. Used by
- * the main-thread provider shells when registering worker-mode proxies (the
+ * Closed list of capability-set specs the OpenAI provider serves. Derived
+ * from {@link OPENAI_CAPABILITY_SETS} — do not edit here. Used by the
+ * main-thread provider shells when registering worker-mode proxies (the
  * actual runFns live in {@link OPENAI_RUN_FNS} on the worker side, but the
  * main thread still needs to know which `serves` sets to register so the
  * dispatcher can route requests to the worker proxy).
- *
- * Must stay in sync with {@link OPENAI_RUN_FNS} in `OpenAI_JobRunFns(.browser).ts`.
  */
-const OPENAI_RUN_FN_SPECS: readonly { readonly serves: readonly Capability[] }[] = [
-  { serves: ["text.generation"] },
-  { serves: ["text.generation", "tool-use"] },
-  { serves: ["text.generation", "json-mode"] },
-  { serves: ["text.rewriter"] },
-  { serves: ["text.summary"] },
-  { serves: ["text.embedding"] },
-  { serves: ["image.generation"] },
-  { serves: ["image.editing"] },
-  { serves: ["model.count-tokens"] },
-  { serves: ["provider.model-search"] },
-  { serves: ["provider.model-info"] },
-];
+export const OPENAI_RUN_FN_SPECS = OPENAI_CAPABILITY_SETS.map((serves) => ({ serves }));
 
 export function openAiWorkerRunFnSpecs(): readonly { readonly serves: readonly Capability[] }[] {
   return OPENAI_RUN_FN_SPECS;
@@ -81,9 +73,9 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
     ];
   }
 
-  // Chat / reasoning models — gpt-3.5/4/4o/5/...; o1/o3/o4 reasoning families.
-  // GPT-4o and gpt-4-vision-* additionally accept image inputs.
-  if (/^gpt-/i.test(id) || /^o[134]/i.test(id)) {
+  // Chat / reasoning models — gpt-3.5/4/4o/5/...; o-series reasoning models (o1, o3, o4, future).
+  // GPT-4o, gpt-4-vision-*, gpt-4-turbo, and all o-series additionally accept image inputs.
+  if (/^gpt-/i.test(id) || /^o\d/i.test(id)) {
     const caps: Capability[] = [
       "text.generation",
       "text.rewriter",
@@ -94,7 +86,9 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
       "provider.model-info",
       "provider.model-search",
     ];
-    if (/gpt-4o|gpt-4\.1|gpt-5|gpt-4-vision|gpt-4-turbo/i.test(id)) {
+    const supportsVision =
+      /gpt-4o|gpt-4\.1|gpt-5|gpt-4-vision|gpt-4-turbo/i.test(id) || /^o\d/i.test(id);
+    if (supportsVision) {
       caps.push("vision-input");
     }
     return caps;

@@ -6,6 +6,19 @@
 
 import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+import {
+  OPENAI_COUNT_TOKENS,
+  OPENAI_IMAGE_EDITING,
+  OPENAI_IMAGE_GENERATION,
+  OPENAI_JSON_MODE,
+  OPENAI_MODEL_INFO,
+  OPENAI_MODEL_SEARCH,
+  OPENAI_TEXT_EMBEDDING,
+  OPENAI_TEXT_GENERATION,
+  OPENAI_TEXT_REWRITER,
+  OPENAI_TEXT_SUMMARY,
+  OPENAI_TOOL_USE,
+} from "./OpenAI_CapabilitySets";
 
 export { loadOpenAISDK, getClient, getModelName } from "./OpenAI_Client";
 
@@ -36,17 +49,17 @@ export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<
   any,
   OpenAiModelConfig
 >[] = [
-  { serves: ["text.generation"], runFn: OpenAI_TextGeneration_Stream },
-  { serves: ["text.generation", "tool-use"], runFn: OpenAI_ToolCalling_Stream },
-  { serves: ["text.generation", "json-mode"], runFn: OpenAI_StructuredGeneration_Stream },
-  { serves: ["text.rewriter"], runFn: OpenAI_TextRewriter_Stream },
-  { serves: ["text.summary"], runFn: OpenAI_TextSummary_Stream },
-  { serves: ["text.embedding"], runFn: OpenAI_TextEmbedding_Stream },
-  { serves: ["image.generation"], runFn: OpenAI_ImageGenerate_Stream },
-  { serves: ["image.editing"], runFn: OpenAI_ImageEdit_Stream },
-  { serves: ["model.count-tokens"], runFn: OpenAI_CountTokens_Stream },
-  { serves: ["provider.model-search"], runFn: OpenAI_ModelSearch_Stream },
-  { serves: ["provider.model-info"], runFn: OpenAI_ModelInfo_Stream },
+  { serves: OPENAI_TEXT_GENERATION, runFn: OpenAI_TextGeneration_Stream },
+  { serves: OPENAI_TOOL_USE, runFn: OpenAI_ToolCalling_Stream },
+  { serves: OPENAI_JSON_MODE, runFn: OpenAI_StructuredGeneration_Stream },
+  { serves: OPENAI_TEXT_REWRITER, runFn: OpenAI_TextRewriter_Stream },
+  { serves: OPENAI_TEXT_SUMMARY, runFn: OpenAI_TextSummary_Stream },
+  { serves: OPENAI_TEXT_EMBEDDING, runFn: OpenAI_TextEmbedding_Stream },
+  { serves: OPENAI_IMAGE_GENERATION, runFn: OpenAI_ImageGenerate_Stream },
+  { serves: OPENAI_IMAGE_EDITING, runFn: OpenAI_ImageEdit_Stream },
+  { serves: OPENAI_COUNT_TOKENS, runFn: OpenAI_CountTokens_Stream },
+  { serves: OPENAI_MODEL_SEARCH, runFn: OpenAI_ModelSearch_Stream },
+  { serves: OPENAI_MODEL_INFO, runFn: OpenAI_ModelInfo_Stream },
 ];
 
 export const OPENAI_PREVIEW_TASKS: Record<
