@@ -10,6 +10,7 @@ import type { DocumentNode, Entity, NodeEnrichment } from "@workglow/knowledge-b
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { ModelConfig } from "../model/ModelSchema";
 import { TextNamedEntityRecognitionTask } from "./TextNamedEntityRecognitionTask";
 import { TextSummaryTask } from "./TextSummaryTask";
@@ -103,6 +104,8 @@ export class DocumentEnricherTask extends Task<
   DocumentEnricherTaskConfig
 > {
   public static override type = "DocumentEnricherTask";
+  /** Orchestration task — delegates to sub-tasks; no direct provider capability. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Document Enricher";
   public static override description = "Enrich document nodes with summaries and entities";

@@ -7,6 +7,7 @@
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -171,6 +172,8 @@ export interface AiChatProviderOutput {
 
 export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutput> {
   public static override type = "AiChatTask";
+  /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
+  public static override readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat";
