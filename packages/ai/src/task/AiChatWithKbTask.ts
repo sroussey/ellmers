@@ -19,6 +19,11 @@ import type { IHumanRequest } from "@workglow/util";
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase } from "@workglow/knowledge-base";
 import { KbSearchTask } from "./KbSearchTask";
+import {
+  buildResponseFormatAddendum,
+  KB_INLINE_CITATION_DIRECTIVE,
+  type ResponseFormat,
+} from "./base/responseFormat";
 
 // ========================================================================
 // Public types
@@ -178,6 +183,17 @@ export const AiChatWithKbInputSchema = {
       description:
         "When set and zero chunks match: emit these verbatim on the references port",
       items: chatChunkReferenceSchema,
+      "x-ui-group": "Configuration",
+    },
+    responseFormat: {
+      type: "string",
+      enum: ["text", "markdown"],
+      default: "text",
+      title: "Response format",
+      description:
+        "How the model is instructed to format replies. 'text' = plain text. " +
+        "'markdown' = GitHub-flavored Markdown; citations are emitted as inline " +
+        "[anchor](url) links instead of [N] numbers.",
       "x-ui-group": "Configuration",
     },
   },
@@ -442,8 +458,19 @@ export class AiChatWithKbTask extends StreamingAiTask<
         assistantText = input.noMatchReply;
       } else {
         // Build a per-turn system prompt that includes the retrieved context.
-        const turnSystemPrompt =
-          (input.systemPrompt ?? "") + "\n\n--- Context ---\n" + formatChunksForPrompt(refs);
+        const addendum = buildResponseFormatAddendum(input.responseFormat);
+        const directive =
+          input.responseFormat === "markdown" ? KB_INLINE_CITATION_DIRECTIVE : "";
+        const userSystemPrompt = input.systemPrompt ?? "";
+        const turnSystemPrompt = [
+          userSystemPrompt,
+          addendum,
+          directive,
+          "--- Context ---",
+          formatChunksForPrompt(refs, input.responseFormat),
+        ]
+          .filter((s) => s.length > 0)
+          .join("\n\n");
         const perTurnInput: AiChatWithKbTaskInput = {
           ...input,
           messages: [
@@ -580,6 +607,17 @@ function buildChunkReference(args: BuildChunkRefArgs): ChatChunkReference {
   };
 }
 
-function formatChunksForPrompt(refs: readonly ChatChunkReference[]): string {
-  return refs.map((r) => `[${r.index}] [${r.kbLabel}] (${r.title}) ${r.snippet}`).join("\n\n");
+function formatChunksForPrompt(
+  refs: readonly ChatChunkReference[],
+  responseFormat: ResponseFormat | undefined
+): string {
+  return refs
+    .map((r) => {
+      const head = `[${r.index}] [${r.kbLabel}] (${r.title})`;
+      if (responseFormat === "markdown" && r.url) {
+        return `${head} <${r.url}>\n    ${r.snippet}`;
+      }
+      return `${head} ${r.snippet}`;
+    })
+    .join("\n\n");
 }

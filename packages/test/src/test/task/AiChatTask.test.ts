@@ -471,3 +471,77 @@ describe("AiChatTask — chat loop", () => {
     }
   });
 });
+
+describe("AiChatTask — responseFormat", () => {
+  it("schema declares responseFormat with default 'text'", () => {
+    const schema = AiChatTask.inputSchema() as any;
+    expect(schema.properties.responseFormat).toBeDefined();
+    expect(schema.properties.responseFormat.enum).toEqual(["text", "markdown"]);
+    expect(schema.properties.responseFormat.default).toBe("text");
+  });
+
+  it("when 'markdown', appends the markdown addendum to the per-turn system prompt", async () => {
+    let capturedSystemPrompt: string | undefined;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+      const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
+        (m) => m.role === "system"
+      );
+      capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "hello",
+        systemPrompt: "You are helpful.",
+        responseFormat: "markdown" as const,
+        maxIterations: 1,
+      };
+      const task = new AiChatTask({ defaults: input } as any);
+      for await (const _ev of task.executeStream(input as any, mkContext(connector))) {
+        // drain
+      }
+      expect(capturedSystemPrompt).toContain("You are helpful.");
+      expect(capturedSystemPrompt).toContain("GitHub-flavored Markdown");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("when 'text' (or omitted), the per-turn system prompt is the raw input.systemPrompt", async () => {
+    let capturedSystemPrompt: string | undefined;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+      const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
+        (m) => m.role === "system"
+      );
+      capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregister = registerFakeChatProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "hello",
+        systemPrompt: "You are helpful.",
+        maxIterations: 1,
+      };
+      const task = new AiChatTask({ defaults: input } as any);
+      for await (const _ev of task.executeStream(input as any, mkContext(connector))) {
+        // drain
+      }
+      expect(capturedSystemPrompt).toBe("You are helpful.");
+      expect(capturedSystemPrompt).not.toContain("GitHub-flavored Markdown");
+    } finally {
+      unregister();
+    }
+  });
+});

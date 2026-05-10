@@ -11,6 +11,7 @@ import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
+import { buildResponseFormatAddendum } from "./base/responseFormat";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
@@ -98,6 +99,16 @@ export const AiChatInputSchema = {
       description: "Safety cap on conversation turns",
       minimum: 1,
       default: 100,
+      "x-ui-group": "Configuration",
+    },
+    responseFormat: {
+      type: "string",
+      enum: ["text", "markdown"],
+      default: "text",
+      title: "Response format",
+      description:
+        "How the model is instructed to format replies. 'text' = plain text. " +
+        "'markdown' = GitHub-flavored Markdown.",
       "x-ui-group": "Configuration",
     },
   },
@@ -212,8 +223,15 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
 
     // Build initial history.
     const history: ChatMessage[] = [];
-    if (input.systemPrompt) {
-      history.push({ role: "system", content: [{ type: "text", text: input.systemPrompt }] });
+    const addendum = buildResponseFormatAddendum(input.responseFormat);
+    const composedSystemPrompt = [input.systemPrompt ?? "", addendum]
+      .filter((s) => s.length > 0)
+      .join("\n\n");
+    if (composedSystemPrompt.length > 0) {
+      history.push({
+        role: "system",
+        content: [{ type: "text", text: composedSystemPrompt }],
+      });
     }
     const firstUserBlocks: ReadonlyArray<ContentBlock> =
       typeof input.prompt === "string"
