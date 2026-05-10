@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -13,31 +12,6 @@ import type {
 import type { StreamEvent } from "@workglow/task-graph";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
-
-export const Anthropic_TextSummary: AiProviderRunFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  AnthropicModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting Anthropic text summarization");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const response = await client.messages.create(
-    {
-      model: modelName,
-      system: "Summarize the following text concisely.",
-      messages: [{ role: "user", content: input.text }],
-      max_tokens: getMaxTokens({}, model),
-    },
-    { signal }
-  );
-
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-
-  update_progress(100, "Completed Anthropic text summarization");
-  return { text };
-};
 
 export const Anthropic_TextSummary_Stream: AiProviderStreamFn<
   TextSummaryTaskInput,
