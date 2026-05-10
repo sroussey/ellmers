@@ -43,7 +43,7 @@ const llmModel: LlamaCppModelRecord = {
   model_id: LLM_MODEL_ID,
   title: "SmolLM2 135M Instruct",
   description: "A 135M parameter instruction-following model, quantized Q4_K_M (~85 MB)",
-  tasks: ["DownloadModelTask", "TextGenerationTask", "TextRewriterTask", "TextSummaryTask"],
+  capabilities: ["text.generation", "text.rewriter", "text.summary"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/SmolLM2-135M-Instruct-Q4_K_M.gguf",
@@ -62,7 +62,7 @@ const embeddingModel: LlamaCppModelRecord = {
   model_id: EMBED_MODEL_ID,
   title: "BGE Small EN v1.5",
   description: "A small English text embedding model, quantized Q8_0 (~34 MB)",
-  tasks: ["DownloadModelTask", "TextEmbeddingTask"],
+  capabilities: ["text.embedding"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/bge-small-en-v1.5-Q8_0.gguf",

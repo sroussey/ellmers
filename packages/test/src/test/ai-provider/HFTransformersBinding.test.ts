@@ -104,7 +104,7 @@ describe("HFTransformersBinding", () => {
         model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
         title: "LaMini-Flan-T5-783M",
         description: "LaMini-Flan-T5-783M",
-        tasks: ["TextGenerationTask", "TextRewriterTask"],
+        capabilities: ["text.generation", "text.rewriter"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "text2text-generation",
@@ -178,7 +178,7 @@ describe("HFTransformersBinding", () => {
         model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
         title: "LaMini-Flan-T5-783M",
         description: "LaMini-Flan-T5-783M",
-        tasks: ["TextGenerationTask", "TextRewriterTask"],
+        capabilities: ["text.generation", "text.rewriter"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "text2text-generation",

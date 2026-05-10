@@ -84,7 +84,7 @@ describe("StreamingAiTask default phase emissions", () => {
     model_id: `${MOCK_PROVIDER}:test-model:v1`,
     title: "test-model",
     description: "test",
-    tasks: [taskType],
+    capabilities: [taskType],
     provider: MOCK_PROVIDER,
     provider_config: {},
     metadata: {},

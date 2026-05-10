@@ -35,7 +35,7 @@ const toolModels: LlamaCppModelRecord[] = [
     model_id: "llamacpp:LiquidAI/LFM2-1.2B-Tool:Q8_0",
     title: "LFM2 1.2B Tool",
     description: "A 1.2B parameter instruction-following model with tool calling support",
-    tasks: ["DownloadModelTask", "ToolCallingTask"],
+    capabilities: ["text.generation", "tool-use"],
     provider: LOCAL_LLAMACPP,
     provider_config: {
       model_path: "./models/LiquidAI/LFM2-1.2B-Tool-GGUF.Q8_0.gguf",
@@ -50,7 +50,7 @@ const toolModels: LlamaCppModelRecord[] = [
     model_id: "llamacpp:bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M",
     title: "Qwen2.5 Coder 1.5B Instruct",
     description: "A 1.5B parameter instruction-following model with tool calling support",
-    tasks: ["DownloadModelTask", "ToolCallingTask"],
+    capabilities: ["text.generation", "tool-use"],
     provider: LOCAL_LLAMACPP,
     provider_config: {
       model_path: "./models/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF.Q4_K_M.gguf",
@@ -65,7 +65,7 @@ const toolModels: LlamaCppModelRecord[] = [
     model_id: "llamacpp:unsloth/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
     title: "Llama 3.2 1B Instruct",
     description: "A 1B parameter instruction-following model with tool calling support",
-    tasks: ["DownloadModelTask", "ToolCallingTask"],
+    capabilities: ["text.generation", "tool-use"],
     provider: LOCAL_LLAMACPP,
     provider_config: {
       model_path: "./models/unsloth/Llama-3.2-1B-Instruct-GGUF.Q4_K_M.gguf",
