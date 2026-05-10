@@ -198,6 +198,20 @@ Shared cloud-provider helpers (base classes, registration, model search, OpenAI-
 
 **Streaming convention:** Provider stream functions (`AiProviderStreamFn`) must **not** accumulate output. They yield incremental `text-delta` / `object-delta` events and a final `finish` event with `{} as Output`. The consumer (`StreamingAiTask` / `TaskRunner`) is responsible for accumulating deltas into the final output. This separation keeps providers stateless and avoids double-buffering. Do **not** change finish events to include accumulated data.
 
+**Streaming convention exception (structured generation):** Run-fns serving
+`["text.generation", "json-mode"]` MUST populate `finish.data.object` with the
+parsed final object. The `StructuredGenerationTask` consumer reads the parsed
+object from finish.data and re-validates it against the output schema; this
+avoids requiring a JSON streaming parser in the consumer layer.
+
+**Capability collision:** When two task types share the same `requires` set
+(e.g. `AiChatTask` and `TextGenerationTask` both require `["text.generation"]`),
+they share a single registered run-fn. The run-fn MUST discriminate on a
+required field that one caller always provides and the other never does
+(e.g., `Array.isArray(input.messages) && input.messages.length > 0` for
+chat-vs-prompt). Schema invariants (e.g. `TextGenerationTask` requires
+`prompt`, `AiChatTask` requires `messages`) make this safe.
+
 ### `@workglow/util` — shared utilities
 
 `EventEmitter`, `ServiceRegistry` (DI), `DirectedAcyclicGraph`, `DataPortSchema`/`JsonSchema` types, `SchemaUtils`/`SchemaValidation`, `uuid4`, `sleep`, `WorkerManager`/`WorkerServer`, vector math, tensor types.

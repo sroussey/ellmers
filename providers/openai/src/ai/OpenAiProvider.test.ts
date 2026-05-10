@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
 import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
 import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
+import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -82,6 +83,42 @@ describe("OpenAiQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("provider.model-search");
     expect(caps).toContain("provider.model-info");
     expect(caps).not.toContain("text.generation");
+  });
+
+  it("infers full capability set for gpt-4o-mini", () => {
+    const caps = provider.inferCapabilities(model("gpt-4o-mini"));
+    // Sort both sides to make the assertion order-independent.
+    const sorted = [...caps].sort();
+    expect(sorted).toEqual([
+      "json-mode",
+      "model.count-tokens",
+      "provider.model-info",
+      "provider.model-search",
+      "text.generation",
+      "text.rewriter",
+      "text.summary",
+      "tool-use",
+      "vision-input",
+    ]);
+  });
+
+  it("infers full capability set for text-embedding-3-small", () => {
+    const caps = provider.inferCapabilities(model("text-embedding-3-small"));
+    const sorted = [...caps].sort();
+    expect(sorted).toEqual([
+      "model.count-tokens",
+      "provider.model-info",
+      "provider.model-search",
+      "text.embedding",
+    ]);
+  });
+});
+
+describe("capability-set parity", () => {
+  it("OPENAI_RUN_FN_SPECS matches OPENAI_RUN_FNS serves shapes", () => {
+    const fnsServes = OPENAI_RUN_FNS.map((r) => [...r.serves].sort().join(","));
+    const specsServes = OPENAI_RUN_FN_SPECS.map((s) => [...s.serves].sort().join(","));
+    expect(specsServes).toEqual(fnsServes);
   });
 });
 
