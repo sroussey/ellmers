@@ -143,6 +143,15 @@ export class ScopedTabularStorage<
     return this.stripArray(results);
   }
 
+  async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const scopedKeys = keys.map((k) => this.inject(k));
+    const results = await this.inner.getBulk(scopedKeys);
+    const stripped = results.map((r: any) => this.strip(r)) as Entity[];
+    this.events.emit("getBulk", keys, stripped);
+    return stripped;
+  }
+
   async getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
     // ScopedTabularStorage always paginates the inner store filtered by
     // `kb_id`, so even the no-criteria `getPage` becomes a `queryPage` on
