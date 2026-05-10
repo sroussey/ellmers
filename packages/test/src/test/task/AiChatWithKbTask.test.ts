@@ -496,3 +496,139 @@ describe("AiChatWithKbTask — multi-turn", () => {
     }
   });
 });
+
+describe("AiChatWithKbTask — responseFormat", () => {
+  it("schema declares responseFormat with default 'text'", () => {
+    const schema = AiChatWithKbTask.inputSchema() as any;
+    expect(schema.properties.responseFormat).toBeDefined();
+    expect(schema.properties.responseFormat.enum).toEqual(["text", "markdown"]);
+    expect(schema.properties.responseFormat.default).toBe("text");
+  });
+
+  it("when 'markdown', injects the markdown addendum AND the inline-citation directive", async () => {
+    const fake = makeFakeKb({
+      id: "kb1",
+      label: "Help",
+      results: [
+        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" } } as any,
+      ],
+    });
+    let capturedSystemPrompt = "";
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+      const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
+      capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "what is doc 1?",
+        knowledgeBaseIds: ["kb1"],
+        systemPrompt: "You are helpful.",
+        responseFormat: "markdown" as const,
+        maxIterations: 1,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      for await (const _ev of task.executeStream(input as any, mkContext(connector))) {
+        // drain
+      }
+      expect(capturedSystemPrompt).toContain("You are helpful.");
+      expect(capturedSystemPrompt).toContain("GitHub-flavored Markdown");
+      expect(capturedSystemPrompt).toContain("Markdown link");
+      expect(capturedSystemPrompt).toContain("Do not use numeric `[1]`-style");
+      expect(capturedSystemPrompt).toContain("--- Context ---");
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+
+  it("markdown-mode chunk formatter emits the URL line for chunks with metadata.url", async () => {
+    const fake = makeFakeKb({
+      id: "kb1",
+      label: "Help",
+      results: [
+        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "first", url: "/help/d1" } } as any,
+        { chunk_id: "c2", doc_id: "d2", score: 0.7, metadata: { doc_title: "Doc 2", text: "second" /* no url */ } } as any,
+      ],
+    });
+    let captured = "";
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+      const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
+      captured = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb1"],
+        responseFormat: "markdown" as const,
+        maxIterations: 1,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      for await (const _ev of task.executeStream(input as any, mkContext(connector))) {
+        // drain
+      }
+      // Doc 1 has a URL — expect a URL-bearing line.
+      expect(captured).toMatch(/\[1\].*\[Help\].*\(Doc 1\).*<\/help\/d1>/);
+      // Doc 2 has no URL — expect the legacy single-line shape.
+      expect(captured).toMatch(/\[2\] \[Help\] \(Doc 2\) second/);
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+
+  it("when 'text' (default), system prompt and chunk formatter are unchanged from today", async () => {
+    const fake = makeFakeKb({
+      id: "kb1",
+      label: "Help",
+      results: [
+        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" } } as any,
+      ],
+    });
+    let captured = "";
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+      const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
+      captured = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregister = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb1"],
+        systemPrompt: "You are helpful.",
+        maxIterations: 1,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      for await (const _ev of task.executeStream(input as any, mkContext(connector))) {
+        // drain
+      }
+      expect(captured).not.toContain("GitHub-flavored Markdown");
+      expect(captured).not.toContain("Markdown link");
+      expect(captured).toMatch(/\[1\] \[Help\] \(Doc 1\) A/);
+      // No `<url>` brackets in text mode.
+      expect(captured).not.toContain("</help/d1>");
+    } finally {
+      unregister();
+      fake.unregister();
+    }
+  });
+});
