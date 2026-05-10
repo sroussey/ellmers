@@ -5,15 +5,12 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import { WEB_BROWSER_STREAM_TASKS, WEB_BROWSER_TASKS } from "./common/WebBrowser_JobRunFns";
+import { WEB_BROWSER_RUN_FNS } from "./common/WebBrowser_JobRunFns";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 
 export async function registerWebBrowserWorker(): Promise<void> {
   await registerProviderWorker(
-    (ws) =>
-      new WebBrowserProvider(WEB_BROWSER_TASKS, WEB_BROWSER_STREAM_TASKS).registerOnWorkerServer(
-        ws
-      ),
+    (ws) => new WebBrowserProvider(WEB_BROWSER_RUN_FNS).registerOnWorkerServer(ws),
     "Web browser"
   );
 }
