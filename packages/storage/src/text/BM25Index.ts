@@ -101,6 +101,11 @@ export class BM25Index implements ITextIndex {
   // without scanning the whole vocabulary on every delete.
   private chunkPostings = new Map<string, Map<string, Set<string>>>();
 
+  // term -> document frequency (number of distinct chunks containing the term
+  // in any field). Maintained incrementally on add/remove so search() doesn't
+  // have to walk every posting list per query term.
+  private termDf = new Map<string, number>();
+
   constructor(options: BM25IndexOptions = {}) {
     this.tokenizer = options.tokenizer ?? createDefaultTokenizer();
     this.fieldWeights = { ...(options.fieldWeights ?? DEFAULT_CHUNK_FIELD_WEIGHTS) };
@@ -170,6 +175,9 @@ export class BM25Index implements ITextIndex {
     this.docLengths.set(chunkId, perField);
     this.chunkToDoc.set(chunkId, docId);
     this.chunkPostings.set(chunkId, termIndex);
+    for (const term of termIndex.keys()) {
+      this.termDf.set(term, (this.termDf.get(term) ?? 0) + 1);
+    }
     let bucket = this.docToChunks.get(docId);
     if (!bucket) {
       bucket = new Set();
@@ -213,6 +221,12 @@ export class BM25Index implements ITextIndex {
         if (byField.size === 0) {
           this.postings.delete(term);
         }
+        const newDf = (this.termDf.get(term) ?? 0) - 1;
+        if (newDf <= 0) {
+          this.termDf.delete(term);
+        } else {
+          this.termDf.set(term, newDf);
+        }
       }
     }
 
@@ -245,6 +259,7 @@ export class BM25Index implements ITextIndex {
     this.chunkToDoc.clear();
     this.docToChunks.clear();
     this.chunkPostings.clear();
+    this.termDf.clear();
   }
 
   search(query: string, options: TextSearchOptions = {}): TextSearchResult[] {
@@ -262,7 +277,8 @@ export class BM25Index implements ITextIndex {
       const byField = this.postings.get(term);
       if (!byField) continue;
 
-      const df = this.distinctChunkCount(byField);
+      const df = this.termDf.get(term) ?? 0;
+      if (df === 0) continue;
       const idf = Math.log(1 + (totalDocs - df + 0.5) / (df + 0.5));
       if (idf <= 0) continue;
 
@@ -347,12 +363,14 @@ export class BM25Index implements ITextIndex {
 
     for (const [term, fieldsObj] of Object.entries(s.postings)) {
       const byField = new Map<string, Posting[]>();
+      const distinctChunks = new Set<string>();
       for (const [field, list] of Object.entries(fieldsObj)) {
         byField.set(
           field,
           list.map((p) => ({ chunkId: p.chunkId, tf: p.tf }))
         );
         for (const p of list) {
+          distinctChunks.add(p.chunkId);
           let termIndex = this.chunkPostings.get(p.chunkId);
           if (!termIndex) {
             termIndex = new Map();
@@ -367,6 +385,7 @@ export class BM25Index implements ITextIndex {
         }
       }
       this.postings.set(term, byField);
+      this.termDf.set(term, distinctChunks.size);
     }
 
     for (const [chunkId, perField] of Object.entries(s.docLengths)) {
@@ -382,13 +401,5 @@ export class BM25Index implements ITextIndex {
       }
       bucket.add(chunkId);
     }
-  }
-
-  private distinctChunkCount(byField: Map<string, Posting[]>): number {
-    const seen = new Set<string>();
-    for (const list of byField.values()) {
-      for (const p of list) seen.add(p.chunkId);
-    }
-    return seen.size;
   }
 }

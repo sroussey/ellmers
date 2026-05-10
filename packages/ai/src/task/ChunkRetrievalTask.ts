@@ -48,7 +48,9 @@ const inputSchema = {
       enum: ["similarity", "hybrid"],
       title: "Retrieval Method",
       description:
-        "Retrieval strategy: 'similarity' (vector only) or 'hybrid' (vector + full-text).",
+        "Retrieval strategy: 'similarity' (vector only, scores are cosine similarity in [0,1]) " +
+        "or 'hybrid' (vector + full-text fused via Reciprocal Rank Fusion; scores are RRF " +
+        "fusion scores, NOT comparable to cosine similarity).",
       default: "similarity",
     },
     topK: {
@@ -66,7 +68,10 @@ const inputSchema = {
     scoreThreshold: {
       type: "number",
       title: "Score Threshold",
-      description: "Minimum similarity score threshold (0-1)",
+      description:
+        "Minimum cosine similarity score threshold (0-1). Applies only to method='similarity'; " +
+        "ignored for method='hybrid' because RRF fusion scores are not comparable to cosine " +
+        "similarity. Use topK to size hybrid results instead.",
       minimum: 0,
       maximum: 1,
       default: 0,
@@ -129,7 +134,10 @@ const outputSchema = {
       type: "array",
       items: { type: "number" },
       title: "Scores",
-      description: "Similarity scores for each result",
+      description:
+        "Per-result scores. For method='similarity', these are cosine similarity scores in " +
+        "[0,1]. For method='hybrid', these are Reciprocal Rank Fusion scores — small positive " +
+        "numbers (typically <0.05) that rank results but do not correspond to a similarity.",
     },
     vectors: {
       type: "array",

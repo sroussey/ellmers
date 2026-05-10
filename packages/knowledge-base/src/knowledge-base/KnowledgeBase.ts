@@ -58,6 +58,8 @@ export interface HybridSearchOptions<
   /**
    * Per-ranker over-fetch multiplier. Each ranker fetches `topK *
    * candidatePoolMultiplier` candidates so RRF has overlap to fuse on.
+   * Defaults to 5; lower values reduce overlap and degenerate RRF toward
+   * "OR of top-K", higher values cost more I/O.
    */
   readonly candidatePoolMultiplier?: number;
 }
@@ -234,15 +236,22 @@ export class KnowledgeBase {
    * Rebuild the installed text index from the current chunk storage. Use
    * after {@link installTextIndex} on a KB that already has chunks, or after
    * a tokenizer / field-weight configuration change.
+   *
+   * Atomic with respect to async failures: chunks are read and tokenisation
+   * is staged before the index is mutated. If `chunkStorage.getAll()` throws,
+   * the existing index is untouched.
    */
   async reindexText(): Promise<void> {
-    if (!this.textIndex) return;
-    this.textIndex.clear();
-    const all = (await this.chunkStorage.getAll()) ?? [];
-    for (const entity of all as ChunkVectorEntity[]) {
+    const index = this.textIndex;
+    if (!index) return;
+    const all = ((await this.chunkStorage.getAll()) ?? []) as ChunkVectorEntity[];
+    const writes: Array<{ chunkId: string; docId: string; fields: TextFields }> = [];
+    for (const entity of all) {
       const fields = chunkTextFields(entity.metadata);
-      if (fields) this.textIndex.add(entity.chunk_id, entity.doc_id, fields);
+      if (fields) writes.push({ chunkId: entity.chunk_id, docId: entity.doc_id, fields });
     }
+    index.clear();
+    for (const w of writes) index.add(w.chunkId, w.docId, w.fields);
   }
 
   // ===========================================================================
@@ -514,7 +523,7 @@ export class KnowledgeBase {
       filter,
       vectorWeight = 0.7,
       rrfK = 60,
-      candidatePoolMultiplier = 2,
+      candidatePoolMultiplier = 5,
     } = options;
 
     const poolSize = Math.max(topK, Math.ceil(topK * candidatePoolMultiplier));

@@ -6,6 +6,7 @@
 
 import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { BM25Index } from "@workglow/storage";
+import { uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const dimensions = 3;
@@ -26,12 +27,10 @@ const makeChunk = (
 });
 
 describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
-  let kbCounter = 0;
   let kbName: string;
 
   beforeEach(() => {
-    kbCounter += 1;
-    kbName = `hybrid-test-${kbCounter}-${Date.now()}`;
+    kbName = `hybrid-test-${uuid4()}`;
   });
 
   afterEach(() => {
@@ -223,5 +222,51 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(index.size()).toBe(1);
     const hits = await kb.textSearch("rabbit");
     expect(hits[0].chunk_id).toBe("c1");
+  });
+
+  it("reindexText is atomic: a chunkStorage failure leaves the existing index untouched", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+    });
+    await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
+    expect(index.size()).toBe(1);
+
+    // Force getAll() to throw. If reindexText() were non-atomic (clear-then-load),
+    // the index would be left empty after this throw.
+    const original = kb.vectorStorage.getAll.bind(kb.vectorStorage);
+    kb.vectorStorage.getAll = () => Promise.reject(new Error("backend gone"));
+
+    await expect(kb.reindexText()).rejects.toThrow(/backend gone/);
+    expect(index.size()).toBe(1);
+    const hits = await kb.textSearch("rabbit");
+    expect(hits.map((r) => r.chunk_id)).toEqual(["c1"]);
+
+    // Restore so the destroy() in afterEach behaves.
+    kb.vectorStorage.getAll = original;
+  });
+
+  it("hybridSearch produces RRF-shaped scores (small positives, not cosine)", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+    });
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "d2", "fox", vec(0, 1, 0)),
+    ]);
+
+    const results = await kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 2 });
+    expect(results.length).toBeGreaterThan(0);
+    // RRF default rrfK=60, so the top contribution is at most 1/(60+1) ≈ 0.0164.
+    // Sum across two rankers (vectorWeight + textWeight = 1) caps at ~0.0164.
+    for (const r of results) {
+      expect(r.score).toBeGreaterThan(0);
+      expect(r.score).toBeLessThan(0.05);
+    }
   });
 });
