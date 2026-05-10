@@ -107,6 +107,32 @@ export abstract class KvViaTabularStorage<
   }
 
   /**
+   * Retrieves multiple values by their keys in a single bulk operation.
+   * Delegates to the underlying tabular `getBulk` so SQL-backed KV stores
+   * (Postgres, SQLite) get push-down for free.
+   */
+  public async getBulk(keys: readonly Key[]): Promise<Combined[]> {
+    if (keys.length === 0) {
+      this.events.emit("getBulk", keys, []);
+      return [];
+    }
+    const rows = await this.tabularRepository.getBulk(keys.map((key) => ({ key })));
+    const combined = rows.map((row) => {
+      let value = row.value as unknown;
+      if (this.needsJsonSerialization && typeof value === "string") {
+        try {
+          value = JSON.parse(value);
+        } catch {
+          // fall through with the raw string
+        }
+      }
+      return { key: row.key as Key, value } as Combined;
+    });
+    this.events.emit("getBulk", keys, combined);
+    return combined;
+  }
+
+  /**
    * Deletes a row from the repository.
    * @param key - The primary key of the row to delete
    */

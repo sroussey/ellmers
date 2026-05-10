@@ -27,6 +27,7 @@ export const DefaultKeyValueKey = ["key"] as const;
 export type KvEventListeners<Key, Value, Combined> = {
   put: (key: Key, value: Value) => void;
   get: (key: Key, value: Value | undefined) => void;
+  getBulk: (keys: readonly Key[], results: readonly Combined[]) => void;
   getAll: (results: Combined[] | undefined) => void;
   delete: (key: unknown) => void;
   deleteall: () => void;
@@ -62,6 +63,14 @@ export interface IKvStorage<
   put(key: Key, value: Value): Promise<void>;
   putBulk(items: Array<{ key: Key; value: Value }>): Promise<void>;
   get(key: Key): Promise<Value | undefined>;
+  /**
+   * Fetches multiple values by their keys in a single bulk operation.
+   *
+   * Returns only the records that were found, as `Combined` (key + value)
+   * pairs. Result ordering is unspecified. Missing keys produce no entry.
+   * Empty input returns `[]` without issuing a backend call.
+   */
+  getBulk(keys: readonly Key[]): Promise<Combined[]>;
   delete(key: Key): Promise<void>;
   getAll(): Promise<Combined[] | undefined>;
   deleteAll(): Promise<void>;
