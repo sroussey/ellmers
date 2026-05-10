@@ -205,14 +205,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     if (!this._sessionId) {
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
-    const taskClass = this.constructor as typeof AiChatTask;
-    return {
-      taskType: "AiChatTask",
-      requires: taskClass.requires,
-      aiProvider: model.provider,
-      taskInput: input as AiChatTaskInput & { model: ModelConfig },
-      sessionId: this._sessionId,
-    };
+    // Delegate to base so timeoutMs, outputSchema, and any future base fields
+    // are always populated. The base reads (input as any).sessionId and
+    // forwards it into jobInput.sessionId, so we inject the session id here.
+    return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
+      sessionId: string;
+    });
   }
 
   override async *executeStream(
@@ -226,6 +224,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     if (!model || typeof model !== "object") {
       throw new Error("AiChatTask: model was not resolved to ModelConfig");
     }
+
+    // Strict gating: this override doesn't call super.executeStream, so we
+    // must gate here to match the contract AiTask.execute and
+    // StreamingAiTask.executeStream both enforce.
+    this.gateOrThrow(model);
+
     const connector = resolveHumanConnector(context);
 
     // Build initial history.

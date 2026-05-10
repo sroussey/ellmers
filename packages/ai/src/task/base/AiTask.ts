@@ -128,6 +128,24 @@ export class AiTask<
   // Execution
   // ========================================================================
 
+  /**
+   * Throws TaskConfigurationError if the model lacks any capability listed in
+   * the task class's static `requires`. Both execute() and executeStream() must
+   * call this before dispatch — gating is task-side, not strategy-side.
+   */
+  protected gateOrThrow(model: ModelConfig): void {
+    const taskClass = this.constructor as typeof AiTask;
+    const requires = taskClass.requires;
+    const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
+    const missing = requires.filter((r) => !modelCaps.includes(r));
+    if (missing.length > 0) {
+      throw new TaskConfigurationError(
+        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
+          `${taskClass.type}: ${missing.join(", ")}.`
+      );
+    }
+  }
+
   override async execute(
     input: Input,
     executeContext: IExecuteContext
@@ -140,16 +158,7 @@ export class AiTask<
     }
 
     // Strict gating: the model must declare every capability this task requires.
-    const taskClass = this.constructor as typeof AiTask;
-    const requires = taskClass.requires;
-    const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
-    const missing = requires.filter((r) => !modelCaps.includes(r));
-    if (missing.length > 0) {
-      throw new TaskConfigurationError(
-        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
-          `${taskClass.type}: ${missing.join(", ")}.`
-      );
-    }
+    this.gateOrThrow(model);
 
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
@@ -160,6 +169,10 @@ export class AiTask<
     // unload path is wired via the "model.unload" capability so providers opt
     // in by registering a run-fn whose `serves` set contains it; bypasses the
     // task's own `requires` so we don't gate the lifecycle hook on the task.
+    //
+    // Phase 5 contract: providers opt into the unload lifecycle by registering
+    // a run-fn whose `serves` set contains "model.unload". Without such a
+    // registration, this lookup returns undefined and the disposer is a no-op.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
       const unloadFn = registry.getRunFnFor(model.provider, ["model.unload"]);
