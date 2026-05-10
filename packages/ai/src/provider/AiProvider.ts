@@ -205,7 +205,15 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
       // Worker-mode: register proxy entries for each capability-set the provider
       // declares. The set is provided via the optional `workerRunFnSpecs` hook
       // since the run functions themselves live behind the worker boundary.
-      for (const spec of this.workerRunFnSpecs()) {
+      const specs = this.workerRunFnSpecs();
+      if (specs.length === 0) {
+        throw new Error(
+          `AiProvider "${this.name}": worker-mode registration requires at least one ` +
+            `entry from workerRunFnSpecs(). Override workerRunFnSpecs() to declare ` +
+            `the capability sets this provider serves over the worker boundary.`
+        );
+      }
+      for (const spec of specs) {
         registry.registerAsWorkerRunFn(this.name, spec.serves);
       }
     } else {

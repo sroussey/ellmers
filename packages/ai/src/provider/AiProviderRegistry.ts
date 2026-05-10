@@ -110,7 +110,7 @@ export class AiProviderRegistry {
    * combinations; lookup picks the most-specific superset of `requires`.
    */
   private runFnsByProvider: Map<string, AiProviderRunFnRegistration<any, any>[]> = new Map();
-  previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> = new Map();
+  private previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> = new Map();
   private providers: Map<string, AiProvider<any>> = new Map();
   private strategyResolvers: Map<string, AiStrategyResolver> = new Map();
   private defaultStrategy: IAiExecutionStrategy | undefined;
