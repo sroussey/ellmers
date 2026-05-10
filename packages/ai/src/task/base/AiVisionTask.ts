@@ -6,7 +6,6 @@
 
 import type { TaskConfig, TaskOutput } from "@workglow/task-graph";
 
-import type { Capability } from "../../capability/Capabilities";
 import { AiTask, AiTaskInput } from "./AiTask";
 
 /**
@@ -24,7 +23,4 @@ export class AiVisionTask<
   Config extends TaskConfig<Input> = TaskConfig<Input>,
 > extends AiTask<Input, Output, Config> {
   public static override type: string = "AiVisionTask";
-
-  /** Capabilities this task requires from a model. Phase 4 fills in concrete values. */
-  static override readonly requires: readonly Capability[] = [];
 }
