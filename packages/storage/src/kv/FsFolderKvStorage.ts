@@ -98,6 +98,22 @@ export class FsFolderKvStorage<
   }
 
   /**
+   * Retrieves multiple values by their keys via parallel single-file reads.
+   * Missing keys are dropped from the result.
+   */
+  public async getBulk(keys: readonly Key[]): Promise<Combined[]> {
+    if (keys.length === 0) return [];
+    const settled = await Promise.all(
+      keys.map(async (key) => {
+        const value = await this.get(key);
+        if (value === undefined) return undefined;
+        return { key, value } as Combined;
+      })
+    );
+    return settled.filter((r): r is Combined => r !== undefined);
+  }
+
+  /**
    * Retrieves a value by its key.
    * This is a convenience method that automatically converts simple types to structured format if using default schema.
    *
