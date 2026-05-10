@@ -19,6 +19,7 @@ export type ValueOptionType = string | number | bigint | boolean | null | Uint8A
 export type TabularEventListeners<PrimaryKey, Entity> = {
   put: (entity: Entity) => void;
   get: (key: PrimaryKey, entity: Entity | undefined) => void;
+  getBulk: (keys: readonly PrimaryKey[], entities: readonly Entity[]) => void;
   query: (key: Partial<Entity>, entities: Entity[] | undefined) => void;
   delete: (key: keyof Entity) => void;
   clearall: () => void;
@@ -279,6 +280,20 @@ export interface ITabularStorage<
    */
   putBulk(values: InsertType[]): Promise<Entity[]>;
   get(key: PrimaryKey): Promise<Entity | undefined>;
+  /**
+   * Fetches multiple entities by their primary keys in a single call.
+   *
+   * Returns only the entities that were found — the result is a filtered
+   * array, not aligned with the input. Each returned entity carries its own
+   * primary-key fields, so callers can re-align by key without a parallel
+   * array. Result ordering is unspecified.
+   *
+   * Empty input returns an empty array without issuing a backend call.
+   *
+   * @param keys - Array of primary keys to look up
+   * @returns Array of matching entities (possibly empty)
+   */
+  getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]>;
   delete(key: PrimaryKey | Entity): Promise<void>;
   getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined>;
   deleteAll(): Promise<void>;

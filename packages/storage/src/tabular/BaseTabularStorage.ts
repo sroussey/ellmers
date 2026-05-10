@@ -406,6 +406,19 @@ export abstract class BaseTabularStorage<
   abstract size(): Promise<number>;
 
   /**
+   * Default plural-get implementation: parallel single-key fetches via
+   * {@link get}, with `undefined` results filtered out. Backends with a
+   * cheaper batched path (SQL `WHERE pk IN (...)`) override this.
+   */
+  async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const results = await Promise.all(keys.map((k) => this.get(k)));
+    const found = results.filter((r): r is Entity => r !== undefined);
+    this.events.emit("getBulk", keys, found);
+    return found;
+  }
+
+  /**
    * Counts entries matching the specified search criteria.
    * Concrete storage implementations can override this with native count APIs.
    */
