@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelConfig } from "@workglow/ai";
+import type { AiProviderStreamFn, ChatMessage, ModelConfig } from "@workglow/ai";
 import { AiChatTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
@@ -97,8 +97,44 @@ function registerFakeChatProvider(stream: AiProviderStreamFn<any, any, ModelConf
   return () => registry.unregisterProvider("fake-chat");
 }
 
-describe("AiChatTask — execute()", () => {
-  it("consumes the stream and returns final accumulated output", async () => {
+interface AccumulatedChatOutput {
+  readonly text: string;
+  readonly messages: ChatMessage[];
+  readonly iterations: number;
+  readonly events: StreamEvent<any>[];
+}
+
+/**
+ * Drives a streaming chat task to completion and assembles the final
+ * accumulator state from the emitted deltas — the same way the runtime
+ * accumulates output via the task's x-stream declarations. Used after
+ * AiChatTask drops finish.data and the execute() override.
+ */
+async function accumulateChatStream(
+  iterable: AsyncIterable<StreamEvent<any>>
+): Promise<AccumulatedChatOutput> {
+  const messages: ChatMessage[] = [];
+  const events: StreamEvent<any>[] = [];
+  for await (const ev of iterable) {
+    events.push(ev);
+    if (ev.type === "object-delta" && (ev as any).port === "messages") {
+      const items = (ev as any).objectDelta as ChatMessage[];
+      messages.push(...items);
+    }
+  }
+  // `text` accumulates across all turns; AiChatTask resets per turn so the
+  // last assistant message's text is the final-turn text.
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const finalText =
+    lastAssistant && lastAssistant.content[0]?.type === "text"
+      ? (lastAssistant.content[0] as { type: "text"; text: string }).text
+      : "";
+  const iterations = messages.filter((m) => m.role === "assistant").length;
+  return { text: finalText, messages, iterations, events };
+}
+
+describe("AiChatTask — streaming output accumulation", () => {
+  it("drives the stream to completion and accumulates final output via deltas", async () => {
     const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
       yield { type: "text-delta", port: "text", textDelta: "ok" };
       yield { type: "finish", data: {} as any };
@@ -121,11 +157,12 @@ describe("AiChatTask — execute()", () => {
 
       const task = new AiChatTask({ defaults: input });
 
-      const result = await task.execute(input as any, mkContext(connector));
-      expect(result).toBeDefined();
-      expect(result!.text).toBe("ok");
-      expect(result!.iterations).toBe(1);
-      expect(result!.messages.length).toBeGreaterThanOrEqual(2);
+      const result = await accumulateChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+      expect(result.text).toBe("ok");
+      expect(result.iterations).toBe(1);
+      expect(result.messages.length).toBeGreaterThanOrEqual(2);
     } finally {
       unregister();
     }
@@ -192,15 +229,14 @@ describe("AiChatTask — chat loop", () => {
 
       const task = new AiChatTask({ defaults: input });
 
-      const events: StreamEvent<any>[] = [];
-      for await (const ev of task.executeStream(input as any, mkContext(connector))) {
-        events.push(ev);
-      }
-
-      const textDeltas = events.filter((e) => e.type === "text-delta").map((e: any) => e.textDelta);
+      const result = await accumulateChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+      const textDeltas = result.events
+        .filter((e) => e.type === "text-delta")
+        .map((e: any) => e.textDelta);
       expect(textDeltas.join("")).toBe("Hello there");
-      const finish = events.find((e) => e.type === "finish") as any;
-      expect(finish.data.iterations).toBe(1);
+      expect(result.iterations).toBe(1);
       expect(calls.length).toBe(1);
       expect(connector.sent.length).toBe(1);
     } finally {
@@ -239,15 +275,12 @@ describe("AiChatTask — chat loop", () => {
 
       const task = new AiChatTask({ defaults: input });
 
-      const events: StreamEvent<any>[] = [];
-      for await (const ev of task.executeStream(input as any, mkContext(connector))) {
-        events.push(ev);
-      }
-      const finish = events.find((e) => e.type === "finish") as any;
-      const finalOutput = finish.data as import("@workglow/ai").AiChatTaskOutput;
-      expect(finalOutput.iterations).toBe(2);
-      expect(finalOutput.text).toBe("Turn 2"); // last turn only, not "Turn 1Turn 2"
-      expect(finalOutput.messages.length).toBeGreaterThan(2);
+      const result = await accumulateChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+      expect(result.iterations).toBe(2);
+      expect(result.text).toBe("Turn 2"); // last turn only, not "Turn 1Turn 2"
+      expect(result.messages.length).toBeGreaterThan(2);
       expect(callIdx).toBe(2);
     } finally {
       unregister();
@@ -285,14 +318,12 @@ describe("AiChatTask — chat loop", () => {
 
       const task = new AiChatTask({ defaults: input });
 
-      const events: StreamEvent<any>[] = [];
-      for await (const ev of task.executeStream(input as any, mkContext(connector))) {
-        events.push(ev);
-      }
+      const result = await accumulateChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
 
-      const finish = events.find((e) => e.type === "finish") as any;
-      expect(finish).toBeDefined();
-      expect(finish.data.iterations).toBe(3);
+      expect(result.events.find((e) => e.type === "finish")).toBeDefined();
+      expect(result.iterations).toBe(3);
       expect(callIdx).toBe(3);
     } finally {
       unregister();
@@ -428,10 +459,11 @@ describe("AiChatTask — chat loop", () => {
 
       const task = new AiChatTask({ defaults: input });
 
-      const result = await task.execute(input as any, mkContext(connector));
-      expect(result).toBeDefined();
+      const result = await accumulateChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
       // No systemPrompt, so index 0 is the initial user message.
-      const userMsg = result!.messages[0];
+      const userMsg = result.messages[0];
       expect(userMsg.role).toBe("user");
       expect(userMsg.content).toEqual(blocks);
     } finally {

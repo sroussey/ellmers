@@ -6,6 +6,7 @@
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { AiChatTask } from "./AiChatTask";
+import { AiChatWithKbTask } from "./AiChatWithKbTask";
 import { BackgroundRemovalTask } from "./BackgroundRemovalTask";
 import { ChunkRetrievalTask } from "./ChunkRetrievalTask";
 import { ChunkVectorUpsertTask } from "./ChunkVectorUpsertTask";
@@ -22,6 +23,7 @@ import { GestureRecognizerTask } from "./GestureRecognizerTask";
 import { HandLandmarkerTask } from "./HandLandmarkerTask";
 import { HierarchicalChunkerTask } from "./HierarchicalChunkerTask";
 import { HierarchyJoinTask } from "./HierarchyJoinTask";
+import { KbSearchTask } from "./KbSearchTask";
 import { KbToDocumentsTask } from "./KbToDocumentsTask";
 import { ImageClassificationTask } from "./ImageClassificationTask";
 import { ImageEmbeddingTask } from "./ImageEmbeddingTask";
@@ -58,6 +60,7 @@ import { VectorSimilarityTask } from "./VectorSimilarityTask";
 export const registerAiTasks = () => {
   const tasks = [
     AiChatTask,
+    AiChatWithKbTask,
     BackgroundRemovalTask,
     CountTokensTask,
     ContextBuilderTask,
@@ -74,6 +77,7 @@ export const registerAiTasks = () => {
     HandLandmarkerTask,
     HierarchicalChunkerTask,
     HierarchyJoinTask,
+    KbSearchTask,
     KbToDocumentsTask,
     ImageClassificationTask,
     ImageEmbeddingTask,
@@ -109,6 +113,7 @@ export const registerAiTasks = () => {
 };
 
 export * from "./AiChatTask";
+export * from "./AiChatWithKbTask";
 export * from "./ChatMessage";
 export * from "./BackgroundRemovalTask";
 export * from "./base/AiImageOutputTask";
@@ -130,6 +135,7 @@ export * from "./GestureRecognizerTask";
 export * from "./HandLandmarkerTask";
 export * from "./HierarchicalChunkerTask";
 export * from "./HierarchyJoinTask";
+export * from "./KbSearchTask";
 export * from "./KbToDocumentsTask";
 export * from "./ImageClassificationTask";
 export * from "./ImageEmbeddingTask";
