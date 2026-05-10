@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
@@ -14,7 +13,6 @@ import type {
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
-import { getLogger } from "@workglow/util/worker";
 
 import { dataUriToImageValue } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
@@ -49,70 +47,12 @@ function modelIdOf(model: ModelConfig | undefined): string {
   );
 }
 
-/** Non-streaming path. Used for DALL-E or when streaming is not requested. */
-export const OpenAI_ImageGenerate: AiProviderRunFn<
-  ImageGenerateTaskInput,
-  ImageGenerateTaskOutput,
-  OpenAiModelConfig
-> = async (input, model, update_progress, signal) => {
-  const logger = getLogger();
-  const timer = `openai:ImageGenerate:${getModelName(model)}`;
-  logger.time(timer);
-  update_progress(0, "Starting OpenAI image generation");
-
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-  const size = aspectRatioToSize(input.aspectRatio);
-
-  try {
-    const resp = await client.images.generate(
-      {
-        model: modelName,
-        prompt: input.prompt,
-        size,
-        quality: input.quality as
-          | "standard"
-          | "hd"
-          | "low"
-          | "medium"
-          | "high"
-          | "auto"
-          | undefined,
-        n: 1,
-        response_format: "b64_json",
-        ...(input.providerOptions ?? {}),
-      } as Parameters<typeof client.images.generate>[0],
-      { signal }
-    );
-
-    const b64 = resp.data?.[0]?.b64_json;
-    if (!b64) {
-      throw new ImageGenerationProviderError(modelIdOf(model), "Empty response (no b64_json)");
-    }
-    const image = await decodeB64Png(b64);
-    update_progress(100, "Completed OpenAI image generation");
-    logger.timeEnd(timer);
-    return { image };
-  } catch (err) {
-    if (
-      err instanceof ImageGenerationProviderError ||
-      err instanceof ImageGenerationContentPolicyError
-    ) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : "unknown error";
-    if (/safety|policy|moderation/i.test(msg)) {
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
-    }
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
-  }
-};
-
 /**
- * Streaming path. Yields snapshot events for each partial + final image, then finish.
- * Uses SDK v6+ streaming support: `stream: true` + `partial_images: 3` on GPT image models.
- * DALL-E 3 does not support streaming (the SDK overload for stream=true is not valid for it),
- * so this function falls back to the non-streaming path for DALL-E models.
+ * Streaming run-fn for `["image.generation"]`. GPT-image models support
+ * native streaming via `stream: true` + `partial_images: 3` and emit a
+ * `snapshot` event per partial frame plus a final snapshot. DALL-E models
+ * do not support streaming so this falls back to a single non-streaming
+ * call and yields one snapshot before finish.
  */
 export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
   ImageGenerateTaskInput,

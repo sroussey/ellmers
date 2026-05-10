@@ -5,20 +5,20 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
-export function createOllamaTextEmbedding(
+export function createOllamaTextEmbeddingStream(
   getClient: GetClient
-): AiProviderRunFn<TextEmbeddingTaskInput, TextEmbeddingTaskOutput, OllamaModelConfig> {
-  return async (input, model, update_progress, _signal) => {
-    update_progress(0, "Starting Ollama text embedding");
+): AiProviderStreamFn<TextEmbeddingTaskInput, TextEmbeddingTaskOutput, OllamaModelConfig> {
+  return async function* (input, model): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
@@ -29,13 +29,10 @@ export function createOllamaTextEmbedding(
       input: texts,
     });
 
-    update_progress(100, "Completed Ollama text embedding");
+    const data: TextEmbeddingTaskOutput = Array.isArray(input.text)
+      ? { vector: response.embeddings.map((e: number[]) => new Float32Array(e)) }
+      : { vector: new Float32Array(response.embeddings[0]) };
 
-    if (Array.isArray(input.text)) {
-      return {
-        vector: response.embeddings.map((e: number[]) => new Float32Array(e)),
-      };
-    }
-    return { vector: new Float32Array(response.embeddings[0]) };
+    yield { type: "finish", data };
   };
 }

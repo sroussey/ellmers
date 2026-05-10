@@ -4,75 +4,97 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  AiProviderStreamFn,
-  TextGenerationTaskInput,
-  TextGenerationTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderStreamFn, TextGenerationTaskInput, TextGenerationTaskOutput } from "@workglow/ai";
+import { toOpenAIMessages } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
-export const OpenAI_TextGeneration: AiProviderRunFn<
-  TextGenerationTaskInput,
-  TextGenerationTaskOutput,
-  OpenAiModelConfig
-> = async (input, model, update_progress, signal) => {
-  const logger = getLogger();
-  const timerLabel = `openai:TextGeneration:${model?.provider_config?.model_name}`;
-  logger.time(timerLabel, { model: model?.provider_config?.model_name });
+/**
+ * Inputs that the unified `["text.generation"]` runFn handles. Both
+ * {@link TextGenerationTask} and {@link AiChatTask} declare
+ * `requires: ["text.generation"]`, so the capability dispatcher routes both
+ * here. AiChatTask supplies a populated `messages` array; TextGenerationTask
+ * (and other simple prompt callers) supply a `prompt` string only.
+ */
+interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
+  readonly messages?: readonly unknown[];
+  readonly systemPrompt?: string;
+}
 
-  update_progress(0, "Starting OpenAI text generation");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
+/**
+ * Build the OpenAI chat-completion request parameters from the unified input
+ * shape — preferring a populated `messages` array (AiChatTask) and falling
+ * back to wrapping `prompt` as a single user message (TextGenerationTask).
+ */
+function buildChatParams(
+  input: UnifiedTextGenerationInput,
+  model: OpenAiModelConfig | undefined
+): Record<string, unknown> {
+  const hasMessages = Array.isArray(input.messages) && input.messages.length > 0;
+  const messages = hasMessages
+    ? toOpenAIMessages({
+        messages: input.messages,
+        systemPrompt: input.systemPrompt,
+        prompt: "",
+        tools: [],
+      } as never)
+    : [{ role: "user" as const, content: input.prompt }];
 
-  const response = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-      top_p: input.topP,
-      frequency_penalty: input.frequencyPenalty,
-      presence_penalty: input.presencePenalty,
-    },
-    { signal }
-  );
+  const params: Record<string, unknown> = {
+    model: getModelName(model),
+    messages,
+  };
+  if (input.maxTokens !== undefined) params.max_completion_tokens = input.maxTokens;
+  if (input.temperature !== undefined) params.temperature = input.temperature;
+  if ((input as { topP?: number }).topP !== undefined)
+    params.top_p = (input as { topP?: number }).topP;
+  if ((input as { frequencyPenalty?: number }).frequencyPenalty !== undefined)
+    params.frequency_penalty = (input as { frequencyPenalty?: number }).frequencyPenalty;
+  if ((input as { presencePenalty?: number }).presencePenalty !== undefined)
+    params.presence_penalty = (input as { presencePenalty?: number }).presencePenalty;
+  return params;
+}
 
-  update_progress(100, "Completed OpenAI text generation");
-  logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
-  return { text: response.choices[0]?.message?.content ?? "" };
-};
-
+/**
+ * Streaming run-fn for the `["text.generation"]` capability. Used by both
+ * {@link TextGenerationTask} (prompt-only input) and {@link AiChatTask}
+ * (full conversation history). Yields `text-delta` events on the `text` port
+ * and a final empty `finish` event per the streaming convention (consumer
+ * accumulates).
+ */
 export const OpenAI_TextGeneration_Stream: AiProviderStreamFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
-  const client = await getClient(model);
-  const modelName = getModelName(model);
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+  const logger = getLogger();
+  const timerLabel = `openai:TextGeneration:${getModelName(model)}`;
+  logger.time(timerLabel, { model: getModelName(model) });
+  try {
+    const client = await getClient(model);
+    const params = buildChatParams(input as UnifiedTextGenerationInput, model);
 
-  const stream = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-      top_p: input.topP,
-      frequency_penalty: input.frequencyPenalty,
-      presence_penalty: input.presencePenalty,
-      stream: true,
-    },
-    { signal }
-  );
+    const stream = await client.chat.completions.create(
+      { ...params, stream: true } as Parameters<typeof client.chat.completions.create>[0],
+      { signal }
+    );
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
-    if (delta) {
-      yield { type: "text-delta", port: "text", textDelta: delta };
+    for await (const chunk of stream as AsyncIterable<{
+      choices?: Array<{ delta?: { content?: string | null } }>;
+    }>) {
+      const delta = chunk.choices?.[0]?.delta?.content ?? "";
+      if (delta) {
+        yield { type: "text-delta", port: "text", textDelta: delta };
+      }
     }
+    yield { type: "finish", data: {} as TextGenerationTaskOutput };
+  } finally {
+    logger.timeEnd(timerLabel, { model: getModelName(model) });
   }
-  yield { type: "finish", data: {} as TextGenerationTaskOutput };
 };

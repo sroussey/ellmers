@@ -4,17 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput,
+} from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
 import { OLLAMA } from "./Ollama_Constants";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
-export function createOllamaModelSearch(
+export function createOllamaModelSearchStream(
   getClient: GetClient
-): AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
-  return async (input) => {
+): AiProviderStreamFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
+  return async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
     try {
       const client = await getClient(undefined);
       const response = await client.list();
@@ -33,9 +38,12 @@ export function createOllamaModelSearch(
         },
         raw: m,
       }));
-      return { results: filterModelSearchResultsByQuery(results, input.query) };
+      yield {
+        type: "finish",
+        data: { results: filterModelSearchResultsByQuery(results, input.query) },
+      };
     } catch {
-      return { results: [] };
+      yield { type: "finish", data: { results: [] } };
     }
   };
 }

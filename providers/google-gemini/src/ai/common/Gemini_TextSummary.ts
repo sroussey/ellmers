@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -13,28 +12,6 @@ import type {
 import type { StreamEvent } from "@workglow/task-graph";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
-
-export const Gemini_TextSummary: AiProviderRunFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  GeminiModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting Gemini text summarization");
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
-  const genModel = genAI.getGenerativeModel({
-    model: getModelName(model),
-    systemInstruction: "Summarize the following text concisely.",
-  });
-
-  const result = await genModel.generateContent({
-    contents: [{ role: "user", parts: [{ text: input.text }] }],
-  });
-
-  const text = result.response.text();
-  update_progress(100, "Completed Gemini text summarization");
-  return { text };
-};
 
 export const Gemini_TextSummary_Stream: AiProviderStreamFn<
   TextSummaryTaskInput,

@@ -88,6 +88,29 @@ export interface AiProviderRunFnRegistration<
 }
 
 /**
+ * @deprecated Legacy non-streaming run-fn signature retained as a typing shim
+ * for vendor packages that still expose non-streaming task factories (e.g.
+ * `@workglow/huggingface-transformers`). The capability-set dispatcher only
+ * consumes {@link AiProviderStreamFn}; the legacy fns are adapted in their
+ * provider's `*_JobRunFns.ts` registration list.
+ *
+ * New code should author {@link AiProviderStreamFn} directly.
+ */
+export type AiProviderRunFn<
+  Input extends TaskInput = TaskInput,
+  Output extends TaskOutput = TaskOutput,
+  Model extends ModelConfig = ModelConfig,
+> = (
+  input: Input,
+  model: Model | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onProgress: (progress: number, message?: string, details?: any) => void,
+  signal: AbortSignal,
+  outputSchema?: JsonSchema,
+  sessionId?: string
+) => Promise<Output>;
+
+/**
  * Build the deterministic key used to register a `serves` set on a worker server
  * and to dispatch worker calls to it. Sorted alphabetically + comma-joined so the
  * key is stable across registrations and worker boundaries.

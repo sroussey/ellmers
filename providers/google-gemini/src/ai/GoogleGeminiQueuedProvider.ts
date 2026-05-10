@@ -5,30 +5,30 @@
  */
 
 import { AiProvider } from "@workglow/ai";
+import type { Capability, ModelRecord } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
+import { inferGeminiCapabilities, geminiWorkerRunFnSpecs } from "./common/Gemini_Capabilities";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
 
-const GEMINI_TASK_TYPES = [
-  "CountTokensTask",
-  "ModelInfoTask",
-  "TextGenerationTask",
-  "TextEmbeddingTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "StructuredGenerationTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-  "ImageGenerateTask",
-  "ImageEditTask",
-] as const;
+/**
+ * Main-thread registration shell for Google Gemini. Used both for inline mode
+ * (constructed with the run-fn registrations array) and worker-backed mode
+ * (constructed empty so the base class registers worker proxies). No queue
+ * is created — Google Gemini uses {@link DirectExecutionStrategy}.
+ */
+export class GoogleGeminiQueuedProvider extends createCloudProviderClass<GeminiModelConfig>(
+  AiProvider,
+  {
+    name: GOOGLE_GEMINI,
+    displayName: "Google Gemini",
+  }
+) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferGeminiCapabilities(model);
+  }
 
-/** Main-thread registration (inline or worker-backed). No queue — uses direct execution. */
-export class GoogleGeminiQueuedProvider extends createCloudProviderClass<
-  GeminiModelConfig,
-  typeof GEMINI_TASK_TYPES
->(AiProvider, {
-  name: GOOGLE_GEMINI,
-  displayName: "Google Gemini",
-  taskTypes: GEMINI_TASK_TYPES,
-}) {}
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return geminiWorkerRunFnSpecs();
+  }
+}
