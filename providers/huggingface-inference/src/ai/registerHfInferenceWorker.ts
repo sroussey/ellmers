@@ -5,12 +5,12 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import { HFI_STREAM_TASKS, HFI_TASKS } from "./common/HFI_JobRunFns";
+import { HFI_RUN_FNS } from "./common/HFI_JobRunFns";
 import { HfInferenceProvider } from "./HfInferenceProvider";
 
 export async function registerHfInferenceWorker(): Promise<void> {
   await registerProviderWorker(
-    (ws) => new HfInferenceProvider(HFI_TASKS, HFI_STREAM_TASKS).registerOnWorkerServer(ws),
+    (ws) => new HfInferenceProvider(HFI_RUN_FNS).registerOnWorkerServer(ws),
     "Hugging Face Inference"
   );
 }
