@@ -862,10 +862,7 @@ export class SqliteTabularStorage<
 
     const params: ValueOptionType[] = [];
     for (const key of keys) {
-      const ordered = this.getPrimaryKeyAsOrderedArray(key);
-      for (let i = 0; i < pkCols.length; i++) {
-        params.push(this.jsToSqlValue(pkCols[i], ordered[i] as Entity[keyof Entity]));
-      }
+      params.push(...this.getPrimaryKeyAsOrderedArray(key));
     }
 
     let lhs: string;

@@ -1144,9 +1144,9 @@ export class PostgresTabularStorage<
     let p = 1;
     for (const key of keys) {
       const ordered = this.getPrimaryKeyAsOrderedArray(key);
+      params.push(...ordered);
       const slots: string[] = [];
       for (let i = 0; i < pkCols.length; i++) {
-        params.push(this.jsToSqlValue(pkCols[i], ordered[i] as Entity[keyof Entity]));
         slots.push(`$${p++}`);
       }
       tuples.push(`(${slots.join(", ")})`);
