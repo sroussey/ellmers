@@ -105,6 +105,12 @@ export class TelemetryTabularStorage<
     );
   }
 
+  getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    return traced("workglow.storage.tabular.getBulk", this.storageName, () =>
+      this.inner.getBulk(keys)
+    );
+  }
+
   getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
     return traced("workglow.storage.tabular.getPage", this.storageName, () =>
       this.inner.getPage(request)
