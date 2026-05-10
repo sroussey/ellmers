@@ -55,9 +55,12 @@ interface SerialisedBM25State {
 
 /**
  * In-memory BM25F text index. State is JSON-serialisable via
- * {@link toJSON} / {@link fromJSON}. Field weights and tokenizer are *not*
- * serialised — the caller is responsible for restoring an index with the
- * same configuration as the one that produced the state.
+ * {@link toJSON} / {@link fromJSON}. The serialised state captures all
+ * scoring inputs — `k1`, `b`, `fieldWeights`, postings, and per-document
+ * stats — so a `fromJSON` round-trip reproduces search results exactly. The
+ * tokenizer is *not* serialised; callers must restore an index configured
+ * with the same tokenizer that produced the state, otherwise query
+ * tokenisation will diverge from indexed terms.
  *
  * Scoring formula (Lucene-style BM25F):
  *
@@ -76,8 +79,8 @@ interface SerialisedBM25State {
 export class BM25Index implements ITextIndex {
   private readonly tokenizer: Tokenizer;
   private fieldWeights: Record<string, number>;
-  private readonly k1: number;
-  private readonly b: number;
+  private k1: number;
+  private b: number;
 
   // term -> field -> postings (one entry per chunk that has the term in the field).
   private postings = new Map<string, Map<string, Posting[]>>();
@@ -93,6 +96,10 @@ export class BM25Index implements ITextIndex {
 
   // docId -> Set<chunkId>, for fast cascade deletes.
   private docToChunks = new Map<string, Set<string>>();
+
+  // chunkId -> term -> Set<field> — reverse index used for surgical removal
+  // without scanning the whole vocabulary on every delete.
+  private chunkPostings = new Map<string, Map<string, Set<string>>>();
 
   constructor(options: BM25IndexOptions = {}) {
     this.tokenizer = options.tokenizer ?? createDefaultTokenizer();
@@ -111,6 +118,7 @@ export class BM25Index implements ITextIndex {
     }
 
     const perField = new Map<string, number>();
+    const termIndex = new Map<string, Set<string>>();
     let anyTokens = false;
 
     for (const [field, weight] of Object.entries(this.fieldWeights)) {
@@ -140,6 +148,13 @@ export class BM25Index implements ITextIndex {
           byField.set(field, list);
         }
         list.push({ chunkId, tf });
+
+        let fieldsForTerm = termIndex.get(term);
+        if (!fieldsForTerm) {
+          fieldsForTerm = new Set();
+          termIndex.set(term, fieldsForTerm);
+        }
+        fieldsForTerm.add(field);
       }
     }
 
@@ -154,6 +169,7 @@ export class BM25Index implements ITextIndex {
 
     this.docLengths.set(chunkId, perField);
     this.chunkToDoc.set(chunkId, docId);
+    this.chunkPostings.set(chunkId, termIndex);
     let bucket = this.docToChunks.get(docId);
     if (!bucket) {
       bucket = new Set();
@@ -179,20 +195,28 @@ export class BM25Index implements ITextIndex {
       }
     }
 
-    for (const [term, byField] of this.postings) {
-      for (const [field, list] of byField) {
-        const filtered = list.filter((p) => p.chunkId !== chunkId);
-        if (filtered.length === 0) {
-          byField.delete(field);
-        } else if (filtered.length !== list.length) {
-          byField.set(field, filtered);
+    const termIndex = this.chunkPostings.get(chunkId);
+    if (termIndex) {
+      for (const [term, fields] of termIndex) {
+        const byField = this.postings.get(term);
+        if (!byField) continue;
+        for (const field of fields) {
+          const list = byField.get(field);
+          if (!list) continue;
+          const filtered = list.filter((p) => p.chunkId !== chunkId);
+          if (filtered.length === 0) {
+            byField.delete(field);
+          } else if (filtered.length !== list.length) {
+            byField.set(field, filtered);
+          }
         }
-      }
-      if (byField.size === 0) {
-        this.postings.delete(term);
+        if (byField.size === 0) {
+          this.postings.delete(term);
+        }
       }
     }
 
+    this.chunkPostings.delete(chunkId);
     this.docLengths.delete(chunkId);
 
     const docId = this.chunkToDoc.get(chunkId);
@@ -220,6 +244,7 @@ export class BM25Index implements ITextIndex {
     this.fieldStats.clear();
     this.chunkToDoc.clear();
     this.docToChunks.clear();
+    this.chunkPostings.clear();
   }
 
   search(query: string, options: TextSearchOptions = {}): TextSearchResult[] {
@@ -230,12 +255,7 @@ export class BM25Index implements ITextIndex {
     const queryTerms = this.tokenizer.tokenize(query);
     if (queryTerms.length === 0) return [];
 
-    // De-duplicate query terms — repeated query terms shouldn't double-count.
     const uniqueTerms = Array.from(new Set(queryTerms));
-
-    // pseudoTf[chunkId] accumulates the BM25F field-weighted, length-normalised
-    // tf across all matching fields. We compute it per term, then convert to
-    // the BM25 saturation curve and multiply by IDF.
     const scores = new Map<string, number>();
 
     for (const term of uniqueTerms) {
@@ -317,6 +337,8 @@ export class BM25Index implements ITextIndex {
     }
 
     this.clear();
+    this.k1 = s.k1;
+    this.b = s.b;
     this.fieldWeights = { ...s.fieldWeights };
 
     for (const [field, stat] of Object.entries(s.fieldStats)) {
@@ -330,6 +352,19 @@ export class BM25Index implements ITextIndex {
           field,
           list.map((p) => ({ chunkId: p.chunkId, tf: p.tf }))
         );
+        for (const p of list) {
+          let termIndex = this.chunkPostings.get(p.chunkId);
+          if (!termIndex) {
+            termIndex = new Map();
+            this.chunkPostings.set(p.chunkId, termIndex);
+          }
+          let fields = termIndex.get(term);
+          if (!fields) {
+            fields = new Set();
+            termIndex.set(term, fields);
+          }
+          fields.add(field);
+        }
       }
       this.postings.set(term, byField);
     }

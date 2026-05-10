@@ -147,6 +147,70 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(results).toEqual([]);
   });
 
+  it("upserting a chunk with empty text drops its postings from the index", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+    });
+
+    await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
+    expect(index.size()).toBe(1);
+
+    // Re-upsert the same chunk with no indexable text — old postings must go.
+    await kb.upsertChunk({
+      chunk_id: "c1",
+      doc_id: "d1",
+      vector: vec(1, 0, 0),
+      metadata: { chunkId: "c1", doc_id: "d1", text: "", nodePath: ["c1"], depth: 0 },
+    });
+    expect(index.size()).toBe(0);
+    expect(await kb.textSearch("rabbit")).toEqual([]);
+  });
+
+  it("put / putBulk go through the indexing path (alias for upsertChunk*)", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+    });
+
+    await kb.put(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
+    await kb.putBulk([
+      makeChunk("c2", "d2", "fox garden", vec(0, 1, 0)),
+      makeChunk("c3", "d3", "tomato vine", vec(0, 0, 1)),
+    ]);
+
+    expect(index.size()).toBe(3);
+    const hits = await kb.textSearch("rabbit");
+    expect(hits.map((r) => r.chunk_id)).toEqual(["c1"]);
+  });
+
+  it("hybridSearch tolerates fractional candidatePoolMultiplier (integer poolSize)", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+    });
+
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "d2", "rabbit fence", vec(0, 1, 0)),
+      makeChunk("c3", "d3", "rabbit garden", vec(0, 0, 1)),
+    ]);
+
+    // 3 * 1.7 = 5.1 — must not propagate as a non-integer topK.
+    const results = await kb.hybridSearch(vec(1, 0, 0), {
+      textQuery: "rabbit",
+      topK: 3,
+      candidatePoolMultiplier: 1.7,
+    });
+    expect(results).toHaveLength(3);
+  });
+
   it("installTextIndex after upserts requires reindexText to populate", async () => {
     const kb = await createKnowledgeBase({ name: kbName, vectorDimensions: dimensions });
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));

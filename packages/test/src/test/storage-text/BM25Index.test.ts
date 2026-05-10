@@ -212,6 +212,42 @@ describe("BM25Index", () => {
       const idx = new BM25Index();
       expect(() => idx.fromJSON({ version: 999 })).toThrow();
     });
+
+    it("restores k1 / b from serialised state (does not silently keep constructor defaults)", () => {
+      const a = new BM25Index({ k1: 2.0, b: 0.5 });
+      addDoc(a, "c1", "d1", "rabbit fence");
+      addDoc(a, "c2", "d2", "rabbit");
+      const stateA = JSON.parse(JSON.stringify(a.toJSON())) as unknown;
+
+      // Fresh instance with *different* k1/b. After fromJSON, scoring must
+      // match a, not the new instance's constructor defaults.
+      const b = new BM25Index({ k1: 0.5, b: 0.9 });
+      b.fromJSON(stateA);
+
+      const ra = a.search("rabbit");
+      const rb = b.search("rabbit");
+      expect(rb.map((r) => r.chunkId)).toEqual(ra.map((r) => r.chunkId));
+      for (let i = 0; i < ra.length; i++) {
+        expect(rb[i].score).toBeCloseTo(ra[i].score, 10);
+      }
+    });
+
+    it("preserves remove correctness after a fromJSON round-trip", () => {
+      const a = new BM25Index();
+      addDoc(a, "c1", "d1", "rabbit fence");
+      addDoc(a, "c2", "d2", "rabbit garden");
+
+      const b = new BM25Index();
+      b.fromJSON(JSON.parse(JSON.stringify(a.toJSON())) as unknown);
+
+      // The reverse-index for surgical remove must be reconstructed by
+      // fromJSON; otherwise remove silently leaves stale postings.
+      b.remove("c1");
+      expect(b.size()).toBe(1);
+      const hits = b.search("rabbit");
+      expect(hits).toHaveLength(1);
+      expect(hits[0].chunkId).toBe("c2");
+    });
   });
 
   describe("tokenizer & stopwords", () => {

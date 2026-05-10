@@ -405,7 +405,14 @@ export class KnowledgeBase {
     const stored = await this.chunkStorage.put(chunk);
     if (this.textIndex) {
       const fields = chunkTextFields(stored.metadata);
-      if (fields) this.textIndex.add(stored.chunk_id, stored.doc_id, fields);
+      if (fields) {
+        this.textIndex.add(stored.chunk_id, stored.doc_id, fields);
+      } else {
+        // The chunk has no indexable text — drop any stale postings from a
+        // prior version where the text was non-empty. Required for upsert
+        // correctness when text is cleared on update.
+        this.textIndex.remove(stored.chunk_id);
+      }
     }
     return stored;
   }
@@ -428,7 +435,11 @@ export class KnowledgeBase {
     if (this.textIndex) {
       for (const entity of stored) {
         const fields = chunkTextFields(entity.metadata);
-        if (fields) this.textIndex.add(entity.chunk_id, entity.doc_id, fields);
+        if (fields) {
+          this.textIndex.add(entity.chunk_id, entity.doc_id, fields);
+        } else {
+          this.textIndex.remove(entity.chunk_id);
+        }
       }
     }
     return stored;
@@ -506,7 +517,7 @@ export class KnowledgeBase {
       candidatePoolMultiplier = 2,
     } = options;
 
-    const poolSize = Math.max(topK, topK * candidatePoolMultiplier);
+    const poolSize = Math.max(topK, Math.ceil(topK * candidatePoolMultiplier));
 
     const [vectorResults, textResults] = await Promise.all([
       this.similaritySearch(query, { topK: poolSize, filter }),
@@ -705,17 +716,19 @@ export class KnowledgeBase {
   }
 
   /**
-   * Store a single chunk (alias for upsertChunk)
+   * Store a single chunk (alias for {@link upsertChunk}). Goes through the
+   * full upsert path so the text index is kept in sync.
    */
   async put(chunk: InsertChunkVectorEntity): Promise<ChunkVectorEntity> {
-    return this.chunkStorage.put(chunk);
+    return this.upsertChunk(chunk);
   }
 
   /**
-   * Store multiple chunks (alias for upsertChunksBulk)
+   * Store multiple chunks (alias for {@link upsertChunksBulk}). Goes through
+   * the full upsert path so the text index is kept in sync.
    */
   async putBulk(chunks: InsertChunkVectorEntity[]): Promise<ChunkVectorEntity[]> {
-    return this.chunkStorage.putBulk(chunks);
+    return this.upsertChunksBulk(chunks);
   }
 
   /**
