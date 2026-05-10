@@ -1,0 +1,498 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { AiProviderStreamFn, ChatMessage, ModelConfig } from "@workglow/ai";
+import type { ChatChunkReference } from "@workglow/ai";
+import { AiChatWithKbTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
+import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
+import { getGlobalKnowledgeBases } from "@workglow/knowledge-base";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import { TaskRegistry } from "@workglow/task-graph";
+import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
+import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
+import { describe, expect, it } from "vitest";
+
+describe("AiChatWithKbTask — schema and registration", () => {
+  it("has required static properties", () => {
+    expect(AiChatWithKbTask.type).toBe("AiChatWithKbTask");
+    expect(AiChatWithKbTask.category).toBe("AI Chat");
+    expect(AiChatWithKbTask.cacheable).toBe(false);
+  });
+
+  it("input schema requires model, prompt, knowledgeBaseIds", () => {
+    const schema = AiChatWithKbTask.inputSchema() as any;
+    expect(schema.type).toBe("object");
+    expect(schema.required).toContain("model");
+    expect(schema.required).toContain("prompt");
+    expect(schema.required).toContain("knowledgeBaseIds");
+    expect(schema.properties.topKPerKb.default).toBe(4);
+    expect(schema.properties.minScore.default).toBeCloseTo(0.3);
+    expect(schema.properties.maxReferences.default).toBe(6);
+    expect(schema.properties.maxIterations.default).toBe(100);
+    expect(schema.properties.noMatchReply).toBeDefined();
+    expect(schema.properties.noMatchReferences).toBeDefined();
+  });
+
+  it("output schema declares text/messages/iterations/references streaming", () => {
+    const schema = AiChatWithKbTask.outputSchema() as any;
+    expect(schema.properties.text["x-stream"]).toBe("append");
+    expect(schema.properties.messages["x-stream"]).toBe("object");
+    expect(schema.properties.references["x-stream"]).toBe("object");
+    expect(schema.properties.iterations).toBeDefined();
+  });
+
+  it("registers via registerAiTasks()", () => {
+    registerAiTasks();
+    expect(TaskRegistry.all.get("AiChatWithKbTask")).toBe(AiChatWithKbTask);
+  });
+});
+
+// ========================================================================
+// Chat-loop test helpers
+// ========================================================================
+
+function mkContext(connector?: IHumanConnector): IExecuteContext {
+  const controller = new AbortController();
+  const registry = new ServiceRegistry(new Container());
+  if (connector) {
+    registry.registerInstance(HUMAN_CONNECTOR, connector);
+  }
+  return {
+    signal: controller.signal,
+    updateProgress: async () => {},
+    own: <T>(i: T) => i,
+    registry,
+    resourceScope: {
+      register: (_key: string, _fn: () => Promise<void>) => {},
+      dispose: async () => {},
+    } as any,
+  } as unknown as IExecuteContext;
+}
+
+function mkModel(): ModelConfig {
+  return { provider: "fake-chat-kb", model: "fake-model" } as unknown as ModelConfig;
+}
+
+class FakeConnector implements IHumanConnector {
+  public sent: IHumanRequest[] = [];
+  constructor(private readonly scripted: IHumanResponse[]) {}
+  async send(request: IHumanRequest, _signal: AbortSignal): Promise<IHumanResponse> {
+    this.sent.push(request);
+    const next = this.scripted.shift();
+    if (!next) throw new Error("FakeConnector: no more scripted responses");
+    return { ...next, requestId: request.requestId };
+  }
+}
+
+class FakeChatKbProvider extends AiProvider {
+  override readonly name = "fake-chat-kb";
+  override readonly displayName = "Fake Chat KB";
+  override readonly isLocal = true;
+  override readonly supportsBrowser = false;
+  override readonly taskTypes = ["AiChatWithKbTask"] as const;
+}
+
+function registerFakeChatKbProvider(stream: AiProviderStreamFn<any, any, ModelConfig>): () => void {
+  const registry = getAiProviderRegistry();
+  const provider = new FakeChatKbProvider();
+  registry.registerProvider(provider);
+  registry.registerStreamFn("fake-chat-kb", "AiChatWithKbTask", stream);
+  return () => registry.unregisterProvider("fake-chat-kb");
+}
+
+interface FakeKbCalls {
+  query: string;
+  opts: unknown;
+}
+
+function makeFakeKb(opts: {
+  id: string;
+  label?: string;
+  results: ChunkSearchResult[];
+  /**
+   * Per-doc-id metadata returned by the fake's `getDocument`. Optional;
+   * when absent, every `getDocument` call resolves to undefined.
+   */
+  docMetadata?: Record<string, Record<string, unknown>>;
+}): { kb: KnowledgeBase; calls: FakeKbCalls[]; unregister: () => void } {
+  const calls: FakeKbCalls[] = [];
+  const kb = {
+    title: opts.label ?? opts.id,
+    description: "fake",
+    search: async (q: string, searchOpts: unknown) => {
+      calls.push({ query: q, opts: searchOpts });
+      return opts.results;
+    },
+    getDocument: async (docId: string) => {
+      const md = opts.docMetadata?.[docId];
+      return md ? { metadata: md } : undefined;
+    },
+  } as unknown as KnowledgeBase;
+  // Bypass the KB registration flow (which persists to a repo) by poking
+  // the live global Map directly. Tests own the lifecycle via `unregister`.
+  const live = getGlobalKnowledgeBases();
+  live.set(opts.id, kb);
+  return {
+    kb,
+    calls,
+    unregister: () => {
+      live.delete(opts.id);
+    },
+  };
+}
+
+interface AccumulatedKbChatOutput {
+  readonly references: ChatChunkReference[];
+  readonly messages: ChatMessage[];
+  readonly events: StreamEvent<any>[];
+}
+
+async function accumulateKbChatStream(
+  iterable: AsyncIterable<StreamEvent<any>>
+): Promise<AccumulatedKbChatOutput> {
+  const references: ChatChunkReference[] = [];
+  const messages: ChatMessage[] = [];
+  const events: StreamEvent<any>[] = [];
+  for await (const ev of iterable) {
+    events.push(ev);
+    if (ev.type === "object-delta") {
+      const e = ev as { port?: string; objectDelta?: unknown };
+      if (e.port === "references" && Array.isArray(e.objectDelta)) {
+        references.push(...(e.objectDelta as ChatChunkReference[]));
+      } else if (e.port === "messages" && Array.isArray(e.objectDelta)) {
+        messages.push(...(e.objectDelta as ChatMessage[]));
+      }
+    }
+  }
+  return { references, messages, events };
+}
+
+// ========================================================================
+// Single-turn happy-path tests
+// ========================================================================
+
+describe("AiChatWithKbTask — single turn", () => {
+  it("retrieves, emits per-chunk references with 1-based indices, and streams the provider", async () => {
+    const fake = makeFakeKb({
+      id: "kb1",
+      label: "Help",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "first chunk text", url: "/help/d1" },
+        } as any,
+        {
+          chunk_id: "c2",
+          doc_id: "d2",
+          score: 0.7,
+          metadata: { doc_title: "Doc 2", text: "second chunk text", url: "/help/d2" },
+        } as any,
+      ],
+    });
+
+    let providerCalls = 0;
+    let receivedSystemPrompt = "";
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (jobInput: any) {
+      providerCalls++;
+      const sys = (jobInput.messages as ChatMessage[]).find((m) => m.role === "system");
+      receivedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "hello" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "tell me about doc 1",
+        knowledgeBaseIds: ["kb1"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+
+      expect(providerCalls).toBe(1);
+      expect(out.references.length).toBe(2);
+      expect(out.references[0]).toMatchObject({
+        kbId: "kb1",
+        kbLabel: "Help",
+        title: "Doc 1",
+        url: "/help/d1",
+        index: 1,
+      });
+      expect(out.references[1]).toMatchObject({ index: 2, url: "/help/d2" });
+
+      expect(receivedSystemPrompt).toContain("--- Context ---");
+      expect(receivedSystemPrompt).toContain("[1]");
+      expect(receivedSystemPrompt).toContain("[2]");
+      expect(fake.calls.length).toBe(1);
+      expect(fake.calls[0]!.query).toBe("tell me about doc 1");
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("uses metadata.url first, then metadata.sourceUri, then undefined", async () => {
+    const fake = makeFakeKb({
+      id: "kb2",
+      label: "Blog",
+      results: [
+        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { text: "a", url: "/explicit" } } as any,
+        { chunk_id: "c2", doc_id: "d2", score: 0.85, metadata: { text: "b", sourceUri: "/raw/x.mdx" } } as any,
+        { chunk_id: "c3", doc_id: "d3", score: 0.8, metadata: { text: "c" } } as any,
+      ],
+    });
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb2"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      expect(out.references[0]?.url).toBe("/explicit");
+      expect(out.references[1]?.url).toBe("/raw/x.mdx");
+      expect(out.references[2]?.url).toBeUndefined();
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+});
+
+describe("AiChatWithKbTask — no-match branches", () => {
+  it("emits noMatchReply and skips the provider when zero chunks survive", async () => {
+    const fake = makeFakeKb({ id: "kb-empty", results: [] });
+    let providerCalls = 0;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      providerCalls++;
+      yield { type: "text-delta", port: "text", textDelta: "should-not-emit" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-empty"],
+        maxIterations: 5,
+        noMatchReply: "Sorry, I don't know.",
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+
+      expect(providerCalls).toBe(0);
+      const textDeltas = out.events
+        .filter((e) => e.type === "text-delta")
+        .map((e: any) => e.textDelta);
+      expect(textDeltas.join("")).toBe("Sorry, I don't know.");
+      const lastAssistant = [...out.messages].reverse().find((m) => m.role === "assistant");
+      expect(
+        lastAssistant && lastAssistant.content[0]?.type === "text"
+          ? (lastAssistant.content[0] as any).text
+          : ""
+      ).toBe("Sorry, I don't know.");
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("emits noMatchReferences verbatim on the references port when zero chunks survive", async () => {
+    const fake = makeFakeKb({ id: "kb-empty2", results: [] });
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-empty2"],
+        maxIterations: 5,
+        noMatchReply: "no info",
+        noMatchReferences: [
+          {
+            kbId: "kb-empty2",
+            kbLabel: "Help",
+            title: "Browse Help",
+            url: "/help",
+            snippet: "Help docs",
+            score: 0,
+            index: 0,
+          },
+        ] as ChatChunkReference[],
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      expect(out.references.length).toBe(1);
+      expect(out.references[0]).toMatchObject({
+        url: "/help",
+        title: "Browse Help",
+        index: 0,
+      });
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("with no chunks and no noMatchReply: still calls the provider with empty Context block", async () => {
+    const fake = makeFakeKb({ id: "kb-empty3", results: [] });
+    let providerCalls = 0;
+    let receivedSystemPrompt = "";
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (jobInput: any) {
+      providerCalls++;
+      const sys = (jobInput.messages as ChatMessage[]).find((m) => m.role === "system");
+      receivedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
+      yield { type: "text-delta", port: "text", textDelta: "model said" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-empty3"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      expect(providerCalls).toBe(1);
+      expect(receivedSystemPrompt).toContain("--- Context ---");
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("skips retrieval entirely for empty user text", async () => {
+    const fake = makeFakeKb({ id: "kb-skip", results: [] });
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: [{ type: "image", image: "data:image/png;base64,xxx" } as any],
+        knowledgeBaseIds: ["kb-skip"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      expect(fake.calls.length).toBe(0);
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+});
+
+describe("AiChatWithKbTask — multi-turn", () => {
+  it("re-runs retrieval each turn against the latest user message", async () => {
+    const fake = makeFakeKb({
+      id: "kb-multi",
+      label: "Help",
+      results: [
+        { chunk_id: "c", doc_id: "d", score: 0.9, metadata: { text: "x", url: "/help/d" } } as any,
+      ],
+    });
+    let turnIdx = 0;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      turnIdx++;
+      yield { type: "text-delta", port: "text", textDelta: `turn-${turnIdx}` };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        {
+          action: "accept",
+          content: { content: "follow up question" },
+          done: false,
+          requestId: "",
+        },
+        { action: "cancel", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "first question",
+        knowledgeBaseIds: ["kb-multi"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      expect(turnIdx).toBe(2);
+      expect(fake.calls.map((c) => c.query)).toEqual(["first question", "follow up question"]);
+      expect(out.messages.filter((m) => m.role === "assistant").length).toBe(2);
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("connector cancel ends the loop and emits a bare finish", async () => {
+    const fake = makeFakeKb({
+      id: "kb-cancel",
+      results: [
+        { chunk_id: "c", doc_id: "d", score: 0.9, metadata: { text: "x", url: "/help/d" } } as any,
+      ],
+    });
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "cancel", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-cancel"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const finish = out.events.find((e) => e.type === "finish") as any;
+      expect(finish).toBeDefined();
+      expect(finish.data).toBeUndefined();
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+});

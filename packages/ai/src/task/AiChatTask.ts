@@ -247,8 +247,6 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       objectDelta: [...history],
     } as StreamEvent<AiChatTaskOutput>;
 
-    let iterations = 0;
-    let lastAssistantText = "";
     for (let turn = 0; turn < maxIterations; turn++) {
       // Fresh job input per turn with current history snapshot.
       const perTurnInput: AiChatTaskInput = { ...input, messages: [...history] };
@@ -273,8 +271,6 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         }
       }
 
-      iterations++;
-      lastAssistantText = assistantText;
       const assistantMsg: ChatMessage = {
         role: "assistant",
         content: [{ type: "text", text: assistantText }],
@@ -328,26 +324,9 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       } as StreamEvent<AiChatTaskOutput>;
     }
 
-    yield {
-      type: "finish",
-      data: {
-        text: lastAssistantText,
-        messages: [...history] as AiChatTaskOutput["messages"],
-        iterations,
-      } satisfies AiChatTaskOutput,
-    } as StreamEvent<AiChatTaskOutput>;
-  }
-
-  override async execute(
-    input: AiChatTaskInput,
-    context: IExecuteContext
-  ): Promise<AiChatTaskOutput | undefined> {
-    let result: AiChatTaskOutput | undefined;
-    for await (const event of this.executeStream(input, context)) {
-      if (event.type === "finish") {
-        result = (event as { type: "finish"; data: AiChatTaskOutput }).data;
-      }
-    }
-    return result;
+    // Bare finish — no data payload. Chats are ephemeral; the runtime
+    // accumulator owns the final output snapshot via the x-stream
+    // declarations on the output ports.
+    yield { type: "finish" } as StreamEvent<AiChatTaskOutput>;
   }
 }
