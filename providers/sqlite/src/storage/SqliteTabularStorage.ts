@@ -846,6 +846,55 @@ export class SqliteTabularStorage<
   }
 
   /**
+   * Fetch multiple rows by primary key in a single statement. Single-column
+   * keys emit `WHERE pk IN (?,?,...)`. Compound keys emit
+   * `WHERE (pk1,pk2,...) IN ((?,?,...),(?,?,...),...)`. Values bind through
+   * `jsToSqlValue` for parity with `query()` and single-row `get()`.
+   */
+  override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    return this.mutex(() => this._getBulkInternal(keys));
+  }
+
+  private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    const db = this.db;
+    const pkCols = this.primaryKeyColumns() as string[];
+
+    const params: ValueOptionType[] = [];
+    for (const key of keys) {
+      const ordered = this.getPrimaryKeyAsOrderedArray(key);
+      for (let i = 0; i < pkCols.length; i++) {
+        params.push(this.jsToSqlValue(pkCols[i], ordered[i] as Entity[keyof Entity]));
+      }
+    }
+
+    let lhs: string;
+    let valuesClause: string;
+    if (pkCols.length === 1) {
+      lhs = `\`${pkCols[0]}\``;
+      valuesClause = keys.map(() => "?").join(", ");
+    } else {
+      lhs = `(${pkCols.map((c) => `\`${c}\``).join(", ")})`;
+      const placeholdersPerKey = `(${pkCols.map(() => "?").join(", ")})`;
+      valuesClause = keys.map(() => placeholdersPerKey).join(", ");
+    }
+
+    const sql = `SELECT * FROM \`${this.table}\` WHERE ${lhs} IN (${valuesClause})`;
+    const stmt = db.prepare<ValueOptionType[], Entity>(sql);
+    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
+    const rows: Entity[] = stmt.all(...(params as ValueOptionType[]));
+
+    for (const row of rows) {
+      const record = row as Record<string, unknown>;
+      for (const k in this.schema.properties) {
+        record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+      }
+    }
+    this.events.emit("getBulk", keys, rows);
+    return rows;
+  }
+
+  /**
    * Deletes a key-value pair from the database
    * @param key - The primary key object to delete
    * @emits 'delete' event when successful
