@@ -116,7 +116,12 @@ export class ModelSearchTask extends Task<
   ModelSearchTaskConfig
 > {
   public static override type = "ModelSearchTask";
-  /** Capabilities required; used by the audit test to verify coverage. */
+  /**
+   * Informational: capability this task uses. NOT enforced by the dispatcher —
+   * ModelSearchTask extends `Task` (not `AiTask`) and implements its own
+   * `execute()`, so `gateOrThrow` is never called against this value. The audit
+   * test in `task/index.test.ts` validates the value is a known {@link Capability}.
+   */
   public static readonly requires: readonly Capability[] = ["provider.model-search"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Model Search";
