@@ -31,6 +31,11 @@ export class TelemetryKvStorage<
   get(key: Key): Promise<Value | undefined> {
     return traced("workglow.storage.kv.get", this.storageName, () => this.inner.get(key));
   }
+  getBulk(keys: readonly Key[]): Promise<Combined[]> {
+    return traced("workglow.storage.kv.getBulk", this.storageName, () =>
+      this.inner.getBulk(keys)
+    );
+  }
   delete(key: Key): Promise<void> {
     return traced("workglow.storage.kv.delete", this.storageName, () => this.inner.delete(key));
   }
