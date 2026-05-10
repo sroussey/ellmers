@@ -2335,9 +2335,9 @@ export function runGenericTabularStorageTests(
       repository.destroy();
     });
 
-    describe("getBulk", () => {
+    describe("getOffsetPage", () => {
       it("should return undefined for empty table", async () => {
-        const result = await repository.getBulk(0, 10);
+        const result = await repository.getOffsetPage(0, 10);
         expect(result).toBeUndefined();
       });
 
@@ -2352,7 +2352,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 5);
+        const result = await repository.getOffsetPage(0, 5);
         expect(result).toBeDefined();
         expect(result!.length).toBe(5);
       });
@@ -2366,7 +2366,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 10);
+        const result = await repository.getOffsetPage(0, 10);
         expect(result).toBeDefined();
         expect(result!.length).toBe(3);
       });
@@ -2382,7 +2382,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(2, 2);
+        const result = await repository.getOffsetPage(2, 2);
         expect(result).toBeDefined();
         expect(result!.length).toBe(2);
         // Assuming deterministic ordering by primary key (name, then type),
@@ -2403,7 +2403,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(10, 5);
+        const result = await repository.getOffsetPage(10, 5);
         expect(result).toBeUndefined();
       });
 
@@ -2416,7 +2416,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 1);
+        const result = await repository.getOffsetPage(0, 1);
         expect(result).toBeDefined();
         expect(result!.length).toBe(1);
       });
