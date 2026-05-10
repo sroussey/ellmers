@@ -5,32 +5,35 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { ANTHROPIC } from "./common/Anthropic_Constants";
+import {
+  inferAnthropicCapabilities,
+  anthropicWorkerRunFnSpecs,
+} from "./common/Anthropic_Capabilities";
 import type { AnthropicModelConfig } from "./common/Anthropic_ModelSchema";
-
-const ANTHROPIC_TASK_TYPES = [
-  "CountTokensTask",
-  "ModelInfoTask",
-  "TextGenerationTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "StructuredGenerationTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-] as const;
 
 /**
  * Worker-server registration for Anthropic cloud models. Imports `AiProvider`
- * from `@workglow/ai/worker` so the SDK is only loaded where actually needed.
+ * from `@workglow/ai/worker` so the SDK is only loaded in the worker.
+ *
+ * The class extends the {@link createCloudProviderClass} mixin (which
+ * supplies `name` / `displayName` / `isLocal` / `supportsBrowser`) and adds
+ * the Anthropic-specific {@link AiProvider.inferCapabilities} and
+ * {@link AiProvider.workerRunFnSpecs} overrides.
  *
  * Note: Anthropic does not offer an embeddings API.
  */
-export class AnthropicProvider extends createCloudProviderClass<
-  AnthropicModelConfig,
-  typeof ANTHROPIC_TASK_TYPES
->(AiProvider, {
+export class AnthropicProvider extends createCloudProviderClass<AnthropicModelConfig>(AiProvider, {
   name: ANTHROPIC,
   displayName: "Anthropic",
-  taskTypes: ANTHROPIC_TASK_TYPES,
-}) {}
+}) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferAnthropicCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return anthropicWorkerRunFnSpecs();
+  }
+}
