@@ -714,12 +714,14 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Fetches a page of records from the repository.
+   * Fetches a page of records from the repository using offset-based paging.
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
+   * @deprecated Offset-based paging is unstable under concurrent writes.
+   *   Use {@link getPage} for stable, keyset-based pagination.
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     // Build the base query
     let query = this.client.from(this.table).select("*");
 
