@@ -90,7 +90,12 @@ export class QueryExpanderTask extends Task<
   QueryExpanderTaskConfig
 > {
   public static override type = "QueryExpanderTask";
-  /** Capabilities required; used by the audit test to verify coverage. */
+  /**
+   * Informational: capability this task uses. NOT enforced by the dispatcher —
+   * QueryExpanderTask extends `Task` (not `AiTask`) and implements its own
+   * `execute()`, so `gateOrThrow` is never called against this value. The audit
+   * test in `task/index.test.ts` validates the value is a known {@link Capability}.
+   */
   public static readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Query Expander";

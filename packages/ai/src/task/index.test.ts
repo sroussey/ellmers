@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import { CAPABILITIES, type Capability } from "../capability/Capabilities";
-import { registerAiTasks } from "./index";
+import { registerAiTasks } from "./registerAiTasks";
 import { AiTask } from "./base/AiTask";
 
 describe("AI task requires audit", () => {
