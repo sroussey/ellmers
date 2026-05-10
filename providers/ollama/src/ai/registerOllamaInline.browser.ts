@@ -6,12 +6,12 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
-import { OLLAMA_STREAM_TASKS, OLLAMA_TASKS } from "./common/Ollama_JobRunFns.browser";
+import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns.browser";
 import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
 
 export async function registerOllamaInline(options?: AiProviderRegisterOptions): Promise<void> {
   await registerProviderInline(
-    new OllamaQueuedProvider(OLLAMA_TASKS, OLLAMA_STREAM_TASKS),
+    new OllamaQueuedProvider(OLLAMA_RUN_FNS),
     "Ollama",
     options
   );
