@@ -6,7 +6,7 @@
 
 import { DefaultKeyValueSchema, IKvStorage } from "@workglow/storage";
 import { FromSchema, JsonSchema } from "@workglow/util/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 export function runGenericKvRepositoryTests(
   createRepository: (keyType: JsonSchema, valueType: JsonSchema) => Promise<IKvStorage<any, any>>
@@ -63,6 +63,48 @@ export function runGenericKvRepositoryTests(
     it("should handle empty array in putBulk", async () => {
       await repository.putBulk([]);
       // Should not throw an error
+    });
+
+    it("should emit put, get, delete and deleteall events", async () => {
+      const putFn = vi.fn();
+      const getFn = vi.fn();
+      const deleteFn = vi.fn();
+      const deleteAllFn = vi.fn();
+
+      repository.on("put", putFn);
+      repository.on("get", getFn);
+      repository.on("delete", deleteFn);
+      repository.on("deleteall", deleteAllFn);
+
+      await repository.put("k1", "v1");
+      expect(putFn).toHaveBeenCalledWith("k1", "v1");
+
+      const value = await repository.get("k1");
+      expect(value).toEqual("v1");
+      expect(getFn).toHaveBeenCalledWith("k1", "v1");
+
+      await repository.get("missing");
+      expect(getFn).toHaveBeenCalledWith("missing", undefined);
+
+      await repository.delete("k1");
+      expect(deleteFn).toHaveBeenCalledWith("k1");
+
+      await repository.deleteAll();
+      expect(deleteAllFn).toHaveBeenCalled();
+    });
+
+    it("should emit a put event for each item in putBulk", async () => {
+      const putFn = vi.fn();
+      repository.on("put", putFn);
+
+      await repository.putBulk([
+        { key: "a", value: "1" },
+        { key: "b", value: "2" },
+      ]);
+
+      expect(putFn).toHaveBeenCalledTimes(2);
+      expect(putFn).toHaveBeenCalledWith("a", "1");
+      expect(putFn).toHaveBeenCalledWith("b", "2");
     });
   });
 
