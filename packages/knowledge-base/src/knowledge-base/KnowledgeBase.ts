@@ -526,7 +526,16 @@ export class KnowledgeBase {
       candidatePoolMultiplier = 5,
     } = options;
 
-    const poolSize = Math.max(topK, Math.ceil(topK * candidatePoolMultiplier));
+    // Empty / whitespace-only textQuery has no signal for the BM25 ranker.
+    // Returning RRF-shaped scores in that case would surprise callers, so
+    // delegate to the cosine similarity path and return cosine scores.
+    if (!textQuery || textQuery.trim().length === 0) {
+      return this.similaritySearch(query, { topK, filter });
+    }
+
+    const safeRrfK = Math.max(0, rrfK);
+    const safePoolMultiplier = Math.max(1, candidatePoolMultiplier);
+    const poolSize = Math.max(topK, Math.ceil(topK * safePoolMultiplier));
 
     const [vectorResults, textResults] = await Promise.all([
       this.similaritySearch(query, { topK: poolSize, filter }),
@@ -539,13 +548,13 @@ export class KnowledgeBase {
     const fused = new Map<string, { score: number; entity: ChunkSearchResult | undefined }>();
 
     vectorResults.forEach((entity, rank) => {
-      const contribution = vectorWeightClamped / (rrfK + rank + 1);
+      const contribution = vectorWeightClamped / (safeRrfK + rank + 1);
       fused.set(entity.chunk_id, { score: contribution, entity });
     });
 
     for (let rank = 0; rank < textResults.length; rank++) {
       const { chunkId } = textResults[rank];
-      const contribution = textWeight / (rrfK + rank + 1);
+      const contribution = textWeight / (safeRrfK + rank + 1);
       const existing = fused.get(chunkId);
       if (existing) {
         existing.score += contribution;

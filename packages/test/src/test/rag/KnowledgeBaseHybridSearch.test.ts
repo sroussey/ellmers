@@ -7,7 +7,7 @@
 import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { BM25Index } from "@workglow/storage";
 import { uuid4 } from "@workglow/util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const dimensions = 3;
 
@@ -33,12 +33,12 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     kbName = `hybrid-test-${uuid4()}`;
   });
 
-  afterEach(() => {
-    // KBs are auto-registered; nothing to tear down explicitly for in-memory.
-  });
-
   it("hybridSearch throws when no text index is installed", async () => {
-    const kb = await createKnowledgeBase({ name: kbName, vectorDimensions: dimensions });
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      register: false,
+    });
     expect(kb.supportsHybridSearch()).toBe(false);
     await expect(
       kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 5 })
@@ -51,6 +51,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.upsertChunk(makeChunk("c1", "d1", "the rabbit jumps over the fence", vec(1, 0, 0)));
@@ -72,6 +73,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)));
@@ -91,6 +93,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
@@ -107,6 +110,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     // Query vector aligned with axis x. c1 is the closest vector match but
@@ -138,6 +142,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: new BM25Index(),
+      register: false,
     });
     const results = await kb.hybridSearch(vec(1, 0, 0), {
       textQuery: "rabbit",
@@ -152,6 +157,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
@@ -174,6 +180,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.put(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
@@ -193,6 +200,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
 
     await kb.upsertChunksBulk([
@@ -211,7 +219,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
   });
 
   it("installTextIndex after upserts requires reindexText to populate", async () => {
-    const kb = await createKnowledgeBase({ name: kbName, vectorDimensions: dimensions });
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      register: false,
+    });
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
 
     const index = new BM25Index();
@@ -230,6 +242,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
     await kb.upsertChunk(makeChunk("c1", "d1", "rabbit fence", vec(1, 0, 0)));
     expect(index.size()).toBe(1);
@@ -248,12 +261,63 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     kb.vectorStorage.getAll = original;
   });
 
+  it("hybridSearch falls back to similaritySearch when textQuery is empty", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+      register: false,
+    });
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "d2", "fox", vec(0, 1, 0)),
+    ]);
+
+    const empty = await kb.hybridSearch(vec(1, 0, 0), { textQuery: "", topK: 2 });
+    const whitespace = await kb.hybridSearch(vec(1, 0, 0), { textQuery: "   ", topK: 2 });
+    const cosine = await kb.similaritySearch(vec(1, 0, 0), { topK: 2 });
+
+    // Empty / whitespace query path returns cosine scores, identical ordering.
+    expect(empty.map((r) => r.chunk_id)).toEqual(cosine.map((r) => r.chunk_id));
+    expect(whitespace.map((r) => r.chunk_id)).toEqual(cosine.map((r) => r.chunk_id));
+    // And cosine scores are in [0,1], unlike the small RRF range.
+    expect(empty[0].score).toBeGreaterThan(0.5);
+  });
+
+  it("hybridSearch clamps negative rrfK to a safe value (no Infinity scores)", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+      register: false,
+    });
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "d2", "rabbit fence", vec(0, 1, 0)),
+    ]);
+
+    // rrfK = -10 would otherwise produce Infinity / negative denominators.
+    const results = await kb.hybridSearch(vec(1, 0, 0), {
+      textQuery: "rabbit",
+      topK: 2,
+      rrfK: -10,
+    });
+    expect(results).toHaveLength(2);
+    for (const r of results) {
+      expect(Number.isFinite(r.score)).toBe(true);
+      expect(r.score).toBeGreaterThan(0);
+    }
+  });
+
   it("hybridSearch produces RRF-shaped scores (small positives, not cosine)", async () => {
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: dimensions,
       textIndex: index,
+      register: false,
     });
     await kb.upsertChunksBulk([
       makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
