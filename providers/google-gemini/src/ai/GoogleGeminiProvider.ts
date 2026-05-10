@@ -5,34 +5,31 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { GOOGLE_GEMINI } from "./common/Gemini_Constants";
+import { inferGeminiCapabilities, geminiWorkerRunFnSpecs } from "./common/Gemini_Capabilities";
 import type { GeminiModelConfig } from "./common/Gemini_ModelSchema";
-
-const GEMINI_TASK_TYPES = [
-  "CountTokensTask",
-  "ModelInfoTask",
-  "TextGenerationTask",
-  "TextEmbeddingTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "StructuredGenerationTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-  "ImageGenerateTask",
-  "ImageEditTask",
-] as const;
 
 /**
  * Worker-server registration for Google Gemini cloud models. Imports
  * `AiProvider` from `@workglow/ai/worker` so the SDK is only loaded in the
  * worker.
+ *
+ * The class extends the {@link createCloudProviderClass} mixin (which
+ * supplies `name` / `displayName` / `isLocal` / `supportsBrowser`) and adds
+ * the Gemini-specific {@link AiProvider.inferCapabilities} and
+ * {@link AiProvider.workerRunFnSpecs} overrides.
  */
-export class GoogleGeminiProvider extends createCloudProviderClass<
-  GeminiModelConfig,
-  typeof GEMINI_TASK_TYPES
->(AiProvider, {
+export class GoogleGeminiProvider extends createCloudProviderClass<GeminiModelConfig>(AiProvider, {
   name: GOOGLE_GEMINI,
   displayName: "Google Gemini",
-  taskTypes: GEMINI_TASK_TYPES,
-}) {}
+}) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferGeminiCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return geminiWorkerRunFnSpecs();
+  }
+}

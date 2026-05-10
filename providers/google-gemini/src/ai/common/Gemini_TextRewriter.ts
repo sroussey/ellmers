@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
@@ -13,28 +12,6 @@ import type {
 import type { StreamEvent } from "@workglow/task-graph";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
-
-export const Gemini_TextRewriter: AiProviderRunFn<
-  TextRewriterTaskInput,
-  TextRewriterTaskOutput,
-  GeminiModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting Gemini text rewriting");
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
-  const genModel = genAI.getGenerativeModel({
-    model: getModelName(model),
-    systemInstruction: input.prompt,
-  });
-
-  const result = await genModel.generateContent({
-    contents: [{ role: "user", parts: [{ text: input.text }] }],
-  });
-
-  const text = result.response.text();
-  update_progress(100, "Completed Gemini text rewriting");
-  return { text };
-};
 
 export const Gemini_TextRewriter_Stream: AiProviderStreamFn<
   TextRewriterTaskInput,
