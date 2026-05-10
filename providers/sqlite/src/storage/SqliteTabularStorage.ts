@@ -970,11 +970,11 @@ export class SqliteTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getBulkInternal(offset, limit));
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getOffsetPageInternal(offset, limit));
   }
 
-  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
+  private async _getOffsetPageInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `\`${String(col)}\``)

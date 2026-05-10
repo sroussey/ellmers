@@ -368,8 +368,8 @@ export class SharedInMemoryTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return await this.inMemoryRepo.getBulk(offset, limit);
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return await this.inMemoryRepo.getOffsetPage(offset, limit);
   }
 
   /**

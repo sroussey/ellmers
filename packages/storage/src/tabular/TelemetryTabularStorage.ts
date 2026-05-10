@@ -99,9 +99,9 @@ export class TelemetryTabularStorage<
     );
   }
 
-  getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return traced("workglow.storage.tabular.getBulk", this.storageName, () =>
-      this.inner.getBulk(offset, limit)
+  getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return traced("workglow.storage.tabular.getOffsetPage", this.storageName, () =>
+      this.inner.getOffsetPage(offset, limit)
     );
   }
 

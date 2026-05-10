@@ -334,7 +334,7 @@ export class HuggingFaceTabularStorage<
     const pageSize = 100; // HF max per request
 
     while (true) {
-      const page = await this.getBulk(offset, pageSize);
+      const page = await this.getOffsetPage(offset, pageSize);
 
       if (!page || page.length === 0) {
         break;
@@ -389,7 +389,7 @@ export class HuggingFaceTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     const data = await this.fetchApi<HfRowsResponse>("/rows", {
       offset: offset.toString(),
       length: Math.min(limit, 100).toString(), // HF max is 100 per request
@@ -436,7 +436,7 @@ export class HuggingFaceTabularStorage<
     while (items.length < limit) {
       const remaining = limit - items.length;
       const chunkSize = Math.min(remaining, HF_PAGE_CAP);
-      const rows = (await this.getBulk(offset, chunkSize)) ?? [];
+      const rows = (await this.getOffsetPage(offset, chunkSize)) ?? [];
       if (rows.length === 0) {
         endOfDataset = true;
         break;

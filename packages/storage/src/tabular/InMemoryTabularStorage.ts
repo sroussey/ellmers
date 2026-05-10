@@ -252,7 +252,7 @@ export class InMemoryTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     const all = Array.from(this.values.values());
 
     // Ensure deterministic ordering by sorting by primary key(s) before pagination

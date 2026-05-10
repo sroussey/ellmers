@@ -465,7 +465,7 @@ export abstract class BaseTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Promise resolving to an array of entities or undefined if no records found
    */
-  abstract getBulk(offset: number, limit: number): Promise<Entity[] | undefined>;
+  abstract getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;
 
   /**
    * Async generator that yields records one at a time.

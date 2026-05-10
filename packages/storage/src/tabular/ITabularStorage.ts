@@ -309,14 +309,14 @@ export interface ITabularStorage<
   deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void>;
 
   /**
-   * Fetches a page of records from the repository.
+   * Fetches a page of records from the repository using offset-based paging.
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    * @deprecated Offset-based paging is unstable under concurrent writes.
    *   Use {@link getPage} for stable, keyset-based pagination.
    */
-  getBulk(offset: number, limit: number): Promise<Entity[] | undefined>;
+  getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;
 
   /**
    * Fetches a page of records using cursor-based (keyset) pagination.

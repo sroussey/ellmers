@@ -343,7 +343,7 @@ export class FsFolderTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     await this.setupDirectory();
     const files = await readdir(this.folderPath);
     // Exclude internal bookkeeping files (prefixed with "_").
@@ -372,7 +372,7 @@ export class FsFolderTabularStorage<
         allEntities.push(result.value);
       } else {
         getLogger().warn(
-          `Skipping corrupted file in getBulk: ${result.reason?.message ?? result.reason}`
+          `Skipping corrupted file in getOffsetPage: ${result.reason?.message ?? result.reason}`
         );
       }
     }
