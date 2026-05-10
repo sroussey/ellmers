@@ -28,7 +28,7 @@ describe.skipIf(!RUN)("OpenAI image generation (live)", () => {
           provider: "OPENAI",
           title: "",
           description: "",
-          tasks: ["ImageGenerateTask"],
+          capabilities: ["image.generation"],
           provider_config: {
             model_name: "gpt-image-2",
             credential_key: process.env.OPENAI_API_KEY,
@@ -52,7 +52,7 @@ describe.skipIf(!RUN)("OpenAI image generation (live)", () => {
           provider: "OPENAI",
           title: "",
           description: "",
-          tasks: ["ImageGenerateTask"],
+          capabilities: ["image.generation"],
           provider_config: {
             model_name: "gpt-image-2",
             credential_key: process.env.OPENAI_API_KEY,
@@ -72,7 +72,7 @@ describe.skipIf(!RUN)("OpenAI image generation (live)", () => {
           provider: "OPENAI",
           title: "",
           description: "",
-          tasks: ["ImageEditTask"],
+          capabilities: ["image.editing"],
           provider_config: {
             model_name: "gpt-image-2",
             credential_key: process.env.OPENAI_API_KEY,

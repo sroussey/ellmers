@@ -30,7 +30,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 const EMBEDDING_MODELS: ModelRecord[] = [
   {
     model_id: "text-embedding-ada-002",
-    tasks: ["EmbeddingTask"],
+    capabilities: ["text.embedding"],
     provider: "openai",
     title: "OpenAI Ada Embedding",
     description: "OpenAI text embedding model",
@@ -39,7 +39,7 @@ const EMBEDDING_MODELS: ModelRecord[] = [
   },
   {
     model_id: "all-MiniLM-L6-v2",
-    tasks: ["EmbeddingTask"],
+    capabilities: ["text.embedding"],
     provider: "local",
     title: "MiniLM Embedding",
     description: "Local embedding model",
@@ -54,7 +54,7 @@ const EMBEDDING_MODELS: ModelRecord[] = [
 const TEXT_GEN_MODELS: ModelRecord[] = [
   {
     model_id: "gpt-4",
-    tasks: ["TextGenerationTask"],
+    capabilities: ["text.generation"],
     provider: "openai",
     title: "GPT-4",
     description: "OpenAI GPT-4 text generation model",
@@ -63,7 +63,7 @@ const TEXT_GEN_MODELS: ModelRecord[] = [
   },
   {
     model_id: "claude-3",
-    tasks: ["TextGenerationTask"],
+    capabilities: ["text.generation"],
     provider: "anthropic",
     title: "Claude 3",
     description: "Anthropic Claude 3 model",

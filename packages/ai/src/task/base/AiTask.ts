@@ -259,12 +259,16 @@ export class AiTask<
     for (const [key] of modelTaskProperties) {
       const model = input[key];
       if (typeof model === "object" && model !== null) {
-        const tasks = (model as ModelConfig).tasks;
-        if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
+        const capabilities = (model as ModelConfig).capabilities;
+        // Phase 4 will add a task-type → capability mapping; until then, skip the
+        // incompatibility check when capabilities use the new dot-notation strings.
+        const usesTaskClassNames =
+          Array.isArray(capabilities) && capabilities.some((c) => !c.includes("."));
+        if (usesTaskClassNames && !capabilities!.includes(this.type)) {
           const modelId = (model as ModelConfig).model_id ?? "(inline config)";
           throw new TaskConfigurationError(
             `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
-              `Model supports: [${tasks.join(", ")}]`
+              `Model supports: [${capabilities!.join(", ")}]`
           );
         }
       } else if (model !== undefined && model !== null) {
@@ -321,8 +325,12 @@ export class AiTask<
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           const model = requestedModel as ModelConfig;
-          const tasks = model.tasks;
-          if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
+          const capabilities = model.capabilities;
+          // Phase 4 will add a task-type → capability mapping; until then, skip the
+          // filtering when capabilities use the new dot-notation strings.
+          const usesTaskClassNames =
+            Array.isArray(capabilities) && capabilities.some((c) => !c.includes("."));
+          if (usesTaskClassNames && !capabilities!.includes(this.type)) {
             (input as any)[key] = undefined;
           }
         }

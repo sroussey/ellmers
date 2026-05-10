@@ -40,7 +40,7 @@ describe("TextGenerationTask abort behavior", () => {
       model_id: MODEL_ID,
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M q8",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",

@@ -190,7 +190,7 @@ export class ModelRepository {
     if (typeof task != "string") return undefined;
     const allModels = await this.modelTabularRepository.getAll();
     if (!allModels || allModels.length === 0) return undefined;
-    const models = allModels.filter((model) => model.tasks?.includes(task));
+    const models = allModels.filter((model) => model.capabilities?.includes(task));
     if (models.length === 0) return undefined;
     return models;
   }
@@ -204,7 +204,7 @@ export class ModelRepository {
     if (typeof model_id != "string") return undefined;
     const modelRecord = await this.modelTabularRepository.get({ model_id });
     if (!modelRecord) return undefined;
-    return modelRecord.tasks && modelRecord.tasks.length > 0 ? modelRecord.tasks : undefined;
+    return modelRecord.capabilities && modelRecord.capabilities.length > 0 ? modelRecord.capabilities : undefined;
   }
 
   /**
@@ -216,8 +216,8 @@ export class ModelRepository {
     if (!allModels || allModels.length === 0) return undefined;
     const uniqueTasks = new Set<string>();
     for (const model of allModels) {
-      if (model.tasks) {
-        for (const task of model.tasks) {
+      if (model.capabilities) {
+        for (const task of model.capabilities) {
           uniqueTasks.add(task);
         }
       }

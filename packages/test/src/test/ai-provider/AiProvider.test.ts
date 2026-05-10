@@ -436,7 +436,7 @@ describe("AiProvider", () => {
         model_id: "test:model:v1",
         title: "test-model",
         description: "test model",
-        tasks: ["TextGenerationTask"],
+        capabilities: ["text.generation"],
         provider: TEST_PROVIDER_NAME,
         provider_config: { model_id: "test-model" },
         metadata: {},

@@ -50,7 +50,7 @@ describe("TextEmbeddingTask with real models", () => {
         model_id: "onnx:Xenova/gte-small:q8",
         title: "gte-small",
         description: "Xenova/gte-small quantized to 8bit",
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "feature-extraction",
@@ -105,7 +105,7 @@ describe("TextEmbeddingTask with real models", () => {
         model_id: "onnx:Xenova/bge-base-en-v1.5:q8",
         title: "bge-base-en-v1.5",
         description: "Xenova/bge-base-en-v1.5 quantized to 8bit",
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "feature-extraction",

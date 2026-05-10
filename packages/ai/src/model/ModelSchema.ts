@@ -17,7 +17,7 @@ export const ModelConfigSchema = {
   type: "object",
   properties: {
     model_id: { type: "string" },
-    tasks: { type: "array", items: { type: "string" }, "x-ui-editor": "multiselect" },
+    capabilities: { type: "array", items: { type: "string" }, "x-ui-editor": "multiselect" },
     title: { type: "string" },
     description: { type: "string", "x-ui-editor": "textarea" },
     provider: { type: "string" },
@@ -54,7 +54,7 @@ export const ModelRecordSchema = {
   },
   required: [
     "model_id",
-    "tasks",
+    "capabilities",
     "provider",
     "title",
     "description",

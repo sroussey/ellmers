@@ -29,7 +29,7 @@ const llmModel: LlamaCppModelRecord = {
   model_id: "llamacpp:SmolLM2-135M-Instruct:Q4_K_M",
   title: "SmolLM2 135M Instruct",
   description: "A 135M parameter instruction-following model, quantized Q4_K_M (~85 MB)",
-  tasks: ["DownloadModelTask", "TextGenerationTask", "TextRewriterTask", "TextSummaryTask"],
+  capabilities: ["text.generation", "text.rewriter", "text.summary"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/SmolLM2-135M-Instruct-Q4_K_M.gguf",
@@ -46,13 +46,12 @@ const toolModel: LlamaCppModelRecord = {
   title: "Qwen2.5 Coder 1.5B Instruct",
   description:
     "A 1.5B parameter instruction-following model with tool calling support, quantized Q4_K_M",
-  tasks: [
-    "DownloadModelTask",
-    "TextGenerationTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "StructuredGenerationTask",
+  capabilities: [
+    "text.generation",
+    "text.rewriter",
+    "text.summary",
+    "tool-use",
+    "json-mode",
   ],
   provider: LOCAL_LLAMACPP,
   provider_config: {
@@ -69,7 +68,7 @@ const embeddingModel: LlamaCppModelRecord = {
   model_id: "llamacpp:bge-small-en-v1.5:Q8_0",
   title: "BGE Small EN v1.5",
   description: "A small English text embedding model, quantized Q8_0 (~34 MB)",
-  tasks: ["DownloadModelTask", "TextEmbeddingTask"],
+  capabilities: ["text.embedding"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/bge-small-en-v1.5-Q8_0.gguf",

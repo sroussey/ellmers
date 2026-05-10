@@ -14,10 +14,10 @@ import { mapHfModelResult, searchHfModels } from "@workglow/ai/provider-utils";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
 import { HF_INFERENCE } from "./HFI_Constants";
 
-/** Models with explicit task overrides (HF pipeline tags don't cover ImageGenerateTask/ImageEditTask). */
-const HFI_IMAGE_MODELS: Array<{ id: string; tasks: string[] }> = [
-  { id: "black-forest-labs/FLUX.1-schnell", tasks: ["ImageGenerateTask"] },
-  { id: "black-forest-labs/FLUX.1-Kontext-dev", tasks: ["ImageEditTask"] },
+/** Models with explicit capability overrides (HF pipeline tags don't cover image.generation/image.editing). */
+const HFI_IMAGE_MODELS: Array<{ id: string; capabilities: string[] }> = [
+  { id: "black-forest-labs/FLUX.1-schnell", capabilities: ["image.generation"] },
+  { id: "black-forest-labs/FLUX.1-Kontext-dev", capabilities: ["image.editing"] },
 ];
 
 function buildFallbackResults(): ModelSearchResultItem[] {
@@ -30,7 +30,7 @@ function buildFallbackResults(): ModelSearchResultItem[] {
       provider: HF_INFERENCE,
       title: m.id.split("/").pop() ?? m.id,
       description: "",
-      tasks: m.tasks,
+      capabilities: m.capabilities,
       provider_config: { model_name: m.id },
       metadata: {},
     },
@@ -60,7 +60,7 @@ export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
     const mapped = mapHfModelResult(entry, HF_INFERENCE);
     if (imageEntry) {
       // Merge explicit task list into the mapped record.
-      mapped.record.tasks = imageEntry.tasks;
+      mapped.record.capabilities = imageEntry.capabilities;
     }
     return mapped;
   });
