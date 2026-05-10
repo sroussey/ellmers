@@ -8,10 +8,7 @@ import type { WorkerServerBase as WorkerServer } from "@workglow/util/worker";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
-import type {
-  AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
-} from "./AiProviderRegistry";
+import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "./AiProviderRegistry";
 import { getAiProviderRegistry, workerKeyForServes } from "./AiProviderRegistry";
 
 /**
