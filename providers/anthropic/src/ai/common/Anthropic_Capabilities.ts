@@ -48,8 +48,8 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       ""
   );
 
-  // Claude 3.5 Sonnet, Claude 3.7 Sonnet — full capability set with vision.
-  if (/^claude-3[.-][57]-sonnet/i.test(id)) {
+  // Claude 3.5 / 3.7 family (sonnet, haiku) — full capability set with vision.
+  if (/^claude-3[.-][57]-/i.test(id)) {
     return [
       "text.generation",
       "text.rewriter",
