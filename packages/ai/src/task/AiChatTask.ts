@@ -205,8 +205,10 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     if (!this._sessionId) {
       this._sessionId = getAiProviderRegistry().createSession(model.provider, model);
     }
+    const taskClass = this.constructor as typeof AiChatTask;
     return {
       taskType: "AiChatTask",
+      requires: taskClass.requires,
       aiProvider: model.provider,
       taskInput: input as AiChatTaskInput & { model: ModelConfig },
       sessionId: this._sessionId,

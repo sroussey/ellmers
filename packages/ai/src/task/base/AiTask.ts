@@ -139,21 +139,46 @@ export class AiTask<
       );
     }
 
+    // Strict gating: the model must declare every capability this task requires.
+    const taskClass = this.constructor as typeof AiTask;
+    const requires = taskClass.requires;
+    const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
+    const missing = requires.filter((r) => !modelCaps.includes(r));
+    if (missing.length > 0) {
+      throw new TaskConfigurationError(
+        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
+          `${taskClass.type}: ${missing.join(", ")}.`
+      );
+    }
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
     const output = await strategy.execute(jobInput, executeContext, this.runConfig.runnerId);
 
-    // Register a disposer so the caller can unload the model when done.
+    // Register a disposer so the caller can unload the model when done. The
+    // unload path is wired via the "model.unload" capability so providers opt
+    // in by registering a run-fn whose `serves` set contains it; bypasses the
+    // task's own `requires` so we don't gate the lifecycle hook on the task.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const provider = registry.getProvider(model.provider);
-      const unloadFn = provider?.getRunFn("UnloadModelTask");
+      const unloadFn = registry.getRunFnFor(model.provider, ["model.unload"]);
       if (unloadFn) {
-        const modelPath = model.provider_config?.model_path ?? model.model;
+        const modelPath =
+          (model as ModelConfig & { model?: string }).model ??
+          (model.provider_config as Record<string, unknown> | undefined)?.["model_path"] ??
+          model.model_id;
         const resourceKey = `ai:${model.provider}:${modelPath}`;
         executeContext.resourceScope.register(resourceKey, async () => {
-          await unloadFn({ model }, model, () => {}, AbortSignal.timeout(30_000));
+          // Drain the unload generator to completion so any cleanup steps run.
+          for await (const _evt of unloadFn(
+            { model } as TaskInput,
+            model,
+            AbortSignal.timeout(30_000)
+          )) {
+            // ignore events; we only care about completion
+            void _evt;
+          }
         });
       }
     }
@@ -173,9 +198,11 @@ export class AiTask<
     const model = input.model as ModelConfig;
 
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
+    const taskClass = this.constructor as typeof AiTask;
 
     const jobInput: AiJobInput<Input> = {
       taskType: runtype,
+      requires: taskClass.requires,
       aiProvider: model.provider,
       taskInput: input as Input & { model: ModelConfig },
     };

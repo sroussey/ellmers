@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { WorkerServerBase as WorkerServer } from "@workglow/util/worker";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
-import type { ModelConfig } from "../model/ModelSchema";
+import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
+  AiProviderRunFnRegistration,
 } from "./AiProviderRegistry";
-import { getAiProviderRegistry } from "./AiProviderRegistry";
+import { getAiProviderRegistry, workerKeyForServes } from "./AiProviderRegistry";
 
 /**
  * Job queue concurrency: one limit for the primary ({@link QueuedAiProvider} hardware) queue,
@@ -41,10 +40,10 @@ export function resolveAiProviderGpuQueueConcurrency(
 /**
  * Options for registering an AI provider on the main thread.
  *
- * - If the provider was constructed **with** task run functions → **inline** registration
- *   (direct run fns). No `worker` option.
- * - If the provider was constructed **without** tasks → **worker** registration (proxies).
- *   A `worker` (instance or lazy factory) is **required**.
+ * - If the provider was constructed **with** run-fn registrations → **inline**
+ *   registration (direct streaming run fns). No `worker` option.
+ * - If the provider was constructed **without** registrations → **worker**
+ *   registration (proxies). A `worker` (instance or lazy factory) is **required**.
  */
 export interface AiProviderRegisterOptions {
   /**
@@ -72,7 +71,7 @@ export interface AiProviderRegisterOptions {
 
 /**
  * Registration context passed to {@link AiProvider.onInitialize}, including whether
- * the provider is registering inline (tasks present) or worker-backed (no tasks).
+ * the provider is registering inline (run-fns present) or worker-backed (no run-fns).
  */
 export interface AiProviderRegisterContext extends AiProviderRegisterOptions {
   readonly isInline: boolean;
@@ -81,14 +80,16 @@ export interface AiProviderRegisterContext extends AiProviderRegisterOptions {
 /**
  * Abstract base class for AI providers.
  *
- * Each provider subclass declares a `taskTypes` array listing the task type
- * names it supports. The actual run function implementations (`tasks` record)
- * are **injected via the constructor** so that heavy ML library imports remain
- * at the call site. This allows the provider class to be imported on the main
- * thread without pulling in heavy dependencies when running in worker mode.
+ * Each provider subclass declares static metadata (`name`, `displayName`,
+ * `isLocal`, `supportsBrowser`). The actual run function implementations
+ * are **injected via the constructor** as a list of capability-set
+ * registrations so heavy ML library imports remain at the call site. This
+ * allows the provider class to be imported on the main thread without pulling
+ * in heavy dependencies when running in worker mode.
  *
  * The base class handles:
- * - Registering run functions with the AiProviderRegistry (inline or worker proxies)
+ * - Registering capability-set run functions with the AiProviderRegistry
+ *   (inline or worker proxies)
  * - Registering functions on a WorkerServer (for worker-side code)
  * - Lifecycle management (initialize / dispose)
  *
@@ -99,13 +100,13 @@ export interface AiProviderRegisterContext extends AiProviderRegisterOptions {
  *   worker: () => new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }),
  * });
  *
- * // Inline -- caller provides the tasks (imports heavy library):
- * import { MY_TASKS } from "./MyJobRunFns";
- * await new MyProvider(MY_TASKS).register();
+ * // Inline -- caller provides the run-fn registrations (imports heavy library):
+ * import { MY_RUN_FNS } from "./MyJobRunFns";
+ * await new MyProvider(MY_RUN_FNS).register();
  *
- * // Worker side -- caller provides the tasks:
- * import { MY_TASKS } from "./MyJobRunFns";
- * new MyProvider(MY_TASKS).registerOnWorkerServer(workerServer);
+ * // Worker side -- caller provides the run-fn registrations:
+ * import { MY_RUN_FNS } from "./MyJobRunFns";
+ * new MyProvider(MY_RUN_FNS).registerOnWorkerServer(workerServer);
  * ```
  */
 export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig> {
@@ -124,106 +125,67 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   abstract readonly supportsBrowser: boolean;
 
   /**
-   * List of task type names this provider supports.
-   * This is lightweight metadata -- no heavy library imports needed.
+   * Capability-set run-fn registrations injected via the constructor. Required
+   * for inline mode and worker-server registration; not needed for worker-mode
+   * registration on the main thread (where the proxies are derived from the
+   * same registrations on the worker).
    */
-  abstract readonly taskTypes: readonly string[];
-
-  /**
-   * Map of task type names to their run functions.
-   * Injected via constructor. Required for inline mode and worker-server
-   * registration; not needed for worker-mode registration on the main thread.
-   */
-  protected readonly tasks?: Record<string, AiProviderRunFn<any, any, TModelConfig>>;
-
-  /**
-   * Map of task type names to their streaming run functions.
-   * Injected via constructor alongside `tasks`. Only needed for tasks that
-   * support streaming output (e.g., text generation, summarization).
-   */
-  protected readonly streamTasks?: Record<string, AiProviderStreamFn<any, any, TModelConfig>>;
+  protected readonly runFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[];
 
   /**
    * Map of task type names to their preview run functions.
-   * Injected via constructor alongside `tasks`. Only needed for tasks that
+   * Injected via constructor alongside `runFns`. Only needed for tasks that
    * provide lightweight previews via executePreview().
    */
   protected readonly previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>;
 
   constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, TModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, TModelConfig>>,
+    runFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
     previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
   ) {
-    this.tasks = tasks;
-    this.streamTasks = streamTasks;
+    this.runFns = runFns;
     this.previewTasks = previewTasks;
   }
 
-  /** Get all task type names this provider supports */
-  get supportedTaskTypes(): readonly string[] {
-    return this.taskTypes;
-  }
-
   /**
-   * Get the run function for a specific task type.
-   * @param taskType - The task type name (e.g., "TextEmbeddingTask")
-   * @returns The run function, or undefined if the task type is not supported or tasks not provided
+   * Infer the closed set of {@link Capability} values a model supports given its
+   * record. The base implementation returns the model's stored `capabilities`
+   * field (or `[]` if absent), letting providers opt out of inference and use
+   * whatever the user set. Provider subclasses override this with real
+   * heuristics (e.g., parse model id strings, hit provider catalog endpoints).
+   *
+   * Main-thread method only — workers do not run capability inference.
    */
-  getRunFn<I extends TaskInput = TaskInput, O extends TaskOutput = TaskOutput>(
-    taskType: string
-  ): AiProviderRunFn<I, O, TModelConfig> | undefined {
-    return this.tasks?.[taskType] as AiProviderRunFn<I, O, TModelConfig> | undefined;
-  }
-
-  /**
-   * Get the streaming function for a specific task type.
-   * @param taskType - The task type name (e.g., "TextGenerationTask")
-   * @returns The stream function, or undefined if streaming is not supported for this task type
-   */
-  getStreamFn<I extends TaskInput = TaskInput, O extends TaskOutput = TaskOutput>(
-    taskType: string
-  ): AiProviderStreamFn<I, O, TModelConfig> | undefined {
-    return this.streamTasks?.[taskType] as AiProviderStreamFn<I, O, TModelConfig> | undefined;
-  }
-
-  /**
-   * Get the preview run function for a specific task type.
-   * @param taskType - The task type name (e.g., "CountTokensTask")
-   * @returns The preview function, or undefined if not supported for this task type
-   */
-  getPreviewRunFn<I extends TaskInput = TaskInput, O extends TaskOutput = TaskOutput>(
-    taskType: string
-  ): AiProviderPreviewRunFn<I, O, TModelConfig> | undefined {
-    return this.previewTasks?.[taskType] as AiProviderPreviewRunFn<I, O, TModelConfig> | undefined;
+  inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return (model.capabilities as readonly Capability[] | undefined) ?? [];
   }
 
   /**
    * Register this provider on the main thread.
    *
-   * Inferred from constructor: **with** tasks → direct run functions; **without** tasks →
-   * worker proxies (requires `worker` in options).
+   * Inferred from constructor: **with** run-fns → direct streaming run functions;
+   * **without** run-fns → worker proxies (requires `worker` in options).
    *
    * Creates a job queue unless `queue.autoCreate` is set to false.
    *
    * @param options - Registration options (worker for worker-backed, queue config)
    */
   async register(options: AiProviderRegisterOptions = {}): Promise<void> {
-    const isInline = !!this.tasks;
+    const isInline = !!this.runFns;
     const context: AiProviderRegisterContext = { ...options, isInline };
     await this.onInitialize(context);
 
     if (isInline) {
-      if (!this.tasks) {
+      if (!this.runFns) {
         throw new Error(
-          `AiProvider "${this.name}": tasks must be provided via the constructor for inline registration. ` +
-            `Pass the tasks record when constructing the provider, e.g. new MyProvider(MY_TASKS).`
+          `AiProvider "${this.name}": runFns must be provided via the constructor for inline registration. ` +
+            `Pass the registrations array when constructing the provider, e.g. new MyProvider(MY_RUN_FNS).`
         );
       }
     } else {
       if (!options.worker) {
         throw new Error(
-          `AiProvider "${this.name}": worker is required when no tasks are provided (worker-backed registration). ` +
+          `AiProvider "${this.name}": worker is required when no runFns are provided (worker-backed registration). ` +
             `Pass worker: new Worker(...) or worker: () => new Worker(...).`
         );
       }
@@ -240,19 +202,15 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
       } else {
         workerManager.registerWorker(this.name, options.worker);
       }
-      for (const taskType of this.taskTypes) {
-        registry.registerAsWorkerRunFn(this.name, taskType);
-        registry.registerAsWorkerStreamFn(this.name, taskType);
-        registry.registerAsWorkerPreviewRunFn(this.name, taskType);
+      // Worker-mode: register proxy entries for each capability-set the provider
+      // declares. The set is provided via the optional `workerRunFnSpecs` hook
+      // since the run functions themselves live behind the worker boundary.
+      for (const spec of this.workerRunFnSpecs()) {
+        registry.registerAsWorkerRunFn(this.name, spec.serves);
       }
     } else {
-      for (const [taskType, fn] of Object.entries(this.tasks!)) {
-        registry.registerRunFn(this.name, taskType, fn as AiProviderRunFn);
-      }
-      if (this.streamTasks) {
-        for (const [taskType, fn] of Object.entries(this.streamTasks)) {
-          registry.registerStreamFn(this.name, taskType, fn as AiProviderStreamFn);
-        }
+      for (const reg of this.runFns!) {
+        registry.registerRunFn(this.name, reg as AiProviderRunFnRegistration);
       }
     }
 
@@ -275,28 +233,42 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   }
 
   /**
+   * Returns the capability-sets to register as worker proxies when the
+   * provider is registered without inline run-fns. Subclasses with worker
+   * support override this to advertise the same `serves` sets that the
+   * worker-side {@link registerOnWorkerServer} call will register.
+   *
+   * The base implementation derives specs from `runFns` if they are present
+   * (rare on the main thread for worker-backed providers, but valid when a
+   * provider chooses to advertise its capability-sets without owning the run
+   * functions on the main thread).
+   */
+  protected workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return this.runFns?.map((r) => ({ serves: r.serves })) ?? [];
+  }
+
+  /**
    * Register this provider's run functions on a WorkerServer.
    * Call this inside a Web Worker to make the provider's functions
    * available for remote invocation from the main thread.
    *
-   * Requires `tasks` to have been provided via the constructor.
+   * Requires `runFns` to have been provided via the constructor. Each
+   * registration is exposed under the deterministic key produced by
+   * {@link workerKeyForServes} so the main-thread proxy resolves to the
+   * matching generator.
    *
    * @param workerServer - The WorkerServer instance to register on
    */
   registerOnWorkerServer(workerServer: WorkerServer): void {
-    if (!this.tasks) {
+    if (!this.runFns) {
       throw new Error(
-        `AiProvider "${this.name}": tasks must be provided via the constructor for worker server registration. ` +
-          `Pass the tasks record when constructing the provider, e.g. new MyProvider(MY_TASKS).`
+        `AiProvider "${this.name}": runFns must be provided via the constructor for worker server registration. ` +
+          `Pass the registrations array when constructing the provider, e.g. new MyProvider(MY_RUN_FNS).`
       );
     }
-    for (const [taskType, fn] of Object.entries(this.tasks)) {
-      workerServer.registerFunction(taskType, fn);
-    }
-    if (this.streamTasks) {
-      for (const [taskType, fn] of Object.entries(this.streamTasks)) {
-        workerServer.registerStreamFunction(taskType, fn);
-      }
+    for (const reg of this.runFns) {
+      const key = workerKeyForServes(reg.serves);
+      workerServer.registerStreamFunction(key, reg.runFn as (...args: any[]) => AsyncIterable<any>);
     }
     if (this.previewTasks) {
       for (const [taskType, fn] of Object.entries(this.previewTasks)) {
