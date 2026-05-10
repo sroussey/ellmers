@@ -105,7 +105,7 @@ export type AiProviderRunFn<
   model: Model | undefined,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onProgress: (progress: number, message?: string, details?: any) => void,
-  signal?: AbortSignal,
+  signal: AbortSignal,
   outputSchema?: JsonSchema,
   sessionId?: string
 ) => Promise<Output>;
