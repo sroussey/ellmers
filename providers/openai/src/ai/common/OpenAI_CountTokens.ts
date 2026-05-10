@@ -6,10 +6,11 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
+  AiProviderStreamFn,
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getModelName } from "./OpenAI_Client";
 import type { Tiktoken, TiktokenModel } from "tiktoken";
@@ -47,20 +48,33 @@ async function getEncoder(modelName: string) {
   return _encoderCache.get(modelName)!;
 }
 
-export const OpenAI_CountTokens: AiProviderRunFn<
-  CountTokensTaskInput,
-  CountTokensTaskOutput,
-  OpenAiModelConfig
-> = async (input, model) => {
+async function countTokens(
+  input: CountTokensTaskInput,
+  model: OpenAiModelConfig | undefined
+): Promise<CountTokensTaskOutput> {
   const enc = await getEncoder(getModelName(model));
   const tokens = enc.encode(input.text);
   return { count: tokens.length };
+}
+
+/**
+ * One-shot streaming run-fn for `["model.count-tokens"]`. Yields a single
+ * `finish` event carrying the token count.
+ */
+export const OpenAI_CountTokens_Stream: AiProviderStreamFn<
+  CountTokensTaskInput,
+  CountTokensTaskOutput,
+  OpenAiModelConfig
+> = async function* (input, model): AsyncIterable<StreamEvent<CountTokensTaskOutput>> {
+  const result = await countTokens(input, model);
+  yield { type: "finish", data: result };
 };
 
+/** Lightweight preview path used by `AiTask.executePreview()`. */
 export const OpenAI_CountTokens_Preview: AiProviderPreviewRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   OpenAiModelConfig
 > = async (input, model) => {
-  return OpenAI_CountTokens(input, model, () => {}, new AbortController().signal);
+  return countTokens(input, model);
 };
