@@ -15,7 +15,7 @@ import type {
 import { cosineSimilarity } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
 import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
-import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+import type { IVectorStorage, VectorSearchOptions } from "@workglow/storage";
 
 /**
  * Check if metadata matches filter
@@ -134,71 +134,6 @@ export class SqliteVectorStorage<
     }
 
     // Sort by score descending and take top K
-    results.sort((a, b) => b.score - a.score);
-    const topResults = results.slice(0, topK);
-
-    return topResults;
-  }
-
-  async hybridSearch(query: TypedArray, options: HybridSearchOptions<Metadata>) {
-    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
-
-    if (!textQuery || textQuery.trim().length === 0) {
-      // Fall back to regular vector search if no text query
-      return this.similaritySearch(query, { topK, filter, scoreThreshold });
-    }
-
-    const results: Array<Entity & { score: number }> = [];
-    const allEntities = (await this.getAll()) || [];
-    const queryLower = textQuery.toLowerCase();
-    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
-
-    for (const entity of allEntities) {
-      // SQLite stores vectors as JSON strings, need to deserialize
-      const vectorRaw = entity[this.vectorPropertyName] as unknown as string;
-      const vector = this.deserializeVector(vectorRaw);
-      const metadata = this.metadataPropertyName
-        ? (entity[this.metadataPropertyName] as Metadata)
-        : ({} as Metadata);
-
-      // Apply filter if provided
-      if (filter && !matchesFilter(metadata, filter)) {
-        continue;
-      }
-
-      // Calculate vector similarity
-      const vectorScore = cosineSimilarity(query, vector);
-
-      // Calculate text relevance (simple keyword matching)
-      const metadataText = Object.values(metadata ?? {})
-        .join(" ")
-        .toLowerCase();
-      let textScore = 0;
-      if (queryWords.length > 0) {
-        let matches = 0;
-        for (const word of queryWords) {
-          if (metadataText.includes(word)) {
-            matches++;
-          }
-        }
-        textScore = matches / queryWords.length;
-      }
-
-      // Combine scores
-      const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
-
-      // Apply threshold
-      if (combinedScore < scoreThreshold) {
-        continue;
-      }
-
-      results.push({
-        ...entity,
-        score: combinedScore,
-      } as Entity & { score: number });
-    }
-
-    // Sort by combined score descending and take top K
     results.sort((a, b) => b.score - a.score);
     const topResults = results.slice(0, topK);
 

@@ -16,7 +16,6 @@ import { cosineSimilarity } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
 import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
 import type {
-  HybridSearchOptions,
   IVectorStorage,
   VectorDistanceMetric,
   VectorIndexOptions,
@@ -514,98 +513,6 @@ export class SqliteAiVectorStorage<
   }
 
   /**
-   * Hybrid search combining vector similarity with text relevance.
-   * Uses sqlite-vector for the vector component and keyword matching for text.
-   * Falls back to in-memory search if the extension is unavailable.
-   */
-  async hybridSearch(query: TypedArray, options: HybridSearchOptions<Metadata>) {
-    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
-
-    if (!textQuery || textQuery.trim().length === 0) {
-      return this.similaritySearch(query, { topK, filter, scoreThreshold });
-    }
-
-    if (!this.extensionLoaded) {
-      return this.hybridSearchFallback(query, options);
-    }
-
-    const db = this.database;
-    const tableName = this.table;
-    const vectorCol = String(this.vectorPropertyName);
-    const metadataCol = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
-
-    try {
-      const queryJson = this.encodeVectorJson(query);
-      const queryBlob = db
-        .prepare(`SELECT vector_as_${this.vectorTypeSuffix}(?) as v`)
-        .get(queryJson) as { v: Buffer };
-
-      // Use streaming mode for hybrid search to allow text scoring on all results
-      const sql = `
-        SELECT t.*, v.distance
-        FROM ${escapeIdentifier(tableName)} AS t
-        JOIN vector_full_scan(?, ?, ?) AS v
-        ON t.rowid = v.rowid
-        ORDER BY v.distance ASC
-      `;
-      const stmt = db.prepare(sql);
-      const rows = stmt.all(tableName, vectorCol, queryBlob.v) as Array<
-        Record<string, unknown> & { distance: number }
-      >;
-
-      const queryLower = textQuery.toLowerCase();
-      const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
-      const results: Array<Entity & { score: number }> = [];
-
-      for (const row of rows) {
-        const vectorScore = 1 - row.distance;
-
-        const entity = { ...row } as Record<string, unknown>;
-        delete entity.distance;
-        for (const k in this.schema.properties) {
-          entity[k] = this.sqlToJsValue(k, entity[k] as any);
-        }
-
-        const metadata = metadataCol ? (entity[metadataCol] as Metadata) : ({} as Metadata);
-
-        // Apply metadata filter
-        if (filter && !matchesFilter(metadata, filter)) {
-          continue;
-        }
-
-        // Calculate text relevance
-        const metadataText = Object.values(metadata ?? {})
-          .join(" ")
-          .toLowerCase();
-        let textScore = 0;
-        if (queryWords.length > 0) {
-          let matches = 0;
-          for (const word of queryWords) {
-            if (metadataText.includes(word)) {
-              matches++;
-            }
-          }
-          textScore = matches / queryWords.length;
-        }
-
-        const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
-
-        if (combinedScore < scoreThreshold) {
-          continue;
-        }
-
-        results.push({ ...entity, score: combinedScore } as Entity & { score: number });
-      }
-
-      results.sort((a, b) => b.score - a.score);
-      return results.slice(0, topK);
-    } catch (error) {
-      console.warn("sqlite-vector hybrid query failed, falling back to in-memory search:", error);
-      return this.hybridSearchFallback(query, options);
-    }
-  }
-
-  /**
    * Fallback search using in-memory cosine similarity
    */
   private async searchFallback(query: TypedArray, options: VectorSearchOptions<Metadata>) {
@@ -627,53 +534,6 @@ export class SqliteAiVectorStorage<
 
       if (score >= scoreThreshold) {
         results.push({ ...row, score } as Entity & { score: number });
-      }
-    }
-
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
-  }
-
-  /**
-   * Fallback hybrid search using in-memory computation
-   */
-  private async hybridSearchFallback(query: TypedArray, options: HybridSearchOptions<Metadata>) {
-    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
-
-    const allRows = (await this.getAll()) || [];
-    const results: Array<Entity & { score: number }> = [];
-    const queryLower = textQuery.toLowerCase();
-    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
-
-    for (const row of allRows) {
-      const vector = row[this.vectorPropertyName] as TypedArray;
-      const metadata = this.metadataPropertyName
-        ? (row[this.metadataPropertyName] as Metadata)
-        : ({} as Metadata);
-
-      if (filter && !matchesFilter(metadata, filter)) {
-        continue;
-      }
-
-      const vectorScore = cosineSimilarity(query, vector);
-      const metadataText = Object.values(metadata ?? {})
-        .join(" ")
-        .toLowerCase();
-      let textScore = 0;
-      if (queryWords.length > 0) {
-        let matches = 0;
-        for (const word of queryWords) {
-          if (metadataText.includes(word)) {
-            matches++;
-          }
-        }
-        textScore = matches / queryWords.length;
-      }
-
-      const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
-
-      if (combinedScore >= scoreThreshold) {
-        results.push({ ...row, score: combinedScore } as Entity & { score: number });
       }
     }
 

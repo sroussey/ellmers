@@ -103,16 +103,6 @@ export interface VectorSearchOptions<
 }
 
 /**
- * Options for hybrid search (vector + full-text)
- */
-export interface HybridSearchOptions<
-  Metadata extends Record<string, unknown> | undefined = Record<string, unknown>,
-> extends VectorSearchOptions<Metadata> {
-  readonly textQuery: string;
-  readonly vectorWeight?: number;
-}
-
-/**
  * Type definitions for document chunk vector repository events
  */
 export interface VectorEventListeners<PrimaryKey, Entity> extends TabularEventListeners<
@@ -120,7 +110,6 @@ export interface VectorEventListeners<PrimaryKey, Entity> extends TabularEventLi
   Entity
 > {
   similaritySearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
-  hybridSearch: (query: TypedArray, results: (Entity & { score: number })[]) => void;
 }
 
 export type VectorEventName = keyof VectorEventListeners<any, any>;
@@ -172,18 +161,6 @@ export interface IVectorStorage<
   similaritySearch(
     query: TypedArray,
     options?: VectorSearchOptions<Metadata>
-  ): Promise<(Entity & { score: number })[]>;
-
-  /**
-   * Hybrid search combining vector similarity with full-text search
-   * This is optional and may not be supported by all implementations
-   * @param query - Query vector to compare against
-   * @param options - Hybrid search options including text query
-   * @returns Array of search results sorted by combined relevance
-   */
-  hybridSearch?(
-    query: TypedArray,
-    options: HybridSearchOptions<Metadata>
   ): Promise<(Entity & { score: number })[]>;
 }
 

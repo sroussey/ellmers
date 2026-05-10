@@ -216,7 +216,9 @@ export class ChunkRetrievalTask extends Task<
     }
     if (method === "hybrid" && !kb.supportsHybridSearch()) {
       throw new Error(
-        "The provided knowledge base does not support hybrid search. Use method: 'similarity' or a backend with hybrid support (e.g., Postgres with pgvector)."
+        "Hybrid retrieval requires a text index installed on the knowledge base. " +
+          "Install one via `kb.installTextIndex(new BM25Index())` or pass " +
+          "`textIndex` to `createKnowledgeBase`. Otherwise use method: 'similarity'."
       );
     }
 
@@ -250,7 +252,6 @@ export class ChunkRetrievalTask extends Task<
             textQuery: queryText!,
             topK,
             filter,
-            scoreThreshold,
             vectorWeight,
           })
         : await kb.similaritySearch(searchVector, {
