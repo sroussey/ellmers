@@ -72,6 +72,16 @@ describe("AnthropicQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("model.count-tokens");
   });
 
+  it("infers full capabilities for claude-3-5-haiku (3.5 family)", () => {
+    // Regression for the regex gap that previously matched only ...-sonnet.
+    const caps = provider.inferCapabilities(model("claude-3-5-haiku-20241022"));
+    expect(caps).toContain("text.generation");
+    expect(caps).toContain("tool-use");
+    expect(caps).toContain("json-mode");
+    expect(caps).toContain("vision-input");
+    expect(caps).toContain("model.count-tokens");
+  });
+
   it("infers full capabilities for claude-3-opus family", () => {
     const caps = provider.inferCapabilities(model("claude-3-opus-20240229"));
     expect(caps).toContain("text.generation");
