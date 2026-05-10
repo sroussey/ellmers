@@ -484,7 +484,8 @@ export class KnowledgeBase {
     query: TypedArray,
     options?: VectorSearchOptions<ChunkRecord>
   ): Promise<ChunkSearchResult[]> {
-    return this.chunkStorage.similaritySearch(query, options);
+    const raw = await this.chunkStorage.similaritySearch(query, options);
+    return raw.map((r) => ({ ...r, scoreType: "cosine" }) as ChunkSearchResult);
   }
 
   /**
@@ -549,7 +550,13 @@ export class KnowledgeBase {
 
     vectorResults.forEach((entity, rank) => {
       const contribution = vectorWeightClamped / (safeRrfK + rank + 1);
-      fused.set(entity.chunk_id, { score: contribution, entity });
+      // Strip the cosine scoreType from the wrapped similarity result; the
+      // outer fused entity will carry "rrf" once we re-emit it.
+      const { scoreType: _drop, ...rest } = entity;
+      fused.set(entity.chunk_id, {
+        score: contribution,
+        entity: rest as ChunkSearchResult,
+      });
     });
 
     for (let rank = 0; rank < textResults.length; rank++) {
@@ -589,7 +596,7 @@ export class KnowledgeBase {
     const ranked: ChunkSearchResult[] = [];
     for (const { score, entity } of fused.values()) {
       if (!entity) continue;
-      ranked.push({ ...entity, score });
+      ranked.push({ ...entity, score, scoreType: "rrf" });
     }
     ranked.sort((a, b) => b.score - a.score);
     return ranked.slice(0, topK);
@@ -628,7 +635,7 @@ export class KnowledgeBase {
       const entity = hydrated[i] as ChunkVectorEntity | undefined;
       if (!entity) continue;
       if (filter && !matchesFilter(entity.metadata as ChunkRecord, filter)) continue;
-      results.push({ ...entity, score: hits[i].score });
+      results.push({ ...entity, score: hits[i].score, scoreType: "bm25" });
       if (results.length >= topK) break;
     }
     return results;

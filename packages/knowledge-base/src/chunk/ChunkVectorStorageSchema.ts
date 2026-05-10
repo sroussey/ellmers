@@ -61,6 +61,25 @@ export type ChunkVectorStorage = IVectorStorage<
 >;
 
 /**
+ * Discriminator for the scoring function used to produce a
+ * {@link ChunkSearchResult.score}. Callers (typically UI) use this to render
+ * the score appropriately, since the three scorers live on different scales:
+ *
+ * - `"cosine"`: cosine similarity in `[-1, 1]`, typically `[0, 1]` for text
+ *   embeddings. Absolute — higher means more similar.
+ * - `"bm25"`: BM25(F) score in `[0, ∞)`. Absolute but corpus-dependent — not
+ *   comparable across knowledge bases.
+ * - `"rrf"`: Reciprocal Rank Fusion score, bounded above by
+ *   `2 / (rrfK + 1)` (~`0.033` with the default `rrfK=60`). Rank-based, not
+ *   absolute — the magnitude is not a similarity, only an ordering signal.
+ *   Not comparable across queries.
+ */
+export type ScoreType = "cosine" | "bm25" | "rrf";
+
+/**
  * Search result with score
  */
-export type ChunkSearchResult = ChunkVectorEntity & { score: number };
+export type ChunkSearchResult = ChunkVectorEntity & {
+  score: number;
+  scoreType?: ScoreType;
+};

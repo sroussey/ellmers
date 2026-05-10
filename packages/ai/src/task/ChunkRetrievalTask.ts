@@ -139,6 +139,15 @@ const outputSchema = {
         "[0,1]. For method='hybrid', these are Reciprocal Rank Fusion scores — small positive " +
         "numbers (typically <0.05) that rank results but do not correspond to a similarity.",
     },
+    scoreType: {
+      type: "string",
+      enum: ["cosine", "bm25", "rrf"],
+      title: "Score Type",
+      description:
+        "Discriminator naming the scorer used for `scores`: 'cosine' for similarity search " +
+        "and for hybrid fallback when the text query is empty/whitespace; 'rrf' for hybrid " +
+        "fusion. ('bm25' is reserved for direct text search and is not produced by this task.)",
+    },
     vectors: {
       type: "array",
       items: TypedArraySchema({
@@ -165,7 +174,7 @@ const outputSchema = {
       description: "The query used for retrieval (pass-through)",
     },
   },
-  required: ["chunks", "chunk_ids", "metadata", "scores", "count", "query"],
+  required: ["chunks", "chunk_ids", "metadata", "scores", "scoreType", "count", "query"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
@@ -273,11 +282,19 @@ export class ChunkRetrievalTask extends Task<
       return meta.text || JSON.stringify(meta);
     });
 
+    // The KB tags every result with the same scoreType; the empty-textQuery
+    // fallback inside hybridSearch can flip this from "rrf" to "cosine", which
+    // is exactly the signal we want to surface to callers.
+    const scoreType =
+      results.length > 0 ? (results[0].scoreType ?? (method === "hybrid" ? "rrf" : "cosine"))
+                         : method === "hybrid" ? "rrf" : "cosine";
+
     const output: ChunkRetrievalTaskOutput = {
       chunks,
       chunk_ids: results.map((r) => r.chunk_id),
       metadata: results.map((r) => r.metadata),
       scores: results.map((r) => r.score),
+      scoreType,
       count: results.length,
       query,
     };

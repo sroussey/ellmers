@@ -311,6 +311,31 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     }
   });
 
+  it("attaches scoreType to results for each search method", async () => {
+    const index = new BM25Index();
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: index,
+      register: false,
+    });
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "d2", "rabbit fence", vec(0, 1, 0)),
+    ]);
+
+    const sim = await kb.similaritySearch(vec(1, 0, 0), { topK: 2 });
+    const text = await kb.textSearch("rabbit", { topK: 2 });
+    const hybrid = await kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 2 });
+    const hybridEmpty = await kb.hybridSearch(vec(1, 0, 0), { textQuery: "", topK: 2 });
+
+    expect(sim.every((r) => r.scoreType === "cosine")).toBe(true);
+    expect(text.every((r) => r.scoreType === "bm25")).toBe(true);
+    expect(hybrid.every((r) => r.scoreType === "rrf")).toBe(true);
+    // Empty-query fallback routes through similaritySearch, so cosine.
+    expect(hybridEmpty.every((r) => r.scoreType === "cosine")).toBe(true);
+  });
+
   it("hybridSearch produces RRF-shaped scores (small positives, not cosine)", async () => {
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
