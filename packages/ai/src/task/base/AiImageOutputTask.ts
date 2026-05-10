@@ -32,7 +32,6 @@ import type {
 } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 
-import type { Capability } from "../../capability/Capabilities";
 import { StreamingAiTask } from "./StreamingAiTask";
 import type { AiTaskInput } from "./AiTask";
 import type { ModelConfig } from "../../model/ModelSchema";
@@ -53,9 +52,6 @@ export class AiImageOutputTask<
 > extends StreamingAiTask<Input, AiImageOutput, Config> {
   public static override type: string = "AiImageOutputTask";
   protected static override readonly streamingPhaseLabel = "Rendering";
-
-  /** Capabilities this task requires from a model. Phase 4 fills in concrete values. */
-  static override readonly requires: readonly Capability[] = [];
 
   /** The most recent partial received from the provider stream. ImageValue
    *  lifetime is JS GC — replacing the slot lets the prior become collectable. */

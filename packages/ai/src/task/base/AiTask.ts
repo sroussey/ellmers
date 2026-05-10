@@ -80,8 +80,17 @@ export class AiTask<
   public static override type: string = "AiTask";
   public static override hasDynamicEntitlements: boolean = true;
 
-  /** Capabilities this task requires from a model. Phase 4 fills in concrete values. */
-  static readonly requires: readonly Capability[] = [];
+  /**
+   * Capabilities this task requires from the model selected at execution time.
+   * The dispatcher (Phase 3) gates strictly: it throws unless
+   * `model.capabilities ⊇ task.requires`. An empty array passes vacuously.
+   *
+   * Concrete subclasses MUST override with the relevant `Capability` values from
+   * {@link CAPABILITIES}; pure-compute subclasses (no provider dispatch) keep `[]`.
+   * Phase 4 populates the 44 concrete tasks; the test in `task/index.test.ts`
+   * audits coverage.
+   */
+  public static readonly requires: readonly Capability[] = [];
 
   public static override entitlements(): TaskEntitlements {
     return {
