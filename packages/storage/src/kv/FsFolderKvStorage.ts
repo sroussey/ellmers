@@ -85,6 +85,7 @@ export class FsFolderKvStorage<
 
     await mkdir(path.dirname(localPath), { recursive: true });
     await writeFile(localPath, content);
+    this.events.emit("put", key, value);
   }
 
   /**
@@ -116,6 +117,7 @@ export class FsFolderKvStorage<
           : "utf-8";
       const content = (await readFile(localPath, { encoding })).toString().trim();
 
+      let value: Value;
       if (encoding === "utf-8") {
         const schemaType =
           typeof typeDef === "object" && typeDef !== null && "type" in typeDef
@@ -127,16 +129,22 @@ export class FsFolderKvStorage<
           (content.startsWith("[") && content.endsWith("]"))
         ) {
           try {
-            return JSON.parse(content) as Value;
+            value = JSON.parse(content) as Value;
           } catch (e) {
             // If JSON parsing fails, return as string
-            return content as unknown as Value;
+            value = content as unknown as Value;
           }
+        } else {
+          value = content as unknown as Value;
         }
+      } else {
+        value = content as unknown as Value;
       }
 
-      return content as unknown as Value;
+      this.events.emit("get", key, value);
+      return value;
     } catch (error) {
+      this.events.emit("get", key, undefined);
       return undefined;
     }
   }
@@ -148,6 +156,7 @@ export class FsFolderKvStorage<
   public async delete(key: Key): Promise<void> {
     const localPath = path.join(this.folderPath, this.pathWriter(key).replaceAll("..", "_"));
     await unlink(localPath);
+    this.events.emit("delete", key);
   }
 
   /**
@@ -163,7 +172,8 @@ export class FsFolderKvStorage<
    */
   public async deleteAll(): Promise<void> {
     const localPath = path.join(this.folderPath);
-    await rm(localPath, { recursive: true });
+    await rm(localPath, { recursive: true, force: true });
+    this.events.emit("deleteall");
   }
 
   /**

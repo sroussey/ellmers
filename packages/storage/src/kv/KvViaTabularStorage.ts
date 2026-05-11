@@ -58,10 +58,9 @@ export abstract class KvViaTabularStorage<
    * @param value - The value to store
    */
   public async put(key: Key, value: Value): Promise<void> {
-    if (this.needsJsonSerialization) {
-      value = JSON.stringify(value) as Value;
-    }
-    await this.tabularRepository.put({ key, value });
+    const storedValue = this.needsJsonSerialization ? (JSON.stringify(value) as Value) : value;
+    await this.tabularRepository.put({ key, value: storedValue });
+    this.events.emit("put", key, value);
   }
 
   /**
@@ -74,6 +73,9 @@ export abstract class KvViaTabularStorage<
       : items;
 
     await this.tabularRepository.putBulk(entities);
+    for (const { key, value } of items) {
+      this.events.emit("put", key, value);
+    }
   }
 
   /**
@@ -85,16 +87,23 @@ export abstract class KvViaTabularStorage<
    */
   public async get(key: Key): Promise<Value | undefined> {
     const result = await this.tabularRepository.get({ key });
-    if (!result) return undefined;
+    if (!result) {
+      this.events.emit("get", key, undefined);
+      return undefined;
+    }
 
+    let value: Value;
     if (this.needsJsonSerialization) {
       try {
-        return JSON.parse(result.value as unknown as string) as Value;
+        value = JSON.parse(result.value as unknown as string) as Value;
       } catch (e) {
-        return result.value as unknown as Value;
+        value = result.value as unknown as Value;
       }
+    } else {
+      value = result.value as unknown as Value;
     }
-    return result.value as unknown as Value;
+    this.events.emit("get", key, value);
+    return value;
   }
 
   /**
@@ -102,7 +111,8 @@ export abstract class KvViaTabularStorage<
    * @param key - The primary key of the row to delete
    */
   public async delete(key: Key): Promise<void> {
-    return await this.tabularRepository.delete({ key });
+    await this.tabularRepository.delete({ key });
+    this.events.emit("delete", key);
   }
 
   /**
@@ -111,31 +121,34 @@ export abstract class KvViaTabularStorage<
    */
   public async getAll(): Promise<Combined[] | undefined> {
     const values = await this.tabularRepository.getAll();
-    if (values) {
-      return values.map(
-        (value) =>
-          ({
-            key: value.key,
-            value: (() => {
-              if (this.needsJsonSerialization && typeof value.value === "string") {
-                try {
-                  return JSON.parse(value.value);
-                } catch (e) {
-                  return value.value;
+    const results = values
+      ? values.map(
+          (value) =>
+            ({
+              key: value.key,
+              value: (() => {
+                if (this.needsJsonSerialization && typeof value.value === "string") {
+                  try {
+                    return JSON.parse(value.value);
+                  } catch (e) {
+                    return value.value;
+                  }
                 }
-              }
-              return value.value;
-            })(),
-          }) as Combined
-      );
-    }
+                return value.value;
+              })(),
+            }) as Combined
+        )
+      : undefined;
+    this.events.emit("getAll", results);
+    return results;
   }
 
   /**
    * Deletes all rows from the repository.
    */
   public async deleteAll(): Promise<void> {
-    return await this.tabularRepository.deleteAll();
+    await this.tabularRepository.deleteAll();
+    this.events.emit("deleteall");
   }
 
   /**
