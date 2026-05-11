@@ -850,10 +850,29 @@ export class SqliteTabularStorage<
    * keys emit `WHERE pk IN (?,?,...)`. Compound keys emit
    * `WHERE (pk1,pk2,...) IN ((?,?,...),(?,?,...),...)`. Values bind through
    * `jsToSqlValue` for parity with `query()` and single-row `get()`.
+   *
+   * Inputs larger than SQLite's `SQLITE_MAX_VARIABLE_NUMBER` are chunked so
+   * the underlying statement never exceeds the bind-parameter limit. The
+   * default limit is 999 on older builds and 32766 on modern ones; we stay
+   * under the conservative threshold by dividing 900 by the PK column count.
    */
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
-    return this.mutex(() => this._getBulkInternal(keys));
+    const pkColCount = this.primaryKeyColumns().length;
+    const chunkSize = Math.max(1, Math.floor(900 / pkColCount));
+    let rows: Entity[];
+    if (keys.length <= chunkSize) {
+      rows = await this.mutex(() => this._getBulkInternal(keys));
+    } else {
+      rows = [];
+      for (let i = 0; i < keys.length; i += chunkSize) {
+        const chunk = keys.slice(i, i + chunkSize);
+        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        rows.push(...chunkRows);
+      }
+    }
+    this.events.emit("getBulk", keys, rows);
+    return rows;
   }
 
   private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
@@ -887,7 +906,6 @@ export class SqliteTabularStorage<
         record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
       }
     }
-    this.events.emit("getBulk", keys, rows);
     return rows;
   }
 

@@ -1129,10 +1129,28 @@ export class PostgresTabularStorage<
    * keys emit `WHERE pk IN ($1,$2,...)`. Compound keys emit
    * `WHERE (pk1,pk2,...) IN (($1,$2,...),($3,$4,...),...)`. Values bind
    * through `jsToSqlValue` for parity with `query()` and `get()`.
+   *
+   * Postgres caps a single statement at 65535 bind parameters; inputs that
+   * would exceed the cap are chunked so each round-trip stays well under
+   * it. The same chunking shape is shared with the SQLite backend.
    */
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
-    return this.mutex(() => this._getBulkInternal(keys));
+    const pkColCount = this.primaryKeyColumns().length;
+    const chunkSize = Math.max(1, Math.floor(30000 / pkColCount));
+    let rows: Entity[];
+    if (keys.length <= chunkSize) {
+      rows = await this.mutex(() => this._getBulkInternal(keys));
+    } else {
+      rows = [];
+      for (let i = 0; i < keys.length; i += chunkSize) {
+        const chunk = keys.slice(i, i + chunkSize);
+        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        rows.push(...chunkRows);
+      }
+    }
+    this.events.emit("getBulk", keys, rows);
+    return rows;
   }
 
   private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
@@ -1173,9 +1191,7 @@ export class PostgresTabularStorage<
         record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
       }
     }
-    const rows = result.rows as Entity[];
-    this.events.emit("getBulk", keys, rows);
-    return rows;
+    return result.rows as Entity[];
   }
 
   /**
