@@ -69,11 +69,19 @@ function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean
   return n > 1;
 }
 
+/** RAG ONNX/HuggingFace integration tests load multiple ONNX pipelines per file;
+ * default parallelism makes two files load pipelines concurrently and OOM-kills the
+ * GitHub-hosted runner (`bun test --parallel=1` is required even though it doubles
+ * wall-clock time — the job timeout-minutes covers the extra runtime). */
+function isRagOnnxIntegrationFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.includes("/rag/") && normalized.includes(".integration.");
+}
+
 function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
-  // RAG suite intentionally runs in parallel: only two .integration.test.ts files exist
-  // and serialising them blows past the per-job wall-clock budget on CI (10+ minutes).
-  // Per-test timeouts (vitest testTimeout / bun --timeout) keep heavy work bounded.
-  return shouldRunLlamaCppIntegrationFilesSequentially(files);
+  return (
+    shouldRunLlamaCppIntegrationFilesSequentially(files) || files.some(isRagOnnxIntegrationFile)
+  );
 }
 
 const SECTION_DIRS: Record<Section, string[]> = {
