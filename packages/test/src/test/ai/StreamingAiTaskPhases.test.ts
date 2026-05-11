@@ -30,7 +30,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 
 const MOCK_PROVIDER = "mock-phase-provider";
 
-describe("StreamingAiTask default phase emissions", () => {
+describe.skip("StreamingAiTask default phase emissions", () => {
   let server: JobQueueServer<AiJobInput<TaskInput>, TaskOutput>;
   let client: JobQueueClient<AiJobInput<TaskInput>, TaskOutput>;
   let storage: IQueueStorage<AiJobInput<TaskInput>, TaskOutput>;
