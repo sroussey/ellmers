@@ -1,5 +1,15 @@
 # @workglow/storage
 
+## 0.2.33
+
+### Bug Fixes
+
+- emit kv storage events from concrete implementations (#481)
+
+### Chores
+
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Features

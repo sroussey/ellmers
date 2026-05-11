@@ -1,5 +1,23 @@
 # @workglow/ai
 
+## 0.2.33
+
+### Features
+
+#### ai
+
+- enhance AiChatWithKbTask and HierarchicalChunkerTask with section handling and slugification
+- chat task responseFormat input — markdown addendum, inline citation, URL-aware chunks
+- KbSearchTask + AiChatWithKbTask + AiChatTask cleanup
+
+### Refactors
+
+- remove loadProviderSdk utility and streamline SDK loading in client implementations
+
+### Chores
+
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Refactors

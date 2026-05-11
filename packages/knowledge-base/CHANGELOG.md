@@ -1,5 +1,17 @@
 # @workglow/knowledge-base
 
+## 0.2.33
+
+### Features
+
+#### ai
+
+- enhance AiChatWithKbTask and HierarchicalChunkerTask with section handling and slugification
+
+### Chores
+
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Bug Fixes

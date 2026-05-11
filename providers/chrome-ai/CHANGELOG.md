@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.33
+
+### Chores
+
+- fixup comment references to things renamed
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Refactors

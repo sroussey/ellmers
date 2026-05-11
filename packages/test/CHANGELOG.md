@@ -1,5 +1,19 @@
 # @workglow/test
 
+## 0.2.33
+
+### Features
+
+#### ai
+
+- enhance AiChatWithKbTask and HierarchicalChunkerTask with section handling and slugification
+- chat task responseFormat input — markdown addendum, inline citation, URL-aware chunks
+- KbSearchTask + AiChatWithKbTask + AiChatTask cleanup
+
+### Bug Fixes
+
+- emit kv storage events from concrete implementations (#481)
+
 ## 0.2.32
 
 ### Features

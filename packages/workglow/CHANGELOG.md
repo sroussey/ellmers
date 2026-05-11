@@ -1,5 +1,11 @@
 # workglow
 
+## 0.2.33
+
+### Chores
+
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Refactors
