@@ -21,4 +21,5 @@ export * from "./document/Document";
 export * from "./document/DocumentNode";
 export * from "./document/DocumentSchema";
 export * from "./document/DocumentStorageSchema";
+export * from "./document/slugify";
 export * from "./document/StructuralParser";

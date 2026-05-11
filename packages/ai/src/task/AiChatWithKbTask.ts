@@ -4,26 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
+import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
+import type { IHumanRequest } from "@workglow/util";
+import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
-import { StreamingAiTask } from "./base/StreamingAiTask";
-import type { ChatMessage, ContentBlock } from "./ChatMessage";
-import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
-import { resolveHumanConnector } from "@workglow/util";
-import type { IHumanRequest } from "@workglow/util";
-import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
-import { getKnowledgeBase } from "@workglow/knowledge-base";
-import { KbSearchTask } from "./KbSearchTask";
 import {
   buildResponseFormatAddendum,
   KB_INLINE_CITATION_DIRECTIVE,
   type ResponseFormat,
 } from "./base/responseFormat";
+import { StreamingAiTask } from "./base/StreamingAiTask";
+import type { ChatMessage, ContentBlock } from "./ChatMessage";
+import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
+import { KbSearchTask } from "./KbSearchTask";
 
 // ========================================================================
 // Public types
@@ -173,15 +173,13 @@ export const AiChatWithKbInputSchema = {
     noMatchReply: {
       type: "string",
       title: "No-match reply",
-      description:
-        "When set and zero chunks match: emit this verbatim and skip the provider",
+      description: "When set and zero chunks match: emit this verbatim and skip the provider",
       "x-ui-group": "Configuration",
     },
     noMatchReferences: {
       type: "array",
       title: "No-match references",
-      description:
-        "When set and zero chunks match: emit these verbatim on the references port",
+      description: "When set and zero chunks match: emit these verbatim on the references port",
       items: chatChunkReferenceSchema,
       "x-ui-group": "Configuration",
     },
@@ -353,6 +351,13 @@ export class AiChatWithKbTask extends StreamingAiTask<
     const minScore = input.minScore ?? 0.3;
     const maxRefs = input.maxReferences ?? 6;
 
+    // Carries the most recent turn's surviving chunks forward so a short
+    // follow-up ("tell me more", "what about X?") that wouldn't match the
+    // KB on its own still has the prior turn's context to answer from.
+    // Reset only on a turn that itself produces hits — so a fresh topic
+    // shift naturally replaces the carry-forward set on the next match.
+    let lastNonEmptyRefs: readonly ChatChunkReference[] = [];
+
     for (let turn = 0; turn < maxIterations; turn++) {
       const lastUserText = extractLastUserText(history);
 
@@ -382,7 +387,12 @@ export class AiChatWithKbTask extends StreamingAiTask<
               query: lastUserText,
               topK,
             });
-            return { kbId, kbLabel: kb.title || kbId, kb: kb as KnowledgeBase, results: out.results };
+            return {
+              kbId,
+              kbLabel: kb.title || kbId,
+              kb: kb as KnowledgeBase,
+              results: out.results,
+            };
           })
         );
       }
@@ -390,16 +400,22 @@ export class AiChatWithKbTask extends StreamingAiTask<
       // Merge, threshold, sort, cap, and number the chunks.
       const allChunks = perKbResults
         .flatMap(({ kbId, kbLabel, kb, results }) =>
-          results
-            .filter((r) => r.score >= minScore)
-            .map((r) => ({ kbId, kbLabel, kb, r }))
+          results.filter((r) => r.score >= minScore).map((r) => ({ kbId, kbLabel, kb, r }))
         )
         .sort((a, b) => b.r.score - a.r.score)
         .slice(0, maxRefs);
 
       // Resolve a URL per unique (kb, doc_id) by reading the document record's
-      // metadata.url (preferred) or metadata.sourceUri (fallback). One IDB
-      // lookup per unique doc; cheap given maxRefs is small.
+      // metadata.url (the public route written by the ingest workflow).
+      // One IDB lookup per unique doc; cheap given maxRefs is small.
+      //
+      // We deliberately do NOT fall back to `metadata.sourceUri` here:
+      // sourceUri carries the raw asset path like `/raw/<domain>/foo.mdx`,
+      // which begins with `/` and would therefore pass `MarkdownLink`'s
+      // path-relative gate and route through TanStack to a non-existent
+      // page. For legacy chunks missing `metadata.url`, leaving the URL
+      // undefined renders a source chip without a click target — safer
+      // than a broken link. Re-ingest fills `metadata.url` in.
       const docUrls = new Map<string, string | undefined>();
       const docFetches: Array<Promise<void>> = [];
       for (const { kb, r } of allChunks) {
@@ -411,13 +427,8 @@ export class AiChatWithKbTask extends StreamingAiTask<
           kb
             .getDocument(r.doc_id)
             .then((doc) => {
-              const md = (doc?.metadata ?? {}) as { url?: unknown; sourceUri?: unknown };
-              const url =
-                typeof md.url === "string"
-                  ? md.url
-                  : typeof md.sourceUri === "string"
-                    ? md.sourceUri
-                    : undefined;
+              const md = (doc?.metadata ?? {}) as { url?: unknown };
+              const url = typeof md.url === "string" ? md.url : undefined;
               docUrls.set(key, url);
             })
             .catch(() => {
@@ -437,10 +448,21 @@ export class AiChatWithKbTask extends StreamingAiTask<
         })
       );
 
+      // Follow-up carry-forward: when this turn produced no hits but a
+      // previous turn did, treat the prior refs as the effective context
+      // instead of firing the no-match path. Short follow-ups like "tell
+      // me more" or "and on mobile?" would otherwise drop the user out of
+      // the conversation thread.
+      const effectiveRefs: readonly ChatChunkReference[] =
+        refs.length > 0 ? refs : lastNonEmptyRefs;
+      if (refs.length > 0) {
+        lastNonEmptyRefs = refs;
+      }
+
       const emitted: ChatChunkReference[] =
-        refs.length > 0
-          ? refs
-          : (input.noMatchReferences as ChatChunkReference[] | undefined) ?? [];
+        effectiveRefs.length > 0
+          ? [...effectiveRefs]
+          : ((input.noMatchReferences as ChatChunkReference[] | undefined) ?? []);
 
       yield {
         type: "object-delta",
@@ -449,7 +471,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
       } as StreamEvent<AiChatWithKbTaskOutput>;
 
       let assistantText = "";
-      if (refs.length === 0 && input.noMatchReply) {
+      if (effectiveRefs.length === 0 && input.noMatchReply) {
         yield {
           type: "text-delta",
           port: "text",
@@ -459,15 +481,14 @@ export class AiChatWithKbTask extends StreamingAiTask<
       } else {
         // Build a per-turn system prompt that includes the retrieved context.
         const addendum = buildResponseFormatAddendum(input.responseFormat);
-        const directive =
-          input.responseFormat === "markdown" ? KB_INLINE_CITATION_DIRECTIVE : "";
+        const directive = input.responseFormat === "markdown" ? KB_INLINE_CITATION_DIRECTIVE : "";
         const userSystemPrompt = input.systemPrompt ?? "";
         const turnSystemPrompt = [
           userSystemPrompt,
           addendum,
           directive,
           "--- Context ---",
-          formatChunksForPrompt(refs, input.responseFormat),
+          formatChunksForPrompt(effectiveRefs, input.responseFormat),
         ]
           .filter((s) => s.length > 0)
           .join("\n\n");
@@ -590,10 +611,20 @@ function buildChunkReference(args: BuildChunkRefArgs): ChatChunkReference {
     title?: string;
     text?: string;
     url?: string;
-    sourceUri?: string;
+    sectionTitles?: readonly string[];
   };
   const title = md.doc_title ?? md.title ?? args.result.doc_id ?? "Untitled";
-  const url = args.url ?? md.url ?? md.sourceUri ?? undefined;
+  // No `md.sourceUri` fallback — sourceUri is the raw `/raw/<domain>/...`
+  // path on legacy chunks. Letting it through would produce a clickable
+  // chip routing to a non-existent page. Leaving the URL undefined
+  // renders a chip without a click target instead.
+  const baseUrl = args.url ?? md.url ?? undefined;
+  // Append a `#anchor` for the chunk's deepest section so the link scrolls
+  // directly to the relevant heading on the rendered page. The MDX rehype
+  // pipeline must emit the same slug as an `id=` on each heading or this
+  // won't scroll — they share `slugifyHeading` from @workglow/knowledge-base
+  // for that reason.
+  const url = withSectionAnchor(baseUrl, md.sectionTitles);
   const text = md.text ?? "";
   const snippet = text.length > 150 ? text.slice(0, 150).trim() + "…" : text;
   return {
@@ -605,6 +636,21 @@ function buildChunkReference(args: BuildChunkRefArgs): ChatChunkReference {
     snippet,
     score: args.result.score,
   };
+}
+
+function withSectionAnchor(
+  url: string | undefined,
+  sectionTitles: readonly string[] | undefined
+): string | undefined {
+  if (!url) return url;
+  // Don't double-fragment: if the URL already has a `#…`, leave it alone.
+  if (url.includes("#")) return url;
+  if (!sectionTitles || sectionTitles.length === 0) return url;
+  const deepest = sectionTitles[sectionTitles.length - 1];
+  if (typeof deepest !== "string") return url;
+  const slug = slugifyHeading(deepest);
+  if (slug.length === 0) return url;
+  return `${url}#${slug}`;
 }
 
 function formatChunksForPrompt(

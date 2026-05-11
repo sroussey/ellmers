@@ -168,6 +168,137 @@ describe("HierarchicalChunker", () => {
         expect(chunk.nodePath[0]).toBe(root.nodeId);
       }
     });
+
+    it("prepends a section-only heading breadcrumb (excludes doc root title)", async () => {
+      const markdown = `# Outer Section
+
+## Inner Subsection
+
+Body text under the inner subsection.`;
+
+      const doc_id = uuid4();
+      const root = await StructuralParser.parseMarkdown(doc_id, markdown, "DocTitle");
+
+      const result = await hierarchicalChunker({
+        doc_id,
+        documentTree: root,
+        maxTokens: 512,
+        overlap: 50,
+        strategy: "hierarchical",
+      });
+
+      expect(result.count).toBeGreaterThan(0);
+      for (const chunk of result.chunks) {
+        // Section breadcrumb only; doc root title must NOT appear inside chunk text
+        // (it lives on metadata.title and was leaking into URL hallucinations
+        // when small models pattern-matched it onto the section slug).
+        expect(chunk.text.startsWith("Outer Section > Inner Subsection\n\n")).toBe(true);
+        expect(chunk.text.includes("DocTitle")).toBe(false);
+      }
+      expect(
+        result.chunks.some((c) => c.text.includes("Body text under the inner subsection"))
+      ).toBe(true);
+    });
+
+    it("keeps prefix+body within the chunk token budget when splitting long leaves", async () => {
+      // Long body forces multiple chunks; breadcrumb tokens must be charged against
+      // the budget so no chunk exceeds maxTokens after prepending the prefix.
+      const longText = "Lorem ipsum dolor sit amet. ".repeat(100);
+      const markdown = `# Section\n\n${longText}`;
+      const doc_id = uuid4();
+      const root = await StructuralParser.parseMarkdown(doc_id, markdown, "Budget");
+
+      const maxTokens = 100;
+      const result = await hierarchicalChunker({
+        doc_id,
+        documentTree: root,
+        maxTokens,
+        overlap: 10,
+        strategy: "hierarchical",
+      });
+
+      expect(result.count).toBeGreaterThan(1);
+      for (const chunk of result.chunks) {
+        // Section breadcrumb (without doc root title) must be present on every chunk,
+        // including continuation chunks.
+        expect(chunk.text.startsWith("Section\n\n")).toBe(true);
+        // And the whole chunk (prefix + body) must respect the token budget.
+        expect(estimateTokens(chunk.text)).toBeLessThanOrEqual(maxTokens);
+      }
+    });
+
+    it("stamps sectionTitles onto every chunk so the chat layer can build #anchor URLs", async () => {
+      const markdown = `# Outer Section
+
+## Inner Subsection
+
+Body text under the inner subsection.
+
+## Another Subsection
+
+More body text.`;
+
+      const doc_id = uuid4();
+      const root = await StructuralParser.parseMarkdown(doc_id, markdown, "Anchors");
+
+      const result = await hierarchicalChunker({
+        doc_id,
+        documentTree: root,
+        maxTokens: 512,
+        overlap: 50,
+        strategy: "hierarchical",
+      });
+
+      expect(result.count).toBeGreaterThan(0);
+      // Each chunk should carry the section breadcrumb leading down to its leaf.
+      // The doc root title ("Anchors") is intentionally NOT included — see
+      // chunkHierarchically comments.
+      for (const chunk of result.chunks) {
+        expect(chunk.sectionTitles).toBeDefined();
+        expect(Array.isArray(chunk.sectionTitles)).toBe(true);
+        expect((chunk.sectionTitles as string[])[0]).toBe("Outer Section");
+        expect((chunk.sectionTitles as string[]).length).toBeGreaterThanOrEqual(1);
+      }
+      const innerChunk = result.chunks.find((c) =>
+        c.text.includes("Body text under the inner subsection")
+      );
+      expect(innerChunk).toBeDefined();
+      expect(innerChunk!.sectionTitles).toEqual(["Outer Section", "Inner Subsection"]);
+      const otherChunk = result.chunks.find((c) => c.text.includes("More body text"));
+      expect(otherChunk).toBeDefined();
+      expect(otherChunk!.sectionTitles).toEqual(["Outer Section", "Another Subsection"]);
+    });
+
+    it("does not prepend the document title in flat strategy", async () => {
+      const markdown = `# Section 1
+
+Paragraph 1.
+
+# Section 2
+
+Paragraph 2.`;
+
+      const doc_id = uuid4();
+      const root = await StructuralParser.parseMarkdown(doc_id, markdown, "FlatDoc");
+
+      // Use the direct helper (strongly typed) rather than the Workflow
+      // chain — the chain's `.run()` returns a wider type that loses the
+      // `chunks: ChunkRecord[]` shape, and we need to inspect chunk.text.
+      const result = await hierarchicalChunker({
+        doc_id,
+        documentTree: root,
+        maxTokens: 512,
+        overlap: 50,
+        strategy: "flat",
+      });
+
+      expect(result.count).toBeGreaterThan(0);
+      // Doc title must not leak into chunk text — it's metadata, and embedding
+      // the brand-name title in chunk content was producing URL hallucinations.
+      for (const chunk of result.chunks) {
+        expect(chunk.text.includes("FlatDoc")).toBe(false);
+      }
+    });
   });
 
   describe("Token estimation", () => {

@@ -10,9 +10,10 @@ import {
   estimateTokens,
   getChildren,
   hasChildren,
+  NodeKind,
 } from "@workglow/knowledge-base";
 
-import type { ChunkRecord, DocumentNode, TokenBudget } from "@workglow/knowledge-base";
+import type { ChunkRecord, DocumentNode, SectionNode, TokenBudget } from "@workglow/knowledge-base";
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
@@ -178,7 +179,7 @@ export class HierarchicalChunkerTask extends Task<
     const chunks: ChunkRecord[] = [];
 
     if (strategy === "hierarchical") {
-      await this.chunkHierarchically(root, [], doc_id, tokenBudget, chunks, countFn);
+      await this.chunkHierarchically(root, [], [], doc_id, tokenBudget, chunks, countFn);
     } else {
       await this.chunkFlat(root, doc_id, tokenBudget, chunks, countFn);
     }
@@ -191,22 +192,46 @@ export class HierarchicalChunkerTask extends Task<
   }
 
   /**
-   * Hierarchical chunking that respects document structure
+   * Hierarchical chunking that respects document structure.
+   *
+   * `headingPath` accumulates the titles of ancestor *section* nodes only
+   * (the document root's title is intentionally excluded), so leaves can be
+   * prefixed with a `"Section > Subsection"` breadcrumb. This is a well-known
+   * RAG win: the embedding picks up the topical keywords from the heading
+   * hierarchy, and the LLM in the answer phase doesn't have to guess what
+   * the chunk is about — both effects matter most on small models, which
+   * otherwise pad with plausible-sounding but unsupported claims.
+   *
+   * The document root title is deliberately omitted: it's already carried
+   * on the document's `metadata.title` (and surfaces to the chat layer as
+   * the reference label), and including it inside chunk text encourages
+   * small models to synthesize fake URLs by pattern-matching the brand
+   * name onto the section slug — e.g. a doc titled "Workglow" plus a
+   * "Secret Management" section produced fabricated links like
+   * `https://workglow.com/help/secret-management`.
    */
   private async chunkHierarchically(
     node: DocumentNode,
     nodePath: string[],
+    headingPath: string[],
     doc_id: string,
     tokenBudget: TokenBudget,
     chunks: ChunkRecord[],
     countFn: (text: string) => Promise<number>
   ): Promise<void> {
     const currentPath = [...nodePath, node.nodeId];
+    const currentHeadings =
+      node.kind === NodeKind.SECTION &&
+      typeof (node as SectionNode).title === "string" &&
+      (node as SectionNode).title.trim().length > 0
+        ? [...headingPath, (node as SectionNode).title.trim()]
+        : headingPath;
 
     if (!hasChildren(node)) {
       await this.chunkText(
         node.text,
         currentPath,
+        currentHeadings,
         doc_id,
         tokenBudget,
         chunks,
@@ -218,7 +243,15 @@ export class HierarchicalChunkerTask extends Task<
 
     const children = getChildren(node);
     for (const child of children) {
-      await this.chunkHierarchically(child, currentPath, doc_id, tokenBudget, chunks, countFn);
+      await this.chunkHierarchically(
+        child,
+        currentPath,
+        currentHeadings,
+        doc_id,
+        tokenBudget,
+        chunks,
+        countFn
+      );
     }
   }
 
@@ -226,24 +259,45 @@ export class HierarchicalChunkerTask extends Task<
    * Chunk a single text string, using countFn for token counting.
    * countFn always returns a number -- it falls back to estimation internally
    * when no real tokenizer is available.
+   *
+   * `headingPath` is prepended to each emitted chunk as a `"A > B > C\n\n"`
+   * breadcrumb and its tokens are charged against the chunk budget so the
+   * combined chunk (prefix + body) still fits `maxTokensPerChunk -
+   * reservedTokens`. If charging the prefix would leave no room for any
+   * body, the prefix is dropped for this leaf so we always make progress.
    */
   private async chunkText(
     text: string,
     nodePath: string[],
+    headingPath: string[],
     doc_id: string,
     tokenBudget: TokenBudget,
     chunks: ChunkRecord[],
     leafNodeId: string,
     countFn: (text: string) => Promise<number>
   ): Promise<void> {
-    const maxTokens = tokenBudget.maxTokensPerChunk - tokenBudget.reservedTokens;
+    // Skip header-only chunks: nothing useful to retrieve or cite.
+    if (text.trim().length === 0) return;
+
+    const budgetAfterReserved = tokenBudget.maxTokensPerChunk - tokenBudget.reservedTokens;
     const overlapTokens = tokenBudget.overlapTokens;
 
-    if (maxTokens <= 0) {
+    if (budgetAfterReserved <= 0) {
       throw new Error(
         `Invalid token budget: reservedTokens (${tokenBudget.reservedTokens}) must be less than maxTokensPerChunk (${tokenBudget.maxTokensPerChunk})`
       );
     }
+
+    const breadcrumb = headingPath.join(" > ");
+    const candidatePrefix = breadcrumb ? `${breadcrumb}\n\n` : "";
+    const prefixTokens = candidatePrefix ? await countFn(candidatePrefix) : 0;
+    // Drop the prefix if it would leave no room for body; never let the prefix
+    // eat the whole chunk.
+    const usePrefix = prefixTokens > 0 && prefixTokens < budgetAfterReserved;
+    const prefix = usePrefix ? candidatePrefix : "";
+    const effectivePrefixTokens = usePrefix ? prefixTokens : 0;
+    const maxTokens = budgetAfterReserved - effectivePrefixTokens;
+
     if (overlapTokens >= maxTokens) {
       throw new Error(
         `Invalid token budget: overlapTokens (${overlapTokens}) must be less than effective maxTokens (${maxTokens})`
@@ -255,9 +309,15 @@ export class HierarchicalChunkerTask extends Task<
       chunks.push({
         chunkId: uuid4(),
         doc_id,
-        text,
+        text: prefix + text,
         nodePath,
         depth: nodePath.length,
+        leafNodeId,
+        // sectionTitles is what the chat layer slugifies into a URL `#anchor`
+        // so retrieved chunks can deep-link to the specific section of the
+        // rendered page. Copy so callers can't mutate the chunker's
+        // internal accumulator.
+        sectionTitles: [...headingPath],
       });
       return;
     }
@@ -293,9 +353,11 @@ export class HierarchicalChunkerTask extends Task<
       chunks.push({
         chunkId: uuid4(),
         doc_id,
-        text: text.substring(startOffset, endOffset),
+        text: prefix + text.substring(startOffset, endOffset),
         nodePath,
         depth: nodePath.length,
+        leafNodeId,
+        sectionTitles: [...headingPath],
       });
 
       if (endOffset >= text.length) break;
@@ -307,7 +369,10 @@ export class HierarchicalChunkerTask extends Task<
   }
 
   /**
-   * Flat chunking (ignores hierarchy)
+   * Flat chunking (ignores hierarchy). The document title is intentionally
+   * NOT prepended here — see the rationale on `chunkHierarchically`. The
+   * doc title rides along on `metadata.title` instead, which is what the
+   * chat layer surfaces as the reference label.
    */
   private async chunkFlat(
     root: DocumentNode,
@@ -317,7 +382,16 @@ export class HierarchicalChunkerTask extends Task<
     countFn: (text: string) => Promise<number>
   ): Promise<void> {
     const allText = this.collectAllText(root);
-    await this.chunkText(allText, [root.nodeId], doc_id, tokenBudget, chunks, root.nodeId, countFn);
+    await this.chunkText(
+      allText,
+      [root.nodeId],
+      [],
+      doc_id,
+      tokenBudget,
+      chunks,
+      root.nodeId,
+      countFn
+    );
   }
 
   /**
