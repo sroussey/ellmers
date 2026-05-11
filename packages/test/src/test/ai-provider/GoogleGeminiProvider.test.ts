@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { GoogleGeminiQueuedProvider } from "./GoogleGeminiQueuedProvider";
-import { GEMINI_RUN_FNS } from "./common/Gemini_JobRunFns";
-import { GEMINI_RUN_FN_SPECS } from "./common/Gemini_Capabilities";
-import { GEMINI_FALLBACK_MODELS } from "./common/Gemini_ModelSearch";
+import { GEMINI_FALLBACK_MODELS, _testOnly } from "@workglow/google-gemini/ai";
+import { describe, expect, it } from "vitest";
+
+const { GoogleGeminiQueuedProvider, GEMINI_RUN_FN_SPECS, GEMINI_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -146,11 +145,7 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
   it("infers exact capability set for imagen-4.0-generate-001", () => {
     const caps = provider.inferCapabilities(model("imagen-4.0-generate-001"));
     const sorted = [...caps].sort();
-    expect(sorted).toEqual([
-      "image.generation",
-      "provider.model-info",
-      "provider.model-search",
-    ]);
+    expect(sorted).toEqual(["image.generation", "provider.model-info", "provider.model-search"]);
   });
 });
 

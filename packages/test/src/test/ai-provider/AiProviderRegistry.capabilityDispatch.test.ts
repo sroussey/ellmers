@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import type { Capability } from "../capability/Capabilities";
-import type { IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
-import type { AiJobInput } from "../job/AiJob";
-import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
-import { AiProvider } from "./AiProvider";
 import type {
+  AiJobInput,
   AiProviderRunFnRegistration,
   AiProviderStreamFn,
-} from "./AiProviderRegistry";
-import { AiProviderRegistry, getAiProviderRegistry, setAiProviderRegistry } from "./AiProviderRegistry";
-import { AiTask } from "../task/base/AiTask";
+  Capability,
+  IAiExecutionStrategy,
+  ModelConfig,
+  ModelRecord,
+} from "@workglow/ai";
+import {
+  AiProvider,
+  AiProviderRegistry,
+  AiTask,
+  getAiProviderRegistry,
+  setAiProviderRegistry,
+} from "@workglow/ai";
+import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -41,10 +46,7 @@ class TestProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(
-    name: string,
-    runFns: readonly AiProviderRunFnRegistration[]
-  ) {
+  constructor(name: string, runFns: readonly AiProviderRunFnRegistration[]) {
     super(runFns);
     this.name = name;
   }
@@ -158,7 +160,7 @@ describe("AiProviderRegistry — capability dispatch", () => {
     await provider.register();
 
     // After register(), the global registry holds both entries.
-    const { getAiProviderRegistry } = await import("./AiProviderRegistry");
+    const { getAiProviderRegistry } = await import("@workglow/ai");
     const globalRegistry = getAiProviderRegistry();
     const regs = globalRegistry.getRunFnRegistrations("TEST_PROVIDER_ENTRY");
     expect(regs).toHaveLength(2);
@@ -187,9 +189,7 @@ describe("AiProviderRegistry — capability dispatch", () => {
     expect(
       (registry as unknown as Record<string, unknown>).registerAsWorkerStreamFn
     ).toBeUndefined();
-    expect(
-      (registry as unknown as Record<string, unknown>).getProviderIdsForTask
-    ).toBeUndefined();
+    expect((registry as unknown as Record<string, unknown>).getProviderIdsForTask).toBeUndefined();
   });
 });
 

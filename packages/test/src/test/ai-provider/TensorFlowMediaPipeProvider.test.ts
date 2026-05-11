@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { TensorFlowMediaPipeQueuedProvider } from "./TensorFlowMediaPipeQueuedProvider";
-import { TFMP_RUN_FNS } from "./common/TFMP_JobRunFns";
-import { TFMP_RUN_FN_SPECS } from "./common/TFMP_Capabilities";
+import { _testOnly } from "@workglow/tf-mediapipe/ai";
+import { describe, expect, it } from "vitest";
+
+const { TensorFlowMediaPipeQueuedProvider, TFMP_RUN_FN_SPECS, TFMP_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -69,9 +69,7 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
     expect(provider.inferCapabilities(model("selfie_segmenter.tflite"))).toContain(
       "image.segmentation"
     );
-    expect(provider.inferCapabilities(model("deeplab_v3.tflite"))).toContain(
-      "image.segmentation"
-    );
+    expect(provider.inferCapabilities(model("deeplab_v3.tflite"))).toContain("image.segmentation");
   });
 
   it("infers image.classification for efficientnet/mobilenet", () => {
@@ -84,9 +82,9 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
   });
 
   it("infers text.embedding for universal_sentence_encoder", () => {
-    expect(
-      provider.inferCapabilities(model("universal_sentence_encoder.tflite"))
-    ).toContain("text.embedding");
+    expect(provider.inferCapabilities(model("universal_sentence_encoder.tflite"))).toContain(
+      "text.embedding"
+    );
   });
 
   it("infers text.language-detection for language_detector", () => {

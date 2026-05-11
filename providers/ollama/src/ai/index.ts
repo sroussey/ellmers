@@ -7,3 +7,16 @@
 export * from "./common/Ollama_Constants";
 export * from "./common/Ollama_ModelSchema";
 export * from "./registerOllama";
+
+import { OLLAMA_RUN_FN_SPECS } from "./common/Ollama_Capabilities";
+import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns";
+import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  OllamaQueuedProvider,
+  OLLAMA_RUN_FN_SPECS,
+  OLLAMA_RUN_FNS,
+} as const;

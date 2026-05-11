@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { HuggingFaceTransformersQueuedProvider } from "./HuggingFaceTransformersQueuedProvider";
-import { HFT_RUN_FNS } from "./common/HFT_JobRunFns";
-import { HFT_RUN_FN_SPECS } from "./common/HFT_Capabilities";
+import {
+  HuggingFaceTransformersQueuedProvider,
+  _testOnly,
+} from "@workglow/huggingface-transformers/ai";
+import { describe, expect, it } from "vitest";
+
+const { HFT_RUN_FN_SPECS, HFT_RUN_FNS } = _testOnly;
 
 function model(
   model_id: string,

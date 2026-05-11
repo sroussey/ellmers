@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { LlamaCppQueuedProvider } from "./LlamaCppQueuedProvider";
-import { LLAMACPP_RUN_FNS } from "./common/LlamaCpp_JobRunFns";
-import { LLAMACPP_RUN_FN_SPECS } from "./common/LlamaCpp_Capabilities";
+import { _testOnly } from "@workglow/node-llama-cpp/ai";
+import { describe, expect, it } from "vitest";
+
+const { LlamaCppQueuedProvider, LLAMACPP_RUN_FN_SPECS, LLAMACPP_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {

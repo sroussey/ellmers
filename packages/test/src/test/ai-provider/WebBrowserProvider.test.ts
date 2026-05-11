@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { WebBrowserProvider } from "./WebBrowserProvider";
-import { WEB_BROWSER_RUN_FNS } from "./common/WebBrowser_JobRunFns";
-import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
+import { _testOnly } from "@workglow/chrome-ai/ai";
+import { describe, expect, it } from "vitest";
+
+const { WebBrowserProvider, WEB_BROWSER_RUN_FN_SPECS, WEB_BROWSER_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
