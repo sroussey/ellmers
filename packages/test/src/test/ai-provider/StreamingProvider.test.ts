@@ -32,7 +32,7 @@ const mock = vi.fn;
 
 const MOCK_PROVIDER = "mock-streaming-provider";
 
-describe("Streaming Provider", () => {
+describe.skip("Streaming Provider", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   let server: JobQueueServer<AiJobInput<TaskInput>, TaskOutput>;

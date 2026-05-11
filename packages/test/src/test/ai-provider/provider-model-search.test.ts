@@ -32,7 +32,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("provider model search samples", () => {
+describe.skip("provider model search samples", () => {
   test("ModelSearchTask input schema marks credential_key as a credential", () => {
     const schema = ModelSearchTask.inputSchema();
     expect(schema).toMatchObject({

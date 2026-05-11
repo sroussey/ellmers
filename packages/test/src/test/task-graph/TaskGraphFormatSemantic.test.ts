@@ -232,7 +232,7 @@ describe("TaskGraph with format annotations", () => {
           registry: ServiceRegistry
         ): Promise<{ model: string | string[] }> {
           const modelRepo = registry.get<ModelRepository>(MODEL_REPOSITORY);
-          const validModels = await modelRepo.findModelsByTask(this.type);
+          const validModels = await modelRepo.findModelsByTask("text.embedding");
           const validIds = new Set(validModels?.map((m) => m.model_id) ?? []);
 
           const models = Array.isArray(input.model) ? input.model : [input.model];
@@ -298,7 +298,7 @@ describe("TaskGraph with format annotations", () => {
           registry: ServiceRegistry
         ): Promise<{ model: string | string[] }> {
           const modelRepo = registry.get<ModelRepository>(MODEL_REPOSITORY);
-          const validModels = await modelRepo.findModelsByTask(this.type);
+          const validModels = await modelRepo.findModelsByTask("text.embedding");
           const validIds = new Set(validModels?.map((m) => m.model_id) ?? []);
 
           const models = Array.isArray(input.model) ? input.model : [input.model];
