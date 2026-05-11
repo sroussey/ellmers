@@ -11,6 +11,7 @@ import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -266,6 +267,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
   AiChatWithKbTaskOutput
 > {
   public static override type = "AiChatWithKbTask";
+  public static override readonly requires: readonly Capability[] = ["text.generation"] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat (Knowledge Base)";
@@ -302,6 +304,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
     }
     return {
       taskType: "AiChatWithKbTask",
+      requires: (this.constructor as typeof AiChatWithKbTask).requires,
       aiProvider: model.provider,
       taskInput: input as AiChatWithKbTaskInput & { model: ModelConfig },
       sessionId: this._sessionId,

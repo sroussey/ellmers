@@ -15,6 +15,7 @@ import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   LLAMACPP_COUNT_TOKENS,
   LLAMACPP_JSON_MODE,
+  LLAMACPP_MODEL_DOWNLOAD,
   LLAMACPP_MODEL_INFO,
   LLAMACPP_MODEL_SEARCH,
   LLAMACPP_MODEL_UNLOAD,
@@ -41,6 +42,7 @@ export {
 
 import { LlamaCpp_Chat_Stream } from "./LlamaCpp_Chat";
 import { LlamaCpp_CountTokens, LlamaCpp_CountTokens_Preview } from "./LlamaCpp_CountTokens";
+import { LlamaCpp_Download } from "./LlamaCpp_Download";
 import { LlamaCpp_ModelInfo } from "./LlamaCpp_ModelInfo";
 import { LlamaCpp_ModelSearch } from "./LlamaCpp_ModelSearch";
 import { LlamaCpp_StructuredGeneration_Stream } from "./LlamaCpp_StructuredGeneration";
@@ -100,6 +102,7 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: LLAMACPP_TEXT_EMBEDDING, runFn: asStreamFn(LlamaCpp_TextEmbedding) },
   { serves: LLAMACPP_COUNT_TOKENS, runFn: asStreamFn(LlamaCpp_CountTokens) },
   { serves: LLAMACPP_MODEL_UNLOAD, runFn: asStreamFn(LlamaCpp_Unload) },
+  { serves: LLAMACPP_MODEL_DOWNLOAD, runFn: asStreamFn(LlamaCpp_Download) },
   { serves: LLAMACPP_MODEL_SEARCH, runFn: asStreamFn(LlamaCpp_ModelSearch) },
   { serves: LLAMACPP_MODEL_INFO, runFn: asStreamFn(LlamaCpp_ModelInfo) },
 ];

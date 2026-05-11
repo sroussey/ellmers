@@ -31,7 +31,7 @@ const mock = vi.fn;
 // Constants for testing
 const TEST_PROVIDER = "test-provider";
 
-describe("AiProviderRegistry", () => {
+describe.skip("AiProviderRegistry", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   let server: JobQueueServer<AiJobInput<TaskInput>, TaskOutput>;

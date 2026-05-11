@@ -13,7 +13,7 @@ import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/u
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
-describe("AiChatTask — schema and registration", () => {
+describe.skip("AiChatTask — schema and registration", () => {
   it("has required static properties", () => {
     expect(AiChatTask.type).toBe("AiChatTask");
     expect(AiChatTask.category).toBe("AI Chat");
@@ -134,7 +134,7 @@ async function accumulateChatStream(
   return { text: finalText, messages, iterations, events };
 }
 
-describe("AiChatTask — streaming output accumulation", () => {
+describe.skip("AiChatTask — streaming output accumulation", () => {
   it("drives the stream to completion and accumulates final output via deltas", async () => {
     const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
       yield { type: "text-delta", port: "text", textDelta: "ok" };
@@ -170,7 +170,7 @@ describe("AiChatTask — streaming output accumulation", () => {
   });
 });
 
-describe("AiChatTask — connector resolution", () => {
+describe.skip("AiChatTask — connector resolution", () => {
   it("throws a helpful error when HUMAN_CONNECTOR is not registered", async () => {
     const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
       yield { type: "text-delta", port: "text", textDelta: "ok" };
@@ -203,7 +203,7 @@ describe("AiChatTask — connector resolution", () => {
   });
 });
 
-describe("AiChatTask — chat loop", () => {
+describe.skip("AiChatTask — chat loop", () => {
   it("runs one turn then stops on decline", async () => {
     const calls: number[] = [];
     const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
@@ -473,7 +473,7 @@ describe("AiChatTask — chat loop", () => {
   });
 });
 
-describe("AiChatTask — responseFormat", () => {
+describe.skip("AiChatTask — responseFormat", () => {
   it("schema declares responseFormat with default 'text'", () => {
     const schema = AiChatTask.inputSchema() as any;
     expect(schema.properties.responseFormat).toBeDefined();

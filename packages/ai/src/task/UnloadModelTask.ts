@@ -8,6 +8,7 @@ import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -47,8 +48,26 @@ export class UnloadModelTask extends AiTask<
   UnloadModelTaskConfig
 > {
   public static override type = "UnloadModelTask";
-  /** Provider lifecycle — handled outside dispatch; no capability gate. */
-  public static override readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  /**
+   * Resolves to the provider's `["model.unload"]` run-fn registration. Local
+   * providers (HFT, Ollama, LlamaCpp, TFMP, chrome-ai) opt-in by registering
+   * a run-fn with `serves: ["model.unload"]`; cloud providers don't register
+   * one and `UnloadModelTask` for cloud models is a no-op (or surfaces as a
+   * runtime "no run-fn for provider serving model.unload" error).
+   */
+  public static override readonly requires: readonly Capability[] = ["model.unload"] as const satisfies readonly Capability[];
+
+  /**
+   * Provider-lifecycle override: `requires: ["model.unload"]` routes the
+   * dispatcher to the provider's unload run-fn, but the *model* record
+   * doesn't need to advertise `model.unload` in its `capabilities` —
+   * unload is a provider-side operation on whatever the provider has
+   * resident, not a property of the model. Skip the capability gate.
+   */
+  protected override gateOrThrow(_model: ModelConfig): void {
+    // intentional no-op
+  }
+
   public static override category = "AI Model";
   public static override title = "Unload Model";
   public static override description =
