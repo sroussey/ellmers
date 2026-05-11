@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.2.34
+
+### Bug Fixes
+
+#### ai
+
+- emit iterations on finish + composite kb:doc key + clarify text schema
+
 ## 0.2.33
 
 ### Features
