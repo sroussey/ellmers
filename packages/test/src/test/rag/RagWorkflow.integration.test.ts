@@ -51,25 +51,29 @@ describe("RAG Workflow End-to-End", () => {
   setLogger(logger);
 
   beforeAll(async () => {
-    console.log("[diag] RagWorkflow beforeAll: start");
-    // Setup task queue and model repository
-    console.log("[diag] RagWorkflow beforeAll: setTaskQueueRegistry(null)");
+    const mem = (label: string): void => {
+      const m = process.memoryUsage();
+      const fmt = (n: number): string => `${(n / 1024 / 1024).toFixed(0)}MB`;
+      console.log(
+        `[mem] ${label}: rss=${fmt(m.rss)} heapUsed=${fmt(m.heapUsed)} heapTotal=${fmt(m.heapTotal)} external=${fmt(m.external)} arrayBuffers=${fmt(m.arrayBuffers)}`
+      );
+    };
+    mem("RagWorkflow beforeAll: start");
     await setTaskQueueRegistry(null);
-    console.log("[diag] RagWorkflow beforeAll: setGlobalModelRepository");
+    mem("RagWorkflow beforeAll: after setTaskQueueRegistry(null)");
     setGlobalModelRepository(new InMemoryModelRepository());
-    console.log("[diag] RagWorkflow beforeAll: clearPipelineCache");
+    mem("RagWorkflow beforeAll: after setGlobalModelRepository");
     clearPipelineCache();
-    console.log("[diag] RagWorkflow beforeAll: registerHuggingFaceTransformersInline");
+    mem("RagWorkflow beforeAll: after clearPipelineCache");
     await registerHuggingFaceTransformersInline();
-    console.log("[diag] RagWorkflow beforeAll: registerHuggingfaceLocalModels");
+    mem("RagWorkflow beforeAll: after registerHuggingFaceTransformersInline");
     await registerHuggingfaceLocalModels();
-    console.log("[diag] RagWorkflow beforeAll: createKnowledgeBase");
-    // Create unified KnowledgeBase
+    mem("RagWorkflow beforeAll: after registerHuggingfaceLocalModels");
     kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: 384,
     });
-    console.log("[diag] RagWorkflow beforeAll: done");
+    mem("RagWorkflow beforeAll: after createKnowledgeBase");
   });
 
   afterAll(async () => {

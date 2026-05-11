@@ -78,17 +78,24 @@ describe("End-to-End RAG Pipeline", () => {
   });
 
   afterAll(async () => {
-    console.log("[diag] EndToEnd afterAll: kb.destroy");
+    const mem = (label: string): void => {
+      const m = process.memoryUsage();
+      const fmt = (n: number): string => `${(n / 1024 / 1024).toFixed(0)}MB`;
+      console.log(
+        `[mem] ${label}: rss=${fmt(m.rss)} heapUsed=${fmt(m.heapUsed)} heapTotal=${fmt(m.heapTotal)} external=${fmt(m.external)} arrayBuffers=${fmt(m.arrayBuffers)}`
+      );
+    };
+    mem("EndToEnd afterAll: start");
     kb.destroy();
-    console.log("[diag] EndToEnd afterAll: stopQueues");
+    mem("EndToEnd afterAll: after kb.destroy");
     await getTaskQueueRegistry().stopQueues();
-    console.log("[diag] EndToEnd afterAll: clearQueues");
+    mem("EndToEnd afterAll: after stopQueues");
     await getTaskQueueRegistry().clearQueues();
-    console.log("[diag] EndToEnd afterAll: setTaskQueueRegistry(null)");
+    mem("EndToEnd afterAll: after clearQueues");
     await setTaskQueueRegistry(null);
-    console.log("[diag] EndToEnd afterAll: clearPipelineCache");
+    mem("EndToEnd afterAll: after setTaskQueueRegistry(null)");
     clearPipelineCache();
-    console.log("[diag] EndToEnd afterAll: done");
+    mem("EndToEnd afterAll: after clearPipelineCache");
   });
 
   it("should ingest document through complete pipeline", async () => {
