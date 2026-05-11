@@ -106,6 +106,33 @@ export function runGenericKvRepositoryTests(
       expect(putFn).toHaveBeenCalledWith("a", "1");
       expect(putFn).toHaveBeenCalledWith("b", "2");
     });
+
+    it("should emit a getAll event with the returned results", async () => {
+      // Probe support — some backends (e.g. FsFolderKvStorage) don't implement getAll
+      try {
+        await repository.getAll();
+      } catch {
+        return;
+      }
+
+      const getAllFn = vi.fn();
+      repository.on("getAll", getAllFn);
+
+      // Empty / undefined case
+      await repository.getAll();
+      expect(getAllFn).toHaveBeenCalledTimes(1);
+      const firstArg = getAllFn.mock.calls[0][0];
+      expect(firstArg === undefined || (Array.isArray(firstArg) && firstArg.length === 0)).toBe(
+        true
+      );
+
+      // Populated case
+      await repository.put("k1", "v1");
+      const results = await repository.getAll();
+      expect(getAllFn).toHaveBeenCalledTimes(2);
+      expect(getAllFn).toHaveBeenLastCalledWith(results);
+      expect(results).toEqual([{ key: "k1", value: "v1" }]);
+    });
   });
 
   describe("with json value", () => {

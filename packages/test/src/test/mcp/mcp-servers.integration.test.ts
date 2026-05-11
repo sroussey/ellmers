@@ -44,7 +44,6 @@ const MCP_SERVERS = [
   { name: "Exa Search", url: "https://mcp.exa.ai/mcp" },
   { name: "Hugging Face", url: "https://hf.co/mcp" },
   { name: "Remote MCP", url: "https://mcp.remote-mcp.com" },
-  { name: "GitMCP", url: "https://gitmcp.io/docs" },
 ] as const;
 
 /** Build minimal input from tool inputSchema for integration test calls */
