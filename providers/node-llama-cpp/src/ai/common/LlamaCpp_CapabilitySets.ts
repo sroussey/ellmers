@@ -22,6 +22,7 @@ export const LLAMACPP_COUNT_TOKENS = [
   "model.count-tokens",
 ] as const satisfies readonly Capability[];
 export const LLAMACPP_MODEL_UNLOAD = ["model.unload"] as const satisfies readonly Capability[];
+export const LLAMACPP_MODEL_DOWNLOAD = ["model.download"] as const satisfies readonly Capability[];
 export const LLAMACPP_MODEL_SEARCH = [
   "provider.model-search",
 ] as const satisfies readonly Capability[];
@@ -36,6 +37,7 @@ export const LLAMACPP_CAPABILITY_SETS = [
   LLAMACPP_TEXT_EMBEDDING,
   LLAMACPP_COUNT_TOKENS,
   LLAMACPP_MODEL_UNLOAD,
+  LLAMACPP_MODEL_DOWNLOAD,
   LLAMACPP_MODEL_SEARCH,
   LLAMACPP_MODEL_INFO,
 ] as const;

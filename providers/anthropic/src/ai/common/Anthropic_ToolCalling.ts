@@ -12,7 +12,7 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription } from "@workglow/ai/worker";
+import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
@@ -159,6 +159,15 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
   const toolCallsInStreamOrder = (): ToolCall[] =>
     [...toolCallsByBlockIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
 
+  /**
+   * Defence-in-depth: drop tool calls whose name isn't in the declared tool
+   * set before yielding to the consumer. Anthropic's tool API normally
+   * respects `input.tools`, but a stray response from a model that
+   * hallucinates a function name would otherwise propagate to dispatch.
+   */
+  const validatedToolCallsInStreamOrder = (): ToolCall[] =>
+    filterValidToolCalls(toolCallsInStreamOrder(), input.tools);
+
   for await (const event of stream) {
     if (event.type === "content_block_start") {
       const block = event.content_block;
@@ -197,7 +206,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
           yield {
             type: "object-delta",
             port: "toolCalls",
-            objectDelta: toolCallsInStreamOrder(),
+            objectDelta: validatedToolCallsInStreamOrder(),
           };
         }
       }
@@ -216,7 +225,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
         yield {
           type: "object-delta",
           port: "toolCalls",
-          objectDelta: toolCallsInStreamOrder(),
+          objectDelta: validatedToolCallsInStreamOrder(),
         };
       }
       blockMeta.delete(index);

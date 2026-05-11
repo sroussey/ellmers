@@ -47,8 +47,14 @@ export class UnloadModelTask extends AiTask<
   UnloadModelTaskConfig
 > {
   public static override type = "UnloadModelTask";
-  /** Provider lifecycle — handled outside dispatch; no capability gate. */
-  public static override readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  /**
+   * Resolves to the provider's `["model.unload"]` run-fn registration. Local
+   * providers (HFT, Ollama, LlamaCpp, TFMP, chrome-ai) opt-in by registering
+   * a run-fn with `serves: ["model.unload"]`; cloud providers don't register
+   * one and `UnloadModelTask` for cloud models is a no-op (or surfaces as a
+   * runtime "no run-fn for provider serving model.unload" error).
+   */
+  public static override readonly requires: readonly Capability[] = ["model.unload"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Unload Model";
   public static override description =

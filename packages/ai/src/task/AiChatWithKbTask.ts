@@ -302,6 +302,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
     }
     return {
       taskType: "AiChatWithKbTask",
+      requires: (this.constructor as typeof AiChatWithKbTask).requires,
       aiProvider: model.provider,
       taskInput: input as AiChatWithKbTaskInput & { model: ModelConfig },
       sessionId: this._sessionId,

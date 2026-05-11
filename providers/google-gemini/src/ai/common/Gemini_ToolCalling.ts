@@ -5,7 +5,7 @@
  */
 
 import type { FunctionCallingMode } from "@google/generative-ai";
-import { buildToolDescription } from "@workglow/ai/worker";
+import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type {
   AiProviderStreamFn,
   ChatMessage,
@@ -146,17 +146,27 @@ export const Gemini_ToolCalling_Stream: AiProviderStreamFn<
       }
       if ("functionCall" in part && part.functionCall) {
         const id = `call_${callIndex++}`;
-        yield {
-          type: "object-delta",
-          port: "toolCalls",
-          objectDelta: [
+        // Defence-in-depth: drop tool calls whose name isn't in the
+        // declared tool set before emitting. Gemini's tool API respects
+        // `input.tools` but a stray response that hallucinates a function
+        // name would otherwise propagate to dispatch.
+        const validated = filterValidToolCalls(
+          [
             {
               id,
               name: part.functionCall.name,
               input: (part.functionCall.args as Record<string, unknown>) ?? {},
             },
           ],
-        };
+          input.tools
+        );
+        if (validated.length > 0) {
+          yield {
+            type: "object-delta",
+            port: "toolCalls",
+            objectDelta: validated,
+          };
+        }
       }
     }
   }
