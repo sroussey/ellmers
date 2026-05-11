@@ -20,30 +20,18 @@ import type {
   DocumentTabularStorage,
   InsertDocumentStorageEntity,
 } from "../document/DocumentStorageSchema";
-import type { IKbAiStrategy } from "./IKbAiStrategy";
-import { toInsertChunkEntities } from "./IKbAiStrategy";
+import type { ChunkStrategy, IKbAiStrategy, SearchMode } from "./IKbAiStrategy";
 
 /**
- * Retrieval flavor selected by {@link KnowledgeBase.search}.
- *
- * - `similarity`: vector cosine similarity only. Requires `embedQuery`.
- * - `hybrid`: vector + full-text. Requires `embedQuery` and a hybrid-capable
- *   storage backend.
- * - `rerank`: hybrid (or similarity, if hybrid unsupported) first stage
- *   followed by cross-encoder reranking. Requires `rerank` on the strategy.
- */
-export type SearchKind = "similarity" | "hybrid" | "rerank";
-
-/**
- * Options passed through `kb.search()` / `kb.searchWithRerank()`. `filter` is
- * a loose record; allowed keys are defined by the underlying vector storage.
+ * Options passed through `kb.search()`. `filter` is a loose record; allowed
+ * keys are defined by the underlying vector storage.
  */
 export interface ISearchOptions {
   readonly topK?: number;
   readonly filter?: Readonly<Record<string, unknown>>;
   readonly scoreThreshold?: number;
   /**
-   * For `kind: "hybrid"` and the first stage of `kind: "rerank"`: vector
+   * For hybrid retrieval and the first stage of rerank retrieval: vector
    * vs. text weighting in [0, 1]. Defaults to the storage backend's default.
    */
   readonly vectorWeight?: number;
@@ -73,6 +61,7 @@ export interface HybridSearchOptions<
   readonly textQuery: string;
   readonly topK?: number;
   readonly filter?: Partial<Metadata>;
+  readonly scoreThreshold?: number;
   readonly vectorWeight?: number;
   /** RRF saturation constant; standard value is 60. */
   readonly rrfK?: number;
@@ -147,10 +136,6 @@ function matchesFilter<T extends Record<string, unknown>>(
   return true;
 }
 
-export interface ISearchWithKindOptions extends ISearchOptions {
-  readonly kind?: SearchKind;
-}
-
 export interface KnowledgeBaseOptions {
   readonly title?: string;
   readonly description?: string;
@@ -172,29 +157,43 @@ export interface KnowledgeBaseOptions {
    */
   readonly queryEmbeddingModel?: string;
   /**
-   * Optional cross-encoder reranker model ID. When set (and the strategy
-   * implements rerank against it) `search({ kind: "rerank" })` and
-   * `searchWithRerank()` use a real cross-encoder; otherwise the strategy
-   * may fall back to a heuristic.
+   * Optional cross-encoder reranker model ID. Required when `searchMode`
+   * is `"rerank"`.
    */
   readonly rerankerModel?: string;
+  /** Chunker mode used by ingest. Defaults to `"hierarchical"`. */
+  readonly chunkStrategy?: ChunkStrategy;
   /**
-   * The AI strategy used by `upsertDocumentWithIndex`, `search`, and
-   * `searchWithRerank`. Installable post-construction via
-   * {@link KnowledgeBase.setAiStrategy}.
+   * Retrieval mode used by search. Defaults to `"rerank"` when a reranker
+   * model is configured, `"hybrid"` when the storage supports it,
+   * otherwise `"similarity"`.
+   */
+  readonly searchMode?: SearchMode;
+  /**
+   * The AI strategy used by `upsert`, `delete`, and `search`. Installable
+   * post-construction via {@link KnowledgeBase.setAiStrategy}.
    */
   readonly aiStrategy?: IKbAiStrategy;
 }
 
 /**
- * Unified KnowledgeBase that owns both document and vector storage,
- * providing lifecycle management and cascading deletes.
+ * Unified KnowledgeBase that owns both document and vector storage.
  *
- * Model configuration (`docEmbeddingModel`, `queryEmbeddingModel`,
- * `rerankerModel`) lives on the KB so callers don't have to thread models
- * through every retrieval call site. Actual AI execution is delegated to an
- * {@link IKbAiStrategy} installed via {@link setAiStrategy} — this indirection
- * keeps the KB package free of `@workglow/ai` (which depends on it).
+ * The public API is intentionally tiny: `upsert`, `delete`, `search`, plus
+ * lifecycle and inspection helpers. RAG behavior (chunking, embedding,
+ * retrieval flavor) is fully delegated to an installed
+ * {@link IKbAiStrategy}. Two flavors ship:
+ *   - `createStandardKbStrategy(...)` from `@workglow/ai` — picks chunker
+ *     mode and search mode from this KB's `chunkStrategy` / `searchMode`
+ *     fields. Uses the registered model IDs.
+ *   - Custom strategies — write your own when you need scoping or unusual
+ *     retrieval; the builder ships one for per-project KBs.
+ *
+ * Storage access methods (`upsertDocument`, `upsertChunksBulk`,
+ * `similaritySearch`, `hybridSearch`, etc.) remain on the class as
+ * building blocks that strategies and subclasses use. They are documented
+ * as "strategy-facing" — application code should go through `kb.upsert` /
+ * `kb.delete` / `kb.search` instead.
  */
 export class KnowledgeBase {
   readonly name: string;
@@ -203,6 +202,8 @@ export class KnowledgeBase {
   readonly docEmbeddingModel: string | undefined = undefined;
   readonly queryEmbeddingModel: string | undefined = undefined;
   readonly rerankerModel: string | undefined = undefined;
+  readonly chunkStrategy: ChunkStrategy | undefined = undefined;
+  readonly searchMode: SearchMode | undefined = undefined;
   private readonly tabularStorage: DocumentTabularStorage;
   private readonly chunkStorage: ChunkVectorStorage;
   private aiStrategy: IKbAiStrategy | undefined;
@@ -234,6 +235,8 @@ export class KnowledgeBase {
       this.docEmbeddingModel = options.docEmbeddingModel;
       this.queryEmbeddingModel = options.queryEmbeddingModel ?? options.docEmbeddingModel;
       this.rerankerModel = options.rerankerModel;
+      this.chunkStrategy = options.chunkStrategy;
+      this.searchMode = options.searchMode;
       this.aiStrategy = options.aiStrategy;
     }
   }
@@ -354,14 +357,9 @@ export class KnowledgeBase {
   }
 
   // ===========================================================================
-  // AI strategy
+  // Strategy installation
   // ===========================================================================
 
-  /**
-   * Install (or replace) the AI strategy that powers ingest embedding and
-   * query-side embedding / reranking. The KB stores model IDs but doesn't
-   * load models itself; the strategy bridges to the AI runtime.
-   */
   setAiStrategy(strategy: IKbAiStrategy | undefined): void {
     this.aiStrategy = strategy;
   }
@@ -370,28 +368,61 @@ export class KnowledgeBase {
     return this.aiStrategy;
   }
 
-  /** True when a strategy is installed AND a reranker model is registered. */
-  supportsRerank(): boolean {
-    return this.aiStrategy !== undefined && this.rerankerModel !== undefined;
-  }
-
   private requireStrategy(forOp: string): IKbAiStrategy {
     if (!this.aiStrategy) {
       throw new Error(
         `KnowledgeBase.${forOp}() requires an AI strategy. ` +
-          `Install one via kb.setAiStrategy(strategy) (typically createAiKbStrategy from @workglow/ai).`
+          `Install one via kb.setAiStrategy(strategy) — see createStandardKbStrategy from @workglow/ai.`
       );
     }
     return this.aiStrategy;
   }
 
   // ===========================================================================
-  // Document CRUD
+  // Public RAG API — strategy-driven
   // ===========================================================================
 
   /**
-   * Upsert a document JSON record. Does NOT chunk or embed — use
-   * {@link upsertDocumentWithIndex} for the full ingest path.
+   * Ingest a document end-to-end: chunk + embed + write. Delegates to the
+   * installed strategy.
+   */
+  async upsert(doc: Document): Promise<Document> {
+    return this.requireStrategy("upsert").ingest(this, doc);
+  }
+
+  /**
+   * Remove a document and its chunks. Delegates to the installed strategy.
+   * Method name uses `[Symbol.iterator]`-style indirection because `delete`
+   * is a JS keyword — call it via `kb.delete(...)` directly; TypeScript
+   * accepts the method name even though the bare `delete` operator does
+   * something different.
+   */
+  async delete(doc_id: string): Promise<void> {
+    return this.requireStrategy("delete").delete(this, doc_id);
+  }
+
+  /**
+   * Run a text query. Retrieval flavor (text / similarity / hybrid /
+   * rerank) is decided by the installed strategy — typically derived from
+   * this KB's `searchMode` field.
+   */
+  async search(query: string, options?: ISearchOptions): Promise<ChunkSearchResult[]> {
+    return this.requireStrategy("search").search(this, query, options);
+  }
+
+  // ===========================================================================
+  // Strategy-facing building blocks
+  //
+  // These methods are public so strategies (and subclasses like
+  // `ScopedKnowledgeBase`) can call them, but application code should go
+  // through `upsert` / `delete` / `search` above. The contract: every one
+  // of these goes through virtual dispatch, so a subclass can intercept
+  // any of them without the strategy knowing.
+  // ===========================================================================
+
+  /**
+   * Store a document JSON record. Does NOT chunk or embed; the strategy
+   * does that orchestration and then calls back into this method.
    * @returns The document with the generated doc_id if it was auto-generated
    */
   async upsertDocument(document: Document): Promise<Document> {
@@ -411,150 +442,28 @@ export class KnowledgeBase {
   }
 
   /**
-   * Full ingest: store the document, drop any existing chunks for it, then
-   * chunk + embed + upsert via the installed AI strategy. Throws if no
-   * strategy is installed.
-   */
-  async upsertDocumentWithIndex(document: Document): Promise<Document> {
-    const strategy = this.requireStrategy("upsertDocumentWithIndex");
-    const stored = await this.upsertDocument(document);
-    const docId = stored.doc_id;
-    if (!docId) {
-      throw new Error(
-        "upsertDocumentWithIndex: document has no doc_id after upsertDocument."
-      );
-    }
-    await this.deleteChunksForDocument(docId);
-    const embedResult = await strategy.chunkAndEmbedDocument(stored);
-    if (embedResult.chunks.length === 0) {
-      return stored;
-    }
-    const inserts = toInsertChunkEntities(embedResult, {
-      doc_id: docId,
-      doc_title: stored.metadata.title,
-    });
-    await this.upsertChunksBulk(inserts);
-    return stored;
-  }
-
-  /**
-   * Get a document by ID
-   */
-  async getDocument(doc_id: string): Promise<Document | undefined> {
-    const entity = await this.tabularStorage.get({ doc_id });
-    if (!entity) {
-      return undefined;
-    }
-    return Document.fromJSON(entity.data, entity.doc_id);
-  }
-
-  /**
-   * Delete a document and all its chunks (cascading delete).
+   * Cascading delete: chunks first, then the document row. Strategies call
+   * this directly when their `delete()` doesn't need extra logic.
    */
   async deleteDocument(doc_id: string): Promise<void> {
     await this.deleteChunksForDocument(doc_id);
     await this.tabularStorage.delete({ doc_id });
   }
 
-  /**
-   * List all document IDs
-   */
+  async getDocument(doc_id: string): Promise<Document | undefined> {
+    const entity = await this.tabularStorage.get({ doc_id });
+    if (!entity) return undefined;
+    return Document.fromJSON(entity.data, entity.doc_id);
+  }
+
   async listDocuments(): Promise<string[]> {
     const entities = await this.tabularStorage.getAll();
-    if (!entities) {
-      return [];
-    }
+    if (!entities) return [];
     return entities.map((e: DocumentStorageEntity) => e.doc_id);
   }
 
-  // ===========================================================================
-  // Tree traversal
-  // ===========================================================================
+  // ----- chunks -----
 
-  /**
-   * Get a specific node by ID from a document
-   */
-  async getNode(doc_id: string, nodeId: string): Promise<DocumentNode | undefined> {
-    const doc = await this.getDocument(doc_id);
-    if (!doc) {
-      return undefined;
-    }
-
-    const traverse = (node: DocumentNode): DocumentNode | undefined => {
-      if (node.nodeId === nodeId) {
-        return node;
-      }
-      if ("children" in node && Array.isArray(node.children)) {
-        for (const child of node.children) {
-          const found = traverse(child);
-          if (found) return found;
-        }
-      }
-      return undefined;
-    };
-
-    return traverse(doc.root);
-  }
-
-  /**
-   * Get ancestors of a node (from root to target node)
-   */
-  async getAncestors(doc_id: string, nodeId: string): Promise<DocumentNode[]> {
-    const doc = await this.getDocument(doc_id);
-    if (!doc) {
-      return [];
-    }
-
-    const path: string[] = [];
-    const findPath = (node: DocumentNode): boolean => {
-      path.push(node.nodeId);
-      if (node.nodeId === nodeId) {
-        return true;
-      }
-      if ("children" in node && Array.isArray(node.children)) {
-        for (const child of node.children) {
-          if (findPath(child)) {
-            return true;
-          }
-        }
-      }
-      path.pop();
-      return false;
-    };
-
-    if (!findPath(doc.root)) {
-      return [];
-    }
-
-    const ancestors: DocumentNode[] = [];
-    let currentNode: DocumentNode = doc.root;
-    ancestors.push(currentNode);
-
-    for (let i = 1; i < path.length; i++) {
-      const targetId = path[i];
-      if ("children" in currentNode && Array.isArray(currentNode.children)) {
-        const found = currentNode.children.find((child: DocumentNode) => child.nodeId === targetId);
-        if (found) {
-          currentNode = found;
-          ancestors.push(currentNode);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    return ancestors;
-  }
-
-  // ===========================================================================
-  // Chunk CRUD
-  // ===========================================================================
-
-  /**
-   * Upsert a single chunk vector entity
-   */
   async upsertChunk(chunk: InsertChunkVectorEntity): Promise<ChunkVectorEntity> {
     const expected = this.getVectorDimensions();
     if (expected > 0 && chunk.vector.length !== expected) {
@@ -567,9 +476,6 @@ export class KnowledgeBase {
     return stored;
   }
 
-  /**
-   * Upsert multiple chunk vector entities
-   */
   async upsertChunksBulk(chunks: InsertChunkVectorEntity[]): Promise<ChunkVectorEntity[]> {
     const expected = this.getVectorDimensions();
     if (expected > 0) {
@@ -586,9 +492,6 @@ export class KnowledgeBase {
     return stored;
   }
 
-  /**
-   * Delete all chunks for a specific document
-   */
   async deleteChunksForDocument(doc_id: string): Promise<void> {
     await this.chunkStorage.deleteSearch({ doc_id });
     if (this.textIndex) {
@@ -596,24 +499,13 @@ export class KnowledgeBase {
     }
   }
 
-  /**
-   * Get all chunks for a specific document
-   */
   async getChunksForDocument(doc_id: string): Promise<ChunkVectorEntity[]> {
     const results = await this.chunkStorage.query({ doc_id });
     return (results ?? []) as ChunkVectorEntity[];
   }
 
-  // ===========================================================================
-  // Search
-  // ===========================================================================
+  // ----- vector retrieval -----
 
-  /**
-   * Search for similar chunks using vector similarity. This is the canonical
-   * scope-aware entry point — subclasses (e.g. a scoped KB that isolates by
-   * tenant) override this to inject filter predicates before delegating to
-   * the underlying storage.
-   */
   async similaritySearch(
     query: TypedArray,
     options?: VectorSearchOptions<ChunkRecord>
@@ -622,24 +514,6 @@ export class KnowledgeBase {
     return raw.map((r) => ({ ...r, scoreType: "cosine" }) as ChunkSearchResult);
   }
 
-  /**
-   * Hybrid search combining vector similarity and full-text BM25(F) ranking.
-   * The two rankers run in parallel, then their per-rank contributions are
-   * fused with Reciprocal Rank Fusion:
-   *
-   * ```
-   * fused(d) = vectorWeight / (rrfK + rank_v(d))
-   *          + (1 - vectorWeight) / (rrfK + rank_t(d))
-   * ```
-   *
-   * RRF rewards items that appear in both rankings. Score values are *not*
-   * comparable to cosine scores — use `topK` to size the result, not a score
-   * threshold.
-   *
-   * Canonical scope-aware entry point; subclasses override for filter injection.
-   *
-   * @throws Error if no text index is installed (call {@link installTextIndex} first).
-   */
   async hybridSearch(
     query: TypedArray,
     options: HybridSearchOptions<ChunkRecord>
@@ -661,9 +535,6 @@ export class KnowledgeBase {
       candidatePoolMultiplier = 5,
     } = options;
 
-    // Empty / whitespace-only textQuery has no signal for the BM25 ranker.
-    // Returning RRF-shaped scores in that case would surprise callers, so
-    // delegate to the cosine similarity path and return cosine scores.
     if (!textQuery || textQuery.trim().length === 0) {
       return this.similaritySearch(query, { topK, filter });
     }
@@ -690,8 +561,6 @@ export class KnowledgeBase {
 
     vectorResults.forEach((entity, rank) => {
       const contribution = vectorWeightClamped / (safeRrfK + rank + 1);
-      // Strip the cosine scoreType from the wrapped similarity result; the
-      // outer fused entity will carry "rrf" once we re-emit it.
       const { scoreType: _drop, ...rest } = entity;
       fused.set(entity.chunk_id, {
         score: contribution,
@@ -746,13 +615,6 @@ export class KnowledgeBase {
     return ranked.slice(0, topK);
   }
 
-  /**
-   * Pure full-text search via the installed text index. Hydrates ranked
-   * chunkIds from chunk storage and applies optional metadata filtering
-   * post-hoc.
-   *
-   * @throws Error if no text index is installed.
-   */
   async textSearch(
     query: string,
     options: TextOnlySearchOptions = {}
@@ -790,155 +652,115 @@ export class KnowledgeBase {
     return results;
   }
 
-  /**
-   * Whether {@link hybridSearch} is available — i.e. a text index has been
-   * installed.
-   */
   supportsHybridSearch(): boolean {
     return this.textIndex !== undefined;
   }
 
-  /**
-   * Hybrid (or similarity) retrieve a wide candidate set, then ask the
-   * strategy's reranker to score them and return the best `topK`. Requires
-   * an AI strategy. If the backend doesn't support hybrid search, this
-   * falls back to similarity for the first stage.
-   */
-  async searchWithRerank(
-    query: string,
-    options?: ISearchOptions
-  ): Promise<ChunkSearchResult[]> {
-    const strategy = this.requireStrategy("searchWithRerank");
-    const topK = options?.topK ?? 5;
-    const firstStageTopK = options?.firstStageTopK ?? Math.max(topK * 5, 20);
-    const vector = await strategy.embedQuery(query);
-    const firstStage: ChunkSearchResult[] = this.supportsHybridSearch()
-      ? await this.hybridSearch(vector, {
-          textQuery: query,
-          topK: firstStageTopK,
-          filter: options?.filter as Partial<ChunkRecord> | undefined,
-          scoreThreshold: options?.scoreThreshold,
-          vectorWeight: options?.vectorWeight,
-        })
-      : await this.similaritySearch(vector, {
-          topK: firstStageTopK,
-          filter: options?.filter as Partial<ChunkRecord> | undefined,
-          scoreThreshold: options?.scoreThreshold,
-        });
-    if (firstStage.length === 0) {
-      return [];
-    }
-    return strategy.rerank(query, firstStage, topK);
+  // ===========================================================================
+  // Tree traversal helpers (unchanged)
+  // ===========================================================================
+
+  async getNode(doc_id: string, nodeId: string): Promise<DocumentNode | undefined> {
+    const doc = await this.getDocument(doc_id);
+    if (!doc) return undefined;
+
+    const traverse = (node: DocumentNode): DocumentNode | undefined => {
+      if (node.nodeId === nodeId) return node;
+      if ("children" in node && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          const found = traverse(child);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+
+    return traverse(doc.root);
   }
 
-  /**
-   * Unified text-query search dispatcher. The KB knows its own embedding
-   * model and reranker (via the installed strategy), so callers don't need
-   * to thread models through every call site.
-   *
-   * - `kind: "similarity"` — embed + vector search
-   * - `kind: "hybrid"` — embed + vector + full-text
-   * - `kind: "rerank"` — first-stage hybrid/similarity + cross-encoder rerank
-   *
-   * Defaults to `"rerank"` when a reranker model is configured, otherwise
-   * `"hybrid"` when supported, otherwise `"similarity"`.
-   */
-  async search(
-    query: string,
-    options?: ISearchWithKindOptions
-  ): Promise<ChunkSearchResult[]> {
-    const kind: SearchKind =
-      options?.kind ??
-      (this.supportsRerank()
-        ? "rerank"
-        : this.supportsHybridSearch()
-          ? "hybrid"
-          : "similarity");
+  async getAncestors(doc_id: string, nodeId: string): Promise<DocumentNode[]> {
+    const doc = await this.getDocument(doc_id);
+    if (!doc) return [];
 
-    if (kind === "rerank") {
-      return this.searchWithRerank(query, options);
+    const path: string[] = [];
+    const findPath = (node: DocumentNode): boolean => {
+      path.push(node.nodeId);
+      if (node.nodeId === nodeId) return true;
+      if ("children" in node && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          if (findPath(child)) return true;
+        }
+      }
+      path.pop();
+      return false;
+    };
+
+    if (!findPath(doc.root)) return [];
+
+    const ancestors: DocumentNode[] = [];
+    let currentNode: DocumentNode = doc.root;
+    ancestors.push(currentNode);
+
+    for (let i = 1; i < path.length; i++) {
+      const targetId = path[i];
+      if ("children" in currentNode && Array.isArray(currentNode.children)) {
+        const found = currentNode.children.find((child: DocumentNode) => child.nodeId === targetId);
+        if (found) {
+          currentNode = found;
+          ancestors.push(currentNode);
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
     }
 
-    const strategy = this.requireStrategy("search");
-    const vector = await strategy.embedQuery(query);
-    const topK = options?.topK ?? 5;
-    if (kind === "hybrid") {
-      return this.hybridSearch(vector, {
-        textQuery: query,
-        topK,
-        filter: options?.filter as Partial<ChunkRecord> | undefined,
-        scoreThreshold: options?.scoreThreshold,
-        vectorWeight: options?.vectorWeight,
-      });
-    }
-    return this.similaritySearch(vector, {
-      topK,
-      filter: options?.filter as Partial<ChunkRecord> | undefined,
-      scoreThreshold: options?.scoreThreshold,
-    });
+    return ancestors;
   }
 
   // ===========================================================================
-  // Accessors for raw storage
+  // Lifecycle / accessors
   // ===========================================================================
 
-  /**
-   * The underlying chunk/vector storage. Use when you need raw, unscoped
-   * access to low-level vector operations — e.g. bulk maintenance, metrics,
-   * or behavior that explicitly should bypass any subclass scoping. For
-   * normal search, prefer `kb.similaritySearch()` / `kb.hybridSearch()`,
-   * which subclasses can override to inject scope.
-   */
+  /** Underlying chunk store; for maintenance and inspection. */
   get vectorStorage(): ChunkVectorStorage {
     return this.chunkStorage;
   }
 
-  // ===========================================================================
-  // Lifecycle
-  // ===========================================================================
-
   /**
-   * Prepare a document for re-indexing: deletes all chunks but keeps the document.
-   * @returns The document if found, undefined otherwise
+   * Prepare a document for re-indexing: deletes all chunks but keeps the
+   * document. Used by re-index flows; routine callers should use
+   * `kb.upsert(doc)` to fully replace.
    */
   async prepareReindex(doc_id: string): Promise<Document | undefined> {
     const doc = await this.getDocument(doc_id);
-    if (!doc) {
-      return undefined;
-    }
+    if (!doc) return undefined;
     await this.deleteChunksForDocument(doc_id);
     return doc;
   }
 
   /**
-   * Re-index every document in this KB using the installed strategy. The
-   * caller is responsible for ensuring the strategy is set. Returns the
-   * number of documents re-indexed.
+   * Re-index every document by re-running ingest. Requires a strategy.
    */
   async reindex(): Promise<number> {
-    this.requireStrategy("reindex");
+    const strategy = this.requireStrategy("reindex");
     const docIds = await this.listDocuments();
     let count = 0;
     for (const doc_id of docIds) {
       const doc = await this.getDocument(doc_id);
       if (!doc) continue;
-      await this.upsertDocumentWithIndex(doc);
+      await strategy.ingest(this, doc);
       count++;
     }
     return count;
   }
 
-  /**
-   * Setup the underlying databases
-   */
   async setupDatabase(): Promise<void> {
     await this.tabularStorage.setupDatabase();
     await this.chunkStorage.setupDatabase();
   }
 
-  /**
-   * Destroy storage instances
-   */
   destroy(): void {
     this.tabularStorage.destroy();
     this.chunkStorage.destroy();
@@ -952,13 +774,6 @@ export class KnowledgeBase {
     this.destroy();
   }
 
-  // ===========================================================================
-  // Accessors
-  // ===========================================================================
-
-  /**
-   * Get a chunk by ID
-   */
   async getChunk(chunk_id: string): Promise<ChunkVectorEntity | undefined> {
     return this.chunkStorage.get({ chunk_id });
   }
@@ -979,23 +794,14 @@ export class KnowledgeBase {
     return this.upsertChunksBulk(chunks);
   }
 
-  /**
-   * Get all chunks
-   */
   async getAllChunks(): Promise<ChunkVectorEntity[] | undefined> {
     return this.chunkStorage.getAll() as Promise<ChunkVectorEntity[] | undefined>;
   }
 
-  /**
-   * Get chunk count
-   */
   async chunkCount(): Promise<number> {
     return this.chunkStorage.size();
   }
 
-  /**
-   * Clear all chunks
-   */
   async clearChunks(): Promise<void> {
     await this.chunkStorage.deleteAll();
     if (this.textIndex) {
@@ -1003,36 +809,19 @@ export class KnowledgeBase {
     }
   }
 
-  /**
-   * Get vector dimensions
-   */
   getVectorDimensions(): number {
     return this.chunkStorage.getVectorDimensions();
   }
 
-  // ===========================================================================
-  // Document chunk helpers
-  // ===========================================================================
-
-  /**
-   * Get chunks from the document JSON (not from vector storage)
-   */
   async getDocumentChunks(doc_id: string): Promise<ChunkRecord[]> {
     const doc = await this.getDocument(doc_id);
-    if (!doc) {
-      return [];
-    }
+    if (!doc) return [];
     return doc.getChunks();
   }
 
-  /**
-   * Find chunks in document JSON that contain a specific nodeId in their path
-   */
   async findChunksByNodeId(doc_id: string, nodeId: string): Promise<ChunkRecord[]> {
     const doc = await this.getDocument(doc_id);
-    if (!doc) {
-      return [];
-    }
+    if (!doc) return [];
     return doc.findChunksByNodeId(nodeId);
   }
 }
