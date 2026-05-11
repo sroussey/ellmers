@@ -6,10 +6,12 @@
 
 import type { ImageSegmentationPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
@@ -18,12 +20,18 @@ import { getPipeline } from "./HFT_Pipeline";
 /**
  * Core implementation for image segmentation using Hugging Face Transformers.
  */
-export const HFT_ImageSegmentation: AiProviderRunFn<
+export const HFT_ImageSegmentation: AiProviderStreamFn<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const segmenter: ImageSegmentationPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<ImageSegmentationTaskOutput>> {
+  const segmenter = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as ImageSegmentationPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await segmenter(imageArg, {
     threshold: input.threshold,
@@ -40,7 +48,10 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
     }))
   );
 
-  return {
-    masks: processedMasks,
+  yield {
+    type: "finish",
+    data: {
+      masks: processedMasks,
+    },
   };
 };

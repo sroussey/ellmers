@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
@@ -63,7 +62,10 @@ describe.skip("Image generation preview chain", () => {
       }
       yield { type: "finish", data: {} } as any;
     };
-    getAiProviderRegistry().registerStreamFn(MOCK_PROVIDER, "ImageGenerateTask", stream);
+    getAiProviderRegistry().registerRunFn(MOCK_PROVIDER, {
+      serves: ["image.generation"],
+      runFn: stream,
+    });
 
     const model: ModelConfig = {
       model_id: "mock/img-1",

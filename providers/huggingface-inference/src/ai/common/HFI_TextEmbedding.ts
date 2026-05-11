@@ -5,24 +5,28 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName } from "./HFI_Client";
 
-export const HFI_TextEmbedding: AiProviderRunFn<
+export const HFI_TextEmbedding: AiProviderStreamFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfInferenceModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
   const logger = getLogger();
   const timerLabel = `hfi:TextEmbedding:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
 
-  update_progress(0, "Starting HF Inference text embedding");
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -39,11 +43,14 @@ export const HFI_TextEmbedding: AiProviderRunFn<
       )
     );
 
-    update_progress(100, "Completed HF Inference text embedding");
     logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name, batch: true });
-    return {
-      vector: embeddings.map((embedding) => new Float32Array(embedding as unknown as number[])),
+    yield {
+      type: "finish",
+      data: {
+        vector: embeddings.map((embedding) => new Float32Array(embedding as unknown as number[])),
+      },
     };
+    return;
   }
 
   const embedding = await client.featureExtraction(
@@ -54,7 +61,9 @@ export const HFI_TextEmbedding: AiProviderRunFn<
     { signal }
   );
 
-  update_progress(100, "Completed HF Inference text embedding");
   logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
-  return { vector: new Float32Array(embedding as unknown as number[]) };
+  yield {
+    type: "finish",
+    data: { vector: new Float32Array(embedding as unknown as number[]) },
+  };
 };

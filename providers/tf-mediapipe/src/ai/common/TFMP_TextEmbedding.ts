@@ -5,22 +5,30 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksTextSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_TextEmbedding: AiProviderRunFn<
+export const TFMP_TextEmbedding: AiProviderStreamFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
   const { TextEmbedder } = await loadTfmpTasksTextSDK();
-  const textEmbedder = await getModelTask(model!, {}, onProgress, signal, TextEmbedder);
+  const textEmbedder = yield* bridgeProgress((cb) =>
+    getModelTask(model!, {}, cb, signal, TextEmbedder)
+  );
 
   if (Array.isArray(input.text)) {
     const embeddings = input.text.map((text) => {
@@ -33,9 +41,8 @@ export const TFMP_TextEmbedding: AiProviderRunFn<
       return Float32Array.from(result.embeddings[0].floatEmbedding);
     });
 
-    return {
-      vector: embeddings,
-    };
+    yield { type: "finish", data: { vector: embeddings } };
+    return;
   }
 
   const result = textEmbedder.embed(input.text);
@@ -46,7 +53,5 @@ export const TFMP_TextEmbedding: AiProviderRunFn<
 
   const embedding = Float32Array.from(result.embeddings[0].floatEmbedding);
 
-  return {
-    vector: embedding,
-  };
+  yield { type: "finish", data: { vector: embedding } };
 };

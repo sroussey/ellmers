@@ -7,7 +7,6 @@
 import type {
   AiChatProviderInput,
   AiChatProviderOutput,
-  AiProviderRunFn,
   AiProviderStreamFn,
 } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
@@ -152,21 +151,6 @@ async function generateTurn(
 }
 
 // ============================================================================
-// Provider run function (non-streaming)
-// ============================================================================
-
-export const HFT_Chat: AiProviderRunFn<
-  AiChatProviderInput,
-  AiChatProviderOutput,
-  HfTransformersOnnxModelConfig
-> = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
-  update_progress(0, "HFT chat turn");
-  const text = await generateTurn(input, model!, sessionId, update_progress, signal, undefined);
-  update_progress(100, "Turn complete");
-  return { text };
-};
-
-// ============================================================================
 // Provider stream function
 // ============================================================================
 
@@ -181,16 +165,23 @@ export const HFT_Chat_Stream: AiProviderStreamFn<
   _outputSchema,
   sessionId
 ): AsyncIterable<StreamEvent<AiChatProviderOutput>> {
-  const noopProgress = () => {};
+  type ChatQueueItem =
+    | { kind: "delta"; text: string }
+    | { kind: "phase"; progress: number; message?: string };
 
-  const queue: string[] = [];
+  const queue: ChatQueueItem[] = [];
   let done = false;
   let resolver: (() => void) | undefined;
 
+  const onProgress = (progress: number, message?: string): void => {
+    queue.push({ kind: "phase", progress, message });
+    resolver?.();
+  };
+
   const task = (async () => {
     try {
-      await generateTurn(input, model!, sessionId, noopProgress, signal, (piece) => {
-        queue.push(piece);
+      await generateTurn(input, model!, sessionId, onProgress, signal, (piece) => {
+        queue.push({ kind: "delta", text: piece });
         resolver?.();
       });
     } finally {
@@ -205,7 +196,12 @@ export const HFT_Chat_Stream: AiProviderStreamFn<
       resolver = undefined;
     }
     while (queue.length > 0) {
-      yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
+      const item = queue.shift()!;
+      if (item.kind === "delta") {
+        yield { type: "text-delta", port: "text", textDelta: item.text };
+      } else {
+        yield { type: "phase", message: item.message ?? "", progress: item.progress };
+      }
     }
   }
   await task;

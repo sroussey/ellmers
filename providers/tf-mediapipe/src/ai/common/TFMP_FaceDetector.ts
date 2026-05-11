@@ -4,27 +4,39 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, FaceDetectorTaskInput, FaceDetectorTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  FaceDetectorTaskInput,
+  FaceDetectorTaskOutput,
+} from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_FaceDetector: AiProviderRunFn<
+export const TFMP_FaceDetector: AiProviderStreamFn<
   FaceDetectorTaskInput,
   FaceDetectorTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<FaceDetectorTaskOutput>> {
   const { FaceDetector } = await loadTfmpTasksVisionSDK();
-  const faceDetector = await getModelTask(
-    model!,
-    {
-      minDetectionConfidence: input.minDetectionConfidence,
-      minSuppressionThreshold: input.minSuppressionThreshold,
-    },
-    onProgress,
-    signal,
-    FaceDetector
+  const faceDetector = yield* bridgeProgress((cb) =>
+    getModelTask(
+      model!,
+      {
+        minDetectionConfidence: input.minDetectionConfidence,
+        minSuppressionThreshold: input.minSuppressionThreshold,
+      },
+      cb,
+      signal,
+      FaceDetector
+    )
   );
   const result = faceDetector.detect(input.image as any);
 
@@ -48,7 +60,5 @@ export const TFMP_FaceDetector: AiProviderRunFn<
     score: detection.categories?.[0]?.score || 0,
   }));
 
-  return {
-    faces,
-  };
+  yield { type: "finish", data: { faces } };
 };

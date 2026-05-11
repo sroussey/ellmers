@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   ImageEditTaskInput,
   ImageEditTaskOutput,
@@ -43,16 +42,20 @@ async function gpuImageToBlob(image: ImageValue | string): Promise<Blob> {
   return new Blob([buffer], { type: "image/png" });
 }
 
-export const HFI_ImageEdit: AiProviderRunFn<
+/**
+ * One-shot stream wrapper. HF Inference does not support partial image streaming,
+ * so we run the request, yield one snapshot, then finish.
+ */
+export const HFI_ImageEdit_Stream: AiProviderStreamFn<
   ImageEditTaskInput,
   ImageEditTaskOutput,
   HfInferenceModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
   const logger = getLogger();
   const timer = `hfi:ImageEdit:${getModelName(model)}`;
   logger.time(timer);
-  update_progress(0, "Starting HF image edit");
 
+  let result: ImageEditTaskOutput;
   try {
     const client = await getClient(model);
     const modelName = getModelName(model);
@@ -84,9 +87,8 @@ export const HFI_ImageEdit: AiProviderRunFn<
       { signal }
     );
     const image = await blobToImageValue(blob);
-    update_progress(100, "Completed HF image edit");
     logger.timeEnd(timer);
-    return { image };
+    result = { image };
   } catch (err) {
     if (
       err instanceof ImageGenerationProviderError ||
@@ -98,18 +100,7 @@ export const HFI_ImageEdit: AiProviderRunFn<
       throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
     throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
   }
-};
 
-/**
- * One-shot stream wrapper. HF Inference does not support partial image streaming,
- * so we call the non-streaming run function, yield one snapshot, then finish.
- */
-export const HFI_ImageEdit_Stream: AiProviderStreamFn<
-  ImageEditTaskInput,
-  ImageEditTaskOutput,
-  HfInferenceModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
-  const result = await HFI_ImageEdit(input, model, () => {}, signal);
   if (signal.aborted) return;
   yield { type: "snapshot", data: result } as StreamEvent<ImageEditTaskOutput>;
   yield { type: "finish", data: {} as ImageEditTaskOutput };

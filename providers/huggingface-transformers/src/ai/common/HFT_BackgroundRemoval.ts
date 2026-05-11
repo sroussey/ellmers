@@ -6,10 +6,12 @@
 
 import type { BackgroundRemovalPipeline, RawImage } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   BackgroundRemovalTaskInput,
   BackgroundRemovalTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { dataUriToImageValue, imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
@@ -28,19 +30,28 @@ function rawImageToBase64Png(image: RawImage): string {
 /**
  * Core implementation for background removal using Hugging Face Transformers.
  */
-export const HFT_BackgroundRemoval: AiProviderRunFn<
+export const HFT_BackgroundRemoval: AiProviderStreamFn<
   BackgroundRemovalTaskInput,
   BackgroundRemovalTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const remover: BackgroundRemovalPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<BackgroundRemovalTaskOutput>> {
+  const remover = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as BackgroundRemovalPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await remover(imageArg);
 
   const resultImage = Array.isArray(result) ? result[0] : result;
   const dataUri = `data:image/png;base64,${rawImageToBase64Png(resultImage)}`;
 
-  return {
-    image: await dataUriToImageValue(dataUri),
+  yield {
+    type: "finish",
+    data: {
+      image: await dataUriToImageValue(dataUri),
+    },
   };
 };

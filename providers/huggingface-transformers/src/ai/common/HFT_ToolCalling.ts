@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Tensor, TextGenerationPipeline } from "@huggingface/transformers";
+import type { TextGenerationPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import {
   buildToolDescription,
   filterValidToolCalls,
@@ -29,11 +29,7 @@ import {
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
+import { createStreamEventQueue, createStreamingTextStreamer } from "./HFT_Streaming";
 import { createToolCallMarkupFilter } from "./HFT_ToolMarkup";
 
 // ============================================================================
@@ -299,86 +295,6 @@ function buildPromptAndPrefix(
 // Provider run functions
 // ============================================================================
 
-export const HFT_ToolCalling: AiProviderRunFn<
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-  HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal, _outputSchema, sessionId) => {
-  const generateText: TextGenerationPipeline = await getPipeline(model!, onProgress, {}, signal);
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-
-  const hfTokenizer = generateText.tokenizer;
-  const hfModel = generateText.model;
-
-  const streamer = createTextStreamer(hfTokenizer, onProgress, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-  const modelFamily = detectModelFamilyFromConfig(model!);
-  const { prompt, responsePrefix } = buildPromptAndPrefix(hfTokenizer, input, modelFamily);
-
-  const inputs = hfTokenizer(prompt, { return_tensor: true });
-
-  // Session cache: prefix-rewind for tool calling
-  const modelPath = model!.provider_config.model_path;
-  let session = sessionId ? getHftSession(sessionId) : undefined;
-  let past_key_values: any = undefined;
-
-  if (sessionId && !session) {
-    // First call with this session: encode the prefix and cache it
-    const { DynamicCache } = await loadTransformersSDK();
-    const cache = new DynamicCache();
-    await hfModel.generate({
-      ...inputs,
-      max_new_tokens: 0,
-      past_key_values: cache,
-    });
-    // Snapshot the prefix entries so we can create fresh caches on each rewind
-    const baseEntries: Record<string, any> = {};
-    for (const key of Object.keys(cache)) {
-      baseEntries[key] = cache[key];
-    }
-    const newSession: HftPrefixRewindSession = {
-      mode: "prefix-rewind",
-      baseEntries,
-      baseSeqLength: cache.get_seq_length(),
-      modelPath,
-    };
-    setHftSession(sessionId, newSession);
-    session = newSession;
-  }
-
-  if (session?.mode === "prefix-rewind") {
-    // Create a fresh DynamicCache from the prefix snapshot for this call
-    const { DynamicCache } = await loadTransformersSDK();
-    past_key_values = new DynamicCache(session.baseEntries);
-  }
-
-  const output = (await hfModel.generate({
-    ...inputs,
-    max_new_tokens: input.maxTokens ?? 1024,
-    streamer,
-    stopping_criteria: [stopping_criteria],
-    ...(past_key_values ? { past_key_values } : {}),
-  })) as Tensor;
-  const promptLen = inputs.input_ids.dims[1];
-  const seqLen = output.dims[1];
-
-  const newTokens = output.slice(0, [promptLen, seqLen], null);
-  const decoded = hfTokenizer.decode(newTokens, {
-    skip_special_tokens: false,
-  });
-  const parseableText = responsePrefix ? `${responsePrefix}${decoded}` : decoded;
-  const { text, toolCalls } = adaptParserResult(
-    parseToolCalls(parseableText, { parser: modelFamily })
-  );
-  return {
-    text,
-    toolCalls: filterValidToolCalls(normalizeParsedToolCalls(input, toolCalls), input.tools),
-  };
-};
-
 export const HFT_ToolCalling_Stream: AiProviderStreamFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -390,8 +306,9 @@ export const HFT_ToolCalling_Stream: AiProviderStreamFn<
   _outputSchema,
   sessionId
 ): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
-  const noopProgress = () => {};
-  const generateText: TextGenerationPipeline = await getPipeline(model!, noopProgress, {}, signal);
+  const generateText = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as TextGenerationPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
   const modelFamily = detectModelFamilyFromConfig(model!);
   const { prompt, responsePrefix } = buildPromptAndPrefix(

@@ -1,15 +1,17 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract assertion. Rewrite during Phase 9 for capability-set dispatch.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { collectStream, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 import { itExpectFail } from "../../itExpectFail";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -28,25 +30,30 @@ export function signalHonoringBlock(
 
   describe.skipIf(!opts.models.textGeneration)("Signal honoring", () => {
     itNonStreaming(
-      "non-streaming runFn rejects with AbortError when aborted before invocation",
+      "collectStream() rejects with AbortError when aborted before invocation",
       async () => {
         const registry = getAiProviderRegistry();
         const repo = getGlobalModelRepository();
         const model = await repo.findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const runFn = registry.getDirectRunFn(model!.provider, "TextGenerationTask");
+        const runFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
+        expect(
+          runFn,
+          `provider "${model!.provider}" has no run-fn for ["text.generation"]`
+        ).toBeDefined();
         const ac = new AbortController();
         ac.abort();
 
         let caught: unknown;
         try {
-          await runFn(
-            { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-            model!,
-            () => {},
-            ac.signal,
-            undefined,
-            undefined
+          await collectStream(
+            runFn!(
+              { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+              model!,
+              ac.signal,
+              undefined,
+              undefined
+            )
           );
         } catch (err) {
           caught = err;
@@ -65,7 +72,7 @@ export function signalHonoringBlock(
           const repo = getGlobalModelRepository();
           const model = await repo.findByName(opts.models.textGeneration!);
           expect(model).toBeDefined();
-          const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+          const streamFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
           if (!streamFn) return; // capability mismatch — covered by capabilityHonesty
           const ac = new AbortController();
           const start = Date.now();

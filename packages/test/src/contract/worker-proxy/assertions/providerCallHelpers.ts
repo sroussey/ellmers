@@ -1,11 +1,13 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract assertion. Rewrite during Phase 9 for capability-set dispatch.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
+import { collectStream, getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 export interface CallOpts {
   readonly maxTokens: number;
@@ -33,6 +35,12 @@ export async function runProviderTextGeneration(
   return { text: (result as { text?: string }).text ?? "" };
 }
 
+/**
+ * Helper used by worker-proxy conformance tests to drive a streaming
+ * text-generation run-fn end-to-end against the dispatched provider. Yields
+ * the raw `StreamEvent` objects so callers can assert on the event sequence;
+ * use {@link collectStream} when only the final output matters.
+ */
 export async function* streamProviderTextGeneration(
   modelId: string,
   prompt: string,
@@ -41,9 +49,9 @@ export async function* streamProviderTextGeneration(
   const model = await getGlobalModelRepository().findByName(modelId);
   if (!model) throw new Error(`Model not registered: ${modelId}`);
   const registry = getAiProviderRegistry();
-  const streamFn = registry.getStreamFn(model.provider, "TextGenerationTask");
+  const streamFn = registry.getRunFnFor(model.provider, TEXT_GENERATION);
   if (!streamFn) {
-    throw new Error(`No stream fn for ${model.provider}/TextGenerationTask`);
+    throw new Error(`No run-fn registered for ${model.provider} serving ["text.generation"]`);
   }
   const ac = new AbortController();
   const onCallerAbort = (): void => ac.abort(callOpts.signal?.reason);
@@ -69,3 +77,6 @@ export async function* streamProviderTextGeneration(
     callOpts.signal?.removeEventListener("abort", onCallerAbort);
   }
 }
+
+// Re-export collectStream so worker-proxy tests can use it without a second import.
+export { collectStream };

@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
@@ -15,34 +14,11 @@ import type { StreamEvent } from "@workglow/task-graph";
 import { ensureAvailable, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextGeneration: AiProviderRunFn<
+export const WebBrowser_TextGeneration: AiProviderStreamFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   WebBrowserModelConfig
-> = async (input, model, update_progress, signal) => {
-  const factory = getApi(
-    "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
-  );
-  await ensureAvailable("LanguageModel", factory);
-
-  const session = await factory.create({
-    temperature: input.temperature ?? undefined,
-  });
-  try {
-    const text = await session.prompt(input.prompt, { signal });
-    update_progress(100, "Completed text generation");
-    return { text };
-  } finally {
-    session.destroy();
-  }
-};
-
-export const WebBrowser_TextGeneration_Stream: AiProviderStreamFn<
-  TextGenerationTaskInput,
-  TextGenerationTaskOutput,
-  WebBrowserModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async function* (input, _model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
   const factory = getApi(
     "LanguageModel",
     typeof LanguageModel !== "undefined" ? LanguageModel : undefined

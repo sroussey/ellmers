@@ -5,12 +5,13 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { WEB_BROWSER } from "./WebBrowser_Constants";
 
 const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
@@ -18,10 +19,10 @@ const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
   { label: "wasm  WASM inference", value: "wasm" },
 ];
 
-export const WebBrowser_ModelSearch: AiProviderRunFn<
+export const WebBrowser_ModelSearch: AiProviderStreamFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   const models = filterLabeledModelsByQuery(WEB_BROWSER_MODELS, input.query);
   const results: ModelSearchResultItem[] = models.map((m) => ({
     id: m.value,
@@ -45,5 +46,5 @@ export const WebBrowser_ModelSearch: AiProviderRunFn<
     },
     raw: m,
   }));
-  return { results };
+  yield { type: "finish", data: { results } };
 };

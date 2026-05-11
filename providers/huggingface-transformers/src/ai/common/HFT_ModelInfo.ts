@@ -5,17 +5,22 @@
  */
 
 import type { DeviceType } from "@huggingface/transformers";
-import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ModelInfoTaskInput,
+  ModelInfoTaskOutput,
+} from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 import { getPipelineCacheKey, hasCachedPipeline, loadTransformersSDK } from "./HFT_Pipeline";
 
-export const HFT_ModelInfo: AiProviderRunFn<
+export const HFT_ModelInfo: AiProviderStreamFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model) => {
+> = async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
   // Handle dimensions detail — resolve native_dimensions and mrl
   if (input.detail === "dimensions") {
     if (!model) throw new Error("Model config is required for ModelInfoTask.");
@@ -41,18 +46,22 @@ export const HFT_ModelInfo: AiProviderRunFn<
       }
     }
 
-    return {
-      model: input.model,
-      is_local: true,
-      is_remote: false,
-      supports_browser: true,
-      supports_node: true,
-      is_cached: false,
-      is_loaded: false,
-      file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl ? { mrl } : {}),
+    yield {
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: true,
+        is_remote: false,
+        supports_browser: true,
+        supports_node: true,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl ? { mrl } : {}),
+      },
     };
+    return;
   }
 
   const logger = getLogger();
@@ -117,15 +126,18 @@ export const HFT_ModelInfo: AiProviderRunFn<
 
   logger.timeEnd(timerLabel, { model: model?.provider_config.model_path });
 
-  return {
-    model: input.model,
-    is_local: true,
-    is_remote: false,
-    supports_browser: true,
-    supports_node: true,
-    is_cached,
-    is_loaded,
-    file_sizes,
-    ...(quantizations ? { quantizations } : {}),
+  yield {
+    type: "finish",
+    data: {
+      model: input.model,
+      is_local: true,
+      is_remote: false,
+      supports_browser: true,
+      supports_node: true,
+      is_cached,
+      is_loaded,
+      file_sizes,
+      ...(quantizations ? { quantizations } : {}),
+    },
   };
 };

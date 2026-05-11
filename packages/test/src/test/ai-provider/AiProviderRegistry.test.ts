@@ -1,14 +1,19 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  AiProviderRunFnRegistration,
+  AiProviderStreamFn,
+  Capability,
+} from "@workglow/ai";
 import {
   AiJob,
   AiJobInput,
   AiProviderRegistry,
+  collectStream,
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
@@ -22,14 +27,35 @@ import {
   TaskOutput,
   TaskQueueRegistry,
 } from "@workglow/task-graph";
+import type { StreamEvent } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const mock = vi.fn;
-
 // Constants for testing
 const TEST_PROVIDER = "test-provider";
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
+
+/**
+ * Build a one-shot streaming run-fn that resolves to `result` via a single
+ * `finish` event. Records its inputs for assertions.
+ */
+function makeFinishStreamFn(
+  result: TaskOutput,
+  spy?: (...args: unknown[]) => void
+): AiProviderStreamFn {
+  return async function* (input, model, signal, outputSchema, sessionId) {
+    spy?.(input, model, signal, outputSchema, sessionId);
+    yield { type: "finish", data: result } as StreamEvent<TaskOutput>;
+  };
+}
+
+function makeReg(
+  serves: readonly Capability[],
+  runFn: AiProviderStreamFn
+): AiProviderRunFnRegistration {
+  return { serves, runFn };
+}
 
 describe.skip("AiProviderRegistry", () => {
   let logger = getTestingLogger();
@@ -83,53 +109,66 @@ describe.skip("AiProviderRegistry", () => {
   });
 
   describe("registerRunFn", () => {
-    test("should register a run function for a task type and model provider", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
+    test("should register a run function for a capability set and provider", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
-      expect(aiProviderRegistry.runFnRegistry.get("text-generation")?.get(TEST_PROVIDER)).toBe(
-        mockRunFn
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBe(runFn);
+    });
+
+    test("should create provider entry if it does not exist", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
+
+      const regs = aiProviderRegistry.getRunFnRegistrations(TEST_PROVIDER);
+      expect(regs).toHaveLength(1);
+      expect(regs[0].serves).toEqual(["text.embedding"]);
+      expect(regs[0].runFn).toBe(runFn);
+    });
+  });
+
+  describe("getRunFnFor", () => {
+    test("should return registered run function for matching capability set", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBe(runFn);
+    });
+
+    test("should return undefined when no registration matches the requires set", () => {
+      aiProviderRegistry.registerRunFn(
+        TEST_PROVIDER,
+        makeReg(["text.embedding"], makeFinishStreamFn({}))
       );
+
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBeUndefined();
     });
 
-    test("should create task type object if it does not exist", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "new-task", mockRunFn);
-
-      expect(aiProviderRegistry.runFnRegistry.get("new-task")).toBeDefined();
-      expect(aiProviderRegistry.runFnRegistry.get("new-task")?.get(TEST_PROVIDER)).toBe(mockRunFn);
-    });
-  });
-
-  describe("getDirectRunFn", () => {
-    test("should return registered run function", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
-
-      const retrievedFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      expect(retrievedFn).toBe(mockRunFn);
-    });
-
-    test("should throw error for unregistered task type", () => {
-      expect(() => {
-        aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "nonexistent");
-      }).toThrow('No run function found for task type "nonexistent" and provider "test-provider"');
+    test("should return undefined for unregistered provider", () => {
+      const retrieved = aiProviderRegistry.getRunFnFor("unknown-provider", TEXT_GENERATION);
+      expect(retrieved).toBeUndefined();
     });
   });
 
-  describe("jobAsTaskRunFn", () => {
-    test("should create a job wrapper and queue it", async () => {
-      const mockRunFn = mock(() => Promise.resolve({ result: "success" }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
-      const wrappedFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      const result = await wrappedFn(
-        { text: "test input" },
-        undefined,
-        () => {},
-        new AbortController().signal
+  describe("capability-set dispatch", () => {
+    test("collectStream returns finish.data for a registered one-shot run-fn", async () => {
+      const runFn = makeFinishStreamFn({ result: "success" });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      const wrappedFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(wrappedFn).toBeDefined();
+      const result = await collectStream(
+        wrappedFn!(
+          { text: "test input" },
+          undefined,
+          new AbortController().signal,
+          undefined,
+          undefined
+        )
       );
       expect(result).toEqual({ result: "success" });
-      expect(mockRunFn).toHaveBeenCalled();
     });
   });
 
@@ -149,11 +188,10 @@ describe.skip("AiProviderRegistry", () => {
 
   describe("AiJob", () => {
     test("should execute registered function with correct parameters", async () => {
-      const mockRunFn = mock((...args) => {
-        return Promise.resolve({ result: "success" });
-      });
+      const spy = vi.fn();
+      const runFn = makeFinishStreamFn({ result: "success" }, spy);
 
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const model = {
         model_id: "test:test-model:v1",
         title: "test-model",
@@ -173,6 +211,7 @@ describe.skip("AiProviderRegistry", () => {
         input: {
           aiProvider: TEST_PROVIDER,
           taskType: "text-generation",
+          requires: TEXT_GENERATION,
           taskInput: { text: "test", model },
         },
       });
@@ -183,6 +222,7 @@ describe.skip("AiProviderRegistry", () => {
       });
 
       expect(result).toEqual({ result: "success" });
+      expect(spy).toHaveBeenCalled();
     });
   });
 });
