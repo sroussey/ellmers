@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { AnthropicQueuedProvider } from "./AnthropicQueuedProvider";
-import { ANTHROPIC_RUN_FNS } from "./common/Anthropic_JobRunFns";
-import { ANTHROPIC_RUN_FN_SPECS } from "./common/Anthropic_Capabilities";
+import { _testOnly } from "@workglow/anthropic/ai";
+import { describe, expect, it } from "vitest";
+
+const { AnthropicQueuedProvider, ANTHROPIC_RUN_FN_SPECS, ANTHROPIC_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {

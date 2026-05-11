@@ -69,11 +69,19 @@ function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean
   return n > 1;
 }
 
+/** RAG ONNX/HuggingFace integration tests load multiple ONNX pipelines per file;
+ * default parallelism makes two files load pipelines concurrently and OOM-kills the
+ * GitHub-hosted runner (`bun test --parallel=1` is required even though it doubles
+ * wall-clock time — the job timeout-minutes covers the extra runtime). */
+function isRagOnnxIntegrationFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.includes("/rag/") && normalized.includes(".integration.");
+}
+
 function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
-  // RAG suite intentionally runs in parallel: only two .integration.test.ts files exist
-  // and serialising them blows past the per-job wall-clock budget on CI (10+ minutes).
-  // Per-test timeouts (vitest testTimeout / bun --timeout) keep heavy work bounded.
-  return shouldRunLlamaCppIntegrationFilesSequentially(files);
+  return (
+    shouldRunLlamaCppIntegrationFilesSequentially(files) || files.some(isRagOnnxIntegrationFile)
+  );
 }
 
 const SECTION_DIRS: Record<Section, string[]> = {
@@ -213,13 +221,11 @@ function buildVitestArgs(files: string[]): string[] {
   const relFiles = files.length > 0 ? files.map((f) => relative(ROOT, f)) : [];
   const args = ["npx", "vitest", "run"];
   if (files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)) {
-    // Locally: one file at a time avoids OOM when many ONNX-heavy suites load at once.
-    // CI: capped workers finish sooner (fewer runs cancelled by overlapping pushes) while limiting RAM.
-    if (process.env.CI === "true") {
-      args.push("--maxWorkers", "2");
-    } else {
-      args.push("--no-file-parallelism");
-    }
+    // One file at a time avoids OOM-kills when multiple ONNX-heavy suites load
+    // pipelines in parallel — applies to both local and CI runners (GitHub-hosted
+    // ubuntu-latest has ~7 GB RAM, easily exhausted by 2x ONNX feature-extraction
+    // pipelines). The job's timeout-minutes covers the longer serial wall-clock.
+    args.push("--no-file-parallelism");
   }
   if (process.env.CI) {
     args.push("--coverage");

@@ -4,16 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// organize-imports-ignore
-
-export * from "./execution/IAiExecutionStrategy";
 export * from "./execution/DirectExecutionStrategy";
+export * from "./execution/IAiExecutionStrategy";
 export * from "./execution/QueuedExecutionStrategy";
-
 export * from "./job/AiJob";
-
-export * from "./task/ToolCallingUtils";
-
 export * from "./model/InMemoryModelRepository";
 export * from "./model/ModelRegistry";
 export * from "./model/ModelRepository";
@@ -25,6 +19,14 @@ export * from "./provider/AiProvider";
 export * from "./provider/AiProviderRegistry";
 export * from "./provider/QueuedAiProvider";
 
+export * from "./capability";
 export * from "./task";
 
-export * from "./capability";
+import { AiVisionTask } from "./task/base/AiVisionTask";
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  AiVisionTask,
+} as const;

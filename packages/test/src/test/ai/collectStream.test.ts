@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, expectTypeOf } from "vitest";
-import { collectStream } from "./collectStream";
-import type { StreamEvent } from "./StreamEvents";
-import type { Capability } from "./Capabilities";
+import { type Capability, collectStream, type StreamEvent } from "@workglow/ai";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,7 +30,7 @@ describe("collectStream", () => {
       { type: "text-delta", port: "text", textDelta: "world!" },
       { type: "finish", data: {} as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown>;
+    const result = await collectStream(stream);
     expect(result).toEqual({ text: "Hello, world!" });
   });
 
@@ -46,9 +44,11 @@ describe("collectStream", () => {
 
   it("error: throws when stream ends without a finish event", async () => {
     type Output = { text: string };
-    const stream = makeStream<Output>(
-      { type: "text-delta", port: "text", textDelta: "incomplete" }
-    );
+    const stream = makeStream<Output>({
+      type: "text-delta",
+      port: "text",
+      textDelta: "incomplete",
+    });
     await expect(collectStream(stream)).rejects.toThrow("finish");
   });
 
@@ -89,7 +89,7 @@ describe("collectStream", () => {
       { type: "object-delta", port: "result", objectDelta: { a: 1, b: 2 } },
       { type: "finish", data: {} as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown>;
+    const result = await collectStream(stream);
     // Replace semantics: last delta replaces previous — result is { a:1, b:2 }, not a merge artifact
     expect(result).toEqual({ result: { a: 1, b: 2 } });
   });
@@ -102,7 +102,7 @@ describe("collectStream", () => {
       { type: "object-delta", port: "result", objectDelta: { a: 1, c: 3 } },
       { type: "finish", data: {} as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown>;
+    const result = await collectStream(stream);
     // Replace: second delta wins wholesale — b must NOT appear
     expect(result).toEqual({ result: { a: 1, c: 3 } });
   });
@@ -115,9 +115,12 @@ describe("collectStream", () => {
       { type: "object-delta", port: "items", objectDelta: [{ id: "a", v: 99 }] },
       { type: "finish", data: {} as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown[]>;
+    const result = (await collectStream(stream)) as unknown as Record<string, unknown[]>;
     // id "a" updated in-place, id "b" preserved
-    expect(result["items"]).toEqual([{ id: "a", v: 99 }, { id: "b", v: 2 }]);
+    expect(result["items"]).toEqual([
+      { id: "a", v: 99 },
+      { id: "b", v: 2 },
+    ]);
   });
 
   it("snapshot (replace) mode: last snapshot wins, finish data merged on top", async () => {
@@ -150,7 +153,7 @@ describe("collectStream", () => {
       { type: "text-delta", port: "summary", textDelta: " there" },
       { type: "finish", data: {} as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown>;
+    const result = await collectStream(stream);
     expect(result).toEqual({ text: "Hello world", summary: "Hi there" });
   });
 
@@ -181,7 +184,7 @@ describe("collectStream", () => {
       { type: "object-delta", port: "result", objectDelta: { a: 1 } },
       { type: "finish", data: { meta: "done" } as Output }
     );
-    const result = await collectStream(stream) as unknown as Record<string, unknown>;
+    const result = await collectStream(stream);
     expect(result).toMatchObject({ result: { a: 1 }, meta: "done" });
   });
 

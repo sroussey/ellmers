@@ -8,10 +8,7 @@ import type { WorkerServerBase as WorkerServer } from "@workglow/util/worker";
 import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
-import type {
-  AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
-} from "./AiProviderRegistry";
+import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "./AiProviderRegistry";
 import { getAiProviderRegistry, workerKeyForServes } from "./AiProviderRegistry";
 
 /**
@@ -173,6 +170,18 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   async register(options: AiProviderRegisterOptions = {}): Promise<void> {
     const isInline = !!this.runFns;
     const context: AiProviderRegisterContext = { ...options, isInline };
+
+    // Tear down any prior registration under this name BEFORE onInitialize so
+    // we don't clobber the strategy resolver that QueuedAiProvider.onInitialize
+    // re-registers below. registerRunFn() appends to a per-provider list with
+    // no dedup; without this clear, every re-registration doubles the run-fn
+    // count and leaks the previous strategy/queue/limiter via closures —
+    // OOM-kills long-running test processes (locally and on CI).
+    const registry = getAiProviderRegistry();
+    if (registry.getProvider(this.name)) {
+      registry.unregisterProvider(this.name);
+    }
+
     await this.onInitialize(context);
 
     if (isInline) {
@@ -190,8 +199,6 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
         );
       }
     }
-
-    const registry = getAiProviderRegistry();
 
     if (!isInline && options.worker) {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);

@@ -97,7 +97,7 @@ describe("HFTransformersBinding", () => {
       client.attach(server);
       // Register custom queue BEFORE the provider so QueuedExecutionStrategy.ensureQueue() finds it
       queueRegistry.registerQueue({ server, client, storage });
-      clearPipelineCache();
+      await clearPipelineCache();
       await registerHuggingFaceTransformersInline();
 
       const model: HfTransformersOnnxModelRecord = {
@@ -170,7 +170,7 @@ describe("HFTransformersBinding", () => {
       // Register custom queue BEFORE the provider so QueuedExecutionStrategy.ensureQueue() finds it
       queueRegistry.registerQueue({ server, client, storage });
 
-      clearPipelineCache();
+      await clearPipelineCache();
       await registerHuggingFaceTransformersInline();
 
       setGlobalModelRepository(new InMemoryModelRepository());

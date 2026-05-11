@@ -284,6 +284,7 @@
         "@workglow/anthropic": "workspace:*",
         "@workglow/browser-control": "workspace:*",
         "@workglow/bun-webview": "workspace:*",
+        "@workglow/chrome-ai": "workspace:*",
         "@workglow/electron": "workspace:*",
         "@workglow/google-gemini": "workspace:*",
         "@workglow/huggingface-inference": "workspace:*",

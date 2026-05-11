@@ -38,7 +38,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
   setLogger(logger);
   beforeEach(async () => {
     await setTaskQueueRegistry(null);
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
     setGlobalModelRepository(new InMemoryModelRepository());
   });

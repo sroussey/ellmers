@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
-import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
-import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
+import { _testOnly } from "@workglow/openai/ai";
+import { describe, expect, it } from "vitest";
+
+const { OpenAiQueuedProvider, OPENAI_RUN_FN_SPECS, OPENAI_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {

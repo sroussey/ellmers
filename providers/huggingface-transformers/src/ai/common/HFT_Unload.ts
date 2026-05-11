@@ -82,7 +82,7 @@ export const HFT_Unload: AiProviderStreamFn<
   // Delete the pipeline from the in-memory map. Intermediate progress callbacks dropped:
   // one-shot run-fns signal completion via the finish event.
   const cacheKey = getPipelineCacheKey(model!);
-  removeCachedPipeline(cacheKey);
+  await removeCachedPipeline(cacheKey);
 
   const model_path = model!.provider_config.model_path;
 

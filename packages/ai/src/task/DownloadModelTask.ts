@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import type { ModelConfig } from "../model/ModelSchema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -55,7 +55,9 @@ export class DownloadModelTask extends AiTask<
    * `DownloadModelTask` for cloud models surfaces as a runtime "no run-fn
    * for provider serving model.download" error.
    */
-  public static override readonly requires: readonly Capability[] = ["model.download"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "model.download",
+  ] as const satisfies readonly Capability[];
 
   /**
    * Provider-lifecycle override: `requires: ["model.download"]` routes the

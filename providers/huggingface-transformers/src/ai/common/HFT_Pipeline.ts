@@ -183,7 +183,7 @@ function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   );
 }
 
-const pipelines = new Map<string, any>();
+const pipelines = new Map<string, Awaited<ReturnType<TransformersSDKModule["pipeline"]>>>();
 
 // ============================================================================
 // Session cache for multi-turn conversations
@@ -281,18 +281,64 @@ const IMAGE_PIPELINE_TYPES = new Set([
 export const HFT_NULL_PROCESSOR_PREFIX = "HFT_NULL_PROCESSOR:";
 
 /**
- * Clear all cached pipelines
+ * Clear all cached pipelines. Best-effort calls `.dispose()` on each pipeline's
+ * underlying ONNX model so its native (WASM) memory is released immediately —
+ * dropping the JS reference alone leaks ONNX sessions, which accumulate across
+ * test files and OOM-kill the next file's pipeline load. Any dispose Promise
+ * is intentionally not awaited (synchronous API is required by the many
+ * callers); native free happens synchronously inside dispose.
  */
-export function clearPipelineCache(): void {
+/**
+ * Clear all cached pipelines. Best-effort awaits `model.dispose()` on each
+ * pipeline so its ONNX sessions release their WASM memory before the cache
+ * is cleared. transformers.js's dispose is async (it awaits `session.release()`
+ * on every session in `model.sessions`); calling it synchronously would
+ * fire-and-forget the WASM release.
+ */
+export async function clearPipelineCache(): Promise<void> {
+  const snapshot = Array.from(pipelines.values());
   pipelines.clear();
+  await Promise.allSettled(
+    snapshot.map(async (pipeline) => {
+      try {
+        const model = pipeline?.model;
+        await model?.dispose?.();
+      } catch {
+        // Best-effort: a dispose failure on one pipeline must not block others.
+      }
+    })
+  );
 }
 
 export function hasCachedPipeline(cacheKey: string): boolean {
   return pipelines.has(cacheKey);
 }
 
-export function removeCachedPipeline(cacheKey: string): boolean {
-  return pipelines.delete(cacheKey);
+/**
+ * Remove a pipeline from the cache and asynchronously dispose its underlying
+ * ONNX sessions. transformers.js's `model.dispose()` is async — it iterates
+ * `model.sessions` and awaits `session.release?.()` on each, which is what
+ * actually frees the WASM session memory. Dropping the JS reference alone
+ * leaks ONNX sessions because the WASM heap doesn't shrink in response to V8
+ * GC; explicit `release()` is required.
+ *
+ * Returns the model.dispose() promise; callers that can await it should
+ * (e.g. inside HFT_Unload's async generator) so the WASM release completes
+ * before the next operation. Best-effort: dispose failure does not prevent
+ * cache eviction.
+ */
+export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
+  const pipeline = pipelines.get(cacheKey);
+  const deleted = pipelines.delete(cacheKey);
+  if (pipeline) {
+    try {
+      const model = pipeline?.model;
+      await model?.dispose?.();
+    } catch {
+      // Best-effort: dispose failure must not propagate.
+    }
+  }
+  return deleted;
 }
 
 /** True when running in a browser or Web Worker. Transformers.js only accepts device "wasm" or "webgpu" in the browser build. */

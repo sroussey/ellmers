@@ -6,10 +6,10 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { collectStream } from "../capability/collectStream";
 import type { Capability } from "../capability/Capabilities";
+import { collectStream } from "../capability/collectStream";
 import type { ModelRecord } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -122,7 +122,9 @@ export class ModelSearchTask extends Task<
    * `execute()`, so `gateOrThrow` is never called against this value. The audit
    * test in `task/index.test.ts` validates the value is a known {@link Capability}.
    */
-  public static readonly requires: readonly Capability[] = ["provider.model-search"] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [
+    "provider.model-search",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Model Search";
   public static override description = "Search for models using provider-specific search functions";

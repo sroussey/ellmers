@@ -33,7 +33,7 @@ describe("TextGenerationTask abort behavior", () => {
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
 
     const model: HfTransformersOnnxModelRecord = {

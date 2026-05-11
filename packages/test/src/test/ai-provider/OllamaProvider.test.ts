@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
-import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns";
-import { OLLAMA_RUN_FN_SPECS } from "./common/Ollama_Capabilities";
+import { _testOnly } from "@workglow/ollama/ai";
+import { describe, expect, it } from "vitest";
+
+const { OllamaQueuedProvider, OLLAMA_RUN_FN_SPECS, OLLAMA_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {

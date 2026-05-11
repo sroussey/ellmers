@@ -42,7 +42,7 @@ describe("Zero-Shot Classification Tasks", () => {
   setLogger(logger);
   beforeEach(async () => {
     await setTaskQueueRegistry(null);
-    clearPipelineCache();
+    await clearPipelineCache();
   });
 
   describe("TextClassificationTask - Zero-Shot", () => {
