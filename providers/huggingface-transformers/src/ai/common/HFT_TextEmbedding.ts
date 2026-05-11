@@ -6,10 +6,12 @@
 
 import type { FeatureExtractionPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger, TypedArray } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
@@ -17,23 +19,24 @@ import { getPipeline } from "./HFT_Pipeline";
 /**
  * Core implementation for text embedding using Hugging Face Transformers.
  * This is shared between inline and worker implementations.
+ *
+ * Model download progress (first-call cold start) is forwarded as `phase`
+ * stream events via {@link bridgeProgress}; subsequent calls are near-instant
+ * because the pipeline is cached.
  */
-export const HFT_TextEmbedding: AiProviderRunFn<
+export const HFT_TextEmbedding: AiProviderStreamFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
   const logger = getLogger();
   const uuid = crypto.randomUUID();
   const timerLabel = `hft:TextEmbedding:${model?.provider_config.model_path}:${uuid}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const generateEmbedding: FeatureExtractionPipeline = await getPipeline(
-    model!,
-    onProgress,
-    {},
-    signal
-  );
+  const generateEmbedding = (yield* bridgeProgress((onProgress) =>
+    getPipeline(model!, onProgress, {}, signal)
+  )) as FeatureExtractionPipeline;
 
   logger.debug("HFT TextEmbedding: pipeline ready, generating embedding", {
     model: model?.provider_config.model_path,
@@ -78,7 +81,8 @@ export const HFT_TextEmbedding: AiProviderRunFn<
     );
 
     logger.timeEnd(timerLabel, { batchSize: numTexts, dimensions: vectorDim });
-    return { vector: vectors };
+    yield { type: "finish", data: { vector: vectors } };
+    return;
   }
 
   // Output[number] text input - validate dimensions
@@ -95,5 +99,5 @@ export const HFT_TextEmbedding: AiProviderRunFn<
   }
 
   logger.timeEnd(timerLabel, { dimensions: hfVector.size });
-  return { vector: hfVector.data as TypedArray };
+  yield { type: "finish", data: { vector: hfVector.data as TypedArray } };
 };

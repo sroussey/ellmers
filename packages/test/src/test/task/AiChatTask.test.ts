@@ -1,17 +1,24 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ChatMessage, ModelConfig } from "@workglow/ai";
+import type {
+  AiProviderRunFnRegistration,
+  AiProviderStreamFn,
+  Capability,
+  ChatMessage,
+  ModelConfig,
+} from "@workglow/ai";
 import { AiChatTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 describe.skip("AiChatTask — schema and registration", () => {
   it("has required static properties", () => {
@@ -87,14 +94,17 @@ class FakeChatProvider extends AiProvider {
   override readonly displayName = "Fake Chat";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
-  override readonly taskTypes = ["AiChatTask"] as const;
+
+  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+    super(runFns);
+  }
 }
 
 function registerFakeChatProvider(stream: AiProviderStreamFn<any, any, ModelConfig>): () => void {
   const registry = getAiProviderRegistry();
-  const provider = new FakeChatProvider();
+  const provider = new FakeChatProvider([{ serves: TEXT_GENERATION, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerStreamFn("fake-chat", "AiChatTask", stream);
+  registry.registerRunFn("fake-chat", { serves: TEXT_GENERATION, runFn: stream });
   return () => registry.unregisterProvider("fake-chat");
 }
 

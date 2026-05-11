@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract assertion. Rewrite during Phase 9 for capability-set dispatch.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
@@ -6,9 +5,12 @@
  */
 
 import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 export function textGenerationSmokeBlock(
   opts: AiProviderConformanceOpts,
@@ -16,7 +18,7 @@ export function textGenerationSmokeBlock(
 ): void {
   describe.skipIf(!opts.models.textGeneration)("TextGeneration smoke", () => {
     it(
-      "non-streaming returns non-empty text",
+      "task-level textGeneration() returns non-empty text",
       async () => {
         const result = await textGeneration({
           model: opts.models.textGeneration!,
@@ -36,7 +38,7 @@ export function textGenerationSmokeBlock(
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+        const streamFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
         expect(streamFn).toBeDefined();
 
         let textDeltaCount = 0;

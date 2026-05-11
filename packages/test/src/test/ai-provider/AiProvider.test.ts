@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
@@ -8,16 +7,20 @@
 import type {
   AiProviderRegisterContext,
   AiProviderRegisterOptions,
-  AiProviderRunFn,
+  AiProviderRunFnRegistration,
+  AiProviderStreamFn,
+  Capability,
 } from "@workglow/ai";
 import {
   AiJob,
   AiProvider,
   AiProviderRegistry,
+  collectStream,
   getAiProviderRegistry,
   QueuedAiProvider,
   setAiProviderRegistry,
 } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
@@ -28,25 +31,30 @@ import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const mock = vi.fn;
-
 const TEST_PROVIDER_NAME = "test-ai-provider";
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
+const TEXT_EMBEDDING: readonly Capability[] = ["text.embedding"];
 
-// A concrete test provider that accepts tasks via constructor (dependency injection)
+/** Build a one-shot streaming run-fn yielding a single `finish` with `result`. */
+function makeFinishStreamFn(result: TaskOutput): AiProviderStreamFn {
+  return async function* () {
+    yield { type: "finish", data: result } as StreamEvent<TaskOutput>;
+  };
+}
+
+// A concrete test provider that accepts runFns via constructor (dependency injection)
 class TestProvider extends AiProvider {
   readonly name = TEST_PROVIDER_NAME;
   readonly displayName = "Test AI Provider";
   readonly isLocal = false;
   readonly supportsBrowser = true;
-  readonly taskTypes: readonly string[];
 
   public initializeCalled = false;
   public initializeOptions: AiProviderRegisterContext | null = null;
   public disposeCalled = false;
 
-  constructor(fns?: Record<string, AiProviderRunFn<any, any, any>>) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
-    this.taskTypes = fns ? Object.keys(fns) : [];
   }
 
   protected override async onInitialize(options: AiProviderRegisterContext): Promise<void> {
@@ -65,24 +73,32 @@ class TestQueuedProvider extends QueuedAiProvider {
   readonly displayName = "Test AI Provider";
   readonly isLocal = false;
   readonly supportsBrowser = true;
-  readonly taskTypes: readonly string[];
 
-  constructor(fns?: Record<string, AiProviderRunFn<any, any, any>>) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
-    this.taskTypes = fns ? Object.keys(fns) : [];
   }
 }
 
-// A provider with static taskTypes (like the real providers)
+// A provider that advertises capability sets for worker-mode registration
+// without binding the run functions on the main thread (worker host pattern).
 class StaticTaskTypesProvider extends AiProvider {
   readonly name = "static-task-types-provider";
   readonly displayName = "Static Task Types";
   readonly isLocal = false;
   readonly supportsBrowser = true;
-  readonly taskTypes = ["TextGenerationTask", "TextEmbeddingTask"] as const;
 
-  constructor(fns?: Record<string, AiProviderRunFn<any, any, any>>) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
+  }
+
+  // Advertise capability sets equivalent to the legacy TextGenerationTask /
+  // TextEmbeddingTask task types so worker-mode registration can install
+  // matching proxies.
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    if (this.runFns && this.runFns.length > 0) {
+      return this.runFns.map((r) => ({ serves: r.serves }));
+    }
+    return [{ serves: TEXT_GENERATION }, { serves: TEXT_EMBEDDING }];
   }
 }
 
@@ -106,74 +122,90 @@ describe.skip("AiProvider", () => {
     await setTaskQueueRegistry(null);
   });
 
-  describe("supportedTaskTypes", () => {
-    test("should return all task type names from taskTypes", () => {
-      const mockRunFn = mock(() => Promise.resolve({ result: "ok" }));
-      const provider = new TestProvider({
-        TextGenerationTask: mockRunFn,
-        TextEmbeddingTask: mockRunFn,
-      });
+  describe("runFns coverage", () => {
+    test("runFns expose every registered capability set", () => {
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({ result: "ok" }) },
+        { serves: TEXT_EMBEDDING, runFn: makeFinishStreamFn({ result: "ok" }) },
+      ]);
 
-      expect(provider.supportedTaskTypes).toEqual(["TextGenerationTask", "TextEmbeddingTask"]);
+      const allCaps = (provider as unknown as {
+        runFns?: readonly AiProviderRunFnRegistration[];
+      }).runFns?.flatMap((r) => r.serves) ?? [];
+      expect(allCaps).toEqual(["text.generation", "text.embedding"]);
     });
 
-    test("should return empty array for provider with no tasks", () => {
-      const provider = new TestProvider({});
-      expect(provider.supportedTaskTypes).toEqual([]);
+    test("provider with empty runFns advertises nothing", () => {
+      const provider = new TestProvider([]);
+      const allCaps = (provider as unknown as {
+        runFns?: readonly AiProviderRunFnRegistration[];
+      }).runFns?.flatMap((r) => r.serves) ?? [];
+      expect(allCaps).toEqual([]);
     });
 
-    test("should return static taskTypes even without tasks provided", () => {
+    test("worker-host provider (no runFns) advertises capabilities via workerRunFnSpecs", () => {
       const provider = new StaticTaskTypesProvider();
-      expect(provider.supportedTaskTypes).toEqual(["TextGenerationTask", "TextEmbeddingTask"]);
+      const specs = (
+        provider as unknown as {
+          workerRunFnSpecs: () => readonly { serves: readonly Capability[] }[];
+        }
+      ).workerRunFnSpecs();
+      expect(specs.map((s) => [...s.serves])).toEqual([
+        [...TEXT_GENERATION],
+        [...TEXT_EMBEDDING],
+      ]);
     });
   });
 
-  describe("getRunFn", () => {
-    test("should return the run function for a supported task type", () => {
-      const mockRunFn = mock(() => Promise.resolve({ result: "ok" }));
-      const provider = new TestProvider({
-        TextGenerationTask: mockRunFn,
-      });
+  describe("getRunFnFor (registry-level)", () => {
+    test("registry exposes the run-fn for a supported capability set after register()", async () => {
+      const runFn = makeFinishStreamFn({ result: "ok" });
+      const provider = new TestProvider([{ serves: TEXT_GENERATION, runFn }]);
+      await provider.register({ queue: { autoCreate: false } });
 
-      expect(provider.getRunFn("TextGenerationTask")).toBe(mockRunFn);
+      expect(aiProviderRegistry.getRunFnFor(TEST_PROVIDER_NAME, TEXT_GENERATION)).toBe(runFn);
     });
 
-    test("should return undefined for an unsupported task type", () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+    test("registry returns undefined for an unsupported capability set", async () => {
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
+      await provider.register({ queue: { autoCreate: false } });
 
-      expect(provider.getRunFn("NonExistentTask")).toBeUndefined();
+      expect(aiProviderRegistry.getRunFnFor(TEST_PROVIDER_NAME, TEXT_EMBEDDING)).toBeUndefined();
     });
 
-    test("should return undefined when no tasks provided", () => {
+    test("registry returns undefined when no runFns were provided (worker host pattern)", () => {
+      // Worker-host providers register proxies through register({ worker: ... }).
+      // Without calling register(), the registry has no entries.
       const provider = new StaticTaskTypesProvider();
-      expect(provider.getRunFn("TextGenerationTask")).toBeUndefined();
+      // No register() call here — just confirm the registry is empty.
+      expect(aiProviderRegistry.getRunFnFor(provider.name, TEXT_GENERATION)).toBeUndefined();
     });
   });
 
   describe("register (inline)", () => {
     test("should register all run functions with the AiProviderRegistry", async () => {
-      const mockGenFn = mock(() => Promise.resolve({ text: "hello" }));
-      const mockEmbedFn = mock(() => Promise.resolve({ vector: [] }));
-      const provider = new TestProvider({
-        TextGenerationTask: mockGenFn,
-        TextEmbeddingTask: mockEmbedFn,
-      });
+      const mockGenFn = makeFinishStreamFn({ text: "hello" });
+      const mockEmbedFn = makeFinishStreamFn({ vector: [] });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: mockGenFn },
+        { serves: TEXT_EMBEDDING, runFn: mockEmbedFn },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
 
-      const genFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER_NAME, "TextGenerationTask");
+      const genFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER_NAME, TEXT_GENERATION);
       expect(genFn).toBe(mockGenFn);
 
-      const embedFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER_NAME, "TextEmbeddingTask");
+      const embedFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER_NAME, TEXT_EMBEDDING);
       expect(embedFn).toBe(mockEmbedFn);
     });
 
     test("should call onInitialize with the register options", async () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
 
       const options: AiProviderRegisterOptions = { queue: { autoCreate: false } };
       await provider.register(options);
@@ -183,9 +215,9 @@ describe.skip("AiProvider", () => {
     });
 
     test("should register provider instance on the registry", async () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
 
@@ -194,9 +226,9 @@ describe.skip("AiProvider", () => {
     });
 
     test("should not auto-create a job queue (base AiProvider)", async () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({ text: "hello" })),
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({ text: "hello" }) },
+      ]);
 
       await provider.register();
 
@@ -205,9 +237,9 @@ describe.skip("AiProvider", () => {
     });
 
     test("should register a strategy resolver by default (QueuedAiProvider)", async () => {
-      const provider = new TestQueuedProvider({
-        TextGenerationTask: mock(() => Promise.resolve({ text: "hello" })),
-      });
+      const provider = new TestQueuedProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({ text: "hello" }) },
+      ]);
 
       await provider.register();
 
@@ -220,9 +252,9 @@ describe.skip("AiProvider", () => {
     });
 
     test("should skip queue creation when autoCreate is false", async () => {
-      const provider = new TestQueuedProvider({
-        TextGenerationTask: mock(() => Promise.resolve({ text: "hello" })),
-      });
+      const provider = new TestQueuedProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({ text: "hello" }) },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
 
@@ -290,49 +322,53 @@ describe.skip("AiProvider", () => {
   });
 
   describe("registerOnWorkerServer", () => {
-    test("should register all task functions on the worker server", () => {
-      const mockGenFn = mock(() => Promise.resolve({ text: "hello" }));
-      const mockEmbedFn = mock(() => Promise.resolve({ vector: [] }));
-      const provider = new TestProvider({
-        TextGenerationTask: mockGenFn,
-        TextEmbeddingTask: mockEmbedFn,
-      });
+    test("should register every run-fn under its workerKeyForServes key", () => {
+      const mockGenFn = makeFinishStreamFn({ text: "hello" });
+      const mockEmbedFn = makeFinishStreamFn({ vector: [] });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: mockGenFn },
+        { serves: TEXT_EMBEDDING, runFn: mockEmbedFn },
+      ]);
 
       const mockWorkerServer = {
-        registerFunction: vi.fn(),
+        registerStreamFunction: vi.fn(),
+        registerPreviewFunction: vi.fn(),
       };
 
       provider.registerOnWorkerServer(mockWorkerServer as any);
 
-      expect(mockWorkerServer.registerFunction).toHaveBeenCalledTimes(2);
-      expect(mockWorkerServer.registerFunction).toHaveBeenCalledWith(
-        "TextGenerationTask",
+      // workerKeyForServes(["text.generation"]) → "text.generation"
+      // workerKeyForServes(["text.embedding"]) → "text.embedding"
+      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledTimes(2);
+      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledWith(
+        "text.generation",
         mockGenFn
       );
-      expect(mockWorkerServer.registerFunction).toHaveBeenCalledWith(
-        "TextEmbeddingTask",
+      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledWith(
+        "text.embedding",
         mockEmbedFn
       );
     });
 
-    test("should throw when tasks not provided for worker server registration", () => {
+    test("should throw when runFns not provided for worker server registration", () => {
       const provider = new StaticTaskTypesProvider();
 
       const mockWorkerServer = {
-        registerFunction: vi.fn(),
+        registerStreamFunction: vi.fn(),
+        registerPreviewFunction: vi.fn(),
       };
 
       expect(() => provider.registerOnWorkerServer(mockWorkerServer as any)).toThrow(
-        /tasks must be provided via the constructor for worker server registration/
+        /runFns must be provided via the constructor for worker server registration/
       );
     });
   });
 
   describe("dispose", () => {
     test("should call dispose on the provider", async () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
       await provider.dispose();
@@ -343,9 +379,9 @@ describe.skip("AiProvider", () => {
 
   describe("getProvider / getProviders", () => {
     test("should retrieve a registered provider by name", async () => {
-      const provider = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
 
@@ -357,14 +393,14 @@ describe.skip("AiProvider", () => {
     });
 
     test("should return all registered providers", async () => {
-      const provider1 = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
-      const mockEmbedFn = mock(() => Promise.resolve({}));
-      const provider2 = new StaticTaskTypesProvider({
-        TextGenerationTask: mockEmbedFn,
-        TextEmbeddingTask: mockEmbedFn,
-      });
+      const provider1 = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
+      const mockEmbedFn = makeFinishStreamFn({});
+      const provider2 = new StaticTaskTypesProvider([
+        { serves: TEXT_GENERATION, runFn: mockEmbedFn },
+        { serves: TEXT_EMBEDDING, runFn: mockEmbedFn },
+      ]);
 
       aiProviderRegistry.registerProvider(provider1);
       aiProviderRegistry.registerProvider(provider2);
@@ -378,12 +414,12 @@ describe.skip("AiProvider", () => {
     test("getInstalledProviderIds returns sorted registered provider ids", async () => {
       expect(aiProviderRegistry.getInstalledProviderIds()).toEqual([]);
 
-      const provider1 = new TestProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
-      const provider2 = new StaticTaskTypesProvider({
-        TextGenerationTask: mock(() => Promise.resolve({})),
-      });
+      const provider1 = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
+      const provider2 = new StaticTaskTypesProvider([
+        { serves: TEXT_GENERATION, runFn: makeFinishStreamFn({}) },
+      ]);
 
       await provider1.register({ queue: { autoCreate: false } });
       await provider2.register({ queue: { autoCreate: false } });
@@ -394,28 +430,29 @@ describe.skip("AiProvider", () => {
       ]);
     });
 
-    test("getProviderIdsForTask returns empty when no run fns exist for task", () => {
-      expect(aiProviderRegistry.getProviderIdsForTask("ModelSearchTask")).toEqual([]);
+    test("getProviderIdsForCapabilities returns empty when no run fns match", () => {
+      // provider.model-search is a real capability but nothing has registered it.
+      expect(
+        aiProviderRegistry.getProviderIdsForCapabilities(["provider.model-search"])
+      ).toEqual([]);
     });
 
-    test("getProviderIdsForTask returns sorted provider ids with a run fn for that task", async () => {
-      const mockRun = mock(() => Promise.resolve({}));
-      const provider1 = new TestProvider({
-        TextGenerationTask: mockRun,
-      });
-      const provider2 = new StaticTaskTypesProvider({
-        TextGenerationTask: mockRun,
-        TextEmbeddingTask: mockRun,
-      });
+    test("getProviderIdsForCapabilities returns sorted provider ids matching the requires set", async () => {
+      const mockRun = makeFinishStreamFn({});
+      const provider1 = new TestProvider([{ serves: TEXT_GENERATION, runFn: mockRun }]);
+      const provider2 = new StaticTaskTypesProvider([
+        { serves: TEXT_GENERATION, runFn: mockRun },
+        { serves: TEXT_EMBEDDING, runFn: mockRun },
+      ]);
 
       await provider1.register({ queue: { autoCreate: false } });
       await provider2.register({ queue: { autoCreate: false } });
 
-      expect(aiProviderRegistry.getProviderIdsForTask("TextGenerationTask")).toEqual([
+      expect(aiProviderRegistry.getProviderIdsForCapabilities(TEXT_GENERATION)).toEqual([
         "static-task-types-provider",
         TEST_PROVIDER_NAME,
       ]);
-      expect(aiProviderRegistry.getProviderIdsForTask("TextEmbeddingTask")).toEqual([
+      expect(aiProviderRegistry.getProviderIdsForCapabilities(TEXT_EMBEDDING)).toEqual([
         "static-task-types-provider",
       ]);
     });
@@ -423,13 +460,14 @@ describe.skip("AiProvider", () => {
 
   describe("end-to-end: AiJob execution with provider", () => {
     test("should execute a job using a function registered via AiProvider", async () => {
-      const mockRunFn = mock((_input: any, _model: any) => {
-        return Promise.resolve({ text: "generated text" });
-      });
+      const mockRunFn: AiProviderStreamFn = async function* () {
+        yield { type: "finish", data: { text: "generated text" } } as StreamEvent<TaskOutput>;
+      };
+      const runFnSpy = vi.fn(mockRunFn);
 
-      const provider = new TestProvider({
-        TextGenerationTask: mockRunFn,
-      });
+      const provider = new TestProvider([
+        { serves: TEXT_GENERATION, runFn: runFnSpy as unknown as AiProviderStreamFn },
+      ]);
 
       await provider.register({ queue: { autoCreate: false } });
 
@@ -449,6 +487,7 @@ describe.skip("AiProvider", () => {
         input: {
           aiProvider: TEST_PROVIDER_NAME,
           taskType: "TextGenerationTask",
+          requires: TEXT_GENERATION,
           taskInput: { prompt: "test prompt", model },
         },
       });
@@ -459,7 +498,19 @@ describe.skip("AiProvider", () => {
       });
 
       expect(result).toEqual({ text: "generated text" });
-      expect(mockRunFn).toHaveBeenCalledOnce();
+      expect(runFnSpy).toHaveBeenCalledOnce();
+
+      // Sanity: also drives through collectStream directly.
+      const direct = await collectStream(
+        runFnSpy(
+          { prompt: "x", model } as any,
+          model as any,
+          new AbortController().signal,
+          undefined,
+          undefined
+        )
+      );
+      expect(direct).toEqual({ text: "generated text" });
     });
   });
 });

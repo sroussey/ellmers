@@ -1,11 +1,15 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelConfig } from "@workglow/ai";
+import type {
+  AiProviderRunFnRegistration,
+  AiProviderStreamFn,
+  Capability,
+  ModelConfig,
+} from "@workglow/ai";
 import {
   AiProvider,
   getAiProviderRegistry,
@@ -20,6 +24,8 @@ import { describe, expect, it } from "vitest";
 // ============================================================================
 // Fixtures
 // ============================================================================
+
+const JSON_MODE: readonly Capability[] = ["text.generation", "json-mode"];
 
 function mkContext(): IExecuteContext {
   const controller = new AbortController();
@@ -52,13 +58,17 @@ class FakeStructuredProvider extends AiProvider {
   override readonly displayName = "Fake Structured";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
-  override readonly taskTypes = ["StructuredGenerationTask"] as const;
+
+  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+    super(runFns);
+  }
 }
 
 /**
- * Registers a fake provider that, per attempt, yields a final object-delta
- * with the scripted payload and a finish event. `attempts` is an ordered
- * list of payloads — one per invocation.
+ * Registers a fake provider that, per attempt, yields a partial object-delta
+ * with the scripted payload and a finish event whose `data.object` carries the
+ * full parsed payload (per the json-mode finish convention). `attempts` is an
+ * ordered list of payloads — one per invocation.
  */
 function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, unknown>>): {
   calls: ReadonlyArray<string>;
@@ -71,13 +81,13 @@ function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, u
     const payload = attempts[Math.min(index, attempts.length - 1)];
     index++;
     yield { type: "object-delta", port: "object", objectDelta: payload };
-    yield { type: "finish", data: {} as any };
+    yield { type: "finish", data: { object: payload } as any };
   };
 
   const registry = getAiProviderRegistry();
-  const provider = new FakeStructuredProvider();
+  const provider = new FakeStructuredProvider([{ serves: JSON_MODE, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerStreamFn("fake-structured", "StructuredGenerationTask", stream);
+  registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
   return { calls, unregister: () => registry.unregisterProvider("fake-structured") };
 }
 

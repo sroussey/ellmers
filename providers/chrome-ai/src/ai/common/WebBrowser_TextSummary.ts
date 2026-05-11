@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -20,34 +19,7 @@ import {
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextSummary: AiProviderRunFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  WebBrowserModelConfig
-> = async (input, model, update_progress, signal) => {
-  const factory = getApi(
-    "Summarizer",
-    (globalThis as any)?.ai?.summarizer ??
-      (typeof Summarizer !== "undefined" ? Summarizer : undefined)
-  );
-  await ensureAvailable("Summarizer", factory);
-  const config = getConfig(model);
-
-  const summarizer = await factory.create({
-    type: config.summary_type,
-    length: config.summary_length,
-    format: config.summary_format,
-  });
-  try {
-    const text = await summarizer.summarize(input.text, { signal });
-    update_progress(100, "Completed text summarization");
-    return { text };
-  } finally {
-    summarizer.destroy();
-  }
-};
-
-export const WebBrowser_TextSummary_Stream: AiProviderStreamFn<
+export const WebBrowser_TextSummary: AiProviderStreamFn<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
   WebBrowserModelConfig

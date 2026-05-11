@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
@@ -12,8 +11,15 @@ import {
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import type { AiJobInput, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
-import type { ModelConfig, ToolCallingTaskInput, ToolDefinition } from "@workglow/ai";
+import type {
+  AiJobInput,
+  AiProviderRunFnRegistration,
+  AiProviderStreamFn,
+  Capability,
+  ModelConfig,
+  ToolCallingTaskInput,
+  ToolDefinition,
+} from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { makeFingerprint, setLogger } from "@workglow/util";
@@ -23,6 +29,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 const mock = vi.fn;
 
 const TEST_PROVIDER = "session-test-provider";
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 describe.skip("SessionCaching", () => {
   const logger = getTestingLogger();
@@ -38,34 +45,45 @@ describe.skip("SessionCaching", () => {
     setAiProviderRegistry(new AiProviderRegistry());
   });
 
-  describe("AiProviderRunFn sessionId parameter", () => {
+  describe("AiProviderStreamFn sessionId parameter (via collectStream)", () => {
     it("should receive sessionId as the last parameter when provided", async () => {
       let capturedSessionId: string | undefined;
 
-      const runFn: AiProviderRunFn = mock(
-        async (input, model, updateProgress, signal, outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
-          return { result: "ok" };
-        }
-      );
+      const streamFn: AiProviderStreamFn = mock(async function* (
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
+        sessionId
+      ) {
+        capturedSessionId = sessionId;
+        yield {
+          type: "finish",
+          data: { result: "ok" },
+        } as unknown as StreamEvent<TaskOutput>;
+      });
 
-      registry.registerRunFn(TEST_PROVIDER, "text-generation", runFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
-      const fn = registry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      await fn(
-        { text: "hello" },
+      const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(fn).toBeDefined();
+      for await (const _event of fn!(
+        { text: "hello" } as TaskInput,
         undefined,
-        () => {},
         new AbortController().signal,
         undefined,
         "session-abc-123"
-      );
+      )) {
+        // consume events
+      }
 
       expect(capturedSessionId).toBe("session-abc-123");
-      expect(runFn).toHaveBeenCalledWith(
+      expect(streamFn).toHaveBeenCalledWith(
         { text: "hello" },
         undefined,
-        expect.any(Function),
         expect.any(AbortSignal),
         undefined,
         "session-abc-123"
@@ -75,45 +93,68 @@ describe.skip("SessionCaching", () => {
     it("should receive undefined sessionId when not provided", async () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
-      const runFn: AiProviderRunFn = mock(
-        async (input, model, updateProgress, signal, outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
-          return { result: "ok" };
-        }
-      );
+      const streamFn: AiProviderStreamFn = mock(async function* (
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
+        sessionId
+      ) {
+        capturedSessionId = sessionId;
+        yield {
+          type: "finish",
+          data: { result: "ok" },
+        } as unknown as StreamEvent<TaskOutput>;
+      });
 
-      registry.registerRunFn(TEST_PROVIDER, "text-generation", runFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
-      const fn = registry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      await fn({ text: "hello" }, undefined, () => {}, new AbortController().signal);
+      const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(fn).toBeDefined();
+      for await (const _event of fn!(
+        { text: "hello" } as TaskInput,
+        undefined,
+        new AbortController().signal
+      )) {
+        // consume events
+      }
 
       expect(capturedSessionId).toBeUndefined();
     });
   });
 
-  describe("AiProviderStreamFn sessionId parameter", () => {
+  describe("AiProviderStreamFn sessionId parameter (streaming iteration)", () => {
     it("should receive sessionId as the last parameter when provided", async () => {
       let capturedSessionId: string | undefined;
 
       const streamFn: AiProviderStreamFn = async function* (
-        input,
-        model,
-        signal,
-        outputSchema,
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
         sessionId
       ) {
         capturedSessionId = sessionId;
-        yield { type: "finish", data: { result: "streamed" } } as StreamEvent<TaskOutput>;
+        yield {
+          type: "finish",
+          data: { result: "streamed" },
+        } as unknown as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(TEST_PROVIDER, "text-generation", streamFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
-      const fn = registry.getStreamFn(TEST_PROVIDER, "text-generation")!;
+      const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(fn).toBeDefined();
 
       const events: StreamEvent<TaskOutput>[] = [];
-      for await (const event of fn(
-        { text: "hello" },
+      for await (const event of fn!(
+        { text: "hello" } as TaskInput,
         undefined,
         new AbortController().signal,
         undefined,
@@ -131,20 +172,28 @@ describe.skip("SessionCaching", () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
       const streamFn: AiProviderStreamFn = async function* (
-        input,
-        model,
-        signal,
-        outputSchema,
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
         sessionId
       ) {
         capturedSessionId = sessionId;
         yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(TEST_PROVIDER, "text-generation", streamFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
-      const fn = registry.getStreamFn(TEST_PROVIDER, "text-generation")!;
-      for await (const _event of fn({ text: "hello" }, undefined, new AbortController().signal)) {
+      const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(fn).toBeDefined();
+      for await (const _event of fn!(
+        { text: "hello" } as TaskInput,
+        undefined,
+        new AbortController().signal
+      )) {
         // consume events
       }
 
@@ -156,14 +205,24 @@ describe.skip("SessionCaching", () => {
     it("should pass sessionId from AiJobInput to the run function", async () => {
       let capturedSessionId: string | undefined;
 
-      const runFn: AiProviderRunFn = mock(
-        async (input, model, updateProgress, signal, outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
-          return { result: "from-job" };
-        }
-      );
+      const streamFn: AiProviderStreamFn = mock(async function* (
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
+        sessionId
+      ) {
+        capturedSessionId = sessionId;
+        yield {
+          type: "finish",
+          data: { result: "from-job" },
+        } as unknown as StreamEvent<TaskOutput>;
+      });
 
-      registry.registerRunFn(TEST_PROVIDER, "text-generation", runFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -176,12 +235,13 @@ describe.skip("SessionCaching", () => {
           model_path: "test-model",
         },
         metadata: {},
-      };
+      } as unknown as ModelConfig;
 
       const jobInput: AiJobInput<TaskInput> = {
         aiProvider: TEST_PROVIDER,
-        taskType: "text-generation",
-        taskInput: { text: "test", model },
+        taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
+        taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
         sessionId: "job-session-789",
       };
 
@@ -204,18 +264,25 @@ describe.skip("SessionCaching", () => {
       let capturedSessionId: string | undefined;
 
       const streamFn: AiProviderStreamFn = async function* (
-        input,
-        model,
-        signal,
-        outputSchema,
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
         sessionId
       ) {
         capturedSessionId = sessionId;
-        yield { type: "text-delta", data: { text: "hello" } } as unknown as StreamEvent<TaskOutput>;
+        yield {
+          type: "text-delta",
+          port: "text",
+          textDelta: "hello",
+        } as unknown as StreamEvent<TaskOutput>;
         yield { type: "finish", data: {} as TaskOutput } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(TEST_PROVIDER, "text-generation", streamFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -228,12 +295,13 @@ describe.skip("SessionCaching", () => {
           model_path: "test-model",
         },
         metadata: {},
-      };
+      } as unknown as ModelConfig;
 
       const jobInput: AiJobInput<TaskInput> = {
         aiProvider: TEST_PROVIDER,
-        taskType: "text-generation",
-        taskInput: { text: "test", model },
+        taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
+        taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
         sessionId: "stream-job-session-101",
       };
 
@@ -258,14 +326,24 @@ describe.skip("SessionCaching", () => {
     it("should pass undefined sessionId when not set in AiJobInput", async () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
-      const runFn: AiProviderRunFn = mock(
-        async (input, model, updateProgress, signal, outputSchema, sessionId) => {
-          capturedSessionId = sessionId;
-          return { result: "ok" };
-        }
-      );
+      const streamFn: AiProviderStreamFn = mock(async function* (
+        _input,
+        _model,
+        _signal,
+        _outputSchema,
+        sessionId
+      ) {
+        capturedSessionId = sessionId;
+        yield {
+          type: "finish",
+          data: { result: "ok" },
+        } as unknown as StreamEvent<TaskOutput>;
+      });
 
-      registry.registerRunFn(TEST_PROVIDER, "text-generation", runFn);
+      registry.registerRunFn(TEST_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: streamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -278,12 +356,13 @@ describe.skip("SessionCaching", () => {
           model_path: "test-model",
         },
         metadata: {},
-      };
+      } as unknown as ModelConfig;
 
       const jobInput: AiJobInput<TaskInput> = {
         aiProvider: TEST_PROVIDER,
-        taskType: "text-generation",
-        taskInput: { text: "test", model },
+        taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
+        taskInput: { text: "test", model } as TaskInput & { model: ModelConfig },
         // no sessionId
       };
 
@@ -308,7 +387,10 @@ describe.skip("SessionCaching", () => {
       readonly displayName = "Test";
       readonly isLocal = true;
       readonly supportsBrowser = true;
-      readonly taskTypes = ["TestTask"] as const;
+
+      constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+        super(runFns);
+      }
     }
 
     it("createSession returns a UUID string", () => {
@@ -338,7 +420,10 @@ describe.skip("SessionCaching", () => {
       readonly displayName = "Test";
       readonly isLocal = true;
       readonly supportsBrowser = true;
-      readonly taskTypes = ["TestTask"] as const;
+
+      constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+        super(runFns);
+      }
     }
 
     it("createSession delegates to the registered provider", () => {

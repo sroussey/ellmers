@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   ChatMessage,
   ToolCallingTaskInput,
@@ -15,7 +14,6 @@ import type {
 } from "@workglow/ai";
 import { filterValidToolCalls } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util/worker";
 import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -208,68 +206,6 @@ function extractNativeFunctionCalls(
     input: (fc.params ?? {}) as Record<string, unknown>,
   }));
 }
-
-// ============================================================================
-// Non-streaming run function
-// ============================================================================
-
-export const LlamaCpp_ToolCalling: AiProviderRunFn<
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-  LlamaCppModelConfig
-> = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
-  if (!model) throw new Error("Model config is required for ToolCallingTask.");
-
-  await loadSdk();
-
-  update_progress(0, "Loading model");
-  const context = await getOrCreateTextContext(model);
-
-  update_progress(10, "Running tool calling");
-  const sequence = context.getSequence();
-  const { LlamaChat } = getLlamaCppSdk();
-  const systemPrompt = buildSystemPrompt(input);
-
-  // ---- Native function calling path via LlamaChat ----
-  const llamaChat = new LlamaChat({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
-
-  const promptText =
-    typeof input.prompt === "string" ? input.prompt : extractMessageText(input.prompt);
-  const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
-  const functions = buildChatModelFunctions(input.tools);
-
-  getLogger().debug("LlamaCpp_ToolCalling LlamaChat", { chatHistory, functions });
-
-  try {
-    const res = await llamaChat.generateResponse(chatHistory, {
-      signal,
-      ...llamaCppChatGenerateOptions(input, model),
-      functions,
-      ...(toolChoiceForcesToolCall(input.toolChoice) && { documentFunctionParams: true }),
-    });
-
-    const text = res.response;
-    const toolCalls = extractNativeFunctionCalls(res.functionCalls);
-
-    // Fallback: parse tool calls from text if native parsing found nothing
-    if (toolCalls.length === 0 && input.tools.length > 0 && input.toolChoice !== "none") {
-      toolCalls.push(...extractToolCallsFromText(text, input));
-    }
-
-    update_progress(100, "Tool calling complete");
-    return { text, toolCalls: filterValidToolCalls(toolCalls, input.tools) };
-  } finally {
-    try {
-      await llamaChat.dispose({ disposeSequence: false });
-    } catch {}
-    try {
-      await sequence.dispose();
-    } catch {}
-  }
-};
 
 // ============================================================================
 // Shared streaming helper

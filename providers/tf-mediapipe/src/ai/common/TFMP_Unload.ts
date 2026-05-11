@@ -5,20 +5,23 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   UnloadModelTaskRunInput,
   UnloadModelTaskRunOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache, wasm_reference_counts, wasm_tasks } from "./TFMP_Runtime";
 
-export const TFMP_Unload: AiProviderRunFn<
+export const TFMP_Unload: AiProviderStreamFn<
   UnloadModelTaskRunInput,
   UnloadModelTaskRunOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, _signal) => {
+> = async function* (
+  input,
+  model
+): AsyncIterable<StreamEvent<UnloadModelTaskRunOutput>> {
   const model_path = model!.provider_config.model_path;
-  onProgress(10, "Unloading model");
   if (modelTaskCache.has(model_path)) {
     const cachedTasks = modelTaskCache.get(model_path)!;
 
@@ -41,7 +44,5 @@ export const TFMP_Unload: AiProviderRunFn<
     modelTaskCache.delete(model_path);
   }
 
-  return {
-    model: input.model,
-  };
+  yield { type: "finish", data: { model: input.model } };
 };

@@ -6,10 +6,12 @@
 
 import type { ImageFeatureExtractionPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger, TypedArray } from "@workglow/util/worker";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
@@ -19,21 +21,18 @@ import { getPipeline } from "./HFT_Pipeline";
 /**
  * Core implementation for image embedding using Hugging Face Transformers.
  */
-export const HFT_ImageEmbedding: AiProviderRunFn<
+export const HFT_ImageEmbedding: AiProviderStreamFn<
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEmbeddingTaskOutput>> {
   const logger = getLogger();
   const timerLabel = `hft:ImageEmbedding:${model?.provider_config.model_path}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const embedder: ImageFeatureExtractionPipeline = await getPipeline(
-    model!,
-    onProgress,
-    {},
-    signal
-  );
+  const embedder = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as ImageFeatureExtractionPipeline;
 
   logger.debug("HFT ImageEmbedding: pipeline ready, generating embedding", {
     model: model?.provider_config.model_path,
@@ -47,14 +46,16 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
       vectors.push(result.data as TypedArray);
     }
     logger.timeEnd(timerLabel, { count: vectors.length });
-    return { vector: vectors } as ImageEmbeddingTaskOutput;
+    yield { type: "finish", data: { vector: vectors } as ImageEmbeddingTaskOutput };
+    return;
   }
 
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await embedder(imageArg);
 
   logger.timeEnd(timerLabel, { dimensions: result?.data?.length });
-  return {
-    vector: result.data as TypedArray,
-  } as ImageEmbeddingTaskOutput;
+  yield {
+    type: "finish",
+    data: { vector: result.data as TypedArray } as ImageEmbeddingTaskOutput,
+  };
 };

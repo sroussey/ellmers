@@ -5,94 +5,106 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   DownloadModelTaskRunInput,
   DownloadModelTaskRunOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask, wasm_reference_counts } from "./TFMP_Runtime";
 import type { TaskInstance } from "./TFMP_Runtime";
 
-export const TFMP_Download: AiProviderRunFn<
+/**
+ * Core implementation for downloading a TensorFlow MediaPipe model. Resolves
+ * the pipeline-specific SDK class, materialises the task via
+ * {@link getModelTask}, then immediately closes it to release the WASM
+ * reference acquired during load — the download itself is the purpose; we
+ * don't keep the task alive.
+ *
+ * Real download progress (0..1, with messages like "Loading WASM task" /
+ * "Creating model task") is forwarded via {@link bridgeProgress}, which the
+ * {@link StreamProcessor} consumer re-translates into task-level
+ * `onProgress(percent, message)` callbacks.
+ */
+export const TFMP_Download: AiProviderStreamFn<
   DownloadModelTaskRunInput,
   DownloadModelTaskRunOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
-  let task: TaskInstance;
-  switch (model?.provider_config.pipeline) {
-    case "text-embedder": {
-      const { TextEmbedder } = await loadTfmpTasksTextSDK();
-      task = await getModelTask(model, {}, onProgress, signal, TextEmbedder);
-      break;
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<DownloadModelTaskRunOutput>> {
+  const pipeline = model?.provider_config.pipeline;
+  const task: TaskInstance = yield* bridgeProgress(async (onProgress) => {
+    switch (pipeline) {
+      case "text-embedder": {
+        const { TextEmbedder } = await loadTfmpTasksTextSDK();
+        return getModelTask(model!, {}, onProgress, signal, TextEmbedder);
+      }
+      case "text-classifier": {
+        const { TextClassifier } = await loadTfmpTasksTextSDK();
+        return getModelTask(model!, {}, onProgress, signal, TextClassifier);
+      }
+      case "text-language-detector": {
+        const { LanguageDetector } = await loadTfmpTasksTextSDK();
+        return getModelTask(model!, {}, onProgress, signal, LanguageDetector);
+      }
+      case "vision-image-classifier": {
+        const { ImageClassifier } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, ImageClassifier);
+      }
+      case "vision-image-embedder": {
+        const { ImageEmbedder } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, ImageEmbedder);
+      }
+      case "vision-image-segmenter": {
+        const { ImageSegmenter } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, ImageSegmenter);
+      }
+      case "vision-object-detector": {
+        const { ObjectDetector } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, ObjectDetector);
+      }
+      case "vision-face-detector": {
+        const { FaceDetector } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, FaceDetector);
+      }
+      case "vision-face-landmarker": {
+        const { FaceLandmarker } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, FaceLandmarker);
+      }
+      case "vision-gesture-recognizer": {
+        const { GestureRecognizer } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, GestureRecognizer);
+      }
+      case "vision-hand-landmarker": {
+        const { HandLandmarker } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, HandLandmarker);
+      }
+      case "vision-pose-landmarker": {
+        const { PoseLandmarker } = await loadTfmpTasksVisionSDK();
+        return getModelTask(model!, {}, onProgress, signal, PoseLandmarker);
+      }
+      default:
+        throw new PermanentJobError(
+          `Invalid pipeline: ${pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
+        );
     }
-    case "text-classifier": {
-      const { TextClassifier } = await loadTfmpTasksTextSDK();
-      task = await getModelTask(model, {}, onProgress, signal, TextClassifier);
-      break;
-    }
-    case "text-language-detector": {
-      const { LanguageDetector } = await loadTfmpTasksTextSDK();
-      task = await getModelTask(model, {}, onProgress, signal, LanguageDetector);
-      break;
-    }
-    case "vision-image-classifier": {
-      const { ImageClassifier } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, ImageClassifier);
-      break;
-    }
-    case "vision-image-embedder": {
-      const { ImageEmbedder } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, ImageEmbedder);
-      break;
-    }
-    case "vision-image-segmenter": {
-      const { ImageSegmenter } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, ImageSegmenter);
-      break;
-    }
-    case "vision-object-detector": {
-      const { ObjectDetector } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, ObjectDetector);
-      break;
-    }
-    case "vision-face-detector": {
-      const { FaceDetector } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, FaceDetector);
-      break;
-    }
-    case "vision-face-landmarker": {
-      const { FaceLandmarker } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, FaceLandmarker);
-      break;
-    }
-    case "vision-gesture-recognizer": {
-      const { GestureRecognizer } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, GestureRecognizer);
-      break;
-    }
-    case "vision-hand-landmarker": {
-      const { HandLandmarker } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, HandLandmarker);
-      break;
-    }
-    case "vision-pose-landmarker": {
-      const { PoseLandmarker } = await loadTfmpTasksVisionSDK();
-      task = await getModelTask(model, {}, onProgress, signal, PoseLandmarker);
-      break;
-    }
-    default:
-      throw new PermanentJobError(
-        `Invalid pipeline: ${model?.provider_config.pipeline}. Supported pipelines: text-embedder, text-classifier, text-language-detector, vision-image-classifier, vision-image-embedder, vision-image-segmenter, vision-object-detector, vision-face-detector, vision-face-landmarker, vision-gesture-recognizer, vision-hand-landmarker, vision-pose-landmarker`
-      );
-  }
-  onProgress(0.9, "Pipeline loaded");
+  });
+
+  yield { type: "phase", message: "Pipeline loaded", progress: 0.9 };
   task.close();
-  const task_engine = model?.provider_config.task_engine;
+  const task_engine = model!.provider_config.task_engine!;
   wasm_reference_counts.set(task_engine, wasm_reference_counts.get(task_engine)! - 1);
 
-  return {
-    model: input.model,
+  yield {
+    type: "finish",
+    data: {
+      model: input.model,
+    },
   };
 };

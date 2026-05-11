@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
@@ -6,7 +5,9 @@
  */
 
 import type {
+  AiProviderRunFnRegistration,
   AiProviderStreamFn,
+  Capability,
   ChatChunkReference,
   ChatMessage,
   ModelConfig,
@@ -19,6 +20,8 @@ import { TaskRegistry } from "@workglow/task-graph";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 describe.skip("AiChatWithKbTask — schema and registration", () => {
   it("has required static properties", () => {
@@ -97,14 +100,20 @@ class FakeChatKbProvider extends AiProvider {
   override readonly displayName = "Fake Chat KB";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
-  override readonly taskTypes = ["AiChatWithKbTask"] as const;
+
+  constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+    super(runFns);
+  }
 }
 
 function registerFakeChatKbProvider(stream: AiProviderStreamFn<any, any, ModelConfig>): () => void {
   const registry = getAiProviderRegistry();
   const provider = new FakeChatKbProvider();
   registry.registerProvider(provider);
-  registry.registerStreamFn("fake-chat-kb", "AiChatWithKbTask", stream);
+  registry.registerRunFn("fake-chat-kb", {
+    serves: TEXT_GENERATION,
+    runFn: stream as AiProviderStreamFn,
+  });
   return () => registry.unregisterProvider("fake-chat-kb");
 }
 

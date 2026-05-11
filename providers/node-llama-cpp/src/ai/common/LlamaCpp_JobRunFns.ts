@@ -6,11 +6,9 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
   AiProviderRunFnRegistration,
   AiProviderStreamFn,
 } from "@workglow/ai";
-import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   LLAMACPP_COUNT_TOKENS,
@@ -53,24 +51,6 @@ import { LlamaCpp_TextSummary_Stream } from "./LlamaCpp_TextSummary";
 import { LlamaCpp_ToolCalling_Stream } from "./LlamaCpp_ToolCalling";
 import { LlamaCpp_Unload } from "./LlamaCpp_Unload";
 
-function asStreamFn<
-  I extends TaskInput = TaskInput,
-  O extends TaskOutput = TaskOutput,
-  M extends LlamaCppModelConfig = LlamaCppModelConfig,
->(fn: AiProviderRunFn<I, O, M>): AiProviderStreamFn<I, O, M> {
-  return async function* (
-    input,
-    model,
-    signal,
-    outputSchema,
-    sessionId
-  ): AsyncIterable<StreamEvent<O>> {
-    const noopProgress = (): void => {};
-    const data = await fn(input, model, noopProgress, signal, outputSchema, sessionId);
-    yield { type: "finish", data };
-  };
-}
-
 /** Unified `["text.generation"]` run-fn — chat vs prompt discrimination. */
 const LlamaCpp_TextGeneration_Unified: AiProviderStreamFn<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,12 +79,12 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: LLAMACPP_JSON_MODE, runFn: LlamaCpp_StructuredGeneration_Stream },
   { serves: LLAMACPP_TEXT_REWRITER, runFn: LlamaCpp_TextRewriter_Stream },
   { serves: LLAMACPP_TEXT_SUMMARY, runFn: LlamaCpp_TextSummary_Stream },
-  { serves: LLAMACPP_TEXT_EMBEDDING, runFn: asStreamFn(LlamaCpp_TextEmbedding) },
-  { serves: LLAMACPP_COUNT_TOKENS, runFn: asStreamFn(LlamaCpp_CountTokens) },
-  { serves: LLAMACPP_MODEL_UNLOAD, runFn: asStreamFn(LlamaCpp_Unload) },
-  { serves: LLAMACPP_MODEL_DOWNLOAD, runFn: asStreamFn(LlamaCpp_Download) },
-  { serves: LLAMACPP_MODEL_SEARCH, runFn: asStreamFn(LlamaCpp_ModelSearch) },
-  { serves: LLAMACPP_MODEL_INFO, runFn: asStreamFn(LlamaCpp_ModelInfo) },
+  { serves: LLAMACPP_TEXT_EMBEDDING, runFn: LlamaCpp_TextEmbedding },
+  { serves: LLAMACPP_COUNT_TOKENS, runFn: LlamaCpp_CountTokens },
+  { serves: LLAMACPP_MODEL_UNLOAD, runFn: LlamaCpp_Unload },
+  { serves: LLAMACPP_MODEL_DOWNLOAD, runFn: LlamaCpp_Download },
+  { serves: LLAMACPP_MODEL_SEARCH, runFn: LlamaCpp_ModelSearch },
+  { serves: LLAMACPP_MODEL_INFO, runFn: LlamaCpp_ModelInfo },
 ];
 
 export const LLAMACPP_PREVIEW_TASKS: Record<

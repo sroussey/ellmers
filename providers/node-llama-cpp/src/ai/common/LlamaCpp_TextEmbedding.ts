@@ -5,34 +5,32 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getOrCreateEmbeddingContext } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_TextEmbedding: AiProviderRunFn<
+export const LlamaCpp_TextEmbedding: AiProviderStreamFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, update_progress, _signal) => {
+> = async function* (input, model): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
   if (!model) throw new Error("Model config is required for TextEmbeddingTask.");
 
-  update_progress(0, "Loading embedding model");
   const context = await getOrCreateEmbeddingContext(model);
 
   const texts = Array.isArray(input.text) ? input.text : [input.text];
-  update_progress(10, "Computing embeddings");
 
   const embeddings = await Promise.all(
     texts.map((text) => context.getEmbeddingFor(text).then((e) => new Float32Array(e.vector)))
   );
 
-  update_progress(100, "Embeddings complete");
-
   if (Array.isArray(input.text)) {
-    return { vector: embeddings };
+    yield { type: "finish", data: { vector: embeddings } };
+    return;
   }
-  return { vector: embeddings[0] };
+  yield { type: "finish", data: { vector: embeddings[0] } };
 };

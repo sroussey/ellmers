@@ -5,31 +5,39 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksTextSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_TextLanguageDetection: AiProviderRunFn<
+export const TFMP_TextLanguageDetection: AiProviderStreamFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<TextLanguageDetectionTaskOutput>> {
   const maxLanguages = input.maxLanguages === 0 ? -1 : input.maxLanguages;
 
   const { LanguageDetector } = await loadTfmpTasksTextSDK();
-  const textLanguageDetector = await getModelTask(
-    model!,
-    {
-      maxLanguages,
-    },
-    onProgress,
-    signal,
-    LanguageDetector
+  const textLanguageDetector = yield* bridgeProgress((cb) =>
+    getModelTask(
+      model!,
+      {
+        maxLanguages,
+      },
+      cb,
+      signal,
+      LanguageDetector
+    )
   );
   const result = textLanguageDetector.detect(input.text);
 
@@ -42,7 +50,5 @@ export const TFMP_TextLanguageDetection: AiProviderRunFn<
     score: language.probability,
   }));
 
-  return {
-    languages,
-  };
+  yield { type: "finish", data: { languages } };
 };

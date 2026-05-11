@@ -6,11 +6,9 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
   AiProviderRunFnRegistration,
   AiProviderStreamFn,
 } from "@workglow/ai";
-import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import {
   HFT_COUNT_TOKENS,
@@ -64,30 +62,6 @@ import { HFT_ToolCalling_Stream } from "./HFT_ToolCalling";
 import { HFT_Unload } from "./HFT_Unload";
 
 /**
- * Adapter: wraps a non-streaming {@link AiProviderRunFn} in an async-generator
- * that yields a single `finish` event with the resolved output. Used for
- * one-shot tasks (image ops, embeddings, classification, etc.) that don't
- * stream incremental data.
- */
-function asStreamFn<
-  I extends TaskInput = TaskInput,
-  O extends TaskOutput = TaskOutput,
-  M extends HfTransformersOnnxModelConfig = HfTransformersOnnxModelConfig,
->(fn: AiProviderRunFn<I, O, M>): AiProviderStreamFn<I, O, M> {
-  return async function* (
-    input,
-    model,
-    signal,
-    outputSchema,
-    sessionId
-  ): AsyncIterable<StreamEvent<O>> {
-    const noopProgress = (): void => {};
-    const data = await fn(input, model, noopProgress, signal, outputSchema, sessionId);
-    yield { type: "finish", data };
-  };
-}
-
-/**
  * Unified `["text.generation"]` run-fn. {@link AiChatTask} (chat history)
  * and {@link TextGenerationTask} (prompt-only) both declare
  * `requires: ["text.generation"]`. Discriminates on
@@ -136,22 +110,22 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_TEXT_SUMMARY, runFn: HFT_TextSummary_Stream },
   { serves: HFT_TEXT_TRANSLATION, runFn: HFT_TextTranslation_Stream },
   { serves: HFT_TEXT_QUESTION_ANSWERING, runFn: HFT_TextQuestionAnswer_Stream },
-  { serves: HFT_TEXT_EMBEDDING, runFn: asStreamFn(HFT_TextEmbedding) },
-  { serves: HFT_TEXT_CLASSIFICATION, runFn: asStreamFn(HFT_TextClassification) },
-  { serves: HFT_TEXT_LANGUAGE_DETECTION, runFn: asStreamFn(HFT_TextLanguageDetection) },
-  { serves: HFT_TEXT_FILL_MASK, runFn: asStreamFn(HFT_TextFillMask) },
-  { serves: HFT_TEXT_NER, runFn: asStreamFn(HFT_TextNamedEntityRecognition) },
-  { serves: HFT_IMAGE_CLASSIFICATION, runFn: asStreamFn(HFT_ImageClassification) },
-  { serves: HFT_IMAGE_EMBEDDING, runFn: asStreamFn(HFT_ImageEmbedding) },
-  { serves: HFT_IMAGE_SEGMENTATION, runFn: asStreamFn(HFT_ImageSegmentation) },
-  { serves: HFT_IMAGE_TO_TEXT, runFn: asStreamFn(HFT_ImageToText) },
-  { serves: HFT_IMAGE_BACKGROUND_REMOVAL, runFn: asStreamFn(HFT_BackgroundRemoval) },
-  { serves: HFT_IMAGE_OBJECT_DETECTION, runFn: asStreamFn(HFT_ObjectDetection) },
-  { serves: HFT_COUNT_TOKENS, runFn: asStreamFn(HFT_CountTokens) },
-  { serves: HFT_MODEL_UNLOAD, runFn: asStreamFn(HFT_Unload) },
-  { serves: HFT_MODEL_DOWNLOAD, runFn: asStreamFn(HFT_Download) },
-  { serves: HFT_MODEL_SEARCH, runFn: asStreamFn(HFT_ModelSearch) },
-  { serves: HFT_MODEL_INFO, runFn: asStreamFn(HFT_ModelInfo) },
+  { serves: HFT_TEXT_EMBEDDING, runFn: HFT_TextEmbedding },
+  { serves: HFT_TEXT_CLASSIFICATION, runFn: HFT_TextClassification },
+  { serves: HFT_TEXT_LANGUAGE_DETECTION, runFn: HFT_TextLanguageDetection },
+  { serves: HFT_TEXT_FILL_MASK, runFn: HFT_TextFillMask },
+  { serves: HFT_TEXT_NER, runFn: HFT_TextNamedEntityRecognition },
+  { serves: HFT_IMAGE_CLASSIFICATION, runFn: HFT_ImageClassification },
+  { serves: HFT_IMAGE_EMBEDDING, runFn: HFT_ImageEmbedding },
+  { serves: HFT_IMAGE_SEGMENTATION, runFn: HFT_ImageSegmentation },
+  { serves: HFT_IMAGE_TO_TEXT, runFn: HFT_ImageToText },
+  { serves: HFT_IMAGE_BACKGROUND_REMOVAL, runFn: HFT_BackgroundRemoval },
+  { serves: HFT_IMAGE_OBJECT_DETECTION, runFn: HFT_ObjectDetection },
+  { serves: HFT_COUNT_TOKENS, runFn: HFT_CountTokens },
+  { serves: HFT_MODEL_UNLOAD, runFn: HFT_Unload },
+  { serves: HFT_MODEL_DOWNLOAD, runFn: HFT_Download },
+  { serves: HFT_MODEL_SEARCH, runFn: HFT_ModelSearch },
+  { serves: HFT_MODEL_INFO, runFn: HFT_ModelInfo },
 ];
 
 export const HFT_PREVIEW_TASKS: Record<

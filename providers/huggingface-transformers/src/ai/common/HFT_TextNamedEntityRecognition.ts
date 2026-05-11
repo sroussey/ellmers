@@ -6,33 +6,39 @@
 
 import type { TokenClassificationPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextNamedEntityRecognitionTaskInput,
   TextNamedEntityRecognitionTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-export const HFT_TextNamedEntityRecognition: AiProviderRunFn<
+export const HFT_TextNamedEntityRecognition: AiProviderStreamFn<
   TextNamedEntityRecognitionTaskInput,
   TextNamedEntityRecognitionTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const textNamedEntityRecognition: TokenClassificationPipeline = await getPipeline(
-    model!,
-    onProgress,
-    {},
-    signal
-  );
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<TextNamedEntityRecognitionTaskOutput>> {
+  const textNamedEntityRecognition = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as TokenClassificationPipeline;
   const results = await textNamedEntityRecognition(input.text, {
     ignore_labels: input.blockList as string[] | undefined,
   });
 
-  return {
-    entities: results.map((entity) => ({
-      entity: entity.entity,
-      score: entity.score,
-      word: entity.word,
-    })),
+  yield {
+    type: "finish",
+    data: {
+      entities: results.map((entity) => ({
+        entity: entity.entity,
+        score: entity.score,
+        word: entity.word,
+      })),
+    },
   };
 };

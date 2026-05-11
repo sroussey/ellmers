@@ -5,19 +5,24 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 
 import { ensureAvailable, getApi } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
+export const WebBrowser_TextLanguageDetection: AiProviderStreamFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   WebBrowserModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async function* (
+  input,
+  _model,
+  signal
+): AsyncIterable<StreamEvent<TextLanguageDetectionTaskOutput>> {
   const factory = getApi(
     "LanguageDetector",
     typeof LanguageDetector !== "undefined" ? LanguageDetector : undefined
@@ -30,8 +35,7 @@ export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
     const languages = detected
       .map((d) => ({ language: d.detectedLanguage, score: d.confidence }))
       .slice(0, input.maxLanguages ?? 5);
-    update_progress(100, "Completed language detection");
-    return { languages };
+    yield { type: "finish", data: { languages } };
   } finally {
     detector.destroy();
   }

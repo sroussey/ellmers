@@ -19,11 +19,7 @@ jobs:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
         with:
-          # Pinned: a recent `latest` regressed the isolated-linker symlink
-          # creation for scoped packages with periods (`@sqlite.org/sqlite-wasm`),
-          # making `bun i` produce a tree where tsgo could not resolve the
-          # type-only import in `packages/sqlite/src/storage/_sqlite/browser.ts`.
-          bun-version: "1.3.11"
+          bun-version: latest
       - run: bun i
       - run: bun run build
       - run: bunx pkg-pr-new publish './packages/util' './packages/storage' './packages/job-queue' './packages/task-graph' './packages/knowledge-base' './packages/tasks' './packages/ai' './packages/browser-control' './packages/indexeddb' './packages/javascript' './packages/mcp' './packages/workglow' './examples/cli' './providers/openai' './providers/anthropic' './providers/google-gemini' './providers/ollama' './providers/huggingface-transformers' './providers/huggingface-inference' './providers/node-llama-cpp' './providers/tf-mediapipe' './providers/chrome-ai' './providers/postgres' './providers/sqlite' './providers/supabase'

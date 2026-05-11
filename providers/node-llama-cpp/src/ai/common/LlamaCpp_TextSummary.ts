@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -19,42 +18,6 @@ import {
   loadSdk,
   streamFromSession,
 } from "./LlamaCpp_Runtime";
-
-export const LlamaCpp_TextSummary: AiProviderRunFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  LlamaCppModelConfig
-> = async (input, model, update_progress, signal) => {
-  if (!model) throw new Error("Model config is required for TextSummaryTask.");
-
-  const { LlamaChatSession } = await loadSdk();
-
-  update_progress(0, "Loading model");
-  const context = await getOrCreateTextContext(model);
-
-  update_progress(10, "Summarizing text");
-  const sequence = context.getSequence();
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-    systemPrompt: "Summarize the following text concisely, preserving the key points.",
-  });
-  try {
-    const text = await session.prompt(input.text, {
-      signal,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-    });
-    update_progress(100, "Summarization complete");
-    return { text };
-  } finally {
-    try {
-      await session.dispose({ disposeSequence: false });
-    } catch {}
-    try {
-      await sequence.dispose();
-    } catch {}
-  }
-};
 
 export const LlamaCpp_TextSummary_Stream: AiProviderStreamFn<
   TextSummaryTaskInput,

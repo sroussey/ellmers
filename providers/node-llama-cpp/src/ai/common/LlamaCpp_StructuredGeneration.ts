@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
@@ -21,56 +20,6 @@ import {
   llamaCppSeedPromptSpread,
   loadSdk,
 } from "./LlamaCpp_Runtime";
-
-export const LlamaCpp_StructuredGeneration: AiProviderRunFn<
-  StructuredGenerationTaskInput,
-  StructuredGenerationTaskOutput,
-  LlamaCppModelConfig
-> = async (input, model, update_progress, signal) => {
-  if (!model) throw new Error("Model config is required for StructuredGenerationTask.");
-
-  await loadSdk();
-
-  update_progress(0, "Loading model");
-  const llama = await getLlamaInstance();
-  const context = await getOrCreateTextContext(model);
-
-  update_progress(10, "Running structured generation");
-  const grammar = await llama.createGrammarForJsonSchema(input.outputSchema as any);
-  const sequence = context.getSequence();
-  const { LlamaChatSession } = getLlamaCppSdk();
-  const session = new LlamaChatSession({
-    contextSequence: sequence,
-    ...llamaCppChatSessionConstructorSpread(model),
-  });
-
-  try {
-    const text = await session.prompt(input.prompt as string, {
-      signal,
-      grammar,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-    });
-
-    let object: Record<string, unknown>;
-    try {
-      object = JSON.parse(text);
-    } catch {
-      object = {};
-    }
-
-    update_progress(100, "Structured generation complete");
-    return { object };
-  } finally {
-    try {
-      await session.dispose({ disposeSequence: false });
-    } catch {}
-    try {
-      await sequence.dispose();
-    } catch {}
-  }
-};
 
 export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
   StructuredGenerationTaskInput,

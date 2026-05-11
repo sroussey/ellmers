@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ModelInfoTaskInput,
+  ModelInfoTaskOutput,
+} from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache } from "./TFMP_Runtime";
 
@@ -13,11 +18,14 @@ const TFMP_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; mrl
   "universal-sentence-encoder": { native_dimensions: 512, mrl: false },
 };
 
-export const TFMP_ModelInfo: AiProviderRunFn<
+export const TFMP_ModelInfo: AiProviderStreamFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   TFMPModelConfig
-> = async (input, model) => {
+> = async function* (
+  input,
+  model
+): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -30,31 +38,38 @@ export const TFMP_ModelInfo: AiProviderRunFn<
         native_dimensions = known.native_dimensions;
       }
     }
-    return {
-      model: input.model,
-      is_local: true,
-      is_remote: false,
-      supports_browser: true,
-      supports_node: false,
-      is_cached: false,
-      is_loaded: false,
-      file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl ? { mrl } : {}),
+    yield {
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: true,
+        is_remote: false,
+        supports_browser: true,
+        supports_node: false,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl ? { mrl } : {}),
+      },
     };
+    return;
   }
 
   const model_path = model!.provider_config.model_path;
   const is_loaded = modelTaskCache.has(model_path);
 
-  return {
-    model: input.model,
-    is_local: true,
-    is_remote: false,
-    supports_browser: true,
-    supports_node: false,
-    is_cached: is_loaded,
-    is_loaded,
-    file_sizes: null,
+  yield {
+    type: "finish",
+    data: {
+      model: input.model,
+      is_local: true,
+      is_remote: false,
+      supports_browser: true,
+      supports_node: false,
+      is_cached: is_loaded,
+      is_loaded,
+      file_sizes: null,
+    },
   };
 };

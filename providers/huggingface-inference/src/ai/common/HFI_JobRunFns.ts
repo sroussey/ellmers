@@ -4,12 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  AiProviderRunFnRegistration,
-  AiProviderStreamFn,
-} from "@workglow/ai";
-import type { StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { AiProviderRunFnRegistration } from "@workglow/ai";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import {
   HFI_IMAGE_EDITING,
@@ -35,24 +30,6 @@ import { HFI_TextRewriter_Stream } from "./HFI_TextRewriter";
 import { HFI_TextSummary_Stream } from "./HFI_TextSummary";
 import { HFI_ToolCalling_Stream } from "./HFI_ToolCalling";
 
-function asStreamFn<
-  I extends TaskInput = TaskInput,
-  O extends TaskOutput = TaskOutput,
-  M extends HfInferenceModelConfig = HfInferenceModelConfig,
->(fn: AiProviderRunFn<I, O, M>): AiProviderStreamFn<I, O, M> {
-  return async function* (
-    input,
-    model,
-    signal,
-    outputSchema,
-    sessionId
-  ): AsyncIterable<StreamEvent<O>> {
-    const noopProgress = (): void => {};
-    const data = await fn(input, model, noopProgress, signal, outputSchema, sessionId);
-    yield { type: "finish", data };
-  };
-}
-
 /**
  * Unified `["text.generation"]` run-fn. {@link AiChatTask} and
  * {@link TextGenerationTask} share this registration; discriminates on
@@ -74,9 +51,9 @@ export const HFI_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFI_TOOL_USE, runFn: HFI_ToolCalling_Stream },
   { serves: HFI_TEXT_REWRITER, runFn: HFI_TextRewriter_Stream },
   { serves: HFI_TEXT_SUMMARY, runFn: HFI_TextSummary_Stream },
-  { serves: HFI_TEXT_EMBEDDING, runFn: asStreamFn(HFI_TextEmbedding) },
+  { serves: HFI_TEXT_EMBEDDING, runFn: HFI_TextEmbedding },
   { serves: HFI_IMAGE_GENERATION, runFn: HFI_ImageGenerate_Stream },
   { serves: HFI_IMAGE_EDITING, runFn: HFI_ImageEdit_Stream },
-  { serves: HFI_MODEL_SEARCH, runFn: asStreamFn(HFI_ModelSearch) },
-  { serves: HFI_MODEL_INFO, runFn: asStreamFn(HFI_ModelInfo) },
+  { serves: HFI_MODEL_SEARCH, runFn: HFI_ModelSearch },
+  { serves: HFI_MODEL_INFO, runFn: HFI_ModelInfo },
 ];

@@ -5,13 +5,14 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { mapHfModelResult, searchHfModels } from "@workglow/ai/provider-utils";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { HF_INFERENCE } from "./HFI_Constants";
 
 /** Models with explicit capability overrides (HF pipeline tags don't cover image.generation/image.editing). */
@@ -38,12 +39,14 @@ function buildFallbackResults(): ModelSearchResultItem[] {
   }));
 }
 
-export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> = async (
+export const HFI_ModelSearch: AiProviderStreamFn<
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput
+> = async function* (
   input,
   _model,
-  _onProgress,
   signal
-) => {
+): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   const query = input.query?.trim() ?? "";
   if (!input.credential_key) {
     const fallback = buildFallbackResults();
@@ -51,7 +54,8 @@ export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
     const filtered = filterLabeledModelsByQuery(labeled, query).map(
       (m) => fallback.find((r) => r.id === m.value)!
     );
-    return { results: filtered };
+    yield { type: "finish", data: { results: filtered } };
+    return;
   }
 
   const entries = await searchHfModels(query, undefined, undefined, signal, input.credential_key);
@@ -64,5 +68,5 @@ export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
     }
     return mapped;
   });
-  return { results };
+  yield { type: "finish", data: { results } };
 };
