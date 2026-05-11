@@ -28,6 +28,7 @@ export const HFT_TEXT_CLASSIFICATION = ["text.classification"] as const satisfie
 export const HFT_TEXT_LANGUAGE_DETECTION = [
   "text.language-detection",
 ] as const satisfies Capability[];
+export const HFT_TEXT_RERANKING = ["text.reranking"] as const satisfies Capability[];
 export const HFT_TEXT_FILL_MASK = ["text.fill-mask"] as const satisfies Capability[];
 export const HFT_TEXT_NER = ["text.ner"] as const satisfies Capability[];
 export const HFT_IMAGE_CLASSIFICATION = ["image.classification"] as const satisfies Capability[];
@@ -58,6 +59,7 @@ export const HFT_CAPABILITY_SETS = [
   HFT_TEXT_EMBEDDING,
   HFT_TEXT_CLASSIFICATION,
   HFT_TEXT_LANGUAGE_DETECTION,
+  HFT_TEXT_RERANKING,
   HFT_TEXT_FILL_MASK,
   HFT_TEXT_NER,
   HFT_IMAGE_CLASSIFICATION,

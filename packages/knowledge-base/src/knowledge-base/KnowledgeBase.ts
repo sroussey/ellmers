@@ -20,17 +20,38 @@ import type {
   DocumentTabularStorage,
   InsertDocumentStorageEntity,
 } from "../document/DocumentStorageSchema";
+import type { IKbAiStrategy } from "./IKbAiStrategy";
+import { toInsertChunkEntities } from "./IKbAiStrategy";
 
 /**
- * Options passed through `kb.search()` to the `onSearch` callback.
- * The callback decides how to interpret them (similarity vs hybrid, etc.).
- * `filter` is intentionally a loose record — the callback and its backing
- * vector storage define the allowed keys.
+ * Retrieval flavor selected by {@link KnowledgeBase.search}.
+ *
+ * - `similarity`: vector cosine similarity only. Requires `embedQuery`.
+ * - `hybrid`: vector + full-text. Requires `embedQuery` and a hybrid-capable
+ *   storage backend.
+ * - `rerank`: hybrid (or similarity, if hybrid unsupported) first stage
+ *   followed by cross-encoder reranking. Requires `rerank` on the strategy.
+ */
+export type SearchKind = "similarity" | "hybrid" | "rerank";
+
+/**
+ * Options passed through `kb.search()` / `kb.searchWithRerank()`. `filter` is
+ * a loose record; allowed keys are defined by the underlying vector storage.
  */
 export interface ISearchOptions {
   readonly topK?: number;
   readonly filter?: Readonly<Record<string, unknown>>;
   readonly scoreThreshold?: number;
+  /**
+   * For `kind: "hybrid"` and the first stage of `kind: "rerank"`: vector
+   * vs. text weighting in [0, 1]. Defaults to the storage backend's default.
+   */
+  readonly vectorWeight?: number;
+  /**
+   * For `kind: "rerank"`: how many candidates to retrieve before reranking.
+   * Defaults to `max(topK * 5, 20)`.
+   */
+  readonly firstStageTopK?: number;
 }
 
 /**
@@ -126,34 +147,13 @@ function matchesFilter<T extends Record<string, unknown>>(
   return true;
 }
 
-/**
- * Callback invoked after a document is upserted.
- * Receives the KB instance and the upserted document.
- */
-export type OnDocumentUpsertCallback = (kb: KnowledgeBase, doc: Document) => Promise<void>;
-
-/**
- * Callback invoked after a document (and its chunks) are deleted.
- * Receives the KB instance and the deleted document's ID.
- */
-export type OnDocumentDeleteCallback = (kb: KnowledgeBase, doc_id: string) => Promise<void>;
-
-/**
- * Callback invoked by `search()` to handle text-to-vector conversion
- * and the actual search. Returns search results.
- */
-export type OnSearchCallback = (
-  kb: KnowledgeBase,
-  query: string,
-  options?: ISearchOptions
-) => Promise<ChunkSearchResult[]>;
+export interface ISearchWithKindOptions extends ISearchOptions {
+  readonly kind?: SearchKind;
+}
 
 export interface KnowledgeBaseOptions {
   readonly title?: string;
   readonly description?: string;
-  readonly onDocumentUpsert?: OnDocumentUpsertCallback;
-  readonly onDocumentDelete?: OnDocumentDeleteCallback;
-  readonly onSearch?: OnSearchCallback;
   /**
    * Optional text index. When installed, chunk upserts auto-write to it and
    * {@link KnowledgeBase.hybridSearch} fuses vector + text rankings via RRF.
@@ -161,35 +161,51 @@ export interface KnowledgeBaseOptions {
    * {@link KnowledgeBase.installTextIndex} after.
    */
   readonly textIndex?: ITextIndex;
+  /**
+   * Model ID used to embed document chunks during ingest. Consumed by the
+   * installed {@link IKbAiStrategy} — the KB itself doesn't run AI.
+   */
+  readonly docEmbeddingModel?: string;
+  /**
+   * Model ID used to embed search queries. Defaults to `docEmbeddingModel`
+   * if absent (the common case — symmetric embedding).
+   */
+  readonly queryEmbeddingModel?: string;
+  /**
+   * Optional cross-encoder reranker model ID. When set (and the strategy
+   * implements rerank against it) `search({ kind: "rerank" })` and
+   * `searchWithRerank()` use a real cross-encoder; otherwise the strategy
+   * may fall back to a heuristic.
+   */
+  readonly rerankerModel?: string;
+  /**
+   * The AI strategy used by `upsertDocumentWithIndex`, `search`, and
+   * `searchWithRerank`. Installable post-construction via
+   * {@link KnowledgeBase.setAiStrategy}.
+   */
+  readonly aiStrategy?: IKbAiStrategy;
 }
 
 /**
  * Unified KnowledgeBase that owns both document and vector storage,
  * providing lifecycle management and cascading deletes.
+ *
+ * Model configuration (`docEmbeddingModel`, `queryEmbeddingModel`,
+ * `rerankerModel`) lives on the KB so callers don't have to thread models
+ * through every retrieval call site. Actual AI execution is delegated to an
+ * {@link IKbAiStrategy} installed via {@link setAiStrategy} — this indirection
+ * keeps the KB package free of `@workglow/ai` (which depends on it).
  */
 export class KnowledgeBase {
   readonly name: string;
   readonly title: string = "";
   readonly description: string = "";
+  readonly docEmbeddingModel: string | undefined = undefined;
+  readonly queryEmbeddingModel: string | undefined = undefined;
+  readonly rerankerModel: string | undefined = undefined;
   private readonly tabularStorage: DocumentTabularStorage;
   private readonly chunkStorage: ChunkVectorStorage;
-
-  /**
-   * Called after `upsertDocument` successfully writes to storage.
-   * Awaited — throwing rejects the upsert call, but storage is already committed.
-   * Use for chunk re-indexing, audit logging, etc.
-   */
-  onDocumentUpsert: OnDocumentUpsertCallback | undefined;
-  /**
-   * Called after `deleteDocument` successfully deletes the document and its chunks.
-   * Awaited — throwing rejects the delete call, but storage is already committed.
-   */
-  onDocumentDelete: OnDocumentDeleteCallback | undefined;
-  /**
-   * Called by `search()` to embed the query and execute the search.
-   * Required if you intend to call `kb.search()`.
-   */
-  onSearch: OnSearchCallback | undefined;
+  private aiStrategy: IKbAiStrategy | undefined;
 
   /**
    * Optional full-text index. When installed, chunk upserts auto-write to it
@@ -212,12 +228,13 @@ export class KnowledgeBase {
     if (typeof options === "object" && options !== null) {
       this.title = options.title ?? name;
       this.description = options.description ?? "";
-      this.onDocumentUpsert = options.onDocumentUpsert;
-      this.onDocumentDelete = options.onDocumentDelete;
-      this.onSearch = options.onSearch;
       if (options.textIndex) {
         this.textIndex = options.textIndex;
       }
+      this.docEmbeddingModel = options.docEmbeddingModel;
+      this.queryEmbeddingModel = options.queryEmbeddingModel ?? options.docEmbeddingModel;
+      this.rerankerModel = options.rerankerModel;
+      this.aiStrategy = options.aiStrategy;
     }
   }
 
@@ -337,11 +354,44 @@ export class KnowledgeBase {
   }
 
   // ===========================================================================
+  // AI strategy
+  // ===========================================================================
+
+  /**
+   * Install (or replace) the AI strategy that powers ingest embedding and
+   * query-side embedding / reranking. The KB stores model IDs but doesn't
+   * load models itself; the strategy bridges to the AI runtime.
+   */
+  setAiStrategy(strategy: IKbAiStrategy | undefined): void {
+    this.aiStrategy = strategy;
+  }
+
+  getAiStrategy(): IKbAiStrategy | undefined {
+    return this.aiStrategy;
+  }
+
+  /** True when a strategy is installed AND a reranker model is registered. */
+  supportsRerank(): boolean {
+    return this.aiStrategy !== undefined && this.rerankerModel !== undefined;
+  }
+
+  private requireStrategy(forOp: string): IKbAiStrategy {
+    if (!this.aiStrategy) {
+      throw new Error(
+        `KnowledgeBase.${forOp}() requires an AI strategy. ` +
+          `Install one via kb.setAiStrategy(strategy) (typically createAiKbStrategy from @workglow/ai).`
+      );
+    }
+    return this.aiStrategy;
+  }
+
+  // ===========================================================================
   // Document CRUD
   // ===========================================================================
 
   /**
-   * Upsert a document.
+   * Upsert a document JSON record. Does NOT chunk or embed — use
+   * {@link upsertDocumentWithIndex} for the full ingest path.
    * @returns The document with the generated doc_id if it was auto-generated
    */
   async upsertDocument(document: Document): Promise<Document> {
@@ -357,11 +407,34 @@ export class KnowledgeBase {
       document.setDocId(entity.doc_id);
     }
 
-    if (this.onDocumentUpsert) {
-      await this.onDocumentUpsert(this, document);
-    }
-
     return document;
+  }
+
+  /**
+   * Full ingest: store the document, drop any existing chunks for it, then
+   * chunk + embed + upsert via the installed AI strategy. Throws if no
+   * strategy is installed.
+   */
+  async upsertDocumentWithIndex(document: Document): Promise<Document> {
+    const strategy = this.requireStrategy("upsertDocumentWithIndex");
+    const stored = await this.upsertDocument(document);
+    const docId = stored.doc_id;
+    if (!docId) {
+      throw new Error(
+        "upsertDocumentWithIndex: document has no doc_id after upsertDocument."
+      );
+    }
+    await this.deleteChunksForDocument(docId);
+    const embedResult = await strategy.chunkAndEmbedDocument(stored);
+    if (embedResult.chunks.length === 0) {
+      return stored;
+    }
+    const inserts = toInsertChunkEntities(embedResult, {
+      doc_id: docId,
+      doc_title: stored.metadata.title,
+    });
+    await this.upsertChunksBulk(inserts);
+    return stored;
   }
 
   /**
@@ -381,10 +454,6 @@ export class KnowledgeBase {
   async deleteDocument(doc_id: string): Promise<void> {
     await this.deleteChunksForDocument(doc_id);
     await this.tabularStorage.delete({ doc_id });
-
-    if (this.onDocumentDelete) {
-      await this.onDocumentDelete(this, doc_id);
-    }
   }
 
   /**
@@ -730,27 +799,83 @@ export class KnowledgeBase {
   }
 
   /**
-   * High-level text search. Delegates to the `onSearch` callback, which is
-   * responsible for embedding the query and executing the appropriate search
-   * (similarity, hybrid, keyword, etc.). Install `onSearch` via
-   * `createKnowledgeBase({ onSearch })` or the KnowledgeBase constructor options.
-   *
-   * If `onSearch` calls back into `kb.similaritySearch()` / `kb.hybridSearch()`,
-   * those calls still go through virtual dispatch — so subclass filter injection
-   * (e.g. tenant scope) applies even when the entry point is `kb.search()`.
-   *
-   * @throws Error if `onSearch` is not configured.
+   * Hybrid (or similarity) retrieve a wide candidate set, then ask the
+   * strategy's reranker to score them and return the best `topK`. Requires
+   * an AI strategy. If the backend doesn't support hybrid search, this
+   * falls back to similarity for the first stage.
    */
-  async search(query: string, options?: ISearchOptions): Promise<ChunkSearchResult[]> {
-    if (!this.onSearch) {
-      throw new Error(
-        "KnowledgeBase.search() requires an `onSearch` callback. " +
-          "Pass one via createKnowledgeBase({ onSearch }) or the KnowledgeBase " +
-          "constructor options. For raw vector search, use " +
-          "`kb.similaritySearch()` or `kb.vectorStorage.similaritySearch()` directly."
-      );
+  async searchWithRerank(
+    query: string,
+    options?: ISearchOptions
+  ): Promise<ChunkSearchResult[]> {
+    const strategy = this.requireStrategy("searchWithRerank");
+    const topK = options?.topK ?? 5;
+    const firstStageTopK = options?.firstStageTopK ?? Math.max(topK * 5, 20);
+    const vector = await strategy.embedQuery(query);
+    const firstStage: ChunkSearchResult[] = this.supportsHybridSearch()
+      ? await this.hybridSearch(vector, {
+          textQuery: query,
+          topK: firstStageTopK,
+          filter: options?.filter as Partial<ChunkRecord> | undefined,
+          scoreThreshold: options?.scoreThreshold,
+          vectorWeight: options?.vectorWeight,
+        })
+      : await this.similaritySearch(vector, {
+          topK: firstStageTopK,
+          filter: options?.filter as Partial<ChunkRecord> | undefined,
+          scoreThreshold: options?.scoreThreshold,
+        });
+    if (firstStage.length === 0) {
+      return [];
     }
-    return this.onSearch(this, query, options);
+    return strategy.rerank(query, firstStage, topK);
+  }
+
+  /**
+   * Unified text-query search dispatcher. The KB knows its own embedding
+   * model and reranker (via the installed strategy), so callers don't need
+   * to thread models through every call site.
+   *
+   * - `kind: "similarity"` — embed + vector search
+   * - `kind: "hybrid"` — embed + vector + full-text
+   * - `kind: "rerank"` — first-stage hybrid/similarity + cross-encoder rerank
+   *
+   * Defaults to `"rerank"` when a reranker model is configured, otherwise
+   * `"hybrid"` when supported, otherwise `"similarity"`.
+   */
+  async search(
+    query: string,
+    options?: ISearchWithKindOptions
+  ): Promise<ChunkSearchResult[]> {
+    const kind: SearchKind =
+      options?.kind ??
+      (this.supportsRerank()
+        ? "rerank"
+        : this.supportsHybridSearch()
+          ? "hybrid"
+          : "similarity");
+
+    if (kind === "rerank") {
+      return this.searchWithRerank(query, options);
+    }
+
+    const strategy = this.requireStrategy("search");
+    const vector = await strategy.embedQuery(query);
+    const topK = options?.topK ?? 5;
+    if (kind === "hybrid") {
+      return this.hybridSearch(vector, {
+        textQuery: query,
+        topK,
+        filter: options?.filter as Partial<ChunkRecord> | undefined,
+        scoreThreshold: options?.scoreThreshold,
+        vectorWeight: options?.vectorWeight,
+      });
+    }
+    return this.similaritySearch(vector, {
+      topK,
+      filter: options?.filter as Partial<ChunkRecord> | undefined,
+      scoreThreshold: options?.scoreThreshold,
+    });
   }
 
   // ===========================================================================
@@ -783,6 +908,24 @@ export class KnowledgeBase {
     }
     await this.deleteChunksForDocument(doc_id);
     return doc;
+  }
+
+  /**
+   * Re-index every document in this KB using the installed strategy. The
+   * caller is responsible for ensuring the strategy is set. Returns the
+   * number of documents re-indexed.
+   */
+  async reindex(): Promise<number> {
+    this.requireStrategy("reindex");
+    const docIds = await this.listDocuments();
+    let count = 0;
+    for (const doc_id of docIds) {
+      const doc = await this.getDocument(doc_id);
+      if (!doc) continue;
+      await this.upsertDocumentWithIndex(doc);
+      count++;
+    }
+    return count;
   }
 
   /**

@@ -23,6 +23,7 @@ export * from "./provider/QueuedAiProvider";
 
 export * from "./capability";
 export * from "./task";
+export * from "./kb/createAiKbStrategy";
 
 import { AiVisionTask } from "./task/base/AiVisionTask";
 

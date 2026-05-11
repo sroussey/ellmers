@@ -11,11 +11,7 @@ import type { ChunkVectorStorage } from "../chunk/ChunkVectorStorageSchema";
 import { ChunkVectorPrimaryKey, ChunkVectorStorageSchema } from "../chunk/ChunkVectorStorageSchema";
 import type { DocumentTabularStorage } from "../document/DocumentStorageSchema";
 import { DocumentStorageKey, DocumentStorageSchema } from "../document/DocumentStorageSchema";
-import type {
-  OnDocumentDeleteCallback,
-  OnDocumentUpsertCallback,
-  OnSearchCallback,
-} from "./KnowledgeBase";
+import type { IKbAiStrategy } from "./IKbAiStrategy";
 import { KnowledgeBase } from "./KnowledgeBase";
 import { registerKnowledgeBase } from "./KnowledgeBaseRegistry";
 
@@ -26,15 +22,16 @@ export interface CreateKnowledgeBaseOptions {
   readonly register?: boolean;
   readonly title?: string;
   readonly description?: string;
-  readonly onDocumentUpsert?: OnDocumentUpsertCallback;
-  readonly onDocumentDelete?: OnDocumentDeleteCallback;
-  readonly onSearch?: OnSearchCallback;
   /**
    * Optional full-text index. When provided, the KB enables
    * {@link KnowledgeBase.hybridSearch} and auto-writes chunks to the index
    * on upsert.
    */
   readonly textIndex?: ITextIndex;
+  readonly docEmbeddingModel?: string;
+  readonly queryEmbeddingModel?: string;
+  readonly rerankerModel?: string;
+  readonly aiStrategy?: IKbAiStrategy;
 }
 
 /**
@@ -45,7 +42,9 @@ export interface CreateKnowledgeBaseOptions {
  * const kb = await createKnowledgeBase({
  *   name: "my-kb",
  *   vectorDimensions: 1024,
+ *   docEmbeddingModel: "onnx:Xenova/bge-base-en-v1.5:q8",
  * });
+ * kb.setAiStrategy(createAiKbStrategy(kb));
  * ```
  */
 export async function createKnowledgeBase(
@@ -58,10 +57,11 @@ export async function createKnowledgeBase(
     register: shouldRegister = true,
     title,
     description,
-    onDocumentUpsert,
-    onDocumentDelete,
-    onSearch,
     textIndex,
+    docEmbeddingModel,
+    queryEmbeddingModel,
+    rerankerModel,
+    aiStrategy,
   } = options;
 
   const vectorCtor = vectorCtorOption ?? Float32Array;
@@ -93,7 +93,15 @@ export async function createKnowledgeBase(
     name,
     tabularStorage as unknown as DocumentTabularStorage,
     vectorStorage as unknown as ChunkVectorStorage,
-    { title, description, onDocumentUpsert, onDocumentDelete, onSearch, textIndex }
+    {
+      title,
+      description,
+      textIndex,
+      docEmbeddingModel,
+      queryEmbeddingModel,
+      rerankerModel,
+      aiStrategy,
+    }
   );
 
   if (shouldRegister) {

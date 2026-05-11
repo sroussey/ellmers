@@ -26,6 +26,7 @@ import { ImageClassificationTask } from "./ImageClassificationTask";
 import { ImageEmbeddingTask } from "./ImageEmbeddingTask";
 import { ImageSegmentationTask } from "./ImageSegmentationTask";
 import { ImageToTextTask } from "./ImageToTextTask";
+import { KbReindexTask } from "./KbReindexTask";
 import { KbSearchTask } from "./KbSearchTask";
 import { KbToDocumentsTask } from "./KbToDocumentsTask";
 import { ModelDownloadRemoveTask } from "./ModelDownloadRemoveTask";
@@ -46,6 +47,7 @@ import { TextGenerationTask } from "./TextGenerationTask";
 import { TextLanguageDetectionTask } from "./TextLanguageDetectionTask";
 import { TextNamedEntityRecognitionTask } from "./TextNamedEntityRecognitionTask";
 import { TextQuestionAnswerTask } from "./TextQuestionAnswerTask";
+import { TextRerankerTask } from "./TextRerankerTask";
 import { TextRewriterTask } from "./TextRewriterTask";
 import { TextSummaryTask } from "./TextSummaryTask";
 import { TextTranslationTask } from "./TextTranslationTask";
@@ -83,6 +85,7 @@ export const registerAiTasks = () => {
     ImageEmbeddingTask,
     ImageSegmentationTask,
     ImageToTextTask,
+    KbReindexTask,
     ModelInfoTask,
     ModelSearchTask,
     ObjectDetectionTask,
@@ -99,6 +102,7 @@ export const registerAiTasks = () => {
     TextLanguageDetectionTask,
     TextNamedEntityRecognitionTask,
     TextQuestionAnswerTask,
+    TextRerankerTask,
     TextRewriterTask,
     TextSummaryTask,
     TextTranslationTask,

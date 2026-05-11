@@ -8,6 +8,7 @@
 
 export * from "./chunk/ChunkSchema";
 export * from "./chunk/ChunkVectorStorageSchema";
+export * from "./knowledge-base/IKbAiStrategy";
 export * from "./knowledge-base/KnowledgeBase";
 export * from "./knowledge-base/KnowledgeBaseSchema";
 export * from "./knowledge-base/KnowledgeBaseRepository";
