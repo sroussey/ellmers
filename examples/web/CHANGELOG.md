@@ -1,5 +1,13 @@
 # @workglow/web
 
+## 0.2.34
+
+### Updated Dependencies
+
+- `tailwind-merge`: ^3.6.0
+- `@tailwindcss/vite`: ^4.3.0
+- `tailwindcss`: ^4.3.0
+
 ## 0.2.33
 
 ## 0.2.32

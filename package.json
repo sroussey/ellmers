@@ -1,7 +1,7 @@
 {
   "name": "@workglow-dev/libs",
   "type": "module",
-  "version": "0.2.33",
+  "version": "0.2.34",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git"
@@ -57,7 +57,7 @@
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-genai": "^0.10.27",
     "@anthropic-ai/sdk": "^0.95.1",
-    "electron": "^42.0.0",
+    "electron": "^42.0.1",
     "@google/generative-ai": "^0.24.1",
     "node-llama-cpp": "^3.18.1",
     "@huggingface/inference": "^4.13.15",
@@ -69,7 +69,7 @@
     "pg": "^8.20.0",
     "playwright": "^1.59.1",
     "@electric-sql/pglite": "^0.4.5",
-    "@supabase/supabase-js": "^2.105.3",
+    "@supabase/supabase-js": "^2.105.4",
     "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
     "@sqliteai/sqlite-vector": "^0.9.95",
     "better-sqlite3": "^12.9.0"
@@ -79,7 +79,7 @@
     "@types/node": "^24.12.3",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.59.2",
-    "@typescript/native-preview": "=7.0.0-dev.20260507.1",
+    "@typescript/native-preview": "=7.0.0-dev.20260510.1",
     "@vitest/coverage-v8": "^4.1.5",
     "@vitest/ui": "4.1.5",
     "bunset": "^1.0.12",
@@ -93,7 +93,7 @@
     "nyc": "^18.0.0",
     "pkg-pr-new": "^0.0.71",
     "prettier": "^3.8.3",
-    "turbo": "^2.9.10",
+    "turbo": "^2.9.12",
     "typescript": "6.0.3",
     "vitest": "^4.1.5"
   },

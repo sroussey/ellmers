@@ -1,5 +1,7 @@
 # @workglow/storage
 
+## 0.2.34
+
 ## 0.2.33
 
 ### Bug Fixes

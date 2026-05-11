@@ -1,5 +1,7 @@
 # @workglow/job-queue
 
+## 0.2.34
+
 ## 0.2.33
 
 ### Chores
