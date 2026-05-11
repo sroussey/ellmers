@@ -4,14 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput,
+} from "@workglow/ai";
 import { searchHfModels, mapHfModelResult } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { LOCAL_LLAMACPP } from "./LlamaCpp_Constants";
 
-export const LlamaCpp_ModelSearch: AiProviderRunFn<
+export const LlamaCpp_ModelSearch: AiProviderStreamFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input, _model, _onProgress, signal) => {
+> = async function* (input, _model, signal): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   const entries = await searchHfModels(
     input.query?.trim() ?? "",
     { filter: "gguf" },
@@ -19,5 +24,5 @@ export const LlamaCpp_ModelSearch: AiProviderRunFn<
     signal
   );
   const results = entries.map((entry) => mapHfModelResult(entry, LOCAL_LLAMACPP));
-  return { results };
+  yield { type: "finish", data: { results } };
 };

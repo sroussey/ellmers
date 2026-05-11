@@ -6,21 +6,22 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
+  AiProviderStreamFn,
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
+import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getOrLoadModel } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_CountTokens: AiProviderRunFn<
+export const LlamaCpp_CountTokens: AiProviderStreamFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (input, model): AsyncIterable<StreamEvent<CountTokensTaskOutput>> {
   const loadedModel = await getOrLoadModel(model!);
   const tokens = loadedModel.tokenizer(input.text);
-  return { count: tokens.length };
+  yield { type: "finish", data: { count: tokens.length } };
 };
 
 export const LlamaCpp_CountTokens_Preview: AiProviderPreviewRunFn<
@@ -28,5 +29,7 @@ export const LlamaCpp_CountTokens_Preview: AiProviderPreviewRunFn<
   CountTokensTaskOutput,
   LlamaCppModelConfig
 > = async (input, model) => {
-  return LlamaCpp_CountTokens(input, model, () => {}, new AbortController().signal);
+  const loadedModel = await getOrLoadModel(model!);
+  const tokens = loadedModel.tokenizer(input.text);
+  return { count: tokens.length };
 };

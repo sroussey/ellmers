@@ -69,6 +69,13 @@ function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean
   return n > 1;
 }
 
+function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
+  // RAG suite intentionally runs in parallel: only two .integration.test.ts files exist
+  // and serialising them blows past the per-job wall-clock budget on CI (10+ minutes).
+  // Per-test timeouts (vitest testTimeout / bun --timeout) keep heavy work bounded.
+  return shouldRunLlamaCppIntegrationFilesSequentially(files);
+}
+
 const SECTION_DIRS: Record<Section, string[]> = {
   graph: [
     join(TEST_BASE, "task-graph"),
@@ -168,6 +175,15 @@ function collectFiles(
   return files;
 }
 
+/** Run fast unit files before integration/e2e so ONNX-heavy suites start with a cleaner heap and predictable progress order. */
+function orderFilteredTestFiles(files: string[]): string[] {
+  if (files.length === 0) return files;
+  const isHeavy = (f: string) => f.includes(".integration.") || f.includes(".e2e.");
+  const light = files.filter((f) => !isHeavy(f)).sort((a, b) => a.localeCompare(b));
+  const heavy = files.filter(isHeavy).sort((a, b) => a.localeCompare(b));
+  return [...light, ...heavy];
+}
+
 async function runBunTest(files: string[]): Promise<number> {
   const args = buildBunTestArgs(files);
   const proc = Bun.spawn(args, {
@@ -183,7 +199,7 @@ async function runBunTest(files: string[]): Promise<number> {
 
 function buildBunTestArgs(files: string[]): string[] {
   const parallelFlag: string =
-    files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)
+    files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)
       ? "--parallel=1"
       : "--parallel";
   // Match vitest's testTimeout: Bun's default is 5s per test, which is easy to exceed in HF/Sqlite work
@@ -195,13 +211,20 @@ function buildBunTestArgs(files: string[]): string[] {
 function buildVitestArgs(files: string[]): string[] {
   // When no file filter: run all. Otherwise pass relative paths as name filters.
   const relFiles = files.length > 0 ? files.map((f) => relative(ROOT, f)) : [];
-  const args = ["npx", "vitest", "run", ...relFiles];
-  if (files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)) {
-    args.push("--no-file-parallelism");
+  const args = ["npx", "vitest", "run"];
+  if (files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)) {
+    // Locally: one file at a time avoids OOM when many ONNX-heavy suites load at once.
+    // CI: capped workers finish sooner (fewer runs cancelled by overlapping pushes) while limiting RAM.
+    if (process.env.CI === "true") {
+      args.push("--maxWorkers", "2");
+    } else {
+      args.push("--no-file-parallelism");
+    }
   }
   if (process.env.CI) {
     args.push("--coverage");
   }
+  args.push(...relFiles);
   return args;
 }
 
@@ -271,7 +294,9 @@ const dirs =
   sections.length > 0
     ? sections.flatMap((s) => SECTION_DIRS[s])
     : Object.values(SECTION_DIRS).flat();
-const files: string[] = needsFileFilter ? collectFiles(dirs, kinds, sections) : [];
+const files: string[] = needsFileFilter
+  ? orderFilteredTestFiles(collectFiles(dirs, kinds, sections))
+  : [];
 
 if (needsFileFilter && files.length === 0) {
   const kindLabel = kinds.length > 0 ? kinds.join("+") : "all";

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export * from "./bridgeProgress";
 export * from "./Capabilities";
 export * from "./collectStream";
 export * from "./StreamEvents";

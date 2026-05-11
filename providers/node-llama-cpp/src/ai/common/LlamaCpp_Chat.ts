@@ -7,7 +7,6 @@
 import type {
   AiChatProviderInput,
   AiChatProviderOutput,
-  AiProviderRunFn,
   AiProviderStreamFn,
   ChatMessage,
 } from "@workglow/ai";
@@ -77,45 +76,6 @@ function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
   }
   return "";
 }
-
-// ============================================================================
-// Non-streaming run function
-// ============================================================================
-
-export const LlamaCpp_Chat: AiProviderRunFn<
-  AiChatProviderInput,
-  AiChatProviderOutput,
-  LlamaCppModelConfig
-> = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
-  if (!model) throw new Error("Model config is required for AiChatTask.");
-
-  update_progress(0, "Loading model");
-  const { session, sequence } = await getOrCreateChatSession(sessionId, model, input.systemPrompt);
-  update_progress(10, "Generating response");
-
-  const userText = lastUserText(input.messages ?? []);
-
-  try {
-    const text = await session.prompt(userText, {
-      signal,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-    });
-    update_progress(100, "Chat turn complete");
-    return { text };
-  } finally {
-    // For ephemeral sessions (no sessionId), dispose resources immediately.
-    if (!sessionId) {
-      try {
-        await session.dispose({ disposeSequence: false });
-      } catch {}
-      try {
-        await sequence.dispose();
-      } catch {}
-    }
-  }
-};
 
 // ============================================================================
 // Streaming run function

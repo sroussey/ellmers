@@ -1,11 +1,11 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ModelSearchTask } from "@workglow/ai";
+import { collectStream, ModelSearchTask } from "@workglow/ai";
+import type { AiProviderStreamFn } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
@@ -16,16 +16,19 @@ import { afterEach, describe, expect, test } from "vitest";
 const originalFetch = globalThis.fetch;
 
 async function modelIdsForSearch(
-  search: typeof OpenAI_ModelSearch,
+  search: AiProviderStreamFn<any, any>,
   query: string
 ): Promise<string[]> {
-  const { results } = await search(
-    { query } as any,
-    undefined as any,
-    undefined as any,
-    undefined as any
+  const { results } = await collectStream(
+    search(
+      { query } as any,
+      undefined as any,
+      new AbortController().signal,
+      undefined,
+      undefined
+    )
   );
-  return results.map((model) => model.id);
+  return results.map((model: { id: string }) => model.id);
 }
 
 afterEach(() => {
@@ -83,11 +86,14 @@ describe.skip("provider model search samples", () => {
       });
     }) as unknown as typeof fetch;
 
-    const { results } = await Gemini_ModelSearch(
-      { query: "live", credential_key: "test-gemini-key" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
+    const { results } = await collectStream(
+      Gemini_ModelSearch(
+        { query: "live", credential_key: "test-gemini-key" } as any,
+        undefined as any,
+        new AbortController().signal,
+        undefined,
+        undefined
+      )
     );
 
     expect(requestedUrl).toContain("key=test-gemini-key");
@@ -101,11 +107,14 @@ describe.skip("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      Gemini_ModelSearch(
-        { query: "live", credential_key: "bad-gemini-key" } as any,
-        undefined as any,
-        undefined as any,
-        undefined as any
+      collectStream(
+        Gemini_ModelSearch(
+          { query: "live", credential_key: "bad-gemini-key" } as any,
+          undefined as any,
+          new AbortController().signal,
+          undefined,
+          undefined
+        )
       )
     ).rejects.toThrow("Gemini API returned 401");
   });
@@ -129,11 +138,14 @@ describe.skip("provider model search samples", () => {
       ]);
     }) as unknown as typeof fetch;
 
-    const { results } = await HFI_ModelSearch(
-      { query: "live", credential_key: "test-hf-key" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
+    const { results } = await collectStream(
+      HFI_ModelSearch(
+        { query: "live", credential_key: "test-hf-key" } as any,
+        undefined as any,
+        new AbortController().signal,
+        undefined,
+        undefined
+      )
     );
 
     expect(authorization).toBe("Bearer test-hf-key");
@@ -145,21 +157,27 @@ describe.skip("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      HFI_ModelSearch(
-        { query: "live", credential_key: "bad-hf-key" } as any,
-        undefined as any,
-        undefined as any,
-        undefined as any
+      collectStream(
+        HFI_ModelSearch(
+          { query: "live", credential_key: "bad-hf-key" } as any,
+          undefined as any,
+          new AbortController().signal,
+          undefined,
+          undefined
+        )
       )
     ).rejects.toThrow("HuggingFace API returned 401");
   });
 
   test("TensorFlow MediaPipe search includes known model records", async () => {
-    const { results } = await TFMP_ModelSearch(
-      { provider: TENSORFLOW_MEDIAPIPE, query: "pose" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
+    const { results } = await collectStream(
+      TFMP_ModelSearch(
+        { provider: TENSORFLOW_MEDIAPIPE, query: "pose" } as any,
+        undefined as any,
+        new AbortController().signal,
+        undefined,
+        undefined
+      )
     );
 
     expect(results).toContainEqual(

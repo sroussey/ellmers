@@ -5,32 +5,40 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   HandLandmarkerTaskInput,
   HandLandmarkerTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_HandLandmarker: AiProviderRunFn<
+export const TFMP_HandLandmarker: AiProviderStreamFn<
   HandLandmarkerTaskInput,
   HandLandmarkerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<HandLandmarkerTaskOutput>> {
   const { HandLandmarker } = await loadTfmpTasksVisionSDK();
-  const handLandmarker = await getModelTask(
-    model!,
-    {
-      numHands: input.numHands,
-      minHandDetectionConfidence: input.minHandDetectionConfidence,
-      minHandPresenceConfidence: input.minHandPresenceConfidence,
-      minTrackingConfidence: input.minTrackingConfidence,
-    },
-    onProgress,
-    signal,
-    HandLandmarker
+  const handLandmarker = yield* bridgeProgress((cb) =>
+    getModelTask(
+      model!,
+      {
+        numHands: input.numHands,
+        minHandDetectionConfidence: input.minHandDetectionConfidence,
+        minHandPresenceConfidence: input.minHandPresenceConfidence,
+        minTrackingConfidence: input.minTrackingConfidence,
+      },
+      cb,
+      signal,
+      HandLandmarker
+    )
   );
   const result = handLandmarker.detect(input.image);
 
@@ -55,7 +63,5 @@ export const TFMP_HandLandmarker: AiProviderRunFn<
     })),
   }));
 
-  return {
-    hands,
-  };
+  yield { type: "finish", data: { hands } };
 };

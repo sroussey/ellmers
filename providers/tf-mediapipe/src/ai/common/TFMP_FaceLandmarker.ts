@@ -5,34 +5,42 @@
  */
 
 import type {
-  AiProviderRunFn,
+  AiProviderStreamFn,
   FaceLandmarkerTaskInput,
   FaceLandmarkerTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_FaceLandmarker: AiProviderRunFn<
+export const TFMP_FaceLandmarker: AiProviderStreamFn<
   FaceLandmarkerTaskInput,
   FaceLandmarkerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async function* (
+  input,
+  model,
+  signal
+): AsyncIterable<StreamEvent<FaceLandmarkerTaskOutput>> {
   const { FaceLandmarker } = await loadTfmpTasksVisionSDK();
-  const faceLandmarker = await getModelTask(
-    model!,
-    {
-      numFaces: input.numFaces,
-      minFaceDetectionConfidence: input.minFaceDetectionConfidence,
-      minFacePresenceConfidence: input.minFacePresenceConfidence,
-      minTrackingConfidence: input.minTrackingConfidence,
-      outputFaceBlendshapes: input.outputFaceBlendshapes,
-      outputFacialTransformationMatrixes: input.outputFacialTransformationMatrixes,
-    },
-    onProgress,
-    signal,
-    FaceLandmarker
+  const faceLandmarker = yield* bridgeProgress((cb) =>
+    getModelTask(
+      model!,
+      {
+        numFaces: input.numFaces,
+        minFaceDetectionConfidence: input.minFaceDetectionConfidence,
+        minFacePresenceConfidence: input.minFacePresenceConfidence,
+        minTrackingConfidence: input.minTrackingConfidence,
+        outputFaceBlendshapes: input.outputFaceBlendshapes,
+        outputFacialTransformationMatrixes: input.outputFacialTransformationMatrixes,
+      },
+      cb,
+      signal,
+      FaceLandmarker
+    )
   );
   const result = faceLandmarker.detect(input.image as any);
 
@@ -63,7 +71,5 @@ export const TFMP_FaceLandmarker: AiProviderRunFn<
     return face;
   });
 
-  return {
-    faces,
-  };
+  yield { type: "finish", data: { faces } };
 };

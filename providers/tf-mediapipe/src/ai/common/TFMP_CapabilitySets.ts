@@ -38,6 +38,7 @@ export const TFMP_VISION_POSE_LANDMARKS = [
 export const TFMP_VISION_GESTURE = [
   "vision.gesture",
 ] as const satisfies readonly Capability[];
+export const TFMP_MODEL_DOWNLOAD = ["model.download"] as const satisfies readonly Capability[];
 export const TFMP_MODEL_UNLOAD = ["model.unload"] as const satisfies readonly Capability[];
 export const TFMP_MODEL_SEARCH = [
   "provider.model-search",
@@ -57,6 +58,7 @@ export const TFMP_CAPABILITY_SETS = [
   TFMP_VISION_HAND_LANDMARKS,
   TFMP_VISION_POSE_LANDMARKS,
   TFMP_VISION_GESTURE,
+  TFMP_MODEL_DOWNLOAD,
   TFMP_MODEL_UNLOAD,
   TFMP_MODEL_SEARCH,
   TFMP_MODEL_INFO,

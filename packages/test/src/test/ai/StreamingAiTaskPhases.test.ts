@@ -1,4 +1,3 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
@@ -128,7 +127,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
+    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p1" });
@@ -157,7 +156,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
+    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p2" });
@@ -178,7 +177,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerStreamFn(MOCK_PROVIDER, "TextSummaryTask", streamFn);
+    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p3" });

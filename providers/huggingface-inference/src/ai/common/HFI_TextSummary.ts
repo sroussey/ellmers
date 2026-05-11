@@ -5,7 +5,6 @@
  */
 
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -13,32 +12,6 @@ import type {
 import type { StreamEvent } from "@workglow/task-graph";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
-
-export const HFI_TextSummary: AiProviderRunFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  HfInferenceModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting HF Inference text summarization");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-  const provider = getProvider(model);
-
-  const response = await client.chatCompletion(
-    {
-      model: modelName,
-      messages: [
-        { role: "system", content: "Summarize the following text concisely." },
-        { role: "user", content: input.text },
-      ],
-      provider,
-    },
-    { signal }
-  );
-
-  update_progress(100, "Completed HF Inference text summarization");
-  return { text: response.choices[0]?.message?.content ?? "" };
-};
 
 export const HFI_TextSummary_Stream: AiProviderStreamFn<
   TextSummaryTaskInput,

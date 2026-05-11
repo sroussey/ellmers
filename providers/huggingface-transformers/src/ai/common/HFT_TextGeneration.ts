@@ -4,97 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { Message, TextGenerationPipeline } from "@huggingface/transformers";
 import type {
-  Message,
-  TextGenerationOutput,
-  TextGenerationPipeline,
-} from "@huggingface/transformers";
-import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline, getHftSession, setHftSession, loadTransformersSDK } from "./HFT_Pipeline";
 import type { HftProgressiveSession } from "./HFT_Pipeline";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
-import { extractGeneratedText } from "./HFT_TextOutput";
-
-/**
- * Core implementation for text generation using Hugging Face Transformers.
- * This is shared between inline and worker implementations.
- */
-export const HFT_TextGeneration: AiProviderRunFn<
-  TextGenerationTaskInput,
-  TextGenerationTaskOutput,
-  HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal, _outputSchema, sessionId) => {
-  signal?.throwIfAborted?.();
-  const logger = getLogger();
-  const timerLabel = `hft:TextGeneration:${model?.provider_config.model_path}`;
-  logger.time(timerLabel, { model: model?.provider_config.model_path });
-
-  const generateText: TextGenerationPipeline = await getPipeline(model!, onProgress, {}, signal);
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-
-  logger.debug("HFT TextGeneration: pipeline ready, generating text", {
-    model: model?.provider_config.model_path,
-    promptLength: input.prompt?.length,
-  });
-
-  const streamer = createTextStreamer(generateText.tokenizer, onProgress, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-
-  // Session cache: progressive caching for text generation
-  const modelPath = model!.provider_config.model_path;
-  let session = sessionId ? getHftSession(sessionId) : undefined;
-  let past_key_values: any = undefined;
-
-  if (sessionId && !session) {
-    const sdk = await loadTransformersSDK();
-    const cache = new sdk.DynamicCache();
-    const newSession: HftProgressiveSession = {
-      mode: "progressive",
-      cache,
-      modelPath,
-    };
-    setHftSession(sessionId, newSession);
-    session = newSession;
-  }
-
-  if (session?.mode === "progressive") {
-    past_key_values = session.cache;
-  }
-
-  const messages: Message[] = [{ role: "user", content: input.prompt }];
-
-  let results = await generateText(messages, {
-    streamer,
-    do_sample: false,
-    max_new_tokens: input.maxTokens ?? 4 * 1024,
-    stopping_criteria: [stopping_criteria],
-    ...(past_key_values ? { past_key_values } : {}),
-  });
-
-  if (!Array.isArray(results)) {
-    results = [results];
-  }
-  const text = extractGeneratedText((results[0] as TextGenerationOutput[number])?.generated_text);
-  logger.timeEnd(timerLabel, { outputLength: text?.length });
-  return {
-    text,
-  };
-};
+import { createStreamEventQueue, createStreamingTextStreamer } from "./HFT_Streaming";
 
 export const HFT_TextGeneration_Stream: AiProviderStreamFn<
   TextGenerationTaskInput,
@@ -107,8 +28,9 @@ export const HFT_TextGeneration_Stream: AiProviderStreamFn<
   _outputSchema,
   sessionId
 ): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
-  const noopProgress = () => {};
-  const generateText: TextGenerationPipeline = await getPipeline(model!, noopProgress, {}, signal);
+  const generateText = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as TextGenerationPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   const queue = createStreamEventQueue<StreamEvent<TextGenerationTaskOutput>>();

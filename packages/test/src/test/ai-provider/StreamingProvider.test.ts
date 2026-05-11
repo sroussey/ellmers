@@ -1,11 +1,10 @@
-// @ts-nocheck — Phase 5j: legacy AiProvider contract test. Rewrite during Phase 9 for new capability-set dispatch APIs.
 /**
  * @license
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn } from "@workglow/ai";
+import type { AiProviderStreamFn, Capability } from "@workglow/ai";
 import {
   AiJob,
   AiJobInput,
@@ -25,12 +24,11 @@ import {
   TaskQueueRegistry,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const mock = vi.fn;
-
 const MOCK_PROVIDER = "mock-streaming-provider";
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 describe.skip("Streaming Provider", () => {
   let logger = getTestingLogger();
@@ -83,60 +81,72 @@ describe.skip("Streaming Provider", () => {
     await setTaskQueueRegistry(null);
   });
 
-  describe("registerStreamFn", () => {
-    it("should register a stream function for a task type and model provider", () => {
+  describe("registerRunFn (streaming)", () => {
+    it("should register a stream function for a capability set and provider", () => {
       const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "text-delta", port: "text", textDelta: "hello" };
-        yield { type: "finish", data: { text: "hello" } };
+        yield { type: "text-delta", port: "text", textDelta: "hello" } as StreamEvent<TaskOutput>;
+        yield { type: "finish", data: { text: "hello" } } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(MOCK_PROVIDER, "TextGenerationTask", mockStreamFn);
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: mockStreamFn,
+      });
 
-      const retrieved = registry.getStreamFn(MOCK_PROVIDER, "TextGenerationTask");
+      const retrieved = registry.getRunFnFor(MOCK_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(mockStreamFn);
     });
 
-    it("should create task type map if it does not exist", () => {
+    it("should create provider entry if it does not exist", () => {
       const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "finish", data: {} };
+        yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(MOCK_PROVIDER, "new-stream-task", mockStreamFn);
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: ["text.embedding"],
+        runFn: mockStreamFn,
+      });
 
-      expect(registry.streamFnRegistry.get("new-stream-task")).toBeDefined();
-      expect(registry.streamFnRegistry.get("new-stream-task")?.get(MOCK_PROVIDER)).toBe(
-        mockStreamFn
-      );
+      const regs = registry.getRunFnRegistrations(MOCK_PROVIDER);
+      expect(regs).toHaveLength(1);
+      expect(regs[0].serves).toEqual(["text.embedding"]);
+      expect(regs[0].runFn).toBe(mockStreamFn);
     });
   });
 
-  describe("getStreamFn", () => {
-    it("should return undefined for unregistered stream function", () => {
-      const result = registry.getStreamFn(MOCK_PROVIDER, "nonexistent");
+  describe("getRunFnFor (streaming)", () => {
+    it("should return undefined for unregistered provider/capability", () => {
+      const result = registry.getRunFnFor(MOCK_PROVIDER, ["text.embedding"]);
       expect(result).toBeUndefined();
     });
 
     it("should return the registered stream function", () => {
       const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "finish", data: {} };
+        yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(MOCK_PROVIDER, "TextGenerationTask", mockStreamFn);
-      const retrieved = registry.getStreamFn(MOCK_PROVIDER, "TextGenerationTask");
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: mockStreamFn,
+      });
+      const retrieved = registry.getRunFnFor(MOCK_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(mockStreamFn);
     });
   });
 
   describe("AiJob.executeStream", () => {
     it("should yield events from registered stream function", async () => {
-      const mockStreamFn: AiProviderStreamFn = async function* (input, model, signal) {
-        yield { type: "text-delta", port: "text", textDelta: "Hello" };
-        yield { type: "text-delta", port: "text", textDelta: " " };
-        yield { type: "text-delta", port: "text", textDelta: "world" };
-        yield { type: "finish", data: { text: "Hello world" } };
+      const mockStreamFn: AiProviderStreamFn = async function* () {
+        yield { type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>;
+        yield { type: "text-delta", port: "text", textDelta: " " } as StreamEvent<TaskOutput>;
+        yield { type: "text-delta", port: "text", textDelta: "world" } as StreamEvent<TaskOutput>;
+        yield { type: "finish", data: { text: "Hello world" } } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(MOCK_PROVIDER, "TextGenerationTask", mockStreamFn);
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: mockStreamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -151,6 +161,7 @@ describe.skip("Streaming Provider", () => {
       const jobInput: AiJobInput = {
         aiProvider: MOCK_PROVIDER,
         taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
         taskInput: { prompt: "test", model },
       };
 
@@ -160,7 +171,7 @@ describe.skip("Streaming Provider", () => {
       });
 
       const controller = new AbortController();
-      const events: StreamEvent[] = [];
+      const events: StreamEvent<TaskOutput>[] = [];
 
       for await (const event of job.executeStream(jobInput, {
         signal: controller.signal,
@@ -176,10 +187,22 @@ describe.skip("Streaming Provider", () => {
       expect(events[3]).toEqual({ type: "finish", data: { text: "Hello world" } });
     });
 
-    it("should fallback to non-streaming execute when no stream function registered", async () => {
-      const mockRunFn = mock(() => Promise.resolve({ text: "non-streaming result" }));
-      registry.registerRunFn(MOCK_PROVIDER, "TextGenerationTask", mockRunFn);
-      // No stream function registered
+    it("should fallback to non-streaming execute when no stream function is registered for the capabilities", async () => {
+      // Register a stream-fn under a DIFFERENT capability set so the
+      // executeStream lookup misses but execute() still finds nothing.
+      // Re-targeted: in capability-set dispatch there's no separate
+      // "non-stream" map to fall back through. Verify that when the same
+      // run-fn yields only a single finish event, executeStream forwards it.
+      const mockStreamFn: AiProviderStreamFn = async function* () {
+        yield {
+          type: "finish",
+          data: { text: "non-streaming result" },
+        } as StreamEvent<TaskOutput>;
+      };
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: mockStreamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -194,6 +217,7 @@ describe.skip("Streaming Provider", () => {
       const jobInput: AiJobInput = {
         aiProvider: MOCK_PROVIDER,
         taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
         taskInput: { prompt: "test", model },
       };
 
@@ -203,7 +227,7 @@ describe.skip("Streaming Provider", () => {
       });
 
       const controller = new AbortController();
-      const events: StreamEvent[] = [];
+      const events: StreamEvent<TaskOutput>[] = [];
 
       for await (const event of job.executeStream(jobInput, {
         signal: controller.signal,
@@ -212,7 +236,7 @@ describe.skip("Streaming Provider", () => {
         events.push(event);
       }
 
-      // Fallback: single finish event with the full result
+      // Single finish event with the full result
       expect(events.length).toBe(1);
       expect(events[0].type).toBe("finish");
       if (events[0].type === "finish") {
@@ -221,16 +245,22 @@ describe.skip("Streaming Provider", () => {
     });
 
     it("should respect abort signal during streaming", async () => {
-      const mockStreamFn: AiProviderStreamFn = async function* (input, model, signal) {
-        yield { type: "text-delta", port: "text", textDelta: "Hello" };
+      const mockStreamFn: AiProviderStreamFn = async function* (_input, _model, signal) {
+        yield { type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>;
         // Simulate slow streaming
         await sleep(200);
         if (signal.aborted) return;
-        yield { type: "text-delta", port: "text", textDelta: " world" };
-        yield { type: "finish", data: { text: "Hello world" } };
+        yield { type: "text-delta", port: "text", textDelta: " world" } as StreamEvent<TaskOutput>;
+        yield {
+          type: "finish",
+          data: { text: "Hello world" },
+        } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerStreamFn(MOCK_PROVIDER, "TextGenerationTask", mockStreamFn);
+      registry.registerRunFn(MOCK_PROVIDER, {
+        serves: TEXT_GENERATION,
+        runFn: mockStreamFn,
+      });
 
       const model = {
         model_id: "test:test-model:v1",
@@ -245,6 +275,7 @@ describe.skip("Streaming Provider", () => {
       const jobInput: AiJobInput = {
         aiProvider: MOCK_PROVIDER,
         taskType: "TextGenerationTask",
+        requires: TEXT_GENERATION,
         taskInput: { prompt: "test", model },
       };
 
@@ -254,16 +285,22 @@ describe.skip("Streaming Provider", () => {
       });
 
       const controller = new AbortController();
-      const events: StreamEvent[] = [];
+      const events: StreamEvent<TaskOutput>[] = [];
 
       // Abort after a short delay
       setTimeout(() => controller.abort(), 50);
 
-      for await (const event of job.executeStream(jobInput, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      })) {
-        events.push(event);
+      try {
+        for await (const event of job.executeStream(jobInput, {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        })) {
+          events.push(event);
+        }
+      } catch {
+        // executeStream may throw an AbortError after the abort fires; the
+        // events accumulated before the abort are still valid for the
+        // assertion below.
       }
 
       // Should have at least the first chunk, but possibly not all

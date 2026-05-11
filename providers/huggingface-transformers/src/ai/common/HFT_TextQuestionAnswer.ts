@@ -9,52 +9,15 @@ import type {
   QuestionAnsweringPipeline,
 } from "@huggingface/transformers";
 import type {
-  AiProviderRunFn,
   AiProviderStreamFn,
   TextQuestionAnswerTaskInput,
   TextQuestionAnswerTaskOutput,
 } from "@workglow/ai";
+import { bridgeProgress } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline, loadTransformersSDK } from "./HFT_Pipeline";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
-
-/**
- * Core implementation for question answering using Hugging Face Transformers.
- * This is shared between inline and worker implementations.
- */
-export const HFT_TextQuestionAnswer: AiProviderRunFn<
-  TextQuestionAnswerTaskInput,
-  TextQuestionAnswerTaskOutput,
-  HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  // Get the question answering pipeline
-  const generateAnswer: QuestionAnsweringPipeline = await getPipeline(
-    model!,
-    onProgress,
-    {},
-    signal
-  );
-
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-  const streamer = createTextStreamer(generateAnswer.tokenizer, onProgress, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-
-  const result = await generateAnswer(input.question, input.context, {
-    streamer,
-    stopping_criteria: [stopping_criteria],
-  } as any);
-
-  const answerText = (result as DocumentQuestionAnsweringOutput[number])?.answer || "";
-  return { text: answerText };
-};
+import { createStreamEventQueue, createStreamingTextStreamer } from "./HFT_Streaming";
 
 export const HFT_TextQuestionAnswer_Stream: AiProviderStreamFn<
   TextQuestionAnswerTaskInput,
@@ -65,13 +28,9 @@ export const HFT_TextQuestionAnswer_Stream: AiProviderStreamFn<
   model,
   signal
 ): AsyncIterable<StreamEvent<TextQuestionAnswerTaskOutput>> {
-  const noopProgress = () => {};
-  const generateAnswer: QuestionAnsweringPipeline = await getPipeline(
-    model!,
-    noopProgress,
-    {},
-    signal
-  );
+  const generateAnswer = (yield* bridgeProgress((cb) =>
+    getPipeline(model!, cb, {}, signal)
+  )) as QuestionAnsweringPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   const queue = createStreamEventQueue<StreamEvent<TextQuestionAnswerTaskOutput>>();

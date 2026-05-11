@@ -4,17 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput,
+} from "@workglow/ai";
 import { searchHfModels, mapHfModelResult } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { HF_TRANSFORMERS_ONNX } from "./HFT_Constants";
 import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 
-export const HFT_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> = async (
-  input,
-  _model,
-  _onProgress,
-  signal
-) => {
+export const HFT_ModelSearch: AiProviderStreamFn<
+  ModelSearchTaskInput,
+  ModelSearchTaskOutput
+> = async function* (input, _model, signal): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
   const entries = await searchHfModels(
     input.query?.trim() ?? "",
     { filter: "onnx" },
@@ -42,5 +45,5 @@ export const HFT_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
 
     return item;
   });
-  return { results };
+  yield { type: "finish", data: { results } };
 };
