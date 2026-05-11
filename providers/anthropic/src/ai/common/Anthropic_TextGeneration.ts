@@ -6,7 +6,6 @@
 
 import type {
   AiProviderStreamFn,
-  AiChatProviderInput,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
@@ -118,10 +117,3 @@ export const Anthropic_TextGeneration_Stream: AiProviderStreamFn<
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }
 };
-
-// Re-export for backward compatibility within the package.
-export const Anthropic_Chat_Stream = Anthropic_TextGeneration_Stream as AiProviderStreamFn<
-  AiChatProviderInput,
-  TextGenerationTaskOutput,
-  AnthropicModelConfig
->;
