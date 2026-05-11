@@ -102,6 +102,48 @@ describe("ScopedTabularStorage", () => {
     });
   });
 
+  describe("getBulk isolation", () => {
+    test("getBulk returns only own scope's rows when keys collide across scopes", async () => {
+      await scopeA.put({ doc_id: "x", data: "from-A" });
+      await scopeA.put({ doc_id: "y", data: "from-A" });
+      await scopeB.put({ doc_id: "x", data: "from-B" });
+      await scopeB.put({ doc_id: "z", data: "from-B" });
+
+      const fromA = await scopeA.getBulk([
+        { doc_id: "x" },
+        { doc_id: "y" },
+        { doc_id: "z" },
+      ] as any);
+      expect(fromA).toHaveLength(2);
+      const aMap = new Map(fromA.map((r: any) => [r.doc_id, r.data]));
+      expect(aMap.get("x")).toBe("from-A");
+      expect(aMap.get("y")).toBe("from-A");
+      expect(aMap.has("z")).toBe(false);
+      expect(fromA.every((r: any) => r.kb_id === undefined)).toBe(true);
+
+      const fromB = await scopeB.getBulk([{ doc_id: "x" }, { doc_id: "z" }] as any);
+      expect(fromB).toHaveLength(2);
+      const bMap = new Map(fromB.map((r: any) => [r.doc_id, r.data]));
+      expect(bMap.get("x")).toBe("from-B");
+      expect(bMap.get("z")).toBe("from-B");
+    });
+
+    test("getBulk emits event with unscoped keys", async () => {
+      await scopeA.put({ doc_id: "e1", data: "a" });
+      await scopeB.put({ doc_id: "e1", data: "b" });
+
+      const fn = vi.fn();
+      scopeA.on("getBulk", fn);
+      const result = await scopeA.getBulk([{ doc_id: "e1" }, { doc_id: "missing" }] as any);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      const [emittedKeys, emittedRows] = fn.mock.calls[0];
+      expect(emittedKeys).toEqual([{ doc_id: "e1" }, { doc_id: "missing" }]);
+      expect(emittedRows).toEqual(result);
+      expect(emittedRows.every((r: any) => r.kb_id === undefined)).toBe(true);
+    });
+  });
+
   describe("key collision prevention", () => {
     test("identical doc_id across scopes do not collide", async () => {
       await scopeA.put({ doc_id: "same-id", data: "scope-A data" });
