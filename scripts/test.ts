@@ -69,16 +69,11 @@ function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean
   return n > 1;
 }
 
-/** RAG ONNX/HuggingFace integration tests load large models; default parallelism runs many files at once and can OOM workers (crash: signaled). */
-function isRagOnnxIntegrationFile(filePath: string): boolean {
-  const normalized = filePath.replace(/\\/g, "/");
-  return normalized.includes("/rag/") && normalized.includes(".integration.");
-}
-
 function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
-  return (
-    shouldRunLlamaCppIntegrationFilesSequentially(files) || files.some(isRagOnnxIntegrationFile)
-  );
+  // RAG suite intentionally runs in parallel: only two .integration.test.ts files exist
+  // and serialising them blows past the per-job wall-clock budget on CI (10+ minutes).
+  // Per-test timeouts (vitest testTimeout / bun --timeout) keep heavy work bounded.
+  return shouldRunLlamaCppIntegrationFilesSequentially(files);
 }
 
 const SECTION_DIRS: Record<Section, string[]> = {
@@ -216,13 +211,20 @@ function buildBunTestArgs(files: string[]): string[] {
 function buildVitestArgs(files: string[]): string[] {
   // When no file filter: run all. Otherwise pass relative paths as name filters.
   const relFiles = files.length > 0 ? files.map((f) => relative(ROOT, f)) : [];
-  const args = ["npx", "vitest", "run", ...relFiles];
+  const args = ["npx", "vitest", "run"];
   if (files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)) {
-    args.push("--no-file-parallelism");
+    // Locally: one file at a time avoids OOM when many ONNX-heavy suites load at once.
+    // CI: capped workers finish sooner (fewer runs cancelled by overlapping pushes) while limiting RAM.
+    if (process.env.CI === "true") {
+      args.push("--maxWorkers", "2");
+    } else {
+      args.push("--no-file-parallelism");
+    }
   }
   if (process.env.CI) {
     args.push("--coverage");
   }
+  args.push(...relFiles);
   return args;
 }
 
