@@ -45,6 +45,23 @@ export abstract class KvViaTabularStorage<
   private _needsJsonSerialization: boolean | undefined;
 
   /**
+   * Deserialize a stored value back to the runtime form. When the schema
+   * isn't a primitive we round-trip through JSON; if the stored bytes
+   * aren't valid JSON we return them as-is so callers see what's on disk
+   * rather than an exception.
+   */
+  private deserialize(raw: unknown): Value {
+    if (this.needsJsonSerialization && typeof raw === "string") {
+      try {
+        return JSON.parse(raw) as Value;
+      } catch {
+        return raw as unknown as Value;
+      }
+    }
+    return raw as Value;
+  }
+
+  /**
    * Sets up the database for the repository.
    * Must be called before using any other methods.
    */
@@ -91,17 +108,7 @@ export abstract class KvViaTabularStorage<
       this.events.emit("get", key, undefined);
       return undefined;
     }
-
-    let value: Value;
-    if (this.needsJsonSerialization) {
-      try {
-        value = JSON.parse(result.value as unknown as string) as Value;
-      } catch (e) {
-        value = result.value as unknown as Value;
-      }
-    } else {
-      value = result.value as unknown as Value;
-    }
+    const value = this.deserialize(result.value);
     this.events.emit("get", key, value);
     return value;
   }
@@ -112,22 +119,11 @@ export abstract class KvViaTabularStorage<
    * (Postgres, SQLite) get push-down for free.
    */
   public async getBulk(keys: readonly Key[]): Promise<Combined[]> {
-    if (keys.length === 0) {
-      this.events.emit("getBulk", keys, []);
-      return [];
-    }
+    if (keys.length === 0) return [];
     const rows = await this.tabularRepository.getBulk(keys.map((key) => ({ key })));
-    const combined = rows.map((row) => {
-      let value = row.value as unknown;
-      if (this.needsJsonSerialization && typeof value === "string") {
-        try {
-          value = JSON.parse(value);
-        } catch {
-          // fall through with the raw string
-        }
-      }
-      return { key: row.key as Key, value } as Combined;
-    });
+    const combined = rows.map(
+      (row) => ({ key: row.key as Key, value: this.deserialize(row.value) }) as Combined
+    );
     this.events.emit("getBulk", keys, combined);
     return combined;
   }
@@ -148,22 +144,7 @@ export abstract class KvViaTabularStorage<
   public async getAll(): Promise<Combined[] | undefined> {
     const values = await this.tabularRepository.getAll();
     const results = values
-      ? values.map(
-          (value) =>
-            ({
-              key: value.key,
-              value: (() => {
-                if (this.needsJsonSerialization && typeof value.value === "string") {
-                  try {
-                    return JSON.parse(value.value);
-                  } catch (e) {
-                    return value.value;
-                  }
-                }
-                return value.value;
-              })(),
-            }) as Combined
-        )
+      ? values.map((row) => ({ key: row.key, value: this.deserialize(row.value) }) as Combined)
       : undefined;
     this.events.emit("getAll", results);
     return results;
