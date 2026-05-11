@@ -78,14 +78,17 @@ describe("End-to-End RAG Pipeline", () => {
   });
 
   afterAll(async () => {
+    console.log("[diag] EndToEnd afterAll: kb.destroy");
     kb.destroy();
+    console.log("[diag] EndToEnd afterAll: stopQueues");
     await getTaskQueueRegistry().stopQueues();
+    console.log("[diag] EndToEnd afterAll: clearQueues");
     await getTaskQueueRegistry().clearQueues();
+    console.log("[diag] EndToEnd afterAll: setTaskQueueRegistry(null)");
     await setTaskQueueRegistry(null);
-    // Release ONNX/WASM memory before the next file loads its own pipelines —
-    // CI runners (~7 GB RAM) OOM-kill the process when both files' models stay
-    // loaded simultaneously.
+    console.log("[diag] EndToEnd afterAll: clearPipelineCache");
     clearPipelineCache();
+    console.log("[diag] EndToEnd afterAll: done");
   });
 
   it("should ingest document through complete pipeline", async () => {

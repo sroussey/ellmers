@@ -51,19 +51,25 @@ describe("RAG Workflow End-to-End", () => {
   setLogger(logger);
 
   beforeAll(async () => {
+    console.log("[diag] RagWorkflow beforeAll: start");
     // Setup task queue and model repository
+    console.log("[diag] RagWorkflow beforeAll: setTaskQueueRegistry(null)");
     await setTaskQueueRegistry(null);
+    console.log("[diag] RagWorkflow beforeAll: setGlobalModelRepository");
     setGlobalModelRepository(new InMemoryModelRepository());
+    console.log("[diag] RagWorkflow beforeAll: clearPipelineCache");
     clearPipelineCache();
+    console.log("[diag] RagWorkflow beforeAll: registerHuggingFaceTransformersInline");
     await registerHuggingFaceTransformersInline();
-
+    console.log("[diag] RagWorkflow beforeAll: registerHuggingfaceLocalModels");
     await registerHuggingfaceLocalModels();
-
+    console.log("[diag] RagWorkflow beforeAll: createKnowledgeBase");
     // Create unified KnowledgeBase
     kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: 384,
     });
+    console.log("[diag] RagWorkflow beforeAll: done");
   });
 
   afterAll(async () => {
