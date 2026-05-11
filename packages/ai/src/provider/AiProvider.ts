@@ -193,6 +193,16 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
 
     const registry = getAiProviderRegistry();
 
+    // If a provider with this name is already registered (e.g. test suites
+    // re-run beforeAll across files), tear down its existing entries first.
+    // `registerRunFn` appends to a per-provider list; without this clear,
+    // every re-registration doubles the run-fn count, leaks the previous
+    // provider's strategy/queue/concurrency-limiter via captured closures,
+    // and (in long test runs) OOM-kills the process.
+    if (registry.getProvider(this.name)) {
+      registry.unregisterProvider(this.name);
+    }
+
     if (!isInline && options.worker) {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
       if (typeof options.worker === "function") {
