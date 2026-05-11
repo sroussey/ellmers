@@ -9,6 +9,7 @@ import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
   type: "object",
@@ -77,6 +78,13 @@ export type KbSearchTaskConfig = TaskConfig<KbSearchTaskInput>;
  */
 export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, KbSearchTaskConfig> {
   public static override type = "KbSearchTask";
+  /**
+   * Pure-compute task (vector similarity query against an in-process
+   * KnowledgeBase) — no AI provider dispatch. `requires: []` opts out of
+   * capability gating; the audit test in `index.test.ts` only inspects the
+   * field shape.
+   */
+  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =
