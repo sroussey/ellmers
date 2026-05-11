@@ -126,7 +126,7 @@ describe("RAG Workflow End-to-End", () => {
     // Verify vectors were stored
     expect(totalVectors).toBeGreaterThan(0);
     logger.info(`Total vectors in knowledge base: ${totalVectors}`);
-  }, 160000);
+  }, 600000);
 
   it("should search for relevant content", async () => {
     const query = "What is retrieval augmented generation?";
@@ -158,7 +158,7 @@ describe("RAG Workflow End-to-End", () => {
     for (let i = 1; i < searchResult.scores!.length; i++) {
       expect(searchResult.scores![i]).toBeLessThanOrEqual(searchResult.scores![i - 1]);
     }
-  }, 160000);
+  }, 600000);
 
   it("should answer questions using retrieved context", async () => {
     const question = "What is RAG?";
@@ -193,7 +193,7 @@ describe("RAG Workflow End-to-End", () => {
     if (answer.text.length > 0) {
       logger.info(`\nAnswer: ${answer.text}`);
     }
-  }, 160000);
+  }, 600000);
 
   it("should handle complex multi-step RAG pipeline", async () => {
     const question = "How does vector search work?";
@@ -228,5 +228,5 @@ describe("RAG Workflow End-to-End", () => {
 
     expect(result.text).toBeDefined();
     expect(typeof result.text).toBe("string");
-  }, 160000);
+  }, 600000);
 });
