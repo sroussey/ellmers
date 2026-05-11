@@ -281,23 +281,9 @@ const IMAGE_PIPELINE_TYPES = new Set([
 export const HFT_NULL_PROCESSOR_PREFIX = "HFT_NULL_PROCESSOR:";
 
 /**
- * Clear all cached pipelines. Best-effort calls `.dispose()` on each pipeline's
- * underlying ONNX model so its native (WASM) memory is released immediately —
- * dropping the JS reference alone leaks ONNX sessions, which accumulate across
- * test files on CI and OOM-kill the runner on the next file's pipeline load.
- * Any dispose Promise is intentionally not awaited (synchronous API is required
- * by the many callers); native free happens synchronously inside dispose.
+ * Clear all cached pipelines.
  */
 export function clearPipelineCache(): void {
-  for (const pipeline of pipelines.values()) {
-    try {
-      const model = (pipeline as { model?: { dispose?: () => unknown } })?.model;
-      model?.dispose?.();
-    } catch {
-      // Best-effort: a dispose failure on one stale pipeline must not prevent
-      // clearing the rest.
-    }
-  }
   pipelines.clear();
 }
 
