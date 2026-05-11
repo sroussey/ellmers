@@ -4,8 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ChatMessage, ModelConfig } from "@workglow/ai";
-import type { ChatChunkReference } from "@workglow/ai";
+import type {
+  AiProviderStreamFn,
+  ChatChunkReference,
+  ChatMessage,
+  ModelConfig,
+} from "@workglow/ai";
 import { AiChatWithKbTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getGlobalKnowledgeBases } from "@workglow/knowledge-base";
@@ -216,7 +220,9 @@ describe("AiChatWithKbTask — single turn", () => {
         maxIterations: 5,
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
 
       expect(providerCalls).toBe(1);
       expect(out.references.length).toBe(2);
@@ -240,13 +246,100 @@ describe("AiChatWithKbTask — single turn", () => {
     }
   });
 
-  it("uses metadata.url first, then metadata.sourceUri, then undefined", async () => {
+  it("appends `#anchor` from the chunk's deepest sectionTitles entry", async () => {
+    // Chunks ingested by HierarchicalChunkerTask carry `sectionTitles` so
+    // the chat layer can produce section-level deep links. The slug must
+    // match what the MDX rehype plugin emits as `id=…` on the heading,
+    // both via @workglow/knowledge-base's slugifyHeading.
+    const fake = makeFakeKb({
+      id: "kb-anchor",
+      label: "Blog",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: {
+            text: "Map-backed store details",
+            sectionTitles: ["Credential Stores", "EncryptedKvCredentialStore"],
+          },
+        } as any,
+        {
+          // Chunk without sectionTitles → URL stays as the doc URL.
+          chunk_id: "c2",
+          doc_id: "d2",
+          score: 0.8,
+          metadata: { text: "no section" },
+        } as any,
+        {
+          // Chunk whose deepest title needs encoding (spaces + punctuation).
+          chunk_id: "c3",
+          doc_id: "d3",
+          score: 0.7,
+          metadata: {
+            text: "encoded section",
+            sectionTitles: ["Why?: Custom Stores"],
+          },
+        } as any,
+      ],
+      docMetadata: {
+        d1: { url: "/blog/post/credential-management" },
+        d2: { url: "/help/foo" },
+        d3: { url: "/help/bar" },
+      },
+    });
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      yield { type: "text-delta", port: "text", textDelta: "ok" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-anchor"],
+        maxIterations: 5,
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+      expect(out.references[0]?.url).toBe(
+        "/blog/post/credential-management#EncryptedKvCredentialStore"
+      );
+      expect(out.references[1]?.url).toBe("/help/foo");
+      expect(out.references[2]?.url).toBe("/help/bar#Why-Custom-Stores");
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("uses metadata.url when present, undefined otherwise — never falls back to sourceUri", async () => {
+    // The chat layer deliberately ignores `sourceUri` because it carries
+    // the raw `/raw/<domain>/...` asset path on legacy chunks. Routing
+    // that through MarkdownLink's path-relative gate would produce a
+    // clickable chip pointing at a non-existent page. Better to render
+    // the chip without a click target.
     const fake = makeFakeKb({
       id: "kb2",
       label: "Blog",
       results: [
-        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { text: "a", url: "/explicit" } } as any,
-        { chunk_id: "c2", doc_id: "d2", score: 0.85, metadata: { text: "b", sourceUri: "/raw/x.mdx" } } as any,
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { text: "a", url: "/explicit" },
+        } as any,
+        {
+          chunk_id: "c2",
+          doc_id: "d2",
+          score: 0.85,
+          metadata: { text: "b", sourceUri: "/raw/x.mdx" },
+        } as any,
         { chunk_id: "c3", doc_id: "d3", score: 0.8, metadata: { text: "c" } } as any,
       ],
     });
@@ -266,9 +359,12 @@ describe("AiChatWithKbTask — single turn", () => {
         maxIterations: 5,
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
       expect(out.references[0]?.url).toBe("/explicit");
-      expect(out.references[1]?.url).toBe("/raw/x.mdx");
+      // No fallback to sourceUri: legacy chunk renders with no URL.
+      expect(out.references[1]?.url).toBeUndefined();
       expect(out.references[2]?.url).toBeUndefined();
     } finally {
       unregisterProvider();
@@ -299,7 +395,9 @@ describe("AiChatWithKbTask — no-match branches", () => {
         noMatchReply: "Sorry, I don't know.",
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
 
       expect(providerCalls).toBe(0);
       const textDeltas = out.events
@@ -348,7 +446,9 @@ describe("AiChatWithKbTask — no-match branches", () => {
         ] as ChatChunkReference[],
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
       expect(out.references.length).toBe(1);
       expect(out.references[0]).toMatchObject({
         url: "/help",
@@ -453,10 +553,129 @@ describe("AiChatWithKbTask — multi-turn", () => {
         maxIterations: 5,
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
       expect(turnIdx).toBe(2);
       expect(fake.calls.map((c) => c.query)).toEqual(["first question", "follow up question"]);
       expect(out.messages.filter((m) => m.role === "assistant").length).toBe(2);
+    } finally {
+      unregisterProvider();
+      fake.unregister();
+    }
+  });
+
+  it("on a follow-up with no new hits, reuses the previous turn's refs instead of firing noMatchReply", async () => {
+    // First turn matches; follow-up ("tell me more") returns no hits.
+    // Behaviour we want: the second turn keeps the conversation alive by
+    // reusing the prior turn's refs as context, instead of replying with
+    // the no-match boilerplate ("I don't have information…").
+    let queryCount = 0;
+    const kb = {
+      title: "Help",
+      description: "fake",
+      search: async (q: string) => {
+        queryCount++;
+        if (q === "first question") {
+          return [
+            {
+              chunk_id: "c1",
+              doc_id: "d1",
+              score: 0.9,
+              metadata: { doc_title: "Credentials", text: "Map-backed", url: "/help/cred" },
+            } as any,
+          ];
+        }
+        return [];
+      },
+      getDocument: async (_docId: string) => ({ metadata: { url: "/help/cred" } }),
+    } as unknown as KnowledgeBase;
+    const live = getGlobalKnowledgeBases();
+    live.set("kb-followup", kb);
+
+    let providerCalls = 0;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      providerCalls++;
+      yield { type: "text-delta", port: "text", textDelta: `reply-${providerCalls}` };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        // Follow-up that won't match the KB on its own.
+        { action: "accept", content: { content: "tell me more" }, done: false, requestId: "" },
+        { action: "cancel", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "first question",
+        knowledgeBaseIds: ["kb-followup"],
+        maxIterations: 5,
+        noMatchReply: "I don't have information about that in our help docs or blog.",
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+
+      // Both turns hit the provider — the second turn must NOT short-circuit
+      // into noMatchReply just because retrieval came back empty.
+      expect(providerCalls).toBe(2);
+      expect(queryCount).toBe(2);
+      const textDeltas = out.events
+        .filter((e) => e.type === "text-delta")
+        .map((e: any) => e.textDelta as string)
+        .join("");
+      expect(textDeltas).not.toContain("I don't have information about that");
+      // And the second turn's `references` port re-emits the carried-forward refs
+      // so the chat UI can render citations against the prior chunk.
+      const referencePortDeltas = out.events.filter(
+        (e: any) => e.type === "object-delta" && e.port === "references"
+      );
+      expect(referencePortDeltas.length).toBeGreaterThanOrEqual(2);
+      const secondTurnRefs = referencePortDeltas[1] as any;
+      expect(Array.isArray(secondTurnRefs.objectDelta)).toBe(true);
+      expect(secondTurnRefs.objectDelta.length).toBe(1);
+      expect(secondTurnRefs.objectDelta[0].url).toBe("/help/cred");
+    } finally {
+      unregisterProvider();
+      live.delete("kb-followup");
+    }
+  });
+
+  it("a follow-up with no hits AND no prior hits still uses noMatchReply", async () => {
+    // Regression guard for the no-match path on a true cold start: if the
+    // *first* turn already has no hits, carry-forward has nothing to draw
+    // on, so the no-match boilerplate must still fire.
+    const fake = makeFakeKb({ id: "kb-cold", results: [] });
+    let providerCalls = 0;
+    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+      providerCalls++;
+      yield { type: "text-delta", port: "text", textDelta: "should-not-emit" };
+      yield { type: "finish", data: {} as any };
+    };
+    const unregisterProvider = registerFakeChatKbProvider(stream);
+    try {
+      const connector = new FakeConnector([
+        { action: "decline", content: undefined, done: true, requestId: "" },
+      ]);
+      const input = {
+        model: mkModel(),
+        prompt: "q",
+        knowledgeBaseIds: ["kb-cold"],
+        maxIterations: 5,
+        noMatchReply: "Sorry, I don't know.",
+      };
+      const task = new AiChatWithKbTask({ defaults: input } as any);
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
+      expect(providerCalls).toBe(0);
+      const textDeltas = out.events
+        .filter((e) => e.type === "text-delta")
+        .map((e: any) => e.textDelta as string)
+        .join("");
+      expect(textDeltas).toBe("Sorry, I don't know.");
     } finally {
       unregisterProvider();
       fake.unregister();
@@ -486,7 +705,9 @@ describe("AiChatWithKbTask — multi-turn", () => {
         maxIterations: 5,
       };
       const task = new AiChatWithKbTask({ defaults: input } as any);
-      const out = await accumulateKbChatStream(task.executeStream(input as any, mkContext(connector)));
+      const out = await accumulateKbChatStream(
+        task.executeStream(input as any, mkContext(connector))
+      );
       const finish = out.events.find((e) => e.type === "finish") as any;
       expect(finish).toBeDefined();
       expect(finish.data).toBeUndefined();
@@ -510,7 +731,12 @@ describe("AiChatWithKbTask — responseFormat", () => {
       id: "kb1",
       label: "Help",
       results: [
-        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" } } as any,
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" },
+        } as any,
       ],
     });
     let capturedSystemPrompt = "";
@@ -553,8 +779,18 @@ describe("AiChatWithKbTask — responseFormat", () => {
       id: "kb1",
       label: "Help",
       results: [
-        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "first", url: "/help/d1" } } as any,
-        { chunk_id: "c2", doc_id: "d2", score: 0.7, metadata: { doc_title: "Doc 2", text: "second" /* no url */ } } as any,
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "first", url: "/help/d1" },
+        } as any,
+        {
+          chunk_id: "c2",
+          doc_id: "d2",
+          score: 0.7,
+          metadata: { doc_title: "Doc 2", text: "second" /* no url */ },
+        } as any,
       ],
     });
     let captured = "";
@@ -595,7 +831,12 @@ describe("AiChatWithKbTask — responseFormat", () => {
       id: "kb1",
       label: "Help",
       results: [
-        { chunk_id: "c1", doc_id: "d1", score: 0.9, metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" } } as any,
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "A", url: "/help/d1" },
+        } as any,
       ],
     });
     let captured = "";

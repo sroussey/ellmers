@@ -9,12 +9,6 @@
  * transports. Failures indicate connectivity or compatibility issues.
  */
 
-import {
-  McpListTask,
-  McpPromptGetTask,
-  McpResourceReadTask,
-  McpToolCallTask,
-} from "@workglow/mcp/tasks";
 import type {
   McpListTaskOutput,
   McpPromptGetTaskConfig,
@@ -23,8 +17,14 @@ import type {
   McpResourceReadTaskOutput,
   McpToolCallTaskConfig,
 } from "@workglow/mcp/tasks";
-import { describe, expect, test } from "vitest";
+import {
+  McpListTask,
+  McpPromptGetTask,
+  McpResourceReadTask,
+  McpToolCallTask,
+} from "@workglow/mcp/tasks";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 /** Assert task run result to expected output type (workaround for generic inference in test.each) */
