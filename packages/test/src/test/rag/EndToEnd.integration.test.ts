@@ -82,6 +82,10 @@ describe("End-to-End RAG Pipeline", () => {
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
+    // Release ONNX/WASM memory before the next file loads its own pipelines —
+    // CI runners (~7 GB RAM) OOM-kill the process when both files' models stay
+    // loaded simultaneously.
+    clearPipelineCache();
   });
 
   it("should ingest document through complete pipeline", async () => {

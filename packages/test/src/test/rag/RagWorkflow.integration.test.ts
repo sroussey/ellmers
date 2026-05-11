@@ -71,6 +71,10 @@ describe("RAG Workflow End-to-End", () => {
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
+    // Release ONNX/WASM memory at the end of the suite. Symmetric with
+    // EndToEnd's afterAll so neighbouring files in the same bun-test invocation
+    // start fresh.
+    clearPipelineCache();
   });
 
   it("should ingest markdown documents with NER enrichment", async () => {
