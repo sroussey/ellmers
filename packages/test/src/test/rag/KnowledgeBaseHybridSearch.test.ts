@@ -236,6 +236,106 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(hits[0].chunk_id).toBe("c1");
   });
 
+  it("reindexText rolls back on synchronous index.add failure (truly atomic)", async () => {
+    // Custom ITextIndex whose `add` throws on a sentinel doc id; verifies the
+    // snapshot/rollback path in reindexText().
+    let addCount = 0;
+    const stub = {
+      _state: new Map<string, { docId: string; fields: unknown }>(),
+      add(chunkId: string, docId: string, fields: unknown) {
+        addCount += 1;
+        if (docId === "trigger-throw") {
+          throw new Error("boom");
+        }
+        this._state.set(chunkId, { docId, fields });
+      },
+      remove(chunkId: string) {
+        this._state.delete(chunkId);
+      },
+      removeByDocument() {},
+      clear() {
+        this._state.clear();
+      },
+      size() {
+        return this._state.size;
+      },
+      search() {
+        return [];
+      },
+      toJSON() {
+        return { snap: Array.from(this._state.entries()) };
+      },
+      fromJSON(s: unknown) {
+        const snap = (s as { snap: Array<[string, { docId: string; fields: unknown }]> }).snap;
+        this._state = new Map(snap);
+      },
+    };
+
+    const kb = await createKnowledgeBase({
+      name: kbName,
+      vectorDimensions: dimensions,
+      textIndex: stub as unknown as InstanceType<typeof BM25Index>,
+      register: false,
+    });
+    // Seed two chunks under safe doc ids; the index now has 2 entries.
+    await kb.upsertChunksBulk([
+      makeChunk("c1", "safe-doc", "rabbit", vec(1, 0, 0)),
+      makeChunk("c2", "safe-doc", "fox", vec(0, 1, 0)),
+    ]);
+    expect(stub.size()).toBe(2);
+    const sizeBefore = stub.size();
+    addCount = 0;
+
+    // Inject a chunk under the trigger doc id directly into chunk storage
+    // (bypassing the KB upsert path so we don't hit the auto-index warn).
+    await kb.vectorStorage.put(makeChunk("c3", "trigger-throw", "vine", vec(0, 0, 1)));
+
+    await expect(kb.reindexText()).rejects.toThrow(/boom/);
+    // Add was called at least once before the throw; rollback must restore.
+    expect(addCount).toBeGreaterThan(0);
+    expect(stub.size()).toBe(sizeBefore);
+  });
+
+  it("upsertChunk surfaces a warning when textIndex.add throws but keeps the chunk", async () => {
+    const errors: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (msg: string) => errors.push(msg);
+    try {
+      const stub = {
+        add() {
+          throw new Error("index unavailable");
+        },
+        remove() {},
+        removeByDocument() {},
+        clear() {},
+        size() {
+          return 0;
+        },
+        search() {
+          return [];
+        },
+        toJSON() {
+          return {};
+        },
+        fromJSON() {},
+      };
+      const kb = await createKnowledgeBase({
+        name: kbName,
+        vectorDimensions: dimensions,
+        textIndex: stub as unknown as InstanceType<typeof BM25Index>,
+        register: false,
+      });
+      const stored = await kb.upsertChunk(makeChunk("c1", "d1", "rabbit", vec(1, 0, 0)));
+      // Chunk is in the vector store even though the index write failed.
+      expect(stored.chunk_id).toBe("c1");
+      expect(await kb.getChunk("c1")).toBeDefined();
+      // And a warning was emitted naming the chunk.
+      expect(errors.some((m) => m.includes("c1"))).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it("reindexText is atomic: a chunkStorage failure leaves the existing index untouched", async () => {
     const index = new BM25Index();
     const kb = await createKnowledgeBase({

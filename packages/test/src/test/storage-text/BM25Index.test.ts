@@ -248,6 +248,23 @@ describe("BM25Index", () => {
       expect(hits).toHaveLength(1);
       expect(hits[0].chunkId).toBe("c2");
     });
+
+    it("preserves removeByDocument cascade after a fromJSON round-trip", () => {
+      const a = new BM25Index();
+      addDoc(a, "c1", "doc-a", "rabbit");
+      addDoc(a, "c2", "doc-a", "fox");
+      addDoc(a, "c3", "doc-b", "rabbit fence");
+
+      const b = new BM25Index();
+      b.fromJSON(JSON.parse(JSON.stringify(a.toJSON())) as unknown);
+
+      // docToChunks must be reconstructed by fromJSON; otherwise cascade
+      // delete is a no-op on the restored index.
+      b.removeByDocument("doc-a");
+      expect(b.size()).toBe(1);
+      const hits = b.search("rabbit");
+      expect(hits.map((h) => h.chunkId)).toEqual(["c3"]);
+    });
   });
 
   describe("tokenizer & stopwords", () => {

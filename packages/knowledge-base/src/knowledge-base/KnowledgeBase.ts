@@ -70,6 +70,14 @@ export interface HybridSearchOptions<
 export interface TextOnlySearchOptions {
   readonly topK?: number;
   readonly filter?: Partial<ChunkRecord>;
+  /**
+   * When a {@link filter} is set, the index is searched with
+   * `topK * candidatePoolMultiplier` candidates so post-hoc filtering has
+   * room to drop non-matching chunks without starving the result set.
+   * Defaults to 2; raise for highly selective filters. Ignored when no
+   * filter is set.
+   */
+  readonly candidatePoolMultiplier?: number;
 }
 
 /**
@@ -237,9 +245,10 @@ export class KnowledgeBase {
    * after {@link installTextIndex} on a KB that already has chunks, or after
    * a tokenizer / field-weight configuration change.
    *
-   * Atomic with respect to async failures: chunks are read and tokenisation
-   * is staged before the index is mutated. If `chunkStorage.getAll()` throws,
-   * the existing index is untouched.
+   * Atomic: snapshots the index state via `toJSON()` before mutating, and
+   * rolls back via `fromJSON()` on any failure (`getAll`, `clear`, or `add`).
+   * The previous index contents are preserved unless this method returns
+   * successfully.
    */
   async reindexText(): Promise<void> {
     const index = this.textIndex;
@@ -250,8 +259,44 @@ export class KnowledgeBase {
       const fields = chunkTextFields(entity.metadata);
       if (fields) writes.push({ chunkId: entity.chunk_id, docId: entity.doc_id, fields });
     }
-    index.clear();
-    for (const w of writes) index.add(w.chunkId, w.docId, w.fields);
+    const snapshot = index.toJSON();
+    try {
+      index.clear();
+      for (const w of writes) index.add(w.chunkId, w.docId, w.fields);
+    } catch (err) {
+      index.fromJSON(snapshot);
+      throw err;
+    }
+  }
+
+  /**
+   * Mirror a single chunk's text into the installed index. Called from the
+   * upsert paths *after* `chunkStorage` has committed: the chunk is durably
+   * stored, so an index error must not fail the upsert — we warn and continue,
+   * leaving the index slightly stale (recall loss, never a correctness
+   * violation in the chunk store). A subsequent {@link reindexText} fully
+   * recovers.
+   */
+  private syncTextIndexForChunk(stored: ChunkVectorEntity): void {
+    const index = this.textIndex;
+    if (!index) return;
+    const fields = chunkTextFields(stored.metadata);
+    try {
+      if (fields) {
+        index.add(stored.chunk_id, stored.doc_id, fields);
+      } else {
+        // Chunk has no indexable text — drop any stale postings from a
+        // prior version that did. Required for upsert correctness when text
+        // is cleared on update.
+        index.remove(stored.chunk_id);
+      }
+    } catch (err) {
+      console.warn(
+        `KnowledgeBase[${this.name}]: text index write failed for chunk ${stored.chunk_id}; ` +
+          `index is now stale for this chunk. Call kb.reindexText() to recover. ` +
+          `Error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
   }
 
   // ===========================================================================
@@ -412,17 +457,7 @@ export class KnowledgeBase {
       );
     }
     const stored = await this.chunkStorage.put(chunk);
-    if (this.textIndex) {
-      const fields = chunkTextFields(stored.metadata);
-      if (fields) {
-        this.textIndex.add(stored.chunk_id, stored.doc_id, fields);
-      } else {
-        // The chunk has no indexable text — drop any stale postings from a
-        // prior version where the text was non-empty. Required for upsert
-        // correctness when text is cleared on update.
-        this.textIndex.remove(stored.chunk_id);
-      }
-    }
+    this.syncTextIndexForChunk(stored);
     return stored;
   }
 
@@ -441,16 +476,7 @@ export class KnowledgeBase {
       }
     }
     const stored = await this.chunkStorage.putBulk(chunks);
-    if (this.textIndex) {
-      for (const entity of stored) {
-        const fields = chunkTextFields(entity.metadata);
-        if (fields) {
-          this.textIndex.add(entity.chunk_id, entity.doc_id, fields);
-        } else {
-          this.textIndex.remove(entity.chunk_id);
-        }
-      }
-    }
+    for (const entity of stored) this.syncTextIndexForChunk(entity);
     return stored;
   }
 
@@ -534,8 +560,10 @@ export class KnowledgeBase {
       return this.similaritySearch(query, { topK, filter });
     }
 
-    const safeRrfK = Math.max(0, rrfK);
-    const safePoolMultiplier = Math.max(1, candidatePoolMultiplier);
+    const safeRrfK = Number.isFinite(rrfK) ? Math.max(0, rrfK) : 60;
+    const safePoolMultiplier = Number.isFinite(candidatePoolMultiplier)
+      ? Math.max(1, candidatePoolMultiplier)
+      : 5;
     const poolSize = Math.max(topK, Math.ceil(topK * safePoolMultiplier));
 
     const [vectorResults, textResults] = await Promise.all([
@@ -543,7 +571,9 @@ export class KnowledgeBase {
       Promise.resolve(index.search(textQuery, { topK: poolSize })),
     ]);
 
-    const vectorWeightClamped = Math.max(0, Math.min(1, vectorWeight));
+    const vectorWeightClamped = Number.isFinite(vectorWeight)
+      ? Math.max(0, Math.min(1, vectorWeight))
+      : 0.7;
     const textWeight = 1 - vectorWeightClamped;
 
     const fused = new Map<string, { score: number; entity: ChunkSearchResult | undefined }>();
@@ -625,8 +655,9 @@ export class KnowledgeBase {
           "`createKnowledgeBase`."
       );
     }
-    const { topK = 10, filter } = options;
-    const poolSize = filter ? Math.max(topK * 2, topK) : topK;
+    const { topK = 10, filter, candidatePoolMultiplier = 2 } = options;
+    const safePoolMultiplier = Math.max(1, candidatePoolMultiplier);
+    const poolSize = filter ? Math.max(topK, Math.ceil(topK * safePoolMultiplier)) : topK;
     const hits = index.search(query, { topK: poolSize });
     if (hits.length === 0) return [];
 
