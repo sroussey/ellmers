@@ -283,11 +283,13 @@ export class ChunkRetrievalTask extends Task<
     });
 
     // The KB tags every result with the same scoreType; the empty-textQuery
-    // fallback inside hybridSearch can flip this from "rrf" to "cosine", which
-    // is exactly the signal we want to surface to callers.
-    const scoreType =
-      results.length > 0 ? (results[0].scoreType ?? (method === "hybrid" ? "rrf" : "cosine"))
-                         : method === "hybrid" ? "rrf" : "cosine";
+    // fallback inside hybridSearch flips this from "rrf" to "cosine", and we
+    // want to surface that to callers even when the result set is empty.
+    const hybridFallsBackToCosine =
+      method === "hybrid" && (queryText === undefined || queryText.trim().length === 0);
+    const defaultScoreType: "cosine" | "bm25" | "rrf" =
+      method === "hybrid" && !hybridFallsBackToCosine ? "rrf" : "cosine";
+    const scoreType = results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
 
     const output: ChunkRetrievalTaskOutput = {
       chunks,
