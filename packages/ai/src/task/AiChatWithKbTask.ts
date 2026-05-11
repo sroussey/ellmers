@@ -205,7 +205,12 @@ export const AiChatWithKbOutputSchema = {
     text: {
       type: "string",
       title: "Text",
-      description: "Last assistant response",
+      // `x-stream: append` concatenates every `text-delta` from every turn,
+      // so the accumulated value is the full transcript across turns — not
+      // just the last assistant response. Consumers that need the most
+      // recent assistant message should read it off the `messages` port
+      // instead.
+      description: "Full streamed transcript across all assistant turns",
       "x-stream": "append",
     },
     messages: {
@@ -351,6 +356,13 @@ export class AiChatWithKbTask extends StreamingAiTask<
     const minScore = input.minScore ?? 0.3;
     const maxRefs = input.maxReferences ?? 6;
 
+    // Incremented after each completed assistant turn — emitted via
+    // `finish.data.iterations` at the end so the output schema's required
+    // `iterations` field is populated. (The streaming accumulator merges
+    // `finish.data` over accumulated stream values; no `x-stream`
+    // declaration applies to a one-shot scalar like this.)
+    let completedTurns = 0;
+
     // Carries the most recent turn's surviving chunks forward so a short
     // follow-up ("tell me more", "what about X?") that wouldn't match the
     // KB on its own still has the prior turn's context to answer from.
@@ -416,11 +428,18 @@ export class AiChatWithKbTask extends StreamingAiTask<
       // page. For legacy chunks missing `metadata.url`, leaving the URL
       // undefined renders a source chip without a click target — safer
       // than a broken link. Re-ingest fills `metadata.url` in.
+      // Keyed by `kbId:doc_id` (composite), not `doc_id` alone: a `doc_id`
+      // is only unique within one KB, and retrieval ranges over many.
+      // Different KBs can share the same id (e.g. UUIDs colliding, or two
+      // KBs intentionally indexing the same source), so keying on
+      // `doc_id` alone would let the first KB's URL leak onto chunks
+      // from the second.
+      const docUrlKey = (kbId: string, docId: string): string => `${kbId}:${docId}`;
       const docUrls = new Map<string, string | undefined>();
       const docFetches: Array<Promise<void>> = [];
-      for (const { kb, r } of allChunks) {
+      for (const { kbId, kb, r } of allChunks) {
         if (!kb) continue;
-        const key = `${r.doc_id}`;
+        const key = docUrlKey(kbId, r.doc_id);
         if (docUrls.has(key)) continue;
         docUrls.set(key, undefined);
         docFetches.push(
@@ -444,7 +463,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
           kbId: entry.kbId,
           kbLabel: entry.kbLabel,
           result: entry.r,
-          url: docUrls.get(entry.r.doc_id),
+          url: docUrls.get(docUrlKey(entry.kbId, entry.r.doc_id)),
         })
       );
 
@@ -527,6 +546,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
         content: [{ type: "text", text: assistantText }],
       };
       history.push(assistantMsg);
+      completedTurns = turn + 1;
       yield {
         type: "object-delta",
         port: "messages",
@@ -570,8 +590,14 @@ export class AiChatWithKbTask extends StreamingAiTask<
       } as StreamEvent<AiChatWithKbTaskOutput>;
     }
 
-    // Bare finish — no data payload.
-    yield { type: "finish" } as StreamEvent<AiChatWithKbTaskOutput>;
+    // `text`, `messages`, and `references` ride the x-stream merge into the
+    // final output. `iterations` has no x-stream, so we deliver it in
+    // `finish.data` for the StreamProcessor to merge over the accumulated
+    // ports.
+    yield {
+      type: "finish",
+      data: { iterations: completedTurns } as Partial<AiChatWithKbTaskOutput>,
+    } as StreamEvent<AiChatWithKbTaskOutput>;
   }
 }
 
