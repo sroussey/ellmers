@@ -17,7 +17,7 @@ import type {
 } from "../tabular/ITabularStorage";
 import { TelemetryTabularStorage } from "../tabular/TelemetryTabularStorage";
 import { traced } from "@workglow/util";
-import type { HybridSearchOptions, IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
+import type { IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
 
 /**
  * Telemetry wrapper for any IVectorStorage implementation.
@@ -63,18 +63,6 @@ export class TelemetryVectorStorage<
   ): Promise<(Entity & { score: number })[]> {
     return traced("workglow.storage.vector.similaritySearch", this.storageName, () =>
       this.vectorInner.similaritySearch(query, options)
-    );
-  }
-
-  hybridSearch(
-    query: TypedArray,
-    options: HybridSearchOptions<Metadata>
-  ): Promise<(Entity & { score: number })[]> {
-    if (!this.vectorInner.hybridSearch) {
-      throw new Error("hybridSearch is not supported by the underlying storage implementation");
-    }
-    return traced("workglow.storage.vector.hybridSearch", this.storageName, () =>
-      this.vectorInner.hybridSearch!(query, options)
     );
   }
 }

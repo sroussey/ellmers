@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ITextIndex } from "@workglow/storage";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import type { TypedArrayConstructor } from "@workglow/util/schema";
 import type { ChunkVectorStorage } from "../chunk/ChunkVectorStorageSchema";
@@ -28,6 +29,12 @@ export interface CreateKnowledgeBaseOptions {
   readonly onDocumentUpsert?: OnDocumentUpsertCallback;
   readonly onDocumentDelete?: OnDocumentDeleteCallback;
   readonly onSearch?: OnSearchCallback;
+  /**
+   * Optional full-text index. When provided, the KB enables
+   * {@link KnowledgeBase.hybridSearch} and auto-writes chunks to the index
+   * on upsert.
+   */
+  readonly textIndex?: ITextIndex;
 }
 
 /**
@@ -54,6 +61,7 @@ export async function createKnowledgeBase(
     onDocumentUpsert,
     onDocumentDelete,
     onSearch,
+    textIndex,
   } = options;
 
   const vectorCtor = vectorCtorOption ?? Float32Array;
@@ -85,7 +93,7 @@ export async function createKnowledgeBase(
     name,
     tabularStorage as unknown as DocumentTabularStorage,
     vectorStorage as unknown as ChunkVectorStorage,
-    { title, description, onDocumentUpsert, onDocumentDelete, onSearch }
+    { title, description, onDocumentUpsert, onDocumentDelete, onSearch, textIndex }
   );
 
   if (shouldRegister) {

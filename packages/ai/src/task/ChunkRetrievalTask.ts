@@ -48,7 +48,9 @@ const inputSchema = {
       enum: ["similarity", "hybrid"],
       title: "Retrieval Method",
       description:
-        "Retrieval strategy: 'similarity' (vector only) or 'hybrid' (vector + full-text).",
+        "Retrieval strategy: 'similarity' (vector only, scores are cosine similarity in [0,1]) " +
+        "or 'hybrid' (vector + full-text fused via Reciprocal Rank Fusion; scores are RRF " +
+        "fusion scores, NOT comparable to cosine similarity).",
       default: "similarity",
     },
     topK: {
@@ -66,7 +68,10 @@ const inputSchema = {
     scoreThreshold: {
       type: "number",
       title: "Score Threshold",
-      description: "Minimum similarity score threshold (0-1)",
+      description:
+        "Minimum cosine similarity score threshold (0-1). Applies only to method='similarity'; " +
+        "ignored for method='hybrid' because RRF fusion scores are not comparable to cosine " +
+        "similarity. Use topK to size hybrid results instead.",
       minimum: 0,
       maximum: 1,
       default: 0,
@@ -129,7 +134,19 @@ const outputSchema = {
       type: "array",
       items: { type: "number" },
       title: "Scores",
-      description: "Similarity scores for each result",
+      description:
+        "Per-result scores. For method='similarity', these are cosine similarity scores in " +
+        "[0,1]. For method='hybrid', these are Reciprocal Rank Fusion scores — small positive " +
+        "numbers (typically <0.05) that rank results but do not correspond to a similarity.",
+    },
+    scoreType: {
+      type: "string",
+      enum: ["cosine", "bm25", "rrf"],
+      title: "Score Type",
+      description:
+        "Discriminator naming the scorer used for `scores`: 'cosine' for similarity search " +
+        "and for hybrid fallback when the text query is empty/whitespace; 'rrf' for hybrid " +
+        "fusion. ('bm25' is reserved for direct text search and is not produced by this task.)",
     },
     vectors: {
       type: "array",
@@ -157,7 +174,7 @@ const outputSchema = {
       description: "The query used for retrieval (pass-through)",
     },
   },
-  required: ["chunks", "chunk_ids", "metadata", "scores", "count", "query"],
+  required: ["chunks", "chunk_ids", "metadata", "scores", "scoreType", "count", "query"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
@@ -216,7 +233,9 @@ export class ChunkRetrievalTask extends Task<
     }
     if (method === "hybrid" && !kb.supportsHybridSearch()) {
       throw new Error(
-        "The provided knowledge base does not support hybrid search. Use method: 'similarity' or a backend with hybrid support (e.g., Postgres with pgvector)."
+        "Hybrid retrieval requires a text index installed on the knowledge base. " +
+          "Install one via `kb.installTextIndex(new BM25Index())` or pass " +
+          "`textIndex` to `createKnowledgeBase`. Otherwise use method: 'similarity'."
       );
     }
 
@@ -250,7 +269,6 @@ export class ChunkRetrievalTask extends Task<
             textQuery: queryText!,
             topK,
             filter,
-            scoreThreshold,
             vectorWeight,
           })
         : await kb.similaritySearch(searchVector, {
@@ -264,11 +282,21 @@ export class ChunkRetrievalTask extends Task<
       return meta.text || JSON.stringify(meta);
     });
 
+    // The KB tags every result with the same scoreType; the empty-textQuery
+    // fallback inside hybridSearch flips this from "rrf" to "cosine", and we
+    // want to surface that to callers even when the result set is empty.
+    const hybridFallsBackToCosine =
+      method === "hybrid" && (queryText === undefined || queryText.trim().length === 0);
+    const defaultScoreType: "cosine" | "bm25" | "rrf" =
+      method === "hybrid" && !hybridFallsBackToCosine ? "rrf" : "cosine";
+    const scoreType = results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
+
     const output: ChunkRetrievalTaskOutput = {
       chunks,
       chunk_ids: results.map((r) => r.chunk_id),
       metadata: results.map((r) => r.metadata),
       scores: results.map((r) => r.score),
+      scoreType,
       count: results.length,
       query,
     };
