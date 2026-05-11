@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.33
+
+### Refactors
+
+- shared promise on import for optional ai provider libs
+- remove loadProviderSdk utility and streamline SDK loading in client implementations
+
+### Chores
+
+- fixup comment references to things renamed
+- fixup some wrong links after rename
+
 ## 0.2.32
 
 ### Refactors
