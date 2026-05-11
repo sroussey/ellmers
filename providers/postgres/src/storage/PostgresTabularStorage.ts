@@ -1125,6 +1125,76 @@ export class PostgresTabularStorage<
   }
 
   /**
+   * Fetch multiple rows by primary key in a single statement. Single-column
+   * keys emit `WHERE pk IN ($1,$2,...)`. Compound keys emit
+   * `WHERE (pk1,pk2,...) IN (($1,$2,...),($3,$4,...),...)`. Values bind
+   * through `jsToSqlValue` for parity with `query()` and `get()`.
+   *
+   * Postgres caps a single statement at 65535 bind parameters; inputs that
+   * would exceed the cap are chunked so each round-trip stays well under
+   * it. The same chunking shape is shared with the SQLite backend.
+   */
+  override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const pkColCount = this.primaryKeyColumns().length;
+    const chunkSize = Math.max(1, Math.floor(30000 / pkColCount));
+    let rows: Entity[];
+    if (keys.length <= chunkSize) {
+      rows = await this.mutex(() => this._getBulkInternal(keys));
+    } else {
+      rows = [];
+      for (let i = 0; i < keys.length; i += chunkSize) {
+        const chunk = keys.slice(i, i + chunkSize);
+        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        rows.push(...chunkRows);
+      }
+    }
+    this.events.emit("getBulk", keys, rows);
+    return rows;
+  }
+
+  private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    const db = this.db;
+    const pkCols = this.primaryKeyColumns() as string[];
+
+    const params: ValueOptionType[] = [];
+    const tuples: string[] = [];
+    let p = 1;
+    for (const key of keys) {
+      const ordered = this.getPrimaryKeyAsOrderedArray(key);
+      params.push(...ordered);
+      const slots: string[] = [];
+      for (let i = 0; i < pkCols.length; i++) {
+        slots.push(`$${p++}`);
+      }
+      tuples.push(`(${slots.join(", ")})`);
+    }
+
+    const lhs =
+      pkCols.length === 1
+        ? `"${pkCols[0]}"`
+        : `(${pkCols.map((c) => `"${c}"`).join(", ")})`;
+
+    // Single-column LHS uses a flat list of placeholders for idiomatic SQL.
+    // Compound LHS uses row-value tuples.
+    const rhs =
+      pkCols.length === 1
+        ? params.map((_, i) => `$${i + 1}`).join(", ")
+        : tuples.join(", ");
+
+    const sql = `SELECT * FROM "${this.table}" WHERE ${lhs} IN (${rhs})`;
+    const result = await db.query(sql, params);
+
+    for (const row of result.rows) {
+      const record = row as Record<string, unknown>;
+      for (const key in this.schema.properties) {
+        record[key] = this.sqlToJsValue(key, record[key] as ValueOptionType);
+      }
+    }
+    return result.rows as Entity[];
+  }
+
+  /**
    * Deletes a row from the database.
    *
    * @param key - The primary key object to delete
@@ -1248,11 +1318,11 @@ export class PostgresTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getBulkInternal(offset, limit));
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getOffsetPageInternal(offset, limit));
   }
 
-  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
+  private async _getOffsetPageInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `"${String(col)}"`)

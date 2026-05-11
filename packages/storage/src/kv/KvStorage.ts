@@ -64,6 +64,14 @@ export abstract class KvStorage<
   abstract get(key: Key): Promise<Value | undefined>;
 
   /**
+   * Retrieves multiple values by their keys in a single bulk operation.
+   * Returns only the found records; missing keys produce no entry. The
+   * returned `Combined` records carry both key and value so callers can
+   * re-align by key.
+   */
+  abstract getBulk(keys: readonly Key[]): Promise<Combined[]>;
+
+  /**
    * Deletes a row from the repository.
    * @param key - The primary key of the row to delete
    */

@@ -324,7 +324,7 @@ describe("HuggingFaceTabularStorage", () => {
         }),
       });
 
-      const result = await storage.getBulk(50, 10);
+      const result = await storage.getOffsetPage(50, 10);
 
       expect(result).toHaveLength(10);
       expect(result![0]).toEqual({ row_idx: 50, id: 50, text: "text50", label: 0 });
@@ -338,7 +338,7 @@ describe("HuggingFaceTabularStorage", () => {
       );
     });
 
-    it("should return undefined for getBulk when no entities found", async () => {
+    it("should return undefined for getOffsetPage when no entities found", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -350,12 +350,12 @@ describe("HuggingFaceTabularStorage", () => {
         }),
       });
 
-      const result = await storage.getBulk(0, 10);
+      const result = await storage.getOffsetPage(0, 10);
 
       expect(result).toBeUndefined();
     });
 
-    it("should cap getBulk limit at 100 (HF max)", async () => {
+    it("should cap getOffsetPage limit at 100 (HF max)", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -371,7 +371,7 @@ describe("HuggingFaceTabularStorage", () => {
         }),
       });
 
-      const result = await storage.getBulk(0, 200);
+      const result = await storage.getOffsetPage(0, 200);
 
       expect(result).toHaveLength(100);
       expect(mockFetch).toHaveBeenCalledWith(

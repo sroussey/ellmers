@@ -2140,6 +2140,85 @@ export function runGenericTabularStorageTests(
         expect(seen.sort()).toEqual([...thornyIds].sort());
       });
     });
+
+    describe("getBulk(keys) on single-PK schema", () => {
+      // SearchSchema has a single-column primary key (`id`). This block
+      // exercises the SQL backends' single-column branch — `WHERE pk IN
+      // (?,?,...)` for SQLite / `WHERE pk IN ($1,$2,...)` for Postgres —
+      // which is structurally distinct from the compound-PK row-value
+      // form covered above and otherwise has no test coverage.
+      let repository: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
+
+      beforeEach(async () => {
+        repository = await createSearchableRepository!();
+        await repository.setupDatabase?.();
+      });
+
+      afterEach(async () => {
+        await repository.deleteAll();
+        repository.destroy();
+      });
+
+      const seed = async (): Promise<void> => {
+        const now = new Date().toISOString();
+        await repository.putBulk([
+          { id: "a", category: "x", subcategory: "s", value: 1, createdAt: now, updatedAt: now },
+          { id: "b", category: "x", subcategory: "s", value: 2, createdAt: now, updatedAt: now },
+          { id: "c", category: "y", subcategory: "s", value: 3, createdAt: now, updatedAt: now },
+        ]);
+      };
+
+      it("returns empty array for empty input without throwing", async () => {
+        const result = await repository.getBulk([]);
+        expect(result).toEqual([]);
+      });
+
+      it("returns empty array when no keys exist", async () => {
+        await seed();
+        const result = await repository.getBulk([{ id: "missing-1" }, { id: "missing-2" }]);
+        expect(result).toEqual([]);
+      });
+
+      it("returns all entities when every key exists", async () => {
+        await seed();
+        const result = await repository.getBulk([{ id: "a" }, { id: "b" }, { id: "c" }]);
+        expect(result.length).toBe(3);
+        const byId = new Map(result.map((r) => [r.id, r]));
+        expect(byId.get("a")?.value).toBe(1);
+        expect(byId.get("b")?.value).toBe(2);
+        expect(byId.get("c")?.value).toBe(3);
+      });
+
+      it("returns only the found subset when some keys are missing", async () => {
+        await seed();
+        const result = await repository.getBulk([{ id: "a" }, { id: "missing" }, { id: "c" }]);
+        expect(result.length).toBe(2);
+        const ids = result.map((r) => r.id).sort();
+        expect(ids).toEqual(["a", "c"]);
+      });
+
+      it("returns full entity rows (non-PK fields included)", async () => {
+        await seed();
+        const result = await repository.getBulk([{ id: "b" }]);
+        expect(result.length).toBe(1);
+        expect(result[0].category).toBe("x");
+        expect(result[0].value).toBe(2);
+      });
+
+      it("emits a getBulk event with the keys and the found entities", async () => {
+        await seed();
+        const seen: Array<{ keys: any; found: any }> = [];
+        repository.on("getBulk", (keys, entities) => {
+          seen.push({ keys, found: entities });
+        });
+        const keys = [{ id: "a" }, { id: "missing" }];
+        await repository.getBulk(keys);
+        expect(seen.length).toBe(1);
+        expect(seen[0].keys).toEqual(keys);
+        expect(seen[0].found.length).toBe(1);
+        expect(seen[0].found[0].id).toBe("a");
+      });
+    });
   }
 
   if (createAllTypesRepository) {
@@ -2335,9 +2414,9 @@ export function runGenericTabularStorageTests(
       repository.destroy();
     });
 
-    describe("getBulk", () => {
+    describe("getOffsetPage", () => {
       it("should return undefined for empty table", async () => {
-        const result = await repository.getBulk(0, 10);
+        const result = await repository.getOffsetPage(0, 10);
         expect(result).toBeUndefined();
       });
 
@@ -2352,7 +2431,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 5);
+        const result = await repository.getOffsetPage(0, 5);
         expect(result).toBeDefined();
         expect(result!.length).toBe(5);
       });
@@ -2366,7 +2445,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 10);
+        const result = await repository.getOffsetPage(0, 10);
         expect(result).toBeDefined();
         expect(result!.length).toBe(3);
       });
@@ -2382,7 +2461,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(2, 2);
+        const result = await repository.getOffsetPage(2, 2);
         expect(result).toBeDefined();
         expect(result!.length).toBe(2);
         // Assuming deterministic ordering by primary key (name, then type),
@@ -2403,7 +2482,7 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(10, 5);
+        const result = await repository.getOffsetPage(10, 5);
         expect(result).toBeUndefined();
       });
 
@@ -2416,9 +2495,82 @@ export function runGenericTabularStorageTests(
         ];
         await repository.putBulk(entities);
 
-        const result = await repository.getBulk(0, 1);
+        const result = await repository.getOffsetPage(0, 1);
         expect(result).toBeDefined();
         expect(result!.length).toBe(1);
+      });
+    });
+
+    describe("getBulk(keys)", () => {
+      const seed = [
+        { name: "key1", type: "type1", option: "value1", success: true },
+        { name: "key2", type: "type2", option: "value2", success: false },
+        { name: "key3", type: "type3", option: "value3", success: true },
+      ];
+
+      it("returns an empty array for empty input without throwing", async () => {
+        const result = await repository.getBulk([]);
+        expect(result).toEqual([]);
+      });
+
+      it("returns an empty array when no keys exist", async () => {
+        await repository.putBulk(seed);
+        const result = await repository.getBulk([
+          { name: "missing", type: "missing" },
+          { name: "also-missing", type: "x" },
+        ]);
+        expect(result).toEqual([]);
+      });
+
+      it("returns all entities when every key exists", async () => {
+        await repository.putBulk(seed);
+        const result = await repository.getBulk([
+          { name: "key1", type: "type1" },
+          { name: "key2", type: "type2" },
+          { name: "key3", type: "type3" },
+        ]);
+        expect(result.length).toBe(3);
+        const byName = new Map(result.map((r) => [r.name, r]));
+        expect(byName.get("key1")?.option).toBe("value1");
+        expect(byName.get("key2")?.option).toBe("value2");
+        expect(byName.get("key3")?.option).toBe("value3");
+      });
+
+      it("returns only the found subset when some keys are missing", async () => {
+        await repository.putBulk(seed);
+        const result = await repository.getBulk([
+          { name: "key1", type: "type1" },
+          { name: "missing", type: "missing" },
+          { name: "key3", type: "type3" },
+        ]);
+        expect(result.length).toBe(2);
+        const names = result.map((r) => r.name).sort();
+        expect(names).toEqual(["key1", "key3"]);
+      });
+
+      it("returns full entity rows (non-PK fields included)", async () => {
+        await repository.putBulk(seed);
+        const result = await repository.getBulk([{ name: "key2", type: "type2" }]);
+        expect(result.length).toBe(1);
+        expect(result[0].option).toBe("value2");
+        expect(!!result[0].success).toBe(false);
+      });
+
+      it("emits a getBulk event with the keys and the found entities", async () => {
+        await repository.putBulk(seed);
+        const seen: Array<{ keys: any; found: any }> = [];
+        repository.on("getBulk", (keys, entities) => {
+          seen.push({ keys, found: entities });
+        });
+        const keys = [
+          { name: "key1", type: "type1" },
+          { name: "missing", type: "missing" },
+        ];
+        await repository.getBulk(keys);
+        expect(seen.length).toBe(1);
+        expect(seen[0].keys).toEqual(keys);
+        expect(seen[0].found.length).toBe(1);
+        expect(seen[0].found[0].name).toBe("key1");
       });
     });
 

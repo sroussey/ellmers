@@ -846,6 +846,70 @@ export class SqliteTabularStorage<
   }
 
   /**
+   * Fetch multiple rows by primary key in a single statement. Single-column
+   * keys emit `WHERE pk IN (?,?,...)`. Compound keys emit
+   * `WHERE (pk1,pk2,...) IN ((?,?,...),(?,?,...),...)`. Values bind through
+   * `jsToSqlValue` for parity with `query()` and single-row `get()`.
+   *
+   * Inputs larger than SQLite's `SQLITE_MAX_VARIABLE_NUMBER` are chunked so
+   * the underlying statement never exceeds the bind-parameter limit. The
+   * default limit is 999 on older builds and 32766 on modern ones; we stay
+   * under the conservative threshold by dividing 900 by the PK column count.
+   */
+  override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const pkColCount = this.primaryKeyColumns().length;
+    const chunkSize = Math.max(1, Math.floor(900 / pkColCount));
+    let rows: Entity[];
+    if (keys.length <= chunkSize) {
+      rows = await this.mutex(() => this._getBulkInternal(keys));
+    } else {
+      rows = [];
+      for (let i = 0; i < keys.length; i += chunkSize) {
+        const chunk = keys.slice(i, i + chunkSize);
+        const chunkRows = await this.mutex(() => this._getBulkInternal(chunk));
+        rows.push(...chunkRows);
+      }
+    }
+    this.events.emit("getBulk", keys, rows);
+    return rows;
+  }
+
+  private async _getBulkInternal(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    const db = this.db;
+    const pkCols = this.primaryKeyColumns() as string[];
+
+    const params: ValueOptionType[] = [];
+    for (const key of keys) {
+      params.push(...this.getPrimaryKeyAsOrderedArray(key));
+    }
+
+    let lhs: string;
+    let valuesClause: string;
+    if (pkCols.length === 1) {
+      lhs = `\`${pkCols[0]}\``;
+      valuesClause = keys.map(() => "?").join(", ");
+    } else {
+      lhs = `(${pkCols.map((c) => `\`${c}\``).join(", ")})`;
+      const placeholdersPerKey = `(${pkCols.map(() => "?").join(", ")})`;
+      valuesClause = keys.map(() => placeholdersPerKey).join(", ");
+    }
+
+    const sql = `SELECT * FROM \`${this.table}\` WHERE ${lhs} IN (${valuesClause})`;
+    const stmt = db.prepare<ValueOptionType[], Entity>(sql);
+    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
+    const rows: Entity[] = stmt.all(...(params as ValueOptionType[]));
+
+    for (const row of rows) {
+      const record = row as Record<string, unknown>;
+      for (const k in this.schema.properties) {
+        record[k] = this.sqlToJsValue(k, record[k] as ValueOptionType);
+      }
+    }
+    return rows;
+  }
+
+  /**
    * Deletes a key-value pair from the database
    * @param key - The primary key object to delete
    * @emits 'delete' event when successful
@@ -970,11 +1034,11 @@ export class SqliteTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
-    return this.mutex(() => this._getBulkInternal(offset, limit));
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
+    return this.mutex(() => this._getOffsetPageInternal(offset, limit));
   }
 
-  private async _getBulkInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
+  private async _getOffsetPageInternal(offset: number, limit: number): Promise<Entity[] | undefined> {
     const db = this.db;
     const orderByClause = this.primaryKeyColumns()
       .map((col) => `\`${String(col)}\``)

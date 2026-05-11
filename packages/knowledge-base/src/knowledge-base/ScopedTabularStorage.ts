@@ -138,9 +138,18 @@ export class ScopedTabularStorage<
     return (rows as any[]).map((r) => this.strip(r)) as Pick<Entity, K>[];
   }
 
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     const results = await this.inner.query({ kb_id: this.kbId } as any, { offset, limit });
     return this.stripArray(results);
+  }
+
+  async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const scopedKeys = keys.map((k) => this.inject(k));
+    const results = await this.inner.getBulk(scopedKeys);
+    const stripped = results.map((r: any) => this.strip(r)) as Entity[];
+    this.events.emit("getBulk", keys, stripped);
+    return stripped;
   }
 
   async getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {

@@ -133,6 +133,42 @@ export function runGenericKvRepositoryTests(
       expect(getAllFn).toHaveBeenLastCalledWith(results);
       expect(results).toEqual([{ key: "k1", value: "v1" }]);
     });
+
+    it("should return empty array for getBulk with empty input", async () => {
+      const result = await repository.getBulk([]);
+      expect(result).toEqual([]);
+    });
+
+    it("should return only found records via getBulk", async () => {
+      await repository.put("key1", "value1");
+      await repository.put("key3", "value3");
+
+      const result = await repository.getBulk(["key1", "key2", "key3"]);
+      expect(result.length).toBe(2);
+      const map = new Map(result.map((r) => [r.key, r.value]));
+      expect(map.get("key1")).toBe("value1");
+      expect(map.get("key3")).toBe("value3");
+      expect(map.has("key2")).toBe(false);
+    });
+
+    it("should return empty array when no getBulk keys match", async () => {
+      await repository.put("key1", "value1");
+      const result = await repository.getBulk(["missing-a", "missing-b"]);
+      expect(result).toEqual([]);
+    });
+
+    it("should emit a getBulk event with the keys and the found results", async () => {
+      await repository.put("k1", "v1");
+      await repository.put("k3", "v3");
+
+      const getBulkFn = vi.fn();
+      repository.on("getBulk", getBulkFn);
+
+      const keys = ["k1", "missing", "k3"];
+      const result = await repository.getBulk(keys);
+      expect(getBulkFn).toHaveBeenCalledTimes(1);
+      expect(getBulkFn).toHaveBeenCalledWith(keys, result);
+    });
   });
 
   describe("with json value", () => {
@@ -198,6 +234,21 @@ export function runGenericKvRepositoryTests(
         expect(output?.option).toEqual(item.value.option);
         expect(output?.success).toEqual(item.value.success);
       }
+    });
+
+    it("should deserialize JSON values in getBulk results", async () => {
+      const k1 = await repository.getObjectAsIdString({ name: "key1", type: "string1" });
+      const k2 = await repository.getObjectAsIdString({ name: "key2", type: "string2" });
+      await repository.put(k1, { option: "value1", success: true });
+      await repository.put(k2, { option: "value2", success: false });
+
+      const result = await repository.getBulk([k1, k2, "missing"]);
+      expect(result.length).toBe(2);
+      const byKey = new Map(result.map((r) => [r.key, r.value]));
+      expect(byKey.get(k1)?.option).toBe("value1");
+      expect(byKey.get(k1)?.success).toBe(true);
+      expect(byKey.get(k2)?.option).toBe("value2");
+      expect(byKey.get(k2)?.success).toBe(false);
     });
   });
 }

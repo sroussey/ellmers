@@ -707,7 +707,7 @@ export class IndexedDbTabularStorage<
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
    */
-  async getBulk(offset: number, limit: number): Promise<Entity[] | undefined> {
+  async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     if (offset < 0) {
       throw new RangeError(`offset must be non-negative, got ${offset}`);
     }
