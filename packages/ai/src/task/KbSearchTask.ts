@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
+import type { ChunkSearchResult, KnowledgeBase, SearchKind } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
@@ -20,7 +20,15 @@ const inputSchema = {
     query: {
       type: "string",
       title: "Query",
-      description: "Search query (the KB's onSearch handles embedding internally)",
+      description: "Search query. The KB owns its embedding/reranker models internally.",
+    },
+    kind: {
+      type: "string",
+      enum: ["similarity", "hybrid", "rerank"],
+      title: "Retrieval Kind",
+      description:
+        "Retrieval flavor. Defaults to 'rerank' when the KB has a reranker model, " +
+        "otherwise 'hybrid' if supported, otherwise 'similarity'.",
     },
     topK: {
       type: "number",
@@ -52,35 +60,56 @@ const outputSchema = {
       title: "Results",
       description: "Matching chunks in score-desc order",
     },
+    chunks: {
+      type: "array",
+      items: { type: "string" },
+      title: "Chunks",
+      description: "The chunk text content, parallel to `results`",
+    },
+    chunk_ids: {
+      type: "array",
+      items: { type: "string" },
+      title: "Chunk IDs",
+      description: "The chunk ids, parallel to `results`",
+    },
+    scores: {
+      type: "array",
+      items: { type: "number" },
+      title: "Scores",
+      description: "Scores parallel to `results`",
+    },
     count: {
       type: "number",
       title: "Count",
       description: "Number of results returned",
     },
   },
-  required: ["results", "count"],
+  required: ["results", "chunks", "chunk_ids", "scores", "count"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
 export type KbSearchTaskInput = FromSchema<typeof inputSchema>;
 export type KbSearchTaskOutput = {
   readonly results: ChunkSearchResult[];
+  readonly chunks: string[];
+  readonly chunk_ids: string[];
+  readonly scores: number[];
   readonly count: number;
 };
 export type KbSearchTaskConfig = TaskConfig<KbSearchTaskInput>;
 
 /**
- * Observable wrapper around `kb.search(text, opts)` — the KB's `onSearch`
- * callback handles embedding and any custom retrieval logic. Distinct from
- * `ChunkRetrievalTask`, which embeds via an explicit model and calls
- * `kb.similaritySearch(vector)` (bypassing `onSearch`).
+ * High-level KB search task. Delegates to `kb.search(query, { kind })`; the
+ * KB owns the embedding and reranker models internally, so no `model` input
+ * is needed here.
  */
 export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, KbSearchTaskConfig> {
   public static override type = "KbSearchTask";
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =
-    "Search a knowledge base for chunks matching a text query. Wraps the KB's `search` method (which embeds and retrieves via the KB's onSearch callback).";
+    "Search a knowledge base. The KB picks the retrieval kind (similarity / hybrid / rerank) " +
+    "from its configured models, or you can override via `kind`.";
   public static override cacheable = true;
 
   public static override inputSchema(): DataPortSchema {
@@ -95,10 +124,24 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
     input: KbSearchTaskInput,
     _context: IExecuteContext
   ): Promise<KbSearchTaskOutput> {
-    const { knowledgeBase, query, topK = 5, filter } = input;
+    const { knowledgeBase, query, kind, topK = 5, filter } = input;
     const kb = knowledgeBase as KnowledgeBase;
-    const results = await kb.search(query, { topK, filter });
-    return { results, count: results.length };
+    const results = await kb.search(query, {
+      kind: kind as SearchKind | undefined,
+      topK,
+      filter,
+    });
+    return {
+      results,
+      chunks: results.map((r) => {
+        const meta = r.metadata as Record<string, unknown> | undefined;
+        const text = meta?.text;
+        return typeof text === "string" ? text : JSON.stringify(meta ?? {});
+      }),
+      chunk_ids: results.map((r) => r.chunk_id),
+      scores: results.map((r) => r.score),
+      count: results.length,
+    };
   }
 }
 

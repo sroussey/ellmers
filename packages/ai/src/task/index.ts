@@ -23,6 +23,7 @@ import { GestureRecognizerTask } from "./GestureRecognizerTask";
 import { HandLandmarkerTask } from "./HandLandmarkerTask";
 import { HierarchicalChunkerTask } from "./HierarchicalChunkerTask";
 import { HierarchyJoinTask } from "./HierarchyJoinTask";
+import { KbReindexTask } from "./KbReindexTask";
 import { KbSearchTask } from "./KbSearchTask";
 import { KbToDocumentsTask } from "./KbToDocumentsTask";
 import { ImageClassificationTask } from "./ImageClassificationTask";
@@ -40,6 +41,7 @@ import { StructuredGenerationTask } from "./StructuredGenerationTask";
 import { TextChunkerTask } from "./TextChunkerTask";
 import { TextClassificationTask } from "./TextClassificationTask";
 import { TextEmbeddingTask } from "./TextEmbeddingTask";
+import { TextRerankerTask } from "./TextRerankerTask";
 import { TextFillMaskTask } from "./TextFillMaskTask";
 import { TextGenerationTask } from "./TextGenerationTask";
 import { TextLanguageDetectionTask } from "./TextLanguageDetectionTask";
@@ -77,6 +79,7 @@ export const registerAiTasks = () => {
     HandLandmarkerTask,
     HierarchicalChunkerTask,
     HierarchyJoinTask,
+    KbReindexTask,
     KbSearchTask,
     KbToDocumentsTask,
     ImageClassificationTask,
@@ -94,6 +97,7 @@ export const registerAiTasks = () => {
     TextChunkerTask,
     TextClassificationTask,
     TextEmbeddingTask,
+    TextRerankerTask,
     TextFillMaskTask,
     TextGenerationTask,
     TextLanguageDetectionTask,
@@ -136,6 +140,7 @@ export * from "./GestureRecognizerTask";
 export * from "./HandLandmarkerTask";
 export * from "./HierarchicalChunkerTask";
 export * from "./HierarchyJoinTask";
+export * from "./KbReindexTask";
 export * from "./KbSearchTask";
 export * from "./KbToDocumentsTask";
 export * from "./ImageClassificationTask";
@@ -154,6 +159,7 @@ export * from "./StructuredGenerationTask";
 export * from "./TextChunkerTask";
 export * from "./TextClassificationTask";
 export * from "./TextEmbeddingTask";
+export * from "./TextRerankerTask";
 export * from "./TextFillMaskTask";
 export * from "./TextGenerationTask";
 export * from "./TextLanguageDetectionTask";

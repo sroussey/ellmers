@@ -28,6 +28,7 @@ import { HFT_TextFillMask } from "./HFT_TextFillMask";
 import { HFT_TextGeneration, HFT_TextGeneration_Stream } from "./HFT_TextGeneration";
 import { HFT_TextLanguageDetection } from "./HFT_TextLanguageDetection";
 import { HFT_TextNamedEntityRecognition } from "./HFT_TextNamedEntityRecognition";
+import { HFT_TextReranker } from "./HFT_TextReranker";
 import { HFT_TextQuestionAnswer, HFT_TextQuestionAnswer_Stream } from "./HFT_TextQuestionAnswer";
 import { HFT_TextRewriter, HFT_TextRewriter_Stream } from "./HFT_TextRewriter";
 import { HFT_TextSummary, HFT_TextSummary_Stream } from "./HFT_TextSummary";
@@ -53,6 +54,7 @@ export const HFT_TASKS: Record<string, AiProviderRunFn<any, any, HfTransformersO
   TextClassificationTask: HFT_TextClassification,
   TextFillMaskTask: HFT_TextFillMask,
   TextNamedEntityRecognitionTask: HFT_TextNamedEntityRecognition,
+  TextRerankerTask: HFT_TextReranker,
   TextRewriterTask: HFT_TextRewriter,
   TextSummaryTask: HFT_TextSummary,
   TextTranslationTask: HFT_TextTranslation,

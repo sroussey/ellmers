@@ -432,99 +432,105 @@ Paragraph.`;
       });
     });
 
-    describe("callbacks", () => {
-      it("should invoke onDocumentUpsert when a document is upserted", async () => {
-        const calls: Array<{ kbName: string; docId: string | undefined }> = [];
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-cb-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentUpsert: async (instance, doc) => {
-            calls.push({ kbName: instance.name, docId: doc.doc_id });
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# Test\n\nContent.", "Test");
-        const doc = new Document(root, { title: "Test" });
-
-        await kbWithCb.upsertDocument(doc);
-
-        expect(calls).toHaveLength(1);
-        expect(calls[0].kbName).toBe(kbWithCb.name);
-        expect(calls[0].docId).toBeDefined();
-      });
-
-      it("should invoke onDocumentDelete when a document is deleted", async () => {
-        const deletedIds: string[] = [];
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-del-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentDelete: async (_instance, doc_id) => {
-            deletedIds.push(doc_id);
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# T\n\nx.", "T");
-        const doc = new Document(root, { title: "T" });
-        const inserted = await kbWithCb.upsertDocument(doc);
-
-        await kbWithCb.deleteDocument(inserted.doc_id!);
-
-        expect(deletedIds).toEqual([inserted.doc_id]);
-      });
-
-      it("should reject upsertDocument when onDocumentUpsert throws, with storage already committed", async () => {
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-throw-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentUpsert: async () => {
-            throw new Error("callback boom");
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# T\n\nx.", "T");
-        const doc = new Document(root, { title: "T" });
-
-        await expect(kbWithCb.upsertDocument(doc)).rejects.toThrow("callback boom");
-
-        // Contract: storage is committed before the callback runs, so the document
-        // must still be retrievable even though upsertDocument rejected.
-        const retrieved = await kbWithCb.getDocument(doc.doc_id!);
-        expect(retrieved).toBeDefined();
-        expect(retrieved?.doc_id).toBe(doc.doc_id);
-      });
-
-      it("should throw a helpful error when kb.search() is called without onSearch", async () => {
+    describe("ai strategy", () => {
+      it("should throw a helpful error when kb.search() is called without a strategy", async () => {
         const bareKb = await createKnowledgeBase({
-          name: `test-kb-nosearch-${uuid4()}`,
+          name: `test-kb-nostrategy-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
         });
 
-        await expect(bareKb.search("hello")).rejects.toThrow(/onSearch/);
+        await expect(bareKb.search("hello")).rejects.toThrow(/AI strategy/);
       });
 
-      it("should invoke onSearch with the query and options when kb.search() is called", async () => {
-        const received: Array<{ query: string; topK: number | undefined }> = [];
-        const kbWithSearch = await createKnowledgeBase({
-          name: `test-kb-search-${uuid4()}`,
+      it("should invoke embedQuery and similaritySearch for kind: 'similarity'", async () => {
+        const received: Array<{ text: string }> = [];
+        const kb = await createKnowledgeBase({
+          name: `test-kb-sim-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
-          onSearch: async (_kb, query, options) => {
-            received.push({ query, topK: options?.topK });
-            return [];
+        });
+        kb.setAiStrategy({
+          chunkAndEmbedDocument: async () => ({ chunks: [], vectors: [] }),
+          embedQuery: async (text) => {
+            received.push({ text });
+            return new Float32Array([0.1, 0.2, 0.3]);
+          },
+          rerank: async (_q, candidates, topK) => candidates.slice(0, topK),
+        });
+
+        const results = await kb.search("hello", { kind: "similarity", topK: 4 });
+
+        expect(received).toEqual([{ text: "hello" }]);
+        expect(results).toEqual([]);
+      });
+
+      it("should run rerank by default when rerankerModel is configured", async () => {
+        const reranks: Array<{ query: string; n: number; topK: number }> = [];
+        const kb = await createKnowledgeBase({
+          name: `test-kb-rerank-${uuid4()}`,
+          vectorDimensions: 3,
+          register: false,
+          docEmbeddingModel: "test:doc-embed",
+          rerankerModel: "test:rerank",
+        });
+        kb.setAiStrategy({
+          chunkAndEmbedDocument: async () => ({ chunks: [], vectors: [] }),
+          embedQuery: async () => new Float32Array([1, 0, 0]),
+          rerank: async (query, candidates, topK) => {
+            reranks.push({ query, n: candidates.length, topK });
+            return candidates.slice(0, topK);
           },
         });
 
-        const results = await kbWithSearch.search("query text", { topK: 4 });
+        // Seed a chunk so the first-stage retrieval returns something the
+        // reranker can score against.
+        await kb.upsertChunk({
+          chunk_id: "c1",
+          doc_id: "d1",
+          vector: new Float32Array([1, 0, 0]),
+          metadata: { chunk_id: "c1", doc_id: "d1", text: "hi", nodePath: [], depth: 0 } as any,
+        });
 
-        expect(received).toEqual([{ query: "query text", topK: 4 }]);
-        expect(results).toEqual([]);
+        await kb.search("q", { topK: 2 });
+
+        expect(reranks).toHaveLength(1);
+        expect(reranks[0].query).toBe("q");
+        expect(reranks[0].topK).toBe(2);
+      });
+
+      it("should chunk+embed via the strategy in upsertDocumentWithIndex", async () => {
+        const kb = await createKnowledgeBase({
+          name: `test-kb-ingest-${uuid4()}`,
+          vectorDimensions: 3,
+          register: false,
+        });
+        kb.setAiStrategy({
+          chunkAndEmbedDocument: async (doc) => {
+            const text = doc.metadata.title ?? "";
+            return {
+              chunks: [
+                {
+                  chunk_id: "c1",
+                  doc_id: doc.doc_id ?? "",
+                  text,
+                  nodePath: [],
+                  depth: 0,
+                } as any,
+              ],
+              vectors: [new Float32Array([1, 0, 0])],
+            };
+          },
+          embedQuery: async () => new Float32Array([0, 0, 0]),
+          rerank: async (_q, c, k) => c.slice(0, k),
+        });
+
+        const root = await StructuralParser.parseMarkdown(uuid4(), "# Test\n\nx.", "Test");
+        const doc = new Document(root, { title: "Test" });
+        const stored = await kb.upsertDocumentWithIndex(doc);
+
+        const chunks = await kb.getChunksForDocument(stored.doc_id!);
+        expect(chunks).toHaveLength(1);
       });
     });
   });
