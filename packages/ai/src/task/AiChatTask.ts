@@ -122,7 +122,12 @@ export const AiChatOutputSchema = {
     text: {
       type: "string",
       title: "Text",
-      description: "Last assistant response",
+      // `x-stream: append` concatenates every `text-delta` from every turn,
+      // so the accumulated value is the full transcript across turns — not
+      // just the last assistant response. Consumers that need the most
+      // recent assistant message should read it off the `messages` port
+      // instead.
+      description: "Full streamed transcript across all assistant turns",
       "x-stream": "append",
     },
     messages: {
@@ -253,6 +258,13 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       });
     }
 
+    // Incremented after each completed assistant turn — emitted via
+    // `finish.data.iterations` at the end so the output schema's required
+    // `iterations` field is populated. (The streaming accumulator merges
+    // `finish.data` over accumulated stream values; no `x-stream`
+    // declaration applies to a one-shot scalar like this.)
+    let completedTurns = 0;
+
     // Emit the initial messages as an object-delta. TaskRunner accumulates
     // array object-deltas by appending items (upsert-by-id when an `id`
     // field is present; plain append otherwise). ChatMessage has no id,
@@ -294,6 +306,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         content: [{ type: "text", text: assistantText }],
       };
       history.push(assistantMsg);
+      completedTurns = turn + 1;
       yield {
         type: "object-delta",
         port: "messages",
@@ -342,9 +355,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       } as StreamEvent<AiChatTaskOutput>;
     }
 
-    // Bare finish — no data payload. Chats are ephemeral; the runtime
-    // accumulator owns the final output snapshot via the x-stream
-    // declarations on the output ports.
-    yield { type: "finish" } as StreamEvent<AiChatTaskOutput>;
+    // `text` and `messages` ride the x-stream merge into the final output.
+    // `iterations` has no x-stream, so we deliver it in `finish.data` for
+    // the StreamProcessor to merge over the accumulated ports.
+    yield {
+      type: "finish",
+      data: { iterations: completedTurns } as Partial<AiChatTaskOutput>,
+    } as StreamEvent<AiChatTaskOutput>;
   }
 }

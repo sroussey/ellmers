@@ -708,9 +708,13 @@ describe("AiChatWithKbTask — multi-turn", () => {
       const out = await accumulateKbChatStream(
         task.executeStream(input as any, mkContext(connector))
       );
+      // The finish event now carries the `iterations` field via `data`
+      // (required-but-non-streamed output schema field — see review fix
+      // for libs PR #482). On cancel after the first assistant turn the
+      // count is 1.
       const finish = out.events.find((e) => e.type === "finish") as any;
       expect(finish).toBeDefined();
-      expect(finish.data).toBeUndefined();
+      expect(finish.data).toEqual({ iterations: 1 });
     } finally {
       unregisterProvider();
       fake.unregister();
