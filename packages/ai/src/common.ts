@@ -25,4 +25,4 @@ export * from "./provider/QueuedAiProvider";
 
 export * from "./task";
 
-export * from "./kb/createAiKbStrategy";
+export * from "./kb/createStandardKbStrategy";

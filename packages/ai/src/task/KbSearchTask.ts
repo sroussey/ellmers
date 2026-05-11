@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChunkSearchResult, KnowledgeBase, SearchKind } from "@workglow/knowledge-base";
+import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
@@ -15,32 +15,24 @@ const inputSchema = {
   properties: {
     knowledgeBase: TypeKnowledgeBase({
       title: "Knowledge Base",
-      description: "The knowledge base instance to search in",
+      description: "Knowledge base to search.",
     }),
     query: {
       type: "string",
       title: "Query",
-      description: "Search query. The KB owns its embedding/reranker models internally.",
-    },
-    kind: {
-      type: "string",
-      enum: ["similarity", "hybrid", "rerank"],
-      title: "Retrieval Kind",
-      description:
-        "Retrieval flavor. Defaults to 'rerank' when the KB has a reranker model, " +
-        "otherwise 'hybrid' if supported, otherwise 'similarity'.",
+      description: "Search query text.",
     },
     topK: {
       type: "number",
       title: "Top K",
-      description: "Number of top results to return",
+      description: "Number of top results to return.",
       minimum: 1,
       default: 5,
     },
     filter: {
       type: "object",
       title: "Metadata Filter",
-      description: "Filter results by metadata fields",
+      description: "Filter results by chunk metadata fields.",
     },
   },
   required: ["knowledgeBase", "query"],
@@ -99,17 +91,17 @@ export type KbSearchTaskOutput = {
 export type KbSearchTaskConfig = TaskConfig<KbSearchTaskInput>;
 
 /**
- * High-level KB search task. Delegates to `kb.search(query, { kind })`; the
- * KB owns the embedding and reranker models internally, so no `model` input
- * is needed here.
+ * High-level KB search task. Delegates to `kb.search(query, options)`; the
+ * KB and its installed strategy decide everything else (embedding model,
+ * retrieval mode, rerank). No model or kind input here — that's the
+ * point of moving the config onto the KB itself.
  */
 export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, KbSearchTaskConfig> {
   public static override type = "KbSearchTask";
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =
-    "Search a knowledge base. The KB picks the retrieval kind (similarity / hybrid / rerank) " +
-    "from its configured models, or you can override via `kind`.";
+    "Search a knowledge base. The KB owns its embedding/reranker models and search mode internally.";
   public static override cacheable = true;
 
   public static override inputSchema(): DataPortSchema {
@@ -124,13 +116,9 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
     input: KbSearchTaskInput,
     _context: IExecuteContext
   ): Promise<KbSearchTaskOutput> {
-    const { knowledgeBase, query, kind, topK = 5, filter } = input;
+    const { knowledgeBase, query, topK = 5, filter } = input;
     const kb = knowledgeBase as KnowledgeBase;
-    const results = await kb.search(query, {
-      kind: kind as SearchKind | undefined,
-      topK,
-      filter,
-    });
+    const results = await kb.search(query, { topK, filter });
     return {
       results,
       chunks: results.map((r) => {

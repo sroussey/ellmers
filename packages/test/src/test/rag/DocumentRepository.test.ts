@@ -443,94 +443,84 @@ Paragraph.`;
         await expect(bareKb.search("hello")).rejects.toThrow(/AI strategy/);
       });
 
-      it("should invoke embedQuery and similaritySearch for kind: 'similarity'", async () => {
-        const received: Array<{ text: string }> = [];
+      it("should delegate kb.search to the installed strategy", async () => {
+        const calls: Array<{ query: string; topK: number | undefined }> = [];
         const kb = await createKnowledgeBase({
-          name: `test-kb-sim-${uuid4()}`,
+          name: `test-kb-search-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
         });
         kb.setAiStrategy({
-          chunkAndEmbedDocument: async () => ({ chunks: [], vectors: [] }),
-          embedQuery: async (text) => {
-            received.push({ text });
-            return new Float32Array([0.1, 0.2, 0.3]);
-          },
-          rerank: async (_q, candidates, topK) => candidates.slice(0, topK),
-        });
-
-        const results = await kb.search("hello", { kind: "similarity", topK: 4 });
-
-        expect(received).toEqual([{ text: "hello" }]);
-        expect(results).toEqual([]);
-      });
-
-      it("should run rerank by default when rerankerModel is configured", async () => {
-        const reranks: Array<{ query: string; n: number; topK: number }> = [];
-        const kb = await createKnowledgeBase({
-          name: `test-kb-rerank-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          docEmbeddingModel: "test:doc-embed",
-          rerankerModel: "test:rerank",
-        });
-        kb.setAiStrategy({
-          chunkAndEmbedDocument: async () => ({ chunks: [], vectors: [] }),
-          embedQuery: async () => new Float32Array([1, 0, 0]),
-          rerank: async (query, candidates, topK) => {
-            reranks.push({ query, n: candidates.length, topK });
-            return candidates.slice(0, topK);
+          ingest: async (_kb, doc) => doc,
+          delete: async () => {},
+          search: async (_kb, query, options) => {
+            calls.push({ query, topK: options?.topK });
+            return [];
           },
         });
 
-        // Seed a chunk so the first-stage retrieval returns something the
-        // reranker can score against.
-        await kb.upsertChunk({
-          chunk_id: "c1",
-          doc_id: "d1",
-          vector: new Float32Array([1, 0, 0]),
-          metadata: { chunk_id: "c1", doc_id: "d1", text: "hi", nodePath: [], depth: 0 } as any,
-        });
+        await kb.search("hello", { topK: 4 });
 
-        await kb.search("q", { topK: 2 });
-
-        expect(reranks).toHaveLength(1);
-        expect(reranks[0].query).toBe("q");
-        expect(reranks[0].topK).toBe(2);
+        expect(calls).toEqual([{ query: "hello", topK: 4 }]);
       });
 
-      it("should chunk+embed via the strategy in upsertDocumentWithIndex", async () => {
+      it("should delegate kb.upsert / kb.delete to the strategy", async () => {
+        const ingested: string[] = [];
+        const deleted: string[] = [];
         const kb = await createKnowledgeBase({
           name: `test-kb-ingest-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
         });
         kb.setAiStrategy({
-          chunkAndEmbedDocument: async (doc) => {
-            const text = doc.metadata.title ?? "";
-            return {
-              chunks: [
-                {
-                  chunk_id: "c1",
-                  doc_id: doc.doc_id ?? "",
-                  text,
-                  nodePath: [],
-                  depth: 0,
-                } as any,
-              ],
-              vectors: [new Float32Array([1, 0, 0])],
-            };
+          ingest: async (target, doc) => {
+            await target.upsertDocument(doc);
+            ingested.push(doc.doc_id ?? "");
+            return doc;
           },
-          embedQuery: async () => new Float32Array([0, 0, 0]),
-          rerank: async (_q, c, k) => c.slice(0, k),
+          delete: async (target, doc_id) => {
+            deleted.push(doc_id);
+            await target.deleteDocument(doc_id);
+          },
+          search: async () => [],
         });
 
-        const root = await StructuralParser.parseMarkdown(uuid4(), "# Test\n\nx.", "Test");
-        const doc = new Document(root, { title: "Test" });
-        const stored = await kb.upsertDocumentWithIndex(doc);
+        const root = await StructuralParser.parseMarkdown(uuid4(), "# T\n\nx.", "T");
+        const doc = new Document(root, { title: "T" });
+        doc.setDocId("d1");
+        await kb.upsert(doc);
+        expect(ingested).toEqual(["d1"]);
 
-        const chunks = await kb.getChunksForDocument(stored.doc_id!);
-        expect(chunks).toHaveLength(1);
+        await kb.delete("d1");
+        expect(deleted).toEqual(["d1"]);
+        expect(await kb.getDocument("d1")).toBeUndefined();
+      });
+
+      it("should expose model + chunk/search-mode config to the strategy", async () => {
+        let observed: { docModel?: string; mode?: string; chunk?: string } = {};
+        const kb = await createKnowledgeBase({
+          name: `test-kb-config-${uuid4()}`,
+          vectorDimensions: 3,
+          register: false,
+          docEmbeddingModel: "test:doc",
+          rerankerModel: "test:rerank",
+          chunkStrategy: "flat",
+          searchMode: "rerank",
+        });
+        kb.setAiStrategy({
+          ingest: async (_k, d) => d,
+          delete: async () => {},
+          search: async (target) => {
+            observed = {
+              docModel: target.docEmbeddingModel,
+              mode: target.searchMode,
+              chunk: target.chunkStrategy,
+            };
+            return [];
+          },
+        });
+        await kb.search("q");
+        expect(observed).toEqual({ docModel: "test:doc", mode: "rerank", chunk: "flat" });
       });
     });
   });

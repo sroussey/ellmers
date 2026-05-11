@@ -10,7 +10,7 @@ import type { ChunkVectorStorage } from "../chunk/ChunkVectorStorageSchema";
 import { ChunkVectorPrimaryKey, ChunkVectorStorageSchema } from "../chunk/ChunkVectorStorageSchema";
 import type { DocumentTabularStorage } from "../document/DocumentStorageSchema";
 import { DocumentStorageKey, DocumentStorageSchema } from "../document/DocumentStorageSchema";
-import type { IKbAiStrategy } from "./IKbAiStrategy";
+import type { ChunkStrategy, IKbAiStrategy, SearchMode } from "./IKbAiStrategy";
 import { KnowledgeBase } from "./KnowledgeBase";
 import { registerKnowledgeBase } from "./KnowledgeBaseRegistry";
 
@@ -24,6 +24,8 @@ export interface CreateKnowledgeBaseOptions {
   readonly docEmbeddingModel?: string;
   readonly queryEmbeddingModel?: string;
   readonly rerankerModel?: string;
+  readonly chunkStrategy?: ChunkStrategy;
+  readonly searchMode?: SearchMode;
   readonly aiStrategy?: IKbAiStrategy;
 }
 
@@ -53,6 +55,8 @@ export async function createKnowledgeBase(
     docEmbeddingModel,
     queryEmbeddingModel,
     rerankerModel,
+    chunkStrategy,
+    searchMode,
     aiStrategy,
   } = options;
 
@@ -85,7 +89,16 @@ export async function createKnowledgeBase(
     name,
     tabularStorage as unknown as DocumentTabularStorage,
     vectorStorage as unknown as ChunkVectorStorage,
-    { title, description, docEmbeddingModel, queryEmbeddingModel, rerankerModel, aiStrategy }
+    {
+      title,
+      description,
+      docEmbeddingModel,
+      queryEmbeddingModel,
+      rerankerModel,
+      chunkStrategy,
+      searchMode,
+      aiStrategy,
+    }
   );
 
   if (shouldRegister) {
