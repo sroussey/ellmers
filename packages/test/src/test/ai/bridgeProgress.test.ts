@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { bridgeProgress } from "@workglow/ai";
 import type { StreamPhase } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import { bridgeProgress } from "./bridgeProgress";
 
 describe("bridgeProgress", () => {
   it("yields one phase event per onProgress invocation in order", async () => {
@@ -72,9 +72,7 @@ describe("bridgeProgress", () => {
   });
 
   it("yields message='' when onProgress is called without a message", async () => {
-    const op = async (
-      onProgress: (progress: number, message?: string) => void
-    ): Promise<void> => {
+    const op = async (onProgress: (progress: number, message?: string) => void): Promise<void> => {
       onProgress(50);
     };
 
@@ -88,9 +86,7 @@ describe("bridgeProgress", () => {
   });
 
   it("rethrows the operation's error and stops yielding", async () => {
-    const op = async (
-      onProgress: (progress: number, message?: string) => void
-    ): Promise<never> => {
+    const op = async (onProgress: (progress: number, message?: string) => void): Promise<never> => {
       onProgress(10, "before-failure");
       throw new Error("boom");
     };

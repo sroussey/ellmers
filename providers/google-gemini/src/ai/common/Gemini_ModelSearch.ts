@@ -10,8 +10,8 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
+import type { StreamEvent } from "@workglow/task-graph";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 
 interface GeminiModelEntry {
@@ -20,7 +20,7 @@ interface GeminiModelEntry {
   readonly capabilities?: readonly string[];
 }
 
-const GEMINI_MODELS: readonly GeminiModelEntry[] = [
+export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
   { label: "gemini-3.1-pro-preview", value: "gemini-3.1-pro-preview" },
   { label: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
   { label: "gemini-3.1-flash-lite-preview", value: "gemini-3.1-flash-lite-preview" },
@@ -63,7 +63,7 @@ interface GeminiApiModel {
 }
 
 function capabilitiesForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
-  const staticEntry = GEMINI_MODELS.find((m) => m.value === id);
+  const staticEntry = GEMINI_FALLBACK_MODELS.find((m) => m.value === id);
   if (staticEntry?.capabilities) return [...staticEntry.capabilities];
 
   const methods = model.supportedGenerationMethods ?? [];
@@ -124,10 +124,10 @@ export const Gemini_ModelSearch_Stream: AiProviderStreamFn<
   }
 
   const filtered = q
-    ? GEMINI_MODELS.filter(
+    ? GEMINI_FALLBACK_MODELS.filter(
         (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
       )
-    : GEMINI_MODELS;
+    : GEMINI_FALLBACK_MODELS;
   const results: ModelSearchResultItem[] = filtered.map((m) => ({
     id: m.value,
     label: m.label,
@@ -145,6 +145,3 @@ export const Gemini_ModelSearch_Stream: AiProviderStreamFn<
   }));
   yield { type: "finish", data: { results } };
 };
-
-/** @deprecated — use {@link Gemini_ModelSearch_Stream} */
-export const GEMINI_FALLBACK_MODELS = GEMINI_MODELS;

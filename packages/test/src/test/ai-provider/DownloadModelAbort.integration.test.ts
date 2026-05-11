@@ -33,7 +33,7 @@ describe("DownloadModelTask abort behavior", () => {
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
   });
 

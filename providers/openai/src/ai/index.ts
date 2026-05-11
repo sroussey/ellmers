@@ -9,3 +9,16 @@ export * from "./common/OpenAI_ImageValidation";
 export * from "./common/OpenAI_ModelSchema";
 export * from "./common/OpenAI_ModelSearch";
 export * from "./registerOpenAi";
+
+import { OPENAI_RUN_FN_SPECS } from "./common/OpenAI_Capabilities";
+import { OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
+import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  OpenAiQueuedProvider,
+  OPENAI_RUN_FN_SPECS,
+  OPENAI_RUN_FNS,
+} as const;

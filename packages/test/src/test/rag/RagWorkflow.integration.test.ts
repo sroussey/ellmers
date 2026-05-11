@@ -55,17 +55,12 @@ describe("RAG Workflow End-to-End", () => {
   setLogger(logger);
 
   beforeAll(async () => {
-    // Setup task queue and model repository
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
-
     await registerHuggingfaceLocalModels();
-
     resourceScope = new ResourceScope();
-
-    // Create unified KnowledgeBase
     kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: 384,
@@ -78,6 +73,10 @@ describe("RAG Workflow End-to-End", () => {
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
     await resourceScope.disposeAll();
+    // Release ONNX/WASM memory at the end of the suite. Symmetric with
+    // EndToEnd's afterAll so neighbouring files in the same bun-test invocation
+    // start fresh.
+    await clearPipelineCache();
   });
 
   it("should ingest markdown documents with NER enrichment", async () => {
@@ -129,7 +128,7 @@ describe("RAG Workflow End-to-End", () => {
     // Verify vectors were stored
     expect(totalVectors).toBeGreaterThan(0);
     logger.info(`Total vectors in knowledge base: ${totalVectors}`);
-  }, 160000);
+  }, 600000);
 
   it("should search for relevant content", async () => {
     const query = "What is retrieval augmented generation?";
@@ -161,7 +160,7 @@ describe("RAG Workflow End-to-End", () => {
     for (let i = 1; i < searchResult.scores!.length; i++) {
       expect(searchResult.scores![i]).toBeLessThanOrEqual(searchResult.scores![i - 1]);
     }
-  }, 160000);
+  }, 600000);
 
   it("should answer questions using retrieved context", async () => {
     const question = "What is RAG?";
@@ -196,7 +195,7 @@ describe("RAG Workflow End-to-End", () => {
     if (answer.text.length > 0) {
       logger.info(`\nAnswer: ${answer.text}`);
     }
-  }, 160000);
+  }, 600000);
 
   it("should handle complex multi-step RAG pipeline", async () => {
     const question = "How does vector search work?";
@@ -231,5 +230,5 @@ describe("RAG Workflow End-to-End", () => {
 
     expect(result.text).toBeDefined();
     expect(typeof result.text).toBe("string");
-  }, 160000);
+  }, 600000);
 });

@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
-import { describe, expect, it, beforeEach } from "vitest";
-import type { Capability } from "../capability/Capabilities";
-import type { IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
-import type { AiJobInput } from "../job/AiJob";
-import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
-import { AiProvider } from "./AiProvider";
 import type {
+  AiJobInput,
   AiProviderRunFnRegistration,
   AiProviderStreamFn,
-} from "./AiProviderRegistry";
-import { AiProviderRegistry } from "./AiProviderRegistry";
-import { AiTask } from "../task/base/AiTask";
+  Capability,
+  IAiExecutionStrategy,
+  ModelConfig,
+  ModelRecord,
+} from "@workglow/ai";
+import {
+  AiProvider,
+  AiProviderRegistry,
+  AiTask,
+  getAiProviderRegistry,
+  setAiProviderRegistry,
+} from "@workglow/ai";
+import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -41,10 +46,7 @@ class TestProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(
-    name: string,
-    runFns: readonly AiProviderRunFnRegistration[]
-  ) {
+  constructor(name: string, runFns: readonly AiProviderRunFnRegistration[]) {
     super(runFns);
     this.name = name;
   }
@@ -158,7 +160,7 @@ describe("AiProviderRegistry — capability dispatch", () => {
     await provider.register();
 
     // After register(), the global registry holds both entries.
-    const { getAiProviderRegistry } = await import("./AiProviderRegistry");
+    const { getAiProviderRegistry } = await import("@workglow/ai");
     const globalRegistry = getAiProviderRegistry();
     const regs = globalRegistry.getRunFnRegistrations("TEST_PROVIDER_ENTRY");
     expect(regs).toHaveLength(2);
@@ -187,9 +189,7 @@ describe("AiProviderRegistry — capability dispatch", () => {
     expect(
       (registry as unknown as Record<string, unknown>).registerAsWorkerStreamFn
     ).toBeUndefined();
-    expect(
-      (registry as unknown as Record<string, unknown>).getProviderIdsForTask
-    ).toBeUndefined();
+    expect((registry as unknown as Record<string, unknown>).getProviderIdsForTask).toBeUndefined();
   });
 });
 
@@ -230,56 +230,69 @@ describe("AiTask strict capability gating", () => {
       },
     });
 
-    await expect(task.run()).rejects.toThrow(/missing capabilities/);
+    await expect(task.run()).rejects.toThrow(/missing capabilities[^:]*: text\.generation/);
   });
 
   // Bonus: passes gating when capabilities cover requires.
-  it("passes the gate when model.capabilities ⊇ task.requires", async () => {
-    // Not asserting end-to-end execution here (which needs a real provider);
-    // we register a stream fn on a temp provider so the strategy can run
-    // it through to completion without the missing-capability throw.
-    const providerName = "GATING_PASS_PROVIDER";
-    const { getAiProviderRegistry } = await import("./AiProviderRegistry");
-    const reg = getAiProviderRegistry();
+  describe("passes the gate when model.capabilities ⊇ task.requires", () => {
+    // Use a fresh, isolated registry so setDefaultStrategy doesn't pollute
+    // subsequent tests in the same Vitest worker.
+    let isolatedReg: AiProviderRegistry;
+    let originalReg: AiProviderRegistry;
 
-    class PassingTask extends AiTask {
-      static override readonly type = "PassingTestTask";
-      static override readonly requires = [
-        "text.embedding",
-      ] as const satisfies readonly Capability[];
-      static override inputSchema() {
-        return taskInputSchema;
+    beforeEach(() => {
+      originalReg = getAiProviderRegistry();
+      isolatedReg = new AiProviderRegistry();
+      setAiProviderRegistry(isolatedReg);
+    });
+
+    afterEach(() => {
+      setAiProviderRegistry(originalReg);
+    });
+
+    it("runs to completion via CollectingStrategy", async () => {
+      // Not asserting end-to-end execution here (which needs a real provider);
+      // we register a stream fn on a temp provider so the strategy can run
+      // it through to completion without the missing-capability throw.
+      const providerName = "GATING_PASS_PROVIDER";
+
+      class PassingTask extends AiTask {
+        static override readonly type = "PassingTestTask";
+        static override readonly requires = [
+          "text.embedding",
+        ] as const satisfies readonly Capability[];
+        static override inputSchema() {
+          return taskInputSchema;
+        }
       }
-    }
 
-    reg.registerRunFn(providerName, {
-      serves: ["text.embedding"],
-      runFn: async function* () {
-        yield {
-          type: "finish",
-          data: { ok: true } as unknown as TaskOutput,
-        } as StreamEvent<TaskOutput>;
-      },
+      isolatedReg.registerRunFn(providerName, {
+        serves: ["text.embedding"],
+        runFn: async function* () {
+          yield {
+            type: "finish",
+            data: { ok: true } as unknown as TaskOutput,
+          } as StreamEvent<TaskOutput>;
+        },
+      });
+
+      // Inject a strategy that will resolve through the registry rather than
+      // hitting the JobQueue infrastructure for this isolated test.
+      isolatedReg.setDefaultStrategy(new CollectingStrategy(isolatedReg));
+
+      const task = new PassingTask({
+        defaults: {
+          model: {
+            provider: providerName,
+            provider_config: {},
+            capabilities: ["text.embedding"],
+            model_id: "test-model",
+          } as ModelConfig,
+        },
+      });
+
+      const out = await task.run();
+      expect(out).toEqual({ ok: true });
     });
-
-    // Inject a strategy that will resolve through the registry rather than
-    // hitting the JobQueue infrastructure for this isolated test.
-    reg.setDefaultStrategy(new CollectingStrategy(reg));
-
-    const task = new PassingTask({
-      defaults: {
-        model: {
-          provider: providerName,
-          provider_config: {},
-          capabilities: ["text.embedding"],
-          model_id: "test-model",
-        } as ModelConfig,
-      },
-    });
-
-    const out = await task.run();
-    expect(out).toEqual({ ok: true });
-
-    reg.unregisterProvider(providerName);
   });
 });

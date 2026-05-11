@@ -31,7 +31,7 @@ describe("TextEmbeddingTask with real models", () => {
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
   });
 

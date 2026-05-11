@@ -169,10 +169,6 @@ export class AiTask<
     // unload path is wired via the "model.unload" capability so providers opt
     // in by registering a run-fn whose `serves` set contains it; bypasses the
     // task's own `requires` so we don't gate the lifecycle hook on the task.
-    //
-    // Phase 5 contract: providers opt into the unload lifecycle by registering
-    // a run-fn whose `serves` set contains "model.unload". Without such a
-    // registration, this lookup returns undefined and the disposer is a no-op.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
       const unloadFn = registry.getRunFnFor(model.provider, ["model.unload"]);

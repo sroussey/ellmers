@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";
-import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
+import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
+import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
-import type { IAiExecutionStrategy, AiStrategyResolver } from "../execution/IAiExecutionStrategy";
+import type { AiStrategyResolver, IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { AiProvider } from "./AiProvider";
 
@@ -110,7 +110,8 @@ export class AiProviderRegistry {
    * combinations; lookup picks the most-specific superset of `requires`.
    */
   private runFnsByProvider: Map<string, AiProviderRunFnRegistration<any, any>[]> = new Map();
-  private previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> = new Map();
+  private previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> =
+    new Map();
   private providers: Map<string, AiProvider<any>> = new Map();
   private strategyResolvers: Map<string, AiStrategyResolver> = new Map();
   private defaultStrategy: IAiExecutionStrategy | undefined;
@@ -325,9 +326,7 @@ export class AiProviderRegistry {
    * Returns the raw list of registrations for a provider (for diagnostics and
    * tests). Returns an empty array when the provider has none.
    */
-  getRunFnRegistrations(
-    providerName: string
-  ): readonly AiProviderRunFnRegistration<any, any>[] {
+  getRunFnRegistrations(providerName: string): readonly AiProviderRunFnRegistration<any, any>[] {
     return this.runFnsByProvider.get(providerName) ?? [];
   }
 

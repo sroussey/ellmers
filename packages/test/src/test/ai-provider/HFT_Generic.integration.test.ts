@@ -95,7 +95,7 @@ runAiProviderConformance({
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      clearPipelineCache();
+      await clearPipelineCache();
       await registerHuggingFaceTransformersInline();
       await getGlobalModelRepository().addModel(textModel);
       await getGlobalModelRepository().addModel(thinkingModel);

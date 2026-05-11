@@ -33,6 +33,18 @@ const DEFAULT_AI_TIMEOUT_MS = 120_000;
 /** Local inference (CPU/WASM) often needs several minutes (downloads, load, multi-turn tool follow-up). */
 const LOCAL_INFERENCE_DEFAULT_TIMEOUT_MS = 300_000;
 
+/**
+ * Cross-runtime macrotask yield. Tight microtask-only `await` chains starve
+ * V8 GC + FinalizationRegistry callbacks, which on ONNX/WASM workloads pins
+ * native handles (session memory, KV cache) for the lifetime of the suite
+ * rather than releasing them per call. One macrotask boundary per AI job
+ * lets the event loop drain those finalizers between calls.
+ */
+const yieldMacrotask: () => Promise<void> =
+  typeof setImmediate === "function"
+    ? () => new Promise<void>((resolve) => setImmediate(resolve))
+    : () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 function resolveAiJobTimeoutMs(aiProvider: string, explicitMs: number | undefined): number {
   if (explicitMs !== undefined) {
     return explicitMs;
@@ -274,6 +286,7 @@ export class AiJob<
       if (abortHandler) {
         abortHandler();
       }
+      await yieldMacrotask();
     }
   }
 
@@ -320,6 +333,8 @@ export class AiJob<
         `AiJob: Stream error for ${input.taskType} (${input.aiProvider}): ${err instanceof Error ? err.message : String(err)}`
       );
       throw classifyProviderError(err, input.taskType, input.aiProvider);
+    } finally {
+      await yieldMacrotask();
     }
   }
 }

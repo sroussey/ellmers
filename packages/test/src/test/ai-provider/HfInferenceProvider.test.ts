@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import type { ModelRecord } from "@workglow/ai";
-import { HfInferenceQueuedProvider } from "./HfInferenceQueuedProvider";
-import { HFI_RUN_FNS } from "./common/HFI_JobRunFns";
-import { HFI_RUN_FN_SPECS } from "./common/HFI_Capabilities";
+import { _testOnly } from "@workglow/huggingface-inference/ai";
+import { describe, expect, it } from "vitest";
+
+const { HfInferenceQueuedProvider, HFI_RUN_FN_SPECS, HFI_RUN_FNS } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -26,9 +26,7 @@ describe("HfInferenceQueuedProvider.inferCapabilities", () => {
   const provider = new HfInferenceQueuedProvider(HFI_RUN_FNS);
 
   it("trusts declared capabilities", () => {
-    const caps = provider.inferCapabilities(
-      model("anything", ["text.classification"])
-    );
+    const caps = provider.inferCapabilities(model("anything", ["text.classification"]));
     expect(caps).toEqual(["text.classification"]);
   });
 

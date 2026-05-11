@@ -70,7 +70,7 @@ describe("End-to-End RAG Pipeline", () => {
     // Setup task queue and model repository
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
     await registerHuggingfaceLocalModels();
 
@@ -89,6 +89,7 @@ describe("End-to-End RAG Pipeline", () => {
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
     await resourceScope.disposeAll();
+    await clearPipelineCache();
   });
 
   it("should ingest document through complete pipeline", async () => {

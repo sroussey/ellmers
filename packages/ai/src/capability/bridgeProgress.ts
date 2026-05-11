@@ -30,30 +30,41 @@ import type { StreamPhase } from "@workglow/task-graph";
  * propagates end-to-end from the SDK through the dataflow into the task's
  * progress listeners.
  *
+ * **Memory note**: the body explicitly nulls every captured reference in
+ * `finally`. The generator's frame survives until the consumer fully drains
+ * it (after `for await ... break` the iterator's `.return()` runs the finally
+ * block). Without these clears, the captured `op` closure transitively pins
+ * the caller's `model`, `signal`, and resolved pipeline objects, which
+ * compounds across tight-loop dispatch and was observed to cause a 7× WASM
+ * heap regression under RAG load (see scratch/bridgeProgress-leak-repro.md).
+ *
  * @param op  Operation that takes an `onProgress` callback and returns a Promise.
  * @returns   An async generator that yields phase events and returns the operation's result.
  */
 export async function* bridgeProgress<T>(
   op: (onProgress: (progress: number, message?: string) => void) => Promise<T>
 ): AsyncGenerator<StreamPhase, T, void> {
-  const queue: StreamPhase[] = [];
+  let queue: StreamPhase[] | undefined = [];
   let waker: (() => void) | undefined;
-  const wake = (): void => {
+  let onProgress: ((progress: number, message?: string) => void) | undefined = (
+    progress,
+    message
+  ) => {
+    queue?.push({ type: "phase", message: message ?? "", progress });
     const r = waker;
     waker = undefined;
     r?.();
-  };
-
-  const onProgress = (progress: number, message?: string): void => {
-    queue.push({ type: "phase", message: message ?? "", progress });
-    wake();
   };
 
   let result: T | undefined;
   let error: unknown;
   let settled = false;
 
-  const promise = op(onProgress).then(
+  // Hold no reference to `op`'s returned promise beyond what's necessary for
+  // the .then / .finally reactions. After both fire, the chained promise
+  // becomes unreachable and its handlers (which close over result/error/
+  // settled/waker) can be GC'd.
+  let promise: Promise<unknown> | undefined = op(onProgress).then(
     (r) => {
       result = r;
     },
@@ -63,20 +74,36 @@ export async function* bridgeProgress<T>(
   );
   void promise.finally(() => {
     settled = true;
-    wake();
+    const r = waker;
+    waker = undefined;
+    r?.();
   });
 
-  while (!settled || queue.length > 0) {
-    while (queue.length > 0) {
-      yield queue.shift()!;
+  try {
+    while (!settled || (queue && queue.length > 0)) {
+      while (queue && queue.length > 0) {
+        yield queue.shift()!;
+      }
+      if (!settled) {
+        await new Promise<void>((resolve) => {
+          waker = resolve;
+        });
+      }
     }
-    if (!settled) {
-      await new Promise<void>((resolve) => {
-        waker = resolve;
-      });
-    }
-  }
 
-  if (error) throw error;
-  return result as T;
+    if (error) throw error;
+    return result as T;
+  } finally {
+    // Explicitly null out every captured reference so the generator's frame
+    // does not pin them past the consumer's break. The frame is finalized
+    // when for-await calls .return() on iterator early-exit; clearing here
+    // ensures that closure-captured `op`, the pipeline result, and the
+    // promise reactions release immediately, not on V8's next major GC.
+    queue = undefined;
+    waker = undefined;
+    onProgress = undefined;
+    promise = undefined;
+    result = undefined;
+    error = undefined;
+  }
 }

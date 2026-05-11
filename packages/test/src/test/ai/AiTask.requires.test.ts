@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {
+  type Capability,
+  AiImageOutputTask,
+  AiTask,
+  StreamingAiTask,
+  _testOnly,
+} from "@workglow/ai";
 import { describe, expect, it } from "vitest";
-import type { Capability } from "../../capability/Capabilities";
-import { AiTask } from "./AiTask";
-import { StreamingAiTask } from "./StreamingAiTask";
-import { AiVisionTask } from "./AiVisionTask";
-import { AiImageOutputTask } from "./AiImageOutputTask";
+
+const { AiVisionTask } = _testOnly;
 
 // ---------------------------------------------------------------------------
 // Base class defaults
@@ -78,9 +82,7 @@ describe("StreamingAiTask.requires", () => {
   it("is accessible from an instance via (instance.constructor as typeof AiTask).requires", () => {
     class SubStreamTask2 extends StreamingAiTask {
       static override readonly type = "SubStreamTask2";
-      static override readonly requires = [
-        "tool-use",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["tool-use"] as const satisfies readonly Capability[];
     }
     const instance = new SubStreamTask2({ defaults: { model: "test-model" } });
     expect((instance.constructor as typeof AiTask).requires).toStrictEqual(["tool-use"]);
@@ -160,7 +162,9 @@ describe("AiImageOutputTask.requires", () => {
         "image.editing",
       ] as const satisfies readonly Capability[];
     }
-    const instance = new SubImageTask2({ defaults: { model: "test-model", prompt: "test prompt" } });
+    const instance = new SubImageTask2({
+      defaults: { model: "test-model", prompt: "test prompt" },
+    });
     expect((instance.constructor as typeof AiTask).requires).toStrictEqual(["image.editing"]);
   });
 });

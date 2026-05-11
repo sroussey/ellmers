@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, test } from "vitest";
 import {
   imageValueFromBuffer,
   isBrowserImageValue,
   isImageValue,
   isNodeImageValue,
   normalizeToImageValue,
-} from "./imageValue";
+} from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 describe("imageValue", () => {
   test("imageValueFromBuffer creates a NodeImageValue with default previewScale 1.0", () => {
