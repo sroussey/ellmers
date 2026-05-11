@@ -173,6 +173,18 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   async register(options: AiProviderRegisterOptions = {}): Promise<void> {
     const isInline = !!this.runFns;
     const context: AiProviderRegisterContext = { ...options, isInline };
+
+    // Tear down any prior registration under this name BEFORE onInitialize so
+    // we don't clobber the strategy resolver that QueuedAiProvider.onInitialize
+    // re-registers below. registerRunFn() appends to a per-provider list with
+    // no dedup; without this clear, every re-registration doubles the run-fn
+    // count and leaks the previous strategy/queue/limiter via closures —
+    // OOM-kills long-running test processes (locally and on CI).
+    const registry = getAiProviderRegistry();
+    if (registry.getProvider(this.name)) {
+      registry.unregisterProvider(this.name);
+    }
+
     await this.onInitialize(context);
 
     if (isInline) {
@@ -189,18 +201,6 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
             `Pass worker: new Worker(...) or worker: () => new Worker(...).`
         );
       }
-    }
-
-    const registry = getAiProviderRegistry();
-
-    // If a provider with this name is already registered (e.g. test suites
-    // re-run beforeAll across files), tear down its existing entries first.
-    // `registerRunFn` appends to a per-provider list; without this clear,
-    // every re-registration doubles the run-fn count, leaks the previous
-    // provider's strategy/queue/concurrency-limiter via captured closures,
-    // and (in long test runs) OOM-kills the process.
-    if (registry.getProvider(this.name)) {
-      registry.unregisterProvider(this.name);
     }
 
     if (!isInline && options.worker) {
@@ -239,6 +239,16 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
     }
 
     registry.registerProvider(this);
+
+    // [diag] Dump registry state after registration so we can see if run-fn
+    // entries are accumulating across re-registrations.
+    try {
+      const snapshot = registry.dumpRunFnsByProviderSnapshot?.() ?? "<no snapshot helper>";
+      // eslint-disable-next-line no-console
+      console.log(`[diag] AiProvider.register(${this.name}) — registry snapshot:`, snapshot);
+    } catch {
+      // best-effort
+    }
 
     try {
       await this.afterRegister(options);

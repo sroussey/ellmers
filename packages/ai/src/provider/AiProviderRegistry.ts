@@ -255,6 +255,29 @@ export class AiProviderRegistry {
   }
 
   /**
+   * Diagnostic helper: returns a per-provider count of registered run-fn
+   * entries plus the providers map size and the strategyResolvers map size.
+   * Used to detect run-fn list growth across re-registrations (a symptom of
+   * test suites repeatedly calling provider.register() without unregistering
+   * — leaks the previous provider's strategy/queue/limiter via closures).
+   */
+  dumpRunFnsByProviderSnapshot(): {
+    providers: number;
+    strategyResolvers: number;
+    runFns: Record<string, number>;
+  } {
+    const runFns: Record<string, number> = {};
+    for (const [name, list] of this.runFnsByProvider) {
+      runFns[name] = list.length;
+    }
+    return {
+      providers: this.providers.size,
+      strategyResolvers: this.strategyResolvers.size,
+      runFns,
+    };
+  }
+
+  /**
    * Registers a worker-proxied streaming run function under a capability-set.
    * The proxy delegates to the worker by streaming `WorkerManager.callWorkerStreamFunction`
    * keyed by {@link workerKeyForServes}(serves) so the worker-side `registerOnWorkerServer`
