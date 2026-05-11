@@ -413,7 +413,7 @@ export abstract class BaseTabularStorage<
   async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
     const results = await Promise.all(keys.map((k) => this.get(k)));
-    const found = results.filter((r): r is Entity => r !== undefined);
+    const found = results.filter((r) => r !== undefined) as Entity[];
     this.events.emit("getBulk", keys, found);
     return found;
   }

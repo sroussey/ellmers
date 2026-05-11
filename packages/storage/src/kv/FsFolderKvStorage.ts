@@ -110,7 +110,7 @@ export class FsFolderKvStorage<
         return { key, value } as Combined;
       })
     );
-    return settled.filter((r): r is Combined => r !== undefined);
+    return settled.filter((r) => r !== undefined) as Combined[];
   }
 
   /**
