@@ -102,7 +102,10 @@ export class FsFolderKvStorage<
    * Missing keys are dropped from the result.
    */
   public async getBulk(keys: readonly Key[]): Promise<Combined[]> {
-    if (keys.length === 0) return [];
+    if (keys.length === 0) {
+      this.events.emit("getBulk", keys, []);
+      return [];
+    }
     const settled = await Promise.all(
       keys.map(async (key) => {
         const value = await this.get(key);
@@ -110,7 +113,9 @@ export class FsFolderKvStorage<
         return { key, value } as Combined;
       })
     );
-    return settled.filter((r) => r !== undefined) as Combined[];
+    const combined = settled.filter((r) => r !== undefined) as Combined[];
+    this.events.emit("getBulk", keys, combined);
+    return combined;
   }
 
   /**
