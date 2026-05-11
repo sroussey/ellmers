@@ -575,18 +575,22 @@ export class KnowledgeBase {
       .map(([chunkId]) => chunkId);
 
     if (missing.length > 0) {
-      const hydrated = await Promise.all(
-        missing.map((chunk_id) => this.chunkStorage.get({ chunk_id }))
+      const hydrated = await this.chunkStorage.getBulk(
+        missing.map((chunk_id) => ({ chunk_id }))
       );
-      for (let i = 0; i < missing.length; i++) {
-        const entity = hydrated[i] as ChunkVectorEntity | undefined;
-        const slot = fused.get(missing[i])!;
+      const byId = new Map<string, ChunkVectorEntity>();
+      for (const entity of hydrated as ChunkVectorEntity[]) {
+        byId.set(entity.chunk_id, entity);
+      }
+      for (const chunkId of missing) {
+        const entity = byId.get(chunkId);
+        const slot = fused.get(chunkId)!;
         if (!entity) {
-          fused.delete(missing[i]);
+          fused.delete(chunkId);
           continue;
         }
         if (filter && !matchesFilter(entity.metadata as ChunkRecord, filter)) {
-          fused.delete(missing[i]);
+          fused.delete(chunkId);
           continue;
         }
         slot.entity = { ...entity, score: 0 };
@@ -626,13 +630,17 @@ export class KnowledgeBase {
     const hits = index.search(query, { topK: poolSize });
     if (hits.length === 0) return [];
 
-    const hydrated = await Promise.all(
-      hits.map((h) => this.chunkStorage.get({ chunk_id: h.chunkId }))
+    const hydrated = await this.chunkStorage.getBulk(
+      hits.map((h) => ({ chunk_id: h.chunkId }))
     );
+    const byId = new Map<string, ChunkVectorEntity>();
+    for (const entity of hydrated as ChunkVectorEntity[]) {
+      byId.set(entity.chunk_id, entity);
+    }
 
     const results: ChunkSearchResult[] = [];
     for (let i = 0; i < hits.length; i++) {
-      const entity = hydrated[i] as ChunkVectorEntity | undefined;
+      const entity = byId.get(hits[i].chunkId);
       if (!entity) continue;
       if (filter && !matchesFilter(entity.metadata as ChunkRecord, filter)) continue;
       results.push({ ...entity, score: hits[i].score, scoreType: "bm25" });
