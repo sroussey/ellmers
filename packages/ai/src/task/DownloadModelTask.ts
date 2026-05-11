@@ -47,8 +47,14 @@ export class DownloadModelTask extends AiTask<
   DownloadModelTaskConfig
 > {
   public static override type = "DownloadModelTask";
-  /** Provider lifecycle — handled outside dispatch; no capability gate. */
-  public static override readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  /**
+   * Resolves to the provider's `["model.download"]` run-fn registration.
+   * Local providers (HFT, LlamaCpp) opt-in by registering a run-fn with
+   * `serves: ["model.download"]`; cloud providers don't register one and
+   * `DownloadModelTask` for cloud models surfaces as a runtime "no run-fn
+   * for provider serving model.download" error.
+   */
+  public static override readonly requires: readonly Capability[] = ["model.download"] as const satisfies readonly Capability[];
   public static override category = "AI Model";
   public static override title = "Download Model";
   public static override description =

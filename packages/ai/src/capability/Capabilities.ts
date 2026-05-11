@@ -46,6 +46,7 @@ export const CAPABILITIES = {
   "provider.model-info": "Fetch metadata about a specific model",
   "model.count-tokens": "Tokenize input for cost / context calculation",
   "model.unload": "Release model-resident resources held by the provider (lifecycle)",
+  "model.download": "Fetch / cache a model's weights locally (lifecycle)",
 } as const;
 
 export type Capability = keyof typeof CAPABILITIES;

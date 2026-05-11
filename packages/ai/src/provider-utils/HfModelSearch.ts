@@ -5,7 +5,7 @@
  */
 
 import type { ModelSearchResultItem } from "../task/ModelSearchTask";
-import { pipelineToTaskTypes } from "./PipelineTaskMapping";
+import { pipelineToCapabilities } from "./PipelineTaskMapping";
 
 export interface HfModelEntry {
   id: string;
@@ -62,7 +62,7 @@ export function mapHfModelResult(entry: HfModelEntry, provider: string): ModelSe
       description: [entry.pipeline_tag, `${formatDownloads(entry.downloads)} downloads`]
         .filter(Boolean)
         .join(" \u2014 "),
-      capabilities: entry.pipeline_tag ? pipelineToTaskTypes(entry.pipeline_tag) : [],
+      capabilities: entry.pipeline_tag ? [...pipelineToCapabilities(entry.pipeline_tag)] : [],
       provider_config: mapHfProviderConfig(entry, provider),
       metadata: {},
     },

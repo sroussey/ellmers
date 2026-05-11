@@ -280,10 +280,11 @@ export class AiJob<
   /**
    * Streaming execution: yields StreamEvents from the provider's stream function.
    * Falls back to non-streaming execute() if no stream function is registered.
-   * On mid-stream errors, logs the failure, yields a finish event with the last
-   * finish payload received (or an empty object if none was received), then
-   * re-throws the classified error. Delta accumulation is the responsibility of
-   * the caller (e.g. TaskRunner).
+   *
+   * On mid-stream errors, logs the failure and re-throws the classified error
+   * without emitting a `finish` event — callers iterating the async iterable
+   * detect termination via the thrown error rather than a synthetic finish.
+   * Delta accumulation is the responsibility of the caller (e.g. TaskRunner).
    */
   async *executeStream(
     input: Input,

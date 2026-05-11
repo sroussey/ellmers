@@ -21,6 +21,7 @@ import {
   HFT_IMAGE_SEGMENTATION,
   HFT_IMAGE_TO_TEXT,
   HFT_JSON_MODE,
+  HFT_MODEL_DOWNLOAD,
   HFT_MODEL_INFO,
   HFT_MODEL_SEARCH,
   HFT_MODEL_UNLOAD,
@@ -40,6 +41,7 @@ import {
 import { HFT_BackgroundRemoval } from "./HFT_BackgroundRemoval";
 import { HFT_Chat_Stream } from "./HFT_Chat";
 import { HFT_CountTokens, HFT_CountTokens_Preview } from "./HFT_CountTokens";
+import { HFT_Download } from "./HFT_Download";
 import { HFT_ImageClassification } from "./HFT_ImageClassification";
 import { HFT_ImageEmbedding } from "./HFT_ImageEmbedding";
 import { HFT_ImageSegmentation } from "./HFT_ImageSegmentation";
@@ -116,9 +118,9 @@ const HFT_TextGeneration_Unified: AiProviderStreamFn<
  * {@link AiChatTask}, while `["text.generation", "tool-use"]` wins for
  * {@link ToolCallingTask}.
  *
- * Note: {@link DownloadModelTask} is handled outside the capability dispatcher
- * (it's a provider lifecycle op, not a per-model capability) so it is not
- * registered here.
+ * Lifecycle ops (`["model.download"]`, `["model.unload"]`) are routed via
+ * the same dispatcher — see `DownloadModelTask` / `UnloadModelTask`'s
+ * `requires` declarations.
  */
 export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,6 +149,7 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_IMAGE_OBJECT_DETECTION, runFn: asStreamFn(HFT_ObjectDetection) },
   { serves: HFT_COUNT_TOKENS, runFn: asStreamFn(HFT_CountTokens) },
   { serves: HFT_MODEL_UNLOAD, runFn: asStreamFn(HFT_Unload) },
+  { serves: HFT_MODEL_DOWNLOAD, runFn: asStreamFn(HFT_Download) },
   { serves: HFT_MODEL_SEARCH, runFn: asStreamFn(HFT_ModelSearch) },
   { serves: HFT_MODEL_INFO, runFn: asStreamFn(HFT_ModelInfo) },
 ];
