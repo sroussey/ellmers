@@ -7,6 +7,7 @@
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { ModelConfig } from "../model/ModelSchema";
 import type { Capability } from "../capability/Capabilities";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -47,8 +48,27 @@ export class DownloadModelTask extends AiTask<
   DownloadModelTaskConfig
 > {
   public static override type = "DownloadModelTask";
-  /** Provider lifecycle — handled outside dispatch; no capability gate. */
-  public static override readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  /**
+   * Resolves to the provider's `["model.download"]` run-fn registration.
+   * Local providers (HFT, LlamaCpp) opt-in by registering a run-fn with
+   * `serves: ["model.download"]`; cloud providers don't register one and
+   * `DownloadModelTask` for cloud models surfaces as a runtime "no run-fn
+   * for provider serving model.download" error.
+   */
+  public static override readonly requires: readonly Capability[] = ["model.download"] as const satisfies readonly Capability[];
+
+  /**
+   * Provider-lifecycle override: `requires: ["model.download"]` routes the
+   * dispatcher to the provider's download run-fn, but the *model* record
+   * doesn't need to advertise `model.download` in its `capabilities` —
+   * a model that's not yet downloaded by definition can't carry that flag
+   * yet. Skip the capability gate; the dispatcher's `getRunFnFor` lookup
+   * (against the provider, not the model record) is the real check.
+   */
+  protected override gateOrThrow(_model: ModelConfig): void {
+    // intentional no-op
+  }
+
   public static override category = "AI Model";
   public static override title = "Download Model";
   public static override description =

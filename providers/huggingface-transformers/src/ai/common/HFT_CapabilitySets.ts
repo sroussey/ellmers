@@ -54,6 +54,7 @@ export const HFT_IMAGE_OBJECT_DETECTION = [
 ] as const satisfies readonly Capability[];
 export const HFT_COUNT_TOKENS = ["model.count-tokens"] as const satisfies readonly Capability[];
 export const HFT_MODEL_UNLOAD = ["model.unload"] as const satisfies readonly Capability[];
+export const HFT_MODEL_DOWNLOAD = ["model.download"] as const satisfies readonly Capability[];
 export const HFT_MODEL_SEARCH = [
   "provider.model-search",
 ] as const satisfies readonly Capability[];
@@ -81,6 +82,7 @@ export const HFT_CAPABILITY_SETS = [
   HFT_IMAGE_OBJECT_DETECTION,
   HFT_COUNT_TOKENS,
   HFT_MODEL_UNLOAD,
+  HFT_MODEL_DOWNLOAD,
   HFT_MODEL_SEARCH,
   HFT_MODEL_INFO,
 ] as const;

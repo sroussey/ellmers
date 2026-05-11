@@ -13,3 +13,7 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+    ignore:
+      - dependency-name: "@typescript/native-preview"
+        update-types:
+          - "version-update:semver-minor"

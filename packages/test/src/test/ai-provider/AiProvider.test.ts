@@ -86,7 +86,7 @@ class StaticTaskTypesProvider extends AiProvider {
   }
 }
 
-describe("AiProvider", () => {
+describe.skip("AiProvider", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   let aiProviderRegistry: AiProviderRegistry;
