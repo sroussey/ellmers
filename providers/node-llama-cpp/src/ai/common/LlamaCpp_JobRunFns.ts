@@ -5,8 +5,8 @@
  */
 
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
   AiProviderStreamFn,
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
@@ -67,7 +67,7 @@ const LlamaCpp_TextGeneration_Unified: AiProviderStreamFn<
   }
 };
 
-export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const LLAMACPP_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

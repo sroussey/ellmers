@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFnRegistration } from "@workglow/ai";
+import type { AiProviderLegacyStreamFnRegistration } from "@workglow/ai";
 import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 import {
   TFMP_IMAGE_CLASSIFICATION,
@@ -51,7 +51,7 @@ export { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
  * `finish` event. {@link DownloadModelTask} (`["model.download"]`) reports
  * real download progress via `phase` events from {@link bridgeProgress}.
  */
-export const TFMP_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const TFMP_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

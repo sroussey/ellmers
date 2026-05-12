@@ -16,6 +16,8 @@ import { AiTask } from "./AiTask";
 import type { AiTaskInput } from "./AiTask";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import type { ModelConfig } from "../../model/ModelSchema";
+import type { AiEmit } from "../../capability/AiEmit";
+import { createEmitQueue } from "../../capability/emitQueue";
 
 /**
  * A base class for streaming AI tasks.
@@ -111,8 +113,18 @@ export class StreamingAiTask<
     // GPU acquisition, provider API connect time.
     yield { type: "phase", message: preparingLabel, progress: undefined } as StreamEvent<Output>;
 
+    const queue = createEmitQueue<StreamEvent<Output>>();
+    const emit: AiEmit<Output> = (event) => queue.push(event);
+
+    const runPromise = strategy
+      .execute(jobInput, context, this.runConfig.runnerId, emit as AiEmit<TaskOutput>)
+      .then(
+        () => queue.close(),
+        (err) => queue.fail(err)
+      );
+
     let firstDataSeen = false;
-    for await (const event of strategy.executeStream(jobInput, context, this.runConfig.runnerId)) {
+    for await (const event of queue.iterable) {
       if (
         !firstDataSeen &&
         (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")
@@ -133,5 +145,6 @@ export class StreamingAiTask<
         yield event as StreamEvent<Output>;
       }
     }
+    await runPromise;
   }
 }
