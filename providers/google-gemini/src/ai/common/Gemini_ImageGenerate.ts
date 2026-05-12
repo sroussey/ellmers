@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
@@ -33,15 +32,15 @@ async function decodeInlineImage(mimeType: string, data: string): Promise<ImageV
 }
 
 /**
- * Streaming run-fn for `["image.generation"]`. Gemini does not support partial
- * image streaming, so we execute the full generation, yield one snapshot, then
- * a finish event per the one-shot stream wrapper convention.
+ * Run-fn for `["image.generation"]`. Gemini does not support partial
+ * image streaming, so we execute the full generation, emit one snapshot, then
+ * a finish event per the one-shot convention.
  */
-export const Gemini_ImageGenerate_Stream: AiProviderStreamFn<
+export const Gemini_ImageGenerate_Stream: AiProviderRunFn<
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   GeminiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageGenerateTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timer = `gemini:ImageGenerate:${modelIdOf(model)}`;
   logger.time(timer, { model: modelIdOf(model) });
@@ -87,8 +86,8 @@ export const Gemini_ImageGenerate_Stream: AiProviderStreamFn<
         imagePart.inlineData.mimeType,
         imagePart.inlineData.data
       );
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageGenerateTaskOutput>;
-      yield { type: "finish", data: {} as ImageGenerateTaskOutput };
+      emit({ type: "snapshot", data: { image } } as any);
+      emit({ type: "finish", data: {} as ImageGenerateTaskOutput });
     } catch (err) {
       if (
         err instanceof ImageGenerationProviderError ||

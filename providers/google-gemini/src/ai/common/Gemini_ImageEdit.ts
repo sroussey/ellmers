@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageEditTaskInput,
   ImageEditTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
@@ -61,15 +60,15 @@ async function gpuImageToInlinePart(
 }
 
 /**
- * Streaming run-fn for `["image.editing"]`. Gemini does not support partial
- * image streaming, so we execute the full edit, yield one snapshot, then
+ * Run-fn for `["image.editing"]`. Gemini does not support partial
+ * image streaming, so we execute the full edit, emit one snapshot, then
  * a finish event.
  */
-export const Gemini_ImageEdit_Stream: AiProviderStreamFn<
+export const Gemini_ImageEdit_Stream: AiProviderRunFn<
   ImageEditTaskInput,
   ImageEditTaskOutput,
   GeminiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timer = `gemini:ImageEdit:${modelIdOf(model)}`;
   logger.time(timer, { model: modelIdOf(model) });
@@ -129,8 +128,8 @@ export const Gemini_ImageEdit_Stream: AiProviderStreamFn<
         imagePart.inlineData.mimeType,
         imagePart.inlineData.data
       );
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageEditTaskOutput>;
-      yield { type: "finish", data: {} as ImageEditTaskOutput };
+      emit({ type: "snapshot", data: { image } } as any);
+      emit({ type: "finish", data: {} as ImageEditTaskOutput });
     } catch (err) {
       if (
         err instanceof ImageGenerationProviderError ||

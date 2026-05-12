@@ -26,7 +26,7 @@ export const LlamaCppModelSchema = {
         model_url: {
           type: "string",
           description:
-            "URI or URL to download the model from (e.g. 'hf:user/repo:quant' or an https URL). Used by DownloadModelTask.",
+            "URI or URL to download the model from (e.g. 'hf:user/repo:quant' or an https URL). Used by ModelDownloadTask.",
         },
         models_dir: {
           type: "string",

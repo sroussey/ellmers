@@ -5,8 +5,8 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
-  AiProviderStreamFn,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
   Capability,
   ModelConfig,
 } from "@workglow/ai";
@@ -59,7 +59,7 @@ class FakeStructuredProvider extends AiProvider {
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
 
-  constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, ModelConfig>[]) {
+  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
     super(runFns);
   }
 }
@@ -76,18 +76,18 @@ function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, u
 } {
   const calls: string[] = [];
   let index = 0;
-  const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (input) {
+  const stream: AiProviderRunFn<any, any, ModelConfig> = async (input, _model, _signal, emit) => {
     calls.push(input.prompt as string);
     const payload = attempts[Math.min(index, attempts.length - 1)];
     index++;
-    yield { type: "object-delta", port: "object", objectDelta: payload };
-    yield { type: "finish", data: { object: payload } as any };
+    emit({ type: "object-delta", port: "object", objectDelta: payload });
+    emit({ type: "finish", data: { object: payload } as any });
   };
 
   const registry = getAiProviderRegistry();
   const provider = new FakeStructuredProvider([{ serves: JSON_MODE, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerLegacyStreamFn("fake-structured", { serves: JSON_MODE, runFn: stream });
+  registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
   return { calls, unregister: () => registry.unregisterProvider("fake-structured") };
 }
 

@@ -7,13 +7,12 @@
 import type { FunctionCallingMode } from "@google/generative-ai";
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
@@ -105,11 +104,11 @@ function mapGeminiToolConfig(
   };
 }
 
-export const Gemini_ToolCalling_Stream: AiProviderStreamFn<
+export const Gemini_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   GeminiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const GoogleGenerativeAI = await loadGeminiSDK();
   const genAI = new GoogleGenerativeAI(getApiKey(model));
 
@@ -142,7 +141,7 @@ export const Gemini_ToolCalling_Stream: AiProviderStreamFn<
     const parts = chunk.candidates?.[0]?.content?.parts ?? [];
     for (const part of parts) {
       if ("text" in part && part.text) {
-        yield { type: "text-delta", port: "text", textDelta: part.text };
+        emit({ type: "text-delta", port: "text", textDelta: part.text });
       }
       if ("functionCall" in part && part.functionCall) {
         const id = `call_${callIndex++}`;
@@ -161,15 +160,15 @@ export const Gemini_ToolCalling_Stream: AiProviderStreamFn<
           input.tools
         );
         if (validated.length > 0) {
-          yield {
+          emit({
             type: "object-delta",
             port: "toolCalls",
             objectDelta: validated,
-          };
+          });
         }
       }
     }
   }
 
-  yield { type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput };
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

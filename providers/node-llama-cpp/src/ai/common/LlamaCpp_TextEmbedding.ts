@@ -5,19 +5,18 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getOrCreateEmbeddingContext } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_TextEmbedding: AiProviderStreamFn<
+export const LlamaCpp_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   LlamaCppModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   if (!model) throw new Error("Model config is required for TextEmbeddingTask.");
 
   const context = await getOrCreateEmbeddingContext(model);
@@ -29,8 +28,8 @@ export const LlamaCpp_TextEmbedding: AiProviderStreamFn<
   );
 
   if (Array.isArray(input.text)) {
-    yield { type: "finish", data: { vector: embeddings } };
+    emit({ type: "finish", data: { vector: embeddings } });
     return;
   }
-  yield { type: "finish", data: { vector: embeddings[0] } };
+  emit({ type: "finish", data: { vector: embeddings[0] } });
 };

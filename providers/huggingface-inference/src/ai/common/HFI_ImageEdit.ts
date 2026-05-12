@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageEditTaskInput,
   ImageEditTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
@@ -43,14 +42,14 @@ async function gpuImageToBlob(image: ImageValue | string): Promise<Blob> {
 }
 
 /**
- * One-shot stream wrapper. HF Inference does not support partial image streaming,
- * so we run the request, yield one snapshot, then finish.
+ * One-shot run fn. HF Inference does not support partial image streaming,
+ * so we run the request, emit one snapshot, then finish.
  */
-export const HFI_ImageEdit_Stream: AiProviderStreamFn<
+export const HFI_ImageEdit_Stream: AiProviderRunFn<
   ImageEditTaskInput,
   ImageEditTaskOutput,
   HfInferenceModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timer = `hfi:ImageEdit:${getModelName(model)}`;
   logger.time(timer);
@@ -102,6 +101,5 @@ export const HFI_ImageEdit_Stream: AiProviderStreamFn<
   }
 
   if (signal.aborted) return;
-  yield { type: "snapshot", data: result } as StreamEvent<ImageEditTaskOutput>;
-  yield { type: "finish", data: {} as ImageEditTaskOutput };
+  emit({ type: "finish", data: result });
 };

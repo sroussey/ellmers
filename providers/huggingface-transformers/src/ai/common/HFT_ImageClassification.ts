@@ -9,14 +9,12 @@ import type {
   ZeroShotImageClassificationPipeline,
 } from "@huggingface/transformers";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
-import type { ImageValue } from "@workglow/util/media";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
+import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
@@ -24,29 +22,28 @@ import { getPipeline } from "./HFT_Pipeline";
  * Core implementation for image classification using Hugging Face Transformers.
  * Auto-selects between regular and zero-shot classification.
  */
-export const HFT_ImageClassification: AiProviderStreamFn<
+export const HFT_ImageClassification: AiProviderRunFn<
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<ImageClassificationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   if (model?.provider_config?.pipeline === "zero-shot-image-classification") {
     if (!input.categories || !Array.isArray(input.categories) || input.categories.length === 0) {
       console.warn("Zero-shot image classification requires categories", input);
       throw new Error("Zero-shot image classification requires categories");
     }
-    const zeroShotClassifier = (yield* bridgeProgress((cb) =>
-      getPipeline(model!, cb, {}, signal)
+    const zeroShotClassifier = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
     )) as ZeroShotImageClassificationPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
 
     const results = Array.isArray(result) ? result : [result];
 
-    yield {
+    emit({
       type: "finish",
       data: {
         categories: results.map((r) => ({
@@ -54,13 +51,11 @@ export const HFT_ImageClassification: AiProviderStreamFn<
           score: r.score,
         })),
       },
-    };
+    });
     return;
   }
 
-  const classifier = (yield* bridgeProgress((cb) =>
-    getPipeline(model!, cb, {}, signal)
-  )) as ImageClassificationPipeline;
+  const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await classifier(imageArg, {
     top_k: input.maxCategories,
@@ -68,7 +63,7 @@ export const HFT_ImageClassification: AiProviderStreamFn<
 
   const results = Array.isArray(result) ? result : [result];
 
-  yield {
+  emit({
     type: "finish",
     data: {
       categories: results.map((r: any) => ({
@@ -76,5 +71,5 @@ export const HFT_ImageClassification: AiProviderStreamFn<
         score: r.score,
       })),
     },
-  };
+  });
 };

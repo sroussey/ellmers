@@ -95,7 +95,7 @@ describe("TensorFlowMediaPipeQueuedProvider.inferCapabilities", () => {
 
   it("returns baseline meta-ops for unknown models", () => {
     const caps = provider.inferCapabilities(model("some-unrecognized-model.tflite"));
-    expect(caps).toEqual(["provider.model-search", "provider.model-info"]);
+    expect(caps).toEqual(["model.search", "model.info"]);
   });
 });
 
@@ -122,9 +122,9 @@ describe("TFMP_RUN_FNS shape", () => {
     expect(sets).toContain("vision.hand-landmarks");
     expect(sets).toContain("vision.pose-landmarks");
     expect(sets).toContain("vision.gesture");
-    expect(sets).toContain("model.unload");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.download-remove");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("does NOT register text.generation (TFMP has no text-gen capability)", () => {

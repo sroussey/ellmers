@@ -58,8 +58,8 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       "json-mode",
       "vision-input",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -73,8 +73,8 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       "json-mode",
       "vision-input",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -88,8 +88,8 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       "json-mode",
       "vision-input",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -102,8 +102,8 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
       "tool-use",
       "json-mode",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -111,5 +111,5 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
   const declared = (model.capabilities as readonly Capability[] | undefined) ?? [];
   if (declared.length > 0) return declared;
   // Unknown id with no declared caps → baseline meta-ops.
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

@@ -42,11 +42,13 @@ export const CAPABILITIES = {
   "json-mode": "Structured-output JSON conformance",
   "vision-input": "Accepts image inputs alongside text",
   // Meta-ops on the provider/model itself
-  "provider.model-search": "Search this provider's catalog",
-  "provider.model-info": "Fetch metadata about a specific model",
+  "model.search": "Search this provider's catalog",
+  "model.info": "Fetch metadata about a specific model",
   "model.count-tokens": "Tokenize input for cost / context calculation",
-  "model.unload": "Release model-resident resources held by the provider (lifecycle)",
+  "model.download-remove": "Uncache a model's weights from cache and disk",
   "model.download": "Fetch / cache a model's weights locally (lifecycle)",
+  // TODO:
+  "model.dispose": "Dispose model-resident resources in memory",
 } as const;
 
 export type Capability = keyof typeof CAPABILITIES;

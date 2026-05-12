@@ -5,26 +5,21 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 
 import { AIAvailability } from "./WebBrowser_ChromeAI";
 import { ensureAvailable, getApi, snapshotStreamToSnapshots } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextTranslation: AiProviderStreamFn<
+export const WebBrowser_TextTranslation: AiProviderRunFn<
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
   WebBrowserModelConfig
-> = async function* (
-  input,
-  _model,
-  signal
-): AsyncIterable<StreamEvent<TextTranslationTaskOutput>> {
+> = async (input, _model, signal, emit) => {
   const factory = getApi("Translator", typeof Translator !== "undefined" ? Translator : undefined);
   let status: AIAvailability;
   try {
@@ -53,10 +48,10 @@ export const WebBrowser_TextTranslation: AiProviderStreamFn<
   });
   try {
     const stream = translator.translateStreaming(input.text, { signal });
-    yield* snapshotStreamToSnapshots<TextTranslationTaskOutput>(stream, (text) => ({
+    for await (const e of snapshotStreamToSnapshots<TextTranslationTaskOutput>(stream, (text) => ({
       text,
       target_lang: input.target_lang,
-    }));
+    }))) { emit(e); }
   } finally {
     translator.destroy();
   }

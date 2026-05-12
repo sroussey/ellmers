@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { CAPABILITIES, type Capability } from "../capability/Capabilities";
-import { registerAiTasks } from "./index";
 import { AiTask } from "./base/AiTask";
+import { registerAiTasks } from "./index";
 
 describe("AI task requires audit", () => {
   it("every registered task declares a static requires array of valid capabilities", () => {
@@ -47,7 +47,7 @@ describe("AI task requires audit", () => {
       "image.generation",
       "vision.face-detection",
       "model.count-tokens",
-      "provider.model-search",
+      "model.search",
     ];
     for (const cap of expected) {
       expect(seen.has(cap), `expected at least one task with ${cap}`).toBe(true);

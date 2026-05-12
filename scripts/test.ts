@@ -44,7 +44,7 @@ const PROVIDER_HFT_FILES = [
   "HFT_Generic",
   "HFTransformersBinding",
   "HFT_TextGenerationAbort",
-  "DownloadModelAbort",
+  "ModelDownloadAbort",
   "TextEmbeddingTask",
   "ZeroShotTasks",
   "VisionTasks",

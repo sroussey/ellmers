@@ -9,24 +9,18 @@ import type {
   ZeroShotClassificationPipeline,
 } from "@huggingface/transformers";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-export const HFT_TextClassification: AiProviderStreamFn<
+export const HFT_TextClassification: AiProviderRunFn<
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextClassificationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   if (model?.provider_config?.pipeline === "zero-shot-classification") {
     if (
       !input.candidateLabels ||
@@ -36,12 +30,15 @@ export const HFT_TextClassification: AiProviderStreamFn<
       throw new Error("Zero-shot text classification requires candidate labels");
     }
 
-    const zeroShotClassifier = (yield* bridgeProgress((cb) =>
-      getPipeline(model!, cb, {}, signal)
+    const zeroShotClassifier = (await getPipeline(
+      model!,
+      emit,
+      {},
+      signal
     )) as ZeroShotClassificationPipeline;
     const result: any = await zeroShotClassifier(input.text, input.candidateLabels as string[], {});
 
-    yield {
+    emit({
       type: "finish",
       data: {
         categories: result.labels.map((label: string, idx: number) => ({
@@ -49,18 +46,21 @@ export const HFT_TextClassification: AiProviderStreamFn<
           score: result.scores[idx],
         })),
       },
-    };
+    });
     return;
   }
 
-  const TextClassification = (yield* bridgeProgress((cb) =>
-    getPipeline(model!, cb, {}, signal)
+  const TextClassification = (await getPipeline(
+    model!,
+    emit,
+    {},
+    signal
   )) as TextClassificationPipeline;
   const result = await TextClassification(input.text, {
     top_k: input.maxCategories || undefined,
   });
 
-  yield {
+  emit({
     type: "finish",
     data: {
       categories: result.map((category) => ({
@@ -68,5 +68,5 @@ export const HFT_TextClassification: AiProviderStreamFn<
         score: category.score,
       })),
     },
-  };
+  });
 };

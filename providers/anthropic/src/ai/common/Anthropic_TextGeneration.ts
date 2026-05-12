@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
@@ -38,17 +37,11 @@ interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
  * to choose the chat vs. prompt path — safe because AiChatTask always provides
  * `messages` and TextGenerationTask never does.
  */
-export const Anthropic_TextGeneration_Stream: AiProviderStreamFn<
+export const Anthropic_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   AnthropicModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   const logger = getLogger();
   const timerLabel = `anthropic:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
@@ -109,10 +102,10 @@ export const Anthropic_TextGeneration_Stream: AiProviderStreamFn<
         delta?: { type?: string; text?: string };
       };
       if (e.type === "content_block_delta" && e.delta?.type === "text_delta") {
-        yield { type: "text-delta", port: "text", textDelta: e.delta.text ?? "" };
+        emit({ type: "text-delta", port: "text", textDelta: e.delta.text ?? "" });
       }
     }
-    yield { type: "finish", data: {} as TextGenerationTaskOutput };
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

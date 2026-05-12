@@ -6,32 +6,29 @@
 
 import type { TextClassificationPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-export const HFT_TextLanguageDetection: AiProviderStreamFn<
+export const HFT_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextLanguageDetectionTaskOutput>> {
-  const TextClassification = (yield* bridgeProgress((cb) =>
-    getPipeline(model!, cb, {}, signal)
+> = async (input, model, signal, emit) => {
+  const TextClassification = (await getPipeline(
+    model!,
+    emit,
+    {},
+    signal
   )) as TextClassificationPipeline;
   const result = await TextClassification(input.text, {
     top_k: input.maxLanguages || undefined,
   });
 
-  yield {
+  emit({
     type: "finish",
     data: {
       languages: result.map((category) => ({
@@ -39,5 +36,5 @@ export const HFT_TextLanguageDetection: AiProviderStreamFn<
         score: category.score,
       })),
     },
-  };
+  });
 };

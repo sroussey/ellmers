@@ -32,7 +32,6 @@ export abstract class QueuedAiProvider<
 
   protected override async afterRegister(options: AiProviderRegisterOptions): Promise<void> {
     this.queuedStrategy = new QueuedExecutionStrategy(
-      `${this.name}_gpu`,
       resolveAiProviderGpuQueueConcurrency(options.queue?.concurrency)
     );
     getAiProviderRegistry().registerStrategyResolver(this.name, (model) =>
@@ -41,14 +40,14 @@ export abstract class QueuedAiProvider<
   }
 
   /**
-   * Helper to create a named {@link QueuedExecutionStrategy}.
+   * Helper to create a {@link QueuedExecutionStrategy}.
    */
   protected createQueuedStrategy(
-    queueName: string,
+    _queueName: string,
     concurrency: number,
     _options: AiProviderRegisterOptions
   ): QueuedExecutionStrategy {
-    return new QueuedExecutionStrategy(queueName, concurrency);
+    return new QueuedExecutionStrategy(concurrency);
   }
 
   /**

@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageEditTaskInput,
   ImageEditTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 
 import { dataUriToImageValue, imageValueToPngBytes } from "@workglow/ai/provider-utils";
@@ -111,14 +110,14 @@ async function buildEditPayload(
 
 /**
  * Streaming run-fn for `["image.editing"]`. SDK v6.35+ supports
- * `stream: true` on `images.edit` for GPT image models — yields snapshot
+ * `stream: true` on `images.edit` for GPT image models — emits snapshot
  * events for each partial + final image, then finish.
  */
-export const OpenAI_ImageEdit_Stream: AiProviderStreamFn<
+export const OpenAI_ImageEdit_Stream: AiProviderRunFn<
   ImageEditTaskInput,
   ImageEditTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
 
   try {
@@ -133,9 +132,9 @@ export const OpenAI_ImageEdit_Stream: AiProviderStreamFn<
       const b64 = event.b64_json;
       if (!b64) continue;
       const image = await decodeB64Png(b64);
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageEditTaskOutput>;
+      emit({ type: "snapshot", data: { image } } as Parameters<typeof emit>[0]);
     }
-    yield { type: "finish", data: {} as ImageEditTaskOutput };
+    emit({ type: "finish", data: {} as ImageEditTaskOutput });
   } catch (err) {
     if (
       err instanceof ImageGenerationProviderError ||

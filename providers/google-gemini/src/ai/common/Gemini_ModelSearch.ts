@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { normalizedModelSearchQuery } from "@workglow/ai/provider-utils";
-import type { StreamEvent } from "@workglow/task-graph";
 import { GOOGLE_GEMINI } from "./Gemini_Constants";
 
 interface GeminiModelEntry {
@@ -109,17 +108,17 @@ async function listGeminiModels(
   return (body.models ?? []).map(mapGeminiModel);
 }
 
-export const Gemini_ModelSearch_Stream: AiProviderStreamFn<
+export const Gemini_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async function* (input, _model, signal): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+> = async (input, _model, signal, emit) => {
   const q = normalizedModelSearchQuery(input.query);
   if (input.credential_key) {
     const models = await listGeminiModels(input.credential_key, signal);
     const results = q
       ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
       : models;
-    yield { type: "finish", data: { results } };
+    emit({ type: "finish", data: { results } });
     return;
   }
 
@@ -143,5 +142,5 @@ export const Gemini_ModelSearch_Stream: AiProviderStreamFn<
     },
     raw: m,
   }));
-  yield { type: "finish", data: { results } };
+  emit({ type: "finish", data: { results } });
 };

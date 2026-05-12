@@ -28,9 +28,9 @@ import {
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
-import { noopEmit } from "../../capability/AiEmit";
-import type { AiEmit } from "../../capability/AiEmit";
 import { accumulatingEmit } from "../../capability/accumulatingEmit";
+import type { AiEmit } from "../../capability/AiEmit";
+import { noopEmit } from "../../capability/AiEmit";
 import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
@@ -43,17 +43,6 @@ function schemaFormat(schema: JsonSchema): string | undefined {
     ? schema.format
     : undefined;
 }
-
-/**
- * Returns true when a capability string is a legacy task class name (PascalCase ending in "Task",
- * e.g. "TextGenerationTask"). New-style capability strings use dot-notation or hyphen-notation
- * (e.g. "text.generation", "tool-use", "json-mode", "vision-input") and do NOT match this predicate.
- *
- * Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use capability
- * strings ('text.generation', 'tool-use', etc.). This guard preserves the legacy incompatibility
- * check only while old fixtures remain. Phase 4 removes both call sites.
- */
-const isLegacyTaskClassName = (c: string): boolean => /^[A-Z][A-Za-z0-9]*Task$/.test(c);
 
 const aiTaskConfigSchema = {
   type: "object",
@@ -84,13 +73,8 @@ export class AiTask<
 
   /**
    * Capabilities this task requires from the model selected at execution time.
-   * The dispatcher (Phase 3) gates strictly: it throws unless
-   * `model.capabilities ⊇ task.requires`. An empty array passes vacuously.
-   *
-   * Concrete subclasses MUST override with the relevant `Capability` values from
-   * {@link CAPABILITIES}; pure-compute subclasses (no provider dispatch) keep `[]`.
-   * Phase 4 populates the 44 concrete tasks; the test in `task/index.test.ts`
-   * audits coverage.
+   * Gates strictly: throws unless `model.capabilities ⊇ task.requires`.
+   * An empty array passes vacuously (pure-compute subclasses that don't dispatch).
    */
   public static readonly requires: readonly Capability[] = [];
 
@@ -165,17 +149,35 @@ export class AiTask<
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
-    const { emit, result } = accumulatingEmit<Output>();
+    const { emit: observeEvent, result } = accumulatingEmit<Output>();
+    const progressUpdates: Promise<void>[] = [];
+    let progressError: unknown;
+    const emit: AiEmit<Output> = (event) => {
+      if (event.type === "phase") {
+        progressUpdates.push(
+          executeContext.updateProgress(event.progress, event.message).catch((err: unknown) => {
+            progressError ??= err;
+          })
+        );
+      }
+      observeEvent(event);
+    };
     await strategy.execute(jobInput, executeContext, this.runConfig.runnerId, emit as AiEmit);
+    if (progressUpdates.length > 0) {
+      await Promise.all(progressUpdates);
+      if (progressError !== undefined) {
+        throw progressError;
+      }
+    }
     const output = result();
 
     // Register a disposer so the caller can unload the model when done. The
-    // unload path is wired via the "model.unload" capability so providers opt
+    // unload path is wired via the "model.download-remove" capability so providers opt
     // in by registering a run-fn whose `serves` set contains it; bypasses the
     // task's own `requires` so we don't gate the lifecycle hook on the task.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const unloadFn = registry.getRunFnFor(model.provider, ["model.unload"]);
+      const unloadFn = registry.getRunFnFor(model.provider, ["model.dispose"]);
       if (unloadFn) {
         const modelPath =
           (model as ModelConfig & { model?: string }).model ??
@@ -317,19 +319,17 @@ export class AiTask<
     for (const [key] of modelTaskProperties) {
       const model = input[key];
       if (typeof model === "object" && model !== null) {
-        const capabilities = (model as ModelConfig).capabilities;
-        // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
-        // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
-        // This guard preserves the legacy incompatibility check only while old fixtures remain.
-        // Phase 4 removes both call sites.
-        const usesTaskClassNames =
-          Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
-        if (usesTaskClassNames && !capabilities!.includes(this.type)) {
-          const modelId = (model as ModelConfig).model_id ?? "(inline config)";
-          throw new TaskConfigurationError(
-            `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
-              `Model supports: [${capabilities!.join(", ")}]`
-          );
+        const taskClass = this.constructor as typeof AiTask;
+        const requires = taskClass.requires;
+        const capabilities = (model as ModelConfig).capabilities as string[] | undefined;
+        if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
+          if (!requires.every((r) => capabilities.includes(r))) {
+            const modelId = (model as ModelConfig).model_id ?? "(inline config)";
+            throw new TaskConfigurationError(
+              `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
+                `Requires: [${requires.join(", ")}]; model has: [${capabilities.join(", ")}]`
+            );
+          }
         }
       } else if (model !== undefined && model !== null) {
         throw new TaskConfigurationError(
@@ -385,15 +385,13 @@ export class AiTask<
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           const model = requestedModel as ModelConfig;
-          const capabilities = model.capabilities;
-          // Legacy fixtures use task class names (e.g., 'TextGenerationTask'). New fixtures use
-          // capability strings ('text.generation', 'tool-use', 'json-mode', 'vision-input', etc.).
-          // This guard preserves the legacy incompatibility check only while old fixtures remain.
-          // Phase 4 removes both call sites.
-          const usesTaskClassNames =
-            Array.isArray(capabilities) && capabilities.some(isLegacyTaskClassName);
-          if (usesTaskClassNames && !capabilities!.includes(this.type)) {
-            (input as any)[key] = undefined;
+          const taskClass = this.constructor as typeof AiTask;
+          const requires = taskClass.requires;
+          const capabilities = model.capabilities as string[] | undefined;
+          if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
+            if (!requires.every((r) => capabilities.includes(r))) {
+              (input as any)[key] = undefined;
+            }
           }
         }
       }

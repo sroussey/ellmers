@@ -5,6 +5,7 @@
  */
 
 import { PermanentJobError } from "@workglow/job-queue";
+import type { StreamPhase } from "@workglow/task-graph";
 import { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 
@@ -58,7 +59,7 @@ const optionsMatch = (opts1: Record<string, unknown>, opts2: Record<string, unkn
 
 const getWasmTask = async (
   model: TFMPModelConfig,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   signal: AbortSignal
 ): Promise<TFMPWasmFileset> => {
   const task_engine = model.provider_config.task_engine;
@@ -71,7 +72,7 @@ const getWasmTask = async (
     throw new PermanentJobError("Aborted job");
   }
 
-  onProgress(0.1, "Loading WASM task");
+  emit({ type: "phase", message: "Loading WASM task", progress: 0.1 });
 
   let wasmFileset: TFMPWasmFileset;
 
@@ -115,7 +116,7 @@ const getWasmTask = async (
 export const getModelTask = async (
   model: TFMPModelConfig,
   options: Record<string, unknown>,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   signal: AbortSignal,
   TaskType: TaskConstructor
 ): Promise<any> => {
@@ -130,9 +131,9 @@ export const getModelTask = async (
     }
   }
 
-  const wasmFileset = await getWasmTask(model, onProgress, signal);
+  const wasmFileset = await getWasmTask(model, emit, signal);
 
-  onProgress(0.2, "Creating model task");
+  emit({ type: "phase", message: "Creating model task", progress: 0.2 });
 
   const task = await TaskType.createFromOptions(wasmFileset, {
     baseOptions: {

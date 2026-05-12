@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 
 import { dataUriToImageValue } from "@workglow/ai/provider-utils";
@@ -52,13 +51,13 @@ function modelIdOf(model: ModelConfig | undefined): string {
  * native streaming via `stream: true` + `partial_images: 3` and emit a
  * `snapshot` event per partial frame plus a final snapshot. DALL-E models
  * do not support streaming so this falls back to a single non-streaming
- * call and yields one snapshot before finish.
+ * call and emits one snapshot before finish.
  */
-export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
+export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageGenerateTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
   const size = aspectRatioToSize(input.aspectRatio);
@@ -83,8 +82,8 @@ export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
         throw new ImageGenerationProviderError(modelIdOf(model), "Empty response (no b64_json)");
       }
       const image = await decodeB64Png(b64);
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageGenerateTaskOutput>;
-      yield { type: "finish", data: {} as ImageGenerateTaskOutput };
+      emit({ type: "snapshot", data: { image } } as Parameters<typeof emit>[0]);
+      emit({ type: "finish", data: {} as ImageGenerateTaskOutput });
       return;
     } catch (err) {
       if (
@@ -122,9 +121,9 @@ export const OpenAI_ImageGenerate_Stream: AiProviderStreamFn<
       const b64 = event.b64_json;
       if (!b64) continue;
       const image = await decodeB64Png(b64);
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageGenerateTaskOutput>;
+      emit({ type: "snapshot", data: { image } } as Parameters<typeof emit>[0]);
     }
-    yield { type: "finish", data: {} as ImageGenerateTaskOutput };
+    emit({ type: "finish", data: {} as ImageGenerateTaskOutput });
   } catch (err) {
     if (
       err instanceof ImageGenerationProviderError ||

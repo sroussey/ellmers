@@ -24,9 +24,7 @@ export async function registerHuggingFaceTransformersWorker(): Promise<void> {
   env.backends!.onnx!.wasm!.proxy = true;
   await registerProviderWorker(
     (ws) =>
-      new HuggingFaceTransformersProvider(HFT_RUN_FNS, HFT_PREVIEW_TASKS).registerOnWorkerServer(
-        ws
-      ),
+      new HuggingFaceTransformersProvider(HFT_RUN_FNS, HFT_PREVIEW_TASKS).registerOnWorkerServer(ws),
     "HuggingFaceTransformers"
   );
 }

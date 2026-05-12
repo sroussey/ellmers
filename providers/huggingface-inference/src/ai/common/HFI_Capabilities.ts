@@ -37,30 +37,27 @@ export function inferHfInferenceCapabilities(model: CapabilityHints): readonly C
 
   // Image generation / editing (Stable Diffusion, FLUX, SDXL, etc).
   if (/flux|stable-diffusion|sd-|sdxl|dall-e|kandinsky|wuerstchen|playground/i.test(baseName)) {
-    return [
-      "image.generation",
-      "image.editing",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.generation", "image.editing", "model.info", "model.search"];
   }
 
   // Embeddings.
   if (/embed|minilm|bge-|gte-|e5-/i.test(baseName)) {
-    return ["text.embedding", "provider.model-info", "provider.model-search"];
+    return ["text.embedding", "model.info", "model.search"];
   }
 
   // Generative text/chat models (Llama, Mistral, Mixtral, Gemma, Phi, Qwen, etc).
-  if (/llama|mistral|mixtral|gemma|phi|qwen|falcon|yi|deepseek|command|claude|gpt-/i.test(baseName)) {
+  if (
+    /llama|mistral|mixtral|gemma|phi|qwen|falcon|yi|deepseek|command|claude|gpt-/i.test(baseName)
+  ) {
     return [
       "text.generation",
       "text.rewriter",
       "text.summary",
       "tool-use",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

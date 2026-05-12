@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
@@ -25,8 +24,8 @@ const OLLAMA_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
 
 export function createOllamaModelInfoStream(
   getClient: GetClient
-): AiProviderStreamFn<ModelInfoTaskInput, ModelInfoTaskOutput, OllamaModelConfig> {
-  return async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+): AiProviderRunFn<ModelInfoTaskInput, ModelInfoTaskOutput, OllamaModelConfig> {
+  return async (input, model, signal, emit) => {
     if (input.detail === "dimensions") {
       if (!model) throw new Error("Model config is required for ModelInfoTask.");
       const pc = model.provider_config as Record<string, unknown>;
@@ -58,7 +57,7 @@ export function createOllamaModelInfoStream(
         }
       }
 
-      yield {
+      emit({
         type: "finish",
         data: {
           model: input.model,
@@ -72,7 +71,7 @@ export function createOllamaModelInfoStream(
           ...(native_dimensions !== undefined ? { native_dimensions } : {}),
           ...(mrl !== undefined ? { mrl } : {}),
         } as ModelInfoTaskOutput,
-      };
+      });
       return;
     }
 
@@ -101,7 +100,7 @@ export function createOllamaModelInfoStream(
       // ps() not available or failed
     }
 
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -113,6 +112,6 @@ export function createOllamaModelInfoStream(
         is_loaded,
         file_sizes,
       },
-    };
+    });
   };
 }

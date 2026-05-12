@@ -14,18 +14,13 @@ import type { Capability } from "@workglow/ai/worker";
  * named exports. SDK-free so the main thread can import without paying the
  * Ollama client cost.
  */
-export const OLLAMA_TEXT_GENERATION = ["text.generation"] as const satisfies readonly Capability[];
-export const OLLAMA_TOOL_USE = [
-  "text.generation",
-  "tool-use",
-] as const satisfies readonly Capability[];
-export const OLLAMA_TEXT_REWRITER = ["text.rewriter"] as const satisfies readonly Capability[];
-export const OLLAMA_TEXT_SUMMARY = ["text.summary"] as const satisfies readonly Capability[];
-export const OLLAMA_TEXT_EMBEDDING = ["text.embedding"] as const satisfies readonly Capability[];
-export const OLLAMA_MODEL_SEARCH = [
-  "provider.model-search",
-] as const satisfies readonly Capability[];
-export const OLLAMA_MODEL_INFO = ["provider.model-info"] as const satisfies readonly Capability[];
+export const OLLAMA_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
+export const OLLAMA_TOOL_USE = ["text.generation", "tool-use"] as const satisfies Capability[];
+export const OLLAMA_TEXT_REWRITER = ["text.rewriter"] as const satisfies Capability[];
+export const OLLAMA_TEXT_SUMMARY = ["text.summary"] as const satisfies Capability[];
+export const OLLAMA_TEXT_EMBEDDING = ["text.embedding"] as const satisfies Capability[];
+export const OLLAMA_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
+export const OLLAMA_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `OLLAMA_RUN_FNS`. */
 export const OLLAMA_CAPABILITY_SETS = [

@@ -5,9 +5,9 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderStreamFn,
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -52,22 +52,22 @@ import { LlamaCpp_ToolCalling_Stream } from "./LlamaCpp_ToolCalling";
 import { LlamaCpp_Unload } from "./LlamaCpp_Unload";
 
 /** Unified `["text.generation"]` run-fn — chat vs prompt discrimination. */
-const LlamaCpp_TextGeneration_Unified: AiProviderStreamFn<
+const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   LlamaCppModelConfig
-> = async function* (input, model, signal, outputSchema, sessionId) {
+> = async (input, model, signal, emit, outputSchema, sessionId) => {
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
-    yield* LlamaCpp_Chat_Stream(input, model, signal, outputSchema, sessionId);
+    await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionId);
   } else {
-    yield* LlamaCpp_TextGeneration_Stream(input, model, signal, outputSchema, sessionId);
+    await LlamaCpp_TextGeneration_Stream(input, model, signal, emit, outputSchema, sessionId);
   }
 };
 
-export const LLAMACPP_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
+export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -6,11 +6,10 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderStreamFn,
+  AiProviderRunFn,
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { loadTransformersSDK } from "./HFT_Pipeline";
 
@@ -26,13 +25,13 @@ async function countTokens(
   return { count: tokenIds.length };
 }
 
-export const HFT_CountTokens: AiProviderStreamFn<
+export const HFT_CountTokens: AiProviderRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<CountTokensTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   const data = await countTokens(input, model);
-  yield { type: "finish", data };
+  emit({ type: "finish", data });
 };
 
 export const HFT_CountTokens_Preview: AiProviderPreviewRunFn<

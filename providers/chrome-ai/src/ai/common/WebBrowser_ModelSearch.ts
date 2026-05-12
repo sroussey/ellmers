@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
-import type { StreamEvent } from "@workglow/task-graph";
 import { WEB_BROWSER } from "./WebBrowser_Constants";
 
 const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
@@ -19,10 +18,10 @@ const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
   { label: "wasm  WASM inference", value: "wasm" },
 ];
 
-export const WebBrowser_ModelSearch: AiProviderStreamFn<
+export const WebBrowser_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+> = async (input, _model, _signal, emit) => {
   const models = filterLabeledModelsByQuery(WEB_BROWSER_MODELS, input.query);
   const results: ModelSearchResultItem[] = models.map((m) => ({
     id: m.value,
@@ -34,7 +33,7 @@ export const WebBrowser_ModelSearch: AiProviderStreamFn<
       title: m.value,
       description: "",
       capabilities: [
-        "provider.model-info",
+        "model.info",
         "text.generation",
         "text.summary",
         "text.language-detection",
@@ -46,5 +45,5 @@ export const WebBrowser_ModelSearch: AiProviderStreamFn<
     },
     raw: m,
   }));
-  yield { type: "finish", data: { results } };
+  emit({ type: "finish", data: { results } });
 };

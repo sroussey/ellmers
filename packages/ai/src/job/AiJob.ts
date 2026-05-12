@@ -232,6 +232,8 @@ export class AiJob<
    * QueuedExecutionStrategy. AiJob still uses Job's progress-event / status
    * machinery, so we keep the inheritance but accept the intentional override
    * signature mismatch.
+   *
+   * @override Deliberate signature deviation: adds `emit` param, returns `Promise<void>`.
    */
   // @ts-expect-error — intentional signature change; see comment above.
   override async execute(

@@ -39,15 +39,15 @@ The framework consists of three layers:
 
 Source files:
 
-| File | Purpose |
-|------|---------|
-| `packages/ai/src/task/base/AiTask.ts` | `AiTask` base class |
-| `packages/ai/src/task/base/StreamingAiTask.ts` | `StreamingAiTask` with streaming support |
-| `packages/ai/src/task/base/AiTaskSchemas.ts` | Schema helpers (`TypeModel`, `TypeImageInput`, etc.) |
-| `packages/ai/src/execution/IAiExecutionStrategy.ts` | Strategy interface and resolver type |
-| `packages/ai/src/execution/DirectExecutionStrategy.ts` | Direct (non-queued) execution |
-| `packages/ai/src/execution/QueuedExecutionStrategy.ts` | Queue-based execution with concurrency control |
-| `packages/ai/src/job/AiJob.ts` | `AiJob` class with error classification |
+| File                                                   | Purpose                                              |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| `packages/ai/src/task/base/AiTask.ts`                  | `AiTask` base class                                  |
+| `packages/ai/src/task/base/StreamingAiTask.ts`         | `StreamingAiTask` with streaming support             |
+| `packages/ai/src/task/base/AiTaskSchemas.ts`           | Schema helpers (`TypeModel`, `TypeImageInput`, etc.) |
+| `packages/ai/src/execution/IAiExecutionStrategy.ts`    | Strategy interface and resolver type                 |
+| `packages/ai/src/execution/DirectExecutionStrategy.ts` | Direct (non-queued) execution                        |
+| `packages/ai/src/execution/QueuedExecutionStrategy.ts` | Queue-based execution with concurrency control       |
+| `packages/ai/src/job/AiJob.ts`                         | `AiJob` class with error classification              |
 
 ---
 
@@ -124,11 +124,11 @@ metadata needed by the execution strategy and job queue:
 
 ```typescript
 interface AiJobInput<Input extends TaskInput = TaskInput> {
-  taskType: string;         // e.g., "TextGenerationTask"
-  aiProvider: string;       // e.g., "OPENAI"
+  taskType: string; // e.g., "TextGenerationTask"
+  aiProvider: string; // e.g., "OPENAI"
   taskInput: Input & { model: ModelConfig };
-  outputSchema?: JsonSchema;  // For structured output tasks
-  timeoutMs?: number;         // Optional task-level timeout
+  outputSchema?: JsonSchema; // For structured output tasks
+  timeoutMs?: number; // Optional task-level timeout
 }
 ```
 
@@ -195,11 +195,11 @@ and similar tasks.
 
 Subclasses annotate their output schema with `x-stream` to control streaming behavior:
 
-| Mode | Behavior |
-|------|----------|
-| `"append"` | Each chunk is a delta (e.g., a new token). Default for text generation. |
-| `"object"` | Each chunk is a progressively more complete partial object. |
-| `"replace"` | Each chunk is a revised full snapshot of the output. |
+| Mode        | Behavior                                                                |
+| ----------- | ----------------------------------------------------------------------- |
+| `"append"`  | Each chunk is a delta (e.g., a new token). Default for text generation. |
+| `"object"`  | Each chunk is a progressively more complete partial object.             |
+| `"replace"` | Each chunk is a revised full snapshot of the output.                    |
 
 ### Port Annotation
 
@@ -332,22 +332,22 @@ error classification.
 
 `AiJob` applies timeouts via `AbortSignal.timeout()` combined with the caller's signal:
 
-| Provider Type | Default Timeout |
-|---------------|-----------------|
-| API providers (OpenAI, Anthropic, etc.) | 120 seconds |
-| Local inference (LlamaCpp, HFT ONNX) | 300 seconds |
-| Explicit `timeoutMs` in job input | Uses provided value |
+| Provider Type                           | Default Timeout     |
+| --------------------------------------- | ------------------- |
+| API providers (OpenAI, Anthropic, etc.) | 120 seconds         |
+| Local inference (LlamaCpp, HFT ONNX)    | 300 seconds         |
+| Explicit `timeoutMs` in job input       | Uses provided value |
 
 ### Error Classification
 
 The `classifyProviderError()` function categorizes provider errors into three buckets for the job
 queue retry system:
 
-| Error Type | HTTP Status | Behavior |
-|------------|-------------|----------|
-| `RetryableJobError` | 429, 500-599 | Retried with backoff |
-| `PermanentJobError` | 400, 401, 403, 404 | Fails immediately |
-| `AbortSignalJobError` | N/A | Task was cancelled |
+| Error Type            | HTTP Status        | Behavior             |
+| --------------------- | ------------------ | -------------------- |
+| `RetryableJobError`   | 429, 500-599       | Retried with backoff |
+| `PermanentJobError`   | 400, 401, 403, 404 | Fails immediately    |
+| `AbortSignalJobError` | N/A                | Task was cancelled   |
 
 Specific patterns:
 
@@ -378,52 +378,52 @@ The `@workglow/ai` package provides a comprehensive set of concrete task types. 
 
 ### Text Tasks
 
-| Task | Base Class | Purpose |
-|------|------------|---------|
-| `TextGenerationTask` | `StreamingAiTask` | Free-form text generation |
-| `TextSummaryTask` | `StreamingAiTask` | Text summarization |
-| `TextRewriterTask` | `StreamingAiTask` | Text rewriting/editing |
-| `TextTranslationTask` | `StreamingAiTask` | Language translation |
-| `TextClassificationTask` | `AiTask` | Text classification |
-| `TextEmbeddingTask` | `AiTask` | Text embedding vectors |
-| `TextFillMaskTask` | `AiTask` | Masked language modeling |
-| `TextQuestionAnswerTask` | `StreamingAiTask` | Question answering |
-| `TextLanguageDetectionTask` | `AiTask` | Language identification |
-| `TextNamedEntityRecognitionTask` | `AiTask` | Named entity recognition |
-| `ToolCallingTask` | `StreamingAiTask` | Function/tool calling |
-| `AgentTask` | `StreamingAiTask` | Autonomous agent execution |
-| `StructuredGenerationTask` | `StreamingAiTask` | Schema-constrained generation |
+| Task                             | Base Class        | Purpose                       |
+| -------------------------------- | ----------------- | ----------------------------- |
+| `TextGenerationTask`             | `StreamingAiTask` | Free-form text generation     |
+| `TextSummaryTask`                | `StreamingAiTask` | Text summarization            |
+| `TextRewriterTask`               | `StreamingAiTask` | Text rewriting/editing        |
+| `TextTranslationTask`            | `StreamingAiTask` | Language translation          |
+| `TextClassificationTask`         | `AiTask`          | Text classification           |
+| `TextEmbeddingTask`              | `AiTask`          | Text embedding vectors        |
+| `TextFillMaskTask`               | `AiTask`          | Masked language modeling      |
+| `TextQuestionAnswerTask`         | `StreamingAiTask` | Question answering            |
+| `TextLanguageDetectionTask`      | `AiTask`          | Language identification       |
+| `TextNamedEntityRecognitionTask` | `AiTask`          | Named entity recognition      |
+| `ToolCallingTask`                | `StreamingAiTask` | Function/tool calling         |
+| `AgentTask`                      | `StreamingAiTask` | Autonomous agent execution    |
+| `StructuredGenerationTask`       | `StreamingAiTask` | Schema-constrained generation |
 
 ### Image Tasks
 
-| Task | Base Class | Purpose |
-|------|------------|---------|
-| `ImageClassificationTask` | `AiTask` | Image classification |
-| `ImageEmbeddingTask` | `AiTask` | Image embedding vectors |
-| `ImageSegmentationTask` | `AiTask` | Image segmentation masks |
-| `ImageToTextTask` | `StreamingAiTask` | Image captioning / VQA |
-| `ObjectDetectionTask` | `AiTask` | Bounding box detection |
-| `BackgroundRemovalTask` | `AiTask` | Background removal |
+| Task                      | Base Class        | Purpose                  |
+| ------------------------- | ----------------- | ------------------------ |
+| `ImageClassificationTask` | `AiTask`          | Image classification     |
+| `ImageEmbeddingTask`      | `AiTask`          | Image embedding vectors  |
+| `ImageSegmentationTask`   | `AiTask`          | Image segmentation masks |
+| `ImageToTextTask`         | `StreamingAiTask` | Image captioning / VQA   |
+| `ObjectDetectionTask`     | `AiTask`          | Bounding box detection   |
+| `BackgroundRemovalTask`   | `AiTask`          | Background removal       |
 
 ### RAG Tasks
 
-| Task | Base Class | Purpose |
-|------|------------|---------|
-| `HierarchicalChunkerTask` | `AiTask` | Document chunking |
-| `ChunkVectorUpsertTask` | `AiTask` | Vector storage insertion |
-| `ChunkRetrievalTask` | `AiTask` | Retrieval-augmented generation |
-| `RerankerTask` | `AiTask` | Result reranking |
-| `ContextBuilderTask` | `AiTask` | Context assembly for RAG |
+| Task                      | Base Class | Purpose                        |
+| ------------------------- | ---------- | ------------------------------ |
+| `HierarchicalChunkerTask` | `AiTask`   | Document chunking              |
+| `ChunkVectorUpsertTask`   | `AiTask`   | Vector storage insertion       |
+| `ChunkRetrievalTask`      | `AiTask`   | Retrieval-augmented generation |
+| `RerankerTask`            | `AiTask`   | Result reranking               |
+| `ContextBuilderTask`      | `AiTask`   | Context assembly for RAG       |
 
 ### Utility Tasks
 
-| Task | Base Class | Purpose |
-|------|------------|---------|
-| `CountTokensTask` | `AiTask` | Token counting |
-| `ModelInfoTask` | `AiTask` | Model metadata retrieval |
-| `ModelSearchTask` | `AiTask` | Model discovery |
-| `DownloadModelTask` | `AiTask` | Model weight downloading |
-| `UnloadModelTask` | `AiTask` | Model unloading |
+| Task                      | Base Class | Purpose                  |
+| ------------------------- | ---------- | ------------------------ |
+| `CountTokensTask`         | `AiTask`   | Token counting           |
+| `ModelInfoTask`           | `AiTask`   | Model metadata retrieval |
+| `ModelSearchTask`         | `AiTask`   | Model discovery          |
+| `ModelDownloadTask`       | `AiTask`   | Model weight downloading |
+| `ModelDownloadRemoveTask` | `AiTask`   | Model unloading          |
 
 ---
 
@@ -490,47 +490,47 @@ performs the actual inference.
 
 ### AiTask
 
-| Member | Type | Description |
-|--------|------|-------------|
-| `static type` | `string` | `"AiTask"` -- override in subclasses |
-| `static hasDynamicEntitlements` | `boolean` | `true` -- entitlements depend on model |
-| `static entitlements()` | `TaskEntitlements` | Base AI inference entitlement |
-| `entitlements()` | `TaskEntitlements` | Instance entitlements including model ID |
-| `execute(input, context)` | `Promise<Output>` | Resolves strategy and delegates |
-| `executePreview(input, context)` | `Promise<Output>` | Delegates to provider preview fn |
-| `validateInput(input)` | `Promise<boolean>` | Validates model resolution and compatibility |
-| `narrowInput(input, registry)` | `Promise<Input>` | Filters incompatible models |
-| `getJobInput(input)` | `Promise<AiJobInput>` | Constructs job envelope (protected) |
-| `createJob(input, queueName?)` | `Promise<Job>` | Creates a standalone AiJob instance |
+| Member                           | Type                  | Description                                  |
+| -------------------------------- | --------------------- | -------------------------------------------- |
+| `static type`                    | `string`              | `"AiTask"` -- override in subclasses         |
+| `static hasDynamicEntitlements`  | `boolean`             | `true` -- entitlements depend on model       |
+| `static entitlements()`          | `TaskEntitlements`    | Base AI inference entitlement                |
+| `entitlements()`                 | `TaskEntitlements`    | Instance entitlements including model ID     |
+| `execute(input, context)`        | `Promise<Output>`     | Resolves strategy and delegates              |
+| `executePreview(input, context)` | `Promise<Output>`     | Delegates to provider preview fn             |
+| `validateInput(input)`           | `Promise<boolean>`    | Validates model resolution and compatibility |
+| `narrowInput(input, registry)`   | `Promise<Input>`      | Filters incompatible models                  |
+| `getJobInput(input)`             | `Promise<AiJobInput>` | Constructs job envelope (protected)          |
+| `createJob(input, queueName?)`   | `Promise<Job>`        | Creates a standalone AiJob instance          |
 
 ### StreamingAiTask
 
-| Member | Type | Description |
-|--------|------|-------------|
-| `static type` | `string` | `"StreamingAiTask"` |
+| Member                          | Type                         | Description                         |
+| ------------------------------- | ---------------------------- | ----------------------------------- |
+| `static type`                   | `string`                     | `"StreamingAiTask"`                 |
 | `executeStream(input, context)` | `AsyncIterable<StreamEvent>` | Yields port-annotated stream events |
 
 ### IAiExecutionStrategy
 
-| Method | Description |
-|--------|-------------|
-| `execute(jobInput, context, runnerId)` | Non-streaming execution |
+| Method                                       | Description                                |
+| -------------------------------------------- | ------------------------------------------ |
+| `execute(jobInput, context, runnerId)`       | Non-streaming execution                    |
 | `executeStream(jobInput, context, runnerId)` | Streaming execution yielding `StreamEvent` |
-| `abort()` | Cancels in-flight execution |
+| `abort()`                                    | Cancels in-flight execution                |
 
 ### AiJob
 
-| Member | Type | Description |
-|--------|------|-------------|
-| `execute(input, context)` | `Promise<Output>` | Executes via provider run function with timeout |
-| `executeStream(input, context)` | `AsyncIterable<StreamEvent>` | Streaming execution with error recovery |
+| Member                          | Type                         | Description                                     |
+| ------------------------------- | ---------------------------- | ----------------------------------------------- |
+| `execute(input, context)`       | `Promise<Output>`            | Executes via provider run function with timeout |
+| `executeStream(input, context)` | `AsyncIterable<StreamEvent>` | Streaming execution with error recovery         |
 
 ### AiJobInput
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `taskType` | `string` | Task type name (e.g., `"TextGenerationTask"`) |
-| `aiProvider` | `string` | Provider name (e.g., `"OPENAI"`) |
-| `taskInput` | `Input & { model: ModelConfig }` | Resolved task input |
-| `outputSchema` | `JsonSchema` (optional) | Structured output schema |
-| `timeoutMs` | `number` (optional) | Provider call timeout |
+| Field          | Type                             | Description                                   |
+| -------------- | -------------------------------- | --------------------------------------------- |
+| `taskType`     | `string`                         | Task type name (e.g., `"TextGenerationTask"`) |
+| `aiProvider`   | `string`                         | Provider name (e.g., `"OPENAI"`)              |
+| `taskInput`    | `Input & { model: ModelConfig }` | Resolved task input                           |
+| `outputSchema` | `JsonSchema` (optional)          | Structured output schema                      |
+| `timeoutMs`    | `number` (optional)              | Provider call timeout                         |

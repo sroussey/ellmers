@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, TextGenerationTaskInput, TextGenerationTaskOutput } from "@workglow/ai";
+import type { AiProviderRunFn, TextGenerationTaskInput, TextGenerationTaskOutput } from "@workglow/ai";
 import { toOpenAIMessages } from "@workglow/ai/worker";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
@@ -60,19 +59,15 @@ function buildChatParams(
 /**
  * Streaming run-fn for the `["text.generation"]` capability. Used by both
  * {@link TextGenerationTask} (prompt-only input) and {@link AiChatTask}
- * (full conversation history). Yields `text-delta` events on the `text` port
+ * (full conversation history). Emits `text-delta` events on the `text` port
  * and a final empty `finish` event per the streaming convention (consumer
  * accumulates).
  */
-export const OpenAI_TextGeneration_Stream: AiProviderStreamFn<
+export const OpenAI_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   OpenAiModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timerLabel = `openai:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
@@ -90,10 +85,10 @@ export const OpenAI_TextGeneration_Stream: AiProviderStreamFn<
     }>) {
       const delta = chunk.choices?.[0]?.delta?.content ?? "";
       if (delta) {
-        yield { type: "text-delta", port: "text", textDelta: delta };
+        emit({ type: "text-delta", port: "text", textDelta: delta });
       }
     }
-    yield { type: "finish", data: {} as TextGenerationTaskOutput };
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

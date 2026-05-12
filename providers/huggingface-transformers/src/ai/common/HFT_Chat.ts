@@ -4,21 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiChatProviderInput,
-  AiChatProviderOutput,
-  AiProviderStreamFn,
-} from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiChatProviderInput, AiChatProviderOutput, AiProviderRunFn } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline, getHftSession, setHftSession, loadTransformersSDK } from "./HFT_Pipeline";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import { buildHFTMessages } from "./HFT_ToolCalling";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
+import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
+import type { StreamPhase } from "@workglow/task-graph";
 
 // ============================================================================
 // Shared turn implementation
@@ -42,11 +34,11 @@ async function generateTurn(
   input: AiChatProviderInput,
   model: HfTransformersOnnxModelConfig,
   sessionId: string | undefined,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   signal: AbortSignal | undefined,
   onDelta: ((text: string) => void) | undefined
 ): Promise<string> {
-  const generateText = await getPipeline(model, onProgress, {}, signal);
+  const generateText = await getPipeline(model, emit, {}, signal);
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   const hfTokenizer = generateText.tokenizer;
@@ -86,24 +78,24 @@ async function generateTurn(
 
   let streamer: any;
   if (onDelta) {
-    // Streaming path: forward decoded token pieces to the caller's callback.
-    // The streamer is constructed with a queue for API compatibility with
-    // createStreamingTextStreamer, but we intercept push() to route events
-    // to onDelta + accumulator and DON'T re-push into the queue — nothing
-    // consumes queue.iterable on this code path, so re-pushing would grow
-    // an unread buffer unboundedly for long generations.
-    const queue = createStreamEventQueue<StreamEvent<AiChatProviderOutput>>();
-    streamer = createStreamingTextStreamer(hfTokenizer, queue, TextStreamer);
-    queue.push = (event: StreamEvent<AiChatProviderOutput>) => {
-      if (event.type === "text-delta" && "textDelta" in event) {
-        accumulated += event.textDelta;
-        onDelta(event.textDelta);
-      }
-    };
+    // Streaming path: forward each decoded token piece to the caller's
+    // callback and accumulate the full string for KV-cache snapshotting.
+    streamer = createStreamingTextStreamer(
+      hfTokenizer,
+      (text) => {
+        accumulated += text;
+        onDelta(text);
+      },
+      TextStreamer
+    );
   } else {
     // Non-streaming path: use progress-reporting text streamer and accumulate
     // the full text by decoding the output tensor after generation.
-    streamer = createTextStreamer(hfTokenizer, onProgress, TextStreamer);
+    streamer = createTextStreamer(
+      hfTokenizer,
+      (progress, message) => emit({ type: "phase", message: message ?? "", progress }),
+      TextStreamer
+    );
   }
 
   const output = (await hfModel.generate({
@@ -151,59 +143,16 @@ async function generateTurn(
 }
 
 // ============================================================================
-// Provider stream function
+// Provider run function
 // ============================================================================
 
-export const HFT_Chat_Stream: AiProviderStreamFn<
+export const HFT_Chat: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<AiChatProviderOutput>> {
-  type ChatQueueItem =
-    | { kind: "delta"; text: string }
-    | { kind: "phase"; progress: number; message?: string };
-
-  const queue: ChatQueueItem[] = [];
-  let done = false;
-  let resolver: (() => void) | undefined;
-
-  const onProgress = (progress: number, message?: string): void => {
-    queue.push({ kind: "phase", progress, message });
-    resolver?.();
-  };
-
-  const task = (async () => {
-    try {
-      await generateTurn(input, model!, sessionId, onProgress, signal, (piece) => {
-        queue.push({ kind: "delta", text: piece });
-        resolver?.();
-      });
-    } finally {
-      done = true;
-      resolver?.();
-    }
-  })();
-
-  while (!done || queue.length > 0) {
-    if (queue.length === 0 && !done) {
-      await new Promise<void>((res) => (resolver = res));
-      resolver = undefined;
-    }
-    while (queue.length > 0) {
-      const item = queue.shift()!;
-      if (item.kind === "delta") {
-        yield { type: "text-delta", port: "text", textDelta: item.text };
-      } else {
-        yield { type: "phase", message: item.message ?? "", progress: item.progress };
-      }
-    }
-  }
-  await task;
-  yield { type: "finish", data: {} as AiChatProviderOutput };
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+  await generateTurn(input, model!, sessionId, emit, signal, (piece) => {
+    emit({ type: "text-delta", port: "text", textDelta: piece });
+  });
+  emit({ type: "finish", data: {} as AiChatProviderOutput });
 };

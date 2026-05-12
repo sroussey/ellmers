@@ -5,7 +5,7 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -284,17 +284,11 @@ async function* streamTextChunks<T>(
 // Streaming run function
 // ============================================================================
 
-export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
+export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   LlamaCppModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for ToolCallingTask.");
 
   await loadSdk();
@@ -316,7 +310,7 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
   const chatHistory = convertMessagesToChatHistory(input.messages, promptText, systemPrompt);
   const functions = buildChatModelFunctions(input.tools);
 
-  const { text: accumulatedText, result: chatResponse } = yield* streamTextChunks(
+  const gen = streamTextChunks(
     (onTextChunk) =>
       llamaChat.generateResponse(chatHistory, {
         signal,
@@ -335,6 +329,12 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
       } catch {}
     }
   );
+  let step = await gen.next();
+  while (!step.done) {
+    emit(step.value);
+    step = await gen.next();
+  }
+  const { text: accumulatedText, result: chatResponse } = step.value;
 
   const toolCalls = extractNativeFunctionCalls(chatResponse?.functionCalls);
 
@@ -345,11 +345,11 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderStreamFn<
   const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
 
   if (validToolCalls.length > 0) {
-    yield { type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] };
+    emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
   }
 
-  yield {
+  emit({
     type: "finish",
     data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
-  };
+  });
 };

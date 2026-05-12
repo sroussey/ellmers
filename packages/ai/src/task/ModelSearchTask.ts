@@ -56,7 +56,7 @@ const ModelSearchInputSchema = {
 
 function buildModelSearchInputSchemaDynamic(): DataPortSchema {
   const registry = getAiProviderRegistry();
-  const ids = registry.getProviderIdsForCapabilities(["provider.model-search"]);
+  const ids = registry.getProviderIdsForCapabilities(["model.search"]);
   const enumLabels: Record<string, string> = {};
   for (const id of ids) {
     enumLabels[id] = registry.getProvider(id)?.displayName ?? id;
@@ -123,8 +123,8 @@ export class ModelSearchTask extends Task<
    * test in `task/index.test.ts` validates the value is a known {@link Capability}.
    */
   public static readonly requires: readonly Capability[] = [
-    "provider.model-search",
-  ] as const satisfies readonly Capability[];
+    "model.search",
+  ] as const satisfies Capability[];
   public static override category = "AI Model";
   public static override title = "Model Search";
   public static override description = "Search for models using provider-specific search functions";
@@ -149,12 +149,10 @@ export class ModelSearchTask extends Task<
     const registry = getAiProviderRegistry();
     const runFn = registry.getRunFnFor<ModelSearchTaskInput, ModelSearchTaskOutput>(
       input.provider,
-      ["provider.model-search"]
+      ["model.search"]
     );
     if (!runFn) {
-      throw new Error(
-        `Provider "${input.provider}" has no run function serving "provider.model-search".`
-      );
+      throw new Error(`Provider "${input.provider}" has no run function serving "model.search".`);
     }
     const { emit, result } = accumulatingEmit<ModelSearchTaskOutput>();
     await runFn(input, undefined, context.signal, emit);

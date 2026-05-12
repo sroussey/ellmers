@@ -114,8 +114,8 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
 
   it("falls back to a baseline of meta-ops when nothing matches and nothing is declared", () => {
     const caps = provider.inferCapabilities(model("totally-unknown-model"));
-    expect(caps).toContain("provider.model-search");
-    expect(caps).toContain("provider.model-info");
+    expect(caps).toContain("model.search");
+    expect(caps).toContain("model.info");
     expect(caps).not.toContain("text.generation");
   });
 
@@ -126,8 +126,8 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
     expect(sorted).toEqual([
       "json-mode",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
       "text.generation",
       "text.rewriter",
       "text.summary",
@@ -139,13 +139,13 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
   it("infers exact capability set for gemini-embedding-001", () => {
     const caps = provider.inferCapabilities(model("gemini-embedding-001"));
     const sorted = [...caps].sort();
-    expect(sorted).toEqual(["provider.model-info", "provider.model-search", "text.embedding"]);
+    expect(sorted).toEqual(["model.info", "model.search", "text.embedding"]);
   });
 
   it("infers exact capability set for imagen-4.0-generate-001", () => {
     const caps = provider.inferCapabilities(model("imagen-4.0-generate-001"));
     const sorted = [...caps].sort();
-    expect(sorted).toEqual(["image.generation", "provider.model-info", "provider.model-search"]);
+    expect(sorted).toEqual(["image.generation", "model.info", "model.search"]);
   });
 });
 
@@ -158,9 +158,7 @@ describe("Gemini fallback-list coverage", () => {
   for (const entry of GEMINI_FALLBACK_MODELS) {
     it(`infers non-baseline capabilities for fallback model ${entry.value}`, () => {
       const caps = provider.inferCapabilities(model(entry.value));
-      const meaningful = caps.filter(
-        (c) => c !== "provider.model-search" && c !== "provider.model-info"
-      );
+      const meaningful = caps.filter((c) => c !== "model.search" && c !== "model.info");
       expect(meaningful.length).toBeGreaterThan(0);
     });
   }
@@ -186,8 +184,8 @@ describe("GEMINI_RUN_FNS shape", () => {
     expect(sets).toContain("image.generation");
     expect(sets).toContain("image.editing");
     expect(sets).toContain("model.count-tokens");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("tiebreaks `text.generation` to the smallest serves entry (plain text-gen)", () => {

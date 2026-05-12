@@ -83,7 +83,7 @@ This is equivalent to creating the graph directly, with additional features like
 
 ```ts
 import { Dataflow, TaskGraph } from "workglow";
-import { DownloadModelTask, TextRewriterTask } from "workglow";
+import { ModelDownloadTask, TextRewriterTask } from "workglow";
 import { DebugLogTask } from "workglow";
 import { registerHuggingFaceTransformersInline } from "workglow/hf-transformers/runtime";
 
@@ -101,7 +101,7 @@ const laMiniModelConfig = {
 
 // build and run graph
 const graph = new TaskGraph();
-graph.addTask(new DownloadModelTask({ model: laMiniModelConfig }, { id: "1" }));
+graph.addTask(new ModelDownloadTask({ model: laMiniModelConfig }, { id: "1" }));
 graph.addTask(
   new TextRewriterTask(
     {
@@ -140,7 +140,7 @@ And unrolling the helpers, we get the following equivalent code:
 ```ts
 import { Dataflow, TaskGraph, getTaskQueueRegistry, TaskInput, TaskOutput } from "workglow";
 import {
-  DownloadModelTask,
+  ModelDownloadTask,
   TextRewriterTask,
   AiJob,
   AiJobInput,
@@ -204,7 +204,7 @@ const laMiniModelConfig = {
 
 // Build and run graph
 const graph = new TaskGraph();
-graph.addTask(new DownloadModelTask({ model: laMiniModelConfig }, { id: "1" }));
+graph.addTask(new ModelDownloadTask({ model: laMiniModelConfig }, { id: "1" }));
 graph.addTask(
   new TextRewriterTask(
     {

@@ -5,37 +5,29 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksTextSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_TextClassification: AiProviderStreamFn<
+export const TFMP_TextClassification: AiProviderRunFn<
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextClassificationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { TextClassifier } = await loadTfmpTasksTextSDK();
-  const TextClassification = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        maxCategories: input.maxCategories,
-      },
-      cb,
-      signal,
-      TextClassifier
-    )
+  const TextClassification = await getModelTask(
+    model!,
+    {
+      maxCategories: input.maxCategories,
+    },
+    emit,
+    signal,
+    TextClassifier
   );
   const result = TextClassification.classify(input.text);
 
@@ -48,5 +40,5 @@ export const TFMP_TextClassification: AiProviderStreamFn<
     score: category.score,
   }));
 
-  yield { type: "finish", data: { categories } };
+  emit({ type: "finish", data: { categories } });
 };

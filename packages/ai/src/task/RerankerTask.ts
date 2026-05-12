@@ -126,7 +126,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
    */
   public static readonly requires: readonly Capability[] = [
     "text.reranking",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Reranker";
   public static override description = "Rerank retrieved chunks to improve relevance";

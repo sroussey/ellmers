@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getActualModelPath,
@@ -18,11 +17,11 @@ import {
   resolvedPaths,
 } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_ModelInfo: AiProviderStreamFn<
+export const LlamaCpp_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   LlamaCppModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   if (!model) throw new Error("Model config is required for ModelInfoTask.");
 
   if (input.detail === "dimensions") {
@@ -30,7 +29,7 @@ export const LlamaCpp_ModelInfo: AiProviderStreamFn<
     const native_dimensions =
       typeof pc.native_dimensions === "number" ? pc.native_dimensions : undefined;
     const mrl = typeof pc.mrl === "boolean" ? pc.mrl : false;
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -44,7 +43,7 @@ export const LlamaCpp_ModelInfo: AiProviderStreamFn<
         ...(native_dimensions !== undefined ? { native_dimensions } : {}),
         ...(mrl ? { mrl } : {}),
       },
-    };
+    });
     return;
   }
 
@@ -65,7 +64,7 @@ export const LlamaCpp_ModelInfo: AiProviderStreamFn<
     }
   }
 
-  yield {
+  emit({
     type: "finish",
     data: {
       model: input.model,
@@ -77,5 +76,5 @@ export const LlamaCpp_ModelInfo: AiProviderStreamFn<
       is_loaded,
       file_sizes,
     },
-  };
+  });
 };

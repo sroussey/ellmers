@@ -22,28 +22,16 @@ import type { Capability } from "@workglow/ai/worker";
  * but it is registered under `["text.generation", "json-mode"]` per the capability
  * dispatch model so the consumer receives a parsed object in `finish.data.object`.
  */
-export const ANTHROPIC_TEXT_GENERATION = ["text.generation"] as const satisfies readonly Capability[];
-export const ANTHROPIC_TOOL_USE = [
-  "text.generation",
-  "tool-use",
-] as const satisfies readonly Capability[];
-export const ANTHROPIC_JSON_MODE = [
-  "text.generation",
-  "json-mode",
-] as const satisfies readonly Capability[];
-export const ANTHROPIC_TEXT_REWRITER = ["text.rewriter"] as const satisfies readonly Capability[];
-export const ANTHROPIC_TEXT_SUMMARY = ["text.summary"] as const satisfies readonly Capability[];
-export const ANTHROPIC_COUNT_TOKENS = [
-  "model.count-tokens",
-] as const satisfies readonly Capability[];
-export const ANTHROPIC_MODEL_SEARCH = [
-  "provider.model-search",
-] as const satisfies readonly Capability[];
-export const ANTHROPIC_MODEL_INFO = [
-  "provider.model-info",
-] as const satisfies readonly Capability[];
+export const ANTHROPIC_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
+export const ANTHROPIC_TOOL_USE = ["text.generation", "tool-use"] as const satisfies Capability[];
+export const ANTHROPIC_JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
+export const ANTHROPIC_TEXT_REWRITER = ["text.rewriter"] as const satisfies Capability[];
+export const ANTHROPIC_TEXT_SUMMARY = ["text.summary"] as const satisfies Capability[];
+export const ANTHROPIC_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
+export const ANTHROPIC_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
+export const ANTHROPIC_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 
-/** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `ANTHROPIC_RUN_FNS`. */
+/** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `ANTHROPIC_RUN_FNS`; validated by the `capability-set parity` test in `AnthropicProvider.test.ts`. */
 export const ANTHROPIC_CAPABILITY_SETS = [
   ANTHROPIC_TEXT_GENERATION,
   ANTHROPIC_TOOL_USE,

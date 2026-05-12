@@ -60,7 +60,7 @@ export function inferOllamaCapabilities(model: CapabilityHints): readonly Capabi
 
   // Embedding models.
   if (EMBEDDING_NAME_PATTERNS.some((rx) => rx.test(baseName))) {
-    return ["text.embedding", "provider.model-info", "provider.model-search"];
+    return ["text.embedding", "model.info", "model.search"];
   }
 
   // Vision-capable local models — llava family, bakllava, and `*-vision` tags.
@@ -71,8 +71,8 @@ export function inferOllamaCapabilities(model: CapabilityHints): readonly Capabi
       "text.summary",
       "tool-use",
       "vision-input",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -85,13 +85,13 @@ export function inferOllamaCapabilities(model: CapabilityHints): readonly Capabi
       "text.rewriter",
       "text.summary",
       "tool-use",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
   // No id at all — fall back to declared or baseline meta-ops.
   const declared = (model.capabilities as readonly Capability[] | undefined) ?? [];
   if (declared.length > 0) return declared;
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

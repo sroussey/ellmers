@@ -5,37 +5,29 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ObjectDetectionTaskInput,
   ObjectDetectionTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_ObjectDetection: AiProviderStreamFn<
+export const TFMP_ObjectDetection: AiProviderRunFn<
   ObjectDetectionTaskInput,
   ObjectDetectionTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<ObjectDetectionTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { ObjectDetector } = await loadTfmpTasksVisionSDK();
-  const objectDetector = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        scoreThreshold: input.threshold,
-      },
-      cb,
-      signal,
-      ObjectDetector
-    )
+  const objectDetector = await getModelTask(
+    model!,
+    {
+      scoreThreshold: input.threshold,
+    },
+    emit,
+    signal,
+    ObjectDetector
   );
   const result = objectDetector.detect(input.image);
 
@@ -54,5 +46,5 @@ export const TFMP_ObjectDetection: AiProviderStreamFn<
     },
   }));
 
-  yield { type: "finish", data: { detections } };
+  emit({ type: "finish", data: { detections } });
 };

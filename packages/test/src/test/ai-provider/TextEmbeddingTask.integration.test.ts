@@ -5,9 +5,9 @@
  */
 
 import {
-  DownloadModelTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
@@ -64,7 +64,7 @@ describe("TextEmbeddingTask with real models", () => {
       await getGlobalModelRepository().addModel(model);
 
       // First download the model
-      const download = new DownloadModelTask({
+      const download = new ModelDownloadTask({
         defaults: { model: "onnx:Xenova/gte-small:q8" },
       });
       let lastProgress: number | undefined = -1;

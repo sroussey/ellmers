@@ -5,41 +5,33 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   PoseLandmarkerTaskInput,
   PoseLandmarkerTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_PoseLandmarker: AiProviderStreamFn<
+export const TFMP_PoseLandmarker: AiProviderRunFn<
   PoseLandmarkerTaskInput,
   PoseLandmarkerTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<PoseLandmarkerTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { PoseLandmarker } = await loadTfmpTasksVisionSDK();
-  const poseLandmarker = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        numPoses: input.numPoses,
-        minPoseDetectionConfidence: input.minPoseDetectionConfidence,
-        minPosePresenceConfidence: input.minPosePresenceConfidence,
-        minTrackingConfidence: input.minTrackingConfidence,
-        outputSegmentationMasks: input.outputSegmentationMasks,
-      },
-      cb,
-      signal,
-      PoseLandmarker
-    )
+  const poseLandmarker = await getModelTask(
+    model!,
+    {
+      numPoses: input.numPoses,
+      minPoseDetectionConfidence: input.minPoseDetectionConfidence,
+      minPosePresenceConfidence: input.minPosePresenceConfidence,
+      minTrackingConfidence: input.minTrackingConfidence,
+      outputSegmentationMasks: input.outputSegmentationMasks,
+    },
+    emit,
+    signal,
+    PoseLandmarker
   );
   const result = poseLandmarker.detect(input.image);
 
@@ -77,5 +69,5 @@ export const TFMP_PoseLandmarker: AiProviderStreamFn<
     return pose;
   });
 
-  yield { type: "finish", data: { poses } };
+  emit({ type: "finish", data: { poses } });
 };

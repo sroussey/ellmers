@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -43,9 +43,7 @@ export class ImageGenerateTask extends AiImageOutputTask<
 > {
   public static override type = "ImageGenerateTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
-    "image.generation",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["image.generation"] as const satisfies Capability[];
   public static override category = "AI Vision";
   public static override title = "Generate Image";
   public static override description =

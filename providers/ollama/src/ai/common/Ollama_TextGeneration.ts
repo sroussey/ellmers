@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
@@ -31,12 +30,8 @@ interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
  */
 export function createOllamaTextGenerationStream(
   getClient: GetClient
-): AiProviderStreamFn<TextGenerationTaskInput, TextGenerationTaskOutput, OllamaModelConfig> {
-  return async function* (
-    input,
-    model,
-    signal
-  ): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+): AiProviderRunFn<TextGenerationTaskInput, TextGenerationTaskOutput, OllamaModelConfig> {
+  return async (input, model, signal, emit) => {
     signal?.throwIfAborted?.();
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
@@ -73,10 +68,10 @@ export function createOllamaTextGenerationStream(
       for await (const chunk of stream) {
         const delta = chunk.message.content;
         if (delta) {
-          yield { type: "text-delta", port: "text", textDelta: delta };
+          emit({ type: "text-delta", port: "text", textDelta: delta });
         }
       }
-      yield { type: "finish", data: {} as TextGenerationTaskOutput };
+      emit({ type: "finish", data: {} as TextGenerationTaskOutput });
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

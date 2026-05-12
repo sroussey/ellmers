@@ -6,6 +6,7 @@
 
 import {
   collectStream,
+  createEmitQueue,
   getAiProviderRegistry,
   getGlobalModelRepository,
   textGeneration,
@@ -71,47 +72,19 @@ export async function* streamProviderTextGeneration(
     }
   }
   // Bridge Promise+emit run-fn back to an async generator for callers that
-  // want to inspect the raw event sequence. We push events into a queue and
-  // yield them as they arrive.
-  const queue: StreamEvent<TaskOutput>[] = [];
-  let resolveNext: (() => void) | undefined;
-  let done = false;
-  let error: unknown;
-  const emit = (e: StreamEvent<TaskOutput>): void => {
-    queue.push(e);
-    resolveNext?.();
-    resolveNext = undefined;
-  };
+  // want to inspect the raw event sequence.
+  const q = createEmitQueue<StreamEvent<TaskOutput>>();
   const runP = streamFn(
     { prompt, maxTokens: callOpts.maxTokens },
     model,
     ac.signal,
-    emit,
+    (e) => q.push(e as StreamEvent<TaskOutput>),
     undefined,
     undefined
-  ).then(
-    () => {
-      done = true;
-      resolveNext?.();
-    },
-    (err) => {
-      error = err;
-      done = true;
-      resolveNext?.();
-    }
-  );
+  ).then(() => q.close(), (err) => q.fail(err));
   try {
-    while (true) {
-      while (queue.length > 0) {
-        yield queue.shift()!;
-      }
-      if (done) {
-        if (error) throw error;
-        return;
-      }
-      await new Promise<void>((r) => {
-        resolveNext = r;
-      });
+    for await (const event of q.iterable) {
+      yield event;
     }
   } finally {
     clearTimeout(t);

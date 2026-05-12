@@ -5,7 +5,7 @@
  */
 
 import { toTextFlatMessages } from "@workglow/ai/worker";
-import type { AiProviderLegacyStreamFnRegistration } from "@workglow/ai";
+import type { AiProviderRunFnRegistration } from "@workglow/ai";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getClient } from "./Ollama_Client";
 import {
@@ -41,7 +41,7 @@ export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient
  * AiChatTask} and `["text.generation", "tool-use"]` wins for
  * {@link ToolCallingTask}.
  */
-export const OLLAMA_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
+export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

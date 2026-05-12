@@ -193,8 +193,7 @@ export class ChunkRetrievalTask extends Task<
 > {
   public static override type = "ChunkRetrievalTask";
   /** Pure-compute retrieval task — uses storage, not a provider capability. */
-  public static readonly requires: readonly Capability[] =
-    [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Chunk Retrieval";
   public static override description =

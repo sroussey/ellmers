@@ -5,24 +5,19 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName } from "./HFI_Client";
 
-export const HFI_TextEmbedding: AiProviderStreamFn<
+export const HFI_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfInferenceModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timerLabel = `hfi:TextEmbedding:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
@@ -44,12 +39,12 @@ export const HFI_TextEmbedding: AiProviderStreamFn<
     );
 
     logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name, batch: true });
-    yield {
+    emit({
       type: "finish",
       data: {
         vector: embeddings.map((embedding) => new Float32Array(embedding as unknown as number[])),
       },
-    };
+    });
     return;
   }
 
@@ -62,8 +57,8 @@ export const HFI_TextEmbedding: AiProviderStreamFn<
   );
 
   logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
-  yield {
+  emit({
     type: "finish",
     data: { vector: new Float32Array(embedding as unknown as number[]) },
-  };
+  });
 };

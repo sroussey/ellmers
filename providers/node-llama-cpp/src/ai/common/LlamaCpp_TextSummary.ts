@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getOrCreateTextContext,
@@ -19,11 +18,11 @@ import {
   streamFromSession,
 } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_TextSummary_Stream: AiProviderStreamFn<
+export const LlamaCpp_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
   LlamaCppModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextSummaryTaskOutput>> {
+> = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for TextSummaryTask.");
 
   const { LlamaChatSession } = await loadSdk();
@@ -36,13 +35,15 @@ export const LlamaCpp_TextSummary_Stream: AiProviderStreamFn<
     systemPrompt: "Summarize the following text concisely, preserving the key points.",
   });
   try {
-    yield* streamFromSession<TextSummaryTaskOutput>((onTextChunk) => {
+    for await (const e of streamFromSession<TextSummaryTaskOutput>((onTextChunk) => {
       return session.prompt(input.text, {
         signal,
         onTextChunk,
         ...llamaCppSeedPromptSpread(model.provider_config),
       });
-    }, signal);
+    }, signal)) {
+      emit(e);
+    }
   } finally {
     try {
       await session.dispose({ disposeSequence: false });

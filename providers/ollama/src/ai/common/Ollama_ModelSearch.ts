@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
 import { OLLAMA } from "./Ollama_Constants";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
@@ -18,8 +17,8 @@ type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
 export function createOllamaModelSearchStream(
   getClient: GetClient
-): AiProviderStreamFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
-  return async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+): AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
+  return async (input, _model, _signal, emit) => {
     try {
       const client = await getClient(undefined);
       const response = await client.list();
@@ -38,12 +37,12 @@ export function createOllamaModelSearchStream(
         },
         raw: m,
       }));
-      yield {
+      emit({
         type: "finish",
         data: { results: filterModelSearchResultsByQuery(results, input.query) },
-      };
+      });
     } catch {
-      yield { type: "finish", data: { results: [] } };
+      emit({ type: "finish", data: { results: [] } });
     }
   };
 }

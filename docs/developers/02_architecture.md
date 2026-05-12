@@ -77,10 +77,10 @@ Tasks are the main building blocks of the system. They are simple or compound ta
 flowchart LR
   subgraph Task
     direction LR
-    subgraph DownloadModelCompoundTask
+    subgraph ModelDownloadCompoundTask
         direction LR
-        DownloadModelTask_1[DownloadModelTask model 1]
-        DownloadModelTask_2[DownloadModelTask model 2]
+        ModelDownloadTask_1[ModelDownloadTask model 1]
+        ModelDownloadTask_2[ModelDownloadTask model 2]
     end
     subgraph RewriteTextCompoundTask
         direction LR
@@ -96,7 +96,7 @@ flowchart LR
 
   A[Load document] --> B[Split document into paragraphs]
   B --> Task
-  DownloadModelCompoundTask --> RewriteTextCompoundTask
+  ModelDownloadCompoundTask --> RewriteTextCompoundTask
   RewriteTextCompoundTask --> TextEmbeddingCompoundTask
   Task --> C[Save to Database]
 
@@ -134,11 +134,11 @@ classDiagram
     style AiTask type:abstract,stroke-dasharray: 5 5
 
 
-  class DownloadModelTask{
+  class ModelDownloadTask{
     run() model
   }
-  AiTask <|-- DownloadModelTask
-  style DownloadModelTask type:model,stroke-width:2px
+  AiTask <|-- ModelDownloadTask
+  style ModelDownloadTask type:model,stroke-width:2px
 
   class TextEmbeddingTask{
     string text
@@ -267,7 +267,7 @@ classDiagram
     reset() Workflow
     toJSON() TaskGraphJson
     toDependencyJSON() JsonTaskItem[]
-    +DownloadModel(model)
+    +ModelDownload(model)
     +TextEmbedding(model text)
     +TextGeneration(model prompt)
     +TextQuestionAnswer(model question context)

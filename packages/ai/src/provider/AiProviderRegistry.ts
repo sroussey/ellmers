@@ -26,40 +26,6 @@ export type AiProviderPreviewRunFn<
   Model extends ModelConfig = ModelConfig,
 > = (input: Input, model: Model | undefined) => Promise<Output | undefined>;
 
-/**
- * Type for the streaming run function for the AiJob.
- * Returns an AsyncIterable of StreamEvents instead of a Promise.
- * No `update_progress` callback -- for streaming providers, the stream itself IS the progress signal.
- * The optional `outputSchema` is provided for structured output tasks.
- *
- * Streaming primitive: this is the canonical authoring surface for provider streams.
- * Implementations MUST be `async function*` generators returning `AsyncIterable`.
- * Do not return a `ReadableStream` -- `ReadableStream` is an engine-internal primitive
- * used only at the dataflow edge for fan-out via `tee()`.
- *
- * Finish convention: yield `{ type: "finish", data: {} as Output }` at the end.
- * Do not accumulate deltas into the finish payload -- the `StreamingAiTask` / `TaskRunner`
- * consumer handles accumulation. Non-streaming consumers use `collectStream(...)` from
- * `@workglow/ai/capability` to materialise a single `Output`.
- *
- * @cancel The provided `signal` MUST be forwarded to the underlying SDK or fetch.
- * Generators MUST stop yielding promptly after `signal.aborted` becomes true -- either
- * because the underlying SDK tears down the connection, or because the generator checks
- * `signal.aborted` at loop boundaries. Use `try { ... } finally { ... }` to release any
- * resources (readers, timers) -- `finally` runs when the consumer stops iterating on abort.
- * On abort, the consumer will throw `TaskAbortedError`; do not swallow abort errors.
- */
-export type AiProviderStreamFn<
-  Input extends TaskInput = TaskInput,
-  Output extends TaskOutput = TaskOutput,
-  Model extends ModelConfig = ModelConfig,
-> = (
-  input: Input,
-  model: Model | undefined,
-  signal: AbortSignal,
-  outputSchema?: JsonSchema,
-  sessionId?: string
-) => AsyncIterable<StreamEvent<Output>>;
 
 /**
  * Promise+emit run-fn shape. Output flows through `emit`; the Promise carries
@@ -109,22 +75,6 @@ export interface AiProviderRunFnRegistration<
   readonly runFn: AiProviderRunFn<Input, Output, Model>;
 }
 
-/**
- * A capability-set registration for a legacy async-generator stream run
- * function. Used only through {@link AiProviderRegistry.registerLegacyStreamFn},
- * which wraps the generator with a pure event forwarder so dispatch always
- * sees the new {@link AiProviderRunFn} shape.
- *
- * Migration only. Removed once every provider moves to {@link AiProviderRunFn}.
- */
-export interface AiProviderLegacyStreamFnRegistration<
-  Input extends TaskInput = TaskInput,
-  Output extends TaskOutput = TaskOutput,
-  Model extends ModelConfig = ModelConfig,
-> {
-  readonly serves: readonly Capability[];
-  readonly runFn: AiProviderStreamFn<Input, Output, Model>;
-}
 
 /**
  * Build the deterministic key used to register a `serves` set on a worker server
@@ -148,11 +98,14 @@ export class AiProviderRegistry {
    * register multiple registrations whose `serves` sets cover different capability
    * combinations; lookup picks the most-specific superset of `requires`.
    */
-  private runFnsByProvider: Map<string, AiProviderRunFnRegistration<any, any>[]> = new Map();
-  private previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> =
+  private readonly runFnsByProvider: Map<string, AiProviderRunFnRegistration<any, any>[]> =
     new Map();
-  private providers: Map<string, AiProvider<any>> = new Map();
-  private strategyResolvers: Map<string, AiStrategyResolver> = new Map();
+  private readonly previewRunFnRegistry: Map<
+    string,
+    Map<string, AiProviderPreviewRunFn<any, any>>
+  > = new Map();
+  private readonly providers: Map<string, AiProvider<any>> = new Map();
+  private readonly strategyResolvers: Map<string, AiStrategyResolver> = new Map();
   private defaultStrategy: IAiExecutionStrategy | undefined;
 
   /**
@@ -299,37 +252,6 @@ export class AiProviderRegistry {
     } else {
       this.runFnsByProvider.set(providerName, [registration]);
     }
-  }
-
-  /**
-   * Registers an old-shape (async-generator) run-fn under a capability set.
-   * Wraps the generator with a pure event forwarder: each yielded event is
-   * passed to `emit`; the Promise resolves when the generator completes. No
-   * accumulation, no materialization — the new-shape contract maps directly
-   * onto the old-shape termination convention (the generator emits its own
-   * `finish` event and then ends iteration).
-   *
-   * Migration only. Once every provider moves to {@link registerRunFn}, both
-   * this method and {@link AiProviderStreamFn} are deleted.
-   */
-  registerLegacyStreamFn(
-    providerName: string,
-    registration: AiProviderLegacyStreamFnRegistration
-  ): void {
-    const oldFn = registration.runFn;
-    const adapted: AiProviderRunFn = async (
-      input,
-      model,
-      signal,
-      emit,
-      outputSchema,
-      sessionId
-    ) => {
-      for await (const event of oldFn(input, model, signal, outputSchema, sessionId)) {
-        emit(event);
-      }
-    };
-    this.registerRunFnInternal(providerName, { serves: registration.serves, runFn: adapted });
   }
 
   /**

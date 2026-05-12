@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProviderRegistry, type AiProviderRunFn, type AiProviderStreamFn } from "@workglow/ai";
+import { AiProviderRegistry, type AiProviderRunFn } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
-describe("AiProviderRegistry: legacy stream-fn adapter", () => {
-  it("forwards every yielded event to emit, including finish", async () => {
+describe("AiProviderRegistry: run-fn registration and dispatch", () => {
+  it("forwards every emitted event to the caller, including finish", async () => {
     const reg = new AiProviderRegistry();
     interface TestIn {
       x: number;
@@ -19,69 +19,88 @@ describe("AiProviderRegistry: legacy stream-fn adapter", () => {
       y: number;
       [k: string]: unknown;
     }
-    const oldFn: AiProviderStreamFn<TestIn, TestOut> = async function* () {
-      yield { type: "phase", message: "starting", progress: 0 };
-      yield { type: "text-delta", port: "y", textDelta: "a" };
-      yield { type: "finish", data: { y: 1 } };
+    const fn: AiProviderRunFn<TestIn, TestOut> = async (_input, _model, _signal, emit) => {
+      emit({ type: "phase", message: "starting", progress: 0 });
+      emit({ type: "text-delta", port: "y", textDelta: "a" });
+      emit({ type: "finish", data: { y: 1 } });
     };
-    reg.registerLegacyStreamFn("P", {
+    reg.registerRunFn("P", {
       serves: ["text.generation"],
-      runFn: oldFn as unknown as AiProviderStreamFn,
+      runFn: fn as unknown as AiProviderRunFn,
     });
-    const fn = reg.getRunFnFor<TestIn, TestOut>("P", ["text.generation"]);
-    expect(fn).toBeTruthy();
+    const resolved = reg.getRunFnFor<TestIn, TestOut>("P", ["text.generation"]);
+    expect(resolved).toBeTruthy();
 
     const events: StreamEvent<TestOut>[] = [];
     const emit = (e: StreamEvent<TestOut>): void => {
       events.push(e);
     };
-    await fn!({ x: 1 }, undefined, new AbortController().signal, emit);
+    await resolved!({ x: 1 }, undefined, new AbortController().signal, emit);
 
     expect(events.map((e) => e.type)).toEqual(["phase", "text-delta", "finish"]);
     expect((events[2] as { data: { y: number } }).data).toEqual({ y: 1 });
   });
 
-  it("does not accumulate (pure forwarder)", async () => {
-    // 10000 delta events should not blow up memory or change shape.
+  it("does not accumulate — emits are forwarded one-by-one without buffering", async () => {
     const reg = new AiProviderRegistry();
-    const oldFn: AiProviderStreamFn = async function* () {
-      for (let i = 0; i < 10000; i++) yield { type: "text-delta", port: "text", textDelta: "x" };
-      yield { type: "finish", data: {} };
+    const fn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+      for (let i = 0; i < 10000; i++) emit({ type: "text-delta", port: "text", textDelta: "x" });
+      emit({ type: "finish", data: {} });
     };
-    reg.registerLegacyStreamFn("P", { serves: ["text.generation"], runFn: oldFn });
-    const fn = reg.getRunFnFor("P", ["text.generation"]);
+    reg.registerRunFn("P", { serves: ["text.generation"], runFn: fn });
+    const resolved = reg.getRunFnFor("P", ["text.generation"]);
 
     let count = 0;
     const emit = (e: StreamEvent) => {
       if (e.type === "text-delta") count++;
     };
-    await fn!({}, undefined, new AbortController().signal, emit);
+    await resolved!({}, undefined, new AbortController().signal, emit);
     expect(count).toBe(10000);
   });
 
-  it("propagates a thrown error from the legacy generator", async () => {
+  it("propagates a thrown error from the run function", async () => {
     const reg = new AiProviderRegistry();
-    const oldFn: AiProviderStreamFn = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "x" };
+    const fn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+      emit({ type: "text-delta", port: "text", textDelta: "x" });
       throw new Error("boom");
     };
-    reg.registerLegacyStreamFn("P", { serves: ["text.generation"], runFn: oldFn });
-    const fn = reg.getRunFnFor("P", ["text.generation"]);
-    await expect(fn!({}, undefined, new AbortController().signal, () => {})).rejects.toThrow(
+    reg.registerRunFn("P", { serves: ["text.generation"], runFn: fn });
+    const resolved = reg.getRunFnFor("P", ["text.generation"]);
+    await expect(resolved!({}, undefined, new AbortController().signal, () => {})).rejects.toThrow(
       /boom/
     );
   });
 
-  it("supports the new shape via registerRunFn", async () => {
+  it("honors abort signal — run function can check signal and reject early", async () => {
     const reg = new AiProviderRegistry();
-    const newFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
-      emit({ type: "finish", data: { ok: true } });
+    const fn: AiProviderRunFn = async (_input, _model, signal, emit) => {
+      emit({ type: "text-delta", port: "text", textDelta: "start" });
+      await new Promise<void>((_resolve, reject) => {
+        const onAbort = () => {
+          signal.removeEventListener("abort", onAbort);
+          reject(new Error("aborted"));
+        };
+        if (signal.aborted) {
+          reject(new Error("aborted"));
+        } else {
+          signal.addEventListener("abort", onAbort);
+        }
+      });
+      emit({ type: "finish", data: {} });
     };
-    reg.registerRunFn("P", { serves: ["text.generation"], runFn: newFn });
-    const fn = reg.getRunFnFor("P", ["text.generation"]);
-    const events: StreamEvent[] = [];
-    await fn!({}, undefined, new AbortController().signal, (e) => events.push(e));
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("finish");
+    reg.registerRunFn("P", { serves: ["text.generation"], runFn: fn });
+    const resolved = reg.getRunFnFor("P", ["text.generation"]);
+
+    const controller = new AbortController();
+    const emitted: string[] = [];
+    const runPromise = resolved!({}, undefined, controller.signal, (e) => emitted.push(e.type));
+    controller.abort();
+    await expect(runPromise).rejects.toThrow(/aborted/);
+    expect(emitted[0]).toBe("text-delta");
+  });
+
+  it("getRunFnFor returns undefined for an unregistered provider", () => {
+    const reg = new AiProviderRegistry();
+    expect(reg.getRunFnFor("nonexistent", ["text.generation"])).toBeUndefined();
   });
 });

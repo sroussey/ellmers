@@ -5,42 +5,34 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   FaceLandmarkerTaskInput,
   FaceLandmarkerTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_FaceLandmarker: AiProviderStreamFn<
+export const TFMP_FaceLandmarker: AiProviderRunFn<
   FaceLandmarkerTaskInput,
   FaceLandmarkerTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<FaceLandmarkerTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { FaceLandmarker } = await loadTfmpTasksVisionSDK();
-  const faceLandmarker = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        numFaces: input.numFaces,
-        minFaceDetectionConfidence: input.minFaceDetectionConfidence,
-        minFacePresenceConfidence: input.minFacePresenceConfidence,
-        minTrackingConfidence: input.minTrackingConfidence,
-        outputFaceBlendshapes: input.outputFaceBlendshapes,
-        outputFacialTransformationMatrixes: input.outputFacialTransformationMatrixes,
-      },
-      cb,
-      signal,
-      FaceLandmarker
-    )
+  const faceLandmarker = await getModelTask(
+    model!,
+    {
+      numFaces: input.numFaces,
+      minFaceDetectionConfidence: input.minFaceDetectionConfidence,
+      minFacePresenceConfidence: input.minFacePresenceConfidence,
+      minTrackingConfidence: input.minTrackingConfidence,
+      outputFaceBlendshapes: input.outputFaceBlendshapes,
+      outputFacialTransformationMatrixes: input.outputFacialTransformationMatrixes,
+    },
+    emit,
+    signal,
+    FaceLandmarker
   );
   const result = faceLandmarker.detect(input.image as any);
 
@@ -71,5 +63,5 @@ export const TFMP_FaceLandmarker: AiProviderStreamFn<
     return face;
   });
 
-  yield { type: "finish", data: { faces } };
+  emit({ type: "finish", data: { faces } });
 };

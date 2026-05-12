@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 
 import { blobToImageValue } from "@workglow/ai/provider-utils";
@@ -28,14 +27,14 @@ function modelIdOf(model: ModelConfig | undefined): string {
 }
 
 /**
- * One-shot stream wrapper. HF Inference does not support partial image streaming,
- * so we run the request, yield one snapshot, then finish.
+ * One-shot run fn. HF Inference does not support partial image streaming,
+ * so we run the request, emit one snapshot, then finish.
  */
-export const HFI_ImageGenerate_Stream: AiProviderStreamFn<
+export const HFI_ImageGenerate_Stream: AiProviderRunFn<
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
   HfInferenceModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageGenerateTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timer = `hfi:ImageGenerate:${getModelName(model)}`;
   logger.time(timer);
@@ -76,6 +75,5 @@ export const HFI_ImageGenerate_Stream: AiProviderStreamFn<
   }
 
   if (signal.aborted) return;
-  yield { type: "snapshot", data: result } as StreamEvent<ImageGenerateTaskOutput>;
-  yield { type: "finish", data: {} as ImageGenerateTaskOutput };
+  emit({ type: "finish", data: result });
 };

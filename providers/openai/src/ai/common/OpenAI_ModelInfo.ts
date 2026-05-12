@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /** Known OpenAI embedding model dimensions. */
@@ -16,15 +15,15 @@ const OPENAI_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
 };
 
 /**
- * One-shot streaming run-fn for `["provider.model-info"]`. Returns a synchronous
+ * One-shot run-fn for `["model.info"]`. Returns a synchronous
  * info record from the in-process embedding-dimensions table; OpenAI does not
- * expose an HTTP endpoint for this metadata. Yields a single `finish` event.
+ * expose an HTTP endpoint for this metadata. Emits a single `finish` event.
  */
-export const OpenAI_ModelInfo_Stream: AiProviderStreamFn<
+export const OpenAI_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -41,7 +40,7 @@ export const OpenAI_ModelInfo_Stream: AiProviderStreamFn<
       }
     }
 
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -55,11 +54,11 @@ export const OpenAI_ModelInfo_Stream: AiProviderStreamFn<
         ...(native_dimensions !== undefined ? { native_dimensions } : {}),
         ...(mrl !== undefined ? { mrl } : {}),
       },
-    };
+    });
     return;
   }
 
-  yield {
+  emit({
     type: "finish",
     data: {
       model: input.model,
@@ -71,5 +70,5 @@ export const OpenAI_ModelInfo_Stream: AiProviderStreamFn<
       is_loaded: false,
       file_sizes: null,
     },
-  };
+  });
 };

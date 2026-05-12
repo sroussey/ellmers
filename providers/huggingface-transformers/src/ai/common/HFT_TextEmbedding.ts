@@ -6,12 +6,10 @@
 
 import type { FeatureExtractionPipeline } from "@huggingface/transformers";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger, TypedArray } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
@@ -21,21 +19,24 @@ import { getPipeline } from "./HFT_Pipeline";
  * This is shared between inline and worker implementations.
  *
  * Model download progress (first-call cold start) is forwarded as `phase`
- * stream events via {@link bridgeProgress}; subsequent calls are near-instant
- * because the pipeline is cached.
+ * stream events via the `emit` callback passed to {@link getPipeline}; subsequent
+ * calls are near-instant because the pipeline is cached.
  */
-export const HFT_TextEmbedding: AiProviderStreamFn<
+export const HFT_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const uuid = crypto.randomUUID();
   const timerLabel = `hft:TextEmbedding:${model?.provider_config.model_path}:${uuid}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const generateEmbedding = (yield* bridgeProgress((onProgress) =>
-    getPipeline(model!, onProgress, {}, signal)
+  const generateEmbedding = (await getPipeline(
+    model!,
+    emit,
+    {},
+    signal
   )) as FeatureExtractionPipeline;
 
   logger.debug("HFT TextEmbedding: pipeline ready, generating embedding", {
@@ -81,7 +82,7 @@ export const HFT_TextEmbedding: AiProviderStreamFn<
     );
 
     logger.timeEnd(timerLabel, { batchSize: numTexts, dimensions: vectorDim });
-    yield { type: "finish", data: { vector: vectors } };
+    emit({ type: "finish", data: { vector: vectors } });
     return;
   }
 
@@ -99,5 +100,5 @@ export const HFT_TextEmbedding: AiProviderStreamFn<
   }
 
   logger.timeEnd(timerLabel, { dimensions: hfVector.size });
-  yield { type: "finish", data: { vector: hfVector.data as TypedArray } };
+  emit({ type: "finish", data: { vector: hfVector.data as TypedArray } });
 };

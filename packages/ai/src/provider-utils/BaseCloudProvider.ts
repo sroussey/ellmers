@@ -6,8 +6,8 @@
 
 import type { AiProvider } from "../provider/AiProvider";
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
+  AiProviderRunFnRegistration,
 } from "../provider/AiProviderRegistry";
 import type { ModelConfig } from "../model/ModelSchema";
 
@@ -31,7 +31,7 @@ export interface CloudProviderMetadata {
  */
 type AiProviderCtor<TModelConfig extends ModelConfig> = abstract new (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, TModelConfig>[],
+  promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
 ) => AiProvider<TModelConfig>;
@@ -58,7 +58,7 @@ export function createCloudProviderClass<TModelConfig extends ModelConfig>(
   }
   return CloudProvider as unknown as new (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, TModelConfig>[],
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
   ) => AiProvider<TModelConfig> & {

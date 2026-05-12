@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { createEmitQueue } from "@workglow/ai";
 import { createOllamaTextGenerationStream } from "@workglow/ollama/ai-runtime";
 
 type FakeStream = {
@@ -57,13 +58,19 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
 
     const events: any[] = [];
     let caught: unknown;
+    const q = createEmitQueue<any>();
+    const runP = streamFn(input, model, controller.signal, (e) => q.push(e)).then(
+      () => q.close(),
+      (e) => q.fail(e)
+    );
     try {
-      for await (const ev of streamFn(input, model, controller.signal)) {
+      for await (const ev of q.iterable) {
         events.push(ev);
       }
     } catch (err) {
       caught = err;
     }
+    await runP;
 
     const deltas = events.filter((e) => e.type === "text-delta");
     expect(deltas).toHaveLength(0);
@@ -80,9 +87,18 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
     const streamFn = createOllamaTextGenerationStream(getClient);
 
     const events: any[] = [];
-    for await (const ev of streamFn(input, model, undefined as any)) {
-      events.push(ev);
-    }
+    const q = createEmitQueue<any>();
+    await Promise.all([
+      streamFn(input, model, undefined as any, (e) => q.push(e)).then(
+        () => q.close(),
+        (e) => q.fail(e)
+      ),
+      (async () => {
+        for await (const ev of q.iterable) {
+          events.push(ev);
+        }
+      })(),
+    ]);
 
     const deltas = events.filter((e) => e.type === "text-delta").map((e) => (e as any).textDelta);
     expect(deltas).toEqual(["hello", " world"]);
@@ -101,7 +117,12 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
     const controller = new AbortController();
     const deltas: string[] = [];
 
-    for await (const ev of streamFn(input, model, controller.signal)) {
+    const q = createEmitQueue<any>();
+    const runP = streamFn(input, model, controller.signal, (e) => q.push(e)).then(
+      () => q.close(),
+      () => q.close()
+    );
+    for await (const ev of q.iterable) {
       if (ev.type === "text-delta") {
         deltas.push(ev.textDelta);
         if (deltas.length === 2) {
@@ -109,6 +130,7 @@ describe("createOllamaTextGenerationStream abort behavior", () => {
         }
       }
     }
+    await runP;
 
     expect(fakeStream.abort).toHaveBeenCalledTimes(1);
     expect(deltas.length).toBeLessThan(chunks.length);

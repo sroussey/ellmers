@@ -5,12 +5,11 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
 import { getClient } from "./Anthropic_Client";
 import { ANTHROPIC } from "./Anthropic_Constants";
@@ -61,10 +60,10 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
   }));
 }
 
-export const Anthropic_ModelSearch_Stream: AiProviderStreamFn<
+export const Anthropic_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+> = async (input, _model, _signal, emit) => {
   let models: AnthropicModelListItem[];
   if (!input.credential_key) {
     models = ANTHROPIC_FALLBACK;
@@ -72,5 +71,5 @@ export const Anthropic_ModelSearch_Stream: AiProviderStreamFn<
     models = await listAnthropicModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
-  yield { type: "finish", data: { results: mapModelList(models) } };
+  emit({ type: "finish", data: { results: mapModelList(models) } });
 };

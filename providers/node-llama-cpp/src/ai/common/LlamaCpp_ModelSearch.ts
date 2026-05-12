@@ -5,18 +5,17 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { searchHfModels, mapHfModelResult } from "@workglow/ai/provider-utils";
-import type { StreamEvent } from "@workglow/task-graph";
 import { LOCAL_LLAMACPP } from "./LlamaCpp_Constants";
 
-export const LlamaCpp_ModelSearch: AiProviderStreamFn<
+export const LlamaCpp_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async function* (input, _model, signal): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+> = async (input, _model, signal, emit) => {
   const entries = await searchHfModels(
     input.query?.trim() ?? "",
     { filter: "gguf" },
@@ -24,5 +23,5 @@ export const LlamaCpp_ModelSearch: AiProviderStreamFn<
     signal
   );
   const results = entries.map((entry) => mapHfModelResult(entry, LOCAL_LLAMACPP));
-  yield { type: "finish", data: { results } };
+  emit({ type: "finish", data: { results } });
 };

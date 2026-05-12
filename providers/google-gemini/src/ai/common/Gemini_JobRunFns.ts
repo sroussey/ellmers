@@ -5,7 +5,7 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
+  AiProviderRunFnRegistration,
   AiProviderPreviewRunFn,
 } from "@workglow/ai";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
@@ -46,7 +46,7 @@ import { Gemini_ToolCalling_Stream } from "./Gemini_ToolCalling";
  * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
  * for {@link ToolCallingTask}.
  */
-export const GEMINI_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
+export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

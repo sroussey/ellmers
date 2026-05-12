@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -97,9 +97,7 @@ export class ImageSegmentationTask extends AiVisionTask<
 > {
   public static override type = "ImageSegmentationTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
-    "image.segmentation",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["image.segmentation"] as const satisfies Capability[];
   public static override category = "AI Vision";
   public static override title = "Image Segmentation";
   public static override description =

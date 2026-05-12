@@ -5,19 +5,18 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 
-export const HFI_TextRewriter_Stream: AiProviderStreamFn<
+export const HFI_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
   HfInferenceModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextRewriterTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
   const provider = getProvider(model);
@@ -37,8 +36,8 @@ export const HFI_TextRewriter_Stream: AiProviderStreamFn<
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? "";
     if (delta) {
-      yield { type: "text-delta", port: "text", textDelta: delta };
+      emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
-  yield { type: "finish", data: {} as TextRewriterTaskOutput };
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
 };

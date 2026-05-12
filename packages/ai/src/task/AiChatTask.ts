@@ -175,9 +175,7 @@ export interface AiChatProviderOutput {
 export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutput> {
   public static override type = "AiChatTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = [
-    "text.generation",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["text.generation"] as const satisfies Capability[];
   protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat";

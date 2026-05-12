@@ -4,20 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
 /**
- * Streaming run-fn for `["text.rewriter"]`. Yields `text-delta` events on
+ * Streaming run-fn for `["text.rewriter"]`. Emits `text-delta` events on
  * the `text` port and a final empty `finish` event.
  */
-export const OpenAI_TextRewriter_Stream: AiProviderStreamFn<
+export const OpenAI_TextRewriter_Stream: AiProviderRunFn<
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextRewriterTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -36,8 +35,8 @@ export const OpenAI_TextRewriter_Stream: AiProviderStreamFn<
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content ?? "";
     if (delta) {
-      yield { type: "text-delta", port: "text", textDelta: delta };
+      emit({ type: "text-delta", port: "text", textDelta: delta });
     }
   }
-  yield { type: "finish", data: {} as TextRewriterTaskOutput };
+  emit({ type: "finish", data: {} as TextRewriterTaskOutput });
 };

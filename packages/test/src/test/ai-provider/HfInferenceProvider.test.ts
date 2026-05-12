@@ -53,15 +53,15 @@ describe("HfInferenceQueuedProvider.inferCapabilities", () => {
 
   it("returns baseline meta-ops for unknown ids", () => {
     const caps = provider.inferCapabilities(model("totally-unknown-no-hints"));
-    expect(caps).toEqual(["provider.model-search", "provider.model-info"]);
+    expect(caps).toEqual(["model.search", "model.info"]);
   });
 
   it("infers exact capability set for mistral", () => {
     const caps = provider.inferCapabilities(model("mistralai/Mistral-7B-Instruct"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
       "text.generation",
       "text.rewriter",
       "text.summary",
@@ -88,8 +88,8 @@ describe("HFI_RUN_FNS shape", () => {
     expect(sets).toContain("text.embedding");
     expect(sets).toContain("image.generation");
     expect(sets).toContain("image.editing");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("tiebreaks `text.generation` to the smallest serves entry", () => {
