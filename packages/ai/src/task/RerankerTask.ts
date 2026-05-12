@@ -111,11 +111,13 @@ interface RankedItem {
 }
 
 /**
- * Heuristic reranking task. Cross-encoder reranking (via model) is handled
- * by `createAiKbStrategy` directly — it dispatches to provider-registered
- * RerankerTask run-fns through `AiProviderRegistry`. This task remains the
- * model-free fallback for workflows that don't want to require a reranker
- * model.
+ * Heuristic, model-free reranking. For real cross-encoder reranking use
+ * {@link TextRerankerTask}, which dispatches to a provider-registered run-fn
+ * (e.g. HuggingFace Transformers) for a configured reranker model.
+ * `createStandardKbStrategy` invokes that path automatically when the KB has
+ * a `rerankerModel` set under `searchMode: "rerank"`; this task is the
+ * fallback when no reranker model is configured and a workflow still wants
+ * some rerank-style scoring.
  */
 export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, RerankerTaskConfig> {
   public static override type = "RerankerTask";

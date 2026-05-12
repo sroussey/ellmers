@@ -6,7 +6,11 @@
 
 import type { TypedArray } from "@workglow/util/schema";
 import type { ChunkRecord } from "../chunk/ChunkSchema";
-import type { ChunkSearchResult, InsertChunkVectorEntity } from "../chunk/ChunkVectorStorageSchema";
+import type {
+  ChunkSearchResult,
+  ChunkVectorEntity,
+  InsertChunkVectorEntity,
+} from "../chunk/ChunkVectorStorageSchema";
 import type { Document } from "../document/Document";
 import type { ISearchOptions } from "./KnowledgeBase";
 
@@ -75,7 +79,7 @@ export interface IKbStrategyTarget {
   /** Low-level: drop every chunk row for the given doc_id. */
   deleteChunksForDocument(doc_id: string): Promise<void>;
   /** Low-level: bulk-write chunk vectors. */
-  upsertChunksBulk(chunks: InsertChunkVectorEntity[]): Promise<unknown>;
+  upsertChunksBulk(chunks: InsertChunkVectorEntity[]): Promise<ChunkVectorEntity[]>;
   /** Low-level: pure-vector retrieval. */
   similaritySearch(
     query: TypedArray,
