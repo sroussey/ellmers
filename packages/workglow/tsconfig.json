@@ -8,5 +8,27 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
-  }
+  },
+  "references": [
+    { "path": "../util" },
+    { "path": "../storage" },
+    { "path": "../job-queue" },
+    { "path": "../task-graph" },
+    { "path": "../knowledge-base" },
+    { "path": "../tasks" },
+    { "path": "../ai" },
+    { "path": "../javascript" },
+    { "path": "../mcp" },
+    { "path": "../browser-control" },
+    { "path": "../../providers/anthropic" },
+    { "path": "../../providers/chrome-ai" },
+    { "path": "../../providers/google-gemini" },
+    { "path": "../../providers/huggingface-inference" },
+    { "path": "../../providers/huggingface-transformers" },
+    { "path": "../../providers/ollama" },
+    { "path": "../../providers/openai" },
+    { "path": "../../providers/postgres" },
+    { "path": "../../providers/sqlite" },
+    { "path": "../../providers/tf-mediapipe" }
+  ]
 }

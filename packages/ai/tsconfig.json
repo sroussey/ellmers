@@ -7,5 +7,12 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src"
-  }
+  },
+  "references": [
+    { "path": "../util" },
+    { "path": "../storage" },
+    { "path": "../job-queue" },
+    { "path": "../task-graph" },
+    { "path": "../knowledge-base" }
+  ]
 }

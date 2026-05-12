@@ -7,5 +7,32 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src"
-  }
+  },
+  "references": [
+    { "path": "../util" },
+    { "path": "../storage" },
+    { "path": "../job-queue" },
+    { "path": "../task-graph" },
+    { "path": "../knowledge-base" },
+    { "path": "../tasks" },
+    { "path": "../ai" },
+    { "path": "../javascript" },
+    { "path": "../indexeddb" },
+    { "path": "../mcp" },
+    { "path": "../browser-control" },
+    { "path": "../../providers/anthropic" },
+    { "path": "../../providers/bun-webview" },
+    { "path": "../../providers/electron" },
+    { "path": "../../providers/google-gemini" },
+    { "path": "../../providers/huggingface-inference" },
+    { "path": "../../providers/huggingface-transformers" },
+    { "path": "../../providers/node-llama-cpp" },
+    { "path": "../../providers/ollama" },
+    { "path": "../../providers/openai" },
+    { "path": "../../providers/playwright" },
+    { "path": "../../providers/postgres" },
+    { "path": "../../providers/sqlite" },
+    { "path": "../../providers/supabase" },
+    { "path": "../../providers/tf-mediapipe" }
+  ]
 }
