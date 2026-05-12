@@ -40,21 +40,7 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
-type MemSnapshot = ReturnType<typeof process.memoryUsage>;
-const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
-const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
-const snapMem = (): MemSnapshot => process.memoryUsage();
-const reportMem = (label: string, start?: MemSnapshot) => {
-  const m = process.memoryUsage();
-  const fmt = (cur: number, base: number | undefined) =>
-    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
-  process.stderr.write(
-    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
-  );
-};
-const reportTime = (label: string, started: number) => {
-  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
-};
+import { snap, report } from "../../binding/testTiming";
 
 describe("RAG Workflow End-to-End", () => {
   const kbName = "rag-test-kb";
@@ -84,8 +70,7 @@ describe("RAG Workflow End-to-End", () => {
   });
 
   afterAll(async () => {
-    reportMem("rag-wf before dispose");
-    const beforeDispose = snapMem();
+    const beforeDispose = snap();
     kb.destroy();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
@@ -95,12 +80,11 @@ describe("RAG Workflow End-to-End", () => {
     // EndToEnd's afterAll so neighbouring files in the same bun-test invocation
     // start fresh.
     await clearPipelineCache();
-    reportMem("rag-wf after dispose", beforeDispose);
+    report("rag-wf: dispose", beforeDispose);
   });
 
   it("should ingest markdown documents with NER enrichment", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     // Find markdown files in docs folder
     const docsPath = join(process.cwd(), "docs", "technical");
     const files = readdirSync(docsPath).filter((f) => f.endsWith(".md"));
@@ -152,13 +136,11 @@ describe("RAG Workflow End-to-End", () => {
     // Verify vectors were stored
     expect(totalVectors).toBeGreaterThan(0);
     logger.info(`Total vectors in knowledge base: ${totalVectors}`);
-    reportTime("rag-wf: ingest", started);
-    reportMem("rag-wf: ingest", startMem);
+    report("rag-wf: ingest", s);
   }, 600000);
 
   it("should search for relevant content", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "What is retrieval augmented generation?";
 
     logger.info(`\nSearching for: "${query}"`);
@@ -191,13 +173,11 @@ describe("RAG Workflow End-to-End", () => {
     for (let i = 1; i < searchResult.scores!.length; i++) {
       expect(searchResult.scores![i]).toBeLessThanOrEqual(searchResult.scores![i - 1]);
     }
-    reportTime("rag-wf: search", started);
-    reportMem("rag-wf: search", startMem);
+    report("rag-wf: search", s);
   }, 600000);
 
   it("should answer questions using retrieved context", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const question = "What is RAG?";
 
     logger.info(`\nAnswering question: "${question}"`);
@@ -214,8 +194,7 @@ describe("RAG Workflow End-to-End", () => {
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No relevant chunks found, skipping QA");
-      reportTime("rag-wf: qa", started);
-      reportMem("rag-wf: qa", startMem);
+      report("rag-wf: qa", s);
       return;
     }
 
@@ -232,13 +211,11 @@ describe("RAG Workflow End-to-End", () => {
     if (answer.text.length > 0) {
       logger.info(`\nAnswer: ${answer.text}`);
     }
-    reportTime("rag-wf: qa", started);
-    reportMem("rag-wf: qa", startMem);
+    report("rag-wf: qa", s);
   }, 600000);
 
   it("should handle complex multi-step RAG pipeline", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const question = "How does vector search work?";
 
     logger.info(`\nComplex RAG pipeline for: "${question}"`);
@@ -259,8 +236,7 @@ describe("RAG Workflow End-to-End", () => {
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No chunks found, skipping QA step");
-      reportTime("rag-wf: complex-pipeline", started);
-      reportMem("rag-wf: complex-pipeline", startMem);
+      report("rag-wf: complex-pipeline", s);
       return;
     }
 
@@ -276,7 +252,6 @@ describe("RAG Workflow End-to-End", () => {
 
     expect(result.text).toBeDefined();
     expect(typeof result.text).toBe("string");
-    reportTime("rag-wf: complex-pipeline", started);
-    reportMem("rag-wf: complex-pipeline", startMem);
+    report("rag-wf: complex-pipeline", s);
   }, 600000);
 });

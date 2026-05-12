@@ -12,21 +12,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { registerTasks } from "../../binding/RegisterTasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-type MemSnapshot = ReturnType<typeof process.memoryUsage>;
-const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
-const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
-const snapMem = (): MemSnapshot => process.memoryUsage();
-const reportMem = (label: string, start?: MemSnapshot) => {
-  const m = process.memoryUsage();
-  const fmt = (cur: number, base: number | undefined) =>
-    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
-  process.stderr.write(
-    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
-  );
-};
-const reportTime = (label: string, started: number) => {
-  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
-};
+import { snap, report } from "../../binding/testTiming";
 
 describe("Complete chainable workflow", () => {
   let logger = getTestingLogger();
@@ -36,8 +22,7 @@ describe("Complete chainable workflow", () => {
   });
 
   it("should chain from parsing to storage without loops", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const markdown = `# Test Document
 
 ## Section 1
@@ -76,13 +61,11 @@ This is the second section with more content.`;
     // Verify output structure matches expectations
     expect(result.chunks.length).toBe(result.count);
     expect(result.text.length).toBe(result.count);
-    reportTime("full-chain: parse+chunk", started);
-    reportMem("full-chain: parse+chunk", startMem);
+    report("full-chain: parse+chunk", s);
   });
 
   it("should demonstrate data flow through chain", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const markdown = "# Title\n\nParagraph content.";
 
     const result = await new Workflow()
@@ -114,13 +97,11 @@ This is the second section with more content.`;
     for (const chunk of chunks) {
       expect(chunk.doc_id).toBe(result.doc_id);
     }
-    reportTime("full-chain: data-flow", started);
-    reportMem("full-chain: data-flow", startMem);
+    report("full-chain: data-flow", s);
   });
 
   it("should allow doc_id override for variant creation", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const markdown = "# Test\n\nContent.";
     const customId = uuid4();
 
@@ -142,7 +123,6 @@ This is the second section with more content.`;
     for (const chunk of result.chunks) {
       expect(chunk.doc_id).toBe(customId);
     }
-    reportTime("full-chain: doc-id-override", started);
-    reportMem("full-chain: doc-id-override", startMem);
+    report("full-chain: doc-id-override", s);
   });
 });

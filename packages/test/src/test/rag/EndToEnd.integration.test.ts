@@ -45,21 +45,7 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
-type MemSnapshot = ReturnType<typeof process.memoryUsage>;
-const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
-const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
-const snapMem = (): MemSnapshot => process.memoryUsage();
-const reportMem = (label: string, start?: MemSnapshot) => {
-  const m = process.memoryUsage();
-  const fmt = (cur: number, base: number | undefined) =>
-    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
-  process.stderr.write(
-    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
-  );
-};
-const reportTime = (label: string, started: number) => {
-  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
-};
+import { snap, report } from "../../binding/testTiming";
 
 describe("End-to-End RAG Pipeline", () => {
   // In CI, skip summary/NER in document enricher to avoid flaky ONNX model downloads
@@ -100,20 +86,18 @@ describe("End-to-End RAG Pipeline", () => {
   });
 
   afterAll(async () => {
-    reportMem("e2e-rag before dispose");
-    const beforeDispose = snapMem();
+    const beforeDispose = snap();
     kb.destroy();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
     await resourceScope.disposeAll();
     await clearPipelineCache();
-    reportMem("e2e-rag after dispose", beforeDispose);
+    report("e2e-rag: dispose", beforeDispose);
   });
 
   it("should ingest document through complete pipeline", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const sampleFilePath = join(__dirname, sampleFileName);
 
     logger.info(`\n=== Stage 1: Document Ingestion ===`);
@@ -160,13 +144,11 @@ describe("End-to-End RAG Pipeline", () => {
     logger.info(`  -> Document ID: ${result.doc_id}`);
     logger.info(`  -> Stored ${result.count} vectors`);
     logger.info(`  -> Chunk IDs: ${result.chunk_ids.slice(0, 3).join(", ")}...`);
-    reportTime("e2e-rag: ingest", started);
-    reportMem("e2e-rag: ingest", startMem);
+    report("e2e-rag: ingest", s);
   }, 160000);
 
   it("should retrieve relevant chunks via query workflow", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "What caused the Civil War?";
 
     logger.info(`\n=== Stage 2: Query Retrieval ===`);
@@ -218,13 +200,11 @@ describe("End-to-End RAG Pipeline", () => {
     ];
     const hasRelevantContent = relevantTerms.some((term) => contextLower.includes(term));
     expect(hasRelevantContent).toBe(true);
-    reportTime("e2e-rag: retrieval", started);
-    reportMem("e2e-rag: retrieval", startMem);
+    report("e2e-rag: retrieval", s);
   }, 120000);
 
   it("should answer questions about US history", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const questions = [
       {
         query: "When did the American Revolution begin?",
@@ -277,13 +257,11 @@ describe("End-to-End RAG Pipeline", () => {
     }
 
     expect(totalQueriesWithResults).toBeGreaterThanOrEqual(1);
-    reportTime("e2e-rag: qa-history", started);
-    reportMem("e2e-rag: qa-history", startMem);
+    report("e2e-rag: qa-history", s);
   }, 180000);
 
   it("should use QueryExpander to generate query variations", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "What were the major battles of World War II?";
 
     logger.info(`\n=== QueryExpander RAG Task ===`);
@@ -331,13 +309,11 @@ describe("End-to-End RAG Pipeline", () => {
     }
 
     expect(totalChunksFound).toBeGreaterThan(0);
-    reportTime("e2e-rag: query-expander", started);
-    reportMem("e2e-rag: query-expander", startMem);
+    report("e2e-rag: query-expander", s);
   }, 180000);
 
   it("should use ContextBuilder with different formats", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "What was the Declaration of Independence?";
 
     logger.info(`\n=== ContextBuilder Format Options ===`);
@@ -377,13 +353,11 @@ describe("End-to-End RAG Pipeline", () => {
       expect(contextResult.context).toBeDefined();
       expect(contextResult.chunksUsed).toBeGreaterThan(0);
     }
-    reportTime("e2e-rag: context-builder", started);
-    reportMem("e2e-rag: context-builder", startMem);
+    report("e2e-rag: context-builder", s);
   }, 120000);
 
   it("should use ChunkRetrieval in hybrid mode for combined vector + text search", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "Civil War slavery abolition Lincoln";
 
     logger.info(`\n=== ChunkRetrieval (hybrid) ===`);
@@ -391,8 +365,7 @@ describe("End-to-End RAG Pipeline", () => {
     // In-memory KB does not support hybrid search; skip cleanly.
     if (!kb.supportsHybridSearch()) {
       logger.info("Skipping: knowledge base does not support hybrid search");
-      reportTime("e2e-rag: hybrid", started);
-      reportMem("e2e-rag: hybrid", startMem);
+      report("e2e-rag: hybrid", s);
       return;
     }
 
@@ -419,13 +392,11 @@ describe("End-to-End RAG Pipeline", () => {
     const relevantTerms = ["civil", "war", "slavery", "lincoln", "union", "emancipation"];
     const foundTerms = relevantTerms.filter((term) => allChunksText.includes(term));
     expect(foundTerms.length).toBeGreaterThan(0);
-    reportTime("e2e-rag: hybrid", started);
-    reportMem("e2e-rag: hybrid", startMem);
+    report("e2e-rag: hybrid", s);
   }, 120000);
 
   it("should use HierarchyJoinTask to enrich results with document context", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     const query = "American Revolution independence";
 
     logger.info(`\n=== HierarchyJoinTask ===`);
@@ -452,13 +423,11 @@ describe("End-to-End RAG Pipeline", () => {
     expect(result.metadata).toBeDefined();
     expect(Array.isArray(result.metadata)).toBe(true);
     expect(result.count).toBe(result.metadata.length);
-    reportTime("e2e-rag: hierarchy-join", started);
-    reportMem("e2e-rag: hierarchy-join", startMem);
+    report("e2e-rag: hierarchy-join", s);
   }, 120000);
 
   it("should demonstrate workflow composability", async () => {
-    const started = Date.now();
-    const startMem = snapMem();
+    const s = snap();
     logger.info(`\n=== Workflow Composability Test ===`);
 
     const ingestionWorkflow = new Workflow()
@@ -504,7 +473,6 @@ describe("End-to-End RAG Pipeline", () => {
     const hybridTasks = hybridRetrievalWorkflow.graph.getTasks();
     expect(hybridTasks.length).toBe(3);
     expect(hybridRetrievalWorkflow.error).toBe("");
-    reportTime("e2e-rag: composability", started);
-    reportMem("e2e-rag: composability", startMem);
+    report("e2e-rag: composability", s);
   });
 });
