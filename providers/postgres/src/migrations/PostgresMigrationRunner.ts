@@ -37,12 +37,15 @@ type ConnectablePool = Pool & {
 };
 
 /**
- * Process-wide serialization of `run()` calls per backing database. Keyed
- * by the `Pool` object so independent databases don't contend, and weak so
- * disposing the pool releases the lock entry. Required because the
- * bookkeeping PK alone resolves races only after `up()` has already
- * executed — without this mutex, three racing runners would each run
- * `up()` and only one would win the INSERT.
+ * In-process serialization of `run()` calls per `Pool` wrapper. Keyed by
+ * the wrapper object (not the underlying database), so two separate pools
+ * pointing at the same database — or runners in different processes — do
+ * not contend through this map. Cross-instance races are handled by the
+ * bookkeeping PK check below (a 23505 from a concurrent INSERT is caught
+ * and treated as "already applied"). Without this in-process mutex,
+ * multiple runners sharing one pool would each invoke `up()` before the
+ * 23505 was raised. The map is a WeakMap so disposing the pool releases
+ * the entry.
  */
 const runLocks = new WeakMap<object, Promise<unknown>>();
 

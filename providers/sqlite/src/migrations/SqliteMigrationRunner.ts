@@ -14,13 +14,21 @@ import {
 } from "@workglow/storage";
 
 /**
- * Process-wide serialization of `run()` calls per backing database. Keyed
- * by the `Sqlite.Database` object so independent databases don't contend,
- * and weak so closing the database releases the entry. Required so racing
- * runners against the same database execute each migration's `up()`
- * exactly once.
+ * In-process serialization of `run()` calls per `Sqlite.Database` wrapper.
+ * Keyed by the wrapper object (not the underlying DB file), so two
+ * separate `new Sqlite.Database(samePath)` instances in the same process
+ * — or runners in different processes — do not contend through this
+ * map. Cross-instance races are handled by the bookkeeping PK check in
+ * `runInternal` (duplicate-key INSERT is caught and treated as
+ * "already applied"). The map is a WeakMap so closing the wrapper
+ * releases the entry.
  */
 const runLocks = new WeakMap<object, Promise<unknown>>();
+
+const isSqliteConstraintError = (err: unknown): boolean => {
+  const code = (err as { code?: string } | null)?.code;
+  return typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT");
+};
 
 /**
  * Runs versioned migrations against a SQLite database.
@@ -33,9 +41,12 @@ const runLocks = new WeakMap<object, Promise<unknown>>();
  * surrounding `runLocks` mutex prevents any other migration call from
  * touching the connection mid-transaction.
  *
- * Concurrent `run()` calls against the same database are serialized through
- * a JS-layer mutex so racing runners see each others' bookkeeping rows
- * before deciding to invoke `up()`.
+ * Concurrent `run()` calls against the same wrapper are serialized through
+ * an in-process JS mutex so racing runners see each others' bookkeeping
+ * rows before deciding to invoke `up()`. The unique constraint on
+ * `(component, version)` is retained as defense-in-depth — a constraint
+ * violation from a separate wrapper or process is treated as
+ * "already applied" (same shape as the Postgres 23505 fast-path).
  */
 export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> {
   constructor(private readonly db: Sqlite.Database) {}
@@ -103,8 +114,10 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
         phase: "starting",
         description: m.description,
       });
-      this.db.exec("BEGIN");
+      let inTransaction = false;
       try {
+        this.db.exec("BEGIN");
+        inTransaction = true;
         const result = m.up(this.db, (fraction) => {
           onProgress?.({
             component: m.component,
@@ -117,6 +130,7 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
         if (result instanceof Promise) await result;
         insert.run(m.component, m.version, m.description ?? null);
         this.db.exec("COMMIT");
+        inTransaction = false;
         seen.add(m.version);
         applied.push(m);
         onProgress?.({
@@ -127,10 +141,25 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
           fraction: 1,
         });
       } catch (err) {
-        try {
-          this.db.exec("ROLLBACK");
-        } catch {
-          // Best-effort: the transaction may already be aborted.
+        if (inTransaction) {
+          try {
+            this.db.exec("ROLLBACK");
+          } catch {
+            // Best-effort: the transaction may already be aborted.
+          }
+        }
+        // Concurrent runner from another wrapper/process already inserted
+        // the bookkeeping row — treat as success, matching Postgres 23505.
+        if (isSqliteConstraintError(err)) {
+          seen.add(m.version);
+          onProgress?.({
+            component: m.component,
+            version: m.version,
+            phase: "completed",
+            description: m.description,
+            fraction: 1,
+          });
+          continue;
         }
         onProgress?.({
           component: m.component,
