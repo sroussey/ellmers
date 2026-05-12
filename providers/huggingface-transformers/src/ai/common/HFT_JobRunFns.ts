@@ -5,8 +5,8 @@
  */
 
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
   AiProviderStreamFn,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
@@ -96,7 +96,7 @@ const HFT_TextGeneration_Unified: AiProviderStreamFn<
  * the same dispatcher — see `DownloadModelTask` / `UnloadModelTask`'s
  * `requires` declarations.
  */
-export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const HFT_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

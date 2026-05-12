@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFnRegistration } from "@workglow/ai";
+import type { AiProviderLegacyStreamFnRegistration } from "@workglow/ai";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 import {
   WEB_BROWSER_MODEL_INFO,
@@ -24,7 +24,7 @@ import { WebBrowser_TextRewriter } from "./WebBrowser_TextRewriter";
 import { WebBrowser_TextSummary } from "./WebBrowser_TextSummary";
 import { WebBrowser_TextTranslation } from "./WebBrowser_TextTranslation";
 
-export const WEB_BROWSER_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const WEB_BROWSER_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

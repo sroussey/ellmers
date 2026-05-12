@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
+import { createEmitQueue } from "../capability/emitQueue";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -294,23 +296,30 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
       const turnJobInput = await this.getJobInput(perTurnInput);
 
       let assistantText = "";
-      for await (const event of strategy.executeStream(
-        turnJobInput as any,
-        context,
-        this.runConfig.runnerId
-      )) {
+      const queue = createEmitQueue<StreamEvent<AiChatTaskOutput>>();
+      const emit: AiEmit<AiChatTaskOutput> = (event) => {
         if (event.type === "text-delta") {
           assistantText += (event as any).textDelta;
-          yield {
+          queue.push({
             ...event,
             port: (event as any).port ?? "text",
-          } as StreamEvent<AiChatTaskOutput>;
+          } as StreamEvent<AiChatTaskOutput>);
         } else if (event.type === "finish") {
           // swallow — we emit our own finish at the end
         } else {
-          yield event as StreamEvent<AiChatTaskOutput>;
+          queue.push(event as StreamEvent<AiChatTaskOutput>);
         }
+      };
+      const runPromise = strategy
+        .execute(turnJobInput as any, context, this.runConfig.runnerId, emit as AiEmit<TaskOutput>)
+        .then(
+          () => queue.close(),
+          (err) => queue.fail(err)
+        );
+      for await (const event of queue.iterable) {
+        yield event;
       }
+      await runPromise;
 
       const assistantMsg: ChatMessage = {
         role: "assistant",

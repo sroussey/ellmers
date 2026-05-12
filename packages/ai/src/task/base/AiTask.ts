@@ -9,7 +9,6 @@
  * provider-registered strategy (direct or queued).
  */
 
-import { Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
   IExecutePreviewContext,
@@ -30,6 +29,8 @@ import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
 import { noopEmit } from "../../capability/AiEmit";
+import type { AiEmit } from "../../capability/AiEmit";
+import { accumulatingEmit } from "../../capability/accumulatingEmit";
 import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
@@ -164,7 +165,9 @@ export class AiTask<
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
-    const output = await strategy.execute(jobInput, executeContext, this.runConfig.runnerId);
+    const { emit, result } = accumulatingEmit<Output>();
+    await strategy.execute(jobInput, executeContext, this.runConfig.runnerId, emit as AiEmit);
+    const output = result();
 
     // Register a disposer so the caller can unload the model when done. The
     // unload path is wired via the "model.unload" capability so providers opt
@@ -192,7 +195,7 @@ export class AiTask<
       }
     }
 
-    return output as Output;
+    return output;
   }
 
   // ========================================================================
@@ -248,7 +251,7 @@ export class AiTask<
   /**
    * Creates a new Job instance for direct execution (without a queue).
    */
-  async createJob(input: Input, queueName?: string): Promise<Job<AiJobInput<Input>, Output>> {
+  async createJob(input: Input, queueName?: string): Promise<AiJob<AiJobInput<Input>, Output>> {
     const jobInput = await this.getJobInput(input);
     const resolvedQueueName = queueName ?? (await this.getDefaultQueueName(input));
     if (!resolvedQueueName) {

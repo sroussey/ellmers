@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFnRegistration } from "@workglow/ai";
+import type { AiProviderLegacyStreamFnRegistration } from "@workglow/ai";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import {
   HFI_IMAGE_EDITING,
@@ -40,7 +40,7 @@ import { HFI_ToolCalling_Stream } from "./HFI_ToolCalling";
  */
 const HFI_TextGeneration_Unified = HFI_TextGeneration_Stream;
 
-export const HFI_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const HFI_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

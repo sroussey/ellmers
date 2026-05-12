@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
+import type {
+  AiProviderLegacyStreamFnRegistration,
+  AiProviderPreviewRunFn,
+} from "@workglow/ai";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import {
   OPENAI_COUNT_TOKENS,
@@ -42,7 +45,7 @@ import { OpenAI_ToolCalling_Stream } from "./OpenAI_ToolCalling";
  * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
  * for {@link ToolCallingTask}.
  */
-export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const OPENAI_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

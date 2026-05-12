@@ -6,8 +6,8 @@
 
 import { AiProvider } from "@workglow/ai";
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
   Capability,
   ModelRecord,
 } from "@workglow/ai";
@@ -23,7 +23,7 @@ export class TensorFlowMediaPipeQueuedProvider extends AiProvider<TFMPModelConfi
   readonly supportsBrowser = true;
 
   constructor(
-    runFns?: readonly AiProviderRunFnRegistration<
+    runFns?: readonly AiProviderLegacyStreamFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
