@@ -31,7 +31,7 @@ import {
 } from "@workglow/huggingface-transformers/ai-runtime";
 import { createKnowledgeBase, KnowledgeBase } from "@workglow/knowledge-base";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
-import { setLogger } from "@workglow/util";
+import { ResourceScope, setLogger } from "@workglow/util";
 import { readdirSync } from "fs";
 import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +47,10 @@ describe("RAG Workflow End-to-End", () => {
   const nerModel = "onnx:onnx-community/NeuroBERT-NER-ONNX:q8";
   const qaModel = "onnx:onnx-community/ModernBERT-finetuned-squad-ONNX";
   let kb: KnowledgeBase;
+  // Shared across every workflow.run() so loaded models stay warm until
+  // afterAll. Without this, each workflow's auto-created scope disposes
+  // every model the workflow used as soon as run() returns.
+  let resourceScope: ResourceScope;
   const logger = getTestingLogger();
   setLogger(logger);
 
@@ -58,6 +62,8 @@ describe("RAG Workflow End-to-End", () => {
     await registerHuggingFaceTransformersInline();
 
     await registerHuggingfaceLocalModels();
+
+    resourceScope = new ResourceScope();
 
     // Create unified KnowledgeBase
     kb = await createKnowledgeBase({
@@ -71,6 +77,7 @@ describe("RAG Workflow End-to-End", () => {
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
+    await resourceScope.disposeAll();
   });
 
   it("should ingest markdown documents with NER enrichment", async () => {
@@ -113,7 +120,7 @@ describe("RAG Workflow End-to-End", () => {
           knowledgeBase: kbName,
         });
 
-      const result = (await ingestionWorkflow.run()) as VectorStoreUpsertTaskOutput;
+      const result = (await ingestionWorkflow.run({}, { resourceScope })) as VectorStoreUpsertTaskOutput;
 
       logger.info(`  -> Stored ${result.count} vectors`);
       totalVectors += result.count;
@@ -139,7 +146,7 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.3,
     });
 
-    const searchResult = (await searchWorkflow.run()) as ChunkRetrievalTaskOutput;
+    const searchResult = (await searchWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
 
     expect(searchResult.chunks).toBeDefined();
     expect(Array.isArray(searchResult.chunks)).toBe(true);
@@ -205,7 +212,7 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.2,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run()) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No chunks found, skipping QA step");
@@ -220,7 +227,7 @@ describe("RAG Workflow End-to-End", () => {
       model: qaModel,
     });
 
-    const result = (await qaWorkflow.run()) as TextQuestionAnswerTaskOutput;
+    const result = (await qaWorkflow.run({}, { resourceScope })) as TextQuestionAnswerTaskOutput;
 
     expect(result.text).toBeDefined();
     expect(typeof result.text).toBe("string");
