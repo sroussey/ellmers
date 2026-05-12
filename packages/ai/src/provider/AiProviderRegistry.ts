@@ -342,10 +342,25 @@ export class AiProviderRegistry {
    *   worker-side registration's `serves` exactly so the deterministic
    *   `workerKeyForServes` lookup resolves on both sides)
    */
-  registerAsWorkerRunFn(_providerName: string, _serves: readonly Capability[]): void {
-    throw new Error(
-      "registerAsWorkerRunFn: not yet wired to the new shape; landing in plan Task 8"
-    );
+  registerAsWorkerRunFn(providerName: string, serves: readonly Capability[]): void {
+    const key = workerKeyForServes(serves);
+    const proxy: AiProviderRunFn = async (
+      input: TaskInput,
+      model: ModelConfig | undefined,
+      signal: AbortSignal,
+      emit: AiEmit,
+      outputSchema?: JsonSchema,
+      sessionId?: string
+    ): Promise<void> => {
+      const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
+      await workerManager.callWorkerRunFunction<StreamEvent<TaskOutput>>(
+        providerName,
+        key,
+        [input, model, outputSchema, sessionId],
+        { signal, emit }
+      );
+    };
+    this.registerRunFnInternal(providerName, { serves, runFn: proxy });
   }
 
   /**
