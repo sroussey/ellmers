@@ -28,9 +28,20 @@ import {
   registerLlamaCppInline,
 } from "@workglow/node-llama-cpp/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
-import { setLogger } from "@workglow/util";
+import { ResourceScope, setLogger } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
+const reportMem = (label: string) => {
+  const m = process.memoryUsage();
+  process.stderr.write(
+    `[${label}] MEM rss=${mb(m.rss)} heap=${mb(m.heapUsed)} ext=${mb(m.external)} ab=${mb(m.arrayBuffers)}\n`
+  );
+};
+const reportTime = (label: string, started: number) => {
+  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
+};
 
 // ========================================================================
 // Model definitions (tiny models suitable for testing)
@@ -80,6 +91,8 @@ const embeddingModel: LlamaCppModelRecord = {
 describe("LlamaCpp Integration (real models, no mocks)", () => {
   let logger = getTestingLogger();
   setLogger(logger);
+  let resourceScope: ResourceScope;
+
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
@@ -89,13 +102,17 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
     const repo = getGlobalModelRepository();
     await repo.addModel(llmModel);
     await repo.addModel(embeddingModel);
+
+    resourceScope = new ResourceScope();
   });
 
   afterAll(async () => {
+    await resourceScope.disposeAll();
     await disposeLlamaCppResources();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
+    reportMem("LlamaCpp afterAll");
   });
 
   // ======================================================================
@@ -105,10 +122,11 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "downloads a text generation model and generates a short story",
     async () => {
+      const started = Date.now();
       // Step 1 — download the LLM
       const downloadWorkflow = new Workflow();
       downloadWorkflow.downloadModel({ model: LLM_MODEL_ID });
-      await downloadWorkflow.run();
+      await downloadWorkflow.run({}, { resourceScope });
 
       // Step 2 — generate a story
       const storyWorkflow = new Workflow();
@@ -119,11 +137,16 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
         temperature: 0.7,
       });
 
-      const storyResult = (await storyWorkflow.run()) as TextGenerationTaskOutput;
+      const storyResult = (await storyWorkflow.run(
+        {},
+        { resourceScope }
+      )) as TextGenerationTaskOutput;
 
       expect(storyResult.text).toBeDefined();
       expect(typeof storyResult.text).toBe("string");
       expect((storyResult.text as string).trim().length).toBeGreaterThan(10);
+      reportTime("llm download+generate", started);
+      reportMem("llm download+generate");
     },
     10 * 60 * 1000 // 10 min: download (~85 MB) + inference
   );
@@ -135,10 +158,11 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "downloads an embedding model and embeds text",
     async () => {
+      const started = Date.now();
       // Step 1 — download the embedding model
       const downloadWorkflow = new Workflow();
       downloadWorkflow.downloadModel({ model: EMBED_MODEL_ID });
-      await downloadWorkflow.run();
+      await downloadWorkflow.run({}, { resourceScope });
 
       // Step 2 — embed a sentence
       const sentence = "A curious robot wandered into an overgrown garden.";
@@ -148,7 +172,10 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
         text: sentence,
       });
 
-      const embedResult = (await embedWorkflow.run()) as TextEmbeddingTaskOutput;
+      const embedResult = (await embedWorkflow.run(
+        {},
+        { resourceScope }
+      )) as TextEmbeddingTaskOutput;
 
       expect(embedResult.vector).toBeDefined();
       expect(embedResult.vector).toBeInstanceOf(Float32Array);
@@ -159,6 +186,8 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
       // Vector should not be all zeros
       const magnitude = Array.from(vector).reduce((sum, v) => sum + v * v, 0);
       expect(magnitude).toBeGreaterThan(0);
+      reportTime("embed download+embed", started);
+      reportMem("embed download+embed");
     },
     10 * 60 * 1000 // 10 min: download (~34 MB) + inference
   );
@@ -170,6 +199,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "generates a story and computes embeddings for each sentence",
     async () => {
+      const started = Date.now();
       // Both models already downloaded by the previous tests; this verifies
       // the full pipeline works end-to-end using cached models.
 
@@ -180,7 +210,10 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
         maxTokens: 80,
         temperature: 0.5,
       });
-      const storyResult = (await storyWorkflow.run()) as TextGenerationTaskOutput;
+      const storyResult = (await storyWorkflow.run(
+        {},
+        { resourceScope }
+      )) as TextGenerationTaskOutput;
       const story = (storyResult.text as string)?.trim() ?? "";
 
       expect(story.length).toBeGreaterThan(5);
@@ -197,7 +230,10 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
         text: sentences.length === 1 ? sentences[0] : sentences,
       });
 
-      const embedResult = (await embedWorkflow.run()) as TextEmbeddingTaskOutput;
+      const embedResult = (await embedWorkflow.run(
+        {},
+        { resourceScope }
+      )) as TextEmbeddingTaskOutput;
 
       if (sentences.length === 1) {
         expect(embedResult.vector).toBeInstanceOf(Float32Array);
@@ -211,6 +247,8 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
           expect(v.length).toBeGreaterThan(0);
         }
       }
+      reportTime("end-to-end", started);
+      reportMem("end-to-end");
     },
     5 * 60 * 1000 // 5 min: inference only (models already cached)
   );
