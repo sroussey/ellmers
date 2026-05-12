@@ -248,17 +248,6 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
       registry.unregisterProvider(this.name);
       throw err;
     }
-
-    // [diag] Dump registry state AFTER afterRegister (which is what sets the
-    // strategy resolver in QueuedAiProvider). If runFns counts grow across
-    // re-registrations, the dedup unregisterProvider call above isn't working.
-    try {
-      const snapshot = registry.dumpRunFnsByProviderSnapshot?.() ?? "<no snapshot helper>";
-      // eslint-disable-next-line no-console
-      console.log(`[diag] AiProvider.register(${this.name}) — registry snapshot:`, snapshot);
-    } catch {
-      // best-effort
-    }
   }
 
   /**

@@ -51,29 +51,15 @@ describe("RAG Workflow End-to-End", () => {
   setLogger(logger);
 
   beforeAll(async () => {
-    const mem = (label: string): void => {
-      const m = process.memoryUsage();
-      const fmt = (n: number): string => `${(n / 1024 / 1024).toFixed(0)}MB`;
-      console.log(
-        `[mem] ${label}: rss=${fmt(m.rss)} heapUsed=${fmt(m.heapUsed)} heapTotal=${fmt(m.heapTotal)} external=${fmt(m.external)} arrayBuffers=${fmt(m.arrayBuffers)}`
-      );
-    };
-    mem("RagWorkflow beforeAll: start");
     await setTaskQueueRegistry(null);
-    mem("RagWorkflow beforeAll: after setTaskQueueRegistry(null)");
     setGlobalModelRepository(new InMemoryModelRepository());
-    mem("RagWorkflow beforeAll: after setGlobalModelRepository");
     clearPipelineCache();
-    mem("RagWorkflow beforeAll: after clearPipelineCache");
     await registerHuggingFaceTransformersInline();
-    mem("RagWorkflow beforeAll: after registerHuggingFaceTransformersInline");
     await registerHuggingfaceLocalModels();
-    mem("RagWorkflow beforeAll: after registerHuggingfaceLocalModels");
     kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: 384,
     });
-    mem("RagWorkflow beforeAll: after createKnowledgeBase");
   });
 
   afterAll(async () => {
