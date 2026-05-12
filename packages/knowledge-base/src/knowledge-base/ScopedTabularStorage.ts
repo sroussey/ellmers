@@ -45,6 +45,39 @@ export class ScopedTabularStorage<
   constructor(inner: AnyTabularStorage, kbId: string) {
     this.inner = inner;
     this.kbId = kbId;
+    // Verify the inner storage's primary key includes `kb_id`. Scoping
+    // correctness depends on it: SQL backends build their `get` / `getBulk`
+    // WHERE clauses from PK columns only (via `getPrimaryKeyAsOrderedArray`),
+    // so a PK that omits `kb_id` would silently drop our injection and
+    // return rows from any scope. The shared-table schemas in
+    // SharedTableSchemas.ts (`SharedDocumentPrimaryKey`,
+    // `SharedChunkPrimaryKey`) both include `kb_id`; external callers that
+    // wrap their own storage MUST do the same.
+    //
+    // Implementations that extend `BaseTabularStorage` (every concrete
+    // backend in this monorepo) expose `primaryKeyNames` as a runtime
+    // field. We read it via a structural cast to fail loudly at
+    // construction rather than leaking rows on a future `get` / `getBulk`.
+    // Storages that don't expose `primaryKeyNames` (third-party impls)
+    // get a `console.warn` instead of a throw, so legitimate custom
+    // backends keep working.
+    const innerPkNames = (inner as { primaryKeyNames?: ReadonlyArray<unknown> }).primaryKeyNames;
+    if (Array.isArray(innerPkNames)) {
+      if (!innerPkNames.includes("kb_id")) {
+        throw new Error(
+          `ScopedTabularStorage requires the inner storage's primary key to include "kb_id". ` +
+            `Got primaryKeyNames=[${innerPkNames.map(String).join(", ")}]. ` +
+            `Use a shared-table primary key (SharedDocumentPrimaryKey / SharedChunkPrimaryKey ` +
+            `from @workglow/knowledge-base), or a custom PK array that includes "kb_id".`
+        );
+      }
+    } else {
+      console.warn(
+        "ScopedTabularStorage: inner.primaryKeyNames is not exposed; cannot verify kb_id is in PK. " +
+          "Scoping correctness requires `kb_id` to be part of the inner storage's primary key — " +
+          "SQL backends drop fields not in PK from `get`/`getBulk` WHERE clauses."
+      );
+    }
   }
 
   private inject(value: any): any {
@@ -143,13 +176,22 @@ export class ScopedTabularStorage<
     return this.stripArray(results);
   }
 
+  /**
+   * Plural-get scoped to this kb_id.
+   *
+   * Delegates to `inner.getBulk` with each key augmented by `kb_id`. SQL
+   * backends build their `WHERE (pk1, pk2, ...) IN ((?, ?, ...), ...)` tuple
+   * from PK columns; because the constructor enforces that `kb_id` is part
+   * of the inner PK, the IN-tuple WHERE automatically scopes by kb_id with
+   * one round trip per call.
+   */
   async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
     const scopedKeys = keys.map((k) => this.inject(k));
-    const results = await this.inner.getBulk(scopedKeys);
-    const stripped = results.map((r: any) => this.strip(r)) as Entity[];
-    this.events.emit("getBulk", keys, stripped);
-    return stripped;
+    const rows = await this.inner.getBulk(scopedKeys as readonly PrimaryKey[]);
+    const entities = (rows as any[]).map((r) => this.strip(r)) as Entity[];
+    this.events.emit("getBulk", keys, entities);
+    return entities;
   }
 
   async getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
