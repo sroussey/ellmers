@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, getTaskConstructors, Workflow } from "@workglow/task-graph";
 
-import type { IExecuteContext, StreamEvent, TaskConfig } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { makeFingerprint, ServiceRegistry } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { AiJobInput } from "../job/AiJob";
@@ -345,8 +345,12 @@ export class ToolCallingTask extends StreamingAiTask<
 /**
  * Convenience function to run a tool calling task.
  */
-export const toolCalling = (input: ToolCallingTaskInput, config?: ToolCallingTaskConfig) => {
-  return new ToolCallingTask(config).run(input);
+export const toolCalling = (
+  input: ToolCallingTaskInput,
+  config?: ToolCallingTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new ToolCallingTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

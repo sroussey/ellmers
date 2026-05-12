@@ -11,7 +11,7 @@ import {
   KnowledgeBase,
   TypeKnowledgeBase,
 } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -135,9 +135,10 @@ export class DocumentUpsertTask extends Task<
 
 export const documentUpsert = (
   input: DocumentUpsertTaskInput,
-  config?: DocumentUpsertTaskConfig
+  config?: DocumentUpsertTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new DocumentUpsertTask(config).run(input);
+  return new DocumentUpsertTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

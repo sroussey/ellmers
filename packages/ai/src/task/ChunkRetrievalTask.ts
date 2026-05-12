@@ -7,7 +7,7 @@
 import { KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { ChunkRecord } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -289,7 +289,8 @@ export class ChunkRetrievalTask extends Task<
       method === "hybrid" && (queryText === undefined || queryText.trim().length === 0);
     const defaultScoreType: "cosine" | "bm25" | "rrf" =
       method === "hybrid" && !hybridFallsBackToCosine ? "rrf" : "cosine";
-    const scoreType = results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
+    const scoreType =
+      results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
 
     const output: ChunkRetrievalTaskOutput = {
       chunks,
@@ -311,9 +312,10 @@ export class ChunkRetrievalTask extends Task<
 
 export const chunkRetrieval = (
   input: ChunkRetrievalTaskInput,
-  config?: ChunkRetrievalTaskConfig
+  config?: ChunkRetrievalTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ChunkRetrievalTask(config).run(input);
+  return new ChunkRetrievalTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

@@ -5,7 +5,7 @@
  */
 
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -120,9 +120,10 @@ export class DownloadModelTask extends AiTask<
  */
 export const downloadModel = (
   input: DownloadModelTaskRunInput,
-  config?: DownloadModelTaskConfig
+  config?: DownloadModelTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new DownloadModelTask(config).run(input);
+  return new DownloadModelTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

@@ -8,7 +8,7 @@ import type { ChunkRecord } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 export const ChunkingStrategy = {
@@ -312,8 +312,12 @@ export class TextChunkerTask extends Task<
   }
 }
 
-export const textChunker = (input: TextChunkerTaskInput, config?: TextChunkerTaskConfig) => {
-  return new TextChunkerTask(config).run(input);
+export const textChunker = (
+  input: TextChunkerTaskInput,
+  config?: TextChunkerTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new TextChunkerTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

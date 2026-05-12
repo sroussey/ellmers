@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -68,9 +68,10 @@ export class BackgroundRemovalTask extends AiVisionTask<
  */
 export const backgroundRemoval = (
   input: BackgroundRemovalTaskInput,
-  config?: BackgroundRemovalTaskConfig
+  config?: BackgroundRemovalTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new BackgroundRemovalTask(config).run(input);
+  return new BackgroundRemovalTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

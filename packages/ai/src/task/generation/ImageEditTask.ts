@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -76,8 +76,11 @@ export class ImageEditTask extends AiImageOutputTask<ImageEditTaskInput, ImageEd
   }
 }
 
-export const imageEdit = (input: ImageEditTaskInput, config?: ImageEditTaskConfig) =>
-  new ImageEditTask(config).run(input);
+export const imageEdit = (
+  input: ImageEditTaskInput,
+  config?: ImageEditTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => new ImageEditTask(config).run(input, runConfig);
 
 declare module "@workglow/task-graph" {
   interface Workflow {

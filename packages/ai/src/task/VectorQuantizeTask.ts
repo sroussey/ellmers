@@ -5,7 +5,7 @@
  */
 
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -241,9 +241,10 @@ export class VectorQuantizeTask extends Task<
 
 export const vectorQuantize = (
   input: VectorQuantizeTaskInput,
-  config?: VectorQuantizeTaskConfig
+  config?: VectorQuantizeTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new VectorQuantizeTask(config).run(input);
+  return new VectorQuantizeTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

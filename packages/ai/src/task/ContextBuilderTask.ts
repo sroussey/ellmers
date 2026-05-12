@@ -12,7 +12,7 @@ import {
   Task,
   Workflow,
 } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { CountTokensTask } from "./CountTokensTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -387,9 +387,10 @@ export class ContextBuilderTask extends Task<
 
 export const contextBuilder = (
   input: ContextBuilderTaskInput,
-  config?: ContextBuilderTaskConfig
+  config?: ContextBuilderTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ContextBuilderTask(config).run(input);
+  return new ContextBuilderTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

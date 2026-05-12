@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const inputSchema = {
@@ -211,8 +211,12 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
   }
 }
 
-export const reranker = (input: RerankerTaskInput, config?: RerankerTaskConfig) => {
-  return new RerankerTask(config).run(input);
+export const reranker = (
+  input: RerankerTaskInput,
+  config?: RerankerTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new RerankerTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

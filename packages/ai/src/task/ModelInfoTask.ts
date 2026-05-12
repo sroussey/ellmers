@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 
-import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import type { IExecuteContext, TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -116,8 +116,12 @@ export class ModelInfoTask extends AiTask<
  * @param input - Input containing the model to query
  * @returns Promise resolving to model info including locality and cache status
  */
-export const modelInfo = (input: ModelInfoTaskInput, config?: ModelInfoTaskConfig) => {
-  return new ModelInfoTask(config).run(input);
+export const modelInfo = (
+  input: ModelInfoTaskInput,
+  config?: ModelInfoTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new ModelInfoTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

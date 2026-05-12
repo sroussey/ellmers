@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent, TaskConfig } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
@@ -261,9 +261,10 @@ export class StructuredGenerationTask extends StreamingAiTask<
  */
 export const structuredGeneration = (
   input: StructuredGenerationTaskInput,
-  config?: StructuredGenerationTaskConfig
+  config?: StructuredGenerationTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new StructuredGenerationTask(config).run(input);
+  return new StructuredGenerationTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

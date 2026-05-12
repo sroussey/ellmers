@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeBoundingBox, TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
@@ -112,9 +112,10 @@ export class ObjectDetectionTask extends AiVisionTask<
  */
 export const objectDetection = (
   input: ObjectDetectionTaskInput,
-  config?: ObjectDetectionTaskConfig
+  config?: ObjectDetectionTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ObjectDetectionTask(config).run(input);
+  return new ObjectDetectionTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

@@ -5,7 +5,7 @@
  */
 
 import { DocumentRootNode, StructuralParser } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -142,9 +142,10 @@ export class StructuralParserTask extends Task<
 
 export const structuralParser = (
   input: StructuralParserTaskInput,
-  config?: StructuralParserTaskConfig
+  config?: StructuralParserTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new StructuralParserTask(config).run(input);
+  return new StructuralParserTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {
