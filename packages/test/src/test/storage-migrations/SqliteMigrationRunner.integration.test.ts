@@ -40,11 +40,6 @@ describe("SqliteMigrationRunner", async () => {
   runMigrationRunnerContract<Sqlite.Database>({
     name: "SQLite",
     timeout: 5_000,
-    // SqliteMigrationRunner does not serialize across run() callers and
-    // does not wrap up() in a transaction (better-sqlite3's transaction()
-    // can't span async). Both contract assertions are expected failures
-    // until those limitations change.
-    expectedFailures: ["concurrentRunsSerialize", "failedMigrationLeavesNoPartialSchema"],
     factory: async () => {
       const db = new Sqlite.Database(":memory:");
       return {

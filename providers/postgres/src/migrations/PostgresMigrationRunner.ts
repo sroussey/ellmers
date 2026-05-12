@@ -37,6 +37,16 @@ type ConnectablePool = Pool & {
 };
 
 /**
+ * Process-wide serialization of `run()` calls per backing database. Keyed
+ * by the `Pool` object so independent databases don't contend, and weak so
+ * disposing the pool releases the lock entry. Required because the
+ * bookkeeping PK alone resolves races only after `up()` has already
+ * executed — without this mutex, three racing runners would each run
+ * `up()` and only one would win the INSERT.
+ */
+const runLocks = new WeakMap<object, Promise<unknown>>();
+
+/**
  * Runs versioned migrations against a PostgreSQL pool.
  *
  * Each migration runs inside a single connection's transaction so the
@@ -47,9 +57,12 @@ type ConnectablePool = Pool & {
  * `connect()` (it is single-client by construction), so we fall back to
  * the raw pool — BEGIN/COMMIT on it still hit the same backing connection.
  *
- * A unique constraint on `(component, version)` makes concurrent runners
- * safe: the loser of a race raises a duplicate-key error (`23505`) and we
- * treat that as "already applied".
+ * Concurrent `run()` calls against the same pool are serialized through a
+ * JS-layer mutex so racing runners see each others' bookkeeping rows before
+ * deciding to invoke `up()`. The unique constraint on `(component, version)`
+ * remains a defense-in-depth check — a 23505 from a separate process (or a
+ * different pool instance backed by the same database) is still treated as
+ * "already applied".
  */
 export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
   constructor(private readonly db: Pool) {}
@@ -91,6 +104,20 @@ export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
   async run(
     migrations: ReadonlyArray<IMigration<Pool>>,
     options: RunMigrationsOptions = {}
+  ): Promise<ReadonlyArray<IMigration<Pool>>> {
+    const key = this.db as unknown as object;
+    const prev = runLocks.get(key) ?? Promise.resolve();
+    const result = prev.then(() => this.runInternal(migrations, options));
+    runLocks.set(
+      key,
+      result.catch(() => undefined)
+    );
+    return result;
+  }
+
+  private async runInternal(
+    migrations: ReadonlyArray<IMigration<Pool>>,
+    options: RunMigrationsOptions
   ): Promise<ReadonlyArray<IMigration<Pool>>> {
     await this.ensureBookkeepingTable();
     const sorted = sortMigrations(migrations);

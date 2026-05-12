@@ -14,13 +14,28 @@ import {
 } from "@workglow/storage";
 
 /**
+ * Process-wide serialization of `run()` calls per backing database. Keyed
+ * by the `Sqlite.Database` object so independent databases don't contend,
+ * and weak so closing the database releases the entry. Required so racing
+ * runners against the same database execute each migration's `up()`
+ * exactly once.
+ */
+const runLocks = new WeakMap<object, Promise<unknown>>();
+
+/**
  * Runs versioned migrations against a SQLite database.
  *
- * SQLite migrations are NOT wrapped in a runner-managed transaction because
- * `up()` may be async (better-sqlite3's `transaction()` cannot span async
- * boundaries). Migrations should therefore be written to be idempotent — for
- * example, `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`. After
- * `up()` resolves successfully, a separate INSERT records the applied version.
+ * Each migration is wrapped in an explicit `BEGIN`/`COMMIT`/`ROLLBACK` so the
+ * bookkeeping INSERT and the migration's DDL commit together — and a failure
+ * in `up()` rolls back any partial schema it created. We do not use
+ * better-sqlite3's `transaction()` helper because it cannot span the `await`
+ * boundary that `up()` may introduce; manual BEGIN/COMMIT works because the
+ * surrounding `runLocks` mutex prevents any other migration call from
+ * touching the connection mid-transaction.
+ *
+ * Concurrent `run()` calls against the same database are serialized through
+ * a JS-layer mutex so racing runners see each others' bookkeeping rows
+ * before deciding to invoke `up()`.
  */
 export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> {
   constructor(private readonly db: Sqlite.Database) {}
@@ -49,6 +64,20 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
     migrations: ReadonlyArray<IMigration<Sqlite.Database>>,
     options: RunMigrationsOptions = {}
   ): Promise<ReadonlyArray<IMigration<Sqlite.Database>>> {
+    const key = this.db as unknown as object;
+    const prev = runLocks.get(key) ?? Promise.resolve();
+    const result = prev.then(() => this.runInternal(migrations, options));
+    runLocks.set(
+      key,
+      result.catch(() => undefined)
+    );
+    return result;
+  }
+
+  private async runInternal(
+    migrations: ReadonlyArray<IMigration<Sqlite.Database>>,
+    options: RunMigrationsOptions
+  ): Promise<ReadonlyArray<IMigration<Sqlite.Database>>> {
     await this.ensureBookkeepingTable();
     const sorted = sortMigrations(migrations);
     const applied: IMigration<Sqlite.Database>[] = [];
@@ -74,6 +103,7 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
         phase: "starting",
         description: m.description,
       });
+      this.db.exec("BEGIN");
       try {
         const result = m.up(this.db, (fraction) => {
           onProgress?.({
@@ -86,6 +116,7 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
         });
         if (result instanceof Promise) await result;
         insert.run(m.component, m.version, m.description ?? null);
+        this.db.exec("COMMIT");
         seen.add(m.version);
         applied.push(m);
         onProgress?.({
@@ -96,6 +127,11 @@ export class SqliteMigrationRunner implements IMigrationRunner<Sqlite.Database> 
           fraction: 1,
         });
       } catch (err) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          // Best-effort: the transaction may already be aborted.
+        }
         onProgress?.({
           component: m.component,
           version: m.version,
