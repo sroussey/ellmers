@@ -82,4 +82,23 @@ describe("KbSearchTask — execute()", () => {
     // @ts-expect-error — test helper
     expect(kb._calls[0].opts).toMatchObject({ topK: 5 });
   });
+
+  it("throws (with the offending chunk_id) when a result is missing metadata.text", async () => {
+    // Custom-strategy KBs are free to return whatever shape they like, but
+    // chunks without `metadata.text` violate the documented contract on
+    // InsertChunkVectorEntity. `KbSearchTask` enforces that contract via
+    // `chunkText`; previously it silently fell back to
+    // JSON.stringify(metadata), which surfaced as garbage downstream.
+    const offending: ChunkSearchResult = {
+      chunk_id: "c-no-text",
+      doc_id: "d1",
+      vector: new Float32Array([1, 0, 0]),
+      // `text` intentionally absent — custom chunker forgot it.
+      metadata: { custom: "x" } as never,
+      score: 1,
+    };
+    const kb = makeFakeKb([offending]);
+    const task = new KbSearchTask();
+    await expect(task.run({ knowledgeBase: kb, query: "q" })).rejects.toThrow(/c-no-text/);
+  });
 });

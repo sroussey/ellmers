@@ -141,12 +141,14 @@ const outputSchema = {
     },
     scoreType: {
       type: "string",
-      enum: ["cosine", "bm25", "rrf"],
+      enum: ["cosine", "bm25", "rrf", "rerank"],
       title: "Score Type",
       description:
         "Discriminator naming the scorer used for `scores`: 'cosine' for similarity search " +
         "and for hybrid fallback when the text query is empty/whitespace; 'rrf' for hybrid " +
-        "fusion. ('bm25' is reserved for direct text search and is not produced by this task.)",
+        "fusion. ('bm25' is reserved for direct text search and is not produced by this task. " +
+        "'rerank' is produced by the standard KB strategy after cross-encoder reranking and " +
+        "is not produced by this task either.)",
     },
     vectors: {
       type: "array",
@@ -287,9 +289,15 @@ export class ChunkRetrievalTask extends Task<
     // want to surface that to callers even when the result set is empty.
     const hybridFallsBackToCosine =
       method === "hybrid" && (queryText === undefined || queryText.trim().length === 0);
-    const defaultScoreType: "cosine" | "bm25" | "rrf" =
+    // `ChunkRetrievalTask` itself only produces cosine or RRF scores; it
+    // can't emit "bm25" (no text-only path) or "rerank" (that comes from
+    // a downstream reranker, not this task). The output-schema enum
+    // includes them so the field is consistent with the canonical
+    // `ScoreType` union, but they won't appear in `defaultScoreType`.
+    const defaultScoreType: "cosine" | "rrf" =
       method === "hybrid" && !hybridFallsBackToCosine ? "rrf" : "cosine";
-    const scoreType = results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
+    const scoreType: "cosine" | "bm25" | "rrf" | "rerank" =
+      results.length > 0 ? (results[0].scoreType ?? defaultScoreType) : defaultScoreType;
 
     const output: ChunkRetrievalTaskOutput = {
       chunks,

@@ -5,7 +5,7 @@
  */
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
-import { TypeKnowledgeBase } from "@workglow/knowledge-base";
+import { chunkText, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { TaskConfig } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -121,11 +121,11 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
     const results = await kb.search(query, { topK, filter });
     return {
       results,
-      chunks: results.map((r) => {
-        const meta = r.metadata as Record<string, unknown> | undefined;
-        const text = meta?.text;
-        return typeof text === "string" ? text : JSON.stringify(meta ?? {});
-      }),
+      // `chunkText` enforces the metadata.text contract — any chunk
+      // missing text throws with its chunk_id rather than silently
+      // emitting `JSON.stringify(metadata)` (which would surface as
+      // garbage to downstream consumers).
+      chunks: results.map(chunkText),
       chunk_ids: results.map((r) => r.chunk_id),
       scores: results.map((r) => r.score),
       count: results.length,
