@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "build": "turbo run build-js build-types build-example --concurrency=15",
-    "rebuild": "turbo run build-js build-types build-example --force --concurrency=15",
+    "clean:dist": "rm -rf {packages,providers,examples}/*/dist {packages,providers,examples}/*/tsconfig.tsbuildinfo",
+    "rebuild": "bun run clean:dist && turbo run build-js build-types build-example --force --concurrency=15",
     "build:packages": "turbo run build-js build-types --concurrency=15",
     "build:examples": "turbo run build-example --concurrency=15",
     "build:js": "turbo run build-js --concurrency=15",
