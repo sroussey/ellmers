@@ -9,4 +9,5 @@ export * from "./bridgeProgress";
 export * from "./Capabilities";
 export * from "./collectStream";
 export * from "./emitQueue";
+export * from "./StreamEventAccumulator";
 export * from "./StreamEvents";
