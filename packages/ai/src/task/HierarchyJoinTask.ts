@@ -106,7 +106,8 @@ export class HierarchyJoinTask extends Task<
 > {
   public static override type = "HierarchyJoinTask";
   /** Pure-compute join task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Hierarchy Join";
   public static override description = "Enrich retrieval metadata with document hierarchy context";

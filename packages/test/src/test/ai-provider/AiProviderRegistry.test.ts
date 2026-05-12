@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFnRegistration, AiProviderStreamFn, Capability } from "@workglow/ai";
+import type {
+  AiProviderLegacyStreamFnRegistration,
+  AiProviderStreamFn,
+  Capability,
+} from "@workglow/ai";
 import {
+  accumulatingEmit,
   AiJob,
   AiJobInput,
   AiProviderRegistry,
-  collectStream,
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
@@ -54,7 +58,7 @@ function makeFinishStreamFn(
 function makeReg(
   serves: readonly Capability[],
   runFn: AiProviderStreamFn
-): AiProviderRunFnRegistration {
+): AiProviderLegacyStreamFnRegistration {
   return { serves, runFn };
 }
 
@@ -71,7 +75,9 @@ describe.skip("AiProviderRegistry", () => {
     await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
-      AiJob<AiJobInput<TaskInput>, TaskOutput>,
+      // AiJob's `execute` signature changed in the Promise+emit refactor and no
+      // longer matches Job's base signature (see @ts-expect-error on AiJob.execute).
+      AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
         storage,
         queueName: TEST_PROVIDER,
@@ -112,7 +118,7 @@ describe.skip("AiProviderRegistry", () => {
   describe("registerRunFn", () => {
     test("should register a run function for a capability set and provider", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
       const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(runFn);
@@ -120,7 +126,7 @@ describe.skip("AiProviderRegistry", () => {
 
     test("should create provider entry if it does not exist", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
+      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
 
       const regs = aiProviderRegistry.getRunFnRegistrations(TEST_PROVIDER);
       expect(regs).toHaveLength(1);
@@ -132,14 +138,14 @@ describe.skip("AiProviderRegistry", () => {
   describe("getRunFnFor", () => {
     test("should return registered run function for matching capability set", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
       const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(runFn);
     });
 
     test("should return undefined when no registration matches the requires set", () => {
-      aiProviderRegistry.registerRunFn(
+      aiProviderRegistry.registerLegacyStreamFn(
         TEST_PROVIDER,
         makeReg(["text.embedding"], makeFinishStreamFn({}))
       );
@@ -155,21 +161,21 @@ describe.skip("AiProviderRegistry", () => {
   });
 
   describe("capability-set dispatch", () => {
-    test("collectStream returns finish.data for a registered one-shot run-fn", async () => {
+    test("accumulatingEmit captures finish.data for a registered one-shot run-fn", async () => {
       const runFn = makeFinishStreamFn({ result: "success" });
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const wrappedFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(wrappedFn).toBeDefined();
-      const result = await collectStream(
-        wrappedFn!(
-          { text: "test input" },
-          undefined,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await wrappedFn!(
+        { text: "test input" },
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        undefined
       );
-      expect(result).toEqual({ result: "success" });
+      expect(getResult()).toEqual({ result: "success" });
     });
   });
 
@@ -192,7 +198,7 @@ describe.skip("AiProviderRegistry", () => {
       const spy = vi.fn();
       const runFn = makeFinishStreamFn({ result: "success" }, spy);
 
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const model = {
         model_id: "test:test-model:v1",
         title: "test-model",
@@ -217,12 +223,17 @@ describe.skip("AiProviderRegistry", () => {
         },
       });
 
-      const result = await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
-      expect(result).toEqual({ result: "success" });
+      expect(getResult()).toEqual({ result: "success" });
       expect(spy).toHaveBeenCalled();
     });
   });

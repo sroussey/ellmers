@@ -9,6 +9,8 @@ import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("TextChunkerTask", () => {
   let logger = getTestingLogger();
   setLogger(logger);
@@ -17,6 +19,7 @@ describe("TextChunkerTask", () => {
     "This is the fourth sentence. This is the fifth sentence.";
 
   test("should chunk text with FIXED strategy and emit ChunkRecord[]", async () => {
+    const s = snap();
     const result = await textChunker({
       text: testText,
       doc_id: "my-doc",
@@ -38,9 +41,11 @@ describe("TextChunkerTask", () => {
       expect(chunk.nodePath).toEqual(["my-doc"]);
       expect(chunk.depth).toBe(chunk.nodePath.length);
     });
+    report("text-chunk: fixed", s);
   });
 
   test("should omit doc_id from output when not provided and emit deterministic chunkIds", async () => {
+    const s = snap();
     const first = await textChunker({ text: testText, chunkSize: 50 });
     const second = await textChunker({ text: testText, chunkSize: 50 });
 
@@ -53,9 +58,11 @@ describe("TextChunkerTask", () => {
       expect(chunk.depth).toBe(0);
       expect(chunk.chunkId).toMatch(/^chunk:\d+:\d+$/);
     });
+    report("text-chunk: no-doc-id", s);
   });
 
   test("should chunk with SENTENCE strategy", async () => {
+    const s = snap();
     const result = await textChunker({
       text: testText,
       doc_id: "d1",
@@ -68,9 +75,11 @@ describe("TextChunkerTask", () => {
     result.chunks.forEach((chunk) => {
       expect(chunk.text.length).toBeGreaterThan(0);
     });
+    report("text-chunk: sentence", s);
   });
 
   test("should chunk with PARAGRAPH strategy", async () => {
+    const s = snap();
     const paragraphText =
       "First paragraph with multiple sentences. It has more content.\n\n" +
       "Second paragraph with different content. It also has sentences.\n\n" +
@@ -85,9 +94,11 @@ describe("TextChunkerTask", () => {
     });
 
     expect(result.chunks.length).toBeGreaterThan(0);
+    report("text-chunk: paragraph", s);
   });
 
   test("should honour a provided doc_id", async () => {
+    const s = snap();
     const result = await textChunker({
       text: testText,
       doc_id: "my-doc",
@@ -98,14 +109,18 @@ describe("TextChunkerTask", () => {
     result.chunks.forEach((chunk) => {
       expect(chunk.doc_id).toBe("my-doc");
     });
+    report("text-chunk: doc-id", s);
   });
 
   test("should handle default parameters", async () => {
+    const s = snap();
     const result = await textChunker({ text: testText });
     expect(result.chunks.length).toBeGreaterThan(0);
+    report("text-chunk: defaults", s);
   });
 
   test("should handle chunkOverlap correctly", async () => {
+    const s = snap();
     const shortText = "A".repeat(100);
     const result = await textChunker({
       text: shortText,
@@ -121,22 +136,28 @@ describe("TextChunkerTask", () => {
       const secondChunkStart = result.chunks[1].text.slice(0, 10);
       expect(firstChunkEnd).toBe(secondChunkStart);
     }
+    report("text-chunk: overlap", s);
   });
 
   test("should handle text shorter than chunkSize", async () => {
+    const s = snap();
     const shortText = "Short text";
     const result = await textChunker({ text: shortText, chunkSize: 100, chunkOverlap: 10 });
 
     expect(result.chunks.length).toBe(1);
     expect(result.chunks[0].text).toBe(shortText);
+    report("text-chunk: short-text", s);
   });
 
   test("should handle empty text", async () => {
+    const s = snap();
     const result = await textChunker({ text: "", chunkSize: 50 });
     expect(result.chunks).toBeDefined();
+    report("text-chunk: empty", s);
   });
 
   test("should handle SEMANTIC strategy (aliased to sentence)", async () => {
+    const s = snap();
     const result = await textChunker({
       text: testText,
       chunkSize: 80,
@@ -145,22 +166,29 @@ describe("TextChunkerTask", () => {
     });
 
     expect(result.chunks.length).toBeGreaterThan(0);
+    report("text-chunk: semantic", s);
   });
 
   test("should handle very large chunkSize", async () => {
+    const s = snap();
     const result = await textChunker({ text: testText, chunkSize: 10000, chunkOverlap: 0 });
 
     expect(result.chunks.length).toBe(1);
     expect(result.chunks[0].text).toBe(testText);
+    report("text-chunk: large-size", s);
   });
 
   test("should handle overlap equal to chunkSize (edge case)", async () => {
+    const s = snap();
     const result = await textChunker({ text: testText, chunkSize: 50, chunkOverlap: 50 });
     expect(result.chunks.length).toBeGreaterThan(0);
+    report("text-chunk: overlap-equal", s);
   });
 
   test("should handle overlap greater than chunkSize (edge case)", async () => {
+    const s = snap();
     const result = await textChunker({ text: testText, chunkSize: 30, chunkOverlap: 50 });
     expect(result.chunks.length).toBeGreaterThan(0);
+    report("text-chunk: overlap-exceeds", s);
   });
 });

@@ -47,10 +47,7 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       case "text-delta": {
         this.hasTextDeltas = true;
         const e = event as Extract<StreamEvent<T>, { type: "text-delta" }>;
-        this.textAccumulator.set(
-          e.port,
-          (this.textAccumulator.get(e.port) ?? "") + e.textDelta
-        );
+        this.textAccumulator.set(e.port, (this.textAccumulator.get(e.port) ?? "") + e.textDelta);
         return;
       }
       case "object-delta": {
@@ -63,9 +60,7 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
           for (const item of delta) {
             const itemObj = item as Record<string, unknown>;
             if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
-              const idx = arr.findIndex(
-                (ex) => (ex as Record<string, unknown>).id === itemObj.id
-              );
+              const idx = arr.findIndex((ex) => (ex as Record<string, unknown>).id === itemObj.id);
               if (idx >= 0) arr[idx] = item;
               else arr.push(item);
             } else {

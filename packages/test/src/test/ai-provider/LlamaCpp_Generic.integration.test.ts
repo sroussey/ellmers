@@ -46,13 +46,7 @@ const toolModel: LlamaCppModelRecord = {
   title: "Qwen2.5 Coder 1.5B Instruct",
   description:
     "A 1.5B parameter instruction-following model with tool calling support, quantized Q4_K_M",
-  capabilities: [
-    "text.generation",
-    "text.rewriter",
-    "text.summary",
-    "tool-use",
-    "json-mode",
-  ],
+  capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF.Q4_K_M.gguf",

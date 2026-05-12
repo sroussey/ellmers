@@ -76,7 +76,9 @@ export class TextFillMaskTask extends AiTask<
 > {
   public static override type = "TextFillMaskTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["text.fill-mask"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.fill-mask",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Text";
   public static override title = "Fill Mask";
   public static override description = "Fills masked tokens in text";

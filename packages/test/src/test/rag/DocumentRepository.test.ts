@@ -22,8 +22,18 @@ import type {
 } from "@workglow/knowledge-base";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("doc-repo", _snap);
+});
 
 describe("DocumentRepository", () => {
   let logger = getTestingLogger();

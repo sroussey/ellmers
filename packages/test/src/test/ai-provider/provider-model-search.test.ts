@@ -20,13 +20,7 @@ async function modelIdsForSearch(
   query: string
 ): Promise<string[]> {
   const { results } = await collectStream(
-    search(
-      { query } as any,
-      undefined as any,
-      new AbortController().signal,
-      undefined,
-      undefined
-    )
+    search({ query } as any, undefined as any, new AbortController().signal, undefined, undefined)
   );
   return results.map((model: { id: string }) => model.id);
 }

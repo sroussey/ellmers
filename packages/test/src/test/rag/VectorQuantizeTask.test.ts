@@ -7,8 +7,18 @@
 import { vectorQuantize } from "@workglow/ai";
 import { setLogger } from "@workglow/util";
 import { TensorType } from "@workglow/util/schema";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("vec-quantize", _snap);
+});
 
 describe("VectorQuantizeTask", () => {
   let logger = getTestingLogger();

@@ -43,7 +43,8 @@ describe.skip("Streaming Provider", () => {
     await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
-      AiJob<AiJobInput<TaskInput>, TaskOutput>,
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
         storage,
         queueName: MOCK_PROVIDER,
@@ -88,7 +89,7 @@ describe.skip("Streaming Provider", () => {
         yield { type: "finish", data: { text: "hello" } } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -102,7 +103,7 @@ describe.skip("Streaming Provider", () => {
         yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: ["text.embedding"],
         runFn: mockStreamFn,
       });
@@ -125,7 +126,7 @@ describe.skip("Streaming Provider", () => {
         yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -143,7 +144,7 @@ describe.skip("Streaming Provider", () => {
         yield { type: "finish", data: { text: "Hello world" } } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -173,12 +174,16 @@ describe.skip("Streaming Provider", () => {
       const controller = new AbortController();
       const events: StreamEvent<TaskOutput>[] = [];
 
-      for await (const event of job.executeStream(jobInput, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      })) {
-        events.push(event);
-      }
+      await job.execute(
+        jobInput,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        (e) => {
+          events.push(e);
+        }
+      );
 
       expect(events.length).toBe(4);
       expect(events[0]).toEqual({ type: "text-delta", port: "text", textDelta: "Hello" });
@@ -199,7 +204,7 @@ describe.skip("Streaming Provider", () => {
           data: { text: "non-streaming result" },
         } as StreamEvent<TaskOutput>;
       };
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -229,12 +234,16 @@ describe.skip("Streaming Provider", () => {
       const controller = new AbortController();
       const events: StreamEvent<TaskOutput>[] = [];
 
-      for await (const event of job.executeStream(jobInput, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      })) {
-        events.push(event);
-      }
+      await job.execute(
+        jobInput,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        (e) => {
+          events.push(e);
+        }
+      );
 
       // Single finish event with the full result
       expect(events.length).toBe(1);
@@ -257,7 +266,7 @@ describe.skip("Streaming Provider", () => {
         } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(MOCK_PROVIDER, {
+      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -291,12 +300,16 @@ describe.skip("Streaming Provider", () => {
       setTimeout(() => controller.abort(), 50);
 
       try {
-        for await (const event of job.executeStream(jobInput, {
-          signal: controller.signal,
-          updateProgress: async () => {},
-        })) {
-          events.push(event);
-        }
+        await job.execute(
+          jobInput,
+          {
+            signal: controller.signal,
+            updateProgress: async () => {},
+          },
+          (e) => {
+            events.push(e);
+          }
+        );
       } catch {
         // executeStream may throw an AbortError after the abort fires; the
         // events accumulated before the abort are still valid for the

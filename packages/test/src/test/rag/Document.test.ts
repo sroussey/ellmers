@@ -6,9 +6,19 @@
 
 import type { ChunkRecord, DocumentNode } from "@workglow/knowledge-base";
 import { Document, NodeKind } from "@workglow/knowledge-base";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("document", _snap);
+});
 
 describe("Document", () => {
   let logger = getTestingLogger();

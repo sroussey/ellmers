@@ -12,7 +12,17 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 setLogger(getTestingLogger());
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("doc-upsert", _snap);
+});
 
 describe("DocumentUpsertTask", () => {
   let kb: KnowledgeBase;

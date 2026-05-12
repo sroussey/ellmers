@@ -5,9 +5,19 @@
  */
 
 import { ContextFormat, contextBuilder } from "@workglow/ai";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("ctx-builder", _snap);
+});
 
 describe("ContextBuilderTask", () => {
   let logger = getTestingLogger();

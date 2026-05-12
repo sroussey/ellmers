@@ -64,7 +64,9 @@ export class ImageToTextTask extends AiVisionTask<
 > {
   public static override type = "ImageToTextTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["image.to-text"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "image.to-text",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Image to Text";
   public static override description =

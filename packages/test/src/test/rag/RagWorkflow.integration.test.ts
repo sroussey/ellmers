@@ -40,6 +40,8 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("RAG Workflow End-to-End", () => {
   const kbName = "rag-test-kb";
   const embeddingModel = "onnx:Xenova/all-MiniLM-L6-v2:q8";
@@ -68,6 +70,7 @@ describe("RAG Workflow End-to-End", () => {
   });
 
   afterAll(async () => {
+    const beforeDispose = snap();
     kb.destroy();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
@@ -77,9 +80,11 @@ describe("RAG Workflow End-to-End", () => {
     // EndToEnd's afterAll so neighbouring files in the same bun-test invocation
     // start fresh.
     await clearPipelineCache();
+    report("rag-wf: dispose", beforeDispose);
   });
 
   it("should ingest markdown documents with NER enrichment", async () => {
+    const s = snap();
     // Find markdown files in docs folder
     const docsPath = join(process.cwd(), "docs", "technical");
     const files = readdirSync(docsPath).filter((f) => f.endsWith(".md"));
@@ -119,7 +124,10 @@ describe("RAG Workflow End-to-End", () => {
           knowledgeBase: kbName,
         });
 
-      const result = (await ingestionWorkflow.run({}, { resourceScope })) as VectorStoreUpsertTaskOutput;
+      const result = (await ingestionWorkflow.run(
+        {},
+        { resourceScope }
+      )) as VectorStoreUpsertTaskOutput;
 
       logger.info(`  -> Stored ${result.count} vectors`);
       totalVectors += result.count;
@@ -128,9 +136,11 @@ describe("RAG Workflow End-to-End", () => {
     // Verify vectors were stored
     expect(totalVectors).toBeGreaterThan(0);
     logger.info(`Total vectors in knowledge base: ${totalVectors}`);
+    report("rag-wf: ingest", s);
   }, 600000);
 
   it("should search for relevant content", async () => {
+    const s = snap();
     const query = "What is retrieval augmented generation?";
 
     logger.info(`\nSearching for: "${query}"`);
@@ -145,7 +155,10 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.3,
     });
 
-    const searchResult = (await searchWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const searchResult = (await searchWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
 
     expect(searchResult.chunks).toBeDefined();
     expect(Array.isArray(searchResult.chunks)).toBe(true);
@@ -160,9 +173,11 @@ describe("RAG Workflow End-to-End", () => {
     for (let i = 1; i < searchResult.scores!.length; i++) {
       expect(searchResult.scores![i]).toBeLessThanOrEqual(searchResult.scores![i - 1]);
     }
+    report("rag-wf: search", s);
   }, 600000);
 
   it("should answer questions using retrieved context", async () => {
+    const s = snap();
     const question = "What is RAG?";
 
     logger.info(`\nAnswering question: "${question}"`);
@@ -179,6 +194,7 @@ describe("RAG Workflow End-to-End", () => {
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No relevant chunks found, skipping QA");
+      report("rag-wf: qa", s);
       return;
     }
 
@@ -195,9 +211,11 @@ describe("RAG Workflow End-to-End", () => {
     if (answer.text.length > 0) {
       logger.info(`\nAnswer: ${answer.text}`);
     }
+    report("rag-wf: qa", s);
   }, 600000);
 
   it("should handle complex multi-step RAG pipeline", async () => {
+    const s = snap();
     const question = "How does vector search work?";
 
     logger.info(`\nComplex RAG pipeline for: "${question}"`);
@@ -211,10 +229,14 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.2,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No chunks found, skipping QA step");
+      report("rag-wf: complex-pipeline", s);
       return;
     }
 
@@ -230,5 +252,6 @@ describe("RAG Workflow End-to-End", () => {
 
     expect(result.text).toBeDefined();
     expect(typeof result.text).toBe("string");
+    report("rag-wf: complex-pipeline", s);
   }, 600000);
 });

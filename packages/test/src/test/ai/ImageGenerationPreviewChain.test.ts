@@ -62,7 +62,7 @@ describe.skip("Image generation preview chain", () => {
       }
       yield { type: "finish", data: {} } as any;
     };
-    getAiProviderRegistry().registerRunFn(MOCK_PROVIDER, {
+    getAiProviderRegistry().registerLegacyStreamFn(MOCK_PROVIDER, {
       serves: ["image.generation"],
       runFn: stream,
     });

@@ -5,8 +5,9 @@
  */
 
 import type {
+  AiEmit,
   AiJobInput,
-  AiProviderRunFnRegistration,
+  AiProviderLegacyStreamFnRegistration,
   AiProviderStreamFn,
   Capability,
   IAiExecutionStrategy,
@@ -36,7 +37,7 @@ function makeStreamFn(label: string): AiProviderStreamFn {
 function makeRegistration(
   serves: readonly Capability[],
   label: string
-): AiProviderRunFnRegistration {
+): AiProviderLegacyStreamFnRegistration {
   return { serves, runFn: makeStreamFn(label) };
 }
 
@@ -46,32 +47,29 @@ class TestProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(name: string, runFns: readonly AiProviderRunFnRegistration[]) {
+  constructor(name: string, runFns: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(runFns);
     this.name = name;
   }
 }
 
-// Strategy that just resolves the registry, runs the run fn, and returns the
-// finish payload via collectStream — used by the gating test.
+// Strategy that resolves the registered run-fn via the registry and forwards
+// emitted events to the supplied `emit`. Used by the strict-gating test.
+// Run-fns wrapped through `registerLegacyStreamFn` already emit a `finish`
+// event when their async generator yields one, so the terminal accumulator on
+// the AiTask side materialises the output.
 class CollectingStrategy implements IAiExecutionStrategy {
   constructor(private readonly registry: AiProviderRegistry) {}
 
   async execute(
     jobInput: AiJobInput<TaskInput>,
-    _context: IExecuteContext,
-    _runnerId: string | undefined
-  ): Promise<TaskOutput> {
+    context: IExecuteContext,
+    _runnerId: string | undefined,
+    emit: AiEmit<TaskOutput>
+  ): Promise<void> {
     const fn = this.registry.getRunFnFor(jobInput.aiProvider, jobInput.requires);
     if (!fn) throw new Error("no runFn");
-    for await (const evt of fn(jobInput.taskInput, jobInput.taskInput.model, AbortSignal.any([]))) {
-      if (evt.type === "finish") return evt.data as TaskOutput;
-    }
-    throw new Error("no finish");
-  }
-
-  async *executeStream(): AsyncIterable<StreamEvent<TaskOutput>> {
-    yield { type: "finish", data: {} as TaskOutput } as StreamEvent<TaskOutput>;
+    await fn(jobInput.taskInput, jobInput.taskInput.model, context.signal, emit);
   }
 
   abort(): void {}
@@ -94,58 +92,61 @@ describe("AiProviderRegistry — capability dispatch", () => {
   });
 
   it("returns undefined when no registration matches the requires set", () => {
-    registry.registerRunFn("PROVIDER_A", makeRegistration(["text.embedding"], "embed"));
+    registry.registerLegacyStreamFn("PROVIDER_A", makeRegistration(["text.embedding"], "embed"));
     expect(registry.getRunFnFor("PROVIDER_A", ["text.generation"])).toBeUndefined();
   });
 
   // 2. Tiebreak by serves size — smallest serves wins.
   it("picks the smallest matching `serves` (most-specific superset)", async () => {
-    registry.registerRunFn(
+    registry.registerLegacyStreamFn(
       "PROVIDER_A",
       makeRegistration(["text.generation", "tool-use"], "with-tools")
     );
-    registry.registerRunFn("PROVIDER_A", makeRegistration(["text.generation"], "plain"));
+    registry.registerLegacyStreamFn("PROVIDER_A", makeRegistration(["text.generation"], "plain"));
     const fn = registry.getRunFnFor("PROVIDER_A", ["text.generation"]);
     expect(fn).toBeDefined();
     let label = "";
-    for await (const evt of fn!({} as TaskInput, undefined, AbortSignal.any([]))) {
+    const emit = (evt: StreamEvent<TaskOutput>): void => {
       if (evt.type === "finish") {
         label = (evt.data as { label: string }).label;
       }
-    }
+    };
+    await fn!({} as TaskInput, undefined, AbortSignal.any([]), emit);
     expect(label).toBe("plain");
   });
 
   // 3. Size-tie falls back to registration order.
   it("breaks size ties by registration order (first-registered wins)", async () => {
-    registry.registerRunFn("PROVIDER_A", makeRegistration(["text.generation"], "first"));
-    registry.registerRunFn("PROVIDER_A", makeRegistration(["text.embedding"], "second"));
+    registry.registerLegacyStreamFn("PROVIDER_A", makeRegistration(["text.generation"], "first"));
+    registry.registerLegacyStreamFn("PROVIDER_A", makeRegistration(["text.embedding"], "second"));
     const fn = registry.getRunFnFor("PROVIDER_A", []);
     expect(fn).toBeDefined();
     let label = "";
-    for await (const evt of fn!({} as TaskInput, undefined, AbortSignal.any([]))) {
+    const emit = (evt: StreamEvent<TaskOutput>): void => {
       if (evt.type === "finish") {
         label = (evt.data as { label: string }).label;
       }
-    }
+    };
+    await fn!({} as TaskInput, undefined, AbortSignal.any([]), emit);
     expect(label).toBe("first");
   });
 
   // 5. Empty requires matches the smallest serves available (vacuous-pass).
   it("empty requires matches the smallest available `serves` (vacuous superset)", async () => {
-    registry.registerRunFn(
+    registry.registerLegacyStreamFn(
       "PROVIDER_A",
       makeRegistration(["text.generation", "tool-use", "json-mode"], "huge")
     );
-    registry.registerRunFn("PROVIDER_A", makeRegistration(["text.generation"], "small"));
+    registry.registerLegacyStreamFn("PROVIDER_A", makeRegistration(["text.generation"], "small"));
     const fn = registry.getRunFnFor("PROVIDER_A", []);
     expect(fn).toBeDefined();
     let label = "";
-    for await (const evt of fn!({} as TaskInput, undefined, AbortSignal.any([]))) {
+    const emit = (evt: StreamEvent<TaskOutput>): void => {
       if (evt.type === "finish") {
         label = (evt.data as { label: string }).label;
       }
-    }
+    };
+    await fn!({} as TaskInput, undefined, AbortSignal.any([]), emit);
     expect(label).toBe("small");
   });
 
@@ -266,7 +267,7 @@ describe("AiTask strict capability gating", () => {
         }
       }
 
-      isolatedReg.registerRunFn(providerName, {
+      isolatedReg.registerLegacyStreamFn(providerName, {
         serves: ["text.embedding"],
         runFn: async function* () {
           yield {

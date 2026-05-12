@@ -111,7 +111,8 @@ export class TextChunkerTask extends Task<
 > {
   public static override type = "TextChunkerTask";
   /** Pure-compute chunking task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Text Chunker";
   public static override description =

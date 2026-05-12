@@ -135,7 +135,10 @@ export class StructuredGenerationTask extends StreamingAiTask<
 > {
   public static override type = "StructuredGenerationTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = ["text.generation", "json-mode"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.generation",
+    "json-mode",
+  ] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Structured Generation";

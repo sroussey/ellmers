@@ -185,12 +185,7 @@ export class AiTask<
         executeContext.resourceScope.register(resourceKey, async () => {
           // Phase 6: run-fns now return Promise<void> and emit via the
           // AiEmit callback. We don't care about events here, so use noopEmit.
-          await unloadFn(
-            { model } as TaskInput,
-            model,
-            AbortSignal.timeout(30_000),
-            noopEmit
-          );
+          await unloadFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
         });
       }
     }

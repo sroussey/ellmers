@@ -105,7 +105,8 @@ export class DocumentEnricherTask extends Task<
 > {
   public static override type = "DocumentEnricherTask";
   /** Orchestration task — delegates to sub-tasks; no direct provider capability. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Document Enricher";
   public static override description = "Enrich document nodes with summaries and entities";
