@@ -152,7 +152,9 @@ export class FaceDetectorTask extends AiVisionTask<
 > {
   public static override type = "FaceDetectorTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["vision.face-detection"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "vision.face-detection",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Face Detector";
   public static override description =

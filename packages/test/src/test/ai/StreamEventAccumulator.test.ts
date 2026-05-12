@@ -33,7 +33,11 @@ describe("StreamEventAccumulator", () => {
   it("replaces object-delta non-array payloads (latest wins)", () => {
     const acc = new StreamEventAccumulator<Out>();
     acc.observe({ type: "object-delta", port: "obj", objectDelta: { a: 1 } } as StreamEvent<Out>);
-    acc.observe({ type: "object-delta", port: "obj", objectDelta: { a: 1, b: 2 } } as StreamEvent<Out>);
+    acc.observe({
+      type: "object-delta",
+      port: "obj",
+      objectDelta: { a: 1, b: 2 },
+    } as StreamEvent<Out>);
     acc.observeFinish({ type: "finish", data: {} });
     expect(acc.materialize()).toEqual({ obj: { a: 1, b: 2 } });
   });
@@ -41,15 +45,25 @@ describe("StreamEventAccumulator", () => {
   it("upserts array object-delta items by id", () => {
     const acc = new StreamEventAccumulator<Out>();
     acc.observe({
-      type: "object-delta", port: "items",
-      objectDelta: [{ id: 1, name: "a" }, { id: 2, name: "b" }],
+      type: "object-delta",
+      port: "items",
+      objectDelta: [
+        { id: 1, name: "a" },
+        { id: 2, name: "b" },
+      ],
     } as StreamEvent<Out>);
     acc.observe({
-      type: "object-delta", port: "items",
+      type: "object-delta",
+      port: "items",
       objectDelta: [{ id: 1, name: "A" }],
     } as StreamEvent<Out>);
     acc.observeFinish({ type: "finish", data: {} });
-    expect(acc.materialize()).toEqual({ items: [{ id: 1, name: "A" }, { id: 2, name: "b" }] });
+    expect(acc.materialize()).toEqual({
+      items: [
+        { id: 1, name: "A" },
+        { id: 2, name: "b" },
+      ],
+    });
   });
 
   it("throws when both text-delta and object-delta were observed", () => {
@@ -63,8 +77,9 @@ describe("StreamEventAccumulator", () => {
   it("throws on error event", () => {
     const acc = new StreamEventAccumulator<Out>();
     acc.observe({ type: "text-delta", port: "text", textDelta: "x" } as StreamEvent<Out>);
-    expect(() => acc.observe({ type: "error", error: new Error("boom") } as StreamEvent<Out>))
-      .toThrow(/boom/);
+    expect(() =>
+      acc.observe({ type: "error", error: new Error("boom") } as StreamEvent<Out>)
+    ).toThrow(/boom/);
   });
 
   it("ignores phase events", () => {

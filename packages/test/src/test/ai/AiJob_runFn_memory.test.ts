@@ -25,9 +25,7 @@ function jobInput(): AiJobInput {
 }
 
 const rss = () =>
-  typeof process !== "undefined" && process.memoryUsage
-    ? process.memoryUsage().rss
-    : 0;
+  typeof process !== "undefined" && process.memoryUsage ? process.memoryUsage().rss : 0;
 
 describe("AiJob memory bound", () => {
   it("RSS stays bounded across 200 dispatch calls emitting 1000 deltas each", async () => {

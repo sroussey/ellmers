@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  AiProviderRegistry,
-  type AiProviderRunFn,
-  type AiProviderStreamFn,
-} from "@workglow/ai";
+import { AiProviderRegistry, type AiProviderRunFn, type AiProviderStreamFn } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
@@ -71,9 +67,9 @@ describe("AiProviderRegistry: legacy stream-fn adapter", () => {
     };
     reg.registerLegacyStreamFn("P", { serves: ["text.generation"], runFn: oldFn });
     const fn = reg.getRunFnFor("P", ["text.generation"]);
-    await expect(
-      fn!({}, undefined, new AbortController().signal, () => {})
-    ).rejects.toThrow(/boom/);
+    await expect(fn!({}, undefined, new AbortController().signal, () => {})).rejects.toThrow(
+      /boom/
+    );
   });
 
   it("supports the new shape via registerRunFn", async () => {

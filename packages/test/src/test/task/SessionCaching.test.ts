@@ -50,19 +50,15 @@ describe.skip("SessionCaching", () => {
     it("should receive sessionId as the last parameter when provided", async () => {
       let capturedSessionId: string | undefined;
 
-      const streamFn: AiProviderStreamFn = mock(async function* (
-        _input,
-        _model,
-        _signal,
-        _outputSchema,
-        sessionId
-      ) {
-        capturedSessionId = sessionId;
-        yield {
-          type: "finish",
-          data: { result: "ok" },
-        } as unknown as StreamEvent<TaskOutput>;
-      });
+      const streamFn: AiProviderStreamFn = mock(
+        async function* (_input, _model, _signal, _outputSchema, sessionId) {
+          capturedSessionId = sessionId;
+          yield {
+            type: "finish",
+            data: { result: "ok" },
+          } as unknown as StreamEvent<TaskOutput>;
+        }
+      );
 
       registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
@@ -96,19 +92,15 @@ describe.skip("SessionCaching", () => {
     it("should receive undefined sessionId when not provided", async () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
-      const streamFn: AiProviderStreamFn = mock(async function* (
-        _input,
-        _model,
-        _signal,
-        _outputSchema,
-        sessionId
-      ) {
-        capturedSessionId = sessionId;
-        yield {
-          type: "finish",
-          data: { result: "ok" },
-        } as unknown as StreamEvent<TaskOutput>;
-      });
+      const streamFn: AiProviderStreamFn = mock(
+        async function* (_input, _model, _signal, _outputSchema, sessionId) {
+          capturedSessionId = sessionId;
+          yield {
+            type: "finish",
+            data: { result: "ok" },
+          } as unknown as StreamEvent<TaskOutput>;
+        }
+      );
 
       registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
@@ -119,12 +111,7 @@ describe.skip("SessionCaching", () => {
       expect(fn).toBeDefined();
       {
         const { emit } = accumulatingEmit<TaskOutput>();
-        await fn!(
-          { text: "hello" } as TaskInput,
-          undefined,
-          new AbortController().signal,
-          emit
-        );
+        await fn!({ text: "hello" } as TaskInput, undefined, new AbortController().signal, emit);
       }
 
       expect(capturedSessionId).toBeUndefined();
@@ -198,12 +185,7 @@ describe.skip("SessionCaching", () => {
       expect(fn).toBeDefined();
       {
         const { emit } = accumulatingEmit<TaskOutput>();
-        await fn!(
-          { text: "hello" } as TaskInput,
-          undefined,
-          new AbortController().signal,
-          emit
-        );
+        await fn!({ text: "hello" } as TaskInput, undefined, new AbortController().signal, emit);
       }
 
       expect(capturedSessionId).toBeUndefined();
@@ -214,19 +196,15 @@ describe.skip("SessionCaching", () => {
     it("should pass sessionId from AiJobInput to the run function", async () => {
       let capturedSessionId: string | undefined;
 
-      const streamFn: AiProviderStreamFn = mock(async function* (
-        _input,
-        _model,
-        _signal,
-        _outputSchema,
-        sessionId
-      ) {
-        capturedSessionId = sessionId;
-        yield {
-          type: "finish",
-          data: { result: "from-job" },
-        } as unknown as StreamEvent<TaskOutput>;
-      });
+      const streamFn: AiProviderStreamFn = mock(
+        async function* (_input, _model, _signal, _outputSchema, sessionId) {
+          capturedSessionId = sessionId;
+          yield {
+            type: "finish",
+            data: { result: "from-job" },
+          } as unknown as StreamEvent<TaskOutput>;
+        }
+      );
 
       registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
@@ -345,19 +323,15 @@ describe.skip("SessionCaching", () => {
     it("should pass undefined sessionId when not set in AiJobInput", async () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
-      const streamFn: AiProviderStreamFn = mock(async function* (
-        _input,
-        _model,
-        _signal,
-        _outputSchema,
-        sessionId
-      ) {
-        capturedSessionId = sessionId;
-        yield {
-          type: "finish",
-          data: { result: "ok" },
-        } as unknown as StreamEvent<TaskOutput>;
-      });
+      const streamFn: AiProviderStreamFn = mock(
+        async function* (_input, _model, _signal, _outputSchema, sessionId) {
+          capturedSessionId = sessionId;
+          yield {
+            type: "finish",
+            data: { result: "ok" },
+          } as unknown as StreamEvent<TaskOutput>;
+        }
+      );
 
       registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,

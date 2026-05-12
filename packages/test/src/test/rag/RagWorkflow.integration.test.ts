@@ -119,7 +119,10 @@ describe("RAG Workflow End-to-End", () => {
           knowledgeBase: kbName,
         });
 
-      const result = (await ingestionWorkflow.run({}, { resourceScope })) as VectorStoreUpsertTaskOutput;
+      const result = (await ingestionWorkflow.run(
+        {},
+        { resourceScope }
+      )) as VectorStoreUpsertTaskOutput;
 
       logger.info(`  -> Stored ${result.count} vectors`);
       totalVectors += result.count;
@@ -145,7 +148,10 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.3,
     });
 
-    const searchResult = (await searchWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const searchResult = (await searchWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
 
     expect(searchResult.chunks).toBeDefined();
     expect(Array.isArray(searchResult.chunks)).toBe(true);
@@ -211,7 +217,10 @@ describe("RAG Workflow End-to-End", () => {
       scoreThreshold: 0.2,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
 
     if (retrievalResult.chunks.length === 0) {
       logger.info("No chunks found, skipping QA step");

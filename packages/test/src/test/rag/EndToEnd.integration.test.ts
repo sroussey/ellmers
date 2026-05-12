@@ -264,7 +264,10 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(expanderWorkflow.error).toBe("");
 
-    const expanderResult = (await expanderWorkflow.run({}, { resourceScope })) as QueryExpanderTaskOutput;
+    const expanderResult = (await expanderWorkflow.run(
+      {},
+      { resourceScope }
+    )) as QueryExpanderTaskOutput;
 
     expect(expanderResult).toBeDefined();
     expect(expanderResult.query).toBeDefined();
@@ -310,7 +313,10 @@ describe("End-to-End RAG Pipeline", () => {
       scoreThreshold: 0.0,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
     expect(retrievalResult.chunks.length).toBeGreaterThan(0);
 
     const formats = ["simple", "numbered", "xml", "markdown"] as const;
@@ -326,7 +332,10 @@ describe("End-to-End RAG Pipeline", () => {
 
       expect(contextWorkflow.error).toBe("");
 
-      const contextResult = (await contextWorkflow.run({}, { resourceScope })) as ContextBuilderTaskOutput;
+      const contextResult = (await contextWorkflow.run(
+        {},
+        { resourceScope }
+      )) as ContextBuilderTaskOutput;
 
       expect(contextResult.context).toBeDefined();
       expect(contextResult.chunksUsed).toBeGreaterThan(0);

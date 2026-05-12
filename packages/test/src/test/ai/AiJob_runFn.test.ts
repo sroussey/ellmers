@@ -39,8 +39,10 @@ describe("AiJob.execute (new shape)", () => {
     const job = new AiJob({ queueName: PROVIDER, input: makeJobInput({}) });
     const events: StreamEvent[] = [];
     const ac = new AbortController();
-    await job.execute(makeJobInput({}), { signal: ac.signal, updateProgress: async () => {} }, (e) =>
-      events.push(e)
+    await job.execute(
+      makeJobInput({}),
+      { signal: ac.signal, updateProgress: async () => {} },
+      (e) => events.push(e)
     );
     expect(events.map((e) => e.type)).toEqual(["phase", "finish"]);
   });

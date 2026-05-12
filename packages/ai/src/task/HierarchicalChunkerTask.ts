@@ -124,7 +124,8 @@ export class HierarchicalChunkerTask extends Task<
 > {
   public static override type = "HierarchicalChunkerTask";
   /** Pure-compute chunking task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Hierarchical Chunker";
   public static override description = "Chunk documents hierarchically respecting token budgets";

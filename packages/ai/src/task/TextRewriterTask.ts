@@ -60,7 +60,9 @@ export class TextRewriterTask extends StreamingAiTask<
 > {
   public static override type = "TextRewriterTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = ["text.rewriter"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.rewriter",
+  ] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Rewriting";
   public static override category = "AI Text";
   public static override title = "Text Rewriter";

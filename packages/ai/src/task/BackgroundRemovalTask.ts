@@ -50,7 +50,9 @@ export class BackgroundRemovalTask extends AiVisionTask<
 > {
   public static override type = "BackgroundRemovalTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["image.background-removal"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "image.background-removal",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Background Removal";
   public static override description =

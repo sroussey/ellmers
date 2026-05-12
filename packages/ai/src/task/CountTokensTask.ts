@@ -58,7 +58,9 @@ export class CountTokensTask extends AiTask<
 > {
   public static override type = "CountTokensTask";
   /** Capability required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["model.count-tokens"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "model.count-tokens",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Text";
   public static override title = "Count Tokens";
   public static override description =

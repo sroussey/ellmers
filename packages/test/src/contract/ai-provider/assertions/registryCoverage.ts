@@ -64,9 +64,10 @@ export function registryCoverageBlock(opts: AiProviderConformanceOpts): void {
         }
 
         expect(seenProviders.size, "no providers reached during coverage walk").toBeGreaterThan(0);
-        expect(seenCapabilities.size, "no capabilities reached during coverage walk").toBeGreaterThan(
-          0
-        );
+        expect(
+          seenCapabilities.size,
+          "no capabilities reached during coverage walk"
+        ).toBeGreaterThan(0);
       },
       opts.timeout
     );

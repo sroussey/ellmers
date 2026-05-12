@@ -73,7 +73,9 @@ export class ImageClassificationTask extends AiVisionTask<
 > {
   public static override type = "ImageClassificationTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["image.classification"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "image.classification",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Image Classification";
   public static override description =

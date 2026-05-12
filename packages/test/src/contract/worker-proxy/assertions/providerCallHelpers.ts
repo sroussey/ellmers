@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { collectStream, getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
+import {
+  collectStream,
+  getAiProviderRegistry,
+  getGlobalModelRepository,
+  textGeneration,
+} from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 

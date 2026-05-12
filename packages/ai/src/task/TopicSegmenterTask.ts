@@ -103,7 +103,8 @@ export class TopicSegmenterTask extends Task<
 > {
   public static override type = "TopicSegmenterTask";
   /** Pure-compute segmentation task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Topic Segmenter";
   public static override description =

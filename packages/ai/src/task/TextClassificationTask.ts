@@ -90,7 +90,9 @@ export class TextClassificationTask extends AiTask<
 > {
   public static override type = "TextClassificationTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["text.classification"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.classification",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Text";
   public static override title = "Text Classifier";
   public static override description =

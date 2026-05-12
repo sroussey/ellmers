@@ -57,7 +57,9 @@ export type ImageEditTaskConfig = TaskConfig<ImageEditTaskInput>;
 export class ImageEditTask extends AiImageOutputTask<ImageEditTaskInput, ImageEditTaskConfig> {
   public static override type = "ImageEditTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["image.editing"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "image.editing",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Vision";
   public static override title = "Edit Image";
   public static override description =
