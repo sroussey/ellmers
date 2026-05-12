@@ -6,7 +6,6 @@
 
 import type {
   AnyVectorStorage,
-  HybridSearchOptions,
   IVectorStorage,
   VectorSearchOptions,
 } from "@workglow/storage";
@@ -71,25 +70,6 @@ export class ScopedVectorStorage<
   ): Promise<(Entity & { score: number })[]> {
     const overfetchLimit = options?.topK ? options.topK * this.overFetchMultiplier : undefined;
     const results = await this.inner.similaritySearch(query, {
-      ...options,
-      topK: overfetchLimit,
-    } as any);
-
-    return this.filterAndStrip(results, options?.topK, overfetchLimit);
-  }
-
-  async hybridSearch(
-    query: TypedArray,
-    options: HybridSearchOptions<Metadata>
-  ): Promise<(Entity & { score: number })[]> {
-    if (typeof this.inner.hybridSearch !== "function") {
-      throw new Error(
-        "Hybrid search is not supported by the configured chunk storage backend. " +
-          "Please use a vector storage implementation that provides `hybridSearch`."
-      );
-    }
-    const overfetchLimit = options?.topK ? options.topK * this.overFetchMultiplier : undefined;
-    const results = await this.inner.hybridSearch(query, {
       ...options,
       topK: overfetchLimit,
     } as any);

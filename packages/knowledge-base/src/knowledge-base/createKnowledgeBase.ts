@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ITextIndex } from "@workglow/storage";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import type { TypedArrayConstructor } from "@workglow/util/schema";
 import type { ChunkVectorStorage } from "../chunk/ChunkVectorStorageSchema";
@@ -27,6 +28,12 @@ export interface CreateKnowledgeBaseOptions {
   readonly chunkStrategy?: ChunkStrategy;
   readonly searchMode?: SearchMode;
   readonly aiStrategy?: IKbAiStrategy;
+  /**
+   * Optional full-text index. When provided, the KB enables
+   * {@link KnowledgeBase.hybridSearch} and auto-writes chunks to the index
+   * on upsert.
+   */
+  readonly textIndex?: ITextIndex;
 }
 
 /**
@@ -37,9 +44,7 @@ export interface CreateKnowledgeBaseOptions {
  * const kb = await createKnowledgeBase({
  *   name: "my-kb",
  *   vectorDimensions: 1024,
- *   docEmbeddingModel: "onnx:Xenova/bge-base-en-v1.5:q8",
  * });
- * kb.setAiStrategy(createAiKbStrategy(kb));
  * ```
  */
 export async function createKnowledgeBase(
@@ -58,6 +63,7 @@ export async function createKnowledgeBase(
     chunkStrategy,
     searchMode,
     aiStrategy,
+    textIndex,
   } = options;
 
   const vectorCtor = vectorCtorOption ?? Float32Array;
@@ -98,6 +104,7 @@ export async function createKnowledgeBase(
       chunkStrategy,
       searchMode,
       aiStrategy,
+      textIndex,
     }
   );
 

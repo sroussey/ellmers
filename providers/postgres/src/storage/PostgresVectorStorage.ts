@@ -21,7 +21,6 @@ import {
   getVectorProperty,
 } from "@workglow/storage";
 import type {
-  HybridSearchOptions,
   IVectorStorage,
   VectorDistanceMetric,
   VectorIndexOptions,
@@ -268,99 +267,6 @@ export class PostgresVectorStorage<
     }
   }
 
-  async hybridSearch(query: TypedArray, options: HybridSearchOptions<Metadata>) {
-    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
-
-    if (!textQuery || textQuery.trim().length === 0) {
-      return this.similaritySearch(query, { topK, filter, scoreThreshold });
-    }
-
-    try {
-      // Try native hybrid search with pgvector + full-text
-      const queryVector = `[${Array.from(query).join(",")}]`;
-      // Use plainto_tsquery via parameterized query to avoid tsquery injection
-      const tsQueryText = textQuery;
-      const vectorColRaw = String(this.vectorPropertyName);
-      const vectorCol = PostgresDialect.quoteId(vectorColRaw);
-      const metadataColRaw = this.metadataPropertyName ? String(this.metadataPropertyName) : null;
-      const metadataCol = metadataColRaw ? PostgresDialect.quoteId(metadataColRaw) : null;
-      const vectorScoreExpr = this.buildScoreExpr(vectorCol, "$1");
-      const combinedScoreExpr = `(
-            $2 * ${vectorScoreExpr} +
-            $3 * ts_rank(to_tsvector('english', ${metadataCol || "''"}::text), plainto_tsquery('english', $4))
-          )`;
-
-      let sql = `
-        SELECT
-          *,
-          ${combinedScoreExpr} as score
-        FROM "${this.table}"
-      `;
-
-      const params: any[] = [queryVector, vectorWeight, 1 - vectorWeight, tsQueryText];
-      let paramIndex = 5;
-      // Track whether we've actually emitted a WHERE — see similaritySearch
-      // for why `filter` alone isn't a sufficient signal.
-      let hasWhere = false;
-
-      if (filter && Object.keys(filter).length > 0 && metadataCol) {
-        const conditions: string[] = [];
-        for (const [key, value] of Object.entries(filter)) {
-          if (!SAFE_IDENTIFIER_RE.test(key)) {
-            throw new StorageValidationError(
-              `Invalid metadata filter key: "${key}". Keys must match /^[a-zA-Z_][a-zA-Z0-9_]*$/.`
-            );
-          }
-          conditions.push(`${metadataCol}->>'${key}' = $${paramIndex}`);
-          params.push(String(value));
-          paramIndex++;
-        }
-        if (conditions.length > 0) {
-          sql += ` WHERE ${conditions.join(" AND ")}`;
-          hasWhere = true;
-        }
-      }
-
-      // Always emit the score threshold predicate (matches the in-memory
-      // fallback's `>= scoreThreshold` semantics for every threshold value).
-      sql += hasWhere ? " AND" : " WHERE";
-      sql += ` ${combinedScoreExpr} >= $${paramIndex}`;
-      params.push(scoreThreshold);
-      paramIndex++;
-
-      sql += ` ORDER BY score DESC LIMIT $${paramIndex}`;
-      params.push(topK);
-
-      const result = await this.db.query(sql, params);
-
-      // Fetch vectors separately for each result
-      const results: Array<Entity & { score: number }> = [];
-      for (const row of result.rows) {
-        const vectorResult = await this.db.query(
-          `SELECT ${vectorCol}::text FROM "${this.table}" WHERE ${this.getPrimaryKeyWhereClause()}`,
-          this.getPrimaryKeyValues(row)
-        );
-        const vectorStr = vectorResult.rows[0]?.[vectorColRaw] || "[]";
-        const vectorArray = JSON.parse(vectorStr);
-
-        results.push({
-          ...row,
-          [this.vectorPropertyName]: new this.vectorCtor(vectorArray),
-          score: parseFloat(row.score),
-        } as Entity & { score: number });
-      }
-
-      return results;
-    } catch (error) {
-      if (error instanceof StorageValidationError) {
-        throw error; // Don't swallow validation errors
-      }
-      // Fall back to in-memory hybrid search
-      console.error("pgvector hybrid query failed, falling back to in-memory search:", error);
-      return this.hybridSearchFallback(query, options);
-    }
-  }
-
   /**
    * Throws if the configured distance metric isn't cosine. The in-memory
    * fallback paths below only know how to compute cosine similarity; if
@@ -402,57 +308,6 @@ export class PostgresVectorStorage<
 
       if (score >= scoreThreshold) {
         results.push({ ...row, score } as Entity & { score: number });
-      }
-    }
-
-    results.sort((a, b) => b.score - a.score);
-    const topResults = results.slice(0, topK);
-
-    return topResults;
-  }
-
-  /**
-   * Fallback hybrid search. Only valid for `distance: "cosine"`; see
-   * {@link assertFallbackSupportsDistance}.
-   */
-  private async hybridSearchFallback(query: TypedArray, options: HybridSearchOptions<Metadata>) {
-    this.assertFallbackSupportsDistance();
-    const { topK = 10, filter, scoreThreshold = 0, textQuery, vectorWeight = 0.7 } = options;
-
-    const allRows = (await this.getAll()) || [];
-    const results: Array<Entity & { score: number }> = [];
-    const queryLower = textQuery.toLowerCase();
-    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
-
-    for (const row of allRows) {
-      const vector = row[this.vectorPropertyName] as TypedArray;
-      const metadata = this.metadataPropertyName
-        ? (row[this.metadataPropertyName] as Metadata)
-        : ({} as Metadata);
-
-      if (filter && !this.matchesFilter(metadata, filter)) {
-        continue;
-      }
-
-      const vectorScore = cosineSimilarity(query, vector);
-      const metadataText = Object.values(metadata ?? {})
-        .join(" ")
-        .toLowerCase();
-      let textScore = 0;
-      if (queryWords.length > 0) {
-        let matches = 0;
-        for (const word of queryWords) {
-          if (metadataText.includes(word)) {
-            matches++;
-          }
-        }
-        textScore = matches / queryWords.length;
-      }
-
-      const combinedScore = vectorWeight * vectorScore + (1 - vectorWeight) * textScore;
-
-      if (combinedScore >= scoreThreshold) {
-        results.push({ ...row, score: combinedScore } as Entity & { score: number });
       }
     }
 

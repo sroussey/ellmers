@@ -67,6 +67,7 @@ export interface IKbStrategyTarget {
   readonly chunkStrategy: ChunkStrategy | undefined;
   readonly searchMode: SearchMode | undefined;
   getVectorDimensions(): number;
+  /** True when a text index is installed — required for hybridSearch / textSearch. */
   supportsHybridSearch(): boolean;
   /** Low-level: store a document JSON record without chunking. */
   upsertDocument(doc: Document): Promise<Document>;
@@ -81,15 +82,29 @@ export interface IKbStrategyTarget {
     query: TypedArray,
     options?: { topK?: number; filter?: Readonly<Record<string, unknown>>; scoreThreshold?: number }
   ): Promise<ChunkSearchResult[]>;
-  /** Low-level: vector + full-text retrieval. */
+  /**
+   * Low-level: vector + full-text retrieval. The KB layer performs RRF over
+   * `similaritySearch` and the installed text index — no `scoreThreshold`
+   * because RRF scores are not directly comparable to cosine scores.
+   */
   hybridSearch(
     query: TypedArray,
     options: {
       readonly textQuery: string;
       readonly topK?: number;
       readonly filter?: Readonly<Record<string, unknown>>;
-      readonly scoreThreshold?: number;
       readonly vectorWeight?: number;
+      readonly rrfK?: number;
+      readonly candidatePoolMultiplier?: number;
+    }
+  ): Promise<ChunkSearchResult[]>;
+  /** Low-level: pure full-text retrieval against the installed text index. */
+  textSearch(
+    query: string,
+    options?: {
+      readonly topK?: number;
+      readonly filter?: Readonly<Record<string, unknown>>;
+      readonly candidatePoolMultiplier?: number;
     }
   ): Promise<ChunkSearchResult[]>;
 }

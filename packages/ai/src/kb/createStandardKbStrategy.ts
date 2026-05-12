@@ -147,23 +147,16 @@ export function createStandardKbStrategy(
       const scoreThreshold = options?.scoreThreshold;
 
       if (mode === "text") {
-        // Pure FTS via hybridSearch with vectorWeight=0 — works on backends
-        // that support hybrid (Postgres, in-memory). For storage that doesn't
-        // support hybrid this falls back to a zero-vector similarity search,
-        // which is mostly useless; callers should pick a different mode.
+        // Pure FTS via the KB's text index. Requires a text index installed
+        // (kb.installTextIndex) — otherwise textSearch throws with a clear
+        // message that points at the install path.
         if (!kb.supportsHybridSearch()) {
           throw new Error(
-            `searchMode "text" needs hybrid-capable storage; install a backend with hybridSearch.`
+            `searchMode "text" requires an installed text index. ` +
+              `Call kb.installTextIndex(new BM25Index()) first.`
           );
         }
-        const dummy = new Float32Array(kb.getVectorDimensions());
-        return kb.hybridSearch(dummy, {
-          textQuery: query,
-          topK,
-          filter,
-          scoreThreshold,
-          vectorWeight: 0,
-        });
+        return kb.textSearch(query, { topK, filter });
       }
 
       const queryVec = await embedTexts([query], requireQueryEmbedModel(kb));
@@ -175,15 +168,10 @@ export function createStandardKbStrategy(
 
       if (mode === "hybrid") {
         if (!kb.supportsHybridSearch()) {
-          // Graceful fallback — hybrid requested but backend doesn't have it.
+          // Graceful fallback — hybrid requested but no text index installed.
           return kb.similaritySearch(vector, { topK, filter, scoreThreshold });
         }
-        return kb.hybridSearch(vector, {
-          textQuery: query,
-          topK,
-          filter,
-          scoreThreshold,
-        });
+        return kb.hybridSearch(vector, { textQuery: query, topK, filter });
       }
 
       // mode === "rerank"
@@ -193,7 +181,6 @@ export function createStandardKbStrategy(
             textQuery: query,
             topK: firstStageTopK,
             filter,
-            scoreThreshold,
           })
         : await kb.similaritySearch(vector, {
             topK: firstStageTopK,

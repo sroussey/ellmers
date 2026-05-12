@@ -52,5 +52,7 @@ export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";
 export * from "./vector/TelemetryVectorStorage";
 
+export * from "./text/index";
+
 export * from "./credentials/EncryptedKvCredentialStore";
 export * from "./credentials/LazyEncryptedCredentialStore";

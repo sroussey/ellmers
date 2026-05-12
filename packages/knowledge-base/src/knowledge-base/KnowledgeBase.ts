@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { HybridSearchOptions, VectorSearchOptions } from "@workglow/storage";
+import type { ITextIndex, TextFields, VectorSearchOptions } from "@workglow/storage";
 import type { TypedArray } from "@workglow/util/schema";
 import type { ChunkRecord } from "../chunk/ChunkSchema";
 import type {
@@ -24,12 +24,103 @@ import type { ChunkStrategy, IKbAiStrategy, SearchMode } from "./IKbAiStrategy";
 
 /**
  * Options passed through `kb.search()`. `filter` is a loose record; allowed
- * keys are defined by the underlying vector storage.
+ * keys are defined by the underlying vector storage / text index.
  */
 export interface ISearchOptions {
   readonly topK?: number;
   readonly filter?: Readonly<Record<string, unknown>>;
   readonly scoreThreshold?: number;
+}
+
+/**
+ * Options for {@link KnowledgeBase.hybridSearch}. The fusion is performed at
+ * the KB layer (Reciprocal Rank Fusion) over the vector storage's
+ * `similaritySearch` and the installed {@link ITextIndex}'s `search`.
+ *
+ * `vectorWeight` controls per-ranker influence in the fused ranking:
+ * the vector ranker contributes `vectorWeight / (rrfK + rank)` and the text
+ * ranker contributes `(1 - vectorWeight) / (rrfK + rank)`. Defaults to 0.7.
+ *
+ * `scoreThreshold` is intentionally not honoured here: RRF scores are not
+ * comparable to cosine scores, so a single threshold knob would be
+ * misleading. Use `topK` to cap result size instead.
+ */
+export interface HybridSearchOptions<
+  Metadata extends Record<string, unknown> | undefined = Record<string, unknown>,
+> {
+  readonly textQuery: string;
+  readonly topK?: number;
+  readonly filter?: Partial<Metadata>;
+  readonly vectorWeight?: number;
+  /** RRF saturation constant; standard value is 60. */
+  readonly rrfK?: number;
+  /**
+   * Per-ranker over-fetch multiplier. Each ranker fetches `topK *
+   * candidatePoolMultiplier` candidates so RRF has overlap to fuse on.
+   * Defaults to 5; lower values reduce overlap and degenerate RRF toward
+   * "OR of top-K", higher values cost more I/O.
+   */
+  readonly candidatePoolMultiplier?: number;
+}
+
+/**
+ * Options for {@link KnowledgeBase.textSearch}.
+ */
+export interface TextOnlySearchOptions {
+  readonly topK?: number;
+  readonly filter?: Partial<ChunkRecord>;
+  /**
+   * When a {@link filter} is set, the index is searched with
+   * `topK * candidatePoolMultiplier` candidates so post-hoc filtering has
+   * room to drop non-matching chunks without starving the result set.
+   * Defaults to 2; raise for highly selective filters. Ignored when no
+   * filter is set.
+   */
+  readonly candidatePoolMultiplier?: number;
+}
+
+/**
+ * Fields on a {@link ChunkRecord} that the text index reads.
+ */
+const TEXT_INDEXABLE_FIELDS = [
+  "text",
+  "doc_title",
+  "sectionTitles",
+  "summary",
+  "parentSummaries",
+] as const;
+
+function chunkTextFields(metadata: ChunkRecord | undefined): TextFields | undefined {
+  if (!metadata) return undefined;
+  const fields: Record<string, string | readonly string[]> = {};
+  let any = false;
+  for (const key of TEXT_INDEXABLE_FIELDS) {
+    const value = (metadata as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.length > 0) {
+      fields[key] = value;
+      any = true;
+    } else if (Array.isArray(value) && value.length > 0) {
+      const filtered = (value as unknown[]).filter(
+        (v): v is string => typeof v === "string" && v.length > 0
+      );
+      if (filtered.length > 0) {
+        fields[key] = filtered;
+        any = true;
+      }
+    }
+  }
+  return any ? fields : undefined;
+}
+
+function matchesFilter<T extends Record<string, unknown>>(
+  metadata: T,
+  filter: Partial<T> | undefined
+): boolean {
+  if (!filter) return true;
+  for (const [k, v] of Object.entries(filter)) {
+    if ((metadata as Record<string, unknown>)[k] !== v) return false;
+  }
+  return true;
 }
 
 export interface KnowledgeBaseOptions {
@@ -42,7 +133,7 @@ export interface KnowledgeBaseOptions {
   readonly docEmbeddingModel?: string;
   /**
    * Model ID used to embed search queries. Defaults to `docEmbeddingModel`
-   * if absent (the common case — symmetric embedding).
+   * if absent.
    */
   readonly queryEmbeddingModel?: string;
   /**
@@ -53,36 +144,39 @@ export interface KnowledgeBaseOptions {
   /** Chunker mode used by ingest. Defaults to `"hierarchical"`. */
   readonly chunkStrategy?: ChunkStrategy;
   /**
-   * Retrieval mode used by search. Defaults to `"rerank"` when a reranker
-   * model is configured, `"hybrid"` when the storage supports it,
-   * otherwise `"similarity"`.
+   * Retrieval mode used by search. Defaults are inferred by the standard
+   * strategy: `"rerank"` when a reranker model is configured,
+   * `"hybrid"` when a text index is installed, otherwise `"similarity"`.
    */
   readonly searchMode?: SearchMode;
-  /**
-   * The AI strategy used by `upsert`, `delete`, and `search`. Installable
-   * post-construction via {@link KnowledgeBase.setAiStrategy}.
-   */
+  /** The AI strategy used by `upsert`, `delete`, and `search`. */
   readonly aiStrategy?: IKbAiStrategy;
+  /**
+   * Optional text index. When installed, chunk upserts auto-write to it and
+   * {@link KnowledgeBase.hybridSearch} fuses vector + text rankings via RRF.
+   */
+  readonly textIndex?: ITextIndex;
 }
 
 /**
  * Unified KnowledgeBase that owns both document and vector storage.
  *
- * The public API is intentionally tiny: `upsert`, `delete`, `search`, plus
- * lifecycle and inspection helpers. RAG behavior (chunking, embedding,
- * retrieval flavor) is fully delegated to an installed
- * {@link IKbAiStrategy}. Two flavors ship:
+ * The public RAG surface is intentionally tiny: `upsert`, `delete`,
+ * `search`. RAG behavior (chunking, embedding, retrieval flavor) is fully
+ * delegated to an installed {@link IKbAiStrategy}. Two flavors ship:
  *   - `createStandardKbStrategy(...)` from `@workglow/ai` — picks chunker
  *     mode and search mode from this KB's `chunkStrategy` / `searchMode`
  *     fields. Uses the registered model IDs.
- *   - Custom strategies — write your own when you need scoping or unusual
- *     retrieval; the builder ships one for per-project KBs.
+ *   - Custom strategies — write your own when you need scoping, alternative
+ *     chunkers, or unusual retrieval (e.g. the builder's per-project KBs
+ *     and its user-authored ingest/search workflows).
  *
  * Storage access methods (`upsertDocument`, `upsertChunksBulk`,
- * `similaritySearch`, `hybridSearch`, etc.) remain on the class as
- * building blocks that strategies and subclasses use. They are documented
- * as "strategy-facing" — application code should go through `kb.upsert` /
- * `kb.delete` / `kb.search` instead.
+ * `similaritySearch`, `hybridSearch`, `textSearch`, etc.) remain on the
+ * class as building blocks that strategies and subclasses use. Every one
+ * of these goes through virtual dispatch, so subclasses (e.g. a
+ * tenant-scoped KB) can intercept any of them without the strategy
+ * knowing.
  */
 export class KnowledgeBase {
   readonly name: string;
@@ -96,6 +190,7 @@ export class KnowledgeBase {
   private readonly tabularStorage: DocumentTabularStorage;
   private readonly chunkStorage: ChunkVectorStorage;
   private aiStrategy: IKbAiStrategy | undefined;
+  private textIndex: ITextIndex | undefined;
 
   constructor(
     name: string,
@@ -116,6 +211,9 @@ export class KnowledgeBase {
       this.chunkStrategy = options.chunkStrategy;
       this.searchMode = options.searchMode;
       this.aiStrategy = options.aiStrategy;
+      if (options.textIndex) {
+        this.textIndex = options.textIndex;
+      }
     }
   }
 
@@ -142,6 +240,75 @@ export class KnowledgeBase {
   }
 
   // ===========================================================================
+  // Text index installation
+  // ===========================================================================
+
+  /**
+   * Install (or replace) the full-text index used by {@link hybridSearch} and
+   * {@link textSearch}. Subsequent {@link upsertChunk} / {@link upsertChunksBulk}
+   * calls auto-write to the index. Existing chunks are *not* back-indexed —
+   * call {@link reindexText} after installing if the chunk store already has
+   * data.
+   */
+  installTextIndex(index: ITextIndex): void {
+    this.textIndex = index;
+  }
+
+  getTextIndex(): ITextIndex | undefined {
+    return this.textIndex;
+  }
+
+  /**
+   * Rebuild the installed text index from the current chunk storage.
+   *
+   * Atomic: snapshots the index state via `toJSON()` before mutating, and
+   * rolls back via `fromJSON()` on any failure.
+   */
+  async reindexText(): Promise<void> {
+    const index = this.textIndex;
+    if (!index) return;
+    const all = ((await this.chunkStorage.getAll()) ?? []) as ChunkVectorEntity[];
+    const writes: Array<{ chunkId: string; docId: string; fields: TextFields }> = [];
+    for (const entity of all) {
+      const fields = chunkTextFields(entity.metadata);
+      if (fields) writes.push({ chunkId: entity.chunk_id, docId: entity.doc_id, fields });
+    }
+    const snapshot = index.toJSON();
+    try {
+      index.clear();
+      for (const w of writes) index.add(w.chunkId, w.docId, w.fields);
+    } catch (err) {
+      index.fromJSON(snapshot);
+      throw err;
+    }
+  }
+
+  /**
+   * Mirror a single chunk's text into the installed index. Called from the
+   * upsert paths *after* `chunkStorage` has committed: an index error must
+   * not fail the upsert — we warn and continue, leaving the index slightly
+   * stale.
+   */
+  private syncTextIndexForChunk(stored: ChunkVectorEntity): void {
+    const index = this.textIndex;
+    if (!index) return;
+    const fields = chunkTextFields(stored.metadata);
+    try {
+      if (fields) {
+        index.add(stored.chunk_id, stored.doc_id, fields);
+      } else {
+        index.remove(stored.chunk_id);
+      }
+    } catch (err) {
+      console.warn(
+        `KnowledgeBase[${this.name}]: text index write failed for chunk ${stored.chunk_id}; ` +
+          `index is now stale for this chunk. Call kb.reindexText() to recover. ` +
+          `Error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  // ===========================================================================
   // Public RAG API — strategy-driven
   // ===========================================================================
 
@@ -153,13 +320,7 @@ export class KnowledgeBase {
     return this.requireStrategy("upsert").ingest(this, doc);
   }
 
-  /**
-   * Remove a document and its chunks. Delegates to the installed strategy.
-   * Method name uses `[Symbol.iterator]`-style indirection because `delete`
-   * is a JS keyword — call it via `kb.delete(...)` directly; TypeScript
-   * accepts the method name even though the bare `delete` operator does
-   * something different.
-   */
+  /** Remove a document and its chunks. Delegates to the installed strategy. */
   async delete(doc_id: string): Promise<void> {
     return this.requireStrategy("delete").delete(this, doc_id);
   }
@@ -175,39 +336,26 @@ export class KnowledgeBase {
 
   // ===========================================================================
   // Strategy-facing building blocks
-  //
-  // These methods are public so strategies (and subclasses like
-  // `ScopedKnowledgeBase`) can call them, but application code should go
-  // through `upsert` / `delete` / `search` above. The contract: every one
-  // of these goes through virtual dispatch, so a subclass can intercept
-  // any of them without the strategy knowing.
   // ===========================================================================
 
   /**
    * Store a document JSON record. Does NOT chunk or embed; the strategy
    * does that orchestration and then calls back into this method.
-   * @returns The document with the generated doc_id if it was auto-generated
    */
   async upsertDocument(document: Document): Promise<Document> {
     const serialized = JSON.stringify(document.toJSON());
-
     const insertEntity: InsertDocumentStorageEntity = {
       doc_id: document.doc_id,
       data: serialized,
     };
     const entity = await this.tabularStorage.put(insertEntity);
-
     if (document.doc_id !== entity.doc_id) {
       document.setDocId(entity.doc_id);
     }
-
     return document;
   }
 
-  /**
-   * Cascading delete: chunks first, then the document row. Strategies call
-   * this directly when their `delete()` doesn't need extra logic.
-   */
+  /** Cascading delete: chunks first, then the document row. */
   async deleteDocument(doc_id: string): Promise<void> {
     await this.deleteChunksForDocument(doc_id);
     await this.tabularStorage.delete({ doc_id });
@@ -234,7 +382,9 @@ export class KnowledgeBase {
         `Vector dimension mismatch: expected ${expected}, got ${chunk.vector.length}.`
       );
     }
-    return this.chunkStorage.put(chunk);
+    const stored = await this.chunkStorage.put(chunk);
+    this.syncTextIndexForChunk(stored);
+    return stored;
   }
 
   async upsertChunksBulk(chunks: InsertChunkVectorEntity[]): Promise<ChunkVectorEntity[]> {
@@ -248,11 +398,14 @@ export class KnowledgeBase {
         }
       }
     }
-    return this.chunkStorage.putBulk(chunks);
+    const stored = await this.chunkStorage.putBulk(chunks);
+    for (const entity of stored) this.syncTextIndexForChunk(entity);
+    return stored;
   }
 
   async deleteChunksForDocument(doc_id: string): Promise<void> {
     await this.chunkStorage.deleteSearch({ doc_id });
+    this.textIndex?.removeByDocument(doc_id);
   }
 
   async getChunksForDocument(doc_id: string): Promise<ChunkVectorEntity[]> {
@@ -260,39 +413,175 @@ export class KnowledgeBase {
     return (results ?? []) as ChunkVectorEntity[];
   }
 
-  // ----- vector retrieval -----
+  // ----- retrieval -----
 
+  /**
+   * Pure-vector retrieval. Canonical scope-aware entry point; subclasses
+   * override to inject filter predicates before delegating to storage.
+   */
   async similaritySearch(
     query: TypedArray,
     options?: VectorSearchOptions<ChunkRecord>
   ): Promise<ChunkSearchResult[]> {
-    return this.chunkStorage.similaritySearch(query, options);
+    const raw = await this.chunkStorage.similaritySearch(query, options);
+    return raw.map((r) => ({ ...r, scoreType: "cosine" }) as ChunkSearchResult);
   }
 
+  /**
+   * Hybrid search combining vector similarity and full-text BM25(F) ranking
+   * via Reciprocal Rank Fusion at the KB layer. Requires an installed
+   * {@link ITextIndex}.
+   */
   async hybridSearch(
     query: TypedArray,
     options: HybridSearchOptions<ChunkRecord>
   ): Promise<ChunkSearchResult[]> {
-    if (typeof this.chunkStorage.hybridSearch !== "function") {
+    const index = this.textIndex;
+    if (!index) {
       throw new Error(
-        "Hybrid search is not supported by the configured chunk storage backend."
+        "Hybrid search requires a text index. Install one via " +
+          "`kb.installTextIndex(new BM25Index())` or pass `textIndex` to " +
+          "`createKnowledgeBase`."
       );
     }
-    return this.chunkStorage.hybridSearch(query, options);
+    const {
+      textQuery,
+      topK = 10,
+      filter,
+      vectorWeight = 0.7,
+      rrfK = 60,
+      candidatePoolMultiplier = 5,
+    } = options;
+
+    if (!textQuery || textQuery.trim().length === 0) {
+      return this.similaritySearch(query, { topK, filter });
+    }
+
+    const safeRrfK = Number.isFinite(rrfK) ? Math.max(0, rrfK) : 60;
+    const safePoolMultiplier = Number.isFinite(candidatePoolMultiplier)
+      ? Math.max(1, candidatePoolMultiplier)
+      : 5;
+    const poolSize = Math.max(topK, Math.ceil(topK * safePoolMultiplier));
+
+    const [vectorResults, textResults] = await Promise.all([
+      this.similaritySearch(query, { topK: poolSize, filter }),
+      Promise.resolve(index.search(textQuery, { topK: poolSize })),
+    ]);
+
+    const vectorWeightClamped = Number.isFinite(vectorWeight)
+      ? Math.max(0, Math.min(1, vectorWeight))
+      : 0.7;
+    const textWeight = 1 - vectorWeightClamped;
+
+    const fused = new Map<string, { score: number; entity: ChunkSearchResult | undefined }>();
+
+    vectorResults.forEach((entity, rank) => {
+      const contribution = vectorWeightClamped / (safeRrfK + rank + 1);
+      const { scoreType: _drop, ...rest } = entity;
+      fused.set(entity.chunk_id, {
+        score: contribution,
+        entity: rest as ChunkSearchResult,
+      });
+    });
+
+    for (let rank = 0; rank < textResults.length; rank++) {
+      const { chunkId } = textResults[rank];
+      const contribution = textWeight / (safeRrfK + rank + 1);
+      const existing = fused.get(chunkId);
+      if (existing) {
+        existing.score += contribution;
+      } else {
+        fused.set(chunkId, { score: contribution, entity: undefined });
+      }
+    }
+
+    const missing = Array.from(fused.entries())
+      .filter(([, v]) => v.entity === undefined)
+      .map(([chunkId]) => chunkId);
+
+    if (missing.length > 0) {
+      const hydrated = await this.chunkStorage.getBulk(
+        missing.map((chunk_id) => ({ chunk_id }))
+      );
+      const byId = new Map<string, ChunkVectorEntity>();
+      for (const entity of hydrated as ChunkVectorEntity[]) {
+        byId.set(entity.chunk_id, entity);
+      }
+      for (const chunkId of missing) {
+        const entity = byId.get(chunkId);
+        const slot = fused.get(chunkId)!;
+        if (!entity) {
+          fused.delete(chunkId);
+          continue;
+        }
+        if (filter && !matchesFilter(entity.metadata as ChunkRecord, filter)) {
+          fused.delete(chunkId);
+          continue;
+        }
+        slot.entity = { ...entity, score: 0 };
+      }
+    }
+
+    const ranked: ChunkSearchResult[] = [];
+    for (const { score, entity } of fused.values()) {
+      if (!entity) continue;
+      ranked.push({ ...entity, score, scoreType: "rrf" });
+    }
+    ranked.sort((a, b) => b.score - a.score);
+    return ranked.slice(0, topK);
+  }
+
+  /**
+   * Pure full-text search via the installed text index. Hydrates ranked
+   * chunkIds from chunk storage and applies optional metadata filtering
+   * post-hoc.
+   */
+  async textSearch(
+    query: string,
+    options: TextOnlySearchOptions = {}
+  ): Promise<ChunkSearchResult[]> {
+    const index = this.textIndex;
+    if (!index) {
+      throw new Error(
+        "Text search requires a text index. Install one via " +
+          "`kb.installTextIndex(new BM25Index())` or pass `textIndex` to " +
+          "`createKnowledgeBase`."
+      );
+    }
+    const { topK = 10, filter, candidatePoolMultiplier = 2 } = options;
+    const safePoolMultiplier = Math.max(1, candidatePoolMultiplier);
+    const poolSize = filter ? Math.max(topK, Math.ceil(topK * safePoolMultiplier)) : topK;
+    const hits = index.search(query, { topK: poolSize });
+    if (hits.length === 0) return [];
+
+    const hydrated = await this.chunkStorage.getBulk(hits.map((h) => ({ chunk_id: h.chunkId })));
+    const byId = new Map<string, ChunkVectorEntity>();
+    for (const entity of hydrated as ChunkVectorEntity[]) {
+      byId.set(entity.chunk_id, entity);
+    }
+
+    const results: ChunkSearchResult[] = [];
+    for (let i = 0; i < hits.length; i++) {
+      const entity = byId.get(hits[i].chunkId);
+      if (!entity) continue;
+      if (filter && !matchesFilter(entity.metadata as ChunkRecord, filter)) continue;
+      results.push({ ...entity, score: hits[i].score, scoreType: "bm25" });
+      if (results.length >= topK) break;
+    }
+    return results;
   }
 
   supportsHybridSearch(): boolean {
-    return typeof this.chunkStorage.hybridSearch === "function";
+    return this.textIndex !== undefined;
   }
 
   // ===========================================================================
-  // Tree traversal helpers (unchanged)
+  // Tree traversal helpers
   // ===========================================================================
 
   async getNode(doc_id: string, nodeId: string): Promise<DocumentNode | undefined> {
     const doc = await this.getDocument(doc_id);
     if (!doc) return undefined;
-
     const traverse = (node: DocumentNode): DocumentNode | undefined => {
       if (node.nodeId === nodeId) return node;
       if ("children" in node && Array.isArray(node.children)) {
@@ -303,14 +592,12 @@ export class KnowledgeBase {
       }
       return undefined;
     };
-
     return traverse(doc.root);
   }
 
   async getAncestors(doc_id: string, nodeId: string): Promise<DocumentNode[]> {
     const doc = await this.getDocument(doc_id);
     if (!doc) return [];
-
     const path: string[] = [];
     const findPath = (node: DocumentNode): boolean => {
       path.push(node.nodeId);
@@ -323,13 +610,10 @@ export class KnowledgeBase {
       path.pop();
       return false;
     };
-
     if (!findPath(doc.root)) return [];
-
     const ancestors: DocumentNode[] = [];
     let currentNode: DocumentNode = doc.root;
     ancestors.push(currentNode);
-
     for (let i = 1; i < path.length; i++) {
       const targetId = path[i];
       if ("children" in currentNode && Array.isArray(currentNode.children)) {
@@ -344,7 +628,6 @@ export class KnowledgeBase {
         break;
       }
     }
-
     return ancestors;
   }
 
@@ -352,7 +635,6 @@ export class KnowledgeBase {
   // Lifecycle / accessors
   // ===========================================================================
 
-  /** Underlying chunk store; for maintenance and inspection. */
   get vectorStorage(): ChunkVectorStorage {
     return this.chunkStorage;
   }
@@ -369,9 +651,7 @@ export class KnowledgeBase {
     return doc;
   }
 
-  /**
-   * Re-index every document by re-running ingest. Requires a strategy.
-   */
+  /** Re-index every document by re-running ingest. Requires a strategy. */
   async reindex(): Promise<number> {
     const strategy = this.requireStrategy("reindex");
     const docIds = await this.listDocuments();
@@ -407,12 +687,14 @@ export class KnowledgeBase {
     return this.chunkStorage.get({ chunk_id });
   }
 
+  /** Alias for {@link upsertChunk}; keeps the text index in sync. */
   async put(chunk: InsertChunkVectorEntity): Promise<ChunkVectorEntity> {
-    return this.chunkStorage.put(chunk);
+    return this.upsertChunk(chunk);
   }
 
+  /** Alias for {@link upsertChunksBulk}; keeps the text index in sync. */
   async putBulk(chunks: InsertChunkVectorEntity[]): Promise<ChunkVectorEntity[]> {
-    return this.chunkStorage.putBulk(chunks);
+    return this.upsertChunksBulk(chunks);
   }
 
   async getAllChunks(): Promise<ChunkVectorEntity[] | undefined> {
@@ -424,7 +706,8 @@ export class KnowledgeBase {
   }
 
   async clearChunks(): Promise<void> {
-    return this.chunkStorage.deleteAll();
+    await this.chunkStorage.deleteAll();
+    this.textIndex?.clear();
   }
 
   getVectorDimensions(): number {
