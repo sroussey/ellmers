@@ -8,8 +8,8 @@ import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 
 import type { IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
-import { collectStream } from "../capability/collectStream";
 import { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { AiTask } from "./base/AiTask";
@@ -115,7 +115,9 @@ export class ModelInfoTask extends AiTask<
         `Provider "${model.provider}" has no run function serving "provider.model-info".`
       );
     }
-    return collectStream<ModelInfoTaskOutput>(runFn(input, model, context.signal));
+    const { emit, result } = accumulatingEmit<ModelInfoTaskOutput>();
+    await runFn(input, model, context.signal, emit);
+    return result();
   }
 }
 

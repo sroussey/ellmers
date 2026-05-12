@@ -112,7 +112,7 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
     // One-shot: finish carries the complete payload.
     if (!this.hasTextDeltas && !this.hasObjectDeltas && !this.hasSnapshots) {
       if (isNonEmptyObject(this.finishData)) return this.finishData;
-      return this.finishData as T;
+      return this.finishData as unknown as T;
     }
 
     // Snapshot (replace) mode — last snapshot wins, finish merged on top.

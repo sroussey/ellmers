@@ -29,6 +29,7 @@ import {
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
+import { noopEmit } from "../../capability/AiEmit";
 import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
@@ -179,15 +180,14 @@ export class AiTask<
           model.model_id;
         const resourceKey = `ai:${model.provider}:${modelPath}`;
         executeContext.resourceScope.register(resourceKey, async () => {
-          // Drain the unload generator to completion so any cleanup steps run.
-          for await (const _evt of unloadFn(
+          // Phase 6: run-fns now return Promise<void> and emit via the
+          // AiEmit callback. We don't care about events here, so use noopEmit.
+          await unloadFn(
             { model } as TaskInput,
             model,
-            AbortSignal.timeout(30_000)
-          )) {
-            // ignore events; we only care about completion
-            void _evt;
-          }
+            AbortSignal.timeout(30_000),
+            noopEmit
+          );
         });
       }
     }

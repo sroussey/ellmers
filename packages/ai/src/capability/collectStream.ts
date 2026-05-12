@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { StreamEventAccumulator } from "./StreamEventAccumulator";
 
 /**
@@ -16,7 +16,9 @@ import { StreamEventAccumulator } from "./StreamEventAccumulator";
  * exists for backwards compat with the few remaining sites that hand back
  * streams.
  */
-export async function collectStream<T>(stream: AsyncIterable<StreamEvent<T>>): Promise<T> {
+export async function collectStream<T extends TaskOutput>(
+  stream: AsyncIterable<StreamEvent<T>>
+): Promise<T> {
   const acc = new StreamEventAccumulator<T>();
   for await (const event of stream) {
     if (event.type === "finish") {
