@@ -16,6 +16,8 @@
  */
 
 // DI — ServiceRegistry, globalServiceRegistry, createServiceToken, Container
+// organize-imports-ignore
+
 export * from "./di";
 
 // Logging — getLogger, setLogger, ILogger, ConsoleLogger, NullLogger

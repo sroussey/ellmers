@@ -23,7 +23,7 @@
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/*tsbuildinfo packages/*/dist packages/*/src/**/*\\.d\\.ts packages/*/src/**/*\\.map integrations/*/node_modules integrations/*/dist integrations/*/src/**/*\\.d\\.ts integrations/*/src/**/*\\.map examples/*/node_modules examples/*/dist examples/*/src/**/*\\.d\\.ts examples/*/src/**/*\\.map .turbo */*/.turbo",
     "dev": "turbo run dev --concurrency=15",
     "docs": "typedoc",
-    "format": "eslint --fix && prettier \"{packages,integrations,examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
+    "format": "eslint --fix && prettier \"{packages,providers,examples}/*/src/**/*.{js,ts,tsx,json}\" --check --write",
     "build:release": "turbo run build-js build-types --concurrency=15",
     "test": "bun scripts/test.ts",
     "test:bun:unit": "bun scripts/test.ts bun unit",
@@ -46,7 +46,8 @@
     "bunset": "git login && bunset --patch --all --push --commit --tag --sections=all --release",
     "publish-all": "bun ./scripts/bunsrc-workspace.ts dist && bun run format && bun run rebuild && bun run test && bun run bunset && bun run publish-login && bun run publish-workspaces",
     "publish-login": "npm login",
-    "publish-workspaces": "bun ./scripts/publish-workspaces.ts"
+    "publish-workspaces": "bun ./scripts/publish-workspaces.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001792"
@@ -91,9 +92,12 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-regexp": "^3.1.0",
     "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.4",
     "nyc": "^18.0.0",
     "pkg-pr-new": "^0.0.71",
     "prettier": "^3.8.3",
+    "prettier-plugin-organize-imports": "^4.3.0",
     "turbo": "^2.9.12",
     "typescript": "6.0.3",
     "vitest": "^4.1.5"
@@ -108,5 +112,12 @@
     "onnxruntime-node",
     "protobufjs",
     "sharp"
-  ]
+  ],
+  "lint-staged": {
+    "{packages,providers,examples}/*/src/**/*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "{packages,providers,examples}/*/src/**/*.json": "prettier --write"
+  }
 }

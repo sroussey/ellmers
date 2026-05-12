@@ -2,6 +2,8 @@
 // previous fork: https://github.com/sroussey/typescript-graph
 // license: MIT
 
+// organize-imports-ignore
+
 export * from "./directedAcyclicGraph";
 export * from "./directedGraph";
 export * from "./graph";
