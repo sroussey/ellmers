@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
@@ -108,9 +108,10 @@ export class TextClassificationTask extends AiTask<
  */
 export const textClassification = (
   input: TextClassificationTaskInput,
-  config?: TextClassificationTaskConfig
+  config?: TextClassificationTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new TextClassificationTask(config).run(input);
+  return new TextClassificationTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

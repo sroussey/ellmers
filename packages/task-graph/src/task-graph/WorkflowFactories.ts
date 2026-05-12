@@ -4,16 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITaskConstructor } from "../task/ITask";
+import type { IRunConfig, ITaskConstructor } from "../task/ITask";
 import type { DataPorts, TaskConfig } from "../task/TaskTypes";
 import { hasVectorLikeInput, hasVectorOutput } from "./GraphSchemaUtils";
 import { Workflow } from "./Workflow";
 import { getLastTask } from "./WorkflowPipe";
 
-// Type definitions for the workflow
+/**
+ * Signature shared by all `Workflow.prototype.<x>` builder methods produced by
+ * {@link CreateWorkflow}.
+ *
+ * The optional `runConfig` is forwarded to the task constructor, so callers can
+ * attach a per-task {@link IRunConfig.resourceScope} (or other runtime knob)
+ * before later invoking `workflow.run(...)`. The workflow's own
+ * {@link WorkflowRunConfig.resourceScope}, if passed to `run()`, still wins
+ * during execution — this third arg primarily exists so that the standalone
+ * convenience wrappers (`chunkRetrieval`, `textEmbedding`, etc.) share a
+ * uniform `(input, config, runConfig)` shape.
+ */
 export type CreateWorkflow<I extends DataPorts, O extends DataPorts, C extends TaskConfig<I>> = (
   input?: Partial<I>,
-  config?: Partial<C>
+  config?: Partial<C>,
+  runConfig?: Partial<IRunConfig>
 ) => Workflow<I, O>;
 
 export function CreateWorkflow<
@@ -33,7 +45,7 @@ export type CreateLoopWorkflow<
   I extends DataPorts,
   O extends DataPorts,
   C extends TaskConfig<I> = TaskConfig<I>,
-> = (this: Workflow<I, O>, config?: Partial<C>) => Workflow<I, O>;
+> = (this: Workflow<I, O>, config?: Partial<C>, runConfig?: Partial<IRunConfig>) => Workflow<I, O>;
 
 /**
  * Factory function that creates a loop workflow method for a given task class.
@@ -47,8 +59,12 @@ export function CreateLoopWorkflow<
   O extends DataPorts,
   C extends TaskConfig<I> = TaskConfig<I>,
 >(taskClass: ITaskConstructor<I, O, C>): CreateLoopWorkflow<I, O, C> {
-  return function (this: Workflow<I, O>, config: Partial<C> = {}): Workflow<I, O> {
-    return this.addLoopTask(taskClass, config);
+  return function (
+    this: Workflow<I, O>,
+    config: Partial<C> = {},
+    runConfig: Partial<IRunConfig> = {}
+  ): Workflow<I, O> {
+    return this.addLoopTask(taskClass, config, runConfig);
   };
 }
 
@@ -86,7 +102,8 @@ export type CreateAdaptiveWorkflow<
 > = (
   this: Workflow,
   input?: Partial<IS> & Partial<IV>,
-  config?: Partial<CS> & Partial<CV>
+  config?: Partial<CS> & Partial<CV>,
+  runConfig?: Partial<IRunConfig>
 ) => Workflow;
 
 /**
@@ -116,14 +133,15 @@ export function CreateAdaptiveWorkflow<
   return function (
     this: Workflow<any, any>,
     input: (Partial<IS> & Partial<IV>) | undefined = {},
-    config: (Partial<CS> & Partial<CV>) | undefined = {}
+    config: (Partial<CS> & Partial<CV>) | undefined = {},
+    runConfig: Partial<IRunConfig> | undefined = {}
   ): Workflow {
     const parent = getLastTask(this);
     const useVector =
       (parent !== undefined && hasVectorOutput(parent)) || hasVectorLikeInput(input);
     if (useVector) {
-      return vectorHelper.call(this, input, config) as Workflow;
+      return vectorHelper.call(this, input, config, runConfig) as Workflow;
     }
-    return scalarHelper.call(this, input, config) as Workflow;
+    return scalarHelper.call(this, input, config, runConfig) as Workflow;
   };
 }

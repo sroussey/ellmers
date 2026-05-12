@@ -8,7 +8,7 @@ import { getLogger, ServiceRegistry, uuid4 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { ConditionFn } from "../task/ConditionalTask";
 import { GraphAsTask } from "../task/GraphAsTask";
-import type { ITask, ITaskConstructor } from "../task/ITask";
+import type { IRunConfig, ITask, ITaskConstructor } from "../task/ITask";
 import { WorkflowError } from "../task/TaskError";
 import type { DataPorts, TaskConfig, TaskInput } from "../task/TaskTypes";
 import { autoConnect } from "./autoConnect";
@@ -95,8 +95,16 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     I extends DataPorts,
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
-  >(taskClass: ITaskConstructor<I, O, C>, config: C): ITask<I, O, C> {
-    const task = new taskClass(config, this._registry ? { registry: this._registry } : undefined);
+  >(
+    taskClass: ITaskConstructor<I, O, C>,
+    config: C,
+    runConfig?: Partial<IRunConfig>
+  ): ITask<I, O, C> {
+    const mergedRunConfig: Partial<IRunConfig> | undefined =
+      runConfig !== undefined || this._registry !== undefined
+        ? { ...runConfig, ...(this._registry ? { registry: this._registry } : {}) }
+        : undefined;
+    const task = new taskClass(config, mergedRunConfig);
     const id = this._facade.graph.addTask(task);
     this._facade.events.emit("changed", id);
     return task;
@@ -115,17 +123,22 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
   >(
     taskClass: ITaskConstructor<I, O, C>,
     input: Partial<I> = {},
-    config: Partial<C> = {}
+    config: Partial<C> = {},
+    runConfig?: Partial<IRunConfig>
   ): Workflow<any, any> {
     this._error = "";
 
     const parent = getLastTask(this._facade);
 
-    const task = this.addTaskInstance<I, O, C>(taskClass, {
-      id: uuid4(),
-      ...config,
-      defaults: input,
-    } as C);
+    const task = this.addTaskInstance<I, O, C>(
+      taskClass,
+      {
+        id: uuid4(),
+        ...config,
+        defaults: input,
+      } as C,
+      runConfig
+    );
 
     // Process any pending data flows
     if (this._dataFlows.length > 0) {
@@ -204,7 +217,11 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     I extends DataPorts,
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
-  >(taskClass: ITaskConstructor<I, O, C>, config: Partial<C> = {}): Workflow<I, O> {
+  >(
+    taskClass: ITaskConstructor<I, O, C>,
+    config: Partial<C> = {},
+    runConfig?: Partial<IRunConfig>
+  ): Workflow<I, O> {
     this._error = "";
 
     const parent = getLastTask(this._facade);
@@ -226,7 +243,11 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
         ? ({ ...config, maxIterations: "unbounded" } as Partial<C>)
         : config;
 
-    const task = this.addTaskInstance<I, O, C>(taskClass, { id: uuid4(), ...resolvedConfig } as C);
+    const task = this.addTaskInstance<I, O, C>(
+      taskClass,
+      { id: uuid4(), ...resolvedConfig } as C,
+      runConfig
+    );
 
     // Process any pending data flows (same as addTaskWithAutoConnect)
     if (this._dataFlows.length > 0) {

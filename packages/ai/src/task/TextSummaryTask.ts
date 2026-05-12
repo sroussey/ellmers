@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -73,8 +73,12 @@ export class TextSummaryTask extends StreamingAiTask<
  * @param input The input parameters for text summary (text and model)
  * @returns Promise resolving to the summarized text output(s)
  */
-export const textSummary = async (input: TextSummaryTaskInput, config?: TextSummaryTaskConfig) => {
-  return new TextSummaryTask(config).run(input);
+export const textSummary = async (
+  input: TextSummaryTaskInput,
+  config?: TextSummaryTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new TextSummaryTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

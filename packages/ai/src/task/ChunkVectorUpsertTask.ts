@@ -6,7 +6,7 @@
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
@@ -156,9 +156,10 @@ export class ChunkVectorUpsertTask extends Task<
 
 export const chunkVectorUpsert = (
   input: VectorStoreUpsertTaskInput,
-  config?: ChunkVectorUpsertTaskConfig
+  config?: ChunkVectorUpsertTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ChunkVectorUpsertTask(config).run(input);
+  return new ChunkVectorUpsertTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

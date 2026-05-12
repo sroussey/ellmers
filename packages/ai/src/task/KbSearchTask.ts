@@ -7,7 +7,7 @@
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const inputSchema = {
@@ -102,8 +102,12 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
   }
 }
 
-export const kbSearch = (input: KbSearchTaskInput, config?: KbSearchTaskConfig) => {
-  return new KbSearchTask(config).run(input);
+export const kbSearch = (
+  input: KbSearchTaskInput,
+  config?: KbSearchTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new KbSearchTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

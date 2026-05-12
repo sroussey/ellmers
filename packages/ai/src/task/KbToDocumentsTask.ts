@@ -5,7 +5,7 @@
  */
 
 import { DocumentNode, KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -121,8 +121,12 @@ export class KbToDocumentsTask extends Task<
   }
 }
 
-export const kbToDocuments = (input: KbToDocumentsTaskInput, config?: KbToDocumentsTaskConfig) => {
-  return new KbToDocumentsTask(config).run(input);
+export const kbToDocuments = (
+  input: KbToDocumentsTaskInput,
+  config?: KbToDocumentsTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new KbToDocumentsTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

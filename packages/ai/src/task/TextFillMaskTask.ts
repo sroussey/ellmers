@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
@@ -91,8 +91,12 @@ export class TextFillMaskTask extends AiTask<
  * @param input The input parameters for fill mask (text with mask token and model)
  * @returns Promise resolving to the predicted tokens with scores and complete sequences
  */
-export const textFillMask = (input: TextFillMaskTaskInput, config?: TextFillMaskTaskConfig) => {
-  return new TextFillMaskTask(config).run(input);
+export const textFillMask = (
+  input: TextFillMaskTaskInput,
+  config?: TextFillMaskTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new TextFillMaskTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
@@ -181,9 +181,10 @@ export class FaceLandmarkerTask extends AiVisionTask<
  */
 export const faceLandmarker = (
   input: FaceLandmarkerTaskInput,
-  config?: FaceLandmarkerTaskConfig
+  config?: FaceLandmarkerTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new FaceLandmarkerTask(config).run(input);
+  return new FaceLandmarkerTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

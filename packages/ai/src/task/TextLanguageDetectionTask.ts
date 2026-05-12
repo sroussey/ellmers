@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
@@ -131,9 +131,10 @@ export class TextLanguageDetectionTask extends AiTask<
  */
 export const textLanguageDetection = (
   input: TextLanguageDetectionTaskInput,
-  config?: TextLanguageDetectionTaskConfig
+  config?: TextLanguageDetectionTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new TextLanguageDetectionTask(config).run(input);
+  return new TextLanguageDetectionTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {
