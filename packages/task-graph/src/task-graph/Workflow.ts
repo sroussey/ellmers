@@ -169,7 +169,7 @@ export class Workflow<
       this: Workflow<any, any>,
       input: Partial<I> = {},
       config: Partial<C> = {},
-      runConfig: Partial<IRunConfig> = {}
+      runConfig?: Partial<IRunConfig>
     ) {
       this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config, runConfig);
       // Preserve input type from the start of the chain
@@ -576,7 +576,7 @@ export class Workflow<
   >(
     taskClass: ITaskConstructor<I, O, C>,
     config: Partial<C> = {},
-    runConfig: Partial<IRunConfig> = {}
+    runConfig?: Partial<IRunConfig>
   ): Workflow<I, O> {
     return this._builder.addLoopTask<I, O, C>(taskClass, config, runConfig);
   }

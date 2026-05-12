@@ -62,7 +62,7 @@ export function CreateLoopWorkflow<
   return function (
     this: Workflow<I, O>,
     config: Partial<C> = {},
-    runConfig: Partial<IRunConfig> = {}
+    runConfig?: Partial<IRunConfig>
   ): Workflow<I, O> {
     return this.addLoopTask(taskClass, config, runConfig);
   };
@@ -134,7 +134,7 @@ export function CreateAdaptiveWorkflow<
     this: Workflow<any, any>,
     input: (Partial<IS> & Partial<IV>) | undefined = {},
     config: (Partial<CS> & Partial<CV>) | undefined = {},
-    runConfig: Partial<IRunConfig> | undefined = {}
+    runConfig?: Partial<IRunConfig>
   ): Workflow {
     const parent = getLastTask(this);
     const useVector =

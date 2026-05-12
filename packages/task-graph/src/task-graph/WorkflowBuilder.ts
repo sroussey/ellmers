@@ -100,10 +100,10 @@ export class WorkflowBuilder implements IWorkflowBuilderHandle {
     config: C,
     runConfig?: Partial<IRunConfig>
   ): ITask<I, O, C> {
-    const mergedRunConfig: Partial<IRunConfig> | undefined =
-      runConfig !== undefined || this._registry !== undefined
-        ? { ...runConfig, ...(this._registry ? { registry: this._registry } : {}) }
-        : undefined;
+    let mergedRunConfig: Partial<IRunConfig> | undefined = runConfig;
+    if (this._registry !== undefined) {
+      mergedRunConfig = { ...(runConfig ?? {}), registry: this._registry };
+    }
     const task = new taskClass(config, mergedRunConfig);
     const id = this._facade.graph.addTask(task);
     this._facade.events.emit("changed", id);

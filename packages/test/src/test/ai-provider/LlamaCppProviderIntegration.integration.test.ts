@@ -91,7 +91,9 @@ const embeddingModel: LlamaCppModelRecord = {
 describe("LlamaCpp Integration (real models, no mocks)", () => {
   let logger = getTestingLogger();
   setLogger(logger);
-  let resourceScope: ResourceScope;
+  // Initialized synchronously up front so `afterAll` always has a scope to
+  // dispose, even if the async setup below throws partway through.
+  const resourceScope = new ResourceScope();
 
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
@@ -102,8 +104,6 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
     const repo = getGlobalModelRepository();
     await repo.addModel(llmModel);
     await repo.addModel(embeddingModel);
-
-    resourceScope = new ResourceScope();
   });
 
   afterAll(async () => {
