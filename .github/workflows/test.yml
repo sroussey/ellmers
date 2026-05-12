@@ -87,9 +87,7 @@ jobs:
           path: .
       - name: Run integration tests via bun
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:bun:integration
 
   test-bun-rag:
@@ -115,9 +113,7 @@ jobs:
           path: .
       - name: Run rag tests via bun
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:bun:rag
 
   test-bun-ai-provider-hft:
@@ -191,9 +187,7 @@ jobs:
           path: .
       - name: Run API provider tests via bun
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:bun:ai-provider-api
 
   test-vitest-unit:
@@ -251,9 +245,7 @@ jobs:
           path: .
       - name: Run integration tests via vitest
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:integration
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-integration-coverage.json
@@ -287,9 +279,7 @@ jobs:
           path: .
       - name: Run rag tests via vitest
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:rag
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-rag-coverage.json
@@ -387,9 +377,7 @@ jobs:
           path: .
       - name: Run API provider tests via vitest
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:ai-provider-api
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-ai-provider-api-coverage.json
