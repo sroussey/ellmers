@@ -64,11 +64,14 @@ describe("ScopedTabularStorage over PostgresTabularStorage", () => {
       await scopeB.put({ doc_id: COLLIDE_Z, data: "from-B" });
 
       // The SQL-backend code path: `PostgresTabularStorage.getBulk` builds an
-      // IN-tuple WHERE from the declared primary-key columns only. If
-      // ScopedTabularStorage.getBulk delegates to it, our injected `kb_id`
-      // is dropped — KB-A would see KB-B's rows for the colliding key
-      // COLLIDE_X. The fix fans out per-key `get()` calls so the WHERE keeps
-      // `kb_id`.
+      // IN-tuple WHERE from the declared primary-key columns only. If the
+      // inner PK doesn't include `kb_id`, the wrapper's injected scope key
+      // gets dropped from the predicate — KB-A would see KB-B's rows for
+      // the colliding key COLLIDE_X. The fix is enforced at the
+      // `ScopedTabularStorage` constructor: it requires `kb_id` to appear in
+      // the inner PK so the existing one-round-trip `inner.getBulk(scopedKeys)`
+      // IN-tuple WHERE naturally carries the scope. This test exercises that
+      // contract on a real SQL backend.
       const fromA = await scopeA.getBulk([
         { doc_id: COLLIDE_X },
         { doc_id: COLLIDE_Y },

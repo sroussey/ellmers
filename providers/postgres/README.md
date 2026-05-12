@@ -33,8 +33,23 @@ const queue = new PostgresQueueStorage(connectionConfig);
 
 `PostgresFtsTextIndex` is an `ITextIndex` backed by a single side table per
 KB indexed by a GIN `tsvector` (Postgres FTS). Plug it into a
-`KnowledgeBase` to get `kb.hybridSearch()` / `kb.textSearch()` without
-loading every chunk into memory at reindex time.
+`KnowledgeBase` to get `kb.hybridSearch()` / `kb.textSearch()` with the
+full-text postings living server-side rather than in the JS heap.
+
+Benefits over the in-memory `BM25Index` default for Postgres-backed KBs:
+
+- **Durable, server-side index**: postings live in Postgres as a side table
+  with a GIN index; the index survives process restarts without a rebuild.
+- **No in-memory BM25 state**: the JS heap doesn't hold the inverted index —
+  the database does. Incremental `add` / `remove` writes don't grow heap.
+- **Transactional rebuild**: `beginRebuild` / `commitRebuild` / `abortRebuild`
+  wrap the rebuild in a single `BEGIN` / `COMMIT` / `ROLLBACK` so a mid-
+  rebuild crash leaves the prior index intact.
+
+> **Note**: `KnowledgeBase.reindexText()` still iterates all chunks via
+> `chunkStorage.getAll()` to populate the index. The benefit here is not
+> memory savings on reindex; it's that the *index itself* lives server-
+> side and incremental writes don't grow the JS heap.
 
 ```typescript
 import { createKnowledgeBase } from "@workglow/knowledge-base";

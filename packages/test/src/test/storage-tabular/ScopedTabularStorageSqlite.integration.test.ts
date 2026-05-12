@@ -14,9 +14,7 @@ import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import { uuid4 } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
-describe("ScopedTabularStorage over SqliteTabularStorage", async () => {
-  await Sqlite.init();
-
+describe("ScopedTabularStorage over SqliteTabularStorage", () => {
   let sharedStorage: SqliteTabularStorage<
     typeof SharedDocumentStorageSchema,
     typeof SharedDocumentPrimaryKey
@@ -25,6 +23,10 @@ describe("ScopedTabularStorage over SqliteTabularStorage", async () => {
   let scopeB: ScopedTabularStorage<any, any>;
 
   beforeAll(async () => {
+    // Vitest's `describe` callback doesn't `await` an async function, so any
+    // top-level `await Sqlite.init()` there could race with test bodies.
+    // Initialise here instead.
+    await Sqlite.init();
     sharedStorage = new SqliteTabularStorage<
       typeof SharedDocumentStorageSchema,
       typeof SharedDocumentPrimaryKey
@@ -52,10 +54,14 @@ describe("ScopedTabularStorage over SqliteTabularStorage", async () => {
       await scopeB.put({ doc_id: "z", data: "from-B" });
 
       // The SQL-backend code path: `SqliteTabularStorage.getBulk` builds an
-      // IN-tuple WHERE from the declared primary-key columns only. If
-      // ScopedTabularStorage.getBulk delegates to it, our injected `kb_id`
-      // is dropped — KB-A would see KB-B's rows for the colliding key "x".
-      // The fix fans out per-key `get()` calls so the WHERE keeps `kb_id`.
+      // IN-tuple WHERE from the declared primary-key columns only. If the
+      // inner PK doesn't include `kb_id`, the wrapper's injected scope key
+      // gets dropped from the predicate — KB-A would see KB-B's rows for
+      // the colliding key "x". The fix is enforced at the `ScopedTabularStorage`
+      // constructor: it requires `kb_id` to appear in the inner PK so the
+      // existing one-round-trip `inner.getBulk(scopedKeys)` IN-tuple WHERE
+      // naturally carries the scope. This test exercises that contract on a
+      // real SQL backend.
       const fromA = await scopeA.getBulk([
         { doc_id: "x" },
         { doc_id: "y" },

@@ -83,8 +83,18 @@ export class PostgresFtsTextIndex implements ITextIndex {
   // beginRebuild; released on commit/abort. When set, all DML methods
   // (`clear`, `add`, `remove`, `removeByDocument`) route through the
   // dedicated client so the rebuild is one BEGIN…COMMIT block.
+  //
+  // We hold a pre-bound `query` reference alongside the client. `pg.PoolClient`'s
+  // `query` method depends on `this` being the client instance; if we returned
+  // the raw method reference from the `exec` getter and call sites invoked it
+  // as a plain function (which they do), `this` would be undefined and real
+  // pg drivers would throw. Binding once at acquisition keeps every `exec(...)`
+  // call safe regardless of how it's invoked.
   private rebuildClient:
-    | { query: Pool["query"]; release: () => void }
+    | {
+        boundQuery: Pool["query"];
+        release: () => void;
+      }
     | undefined;
 
   constructor(pool: Pool, table: string, options: PostgresFtsTextIndexOptions = {}) {
@@ -101,9 +111,13 @@ export class PostgresFtsTextIndex implements ITextIndex {
     return this.options.fieldWeights ?? DEFAULT_POSTGRES_FTS_FIELD_WEIGHTS;
   }
 
-  /** Routes a query to the rebuild-bound client when a rebuild is open. */
+  /**
+   * Routes a query to the rebuild-bound client when a rebuild is open.
+   * Returns a function that is safe to call without preserving `this` —
+   * the underlying `pg.PoolClient.query` is bound at acquisition time.
+   */
   private get exec(): Pool["query"] {
-    if (this.rebuildClient) return this.rebuildClient.query;
+    if (this.rebuildClient) return this.rebuildClient.boundQuery;
     return this.pool.query.bind(this.pool) as Pool["query"];
   }
 
@@ -236,7 +250,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
     }
     this.rebuildClient = await this.acquireConnection();
     try {
-      await this.rebuildClient.query(`BEGIN`);
+      await this.rebuildClient.boundQuery(`BEGIN`);
     } catch (err) {
       this.rebuildClient.release();
       this.rebuildClient = undefined;
@@ -251,7 +265,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
       );
     }
     try {
-      await this.rebuildClient.query(`COMMIT`);
+      await this.rebuildClient.boundQuery(`COMMIT`);
     } finally {
       this.rebuildClient.release();
       this.rebuildClient = undefined;
@@ -261,7 +275,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
   async abortRebuild(): Promise<void> {
     if (!this.rebuildClient) return;
     try {
-      await this.rebuildClient.query(`ROLLBACK`);
+      await this.rebuildClient.boundQuery(`ROLLBACK`);
     } finally {
       this.rebuildClient.release();
       this.rebuildClient = undefined;
@@ -311,19 +325,27 @@ export class PostgresFtsTextIndex implements ITextIndex {
    * when available (real `pg.Pool`); fall back to routing through `pool.query`
    * directly for single-connection wrappers (PGlite / PGLitePool). Failing
    * fast on anything else keeps BEGIN/COMMIT bracket sanity.
+   *
+   * Returns a pre-bound `boundQuery` rather than the raw `query` reference so
+   * call sites invoking it as a plain function (`exec(sql, params)`) don't
+   * lose the `pg.PoolClient` `this` binding.
    */
   private async acquireConnection(): Promise<{
-    query: Pool["query"];
+    boundQuery: Pool["query"];
     release: () => void;
   }> {
     const supportsConnect =
       typeof (this.pool as unknown as { connect?: unknown }).connect === "function";
     if (supportsConnect) {
-      return await (
+      const client = await (
         this.pool as unknown as {
           connect: () => Promise<{ query: Pool["query"]; release: () => void }>;
         }
       ).connect();
+      return {
+        boundQuery: client.query.bind(client) as Pool["query"],
+        release: () => client.release(),
+      };
     }
     const poolAny = this.pool as unknown as {
       waitReady?: unknown;
@@ -341,7 +363,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
       );
     }
     return {
-      query: this.pool.query.bind(this.pool) as Pool["query"],
+      boundQuery: this.pool.query.bind(this.pool) as Pool["query"],
       release: () => {},
     };
   }
