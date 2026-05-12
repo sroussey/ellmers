@@ -5,22 +5,23 @@
  */
 
 import type { IExecuteContext, TaskInput, TaskOutput } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiEmit } from "../capability/AiEmit";
 import { AiJob } from "../job/AiJob";
 import type { AiJobInput } from "../job/AiJob";
 import type { IAiExecutionStrategy } from "./IAiExecutionStrategy";
 
 /**
- * Executes AI jobs directly without a queue. Used by API providers
- * (OpenAI, Anthropic, etc.) and local providers that don't require
- * GPU serialization or concurrency control.
+ * Direct (no queue) execution for API providers and local providers that
+ * don't need GPU serialization. Forwards `emit` straight to the AiJob's
+ * run-fn dispatch.
  */
 export class DirectExecutionStrategy implements IAiExecutionStrategy {
   async execute(
     jobInput: AiJobInput<TaskInput>,
     context: IExecuteContext,
-    runnerId: string | undefined
-  ): Promise<TaskOutput> {
+    runnerId: string | undefined,
+    emit: AiEmit<TaskOutput>
+  ): Promise<void> {
     const job = new AiJob({
       queueName: jobInput.aiProvider,
       jobRunId: runnerId,
@@ -34,33 +35,17 @@ export class DirectExecutionStrategy implements IAiExecutionStrategy {
     );
 
     try {
-      return await job.execute(jobInput, {
-        signal: context.signal,
-        updateProgress: context.updateProgress,
-      });
+      await job.execute(
+        jobInput,
+        { signal: context.signal, updateProgress: context.updateProgress },
+        emit
+      );
     } finally {
       cleanup();
     }
   }
 
-  async *executeStream(
-    jobInput: AiJobInput<TaskInput>,
-    context: IExecuteContext,
-    runnerId: string | undefined
-  ): AsyncIterable<StreamEvent<TaskOutput>> {
-    const job = new AiJob({
-      queueName: jobInput.aiProvider,
-      jobRunId: runnerId,
-      input: jobInput,
-    });
-
-    yield* job.executeStream(jobInput, {
-      signal: context.signal,
-      updateProgress: context.updateProgress,
-    });
-  }
-
   abort(): void {
-    // No-op — abort handled via AbortSignal passed through context
+    // No-op — abort flows through context.signal.
   }
 }
