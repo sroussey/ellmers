@@ -19,6 +19,12 @@
  * Termination: `close()` ends the stream cleanly; `fail(err)` makes the next
  * iteration step `throw`. Both are idempotent — later pushes / closes / fails
  * after the first terminal signal are ignored.
+ *
+ * **Single-consumer.** The waker pattern stores at most one pending resolver,
+ * so the `iterable` must be consumed by exactly one `for await` loop. Multiple
+ * concurrent iterators are not supported and will hang. This matches the
+ * intended use site ({@link StreamingAiTask.executeStream}, which iterates
+ * once).
  */
 export interface EmitQueue<E> {
   push(event: E): void;
