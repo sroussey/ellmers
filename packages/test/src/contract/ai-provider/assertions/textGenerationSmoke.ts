@@ -6,6 +6,7 @@
 
 import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
@@ -44,20 +45,22 @@ export function textGenerationSmokeBlock(
         let textDeltaCount = 0;
         let finishCount = 0;
         let sawEventAfterFinish = false;
-        for await (const ev of streamFn!(
-          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-          model!,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )) {
+        const emit = (ev: StreamEvent<TaskOutput>): void => {
           if (finishCount > 0) {
             sawEventAfterFinish = true;
           }
           const e = ev as { type: string };
           if (e.type === "text-delta") textDeltaCount += 1;
           if (e.type === "finish") finishCount += 1;
-        }
+        };
+        await streamFn!(
+          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+          model!,
+          new AbortController().signal,
+          emit,
+          undefined,
+          undefined
+        );
 
         expect(textDeltaCount).toBeGreaterThanOrEqual(1);
         expect(finishCount).toBe(1);

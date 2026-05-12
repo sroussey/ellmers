@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 interface Out {
   text?: string;
   count?: number;
+  [key: string]: unknown;
 }
 
 describe("accumulatingEmit", () => {

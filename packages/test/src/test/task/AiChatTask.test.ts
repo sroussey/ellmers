@@ -5,7 +5,7 @@
  */
 
 import type {
-  AiProviderRunFnRegistration,
+  AiProviderLegacyStreamFnRegistration,
   AiProviderStreamFn,
   Capability,
   ChatMessage,
@@ -95,7 +95,7 @@ class FakeChatProvider extends AiProvider {
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
 
-  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+  constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, ModelConfig>[]) {
     super(runFns);
   }
 }
@@ -104,7 +104,7 @@ function registerFakeChatProvider(stream: AiProviderStreamFn<any, any, ModelConf
   const registry = getAiProviderRegistry();
   const provider = new FakeChatProvider([{ serves: TEXT_GENERATION, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerRunFn("fake-chat", { serves: TEXT_GENERATION, runFn: stream });
+  registry.registerLegacyStreamFn("fake-chat", { serves: TEXT_GENERATION, runFn: stream });
   return () => registry.unregisterProvider("fake-chat");
 }
 

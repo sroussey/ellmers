@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { collectStream, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import type { TaskOutput } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -49,24 +50,28 @@ export function sessionReuseBlock(
         ).toBeDefined();
 
         const sessionId = `conformance-${Date.now()}`;
-        await collectStream(
-          runFn!(
+        {
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
             { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
             model!,
             new AbortController().signal,
+            emit,
             undefined,
             sessionId
-          )
-        );
-        await collectStream(
-          runFn!(
+          );
+        }
+        {
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
             { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
             model!,
             new AbortController().signal,
+            emit,
             undefined,
             sessionId
-          )
-        );
+          );
+        }
 
         const newEntries = map.size - sizeBefore;
         expect(newEntries).toBe(1);

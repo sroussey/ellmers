@@ -5,7 +5,7 @@
  */
 
 import type {
-  AiProviderRunFnRegistration,
+  AiProviderLegacyStreamFnRegistration,
   AiProviderStreamFn,
   Capability,
   ChatChunkReference,
@@ -101,7 +101,7 @@ class FakeChatKbProvider extends AiProvider {
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
 
-  constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(runFns);
   }
 }
@@ -110,7 +110,7 @@ function registerFakeChatKbProvider(stream: AiProviderStreamFn<any, any, ModelCo
   const registry = getAiProviderRegistry();
   const provider = new FakeChatKbProvider();
   registry.registerProvider(provider);
-  registry.registerRunFn("fake-chat-kb", {
+  registry.registerLegacyStreamFn("fake-chat-kb", {
     serves: TEXT_GENERATION,
     runFn: stream as AiProviderStreamFn,
   });

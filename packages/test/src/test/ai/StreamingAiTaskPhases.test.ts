@@ -69,7 +69,8 @@ describe("StreamingAiTask default phase emissions", () => {
     await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
-      AiJob<AiJobInput<TaskInput>, TaskOutput>,
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
         storage,
         queueName: MOCK_PROVIDER,
@@ -127,7 +128,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
+    registry.registerLegacyStreamFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p1" });
@@ -156,7 +157,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
+    registry.registerLegacyStreamFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p2" });
@@ -177,7 +178,7 @@ describe("StreamingAiTask default phase emissions", () => {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
     };
-    registry.registerRunFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
+    registry.registerLegacyStreamFn(MOCK_PROVIDER, { serves: ["text.summary"], runFn: streamFn });
 
     const model = buildModel("text.summary");
     const task = new TextSummaryTask({ id: "p3" });

@@ -5,13 +5,14 @@
  */
 
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderRegisterContext,
   AiProviderRegisterOptions,
-  AiProviderRunFnRegistration,
   AiProviderStreamFn,
   Capability,
 } from "@workglow/ai";
 import {
+  accumulatingEmit,
   AiJob,
   AiProvider,
   AiProviderRegistry,
@@ -53,7 +54,7 @@ class TestProvider extends AiProvider {
   public initializeOptions: AiProviderRegisterContext | null = null;
   public disposeCalled = false;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 
@@ -74,7 +75,7 @@ class TestQueuedProvider extends QueuedAiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 }
@@ -87,7 +88,7 @@ class StaticTaskTypesProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 
@@ -130,7 +131,7 @@ describe.skip("AiProvider", () => {
       ]);
 
       const allCaps = (provider as unknown as {
-        runFns?: readonly AiProviderRunFnRegistration[];
+        runFns?: readonly AiProviderLegacyStreamFnRegistration[];
       }).runFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual(["text.generation", "text.embedding"]);
     });
@@ -138,7 +139,7 @@ describe.skip("AiProvider", () => {
     test("provider with empty runFns advertises nothing", () => {
       const provider = new TestProvider([]);
       const allCaps = (provider as unknown as {
-        runFns?: readonly AiProviderRunFnRegistration[];
+        runFns?: readonly AiProviderLegacyStreamFnRegistration[];
       }).runFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual([]);
     });
@@ -492,12 +493,17 @@ describe.skip("AiProvider", () => {
         },
       });
 
-      const result = await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
-      expect(result).toEqual({ text: "generated text" });
+      expect(getResult()).toEqual({ text: "generated text" });
       expect(runFnSpy).toHaveBeenCalledOnce();
 
       // Sanity: also drives through collectStream directly.

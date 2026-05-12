@@ -12,6 +12,7 @@ interface Out {
   text?: string;
   count?: number;
   items?: unknown[];
+  [key: string]: unknown;
 }
 
 describe("StreamEventAccumulator", () => {

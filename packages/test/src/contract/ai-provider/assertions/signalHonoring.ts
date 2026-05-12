@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { collectStream, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
@@ -30,7 +31,7 @@ export function signalHonoringBlock(
 
   describe.skipIf(!opts.models.textGeneration)("Signal honoring", () => {
     itNonStreaming(
-      "collectStream() rejects with AbortError when aborted before invocation",
+      "run-fn rejects with AbortError when aborted before invocation",
       async () => {
         const registry = getAiProviderRegistry();
         const repo = getGlobalModelRepository();
@@ -46,14 +47,14 @@ export function signalHonoringBlock(
 
         let caught: unknown;
         try {
-          await collectStream(
-            runFn!(
-              { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-              model!,
-              ac.signal,
-              undefined,
-              undefined
-            )
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
+            { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+            model!,
+            ac.signal,
+            emit,
+            undefined,
+            undefined
           );
         } catch (err) {
           caught = err;
@@ -66,7 +67,7 @@ export function signalHonoringBlock(
 
     if (!skipMid) {
       itMidStream(
-        "streaming iterator terminates within abortGraceMs * 4 when aborted mid-stream",
+        "streaming run-fn terminates within abortGraceMs * 4 when aborted mid-stream",
         async () => {
           const registry = getAiProviderRegistry();
           const repo = getGlobalModelRepository();
@@ -79,15 +80,15 @@ export function signalHonoringBlock(
           setTimeout(() => ac.abort(), fixture.abortGraceMs);
 
           try {
-            for await (const _ev of streamFn(
+            const emit = (_e: StreamEvent<TaskOutput>): void => {};
+            await streamFn(
               { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
               model!,
               ac.signal,
+              emit,
               undefined,
               undefined
-            )) {
-              void _ev;
-            }
+            );
           } catch (err) {
             if (!isAbortError(err)) throw err;
           }

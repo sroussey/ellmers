@@ -5,6 +5,7 @@
  */
 
 import {
+  accumulatingEmit,
   AiJob,
   AiProvider,
   AiProviderRegistry,
@@ -13,7 +14,7 @@ import {
 } from "@workglow/ai";
 import type {
   AiJobInput,
-  AiProviderRunFnRegistration,
+  AiProviderLegacyStreamFnRegistration,
   AiProviderStreamFn,
   Capability,
   ModelConfig,
@@ -63,21 +64,23 @@ describe.skip("SessionCaching", () => {
         } as unknown as StreamEvent<TaskOutput>;
       });
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
 
       const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(fn).toBeDefined();
-      for await (const _event of fn!(
-        { text: "hello" } as TaskInput,
-        undefined,
-        new AbortController().signal,
-        undefined,
-        "session-abc-123"
-      )) {
-        // consume events
+      {
+        const { emit } = accumulatingEmit<TaskOutput>();
+        await fn!(
+          { text: "hello" } as TaskInput,
+          undefined,
+          new AbortController().signal,
+          emit,
+          undefined,
+          "session-abc-123"
+        );
       }
 
       expect(capturedSessionId).toBe("session-abc-123");
@@ -107,19 +110,21 @@ describe.skip("SessionCaching", () => {
         } as unknown as StreamEvent<TaskOutput>;
       });
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
 
       const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(fn).toBeDefined();
-      for await (const _event of fn!(
-        { text: "hello" } as TaskInput,
-        undefined,
-        new AbortController().signal
-      )) {
-        // consume events
+      {
+        const { emit } = accumulatingEmit<TaskOutput>();
+        await fn!(
+          { text: "hello" } as TaskInput,
+          undefined,
+          new AbortController().signal,
+          emit
+        );
       }
 
       expect(capturedSessionId).toBeUndefined();
@@ -144,7 +149,7 @@ describe.skip("SessionCaching", () => {
         } as unknown as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
@@ -153,15 +158,17 @@ describe.skip("SessionCaching", () => {
       expect(fn).toBeDefined();
 
       const events: StreamEvent<TaskOutput>[] = [];
-      for await (const event of fn!(
+      const emit = (e: StreamEvent<TaskOutput>): void => {
+        events.push(e);
+      };
+      await fn!(
         { text: "hello" } as TaskInput,
         undefined,
         new AbortController().signal,
+        emit,
         undefined,
         "session-stream-456"
-      )) {
-        events.push(event);
-      }
+      );
 
       expect(capturedSessionId).toBe("session-stream-456");
       expect(events).toHaveLength(1);
@@ -182,19 +189,21 @@ describe.skip("SessionCaching", () => {
         yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
 
       const fn = registry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(fn).toBeDefined();
-      for await (const _event of fn!(
-        { text: "hello" } as TaskInput,
-        undefined,
-        new AbortController().signal
-      )) {
-        // consume events
+      {
+        const { emit } = accumulatingEmit<TaskOutput>();
+        await fn!(
+          { text: "hello" } as TaskInput,
+          undefined,
+          new AbortController().signal,
+          emit
+        );
       }
 
       expect(capturedSessionId).toBeUndefined();
@@ -219,7 +228,7 @@ describe.skip("SessionCaching", () => {
         } as unknown as StreamEvent<TaskOutput>;
       });
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
@@ -251,12 +260,17 @@ describe.skip("SessionCaching", () => {
       });
 
       const controller = new AbortController();
-      const result = await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
-      expect(result).toEqual({ result: "from-job" });
+      expect(getResult()).toEqual({ result: "from-job" });
       expect(capturedSessionId).toBe("job-session-789");
     });
 
@@ -279,7 +293,7 @@ describe.skip("SessionCaching", () => {
         yield { type: "finish", data: {} as TaskOutput } as StreamEvent<TaskOutput>;
       };
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
@@ -312,12 +326,17 @@ describe.skip("SessionCaching", () => {
 
       const controller = new AbortController();
       const events: StreamEvent<TaskOutput>[] = [];
-      for await (const event of job.executeStream(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      })) {
-        events.push(event);
-      }
+      const emit = (e: StreamEvent<TaskOutput>): void => {
+        events.push(e);
+      };
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
       expect(capturedSessionId).toBe("stream-job-session-101");
       expect(events).toHaveLength(2);
@@ -340,7 +359,7 @@ describe.skip("SessionCaching", () => {
         } as unknown as StreamEvent<TaskOutput>;
       });
 
-      registry.registerRunFn(TEST_PROVIDER, {
+      registry.registerLegacyStreamFn(TEST_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: streamFn,
       });
@@ -372,10 +391,15 @@ describe.skip("SessionCaching", () => {
       });
 
       const controller = new AbortController();
-      await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
       expect(capturedSessionId).toBeUndefined();
     });
@@ -388,7 +412,7 @@ describe.skip("SessionCaching", () => {
       readonly isLocal = true;
       readonly supportsBrowser = true;
 
-      constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+      constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration[]) {
         super(runFns);
       }
     }
@@ -421,7 +445,7 @@ describe.skip("SessionCaching", () => {
       readonly isLocal = true;
       readonly supportsBrowser = true;
 
-      constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
+      constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration[]) {
         super(runFns);
       }
     }

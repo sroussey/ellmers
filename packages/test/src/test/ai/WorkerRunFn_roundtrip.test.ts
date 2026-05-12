@@ -5,7 +5,6 @@
  */
 
 import { WorkerManager, WorkerServerBase } from "@workglow/util/worker";
-import type { StreamEvent } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 describe("WorkerManager.callWorkerRunFunction round-trip", () => {

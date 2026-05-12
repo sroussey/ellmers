@@ -6,6 +6,7 @@
 
 import { collectStream, getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
@@ -64,17 +65,53 @@ export async function* streamProviderTextGeneration(
       callOpts.signal.addEventListener("abort", onCallerAbort, { once: true });
     }
   }
+  // Bridge Promise+emit run-fn back to an async generator for callers that
+  // want to inspect the raw event sequence. We push events into a queue and
+  // yield them as they arrive.
+  const queue: StreamEvent<TaskOutput>[] = [];
+  let resolveNext: (() => void) | undefined;
+  let done = false;
+  let error: unknown;
+  const emit = (e: StreamEvent<TaskOutput>): void => {
+    queue.push(e);
+    resolveNext?.();
+    resolveNext = undefined;
+  };
+  const runP = streamFn(
+    { prompt, maxTokens: callOpts.maxTokens },
+    model,
+    ac.signal,
+    emit,
+    undefined,
+    undefined
+  ).then(
+    () => {
+      done = true;
+      resolveNext?.();
+    },
+    (err) => {
+      error = err;
+      done = true;
+      resolveNext?.();
+    }
+  );
   try {
-    yield* streamFn(
-      { prompt, maxTokens: callOpts.maxTokens },
-      model,
-      ac.signal,
-      undefined,
-      undefined
-    );
+    while (true) {
+      while (queue.length > 0) {
+        yield queue.shift()!;
+      }
+      if (done) {
+        if (error) throw error;
+        return;
+      }
+      await new Promise<void>((r) => {
+        resolveNext = r;
+      });
+    }
   } finally {
     clearTimeout(t);
     callOpts.signal?.removeEventListener("abort", onCallerAbort);
+    await runP.catch(() => {});
   }
 }
 
