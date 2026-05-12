@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { createRequire } from "node:module";
 import { SqliteAiVectorStorage } from "@workglow/sqlite/storage";
 import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger } from "@workglow/util";
@@ -11,9 +12,13 @@ import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+const _require = createRequire(import.meta.url);
+
 let sqliteVectorAvailable = false;
 try {
-  const mod = await import("@sqliteai/sqlite-vector");
+  // Use CJS require so the platform-specific sub-package resolves correctly in ESM contexts
+  const mod = _require("@sqliteai/sqlite-vector");
+  await Sqlite.init();
   const db = new Sqlite.Database(":memory:");
   db.loadExtension(mod.getExtensionPath());
   db.exec("SELECT vector_version()");

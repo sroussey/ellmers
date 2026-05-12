@@ -45,7 +45,7 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("End-to-End RAG Pipeline", () => {
   // In CI, skip summary/NER in document enricher to avoid flaky ONNX model downloads

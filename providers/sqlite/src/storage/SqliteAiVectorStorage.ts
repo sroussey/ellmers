@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { createRequire } from "node:module";
 import { Sqlite } from "@workglow/sqlite/storage";
 import type {
   DataPortSchemaObject,
@@ -179,8 +180,9 @@ export class SqliteAiVectorStorage<
     // Try to load the sqlite-vector extension if not already loaded
     if (!this.extensionLoaded) {
       try {
-        // Try to load the extension - the caller may have already loaded it
-        const { getExtensionPath } = await import("@sqliteai/sqlite-vector");
+        // Use CJS require so the platform-specific sub-package resolves correctly in ESM contexts
+        const _require = createRequire(import.meta.url);
+        const { getExtensionPath } = _require("@sqliteai/sqlite-vector");
         this.database.loadExtension(getExtensionPath());
         this.extensionLoaded = true;
       } catch {
@@ -483,7 +485,7 @@ export class SqliteAiVectorStorage<
         ORDER BY v.distance ASC
       `;
       const stmt = db.prepare(sql);
-      const rows = stmt.all(tableName, vectorCol, queryBlob.v, topK) as Array<
+      const rows = stmt.all(tableName, vectorCol, queryBlob.v, topK | 0) as Array<
         Record<string, unknown> & { distance: number }
       >;
 

@@ -23,6 +23,7 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
+    "@sqliteai/sqlite-vector": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@supabase/supabase-js": "catalog:",
