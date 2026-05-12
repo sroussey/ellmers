@@ -29,11 +29,16 @@ import { getTestingLogger } from "../../binding/TestingLogger";
 
 const MOCK_PROVIDER = "mock-phase-provider";
 
+type MemSnapshot = ReturnType<typeof process.memoryUsage>;
 const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
-const reportMem = (label: string) => {
+const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
+const snapMem = (): MemSnapshot => process.memoryUsage();
+const reportMem = (label: string, start?: MemSnapshot) => {
   const m = process.memoryUsage();
+  const fmt = (cur: number, base: number | undefined) =>
+    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
   process.stderr.write(
-    `[${label}] MEM rss=${mb(m.rss)} heap=${mb(m.heapUsed)} ext=${mb(m.external)} ab=${mb(m.arrayBuffers)}\n`
+    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
   );
 };
 const reportTime = (label: string, started: number) => {
@@ -91,11 +96,13 @@ describe("StreamingAiTask default phase emissions", () => {
   });
 
   afterAll(async () => {
+    reportMem("StreamingAiTaskPhases before dispose");
+    const beforeDispose = snapMem();
     await resourceScope.disposeAll();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
-    reportMem("StreamingAiTaskPhases afterAll");
+    reportMem("StreamingAiTaskPhases after dispose", beforeDispose);
   });
 
   const buildModel = (taskType: string) => ({
@@ -110,6 +117,7 @@ describe("StreamingAiTask default phase emissions", () => {
 
   it("emits 'Preparing' before any data event", async () => {
     const started = Date.now();
+    const startMem = snapMem();
     const streamFn: AiProviderStreamFn = async function* () {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
@@ -133,11 +141,12 @@ describe("StreamingAiTask default phase emissions", () => {
       `expected 'Summarizing' after 'Preparing' in messages ${JSON.stringify(messages)}`
     ).toBeGreaterThan(idxPreparing);
     reportTime("phase: preparing", started);
-    reportMem("phase: preparing");
+    reportMem("phase: preparing", startMem);
   });
 
   it("uses the subclass's streamingPhaseLabel on first data event", async () => {
     const started = Date.now();
+    const startMem = snapMem();
     const streamFn: AiProviderStreamFn = async function* () {
       yield { type: "text-delta", port: "text", textDelta: "hi" };
       yield { type: "finish", data: {} };
@@ -152,11 +161,12 @@ describe("StreamingAiTask default phase emissions", () => {
 
     expect(events).toContainEqual({ progress: undefined, message: "Summarizing" });
     reportTime("phase: subclass label", started);
-    reportMem("phase: subclass label");
+    reportMem("phase: subclass label", startMem);
   });
 
   it("provider-yielded phase overrides the default", async () => {
     const started = Date.now();
+    const startMem = snapMem();
     const streamFn: AiProviderStreamFn = async function* () {
       yield { type: "phase", message: "Calling Anthropic", progress: undefined };
       yield { type: "text-delta", port: "text", textDelta: "hi" };
@@ -186,6 +196,6 @@ describe("StreamingAiTask default phase emissions", () => {
       `expected 'Summarizing' after 'Calling Anthropic' in messages ${JSON.stringify(messages)}`
     ).toBeGreaterThan(idxCalling);
     reportTime("phase: provider override", started);
-    reportMem("phase: provider override");
+    reportMem("phase: provider override", startMem);
   });
 });
