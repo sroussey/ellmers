@@ -8,6 +8,7 @@ import type { StreamEvent } from "@workglow/task-graph";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
 import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
+import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
 import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
 import type { AiStrategyResolver, IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";

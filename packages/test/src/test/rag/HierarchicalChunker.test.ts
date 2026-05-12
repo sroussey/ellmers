@@ -11,12 +11,30 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+type MemSnapshot = ReturnType<typeof process.memoryUsage>;
+const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
+const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
+const snapMem = (): MemSnapshot => process.memoryUsage();
+const reportMem = (label: string, start?: MemSnapshot) => {
+  const m = process.memoryUsage();
+  const fmt = (cur: number, base: number | undefined) =>
+    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
+  process.stderr.write(
+    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
+  );
+};
+const reportTime = (label: string, started: number) => {
+  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
+};
+
 describe("HierarchicalChunker", () => {
   let logger = getTestingLogger();
   setLogger(logger);
 
   describe("HierarchicalChunkerTask", () => {
     it("should chunk a simple document hierarchically", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Section 1
 
   This is a paragraph that should fit in one chunk.
@@ -51,9 +69,13 @@ describe("HierarchicalChunker", () => {
         expect(chunk.nodePath.length).toBeGreaterThan(0);
         expect(chunk.depth).toBeGreaterThanOrEqual(0);
       }
+      reportTime("hier-chunk: simple", started);
+      reportMem("hier-chunk: simple", startMem);
     });
 
     it("should respect token budgets", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       // Create a long text that requires splitting
       const longText = "Lorem ipsum dolor sit amet. ".repeat(100);
       const markdown = `# Section\n\n${longText}`;
@@ -78,9 +100,13 @@ describe("HierarchicalChunker", () => {
         const tokens = estimateTokens(chunk.text);
         expect(tokens).toBeLessThanOrEqual(maxTokens);
       }
+      reportTime("hier-chunk: token-budget", started);
+      reportMem("hier-chunk: token-budget", startMem);
     });
 
     it("should create overlapping chunks", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const text = "Word ".repeat(200);
       const markdown = `# Section\n\n${text}`;
 
@@ -112,9 +138,13 @@ describe("HierarchicalChunker", () => {
 
         expect(hasOverlap).toBe(true);
       }
+      reportTime("hier-chunk: overlap", started);
+      reportMem("hier-chunk: overlap", startMem);
     });
 
     it("should handle flat strategy", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Section 1
 
   Paragraph 1.
@@ -138,9 +168,13 @@ describe("HierarchicalChunker", () => {
 
       // Flat strategy should still produce chunks
       expect(result.count).toBeGreaterThan(0);
+      reportTime("hier-chunk: flat-strategy", started);
+      reportMem("hier-chunk: flat-strategy", startMem);
     });
 
     it("should maintain node paths in chunks", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Section 1
 
   ## Subsection 1.1
@@ -167,9 +201,13 @@ describe("HierarchicalChunker", () => {
         // First element should be root node ID
         expect(chunk.nodePath[0]).toBe(root.nodeId);
       }
+      reportTime("hier-chunk: node-paths", started);
+      reportMem("hier-chunk: node-paths", startMem);
     });
 
     it("prepends a section-only heading breadcrumb (excludes doc root title)", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Outer Section
 
 ## Inner Subsection
@@ -198,9 +236,13 @@ Body text under the inner subsection.`;
       expect(
         result.chunks.some((c) => c.text.includes("Body text under the inner subsection"))
       ).toBe(true);
+      reportTime("hier-chunk: breadcrumb", started);
+      reportMem("hier-chunk: breadcrumb", startMem);
     });
 
     it("keeps prefix+body within the chunk token budget when splitting long leaves", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       // Long body forces multiple chunks; breadcrumb tokens must be charged against
       // the budget so no chunk exceeds maxTokens after prepending the prefix.
       const longText = "Lorem ipsum dolor sit amet. ".repeat(100);
@@ -225,9 +267,13 @@ Body text under the inner subsection.`;
         // And the whole chunk (prefix + body) must respect the token budget.
         expect(estimateTokens(chunk.text)).toBeLessThanOrEqual(maxTokens);
       }
+      reportTime("hier-chunk: prefix-budget", started);
+      reportMem("hier-chunk: prefix-budget", startMem);
     });
 
     it("stamps sectionTitles onto every chunk so the chat layer can build #anchor URLs", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Outer Section
 
 ## Inner Subsection
@@ -267,9 +313,13 @@ More body text.`;
       const otherChunk = result.chunks.find((c) => c.text.includes("More body text"));
       expect(otherChunk).toBeDefined();
       expect(otherChunk!.sectionTitles).toEqual(["Outer Section", "Another Subsection"]);
+      reportTime("hier-chunk: section-titles", started);
+      reportMem("hier-chunk: section-titles", startMem);
     });
 
     it("does not prepend the document title in flat strategy", async () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const markdown = `# Section 1
 
 Paragraph 1.
@@ -298,25 +348,37 @@ Paragraph 2.`;
       for (const chunk of result.chunks) {
         expect(chunk.text.includes("FlatDoc")).toBe(false);
       }
+      reportTime("hier-chunk: flat-no-title", started);
+      reportMem("hier-chunk: flat-no-title", startMem);
     });
   });
 
   describe("Token estimation", () => {
     it("should estimate tokens approximately", () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const text = "This is a test string";
       const tokens = estimateTokens(text);
 
       // Rough approximation: 1 token ~= 4 characters
       const expected = Math.ceil(text.length / 4);
       expect(tokens).toBe(expected);
+      reportTime("token-est: approximate", started);
+      reportMem("token-est: approximate", startMem);
     });
 
     it("should handle empty strings", () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const tokens = estimateTokens("");
       expect(tokens).toBe(0);
+      reportTime("token-est: empty", started);
+      reportMem("token-est: empty", startMem);
     });
 
     it("should increase token count with text length", () => {
+      const started = Date.now();
+      const startMem = snapMem();
       const shortText = "Hello";
       const longText = "Hello world this is a much longer text";
 
@@ -324,6 +386,8 @@ Paragraph 2.`;
       const longTokens = estimateTokens(longText);
 
       expect(longTokens).toBeGreaterThan(shortTokens);
+      reportTime("token-est: length-proportional", started);
+      reportMem("token-est: length-proportional", startMem);
     });
   });
 });

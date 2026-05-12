@@ -15,6 +15,22 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+type MemSnapshot = ReturnType<typeof process.memoryUsage>;
+const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
+const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
+const snapMem = (): MemSnapshot => process.memoryUsage();
+const reportMem = (label: string, start?: MemSnapshot) => {
+  const m = process.memoryUsage();
+  const fmt = (cur: number, base: number | undefined) =>
+    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
+  process.stderr.write(
+    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
+  );
+};
+const reportTime = (label: string, started: number) => {
+  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
+};
+
 const makeChunk = (overrides: Partial<ChunkRecord> & { doc_id?: string }): ChunkRecord => ({
   chunkId: uuid4(),
   doc_id: overrides.doc_id ?? "doc1",
@@ -42,6 +58,8 @@ describe("ChunkVectorUpsertTask", () => {
   });
 
   test("should upsert a single chunk + vector", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunk = makeChunk({ text: "Test document", doc_id: "doc1" });
     const vector = new Float32Array([0.1, 0.2, 0.3]);
 
@@ -60,9 +78,13 @@ describe("ChunkVectorUpsertTask", () => {
     expect(retrieved).toBeDefined();
     expect(retrieved?.doc_id).toBe("doc1");
     expect(retrieved!.metadata).toMatchObject({ text: "Test document" });
+    reportTime("chunk-upsert: single", started);
+    reportMem("chunk-upsert: single", startMem);
   });
 
   test("should accept a single vector (not wrapped in an array)", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunk = makeChunk({ text: "Shortcut single-vector form", doc_id: "doc1" });
     const vector = new Float32Array([0.1, 0.2, 0.3]);
 
@@ -75,9 +97,13 @@ describe("ChunkVectorUpsertTask", () => {
 
     expect(result.count).toBe(1);
     expect(result.doc_id).toBe("doc1");
+    reportTime("chunk-upsert: single-vector", started);
+    reportMem("chunk-upsert: single-vector", startMem);
   });
 
   test("should upsert multiple chunks + vectors in bulk", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunks = [
       makeChunk({ text: "Part 1", doc_id: "doc1" }),
       makeChunk({ text: "Part 2", doc_id: "doc1" }),
@@ -105,9 +131,13 @@ describe("ChunkVectorUpsertTask", () => {
       expect(retrieved).toBeDefined();
       expect(retrieved?.doc_id).toBe("doc1");
     }
+    reportTime("chunk-upsert: bulk", started);
+    reportMem("chunk-upsert: bulk", startMem);
   });
 
   test("should derive leafNodeId from nodePath when not set explicitly", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunk = makeChunk({
       text: "Derived leaf",
       nodePath: ["root", "section", "leaf-123"],
@@ -120,9 +150,13 @@ describe("ChunkVectorUpsertTask", () => {
 
     const retrieved = await kb.getChunk(result.chunk_ids[0]);
     expect(retrieved?.metadata).toMatchObject({ leafNodeId: "leaf-123" });
+    reportTime("chunk-upsert: leaf-node-id", started);
+    reportMem("chunk-upsert: leaf-node-id", startMem);
   });
 
   test("should stamp doc_title onto every chunk when provided", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunks = [
       makeChunk({ text: "A", doc_id: "doc1" }),
       makeChunk({ text: "B", doc_id: "doc1" }),
@@ -141,9 +175,13 @@ describe("ChunkVectorUpsertTask", () => {
     const retrieved1 = await kb.getChunk(result.chunk_ids[1]);
     expect(retrieved0?.metadata).toMatchObject({ doc_title: "My Document" });
     expect(retrieved1?.metadata).toMatchObject({ doc_title: "My Document" });
+    reportTime("chunk-upsert: doc-title", started);
+    reportMem("chunk-upsert: doc-title", startMem);
   });
 
   test("should throw when chunks and vectors length mismatch", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunks = [makeChunk({}), makeChunk({})];
     const vectors = [new Float32Array([0.1, 0.2, 0.3])];
 
@@ -151,9 +189,13 @@ describe("ChunkVectorUpsertTask", () => {
     await expect(task.run({ knowledgeBase: kb, chunks, vector: vectors })).rejects.toThrow(
       "Mismatch"
     );
+    reportTime("chunk-upsert: mismatch-throw", started);
+    reportMem("chunk-upsert: mismatch-throw", startMem);
   });
 
   test("should throw when chunks have mixed doc_ids", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const chunks = [makeChunk({ doc_id: "doc-a" }), makeChunk({ doc_id: "doc-b" })];
     const vectors = [new Float32Array([0.1, 0.2, 0.3]), new Float32Array([0.4, 0.5, 0.6])];
 
@@ -161,9 +203,13 @@ describe("ChunkVectorUpsertTask", () => {
     await expect(task.run({ knowledgeBase: kb, chunks, vector: vectors })).rejects.toThrow(
       /share one doc_id/
     );
+    reportTime("chunk-upsert: mixed-doc-ids", started);
+    reportMem("chunk-upsert: mixed-doc-ids", startMem);
   });
 
   test("should handle large batch upsert", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     const count = 100;
     const chunks = Array.from({ length: count }, (_, i) =>
       makeChunk({ text: `Part ${i}`, doc_id: "batch-doc" })
@@ -183,9 +229,13 @@ describe("ChunkVectorUpsertTask", () => {
     expect(result.count).toBe(count);
     expect(result.chunk_ids).toHaveLength(count);
     expect(await kb.chunkCount()).toBe(count);
+    reportTime("chunk-upsert: large-batch", started);
+    reportMem("chunk-upsert: large-batch", startMem);
   });
 
   test("should resolve knowledge base from string ID", async () => {
+    const started = Date.now();
+    const startMem = snapMem();
     await registerKnowledgeBase("test-upsert-kb", kb);
 
     const chunk = makeChunk({ text: "Test document", doc_id: "doc1" });
@@ -200,5 +250,7 @@ describe("ChunkVectorUpsertTask", () => {
 
     expect(result.count).toBe(1);
     expect(result.doc_id).toBe("doc1");
+    reportTime("chunk-upsert: string-id", started);
+    reportMem("chunk-upsert: string-id", startMem);
   });
 });

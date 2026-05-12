@@ -12,7 +12,34 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+type MemSnapshot = ReturnType<typeof process.memoryUsage>;
+const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
+const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
+const snapMem = (): MemSnapshot => process.memoryUsage();
+const reportMem = (label: string, start?: MemSnapshot) => {
+  const m = process.memoryUsage();
+  const fmt = (cur: number, base: number | undefined) =>
+    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
+  process.stderr.write(
+    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
+  );
+};
+const reportTime = (label: string, started: number) => {
+  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
+};
+
 setLogger(getTestingLogger());
+
+let _testStarted = 0;
+let _testStartMem: MemSnapshot;
+beforeEach(() => {
+  _testStarted = Date.now();
+  _testStartMem = snapMem();
+});
+afterEach((ctx) => {
+  reportTime(`doc-upsert: ${ctx.task.name}`, _testStarted);
+  reportMem(`doc-upsert: ${ctx.task.name}`, _testStartMem);
+});
 
 describe("DocumentUpsertTask", () => {
   let kb: KnowledgeBase;
