@@ -143,13 +143,21 @@ export class ScopedTabularStorage<
     return this.stripArray(results);
   }
 
+  /**
+   * We deliberately do not delegate to `inner.getBulk` because SQL backends
+   * build their IN-tuple WHERE from PK columns only, dropping our injected
+   * `kb_id`. Fanning out per-key `get()` calls keeps the predicate complete
+   * on every backend; correctness over throughput.
+   */
   async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
     if (keys.length === 0) return [];
-    const scopedKeys = keys.map((k) => this.inject(k));
-    const results = await this.inner.getBulk(scopedKeys);
-    const stripped = results.map((r: any) => this.strip(r)) as Entity[];
-    this.events.emit("getBulk", keys, stripped);
-    return stripped;
+    const results: Entity[] = [];
+    for (const key of keys) {
+      const row = await this.inner.get({ ...(key as any), kb_id: this.kbId } as any);
+      if (row) results.push(this.strip(row));
+    }
+    this.events.emit("getBulk", keys, results);
+    return results;
   }
 
   async getPage(request?: PageRequest<Entity>): Promise<Page<Entity>> {
