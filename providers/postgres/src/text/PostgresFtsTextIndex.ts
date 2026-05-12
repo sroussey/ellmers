@@ -292,7 +292,18 @@ export class PostgresFtsTextIndex implements ITextIndex {
         )}`
       );
     }
-    // No-op: state is server-side. We accept the snapshot for API parity.
+    // Symmetric with toJSON: if the snapshot carries a `table`, it must
+    // match this instance's table. A snapshot from a different table
+    // round-tripping through a mismatched instance would silently mask
+    // bugs (the server-side data still lives in the original table).
+    const snapshotTable = (state as { table?: unknown }).table;
+    if (snapshotTable !== undefined && snapshotTable !== this.table) {
+      throw new Error(
+        `PostgresFtsTextIndex.fromJSON: snapshot table "${String(snapshotTable)}" does not match this index's table "${this.table}".`
+      );
+    }
+    // No-op beyond validation: state is server-side. We accept the
+    // snapshot for API parity.
   }
 
   /**

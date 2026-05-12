@@ -51,6 +51,14 @@ const kb = await createKnowledgeBase({
 });
 ```
 
+> **Note**: the `table` argument is validated against a strict identifier
+> whitelist — alphanumerics and underscore only, and must start with a
+> letter or underscore (regex: `/^[A-Za-z_][A-Za-z0-9_]*$/`). Schema-
+> qualified names (e.g. `public.chunks_fts`) and names containing dashes
+> are rejected with an `Error` at DDL time. If you need to use a non-
+> default schema, configure it via the Postgres pool's `search_path`
+> instead.
+
 `reindexText` wraps the rebuild in a Postgres transaction via the
 `ITextIndex.beginRebuild` / `commitRebuild` / `abortRebuild` hooks, so a
 failed rebuild rolls back atomically. `toJSON` / `fromJSON` are no-ops:

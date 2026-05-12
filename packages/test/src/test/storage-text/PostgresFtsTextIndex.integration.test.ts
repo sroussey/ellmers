@@ -155,4 +155,25 @@ describe("PostgresFtsTextIndex", () => {
     await index.add("c1", "d1", { text: "" });
     expect(await index.search("rabbit")).toEqual([]);
   });
+
+  it("fromJSON accepts a snapshot with the same table", async () => {
+    const sameTable = `fts_roundtrip_${uuid4().replace(/-/g, "_")}`;
+    const a = new PostgresFtsTextIndex(db, sameTable);
+    const b = new PostgresFtsTextIndex(db, sameTable);
+    const snapshot = a.toJSON();
+    expect(() => b.fromJSON(snapshot)).not.toThrow();
+    // Round-trip on the same instance too.
+    expect(() => a.fromJSON(a.toJSON())).not.toThrow();
+  });
+
+  it("fromJSON throws when snapshot.table does not match this.table", async () => {
+    const tableA = `fts_a_${uuid4().replace(/-/g, "_")}`;
+    const tableB = `fts_b_${uuid4().replace(/-/g, "_")}`;
+    const idxA = new PostgresFtsTextIndex(db, tableA);
+    const idxB = new PostgresFtsTextIndex(db, tableB);
+    const snapshot = idxA.toJSON();
+    expect(() => idxB.fromJSON(snapshot)).toThrowError(
+      `PostgresFtsTextIndex.fromJSON: snapshot table "${tableA}" does not match this index's table "${tableB}".`
+    );
+  });
 });
