@@ -145,7 +145,8 @@ export class ContextBuilderTask extends Task<
 > {
   public static override type = "ContextBuilderTask";
   /** Pure-compute formatting task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "Context Builder";
   public static override description = "Format retrieved chunks into context for LLM prompts";

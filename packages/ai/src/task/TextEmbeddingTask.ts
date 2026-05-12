@@ -70,7 +70,9 @@ export class TextEmbeddingTask extends AiTask<
 > {
   public static override type = "TextEmbeddingTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = ["text.embedding"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.embedding",
+  ] as const satisfies readonly Capability[];
   public static override category = "AI Text";
   public static override title = "Text Embedding";
   public static override description =

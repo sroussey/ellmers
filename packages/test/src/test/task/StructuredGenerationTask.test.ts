@@ -5,7 +5,7 @@
  */
 
 import type {
-  AiProviderRunFnRegistration,
+  AiProviderLegacyStreamFnRegistration,
   AiProviderStreamFn,
   Capability,
   ModelConfig,
@@ -59,7 +59,7 @@ class FakeStructuredProvider extends AiProvider {
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
 
-  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+  constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, ModelConfig>[]) {
     super(runFns);
   }
 }
@@ -87,7 +87,7 @@ function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, u
   const registry = getAiProviderRegistry();
   const provider = new FakeStructuredProvider([{ serves: JSON_MODE, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
+  registry.registerLegacyStreamFn("fake-structured", { serves: JSON_MODE, runFn: stream });
   return { calls, unregister: () => registry.unregisterProvider("fake-structured") };
 }
 

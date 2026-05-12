@@ -84,7 +84,8 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
    * capability gating; the audit test in `index.test.ts` only inspects the
    * field shape.
    */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =

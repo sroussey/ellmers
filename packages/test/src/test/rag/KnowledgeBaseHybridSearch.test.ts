@@ -9,6 +9,8 @@ import { BM25Index } from "@workglow/storage";
 import { uuid4 } from "@workglow/util";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { snap, report } from "../../binding/testTiming";
+
 const dimensions = 3;
 
 const vec = (a: number, b: number, c: number) => new Float32Array([a, b, c]);
@@ -34,6 +36,7 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
   });
 
   it("hybridSearch throws when no text index is installed", async () => {
+    const s = snap();
     const kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: dimensions,
@@ -43,9 +46,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     await expect(
       kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 5 })
     ).rejects.toThrow(/text index/i);
+    report("hybrid: throws-no-index", s);
   });
 
   it("auto-indexes text fields on upsertChunk and exposes them via textSearch", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -65,9 +70,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(results[0].chunk_id).toBe("c1");
     expect(results[0].score).toBeGreaterThan(0);
     expect(results[0].metadata.text).toContain("rabbit");
+    report("hybrid: auto-index", s);
   });
 
   it("deleteDocument cascades to the text index", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -85,9 +92,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(await kb.textSearch("rabbit")).toEqual([]);
     const foxHits = await kb.textSearch("fox");
     expect(foxHits.map((r) => r.chunk_id)).toEqual(["c2"]);
+    report("hybrid: delete-cascade", s);
   });
 
   it("clearChunks empties the text index", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -102,9 +111,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     await kb.clearChunks();
     expect(index.size()).toBe(0);
     expect(await kb.textSearch("rabbit")).toEqual([]);
+    report("hybrid: clear-chunks", s);
   });
 
   it("RRF surfaces a chunk that ranks high in text but only mid-pack in vector", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -135,9 +146,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       vectorWeight: 0.3,
     });
     expect(fused[0].chunk_id).toBe("c2");
+    report("hybrid: rrf-promotion", s);
   });
 
   it("hybridSearch returns an empty array when the index has no chunks", async () => {
+    const s = snap();
     const kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: dimensions,
@@ -149,9 +162,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       topK: 5,
     });
     expect(results).toEqual([]);
+    report("hybrid: empty-index", s);
   });
 
   it("upserting a chunk with empty text drops its postings from the index", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -172,9 +187,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     });
     expect(index.size()).toBe(0);
     expect(await kb.textSearch("rabbit")).toEqual([]);
+    report("hybrid: empty-text-drop", s);
   });
 
   it("put / putBulk go through the indexing path (alias for upsertChunk*)", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -192,9 +209,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(index.size()).toBe(3);
     const hits = await kb.textSearch("rabbit");
     expect(hits.map((r) => r.chunk_id)).toEqual(["c1"]);
+    report("hybrid: put-alias", s);
   });
 
   it("hybridSearch tolerates fractional candidatePoolMultiplier (integer poolSize)", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -216,9 +235,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       candidatePoolMultiplier: 1.7,
     });
     expect(results).toHaveLength(3);
+    report("hybrid: fractional-pool", s);
   });
 
   it("installTextIndex after upserts requires reindexText to populate", async () => {
+    const s = snap();
     const kb = await createKnowledgeBase({
       name: kbName,
       vectorDimensions: dimensions,
@@ -234,9 +255,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(index.size()).toBe(1);
     const hits = await kb.textSearch("rabbit");
     expect(hits[0].chunk_id).toBe("c1");
+    report("hybrid: reindex", s);
   });
 
   it("reindexText rolls back on synchronous index.add failure (truly atomic)", async () => {
+    const s = snap();
     // Custom ITextIndex whose `add` throws on a sentinel doc id; verifies the
     // snapshot/rollback path in reindexText().
     let addCount = 0;
@@ -294,9 +317,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     // Add was called at least once before the throw; rollback must restore.
     expect(addCount).toBeGreaterThan(0);
     expect(stub.size()).toBe(sizeBefore);
+    report("hybrid: reindex-rollback", s);
   });
 
   it("upsertChunk surfaces a warning when textIndex.add throws but keeps the chunk", async () => {
+    const s = snap();
     const errors: string[] = [];
     const originalWarn = console.warn;
     console.warn = (msg: string) => errors.push(msg);
@@ -334,9 +359,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     } finally {
       console.warn = originalWarn;
     }
+    report("hybrid: index-warn", s);
   });
 
   it("reindexText is atomic: a chunkStorage failure leaves the existing index untouched", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -359,9 +386,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
 
     // Restore so the destroy() in afterEach behaves.
     kb.vectorStorage.getAll = original;
+    report("hybrid: reindex-atomic", s);
   });
 
   it("hybridSearch falls back to similaritySearch when textQuery is empty", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -383,9 +412,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(whitespace.map((r) => r.chunk_id)).toEqual(cosine.map((r) => r.chunk_id));
     // And cosine scores are in [0,1], unlike the small RRF range.
     expect(empty[0].score).toBeGreaterThan(0.5);
+    report("hybrid: empty-query-fallback", s);
   });
 
   it("hybridSearch clamps negative rrfK to a safe value (no Infinity scores)", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -409,9 +440,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       expect(Number.isFinite(r.score)).toBe(true);
       expect(r.score).toBeGreaterThan(0);
     }
+    report("hybrid: clamp-rrfK", s);
   });
 
   it("attaches scoreType to results for each search method", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -434,9 +467,11 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
     expect(hybrid.every((r) => r.scoreType === "rrf")).toBe(true);
     // Empty-query fallback routes through similaritySearch, so cosine.
     expect(hybridEmpty.every((r) => r.scoreType === "cosine")).toBe(true);
+    report("hybrid: score-type", s);
   });
 
   it("hybridSearch produces RRF-shaped scores (small positives, not cosine)", async () => {
+    const s = snap();
     const index = new BM25Index();
     const kb = await createKnowledgeBase({
       name: kbName,
@@ -457,5 +492,6 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       expect(r.score).toBeGreaterThan(0);
       expect(r.score).toBeLessThan(0.05);
     }
+    report("hybrid: rrf-scores", s);
   });
 });

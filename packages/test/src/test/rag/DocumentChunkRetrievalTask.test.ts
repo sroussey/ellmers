@@ -14,6 +14,8 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("ChunkRetrievalTask", () => {
   let logger = getTestingLogger();
   setLogger(logger);
@@ -83,6 +85,7 @@ describe("ChunkRetrievalTask", () => {
   });
 
   test("should retrieve chunks with query vector", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -100,9 +103,11 @@ describe("ChunkRetrievalTask", () => {
     // Chunks should be extracted from metadata
     expect(result.chunks[0]).toBeTruthy();
     expect(typeof result.chunks[0]).toBe("string");
+    report("chunk-retrieval: query-vector", s);
   });
 
   test("should extract text from metadata.text field", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -122,9 +127,11 @@ describe("ChunkRetrievalTask", () => {
       const originalIdx = result.chunks.indexOf(chunk);
       expect(chunk).toBe(result.metadata[originalIdx].text);
     });
+    report("chunk-retrieval: extract-text", s);
   });
 
   test("should return vectors when returnVectors is true", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -137,9 +144,11 @@ describe("ChunkRetrievalTask", () => {
     expect(result.vectors).toBeDefined();
     expect(result.vectors).toHaveLength(3);
     expect(result.vectors![0]).toBeInstanceOf(Float32Array);
+    report("chunk-retrieval: return-vectors", s);
   });
 
   test("should not return vectors when returnVectors is false", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -150,9 +159,11 @@ describe("ChunkRetrievalTask", () => {
     });
 
     expect(result.vectors).toBeUndefined();
+    report("chunk-retrieval: no-vectors", s);
   });
 
   test("should respect topK parameter", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -163,9 +174,11 @@ describe("ChunkRetrievalTask", () => {
 
     expect(result.count).toBe(2);
     expect(result.chunks).toHaveLength(2);
+    report("chunk-retrieval: topK", s);
   });
 
   test("should apply score threshold", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -178,9 +191,11 @@ describe("ChunkRetrievalTask", () => {
     result.scores.forEach((score) => {
       expect(score).toBeGreaterThanOrEqual(0.9);
     });
+    report("chunk-retrieval: score-threshold", s);
   });
 
   test("should throw error when query is string without model", async () => {
+    const s = snap();
     await expect(
       // @ts-expect-error - query is string but no model is provided
       chunkRetrieval({
@@ -189,9 +204,11 @@ describe("ChunkRetrievalTask", () => {
         topK: 3,
       })
     ).rejects.toThrow("model");
+    report("chunk-retrieval: throw-no-model", s);
   });
 
   test("should handle default topK value", async () => {
+    const s = snap();
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
 
     const result = await chunkRetrieval({
@@ -202,9 +219,11 @@ describe("ChunkRetrievalTask", () => {
     // Default topK is 5
     expect(result.count).toBe(5);
     expect(result.count).toBeLessThanOrEqual(5);
+    report("chunk-retrieval: default-topK", s);
   });
 
   test("should resolve knowledge base from string ID", async () => {
+    const s = snap();
     await registerKnowledgeBase("test-retrieval-kb", kb);
 
     const queryVector = new Float32Array([1.0, 0.0, 0.0]);
@@ -218,5 +237,6 @@ describe("ChunkRetrievalTask", () => {
     expect(result.count).toBe(3);
     expect(result.chunks).toHaveLength(3);
     expect(result.chunk_ids).toHaveLength(3);
+    report("chunk-retrieval: string-id", s);
   });
 });

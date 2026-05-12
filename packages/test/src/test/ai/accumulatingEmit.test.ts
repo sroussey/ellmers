@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 interface Out {
   text?: string;
   count?: number;
+  [key: string]: unknown;
 }
 
 describe("accumulatingEmit", () => {
@@ -36,7 +37,8 @@ describe("accumulatingEmit", () => {
 
   it("error event thrown inside emit() propagates to caller", () => {
     const { emit } = accumulatingEmit<Out>();
-    expect(() => emit({ type: "error", error: new Error("boom") } as StreamEvent<Out>))
-      .toThrow(/boom/);
+    expect(() => emit({ type: "error", error: new Error("boom") } as StreamEvent<Out>)).toThrow(
+      /boom/
+    );
   });
 });

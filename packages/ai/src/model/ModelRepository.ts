@@ -204,7 +204,9 @@ export class ModelRepository {
     if (typeof model_id != "string") return undefined;
     const modelRecord = await this.modelTabularRepository.get({ model_id });
     if (!modelRecord) return undefined;
-    return modelRecord.capabilities && modelRecord.capabilities.length > 0 ? modelRecord.capabilities : undefined;
+    return modelRecord.capabilities && modelRecord.capabilities.length > 0
+      ? modelRecord.capabilities
+      : undefined;
   }
 
   /**

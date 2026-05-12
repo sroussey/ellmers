@@ -72,7 +72,8 @@ export class KbToDocumentsTask extends Task<
 > {
   public static override type = "KbToDocumentsTask";
   /** Storage task — no provider capability required. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Knowledge Base to Documents";
   public static override description =

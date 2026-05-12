@@ -75,7 +75,9 @@ export class TextTranslationTask extends StreamingAiTask<
 > {
   public static override type = "TextTranslationTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = ["text.translation"] as const satisfies readonly Capability[];
+  public static override readonly requires: readonly Capability[] = [
+    "text.translation",
+  ] as const satisfies readonly Capability[];
   protected static override readonly streamingPhaseLabel = "Translating";
   public static override category = "AI Text";
   public static override title = "Text Translation";

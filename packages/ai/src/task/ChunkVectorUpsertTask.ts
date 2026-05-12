@@ -82,7 +82,8 @@ export class ChunkVectorUpsertTask extends Task<
 > {
   public static override type = "ChunkVectorUpsertTask";
   /** Pure-compute upsert task — uses storage, not a provider capability. */
-  public static readonly requires: readonly Capability[] = [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] =
+    [] as const satisfies readonly Capability[];
   public static override category = "Document";
   public static override title = "Add to Vector Store";
   public static override description =

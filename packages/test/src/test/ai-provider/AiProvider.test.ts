@@ -5,13 +5,14 @@
  */
 
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderRegisterContext,
   AiProviderRegisterOptions,
-  AiProviderRunFnRegistration,
   AiProviderStreamFn,
   Capability,
 } from "@workglow/ai";
 import {
+  accumulatingEmit,
   AiJob,
   AiProvider,
   AiProviderRegistry,
@@ -53,7 +54,7 @@ class TestProvider extends AiProvider {
   public initializeOptions: AiProviderRegisterContext | null = null;
   public disposeCalled = false;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 
@@ -74,7 +75,7 @@ class TestQueuedProvider extends QueuedAiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 }
@@ -87,7 +88,7 @@ class StaticTaskTypesProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
+  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
     super(fns);
   }
 
@@ -129,17 +130,23 @@ describe.skip("AiProvider", () => {
         { serves: TEXT_EMBEDDING, runFn: makeFinishStreamFn({ result: "ok" }) },
       ]);
 
-      const allCaps = (provider as unknown as {
-        runFns?: readonly AiProviderRunFnRegistration[];
-      }).runFns?.flatMap((r) => r.serves) ?? [];
+      const allCaps =
+        (
+          provider as unknown as {
+            runFns?: readonly AiProviderLegacyStreamFnRegistration[];
+          }
+        ).runFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual(["text.generation", "text.embedding"]);
     });
 
     test("provider with empty runFns advertises nothing", () => {
       const provider = new TestProvider([]);
-      const allCaps = (provider as unknown as {
-        runFns?: readonly AiProviderRunFnRegistration[];
-      }).runFns?.flatMap((r) => r.serves) ?? [];
+      const allCaps =
+        (
+          provider as unknown as {
+            runFns?: readonly AiProviderLegacyStreamFnRegistration[];
+          }
+        ).runFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual([]);
     });
 
@@ -150,10 +157,7 @@ describe.skip("AiProvider", () => {
           workerRunFnSpecs: () => readonly { serves: readonly Capability[] }[];
         }
       ).workerRunFnSpecs();
-      expect(specs.map((s) => [...s.serves])).toEqual([
-        [...TEXT_GENERATION],
-        [...TEXT_EMBEDDING],
-      ]);
+      expect(specs.map((s) => [...s.serves])).toEqual([[...TEXT_GENERATION], [...TEXT_EMBEDDING]]);
     });
   });
 
@@ -432,9 +436,9 @@ describe.skip("AiProvider", () => {
 
     test("getProviderIdsForCapabilities returns empty when no run fns match", () => {
       // provider.model-search is a real capability but nothing has registered it.
-      expect(
-        aiProviderRegistry.getProviderIdsForCapabilities(["provider.model-search"])
-      ).toEqual([]);
+      expect(aiProviderRegistry.getProviderIdsForCapabilities(["provider.model-search"])).toEqual(
+        []
+      );
     });
 
     test("getProviderIdsForCapabilities returns sorted provider ids matching the requires set", async () => {
@@ -492,12 +496,17 @@ describe.skip("AiProvider", () => {
         },
       });
 
-      const result = await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
-      expect(result).toEqual({ text: "generated text" });
+      expect(getResult()).toEqual({ text: "generated text" });
       expect(runFnSpy).toHaveBeenCalledOnce();
 
       // Sanity: also drives through collectStream directly.

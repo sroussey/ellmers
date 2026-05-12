@@ -10,11 +10,14 @@ import { describe, expect, it } from "vitest";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("StructuralParser", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   describe("Markdown parsing", () => {
     it("should parse markdown with headers into hierarchical tree", async () => {
+      const s = snap();
       const markdown = `# Main Title
 
 This is the intro.
@@ -43,9 +46,11 @@ Nested content.`;
 
       // Should have some children (sections or paragraphs)
       expect(root.children.length).toBeGreaterThanOrEqual(1);
+      report("struct-parser: md-hierarchy", s);
     });
 
     it("should preserve source offsets", async () => {
+      const s = snap();
       const markdown = `# Title
 
 Paragraph one.
@@ -64,9 +69,11 @@ Paragraph two.`;
         expect(child.range.endOffset).toBeLessThanOrEqual(markdown.length);
         expect(child.range.endOffset).toBeGreaterThan(child.range.startOffset);
       }
+      report("struct-parser: offsets", s);
     });
 
     it("should handle nested sections correctly", async () => {
+      const s = snap();
       const markdown = `# Level 1
 
 Content.
@@ -99,11 +106,13 @@ Deep content.`;
         (c): c is SectionNode => c.kind === NodeKind.SECTION && c.level === 3
       );
       expect(level3).toBeDefined();
+      report("struct-parser: nested-sections", s);
     });
   });
 
   describe("Plain text parsing", () => {
     it("should parse plain text into paragraphs", async () => {
+      const s = snap();
       const text = `First paragraph here.
 
 Second paragraph here.
@@ -119,9 +128,11 @@ Third paragraph here.`;
       for (const child of root.children) {
         expect(child.kind).toBe(NodeKind.PARAGRAPH);
       }
+      report("struct-parser: plain-text", s);
     });
 
     it("should handle single paragraph", async () => {
+      const s = snap();
       const text = "Just one paragraph.";
 
       const doc_id = "doc_plain456";
@@ -130,11 +141,13 @@ Third paragraph here.`;
       expect(root.children.length).toBe(1);
       expect(root.children[0].kind).toBe(NodeKind.PARAGRAPH);
       expect(root.children[0].text).toBe(text);
+      report("struct-parser: single-paragraph", s);
     });
   });
 
   describe("Auto-detect", () => {
     it("should auto-detect markdown", async () => {
+      const s = snap();
       const markdown = "# Header\n\nParagraph.";
       const doc_id = "doc_auto123";
 
@@ -143,9 +156,11 @@ Third paragraph here.`;
       // Should have detected markdown and created sections
       const hasSection = root.children.some((c) => c.kind === NodeKind.SECTION);
       expect(hasSection).toBe(true);
+      report("struct-parser: auto-md", s);
     });
 
     it("should default to plain text when no markdown markers", async () => {
+      const s = snap();
       const text = "Just plain text here.";
       const doc_id = "doc_auto456";
 
@@ -153,6 +168,7 @@ Third paragraph here.`;
 
       // Should be plain paragraph
       expect(root.children[0].kind).toBe(NodeKind.PARAGRAPH);
+      report("struct-parser: auto-plain", s);
     });
   });
 });

@@ -53,7 +53,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -115,7 +116,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -172,7 +174,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -239,7 +242,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),

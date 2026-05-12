@@ -4,28 +4,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  AiProviderRegistry,
-  type AiProviderRunFn,
-  type AiProviderStreamFn,
-} from "@workglow/ai";
+import { AiProviderRegistry, type AiProviderRunFn, type AiProviderStreamFn } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 describe("AiProviderRegistry: legacy stream-fn adapter", () => {
   it("forwards every yielded event to emit, including finish", async () => {
     const reg = new AiProviderRegistry();
-    const oldFn: AiProviderStreamFn<{ x: number }, { y: number }> = async function* () {
+    interface TestIn {
+      x: number;
+      [k: string]: unknown;
+    }
+    interface TestOut {
+      y: number;
+      [k: string]: unknown;
+    }
+    const oldFn: AiProviderStreamFn<TestIn, TestOut> = async function* () {
       yield { type: "phase", message: "starting", progress: 0 };
       yield { type: "text-delta", port: "y", textDelta: "a" };
       yield { type: "finish", data: { y: 1 } };
     };
-    reg.registerLegacyStreamFn("P", { serves: ["text.generation"], runFn: oldFn });
-    const fn = reg.getRunFnFor<{ x: number }, { y: number }>("P", ["text.generation"]);
+    reg.registerLegacyStreamFn("P", {
+      serves: ["text.generation"],
+      runFn: oldFn as unknown as AiProviderStreamFn,
+    });
+    const fn = reg.getRunFnFor<TestIn, TestOut>("P", ["text.generation"]);
     expect(fn).toBeTruthy();
 
-    const events: StreamEvent<{ y: number }>[] = [];
-    const emit = (e: StreamEvent<{ y: number }>) => events.push(e);
+    const events: StreamEvent<TestOut>[] = [];
+    const emit = (e: StreamEvent<TestOut>): void => {
+      events.push(e);
+    };
     await fn!({ x: 1 }, undefined, new AbortController().signal, emit);
 
     expect(events.map((e) => e.type)).toEqual(["phase", "text-delta", "finish"]);
@@ -58,9 +67,9 @@ describe("AiProviderRegistry: legacy stream-fn adapter", () => {
     };
     reg.registerLegacyStreamFn("P", { serves: ["text.generation"], runFn: oldFn });
     const fn = reg.getRunFnFor("P", ["text.generation"]);
-    await expect(
-      fn!({}, undefined, new AbortController().signal, () => {})
-    ).rejects.toThrow(/boom/);
+    await expect(fn!({}, undefined, new AbortController().signal, () => {})).rejects.toThrow(
+      /boom/
+    );
   });
 
   it("supports the new shape via registerRunFn", async () => {
