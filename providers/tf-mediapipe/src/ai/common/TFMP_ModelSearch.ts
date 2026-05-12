@@ -5,13 +5,12 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ModelSearchResultItem,
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
 import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
-import type { StreamEvent } from "@workglow/task-graph";
 import { TENSORFLOW_MEDIAPIPE } from "./TFMP_Constants";
 
 const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
@@ -228,8 +227,8 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
 
 export function createTFMPModelSearch(
   providerId: string
-): AiProviderStreamFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
-  return async function* (input): AsyncIterable<StreamEvent<ModelSearchTaskOutput>> {
+): AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
+  return async (input, _model, _signal, emit) => {
     const results = filterModelSearchResultsByQuery(
       TFMP_MODEL_RESULTS.map((result) => ({
         ...result,
@@ -237,9 +236,9 @@ export function createTFMPModelSearch(
       })),
       input.query
     );
-    yield { type: "finish", data: { results } };
+    emit({ type: "finish", data: { results } });
   };
 }
 
-export const TFMP_ModelSearch: AiProviderStreamFn<ModelSearchTaskInput, ModelSearchTaskOutput> =
+export const TFMP_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> =
   createTFMPModelSearch(TENSORFLOW_MEDIAPIPE);

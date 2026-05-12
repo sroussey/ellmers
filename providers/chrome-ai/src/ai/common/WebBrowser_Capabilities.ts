@@ -37,30 +37,20 @@ export function inferWebBrowserCapabilities(model: CapabilityHints): readonly Ca
   const baseName = id.toLowerCase();
 
   if (/prompt|gemini[-_]?nano/.test(baseName)) {
-    return [
-      "text.generation",
-      "text.rewriter",
-      "text.summary",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.generation", "text.rewriter", "text.summary", "model.info", "model.search"];
   }
   if (/summariz/.test(baseName)) {
-    return ["text.summary", "provider.model-info", "provider.model-search"];
+    return ["text.summary", "model.info", "model.search"];
   }
   if (/rewrit/.test(baseName)) {
-    return ["text.rewriter", "provider.model-info", "provider.model-search"];
+    return ["text.rewriter", "model.info", "model.search"];
   }
   if (/translat/.test(baseName)) {
-    return ["text.translation", "provider.model-info", "provider.model-search"];
+    return ["text.translation", "model.info", "model.search"];
   }
   if (/language[-_]?detect/.test(baseName)) {
-    return [
-      "text.language-detection",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.language-detection", "model.info", "model.search"];
   }
 
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

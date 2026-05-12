@@ -15,14 +15,14 @@
  *   - Embedding:       BGE Small EN v1.5 Q8_0         (~34 MB)
  */
 
+import type { TextEmbeddingTaskOutput, TextGenerationTaskOutput } from "@workglow/ai";
 import {
   getGlobalModelRepository,
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import type { TextEmbeddingTaskOutput, TextGenerationTaskOutput } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
   registerLlamaCppInline,
@@ -31,22 +31,7 @@ import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/
 import { ResourceScope, setLogger } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
-
-type MemSnapshot = ReturnType<typeof process.memoryUsage>;
-const mb = (n: number) => (n / 1024 / 1024).toFixed(0) + "MB";
-const signedMb = (n: number) => (n >= 0 ? "+" : "") + (n / 1024 / 1024).toFixed(0) + "MB";
-const snapMem = (): MemSnapshot => process.memoryUsage();
-const reportMem = (label: string, start?: MemSnapshot) => {
-  const m = process.memoryUsage();
-  const fmt = (cur: number, base: number | undefined) =>
-    base === undefined ? mb(cur) : `${mb(cur)} (${signedMb(cur - base)})`;
-  process.stderr.write(
-    `[${label}] MEM rss=${fmt(m.rss, start?.rss)} heap=${fmt(m.heapUsed, start?.heapUsed)} ext=${fmt(m.external, start?.external)} ab=${fmt(m.arrayBuffers, start?.arrayBuffers)}\n`
-  );
-};
-const reportTime = (label: string, started: number) => {
-  process.stderr.write(`[${label}] TIME ${((Date.now() - started) / 1000).toFixed(2)}s\n`);
-};
+import { report, snap } from "../../binding/testTiming";
 
 // ========================================================================
 // Model definitions (tiny models suitable for testing)
@@ -112,14 +97,13 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   });
 
   afterAll(async () => {
-    reportMem("LlamaCpp before dispose");
-    const beforeDispose = snapMem();
+    const s = snap();
     await resourceScope.disposeAll();
     await disposeLlamaCppResources();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
-    reportMem("LlamaCpp after dispose", beforeDispose);
+    report("LlamaCpp dispose", s);
   });
 
   // ======================================================================
@@ -129,8 +113,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "downloads a text generation model and generates a short story",
     async () => {
-      const started = Date.now();
-      const startMem = snapMem();
+      const s = snap();
       // Step 1 — download the LLM
       const downloadWorkflow = new Workflow();
       downloadWorkflow.downloadModel({ model: LLM_MODEL_ID });
@@ -153,8 +136,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
       expect(storyResult.text).toBeDefined();
       expect(typeof storyResult.text).toBe("string");
       expect((storyResult.text as string).trim().length).toBeGreaterThan(10);
-      reportTime("llm download+generate", started);
-      reportMem("llm download+generate", startMem);
+      report("llm download+generate", s);
     },
     10 * 60 * 1000 // 10 min: download (~85 MB) + inference
   );
@@ -166,8 +148,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "downloads an embedding model and embeds text",
     async () => {
-      const started = Date.now();
-      const startMem = snapMem();
+      const s = snap();
       // Step 1 — download the embedding model
       const downloadWorkflow = new Workflow();
       downloadWorkflow.downloadModel({ model: EMBED_MODEL_ID });
@@ -195,8 +176,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
       // Vector should not be all zeros
       const magnitude = Array.from(vector).reduce((sum, v) => sum + v * v, 0);
       expect(magnitude).toBeGreaterThan(0);
-      reportTime("embed download+embed", started);
-      reportMem("embed download+embed", startMem);
+      report("embed download+embed", s);
     },
     10 * 60 * 1000 // 10 min: download (~34 MB) + inference
   );
@@ -208,8 +188,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
   it(
     "generates a story and computes embeddings for each sentence",
     async () => {
-      const started = Date.now();
-      const startMem = snapMem();
+      const s = snap();
       // Both models already downloaded by the previous tests; this verifies
       // the full pipeline works end-to-end using cached models.
 
@@ -257,8 +236,7 @@ describe("LlamaCpp Integration (real models, no mocks)", () => {
           expect(v.length).toBeGreaterThan(0);
         }
       }
-      reportTime("end-to-end", started);
-      reportMem("end-to-end", startMem);
+      report("end-to-end", s);
     },
     5 * 60 * 1000 // 5 min: inference only (models already cached)
   );

@@ -5,10 +5,10 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderRegisterContext,
   AiProviderRegisterOptions,
-  AiProviderStreamFn,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
   Capability,
 } from "@workglow/ai";
 import {
@@ -16,12 +16,11 @@ import {
   AiJob,
   AiProvider,
   AiProviderRegistry,
-  collectStream,
   getAiProviderRegistry,
   QueuedAiProvider,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
+import type { TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
@@ -36,10 +35,10 @@ const TEST_PROVIDER_NAME = "test-ai-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 const TEXT_EMBEDDING: readonly Capability[] = ["text.embedding"];
 
-/** Build a one-shot streaming run-fn yielding a single `finish` with `result`. */
-function makeFinishStreamFn(result: TaskOutput): AiProviderStreamFn {
-  return async function* () {
-    yield { type: "finish", data: result } as StreamEvent<TaskOutput>;
+/** Build a one-shot run-fn yielding a single `finish` with `result`. */
+function makeFinishStreamFn(result: TaskOutput): AiProviderRunFn {
+  return async (_input, _model, _signal, emit) => {
+    emit({ type: "finish", data: result });
   };
 }
 
@@ -54,7 +53,7 @@ class TestProvider extends AiProvider {
   public initializeOptions: AiProviderRegisterContext | null = null;
   public disposeCalled = false;
 
-  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
   }
 
@@ -75,7 +74,7 @@ class TestQueuedProvider extends QueuedAiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
   }
 }
@@ -88,7 +87,7 @@ class StaticTaskTypesProvider extends AiProvider {
   readonly isLocal = false;
   readonly supportsBrowser = true;
 
-  constructor(fns?: readonly AiProviderLegacyStreamFnRegistration[]) {
+  constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
   }
 
@@ -96,8 +95,8 @@ class StaticTaskTypesProvider extends AiProvider {
   // TextEmbeddingTask task types so worker-mode registration can install
   // matching proxies.
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
-    if (this.runFns && this.runFns.length > 0) {
-      return this.runFns.map((r) => ({ serves: r.serves }));
+    if (this.promiseRunFns && this.promiseRunFns.length > 0) {
+      return this.promiseRunFns.map((r) => ({ serves: r.serves }));
     }
     return [{ serves: TEXT_GENERATION }, { serves: TEXT_EMBEDDING }];
   }
@@ -133,9 +132,9 @@ describe.skip("AiProvider", () => {
       const allCaps =
         (
           provider as unknown as {
-            runFns?: readonly AiProviderLegacyStreamFnRegistration[];
+            promiseRunFns?: readonly AiProviderRunFnRegistration[];
           }
-        ).runFns?.flatMap((r) => r.serves) ?? [];
+        ).promiseRunFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual(["text.generation", "text.embedding"]);
     });
 
@@ -144,13 +143,13 @@ describe.skip("AiProvider", () => {
       const allCaps =
         (
           provider as unknown as {
-            runFns?: readonly AiProviderLegacyStreamFnRegistration[];
+            promiseRunFns?: readonly AiProviderRunFnRegistration[];
           }
-        ).runFns?.flatMap((r) => r.serves) ?? [];
+        ).promiseRunFns?.flatMap((r) => r.serves) ?? [];
       expect(allCaps).toEqual([]);
     });
 
-    test("worker-host provider (no runFns) advertises capabilities via workerRunFnSpecs", () => {
+    test("worker-host provider (no promiseRunFns) advertises capabilities via workerRunFnSpecs", () => {
       const provider = new StaticTaskTypesProvider();
       const specs = (
         provider as unknown as {
@@ -363,7 +362,7 @@ describe.skip("AiProvider", () => {
       };
 
       expect(() => provider.registerOnWorkerServer(mockWorkerServer as any)).toThrow(
-        /runFns must be provided via the constructor for worker server registration/
+        /promiseRunFns must be provided via the constructor for worker server registration/
       );
     });
   });
@@ -436,9 +435,7 @@ describe.skip("AiProvider", () => {
 
     test("getProviderIdsForCapabilities returns empty when no run fns match", () => {
       // provider.model-search is a real capability but nothing has registered it.
-      expect(aiProviderRegistry.getProviderIdsForCapabilities(["provider.model-search"])).toEqual(
-        []
-      );
+      expect(aiProviderRegistry.getProviderIdsForCapabilities(["model.search"])).toEqual([]);
     });
 
     test("getProviderIdsForCapabilities returns sorted provider ids matching the requires set", async () => {
@@ -464,13 +461,13 @@ describe.skip("AiProvider", () => {
 
   describe("end-to-end: AiJob execution with provider", () => {
     test("should execute a job using a function registered via AiProvider", async () => {
-      const mockRunFn: AiProviderStreamFn = async function* () {
-        yield { type: "finish", data: { text: "generated text" } } as StreamEvent<TaskOutput>;
+      const mockRunFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({ type: "finish", data: { text: "generated text" } });
       };
       const runFnSpy = vi.fn(mockRunFn);
 
       const provider = new TestProvider([
-        { serves: TEXT_GENERATION, runFn: runFnSpy as unknown as AiProviderStreamFn },
+        { serves: TEXT_GENERATION, runFn: runFnSpy as unknown as AiProviderRunFn },
       ]);
 
       await provider.register({ queue: { autoCreate: false } });
@@ -509,17 +506,15 @@ describe.skip("AiProvider", () => {
       expect(getResult()).toEqual({ text: "generated text" });
       expect(runFnSpy).toHaveBeenCalledOnce();
 
-      // Sanity: also drives through collectStream directly.
-      const direct = await collectStream(
-        runFnSpy(
-          { prompt: "x", model } as any,
-          model as any,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )
+      // Sanity: also drives through accumulatingEmit directly.
+      const { emit: directEmit, result: getDirectResult } = accumulatingEmit<TaskOutput>();
+      await runFnSpy(
+        { prompt: "x", model } as any,
+        model as any,
+        new AbortController().signal,
+        directEmit
       );
-      expect(direct).toEqual({ text: "generated text" });
+      expect(getDirectResult()).toEqual({ text: "generated text" });
     });
   });
 });

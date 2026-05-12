@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
@@ -17,8 +16,8 @@ type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
 export function createOllamaTextEmbeddingStream(
   getClient: GetClient
-): AiProviderStreamFn<TextEmbeddingTaskInput, TextEmbeddingTaskOutput, OllamaModelConfig> {
-  return async function* (input, model): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
+): AiProviderRunFn<TextEmbeddingTaskInput, TextEmbeddingTaskOutput, OllamaModelConfig> {
+  return async (input, model, _signal, emit) => {
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
@@ -33,6 +32,6 @@ export function createOllamaTextEmbeddingStream(
       ? { vector: response.embeddings.map((e: number[]) => new Float32Array(e)) }
       : { vector: new Float32Array(response.embeddings[0]) };
 
-    yield { type: "finish", data };
+    emit({ type: "finish", data });
   };
 }

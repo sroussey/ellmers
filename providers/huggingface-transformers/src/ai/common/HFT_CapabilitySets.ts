@@ -14,51 +14,37 @@ import type { Capability } from "@workglow/ai/worker";
  * named exports. SDK-free so the main thread can import without paying the
  * `@huggingface/transformers` cost.
  */
-export const HFT_TEXT_GENERATION = ["text.generation"] as const satisfies readonly Capability[];
-export const HFT_TOOL_USE = [
-  "text.generation",
-  "tool-use",
-] as const satisfies readonly Capability[];
-export const HFT_JSON_MODE = [
-  "text.generation",
-  "json-mode",
-] as const satisfies readonly Capability[];
-export const HFT_TEXT_REWRITER = ["text.rewriter"] as const satisfies readonly Capability[];
-export const HFT_TEXT_SUMMARY = ["text.summary"] as const satisfies readonly Capability[];
-export const HFT_TEXT_TRANSLATION = ["text.translation"] as const satisfies readonly Capability[];
+export const HFT_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
+export const HFT_TOOL_USE = ["text.generation", "tool-use"] as const satisfies Capability[];
+export const HFT_JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
+export const HFT_TEXT_REWRITER = ["text.rewriter"] as const satisfies Capability[];
+export const HFT_TEXT_SUMMARY = ["text.summary"] as const satisfies Capability[];
+export const HFT_TEXT_TRANSLATION = ["text.translation"] as const satisfies Capability[];
 export const HFT_TEXT_QUESTION_ANSWERING = [
   "text.question-answering",
-] as const satisfies readonly Capability[];
-export const HFT_TEXT_EMBEDDING = ["text.embedding"] as const satisfies readonly Capability[];
-export const HFT_TEXT_CLASSIFICATION = [
-  "text.classification",
-] as const satisfies readonly Capability[];
+] as const satisfies Capability[];
+export const HFT_TEXT_EMBEDDING = ["text.embedding"] as const satisfies Capability[];
+export const HFT_TEXT_CLASSIFICATION = ["text.classification"] as const satisfies Capability[];
 export const HFT_TEXT_LANGUAGE_DETECTION = [
   "text.language-detection",
-] as const satisfies readonly Capability[];
-export const HFT_TEXT_FILL_MASK = ["text.fill-mask"] as const satisfies readonly Capability[];
-export const HFT_TEXT_NER = ["text.ner"] as const satisfies readonly Capability[];
-export const HFT_IMAGE_CLASSIFICATION = [
-  "image.classification",
-] as const satisfies readonly Capability[];
-export const HFT_IMAGE_EMBEDDING = ["image.embedding"] as const satisfies readonly Capability[];
-export const HFT_IMAGE_SEGMENTATION = [
-  "image.segmentation",
-] as const satisfies readonly Capability[];
-export const HFT_IMAGE_TO_TEXT = ["image.to-text"] as const satisfies readonly Capability[];
+] as const satisfies Capability[];
+export const HFT_TEXT_FILL_MASK = ["text.fill-mask"] as const satisfies Capability[];
+export const HFT_TEXT_NER = ["text.ner"] as const satisfies Capability[];
+export const HFT_IMAGE_CLASSIFICATION = ["image.classification"] as const satisfies Capability[];
+export const HFT_IMAGE_EMBEDDING = ["image.embedding"] as const satisfies Capability[];
+export const HFT_IMAGE_SEGMENTATION = ["image.segmentation"] as const satisfies Capability[];
+export const HFT_IMAGE_TO_TEXT = ["image.to-text"] as const satisfies Capability[];
 export const HFT_IMAGE_BACKGROUND_REMOVAL = [
   "image.background-removal",
-] as const satisfies readonly Capability[];
+] as const satisfies Capability[];
 export const HFT_IMAGE_OBJECT_DETECTION = [
   "image.object-detection",
-] as const satisfies readonly Capability[];
-export const HFT_COUNT_TOKENS = ["model.count-tokens"] as const satisfies readonly Capability[];
-export const HFT_MODEL_UNLOAD = ["model.unload"] as const satisfies readonly Capability[];
-export const HFT_MODEL_DOWNLOAD = ["model.download"] as const satisfies readonly Capability[];
-export const HFT_MODEL_SEARCH = [
-  "provider.model-search",
-] as const satisfies readonly Capability[];
-export const HFT_MODEL_INFO = ["provider.model-info"] as const satisfies readonly Capability[];
+] as const satisfies Capability[];
+export const HFT_COUNT_TOKENS = ["model.count-tokens"] as const satisfies Capability[];
+export const HFT_MODEL_DOWNLOAD_REMOVE = ["model.download-remove"] as const satisfies Capability[];
+export const HFT_MODEL_DOWNLOAD = ["model.download"] as const satisfies Capability[];
+export const HFT_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
+export const HFT_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 
 /** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `HFT_RUN_FNS`. */
 export const HFT_CAPABILITY_SETS = [
@@ -81,7 +67,7 @@ export const HFT_CAPABILITY_SETS = [
   HFT_IMAGE_BACKGROUND_REMOVAL,
   HFT_IMAGE_OBJECT_DETECTION,
   HFT_COUNT_TOKENS,
-  HFT_MODEL_UNLOAD,
+  HFT_MODEL_DOWNLOAD_REMOVE,
   HFT_MODEL_DOWNLOAD,
   HFT_MODEL_SEARCH,
   HFT_MODEL_INFO,

@@ -420,7 +420,7 @@
 
 #### util/media
 
-- previewSource composes scale via _setPreviewScale
+- previewSource composes scale via \_setPreviewScale
 - GpuImage carries previewScale; backends implement; apply() propagates
 
 #### util/media, tasks/image
@@ -1131,7 +1131,7 @@
 
 #### test
 
-- enhance error handling in DownloadModelAbort integration test
+- enhance error handling in ModelDownloadAbort integration test
 
 ### Refactors
 

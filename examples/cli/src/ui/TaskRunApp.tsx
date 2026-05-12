@@ -97,7 +97,7 @@ export function TaskRunApp({
 
   const showFileDownloadList = downloadFiles.length > 0;
   /** One header row + optional file list — avoids a pre-files row (default bar width) then a second row after `files` appears. */
-  const isDownloadModelTask = taskType === "DownloadModelTask";
+  const isModelDownloadTask = taskType === "ModelDownloadTask";
 
   useEffect(() => {
     let logCounter = 0;
@@ -197,11 +197,11 @@ export function TaskRunApp({
     orderedSubTasks.length === 1 && orderedSubTasks[0]?.type === taskType;
   /** Job queue may register multiple subgraph tasks of the same type (mirrors); hide when all match the parent. */
   const subgraphIsAllSameTypeMirror =
-    isDownloadModelTask &&
+    isModelDownloadTask &&
     orderedSubTasks.length > 1 &&
     orderedSubTasks.every((t) => t.type === taskType);
-  /** Per-file download UI already reflects progress; subgraph rows duplicate the parent row (often another DownloadModelTask). */
-  const hideSubtasksWhileDownloadFileUi = isDownloadModelTask && showFileDownloadList;
+  /** Per-file download UI already reflects progress; subgraph rows duplicate the parent row (often another ModelDownloadTask). */
+  const hideSubtasksWhileDownloadFileUi = isModelDownloadTask && showFileDownloadList;
   const showSubtasksSection =
     !hideSubtasksWhileDownloadFileUi &&
     !subgraphIsRedundantDuplicate &&
@@ -223,10 +223,10 @@ export function TaskRunApp({
           <TaskStatusProgressRow
             type={taskType}
             status={status}
-            message={isDownloadModelTask ? undefined : batch.message}
+            message={isModelDownloadTask ? undefined : batch.message}
             barProgress={batch.progress}
             spinnerFrame={batch.spin}
-            progressBarWidth={isDownloadModelTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
+            progressBarWidth={isModelDownloadTask ? DOWNLOAD_PROGRESS_BAR_WIDTH : undefined}
           />
           {showFileDownloadList && (
             <Box paddingLeft={2} flexDirection="column">

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent, TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
@@ -135,10 +135,10 @@ export class StructuredGenerationTask extends StreamingAiTask<
 > {
   public static override type = "StructuredGenerationTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = [
+  public static override readonly requires = [
     "text.generation",
     "json-mode",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Structured Generation";

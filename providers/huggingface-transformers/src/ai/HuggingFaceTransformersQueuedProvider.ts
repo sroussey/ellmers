@@ -6,10 +6,10 @@
 
 import { QueuedAiProvider } from "@workglow/ai";
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
   AiProviderRegisterOptions,
   AiProviderQueueConcurrency,
+  AiProviderRunFnRegistration,
   Capability,
   IAiExecutionStrategy,
   ModelConfig,
@@ -70,7 +70,7 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
   private cpuStrategy: IAiExecutionStrategy | undefined;
 
   constructor(
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,7 +83,7 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
       AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>
     >
   ) {
-    super(runFns, previewTasks);
+    super(promiseRunFns, previewTasks);
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {

@@ -5,21 +5,20 @@
  */
 
 import type {
-  AiProviderStreamFn,
-  DownloadModelTaskRunInput,
-  DownloadModelTaskRunOutput,
+  AiProviderRunFn,
+  ModelDownloadTaskRunInput,
+  ModelDownloadTaskRunOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { LLAMACPP_DEFAULT_MODELS_DIR } from "./LlamaCpp_Constants";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getConfigKey, loadSdk, resolvedPaths } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_Download: AiProviderStreamFn<
-  DownloadModelTaskRunInput,
-  DownloadModelTaskRunOutput,
+export const LlamaCpp_Download: AiProviderRunFn<
+  ModelDownloadTaskRunInput,
+  ModelDownloadTaskRunOutput,
   LlamaCppModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<DownloadModelTaskRunOutput>> {
-  if (!model) throw new Error("Model config is required for DownloadModelTask.");
+> = async (input, model, _signal, emit) => {
+  if (!model) throw new Error("Model config is required for ModelDownloadTask.");
 
   const { createModelDownloader } = await loadSdk();
   const config = model.provider_config;
@@ -40,7 +39,7 @@ export const LlamaCpp_Download: AiProviderStreamFn<
     }
   );
 
-  // Poll progress while download is in flight, yielding phase events.
+  // Poll progress while download is in flight, emitting phase events.
   let settled = false;
   downloadPromise.finally(() => {
     settled = true;
@@ -53,11 +52,7 @@ export const LlamaCpp_Download: AiProviderStreamFn<
     const downloaded = downloader.downloadedSize;
     if (total && total > 0 && downloaded !== undefined) {
       const pct = Math.min(99, Math.round((downloaded / total) * 100));
-      yield {
-        type: "phase",
-        message: "Downloading model",
-        progress: pct,
-      };
+      emit({ type: "phase", message: "Downloading model", progress: pct });
     }
   }
 
@@ -66,5 +61,5 @@ export const LlamaCpp_Download: AiProviderStreamFn<
 
   resolvedPaths.set(getConfigKey(model), modelPath);
 
-  yield { type: "finish", data: { model: input.model! } };
+  emit({ type: "finish", data: { model: input.model! } });
 };

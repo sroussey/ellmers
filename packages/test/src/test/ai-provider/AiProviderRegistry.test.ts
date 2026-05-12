@@ -5,8 +5,8 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
-  AiProviderStreamFn,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
   Capability,
 } from "@workglow/ai";
 import {
@@ -25,7 +25,6 @@ import {
   JobQueueServer,
   RateLimiter,
 } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
@@ -42,23 +41,23 @@ const TEST_PROVIDER = "test-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 /**
- * Build a one-shot streaming run-fn that resolves to `result` via a single
+ * Build a one-shot run-fn that resolves to `result` via a single
  * `finish` event. Records its inputs for assertions.
  */
 function makeFinishStreamFn(
   result: TaskOutput,
   spy?: (...args: unknown[]) => void
-): AiProviderStreamFn {
-  return async function* (input, model, signal, outputSchema, sessionId) {
-    spy?.(input, model, signal, outputSchema, sessionId);
-    yield { type: "finish", data: result } as StreamEvent<TaskOutput>;
+): AiProviderRunFn {
+  return async (input, model, signal, emit) => {
+    spy?.(input, model, signal);
+    emit({ type: "finish", data: result });
   };
 }
 
 function makeReg(
   serves: readonly Capability[],
-  runFn: AiProviderStreamFn
-): AiProviderLegacyStreamFnRegistration {
+  runFn: AiProviderRunFn
+): AiProviderRunFnRegistration {
   return { serves, runFn };
 }
 
@@ -118,7 +117,7 @@ describe.skip("AiProviderRegistry", () => {
   describe("registerRunFn", () => {
     test("should register a run function for a capability set and provider", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
       const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(runFn);
@@ -126,7 +125,7 @@ describe.skip("AiProviderRegistry", () => {
 
     test("should create provider entry if it does not exist", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
 
       const regs = aiProviderRegistry.getRunFnRegistrations(TEST_PROVIDER);
       expect(regs).toHaveLength(1);
@@ -138,14 +137,14 @@ describe.skip("AiProviderRegistry", () => {
   describe("getRunFnFor", () => {
     test("should return registered run function for matching capability set", () => {
       const runFn = makeFinishStreamFn({ success: true });
-      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
       const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(retrieved).toBe(runFn);
     });
 
     test("should return undefined when no registration matches the requires set", () => {
-      aiProviderRegistry.registerLegacyStreamFn(
+      aiProviderRegistry.registerRunFn(
         TEST_PROVIDER,
         makeReg(["text.embedding"], makeFinishStreamFn({}))
       );
@@ -163,7 +162,7 @@ describe.skip("AiProviderRegistry", () => {
   describe("capability-set dispatch", () => {
     test("accumulatingEmit captures finish.data for a registered one-shot run-fn", async () => {
       const runFn = makeFinishStreamFn({ result: "success" });
-      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const wrappedFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
       expect(wrappedFn).toBeDefined();
       const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
@@ -198,7 +197,7 @@ describe.skip("AiProviderRegistry", () => {
       const spy = vi.fn();
       const runFn = makeFinishStreamFn({ result: "success" }, spy);
 
-      aiProviderRegistry.registerLegacyStreamFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const model = {
         model_id: "test:test-model:v1",
         title: "test-model",

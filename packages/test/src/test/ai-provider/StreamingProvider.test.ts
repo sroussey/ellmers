@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, Capability } from "@workglow/ai";
+import type { AiProviderRunFn, Capability } from "@workglow/ai";
 import {
   AiJob,
   AiJobInput,
@@ -84,12 +84,12 @@ describe.skip("Streaming Provider", () => {
 
   describe("registerRunFn (streaming)", () => {
     it("should register a stream function for a capability set and provider", () => {
-      const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "text-delta", port: "text", textDelta: "hello" } as StreamEvent<TaskOutput>;
-        yield { type: "finish", data: { text: "hello" } } as StreamEvent<TaskOutput>;
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({ type: "text-delta", port: "text", textDelta: "hello" } as StreamEvent<TaskOutput>);
+        emit({ type: "finish", data: { text: "hello" } } as StreamEvent<TaskOutput>);
       };
 
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -99,11 +99,11 @@ describe.skip("Streaming Provider", () => {
     });
 
     it("should create provider entry if it does not exist", () => {
-      const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({ type: "finish", data: {} } as StreamEvent<TaskOutput>);
       };
 
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: ["text.embedding"],
         runFn: mockStreamFn,
       });
@@ -122,11 +122,11 @@ describe.skip("Streaming Provider", () => {
     });
 
     it("should return the registered stream function", () => {
-      const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "finish", data: {} } as StreamEvent<TaskOutput>;
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({ type: "finish", data: {} } as StreamEvent<TaskOutput>);
       };
 
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -137,14 +137,14 @@ describe.skip("Streaming Provider", () => {
 
   describe("AiJob.executeStream", () => {
     it("should yield events from registered stream function", async () => {
-      const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield { type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>;
-        yield { type: "text-delta", port: "text", textDelta: " " } as StreamEvent<TaskOutput>;
-        yield { type: "text-delta", port: "text", textDelta: "world" } as StreamEvent<TaskOutput>;
-        yield { type: "finish", data: { text: "Hello world" } } as StreamEvent<TaskOutput>;
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({ type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>);
+        emit({ type: "text-delta", port: "text", textDelta: " " } as StreamEvent<TaskOutput>);
+        emit({ type: "text-delta", port: "text", textDelta: "world" } as StreamEvent<TaskOutput>);
+        emit({ type: "finish", data: { text: "Hello world" } } as StreamEvent<TaskOutput>);
       };
 
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -198,13 +198,13 @@ describe.skip("Streaming Provider", () => {
       // Re-targeted: in capability-set dispatch there's no separate
       // "non-stream" map to fall back through. Verify that when the same
       // run-fn yields only a single finish event, executeStream forwards it.
-      const mockStreamFn: AiProviderStreamFn = async function* () {
-        yield {
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, _signal, emit) => {
+        emit({
           type: "finish",
           data: { text: "non-streaming result" },
-        } as StreamEvent<TaskOutput>;
+        } as StreamEvent<TaskOutput>);
       };
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });
@@ -254,19 +254,19 @@ describe.skip("Streaming Provider", () => {
     });
 
     it("should respect abort signal during streaming", async () => {
-      const mockStreamFn: AiProviderStreamFn = async function* (_input, _model, signal) {
-        yield { type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>;
+      const mockStreamFn: AiProviderRunFn = async (_input, _model, signal, emit) => {
+        emit({ type: "text-delta", port: "text", textDelta: "Hello" } as StreamEvent<TaskOutput>);
         // Simulate slow streaming
         await sleep(200);
         if (signal.aborted) return;
-        yield { type: "text-delta", port: "text", textDelta: " world" } as StreamEvent<TaskOutput>;
-        yield {
+        emit({ type: "text-delta", port: "text", textDelta: " world" } as StreamEvent<TaskOutput>);
+        emit({
           type: "finish",
           data: { text: "Hello world" },
-        } as StreamEvent<TaskOutput>;
+        } as StreamEvent<TaskOutput>);
       };
 
-      registry.registerLegacyStreamFn(MOCK_PROVIDER, {
+      registry.registerRunFn(MOCK_PROVIDER, {
         serves: TEXT_GENERATION,
         runFn: mockStreamFn,
       });

@@ -4,12 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderStreamFn,
-  ModelInfoTaskInput,
-  ModelInfoTaskOutput,
-} from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { modelTaskCache } from "./TFMP_Runtime";
 
@@ -18,14 +13,11 @@ const TFMP_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; mrl
   "universal-sentence-encoder": { native_dimensions: 512, mrl: false },
 };
 
-export const TFMP_ModelInfo: AiProviderStreamFn<
+export const TFMP_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model
-): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -38,7 +30,7 @@ export const TFMP_ModelInfo: AiProviderStreamFn<
         native_dimensions = known.native_dimensions;
       }
     }
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -52,14 +44,14 @@ export const TFMP_ModelInfo: AiProviderStreamFn<
         ...(native_dimensions !== undefined ? { native_dimensions } : {}),
         ...(mrl ? { mrl } : {}),
       },
-    };
+    });
     return;
   }
 
   const model_path = model!.provider_config.model_path;
   const is_loaded = modelTaskCache.has(model_path);
 
-  yield {
+  emit({
     type: "finish",
     data: {
       model: input.model,
@@ -71,5 +63,5 @@ export const TFMP_ModelInfo: AiProviderStreamFn<
       is_loaded,
       file_sizes: null,
     },
-  };
+  });
 };

@@ -107,8 +107,7 @@ export class VectorQuantizeTask extends Task<
 > {
   public static override type = "VectorQuantizeTask";
   /** Pure-compute vector quantization — no provider capability required. */
-  public static readonly requires: readonly Capability[] =
-    [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Vector";
   public static override title = "Quantize";
   public static override description = "Quantize vectors to reduce storage and improve performance";

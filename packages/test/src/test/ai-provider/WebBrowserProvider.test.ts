@@ -58,7 +58,7 @@ describe("WebBrowserProvider.inferCapabilities", () => {
 
   it("returns baseline meta-ops for unknown ids", () => {
     const caps = provider.inferCapabilities(model("unknown-id"));
-    expect(caps).toEqual(["provider.model-search", "provider.model-info"]);
+    expect(caps).toEqual(["model.search", "model.info"]);
   });
 });
 
@@ -78,7 +78,7 @@ describe("WEB_BROWSER_RUN_FNS shape", () => {
     expect(sets).toContain("text.summary");
     expect(sets).toContain("text.translation");
     expect(sets).toContain("text.language-detection");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 });

@@ -6,12 +6,11 @@
 
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ToolCalls,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import {
   accumulateOpenAIStream,
   buildOpenAITools,
@@ -23,17 +22,17 @@ import { getClient, getModelName } from "./OpenAI_Client";
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the OpenAI
  * chat-completions endpoint with `stream: true` and forwards delta events via
- * {@link accumulateOpenAIStream}, which yields `text-delta` and tool-call
+ * {@link accumulateOpenAIStream}, which emits `text-delta` and tool-call
  * `object-delta` events plus a final empty `finish`.
  *
  * Defence-in-depth: each tool-call `object-delta` is filtered against
  * `input.tools` so a hallucinated function name never reaches the consumer.
  */
-export const OpenAI_ToolCalling_Stream: AiProviderStreamFn<
+export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -58,10 +57,10 @@ export const OpenAI_ToolCalling_Stream: AiProviderStreamFn<
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {
-        yield { type: "object-delta", port: "toolCalls", objectDelta: validated };
+        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
       }
       continue;
     }
-    yield event;
+    emit(event);
   }
 };

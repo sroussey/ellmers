@@ -5,27 +5,19 @@
  */
 
 import type { FillMaskPipeline } from "@huggingface/transformers";
-import type {
-  AiProviderStreamFn,
-  TextFillMaskTaskInput,
-  TextFillMaskTaskOutput,
-} from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, TextFillMaskTaskInput, TextFillMaskTaskOutput } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-export const HFT_TextFillMask: AiProviderStreamFn<
+export const HFT_TextFillMask: AiProviderRunFn<
   TextFillMaskTaskInput,
   TextFillMaskTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextFillMaskTaskOutput>> {
-  const unmasker = (yield* bridgeProgress((cb) =>
-    getPipeline(model!, cb, {}, signal)
-  )) as FillMaskPipeline;
+> = async (input, model, signal, emit) => {
+  const unmasker = (await getPipeline(model!, emit, {}, signal)) as FillMaskPipeline;
   const predictions = await unmasker(input.text);
 
-  yield {
+  emit({
     type: "finish",
     data: {
       predictions: predictions.map((prediction) => ({
@@ -34,5 +26,5 @@ export const HFT_TextFillMask: AiProviderStreamFn<
         sequence: prediction.sequence,
       })),
     },
-  };
+  });
 };

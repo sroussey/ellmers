@@ -5,19 +5,19 @@
  */
 
 import {
-  DownloadModelTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
-  getOrCreateTextContext,
   getLlamaCppSdk,
-  loadSdk,
+  getOrCreateTextContext,
   llamaCppChatSessionConstructorSpread,
+  loadSdk,
   registerLlamaCppInline,
 } from "@workglow/node-llama-cpp/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
@@ -94,7 +94,7 @@ describe("LlamaCpp Chat Wrapper Inspection", () => {
 
     for (const model of toolModels) {
       await getGlobalModelRepository().addModel(model);
-      const download = new DownloadModelTask();
+      const download = new ModelDownloadTask();
       download.on("progress", (progress, _message, details) => {
         logger.info(
           `Download ${model.model_id}: ${progress}% | ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`

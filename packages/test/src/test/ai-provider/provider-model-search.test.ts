@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { collectStream, ModelSearchTask } from "@workglow/ai";
-import type { AiProviderStreamFn } from "@workglow/ai";
+import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
+import type { AiProviderRunFn } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
@@ -15,14 +15,30 @@ import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;
 
+async function runFnToIterable(fn: AiProviderRunFn<any, any>, input: any) {
+  const q = createEmitQueue<any>();
+  fn(input, undefined as any, new AbortController().signal, (e) => q.push(e)).then(
+    () => q.close(),
+    (e) => q.fail(e)
+  );
+  return q.iterable;
+}
+
+interface ModelSearchResult {
+  readonly id: string;
+  readonly label?: string;
+  readonly description?: string;
+  readonly record?: unknown;
+}
+
 async function modelIdsForSearch(
-  search: AiProviderStreamFn<any, any>,
+  search: AiProviderRunFn<any, any>,
   query: string
 ): Promise<string[]> {
-  const { results } = await collectStream(
-    search({ query } as any, undefined as any, new AbortController().signal, undefined, undefined)
-  );
-  return results.map((model: { id: string }) => model.id);
+  const { results } = (await collectStream(await runFnToIterable(search, { query }))) as {
+    results: ModelSearchResult[];
+  };
+  return results.map((model) => model.id);
 }
 
 afterEach(() => {
@@ -80,15 +96,9 @@ describe.skip("provider model search samples", () => {
       });
     }) as unknown as typeof fetch;
 
-    const { results } = await collectStream(
-      Gemini_ModelSearch(
-        { query: "live", credential_key: "test-gemini-key" } as any,
-        undefined as any,
-        new AbortController().signal,
-        undefined,
-        undefined
-      )
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(Gemini_ModelSearch, { query: "live", credential_key: "test-gemini-key" })
+    )) as { results: ModelSearchResult[] };
 
     expect(requestedUrl).toContain("key=test-gemini-key");
     expect(results.map((model) => model.id)).toContain("gemini-live-test");
@@ -101,14 +111,8 @@ describe.skip("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      collectStream(
-        Gemini_ModelSearch(
-          { query: "live", credential_key: "bad-gemini-key" } as any,
-          undefined as any,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )
+      runFnToIterable(Gemini_ModelSearch, { query: "live", credential_key: "bad-gemini-key" }).then(
+        collectStream
       )
     ).rejects.toThrow("Gemini API returned 401");
   });
@@ -132,15 +136,9 @@ describe.skip("provider model search samples", () => {
       ]);
     }) as unknown as typeof fetch;
 
-    const { results } = await collectStream(
-      HFI_ModelSearch(
-        { query: "live", credential_key: "test-hf-key" } as any,
-        undefined as any,
-        new AbortController().signal,
-        undefined,
-        undefined
-      )
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(HFI_ModelSearch, { query: "live", credential_key: "test-hf-key" })
+    )) as { results: ModelSearchResult[] };
 
     expect(authorization).toBe("Bearer test-hf-key");
     expect(results.map((model) => model.id)).toContain("org/live-hfi-model");
@@ -151,28 +149,16 @@ describe.skip("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      collectStream(
-        HFI_ModelSearch(
-          { query: "live", credential_key: "bad-hf-key" } as any,
-          undefined as any,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )
+      runFnToIterable(HFI_ModelSearch, { query: "live", credential_key: "bad-hf-key" }).then(
+        collectStream
       )
     ).rejects.toThrow("HuggingFace API returned 401");
   });
 
   test("TensorFlow MediaPipe search includes known model records", async () => {
-    const { results } = await collectStream(
-      TFMP_ModelSearch(
-        { provider: TENSORFLOW_MEDIAPIPE, query: "pose" } as any,
-        undefined as any,
-        new AbortController().signal,
-        undefined,
-        undefined
-      )
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(TFMP_ModelSearch, { provider: TENSORFLOW_MEDIAPIPE, query: "pose" })
+    )) as { results: ModelSearchResult[] };
 
     expect(results).toContainEqual(
       expect.objectContaining({

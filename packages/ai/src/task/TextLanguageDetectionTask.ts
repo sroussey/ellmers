@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -114,9 +114,9 @@ export class TextLanguageDetectionTask extends AiTask<
 > {
   public static override type = "TextLanguageDetectionTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
+  public static override readonly requires = [
     "text.language-detection",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   public static override category = "AI Text";
   public static override title = "Language Detection";
   public static override description = "Detects the language of text using language models";

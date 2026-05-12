@@ -14,7 +14,7 @@ import { TypeModel } from "./base/AiTaskSchemas";
 
 const modelSchema = TypeModel("model");
 
-const UnloadModelInputSchema = {
+const ModelDownloadRemoveInputSchema = {
   type: "object",
   properties: {
     model: modelSchema,
@@ -23,7 +23,7 @@ const UnloadModelInputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-const UnloadModelOutputSchema = {
+const ModelDownloadRemoveOutputSchema = {
   type: "object",
   properties: {
     model: modelSchema,
@@ -32,9 +32,9 @@ const UnloadModelOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type UnloadModelTaskRunInput = FromSchema<typeof UnloadModelInputSchema>;
-export type UnloadModelTaskRunOutput = FromSchema<typeof UnloadModelOutputSchema>;
-export type UnloadModelTaskConfig = TaskConfig<UnloadModelTaskRunInput>;
+export type ModelDownloadRemoveTaskRunInput = FromSchema<typeof ModelDownloadRemoveInputSchema>;
+export type ModelDownloadRemoveTaskRunOutput = FromSchema<typeof ModelDownloadRemoveOutputSchema>;
+export type ModelDownloadRemoveTaskConfig = TaskConfig<ModelDownloadRemoveTaskRunInput>;
 
 /**
  * Unload a model from memory and clear its cache.
@@ -42,25 +42,25 @@ export type UnloadModelTaskConfig = TaskConfig<UnloadModelTaskRunInput>;
  * @remarks
  * This task has a side effect of removing the model from memory and deleting cached files
  */
-export class UnloadModelTask extends AiTask<
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
-  UnloadModelTaskConfig
+export class ModelDownloadRemoveTask extends AiTask<
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
+  ModelDownloadRemoveTaskConfig
 > {
-  public static override type = "UnloadModelTask";
+  public static override type = "ModelDownloadRemoveTask";
   /**
-   * Resolves to the provider's `["model.unload"]` run-fn registration. Local
+   * Resolves to the provider's `["model.download-remove"]` run-fn registration. Local
    * providers (HFT, Ollama, LlamaCpp, TFMP, chrome-ai) opt-in by registering
-   * a run-fn with `serves: ["model.unload"]`; cloud providers don't register
-   * one and `UnloadModelTask` for cloud models is a no-op (or surfaces as a
+   * a run-fn with `serves: ["model.download-remove"]`; cloud providers don't register
+   * one and `ModelDownloadRemoveTask` for cloud models is a no-op (or surfaces as a
    * runtime "no run-fn for provider serving model.unload" error).
    */
-  public static override readonly requires: readonly Capability[] = [
-    "model.unload",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = [
+    "model.download-remove",
+  ] as const satisfies Capability[];
 
   /**
-   * Provider-lifecycle override: `requires: ["model.unload"]` routes the
+   * Provider-lifecycle override: `requires: ["model.download-remove"]` routes the
    * dispatcher to the provider's unload run-fn, but the *model* record
    * doesn't need to advertise `model.unload` in its `capabilities` —
    * unload is a provider-side operation on whatever the provider has
@@ -75,10 +75,10 @@ export class UnloadModelTask extends AiTask<
   public static override description =
     "Unloads and clears cached AI models from memory and storage";
   public static override inputSchema(): DataPortSchema {
-    return UnloadModelInputSchema satisfies DataPortSchema;
+    return ModelDownloadRemoveInputSchema satisfies DataPortSchema;
   }
   public static override outputSchema(): DataPortSchema {
-    return UnloadModelOutputSchema satisfies DataPortSchema;
+    return ModelDownloadRemoveOutputSchema satisfies DataPortSchema;
   }
   public static override cacheable = false;
 }
@@ -90,21 +90,21 @@ export class UnloadModelTask extends AiTask<
  * @returns Promise resolving to the unloaded model(s)
  */
 export const unloadModel = (
-  input: UnloadModelTaskRunInput,
-  config?: UnloadModelTaskConfig,
+  input: ModelDownloadRemoveTaskRunInput,
+  config?: ModelDownloadRemoveTaskConfig,
   runConfig?: Partial<IRunConfig>
 ) => {
-  return new UnloadModelTask(config).run(input, runConfig);
+  return new ModelDownloadRemoveTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
     unloadModel: CreateWorkflow<
-      UnloadModelTaskRunInput,
-      UnloadModelTaskRunOutput,
-      UnloadModelTaskConfig
+      ModelDownloadRemoveTaskRunInput,
+      ModelDownloadRemoveTaskRunOutput,
+      ModelDownloadRemoveTaskConfig
     >;
   }
 }
 
-Workflow.prototype.unloadModel = CreateWorkflow(UnloadModelTask);
+Workflow.prototype.unloadModel = CreateWorkflow(ModelDownloadRemoveTask);

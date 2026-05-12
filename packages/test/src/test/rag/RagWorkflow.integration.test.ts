@@ -40,7 +40,7 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("RAG Workflow End-to-End", () => {
   const kbName = "rag-test-kb";

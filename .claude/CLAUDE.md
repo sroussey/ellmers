@@ -206,7 +206,6 @@ parsed final object. The `StructuredGenerationTask` consumer reads the parsed
 object from finish.data and re-validates it against the output schema; this
 avoids requiring a JSON streaming parser in the consumer layer.
 
-
 **Capability collision:** When two task types share the same `requires` set
 (e.g. `AiChatTask` and `TextGenerationTask` both require `["text.generation"]`),
 they share a single registered run-fn. The run-fn MUST discriminate on a

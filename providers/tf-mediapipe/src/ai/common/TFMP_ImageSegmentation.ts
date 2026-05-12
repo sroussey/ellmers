@@ -5,30 +5,22 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_ImageSegmentation: AiProviderStreamFn<
+export const TFMP_ImageSegmentation: AiProviderRunFn<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<ImageSegmentationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { ImageSegmenter } = await loadTfmpTasksVisionSDK();
-  const imageSegmenter = yield* bridgeProgress((cb) =>
-    getModelTask(model!, {}, cb, signal, ImageSegmenter)
-  );
+  const imageSegmenter = await getModelTask(model!, {}, emit, signal, ImageSegmenter);
   const result = imageSegmenter.segment(input.image as any);
 
   if (!result.categoryMask) {
@@ -47,5 +39,5 @@ export const TFMP_ImageSegmentation: AiProviderStreamFn<
     },
   ];
 
-  yield { type: "finish", data: { masks } };
+  emit({ type: "finish", data: { masks } });
 };

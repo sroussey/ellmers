@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -21,15 +20,11 @@ import {
   loadSdk,
 } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
+export const LlamaCpp_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   LlamaCppModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for StructuredGenerationTask.");
 
   await loadSdk();
@@ -85,11 +80,11 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
         accumulatedText += chunk;
         const partial = parsePartialJson(accumulatedText);
         if (partial !== undefined) {
-          yield {
+          emit({
             type: "object-delta",
             port: "object",
             objectDelta: partial as Record<string, unknown>,
-          };
+          });
         }
       }
       if (isComplete) break;
@@ -123,5 +118,5 @@ export const LlamaCpp_StructuredGeneration_Stream: AiProviderStreamFn<
     finalObject = (parsePartialJson(accumulatedText) as Record<string, unknown>) ?? {};
   }
 
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

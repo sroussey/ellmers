@@ -31,8 +31,8 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("tool-use");
     expect(caps).toContain("text.rewriter");
     expect(caps).toContain("text.summary");
-    expect(caps).toContain("provider.model-info");
-    expect(caps).toContain("provider.model-search");
+    expect(caps).toContain("model.info");
+    expect(caps).toContain("model.search");
     expect(caps).not.toContain("vision-input");
   });
 
@@ -87,8 +87,8 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
 
   it("falls back to baseline meta-ops when nothing matches and nothing is declared", () => {
     const caps = provider.inferCapabilities(model(""));
-    expect(caps).toContain("provider.model-search");
-    expect(caps).toContain("provider.model-info");
+    expect(caps).toContain("model.search");
+    expect(caps).toContain("model.info");
     expect(caps).not.toContain("text.generation");
   });
 
@@ -97,8 +97,8 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
     const caps = provider.inferCapabilities(model("llama3:8b"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
       "text.generation",
       "text.rewriter",
       "text.summary",
@@ -109,15 +109,15 @@ describe("OllamaQueuedProvider.inferCapabilities", () => {
   it("infers exact capability set for nomic-embed-text", () => {
     const caps = provider.inferCapabilities(model("nomic-embed-text"));
     const sorted = [...caps].sort();
-    expect(sorted).toEqual(["provider.model-info", "provider.model-search", "text.embedding"]);
+    expect(sorted).toEqual(["model.info", "model.search", "text.embedding"]);
   });
 
   it("infers exact capability set for llava:13b", () => {
     const caps = provider.inferCapabilities(model("llava:13b"));
     const sorted = [...caps].sort();
     expect(sorted).toEqual([
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
       "text.generation",
       "text.rewriter",
       "text.summary",
@@ -143,8 +143,8 @@ describe("OLLAMA_RUN_FNS shape", () => {
     expect(sets).toContain("text.rewriter");
     expect(sets).toContain("text.summary");
     expect(sets).toContain("text.embedding");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("tiebreaks `text.generation` to the smallest serves entry (plain text-gen)", () => {

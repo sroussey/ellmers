@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getConfigKey,
@@ -22,17 +21,11 @@ import {
   streamFromSession,
 } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
+export const LlamaCpp_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   LlamaCppModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for TextGenerationTask.");
 
   const { LlamaChatSession } = await loadSdk();
@@ -57,7 +50,7 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
   }
 
   try {
-    yield* streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
+    for await (const e of streamFromSession<TextGenerationTaskOutput>((onTextChunk) => {
       return session.prompt(input.prompt, {
         signal,
         onTextChunk,
@@ -66,7 +59,9 @@ export const LlamaCpp_TextGeneration_Stream: AiProviderStreamFn<
         ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
         ...(input.topP !== undefined && { topP: input.topP }),
       });
-    }, signal);
+    }, signal)) {
+      emit(e);
+    }
   } finally {
     if (!sessionId) {
       try {

@@ -61,23 +61,19 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
 
   // Embedding models — text-embedding-004, embedding-001, gemini-embedding-*.
   if (/^text-embedding/i.test(id) || /^embedding-\d/i.test(id) || /^gemini-embedding/i.test(id)) {
-    return [
-      "text.embedding",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.embedding", "model.info", "model.search"];
   }
 
   // Imagen models — imagen-* (image generation only, no chat).
   if (/^imagen-/i.test(id)) {
-    return ["image.generation", "provider.model-info", "provider.model-search"];
+    return ["image.generation", "model.info", "model.search"];
   }
 
   // Gemini image-output model variants — e.g. gemini-3.1-flash-image-preview,
   // gemini-3-pro-image-preview. These come from the fallback list with explicit
   // capabilities and also need to be covered by inference.
   if (/^gemini-.*-image-/i.test(id)) {
-    return ["image.generation", "image.editing", "provider.model-info", "provider.model-search"];
+    return ["image.generation", "image.editing", "model.info", "model.search"];
   }
 
   // gemini-pro-vision — older vision model, no count-tokens API.
@@ -89,8 +85,8 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
       "tool-use",
       "json-mode",
       "vision-input",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -102,8 +98,8 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
       "text.summary",
       "tool-use",
       "json-mode",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -115,8 +111,8 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
       "text.summary",
       "tool-use",
       "json-mode",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -136,8 +132,8 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
       "json-mode",
       "vision-input",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -145,5 +141,5 @@ export function inferGeminiCapabilities(model: CapabilityHints): readonly Capabi
   // expose the meta-ops so the model can still be searched / inspected.
   const declared = (model.capabilities as readonly Capability[] | undefined) ?? [];
   if (declared.length > 0) return declared;
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

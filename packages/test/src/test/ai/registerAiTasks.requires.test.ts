@@ -45,7 +45,7 @@ describe("AI task requires audit", () => {
       "image.generation",
       "vision.face-detection",
       "model.count-tokens",
-      "provider.model-search",
+      "model.search",
     ];
     for (const cap of expected) {
       expect(seen.has(cap), `expected at least one task with ${cap}`).toBe(true);

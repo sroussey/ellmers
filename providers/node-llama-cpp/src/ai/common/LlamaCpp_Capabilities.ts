@@ -42,9 +42,9 @@ export function inferLlamaCppCapabilities(model: CapabilityHints): readonly Capa
     return [
       "text.embedding",
       "model.count-tokens",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
+      "model.download-remove",
+      "model.info",
+      "model.search",
     ];
   }
 
@@ -57,11 +57,11 @@ export function inferLlamaCppCapabilities(model: CapabilityHints): readonly Capa
       "tool-use",
       "json-mode",
       "model.count-tokens",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
+      "model.download-remove",
+      "model.info",
+      "model.search",
     ];
   }
 
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

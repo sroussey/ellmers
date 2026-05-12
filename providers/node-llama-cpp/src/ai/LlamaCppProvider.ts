@@ -6,7 +6,7 @@
 
 import { AiProvider } from "@workglow/ai/worker";
 import type {
-  AiProviderLegacyStreamFnRegistration,
+  AiProviderRunFnRegistration,
   AiProviderPreviewRunFn,
   Capability,
   ModelConfig,
@@ -28,7 +28,7 @@ export class LlamaCppProvider extends AiProvider<LlamaCppModelConfig> {
   readonly supportsBrowser = false;
 
   constructor(
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,7 +41,7 @@ export class LlamaCppProvider extends AiProvider<LlamaCppModelConfig> {
       AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>
     >
   ) {
-    super(runFns, previewTasks);
+    super(promiseRunFns, previewTasks);
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {

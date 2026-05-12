@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderLegacyStreamFnRegistration } from "@workglow/ai";
-import type { TFMPModelConfig } from "./TFMP_ModelSchema";
+import type { AiProviderRunFnRegistration } from "@workglow/ai";
 import {
   TFMP_IMAGE_CLASSIFICATION,
   TFMP_IMAGE_EMBEDDING,
@@ -24,6 +23,7 @@ import {
   TFMP_VISION_HAND_LANDMARKS,
   TFMP_VISION_POSE_LANDMARKS,
 } from "./TFMP_CapabilitySets";
+import type { TFMPModelConfig } from "./TFMP_ModelSchema";
 
 import { TFMP_Download } from "./TFMP_Download";
 import { TFMP_FaceDetector } from "./TFMP_FaceDetector";
@@ -47,11 +47,11 @@ export { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
 /**
  * Capability-set run-fn registrations for TensorFlow MediaPipe.
  *
- * All TFMP inference ops are one-shot async generators that yield a single
- * `finish` event. {@link DownloadModelTask} (`["model.download"]`) reports
- * real download progress via `phase` events from {@link bridgeProgress}.
+ * All TFMP inference ops are one-shot run-fns that emit a single `finish` event.
+ * {@link ModelDownloadTask} (`["model.download"]`) reports real download progress
+ * via `phase` events emitted directly from {@link getModelTask}.
  */
-export const TFMP_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
+export const TFMP_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -48,7 +48,7 @@ describe("HuggingFaceTransformersQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("text.generation");
     expect(caps).toContain("tool-use");
     expect(caps).toContain("model.count-tokens");
-    expect(caps).toContain("model.unload");
+    expect(caps).toContain("model.download-remove");
   });
 
   it("maps pipeline_task=feature-extraction to text.embedding", () => {
@@ -92,7 +92,7 @@ describe("HuggingFaceTransformersQueuedProvider.inferCapabilities", () => {
 
   it("returns baseline meta-ops for truly unknown models", () => {
     const caps = provider.inferCapabilities(model("totally-unknown-no-hints"));
-    expect(caps).toEqual(["provider.model-search", "provider.model-info"]);
+    expect(caps).toEqual(["model.search", "model.info"]);
   });
 });
 
@@ -126,9 +126,9 @@ describe("HFT_RUN_FNS shape", () => {
     expect(sets).toContain("image.background-removal");
     expect(sets).toContain("image.object-detection");
     expect(sets).toContain("model.count-tokens");
-    expect(sets).toContain("model.unload");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.download-remove");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("tiebreaks `text.generation` to the smallest serves entry", () => {

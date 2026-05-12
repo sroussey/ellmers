@@ -6,11 +6,10 @@
 
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import {
   accumulateOpenAIStream,
   buildOpenAITools,
@@ -19,11 +18,11 @@ import {
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
 
-export const HFI_ToolCalling_Stream: AiProviderStreamFn<
+export const HFI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   HfInferenceModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
   const provider = getProvider(model);
@@ -48,5 +47,5 @@ export const HFI_ToolCalling_Stream: AiProviderStreamFn<
 
   const stream = client.chatCompletionStream(params, { signal });
 
-  yield* accumulateOpenAIStream(stream);
+  for await (const e of accumulateOpenAIStream(stream)) { emit(e); }
 };

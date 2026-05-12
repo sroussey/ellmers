@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { Capability } from "../capability/Capabilities";
 import {
   DataPortSchema,
   FromSchema,
   TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeModel, TypeSingleOrArray } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -62,9 +62,7 @@ export class ImageEmbeddingTask extends AiVisionTask<
 > {
   public static override type = "ImageEmbeddingTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
-    "image.embedding",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["image.embedding"] as const satisfies Capability[];
   public static override category = "AI Vision";
   public static override title = "Image Embedding";
   public static override description = "Generates embeddings from images using vision models";

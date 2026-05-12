@@ -300,15 +300,15 @@ const result = await task.run();
 
 ### Model Management Tasks
 
-#### DownloadModelTask
+#### ModelDownloadTask
 
 Downloads and prepares AI models for use.
 
 ```typescript
-import { DownloadModelTask } from "@workglow/ai";
+import { ModelDownloadTask } from "@workglow/ai";
 import { HF_TRANSFORMERS_ONNX } from "@workglow/huggingface-transformers/ai";
 
-const task = new DownloadModelTask({
+const task = new ModelDownloadTask({
   model: {
     provider: HF_TRANSFORMERS_ONNX,
     provider_config: {

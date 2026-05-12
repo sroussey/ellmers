@@ -6,13 +6,12 @@
 
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
@@ -37,8 +36,8 @@ function mapOllamaTools(tools: ReadonlyArray<ToolDefinition>) {
 export function createOllamaToolCallingStream(
   getClient: GetClient,
   buildMessages: OllamaToolCallingMessagesFn
-): AiProviderStreamFn<ToolCallingTaskInput, ToolCallingTaskOutput, OllamaModelConfig> {
-  return async function* (input, model, signal): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+): AiProviderRunFn<ToolCallingTaskInput, ToolCallingTaskOutput, OllamaModelConfig> {
+  return async (input, model, signal, emit) => {
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
@@ -69,7 +68,7 @@ export function createOllamaToolCallingStream(
         const delta = chunk.message.content;
         if (delta) {
           accumulatedText += delta;
-          yield { type: "text-delta", port: "text", textDelta: delta };
+          emit({ type: "text-delta", port: "text", textDelta: delta });
         }
 
         const chunkToolCalls = chunk.message.tool_calls;
@@ -90,15 +89,15 @@ export function createOllamaToolCallingStream(
             const id = `call_${callIndex++}`;
             toolCalls.push({ id, name: tc.function.name as string, input: parsedInput });
           }
-          yield { type: "object-delta", port: "toolCalls", objectDelta: [...toolCalls] };
+          emit({ type: "object-delta", port: "toolCalls", objectDelta: [...toolCalls] });
         }
       }
 
       const validToolCalls = filterValidToolCalls(toolCalls, input.tools);
-      yield {
+      emit({
         type: "finish",
         data: { text: accumulatedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
-      };
+      });
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

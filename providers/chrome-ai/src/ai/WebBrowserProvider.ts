@@ -5,8 +5,8 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
+  AiProviderRunFnRegistration,
   Capability,
   ModelRecord,
 } from "@workglow/ai/worker";
@@ -32,7 +32,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly supportsBrowser = true;
 
   constructor(
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,7 +45,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
       AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>
     >
   ) {
-    super(runFns, previewTasks);
+    super(promiseRunFns, previewTasks);
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {

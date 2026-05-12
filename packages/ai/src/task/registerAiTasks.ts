@@ -14,21 +14,22 @@ import { ContextBuilderTask } from "./ContextBuilderTask";
 import { CountTokensTask } from "./CountTokensTask";
 import { DocumentEnricherTask } from "./DocumentEnricherTask";
 import { DocumentUpsertTask } from "./DocumentUpsertTask";
-import { DownloadModelTask } from "./DownloadModelTask";
-import { ImageEditTask } from "./generation/ImageEditTask";
 import { FaceDetectorTask } from "./FaceDetectorTask";
 import { FaceLandmarkerTask } from "./FaceLandmarkerTask";
+import { ImageEditTask } from "./generation/ImageEditTask";
 import { ImageGenerateTask } from "./generation/ImageGenerateTask";
 import { GestureRecognizerTask } from "./GestureRecognizerTask";
 import { HandLandmarkerTask } from "./HandLandmarkerTask";
 import { HierarchicalChunkerTask } from "./HierarchicalChunkerTask";
 import { HierarchyJoinTask } from "./HierarchyJoinTask";
-import { KbSearchTask } from "./KbSearchTask";
-import { KbToDocumentsTask } from "./KbToDocumentsTask";
 import { ImageClassificationTask } from "./ImageClassificationTask";
 import { ImageEmbeddingTask } from "./ImageEmbeddingTask";
 import { ImageSegmentationTask } from "./ImageSegmentationTask";
 import { ImageToTextTask } from "./ImageToTextTask";
+import { KbSearchTask } from "./KbSearchTask";
+import { KbToDocumentsTask } from "./KbToDocumentsTask";
+import { ModelDownloadRemoveTask } from "./ModelDownloadRemoveTask";
+import { ModelDownloadTask } from "./ModelDownloadTask";
 import { ModelInfoTask } from "./ModelInfoTask";
 import { ModelSearchTask } from "./ModelSearchTask";
 import { ObjectDetectionTask } from "./ObjectDetectionTask";
@@ -50,7 +51,6 @@ import { TextSummaryTask } from "./TextSummaryTask";
 import { TextTranslationTask } from "./TextTranslationTask";
 import { ToolCallingTask } from "./ToolCallingTask";
 import { TopicSegmenterTask } from "./TopicSegmenterTask";
-import { UnloadModelTask } from "./UnloadModelTask";
 import { VectorQuantizeTask } from "./VectorQuantizeTask";
 import { VectorSimilarityTask } from "./VectorSimilarityTask";
 
@@ -68,7 +68,7 @@ export const registerAiTasks = () => {
     DocumentUpsertTask,
     ChunkRetrievalTask,
     ChunkVectorUpsertTask,
-    DownloadModelTask,
+    ModelDownloadTask,
     ImageEditTask,
     FaceDetectorTask,
     FaceLandmarkerTask,
@@ -104,7 +104,7 @@ export const registerAiTasks = () => {
     TextTranslationTask,
     ToolCallingTask,
     TopicSegmenterTask,
-    UnloadModelTask,
+    ModelDownloadRemoveTask,
     VectorQuantizeTask,
     VectorSimilarityTask,
   ];

@@ -5,40 +5,32 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   GestureRecognizerTaskInput,
   GestureRecognizerTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_GestureRecognizer: AiProviderStreamFn<
+export const TFMP_GestureRecognizer: AiProviderRunFn<
   GestureRecognizerTaskInput,
   GestureRecognizerTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<GestureRecognizerTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { GestureRecognizer } = await loadTfmpTasksVisionSDK();
-  const gestureRecognizer = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        numHands: input.numHands,
-        minHandDetectionConfidence: input.minHandDetectionConfidence,
-        minHandPresenceConfidence: input.minHandPresenceConfidence,
-        minTrackingConfidence: input.minTrackingConfidence,
-      },
-      cb,
-      signal,
-      GestureRecognizer
-    )
+  const gestureRecognizer = await getModelTask(
+    model!,
+    {
+      numHands: input.numHands,
+      minHandDetectionConfidence: input.minHandDetectionConfidence,
+      minHandPresenceConfidence: input.minHandPresenceConfidence,
+      minTrackingConfidence: input.minTrackingConfidence,
+    },
+    emit,
+    signal,
+    GestureRecognizer
   );
   const result = gestureRecognizer.recognize(input.image);
 
@@ -67,5 +59,5 @@ export const TFMP_GestureRecognizer: AiProviderStreamFn<
     })),
   }));
 
-  yield { type: "finish", data: { hands } };
+  emit({ type: "finish", data: { hands } });
 };

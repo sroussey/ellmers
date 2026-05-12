@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -90,9 +90,7 @@ export class TextNamedEntityRecognitionTask extends AiTask<
 > {
   public static override type = "TextNamedEntityRecognitionTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
-    "text.ner",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["text.ner"] as const satisfies Capability[];
   public static override category = "AI Text";
   public static override title = "Named Entity Recognition";
   public static override description = "Extracts named entities from text";

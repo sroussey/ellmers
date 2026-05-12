@@ -5,31 +5,25 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
 /**
- * Streaming run-fn for `["text.generation", "json-mode"]`. Yields
+ * Streaming run-fn for `["text.generation", "json-mode"]`. Emits
  * `object-delta` events with progressively-completed partial JSON snapshots
  * on the `object` port, ending with a `finish` event carrying the parsed
  * final object.
  */
-export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
+export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   OpenAiModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  outputSchema
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit, outputSchema) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -61,7 +55,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
       accumulatedJson += delta;
       const partial = parsePartialJson(accumulatedJson);
       if (partial !== undefined) {
-        yield { type: "object-delta", port: "object", objectDelta: partial };
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
@@ -72,5 +66,5 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

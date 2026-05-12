@@ -4,15 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
-export const Anthropic_ModelInfo_Stream: AiProviderStreamFn<
+export const Anthropic_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   AnthropicModelConfig
-> = async function* (input): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, _model, _signal, emit) => {
   const result: ModelInfoTaskOutput = {
     model: input.model,
     is_local: false,
@@ -23,5 +22,5 @@ export const Anthropic_ModelInfo_Stream: AiProviderStreamFn<
     is_loaded: false,
     file_sizes: null,
   };
-  yield { type: "finish", data: result };
+  emit({ type: "finish", data: result });
 };

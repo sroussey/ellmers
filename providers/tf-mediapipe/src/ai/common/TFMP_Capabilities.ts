@@ -41,99 +41,44 @@ export function inferTfmpCapabilities(model: CapabilityHints): readonly Capabili
     return [
       "vision.gesture",
       "vision.hand-landmarks",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
+      "model.download-remove",
+      "model.info",
+      "model.search",
     ];
   }
   if (/hand_landmarker/.test(baseName)) {
-    return [
-      "vision.hand-landmarks",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["vision.hand-landmarks", "model.download-remove", "model.info", "model.search"];
   }
   if (/face_landmarker/.test(baseName)) {
-    return [
-      "vision.face-landmarks",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["vision.face-landmarks", "model.download-remove", "model.info", "model.search"];
   }
   if (/face_detector|blaze_face/.test(baseName)) {
-    return [
-      "vision.face-detection",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["vision.face-detection", "model.download-remove", "model.info", "model.search"];
   }
   if (/pose_landmarker/.test(baseName)) {
-    return [
-      "vision.pose-landmarks",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["vision.pose-landmarks", "model.download-remove", "model.info", "model.search"];
   }
   if (/object_detector|efficientdet|ssd_mobilenet|yolo/.test(baseName)) {
-    return [
-      "image.object-detection",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.object-detection", "model.download-remove", "model.info", "model.search"];
   }
   if (/segmenter|deeplab|selfie/.test(baseName)) {
-    return [
-      "image.segmentation",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.segmentation", "model.download-remove", "model.info", "model.search"];
   }
   if (/image_classifier|efficientnet|mobilenet/.test(baseName)) {
-    return [
-      "image.classification",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.classification", "model.download-remove", "model.info", "model.search"];
   }
   if (/image_embed/.test(baseName)) {
-    return [
-      "image.embedding",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.embedding", "model.download-remove", "model.info", "model.search"];
   }
   if (/text_embed|universal_sentence_encoder|use_/.test(baseName)) {
-    return [
-      "text.embedding",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.embedding", "model.download-remove", "model.info", "model.search"];
   }
   if (/text_classifier|bert_classifier/.test(baseName)) {
-    return [
-      "text.classification",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.classification", "model.download-remove", "model.info", "model.search"];
   }
   if (/language_detector/.test(baseName)) {
-    return [
-      "text.language-detection",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.language-detection", "model.download-remove", "model.info", "model.search"];
   }
 
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

@@ -53,125 +53,65 @@ export function inferHftCapabilities(model: CapabilityHints): readonly Capabilit
         "text.summary",
         "tool-use",
         "model.count-tokens",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
+        "model.download-remove",
+        "model.info",
+        "model.search",
       ];
     case "feature-extraction":
     case "sentence-similarity":
-      return [
-        "text.embedding",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["text.embedding", "model.download-remove", "model.info", "model.search"];
     case "text-classification":
-      return [
-        "text.classification",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["text.classification", "model.download-remove", "model.info", "model.search"];
     case "token-classification":
-      return ["text.ner", "model.unload", "provider.model-info", "provider.model-search"];
+      return ["text.ner", "model.download-remove", "model.info", "model.search"];
     case "fill-mask":
-      return [
-        "text.fill-mask",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["text.fill-mask", "model.download-remove", "model.info", "model.search"];
     case "translation":
-      return [
-        "text.translation",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["text.translation", "model.download-remove", "model.info", "model.search"];
     case "summarization":
-      return ["text.summary", "model.unload", "provider.model-info", "provider.model-search"];
+      return ["text.summary", "model.download-remove", "model.info", "model.search"];
     case "question-answering":
-      return [
-        "text.question-answering",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["text.question-answering", "model.download-remove", "model.info", "model.search"];
     case "image-classification":
-      return [
-        "image.classification",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["image.classification", "model.download-remove", "model.info", "model.search"];
     case "image-segmentation":
-      return [
-        "image.segmentation",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["image.segmentation", "model.download-remove", "model.info", "model.search"];
     case "image-to-text":
-      return [
-        "image.to-text",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["image.to-text", "model.download-remove", "model.info", "model.search"];
     case "object-detection":
-      return [
-        "image.object-detection",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
-      ];
+      return ["image.object-detection", "model.download-remove", "model.info", "model.search"];
     case "zero-shot-image-classification":
       return [
         "image.classification",
         "image.embedding",
-        "model.unload",
-        "provider.model-info",
-        "provider.model-search",
+        "model.download-remove",
+        "model.info",
+        "model.search",
       ];
   }
 
   // Fallback name-based pattern matching for repos without pipeline_task.
   const baseName = id.split("/").pop() ?? id;
   if (/embed|minilm|bge-|gte-|e5-/i.test(baseName)) {
-    return ["text.embedding", "model.unload", "provider.model-info", "provider.model-search"];
+    return ["text.embedding", "model.download-remove", "model.info", "model.search"];
   }
   if (/clip|siglip/i.test(baseName)) {
     return [
       "image.classification",
       "image.embedding",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
+      "model.download-remove",
+      "model.info",
+      "model.search",
     ];
   }
   if (/yolo|detr|owl/i.test(baseName)) {
-    return [
-      "image.object-detection",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.object-detection", "model.download-remove", "model.info", "model.search"];
   }
   if (/sam|segformer|mask/i.test(baseName)) {
-    return [
-      "image.segmentation",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.segmentation", "model.download-remove", "model.info", "model.search"];
   }
   if (/blip|llava|vision/i.test(baseName)) {
-    return [
-      "image.to-text",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.to-text", "model.download-remove", "model.info", "model.search"];
   }
   if (/llama|mistral|gemma|phi|qwen|tinyllama|smollm/i.test(baseName)) {
     return [
@@ -180,12 +120,12 @@ export function inferHftCapabilities(model: CapabilityHints): readonly Capabilit
       "text.summary",
       "tool-use",
       "model.count-tokens",
-      "model.unload",
-      "provider.model-info",
-      "provider.model-search",
+      "model.download-remove",
+      "model.info",
+      "model.search",
     ];
   }
 
   // Truly unknown — expose meta-ops only.
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

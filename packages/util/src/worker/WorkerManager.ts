@@ -539,9 +539,9 @@ export class WorkerManager {
    * worker's terminal `result` message and rejects on `error`.
    *
    * Wire protocol: same `stream_chunk` messages as {@link callWorkerStreamFunction}
-   * for events; the terminal `result` message carries `data: undefined` and
+   * for events; the terminal `complete` message carries `data: undefined` and
    * signals completion. `postMessage` ordering on the same port guarantees all
-   * `stream_chunk` messages arrive before the terminal `result`, so the local
+   * `stream_chunk` messages arrive before the terminal `complete`, so the local
    * message handler drains them before resolving.
    */
   async callWorkerRunFunction<T>(
@@ -569,10 +569,9 @@ export class WorkerManager {
         if (id !== requestId) return;
         if (type === "stream_chunk") {
           options.emit(data as T);
-        } else if (type === "result") {
-          // `result` here carries undefined data — the protocol uses the same
-          // terminal message as today's stream path, with `data: undefined`
-          // indicating completion.
+        } else if (type === "complete") {
+          // `complete` carries undefined data — the protocol mirrors the stream
+          // path's terminal message, with `data: undefined` indicating completion.
           resolveFn();
         } else if (type === "error") {
           const err =

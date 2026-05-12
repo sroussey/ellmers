@@ -5,13 +5,13 @@
  */
 
 import {
-  DownloadModelTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
   llamaCppSessions,
@@ -22,8 +22,8 @@ import {
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const llmModel: LlamaCppModelRecord = {
   model_id: "llamacpp:SmolLM2-135M-Instruct:Q4_K_M",
@@ -87,7 +87,7 @@ runAiProviderConformance({
       await getGlobalModelRepository().addModel(toolModel);
       await getGlobalModelRepository().addModel(embeddingModel);
       for (const modelId of [llmModel.model_id, toolModel.model_id, embeddingModel.model_id]) {
-        const download = new DownloadModelTask({ defaults: { model: modelId } });
+        const download = new ModelDownloadTask({ defaults: { model: modelId } });
         download.on("progress", (progress, _message, details) => {
           logger.info(
             `Download ${modelId}: ${progress}% | ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`

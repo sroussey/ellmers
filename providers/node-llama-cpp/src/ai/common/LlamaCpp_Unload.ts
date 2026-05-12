@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+  AiProviderRunFn,
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   disposeLlamaCppSessionsForModel,
@@ -19,12 +18,12 @@ import {
   llamaCppTextContexts,
 } from "./LlamaCpp_Runtime";
 
-export const LlamaCpp_Unload: AiProviderStreamFn<
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+export const LlamaCpp_Unload: AiProviderRunFn<
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
   LlamaCppModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<UnloadModelTaskRunOutput>> {
-  if (!model) throw new Error("Model config is required for UnloadModelTask.");
+> = async (input, model, _signal, emit) => {
+  if (!model) throw new Error("Model config is required for ModelDownloadRemoveTask.");
 
   const modelPath = getActualModelPath(model);
 
@@ -49,5 +48,5 @@ export const LlamaCpp_Unload: AiProviderStreamFn<
     llamaCppModels.delete(modelPath);
   }
 
-  yield { type: "finish", data: { model: input.model! } };
+  emit({ type: "finish", data: { model: input.model! } });
 };

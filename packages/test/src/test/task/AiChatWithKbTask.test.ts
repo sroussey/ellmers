@@ -5,8 +5,8 @@
  */
 
 import type {
-  AiProviderLegacyStreamFnRegistration,
-  AiProviderStreamFn,
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
   Capability,
   ChatChunkReference,
   ChatMessage,
@@ -18,7 +18,7 @@ import { getGlobalKnowledgeBases } from "@workglow/knowledge-base";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
-import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
+import { Container, HUMAN_CONNECTOR, ResourceScope, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
@@ -101,24 +101,29 @@ class FakeChatKbProvider extends AiProvider {
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
 
-  constructor(runFns?: readonly AiProviderLegacyStreamFnRegistration[]) {
-    super(runFns);
+  constructor(promiseRunFns?: readonly AiProviderRunFnRegistration[]) {
+    super(promiseRunFns);
   }
 }
 
-function registerFakeChatKbProvider(stream: AiProviderStreamFn<any, any, ModelConfig>): () => void {
+function registerFakeChatKbProvider(stream: AiProviderRunFn<any, any, ModelConfig>): () => void {
   const registry = getAiProviderRegistry();
   const provider = new FakeChatKbProvider();
   registry.registerProvider(provider);
-  registry.registerLegacyStreamFn("fake-chat-kb", {
+  registry.registerRunFn("fake-chat-kb", {
     serves: TEXT_GENERATION,
-    runFn: stream as AiProviderStreamFn,
+    runFn: stream as AiProviderRunFn,
   });
   return () => registry.unregisterProvider("fake-chat-kb");
 }
 
 interface FakeKbCalls {
   query: string;
+  opts: unknown;
+}
+
+interface FakeKbVectorCalls {
+  vector: Float32Array;
   opts: unknown;
 }
 
@@ -131,13 +136,23 @@ function makeFakeKb(opts: {
    * when absent, every `getDocument` call resolves to undefined.
    */
   docMetadata?: Record<string, Record<string, unknown>>;
-}): { kb: KnowledgeBase; calls: FakeKbCalls[]; unregister: () => void } {
+}): {
+  kb: KnowledgeBase;
+  calls: FakeKbCalls[];
+  vectorCalls: FakeKbVectorCalls[];
+  unregister: () => void;
+} {
   const calls: FakeKbCalls[] = [];
+  const vectorCalls: FakeKbVectorCalls[] = [];
   const kb = {
     title: opts.label ?? opts.id,
     description: "fake",
     search: async (q: string, searchOpts: unknown) => {
       calls.push({ query: q, opts: searchOpts });
+      return opts.results;
+    },
+    similaritySearch: async (vector: Float32Array, searchOpts: unknown) => {
+      vectorCalls.push({ vector, opts: searchOpts });
       return opts.results;
     },
     getDocument: async (docId: string) => {
@@ -152,6 +167,7 @@ function makeFakeKb(opts: {
   return {
     kb,
     calls,
+    vectorCalls,
     unregister: () => {
       live.delete(opts.id);
     },
@@ -184,6 +200,110 @@ async function accumulateKbChatStream(
   return { references, messages, events };
 }
 
+describe("AiChatWithKbTask — embedding-backed retrieval", () => {
+  it("uses the supplied embedding model inside the chat run and defers unload until the shared resource scope is disposed", async () => {
+    const fake = makeFakeKb({
+      id: "kb-direct",
+      label: "Direct KB",
+      results: [
+        {
+          chunk_id: "c1",
+          doc_id: "d1",
+          score: 0.9,
+          metadata: { doc_title: "Doc 1", text: "direct chunk text", url: "/help/d1" },
+        } as any,
+      ],
+    });
+
+    const registry = getAiProviderRegistry();
+    const provider = new FakeChatKbProvider();
+    let embedCalls = 0;
+    let unloadCalls = 0;
+    registry.registerProvider(provider);
+    registry.registerRunFn("fake-chat-kb", {
+      serves: ["text.embedding"],
+      runFn: async (_input, _model, _signal, emit) => {
+        embedCalls++;
+        emit({ type: "finish", data: { vector: new Float32Array([1, 0, 0]) } });
+      },
+    });
+    registry.registerRunFn("fake-chat-kb", {
+      serves: TEXT_GENERATION,
+      runFn: async (_input, _model, _signal, emit) => {
+        emit({ type: "text-delta", port: "text", textDelta: "answer" });
+        emit({ type: "finish", data: {} as any });
+      },
+    });
+    registry.registerRunFn("fake-chat-kb", {
+      serves: ["model.download-remove"],
+      runFn: async (_input, _model, _signal, emit) => {
+        unloadCalls++;
+        emit({ type: "finish", data: {} as any });
+      },
+    });
+
+    const resourceScope = new ResourceScope();
+    const connector = new FakeConnector([
+      { action: "accept", content: { content: "follow up" }, done: false, requestId: "" },
+      { action: "decline", content: undefined, done: true, requestId: "" },
+    ]);
+    const context = mkContext(connector);
+    (context as any).resourceScope = resourceScope;
+    (context as any).own = <T extends { runConfig?: Record<string, unknown> }>(task: T): T => {
+      if (task.runConfig) {
+        Object.assign(task.runConfig, { resourceScope });
+      }
+      return task;
+    };
+
+    const model: ModelConfig = {
+      model_id: "chat-model",
+      title: "Chat",
+      description: "Chat",
+      provider: "fake-chat-kb",
+      capabilities: ["text.generation"],
+      provider_config: {},
+      metadata: {},
+    };
+    const embeddingModel: ModelConfig = {
+      model_id: "embedding-model",
+      title: "Embedding",
+      description: "Embedding",
+      provider: "fake-chat-kb",
+      capabilities: ["text.embedding"],
+      provider_config: {},
+      metadata: {},
+    };
+
+    try {
+      const task = new AiChatWithKbTask();
+      await accumulateKbChatStream(
+        task.executeStream(
+          {
+            model,
+            embeddingModel,
+            prompt: "tell me about doc 1",
+            knowledgeBaseIds: ["kb-direct"],
+            maxIterations: 2,
+          } as any,
+          context
+        )
+      );
+
+      expect(embedCalls).toBe(2);
+      expect(fake.calls).toHaveLength(0);
+      expect(fake.vectorCalls).toHaveLength(2);
+      expect(unloadCalls).toBe(0);
+
+      await resourceScope.disposeAll();
+      expect(unloadCalls).toBe(1);
+    } finally {
+      fake.unregister();
+      registry.unregisterProvider("fake-chat-kb");
+    }
+  });
+});
+
 // ========================================================================
 // Single-turn happy-path tests
 // ========================================================================
@@ -211,12 +331,17 @@ describe.skip("AiChatWithKbTask — single turn", () => {
 
     let providerCalls = 0;
     let receivedSystemPrompt = "";
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (jobInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       providerCalls++;
       const sys = (jobInput.messages as ChatMessage[]).find((m) => m.role === "system");
       receivedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "hello" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "hello" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -298,9 +423,14 @@ describe.skip("AiChatWithKbTask — single turn", () => {
         d3: { url: "/help/bar" },
       },
     });
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -353,9 +483,14 @@ describe.skip("AiChatWithKbTask — single turn", () => {
         { chunk_id: "c3", doc_id: "d3", score: 0.8, metadata: { text: "c" } } as any,
       ],
     });
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -387,10 +522,15 @@ describe.skip("AiChatWithKbTask — no-match branches", () => {
   it("emits noMatchReply and skips the provider when zero chunks survive", async () => {
     const fake = makeFakeKb({ id: "kb-empty", results: [] });
     let providerCalls = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       providerCalls++;
-      yield { type: "text-delta", port: "text", textDelta: "should-not-emit" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "should-not-emit" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -428,9 +568,14 @@ describe.skip("AiChatWithKbTask — no-match branches", () => {
 
   it("emits noMatchReferences verbatim on the references port when zero chunks survive", async () => {
     const fake = makeFakeKb({ id: "kb-empty2", results: [] });
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -475,12 +620,17 @@ describe.skip("AiChatWithKbTask — no-match branches", () => {
     const fake = makeFakeKb({ id: "kb-empty3", results: [] });
     let providerCalls = 0;
     let receivedSystemPrompt = "";
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (jobInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       providerCalls++;
       const sys = (jobInput.messages as ChatMessage[]).find((m) => m.role === "system");
       receivedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "model said" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "model said" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -505,9 +655,14 @@ describe.skip("AiChatWithKbTask — no-match branches", () => {
 
   it("skips retrieval entirely for empty user text", async () => {
     const fake = makeFakeKb({ id: "kb-skip", results: [] });
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -540,10 +695,15 @@ describe.skip("AiChatWithKbTask — multi-turn", () => {
       ],
     });
     let turnIdx = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       turnIdx++;
-      yield { type: "text-delta", port: "text", textDelta: `turn-${turnIdx}` };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: `turn-${turnIdx}` });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -604,10 +764,15 @@ describe.skip("AiChatWithKbTask — multi-turn", () => {
     live.set("kb-followup", kb);
 
     let providerCalls = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       providerCalls++;
-      yield { type: "text-delta", port: "text", textDelta: `reply-${providerCalls}` };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: `reply-${providerCalls}` });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -659,10 +824,15 @@ describe.skip("AiChatWithKbTask — multi-turn", () => {
     // on, so the no-match boilerplate must still fire.
     const fake = makeFakeKb({ id: "kb-cold", results: [] });
     let providerCalls = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       providerCalls++;
-      yield { type: "text-delta", port: "text", textDelta: "should-not-emit" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "should-not-emit" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -699,9 +869,14 @@ describe.skip("AiChatWithKbTask — multi-turn", () => {
         { chunk_id: "c", doc_id: "d", score: 0.9, metadata: { text: "x", url: "/help/d" } } as any,
       ],
     });
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _jobInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregisterProvider = registerFakeChatKbProvider(stream);
     try {
@@ -754,11 +929,16 @@ describe.skip("AiChatWithKbTask — responseFormat", () => {
       ],
     });
     let capturedSystemPrompt = "";
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
       capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatKbProvider(stream);
     try {
@@ -808,11 +988,16 @@ describe.skip("AiChatWithKbTask — responseFormat", () => {
       ],
     });
     let captured = "";
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
       captured = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatKbProvider(stream);
     try {
@@ -854,11 +1039,16 @@ describe.skip("AiChatWithKbTask — responseFormat", () => {
       ],
     });
     let captured = "";
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput: any,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[]).find((m) => m.role === "system");
       captured = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatKbProvider(stream);
     try {

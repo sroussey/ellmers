@@ -5,37 +5,29 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
 } from "@workglow/ai";
-import { bridgeProgress } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { StreamEvent } from "@workglow/task-graph";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
 
-export const TFMP_ImageClassification: AiProviderStreamFn<
+export const TFMP_ImageClassification: AiProviderRunFn<
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
   TFMPModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<ImageClassificationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const { ImageClassifier } = await loadTfmpTasksVisionSDK();
-  const imageClassifier = yield* bridgeProgress((cb) =>
-    getModelTask(
-      model!,
-      {
-        maxResults: input.maxCategories,
-      },
-      cb,
-      signal,
-      ImageClassifier
-    )
+  const imageClassifier = await getModelTask(
+    model!,
+    {
+      maxResults: input.maxCategories,
+    },
+    emit,
+    signal,
+    ImageClassifier
   );
   const result = imageClassifier.classify(input.image);
 
@@ -50,5 +42,5 @@ export const TFMP_ImageClassification: AiProviderStreamFn<
     })
   );
 
-  yield { type: "finish", data: { categories } };
+  emit({ type: "finish", data: { categories } });
 };

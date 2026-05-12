@@ -7,8 +7,8 @@
 export const TENSORFLOW_MEDIAPIPE = "TENSORFLOW_MEDIAPIPE";
 
 export const TFMP_DEFAULT_TASK_TYPES = [
-  "DownloadModelTask",
-  "UnloadModelTask",
+  "ModelDownloadTask",
+  "ModelDownloadRemoveTask",
   "ModelInfoTask",
   "TextEmbeddingTask",
   "TextLanguageDetectionTask",

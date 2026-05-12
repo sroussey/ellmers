@@ -34,9 +34,7 @@ describe("AiTask.requires", () => {
   it("subclass can override requires with specific capabilities", () => {
     class TextGenTask extends AiTask {
       static override readonly type = "TextGenTask";
-      static override readonly requires = [
-        "text.generation",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["text.generation"] as const satisfies Capability[];
     }
     expect((TextGenTask as typeof AiTask).requires).toStrictEqual(["text.generation"]);
   });
@@ -44,9 +42,7 @@ describe("AiTask.requires", () => {
   it("is accessible from an instance via (instance.constructor as typeof AiTask).requires", () => {
     class SubTask extends AiTask {
       static override readonly type = "SubTask2";
-      static override readonly requires = [
-        "text.embedding",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["text.embedding"] as const satisfies Capability[];
     }
     const instance = new SubTask({ defaults: { model: "test-model" } });
     expect((instance.constructor as typeof AiTask).requires).toStrictEqual(["text.embedding"]);
@@ -72,9 +68,7 @@ describe("StreamingAiTask.requires", () => {
   it("subclass can override requires with specific capabilities", () => {
     class StreamGenTask extends StreamingAiTask {
       static override readonly type = "StreamGenTask";
-      static override readonly requires = [
-        "text.generation",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["text.generation"] as const satisfies Capability[];
     }
     expect((StreamGenTask as typeof AiTask).requires).toStrictEqual(["text.generation"]);
   });
@@ -82,7 +76,7 @@ describe("StreamingAiTask.requires", () => {
   it("is accessible from an instance via (instance.constructor as typeof AiTask).requires", () => {
     class SubStreamTask2 extends StreamingAiTask {
       static override readonly type = "SubStreamTask2";
-      static override readonly requires = ["tool-use"] as const satisfies readonly Capability[];
+      static override readonly requires = ["tool-use"] as const satisfies Capability[];
     }
     const instance = new SubStreamTask2({ defaults: { model: "test-model" } });
     expect((instance.constructor as typeof AiTask).requires).toStrictEqual(["tool-use"]);
@@ -108,9 +102,7 @@ describe("AiVisionTask.requires", () => {
   it("subclass can override requires with specific capabilities", () => {
     class FaceTask extends AiVisionTask {
       static override readonly type = "FaceTask";
-      static override readonly requires = [
-        "vision.face-detection",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["vision.face-detection"] as const satisfies Capability[];
     }
     expect((FaceTask as typeof AiTask).requires).toStrictEqual(["vision.face-detection"]);
   });
@@ -118,9 +110,7 @@ describe("AiVisionTask.requires", () => {
   it("is accessible from an instance via (instance.constructor as typeof AiTask).requires", () => {
     class SubVisionTask2 extends AiVisionTask {
       static override readonly type = "SubVisionTask2";
-      static override readonly requires = [
-        "vision.hand-landmarks",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["vision.hand-landmarks"] as const satisfies Capability[];
     }
     const instance = new SubVisionTask2({ defaults: { model: "test-model" } });
     expect((instance.constructor as typeof AiTask).requires).toStrictEqual([
@@ -148,9 +138,7 @@ describe("AiImageOutputTask.requires", () => {
   it("subclass can override requires with specific capabilities", () => {
     class ImageGenTask extends AiImageOutputTask {
       static override readonly type = "ImageGenTask";
-      static override readonly requires = [
-        "image.generation",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["image.generation"] as const satisfies Capability[];
     }
     expect((ImageGenTask as typeof AiTask).requires).toStrictEqual(["image.generation"]);
   });
@@ -158,9 +146,7 @@ describe("AiImageOutputTask.requires", () => {
   it("is accessible from an instance via (instance.constructor as typeof AiTask).requires", () => {
     class SubImageTask2 extends AiImageOutputTask {
       static override readonly type = "SubImageTask2";
-      static override readonly requires = [
-        "image.editing",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["image.editing"] as const satisfies Capability[];
     }
     const instance = new SubImageTask2({
       defaults: { model: "test-model", prompt: "test prompt" },

@@ -64,7 +64,7 @@ Then open `dist/stats.html` in a browser (the `dist/` folder is gitignored). Set
 const workflow = new Workflow();
 
 workflow
-  .DownloadModel({
+  .ModelDownload({
     model: [
       {
         provider: "HF_TRANSFORMERS_ONNX",

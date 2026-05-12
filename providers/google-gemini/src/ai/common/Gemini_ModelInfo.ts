@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 /** Known Gemini embedding model dimensions. */
@@ -14,11 +13,11 @@ const GEMINI_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
   "embedding-001": { native_dimensions: 768, mrl: false },
 };
 
-export const Gemini_ModelInfo_Stream: AiProviderStreamFn<
+export const Gemini_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   GeminiModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -32,7 +31,7 @@ export const Gemini_ModelInfo_Stream: AiProviderStreamFn<
         mrl = mrl ?? known.mrl;
       }
     }
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -46,10 +45,10 @@ export const Gemini_ModelInfo_Stream: AiProviderStreamFn<
         ...(native_dimensions !== undefined ? { native_dimensions } : {}),
         ...(mrl !== undefined ? { mrl } : {}),
       },
-    };
+    });
     return;
   }
-  yield {
+  emit({
     type: "finish",
     data: {
       model: input.model,
@@ -61,5 +60,5 @@ export const Gemini_ModelInfo_Stream: AiProviderStreamFn<
       is_loaded: false,
       file_sizes: null,
     },
-  };
+  });
 };

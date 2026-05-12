@@ -5,20 +5,19 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 
 import { ensureAvailable, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextGeneration: AiProviderStreamFn<
+export const WebBrowser_TextGeneration: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   WebBrowserModelConfig
-> = async function* (input, _model, signal): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async (input, _model, signal, emit) => {
   const factory = getApi(
     "LanguageModel",
     typeof LanguageModel !== "undefined" ? LanguageModel : undefined
@@ -30,9 +29,9 @@ export const WebBrowser_TextGeneration: AiProviderStreamFn<
   });
   try {
     const stream = session.promptStreaming(input.prompt, { signal });
-    yield* snapshotStreamToTextDeltas<TextGenerationTaskOutput>(stream, "text", (text) => ({
+    for await (const e of snapshotStreamToTextDeltas<TextGenerationTaskOutput>(stream, "text", (text) => ({
       text,
-    }));
+    }))) { emit(e); }
   } finally {
     session.destroy();
   }

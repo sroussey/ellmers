@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
@@ -26,16 +25,11 @@ import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
  * lines 201-205): the `StructuredGenerationTask` consumer reads the parsed
  * object from `finish.data` directly instead of accumulating deltas.
  */
-export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
+export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   AnthropicModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  outputSchema
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit, outputSchema) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -64,7 +58,7 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
       accumulatedJson += event.delta.partial_json;
       const partial = parsePartialJson(accumulatedJson);
       if (partial !== undefined) {
-        yield { type: "object-delta", port: "object", objectDelta: partial };
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
@@ -78,5 +72,5 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
   // Exception: structured generation MUST populate finish.data.object so the
   // StructuredGenerationTask consumer can read the parsed object without a
   // JSON streaming parser. See CLAUDE.md streaming-convention-exception note.
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -56,9 +56,7 @@ export class TextSummaryTask extends StreamingAiTask<
 > {
   public static override type = "TextSummaryTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires: readonly Capability[] = [
-    "text.summary",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["text.summary"] as const satisfies Capability[];
   public static override category = "AI Text";
   public static override title = "Text Summary";
   protected static override readonly streamingPhaseLabel = "Summarizing";

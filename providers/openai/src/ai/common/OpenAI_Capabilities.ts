@@ -50,27 +50,17 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
 
   // Embedding models — text-embedding-3-{small,large}, text-embedding-ada-002.
   if (/^text-embedding/i.test(id)) {
-    return [
-      "text.embedding",
-      "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["text.embedding", "model.count-tokens", "model.info", "model.search"];
   }
 
   // Image models — DALL-E and gpt-image families.
   if (/^dall-e/i.test(id)) {
     // DALL-E 2/3 do NOT support edit consistently — gpt-image-* does. Cover
     // generation only here; the gpt-image branch below adds editing.
-    return ["image.generation", "provider.model-info", "provider.model-search"];
+    return ["image.generation", "model.info", "model.search"];
   }
   if (/^gpt-image/i.test(id)) {
-    return [
-      "image.generation",
-      "image.editing",
-      "provider.model-info",
-      "provider.model-search",
-    ];
+    return ["image.generation", "image.editing", "model.info", "model.search"];
   }
 
   // Chat / reasoning models — gpt-3.5/4/4o/5/...; o-series reasoning models (o1, o3, o4, future).
@@ -83,8 +73,8 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
       "tool-use",
       "json-mode",
       "model.count-tokens",
-      "provider.model-info",
-      "provider.model-search",
+      "model.info",
+      "model.search",
     ];
     const supportsVision =
       /gpt-4o|gpt-4\.1|gpt-5|gpt-4-vision|gpt-4-turbo/i.test(id) || /^o\d/i.test(id);
@@ -98,5 +88,5 @@ export function inferOpenAiCapabilities(model: CapabilityHints): readonly Capabi
   // expose the meta-ops so the model can still be searched / inspected.
   const declared = (model.capabilities as readonly Capability[] | undefined) ?? [];
   if (declared.length > 0) return declared;
-  return ["provider.model-search", "provider.model-info"];
+  return ["model.search", "model.info"];
 }

@@ -7,10 +7,9 @@
 import type {
   AiChatProviderInput,
   AiChatProviderOutput,
-  AiProviderStreamFn,
+  AiProviderRunFn,
   ChatMessage,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getConfigKey,
@@ -81,17 +80,11 @@ function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
 // Streaming run function
 // ============================================================================
 
-export const LlamaCpp_Chat_Stream: AiProviderStreamFn<
+export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   LlamaCppModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<AiChatProviderOutput>> {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for AiChatTask.");
 
   const { session, sequence } = await getOrCreateChatSession(sessionId, model, input.systemPrompt);
@@ -132,9 +125,9 @@ export const LlamaCpp_Chat_Stream: AiProviderStreamFn<
       resolver = undefined;
     }
     while (queue.length > 0) {
-      yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
+      emit({ type: "text-delta", port: "text", textDelta: queue.shift()! });
     }
   }
   await promptPromise;
-  yield { type: "finish", data: {} as AiChatProviderOutput };
+  emit({ type: "finish", data: {} as AiChatProviderOutput });
 };

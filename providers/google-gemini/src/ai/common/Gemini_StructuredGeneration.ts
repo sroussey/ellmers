@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
@@ -22,16 +21,11 @@ import { sanitizeSchemaForGemini } from "./Gemini_Schema";
  * the `finish` event MUST include the parsed `object` so that
  * `StructuredGenerationTask` can read it without a JSON streaming parser.
  */
-export const Gemini_StructuredGeneration_Stream: AiProviderStreamFn<
+export const Gemini_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   GeminiModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  outputSchema
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit, outputSchema) => {
   const GoogleGenerativeAI = await loadGeminiSDK();
   const genAI = new GoogleGenerativeAI(getApiKey(model));
 
@@ -61,7 +55,7 @@ export const Gemini_StructuredGeneration_Stream: AiProviderStreamFn<
       accumulatedJson += text;
       const partial = parsePartialJson(accumulatedJson);
       if (partial !== undefined) {
-        yield { type: "object-delta", port: "object", objectDelta: partial };
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
@@ -73,5 +67,5 @@ export const Gemini_StructuredGeneration_Stream: AiProviderStreamFn<
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
   // json-mode finish exception: populate finish.data.object with parsed result.
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

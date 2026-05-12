@@ -5,22 +5,17 @@
  */
 
 import type { DeviceType } from "@huggingface/transformers";
-import type {
-  AiProviderStreamFn,
-  ModelInfoTaskInput,
-  ModelInfoTaskOutput,
-} from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 import { getPipelineCacheKey, hasCachedPipeline, loadTransformersSDK } from "./HFT_Pipeline";
 
-export const HFT_ModelInfo: AiProviderStreamFn<
+export const HFT_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   HfTransformersOnnxModelConfig
-> = async function* (input, model): AsyncIterable<StreamEvent<ModelInfoTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   // Handle dimensions detail — resolve native_dimensions and mrl
   if (input.detail === "dimensions") {
     if (!model) throw new Error("Model config is required for ModelInfoTask.");
@@ -46,7 +41,7 @@ export const HFT_ModelInfo: AiProviderStreamFn<
       }
     }
 
-    yield {
+    emit({
       type: "finish",
       data: {
         model: input.model,
@@ -60,7 +55,7 @@ export const HFT_ModelInfo: AiProviderStreamFn<
         ...(native_dimensions !== undefined ? { native_dimensions } : {}),
         ...(mrl ? { mrl } : {}),
       },
-    };
+    });
     return;
   }
 
@@ -126,7 +121,7 @@ export const HFT_ModelInfo: AiProviderStreamFn<
 
   logger.timeEnd(timerLabel, { model: model?.provider_config.model_path });
 
-  yield {
+  emit({
     type: "finish",
     data: {
       model: input.model,
@@ -139,5 +134,5 @@ export const HFT_ModelInfo: AiProviderStreamFn<
       file_sizes,
       ...(quantizations ? { quantizations } : {}),
     },
-  };
+  });
 };

@@ -5,6 +5,7 @@
  */
 
 import type { DynamicCache, PretrainedModelOptions, ProgressInfo } from "@huggingface/transformers";
+import type { StreamPhase } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
@@ -323,7 +324,7 @@ export function hasCachedPipeline(cacheKey: string): boolean {
  * GC; explicit `release()` is required.
  *
  * Returns the model.dispose() promise; callers that can await it should
- * (e.g. inside HFT_Unload's async generator) so the WASM release completes
+ * (e.g. inside HFT_DownloadRemove's async generator) so the WASM release completes
  * before the next operation. Best-effort: dispose failure does not prevent
  * cache eviction.
  */
@@ -370,7 +371,7 @@ export function getPipelineCacheKey(model: HfTransformersOnnxModelConfig): strin
  */
 export async function getPipeline(
   model: HfTransformersOnnxModelConfig,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   options: PretrainedModelOptions = {},
   signal?: AbortSignal,
   progressScaleMax: number = 10
@@ -397,7 +398,7 @@ export async function getPipeline(
 
   const loadPromise = doGetPipeline(
     model,
-    onProgress,
+    emit,
     options,
     progressScaleMax,
     cacheKey,
@@ -411,7 +412,7 @@ export async function getPipeline(
 
 const doGetPipeline = async (
   model: HfTransformersOnnxModelConfig,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   options: PretrainedModelOptions,
   progressScaleMax: number,
   cacheKey: string,
@@ -419,41 +420,15 @@ const doGetPipeline = async (
 ) => {
   // Throttle state for progress events
   let lastProgressTime = 0;
-  type FilesByteMap = Record<string, { loaded: number; total: number }>;
-  let pendingProgress: {
-    progress: number;
-    file: string;
-    fileProgress: number;
-    filesMap?: FilesByteMap;
-  } | null = null;
+  let pendingProgress: number | null = null;
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
   const THROTTLE_MS = 160;
-
-  const buildProgressDetails = (
-    file: string,
-    fileProgress: number,
-    filesMap?: FilesByteMap
-  ): { file: string; progress: number; files?: FilesByteMap } => {
-    const details: { file: string; progress: number; files?: FilesByteMap } = {
-      file,
-      progress: fileProgress,
-    };
-    if (filesMap && Object.keys(filesMap).length > 0) {
-      details.files = filesMap;
-    }
-    return details;
-  };
 
   /**
    * Sends a progress event, throttled to avoid flooding the worker channel.
    * Always sends first event and final (>=progressScaleMax) immediately.
    */
-  const sendProgress = (
-    progress: number,
-    file: string,
-    fileProgress: number,
-    filesMap?: FilesByteMap
-  ): void => {
+  const sendProgress = (progress: number): void => {
     const now = Date.now();
     const timeSinceLastEvent = now - lastProgressTime;
     const isFirst = lastProgressTime === 0;
@@ -465,28 +440,23 @@ const doGetPipeline = async (
         throttleTimer = null;
       }
       pendingProgress = null;
-      onProgress(
-        Math.round(progress),
-        "Downloading model",
-        buildProgressDetails(file, fileProgress, filesMap)
-      );
+      emit({ type: "phase", message: "Downloading model", progress: Math.round(progress) });
       lastProgressTime = now;
       return;
     }
 
     if (timeSinceLastEvent < THROTTLE_MS) {
-      pendingProgress = { progress, file, fileProgress, filesMap };
+      pendingProgress = progress;
       if (!throttleTimer) {
         const timeRemaining = Math.max(1, THROTTLE_MS - timeSinceLastEvent);
         throttleTimer = setTimeout(() => {
           throttleTimer = null;
-          if (pendingProgress) {
-            const p = pendingProgress;
-            onProgress(
-              Math.round(p.progress),
-              "Downloading model",
-              buildProgressDetails(p.file, p.fileProgress, p.filesMap)
-            );
+          if (pendingProgress !== null) {
+            emit({
+              type: "phase",
+              message: "Downloading model",
+              progress: Math.round(pendingProgress),
+            });
             lastProgressTime = Date.now();
             pendingProgress = null;
           }
@@ -495,11 +465,7 @@ const doGetPipeline = async (
       return;
     }
 
-    onProgress(
-      Math.round(progress),
-      "Downloading model",
-      buildProgressDetails(file, fileProgress, filesMap)
-    );
+    emit({ type: "phase", message: "Downloading model", progress: Math.round(progress) });
     lastProgressTime = now;
     pendingProgress = null;
   };
@@ -524,32 +490,8 @@ const doGetPipeline = async (
     if (abortSignal?.aborted) return;
 
     if (status.status === "progress_total") {
-      const totalStatus = status;
-      const scaledProgress = (totalStatus.progress * progressScaleMax) / 100;
-
-      // Find the currently active file (one still downloading)
-      let activeFile = "";
-      let activeFileProgress = 0;
-      const files: Record<string, { loaded: number; total: number }> | undefined =
-        totalStatus.files;
-      if (files) {
-        for (const [file, info] of Object.entries(files)) {
-          if (info.loaded < info.total) {
-            activeFile = file;
-            activeFileProgress = info.total > 0 ? (info.loaded / info.total) * 100 : 0;
-            break;
-          }
-        }
-        if (!activeFile) {
-          const fileNames = Object.keys(files);
-          if (fileNames.length > 0) {
-            activeFile = fileNames[fileNames.length - 1];
-            activeFileProgress = 100;
-          }
-        }
-      }
-
-      sendProgress(scaledProgress, activeFile, activeFileProgress, files);
+      const scaledProgress = (status.progress * progressScaleMax) / 100;
+      sendProgress(scaledProgress);
     }
   };
 
@@ -607,18 +549,12 @@ const doGetPipeline = async (
       throttleTimer = null;
     }
     // pendingProgress may have been set by progressCallback during the pipeline() await
-    const finalPending = pendingProgress as {
-      progress: number;
-      file: string;
-      fileProgress: number;
-      filesMap?: FilesByteMap;
-    } | null;
-    if (finalPending) {
-      onProgress(
-        Math.round(finalPending.progress),
-        "Downloading model",
-        buildProgressDetails(finalPending.file, finalPending.fileProgress, finalPending.filesMap)
-      );
+    if (pendingProgress !== null) {
+      emit({
+        type: "phase",
+        message: "Downloading model",
+        progress: Math.round(pendingProgress),
+      });
       pendingProgress = null;
     }
 

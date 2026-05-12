@@ -86,9 +86,7 @@ export class ModelInfoTask extends AiTask<
 > {
   public static override type = "ModelInfoTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
-    "provider.model-info",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["model.info"] as const satisfies Capability[];
   public static override category = "AI Model";
   public static override cacheable = false;
   public static override title = "Model Info";
@@ -108,12 +106,10 @@ export class ModelInfoTask extends AiTask<
     const model = input.model as ModelConfig;
     const registry = getAiProviderRegistry();
     const runFn = registry.getRunFnFor<ModelInfoTaskInput, ModelInfoTaskOutput>(model.provider, [
-      "provider.model-info",
+      "model.info",
     ]);
     if (!runFn) {
-      throw new Error(
-        `Provider "${model.provider}" has no run function serving "provider.model-info".`
-      );
+      throw new Error(`Provider "${model.provider}" has no run function serving "model.info".`);
     }
     const { emit, result } = accumulatingEmit<ModelInfoTaskOutput>();
     await runFn(input, model, context.signal, emit);

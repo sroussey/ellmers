@@ -5,26 +5,26 @@
  */
 
 import {
-  DownloadModelTask,
-  DownloadModelTaskRunOutput,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
+  ModelDownloadTaskRunOutput,
   setGlobalModelRepository,
   unloadModel,
 } from "@workglow/ai";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry, TaskStatus } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-describe("DownloadModelTask abort behavior", () => {
+describe("ModelDownloadTask abort behavior", () => {
   let logger = getTestingLogger();
   setLogger(logger);
 
@@ -67,7 +67,7 @@ describe("DownloadModelTask abort behavior", () => {
 
     await getGlobalModelRepository().addModel(model);
 
-    const download = new DownloadModelTask({
+    const download = new ModelDownloadTask({
       defaults: { model: modelId },
     });
 
@@ -94,7 +94,7 @@ describe("DownloadModelTask abort behavior", () => {
       }
     });
 
-    let downloadPromise: Promise<DownloadModelTaskRunOutput>;
+    let downloadPromise: Promise<ModelDownloadTaskRunOutput>;
     // The download should throw an error due to abort
     logger.info("Starting download");
     // Start the download

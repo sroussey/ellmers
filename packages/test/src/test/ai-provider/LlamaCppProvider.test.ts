@@ -42,12 +42,12 @@ describe("LlamaCppQueuedProvider.inferCapabilities", () => {
     expect(caps).toContain("tool-use");
     expect(caps).toContain("json-mode");
     expect(caps).toContain("model.count-tokens");
-    expect(caps).toContain("model.unload");
+    expect(caps).toContain("model.download-remove");
   });
 
   it("returns baseline meta-ops for empty id", () => {
     const caps = provider.inferCapabilities(model(""));
-    expect(caps).toEqual(["provider.model-search", "provider.model-info"]);
+    expect(caps).toEqual(["model.search", "model.info"]);
   });
 });
 
@@ -69,9 +69,9 @@ describe("LLAMACPP_RUN_FNS shape", () => {
     expect(sets).toContain("text.summary");
     expect(sets).toContain("text.embedding");
     expect(sets).toContain("model.count-tokens");
-    expect(sets).toContain("model.unload");
-    expect(sets).toContain("provider.model-search");
-    expect(sets).toContain("provider.model-info");
+    expect(sets).toContain("model.download-remove");
+    expect(sets).toContain("model.search");
+    expect(sets).toContain("model.info");
   });
 
   it("tiebreaks `text.generation` to smallest serves entry", () => {

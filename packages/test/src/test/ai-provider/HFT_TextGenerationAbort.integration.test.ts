@@ -5,19 +5,19 @@
  */
 
 import {
-  DownloadModelTask,
-  TextGenerationTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
+  TextGenerationTask,
   unloadModel,
 } from "@workglow/ai";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry, TaskStatus } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -53,7 +53,7 @@ describe("TextGenerationTask abort behavior", () => {
     await getGlobalModelRepository().addModel(model);
 
     // Download (or warm up from cache) the model before running generation tests
-    const download = new DownloadModelTask({ defaults: { model: MODEL_ID } });
+    const download = new ModelDownloadTask({ defaults: { model: MODEL_ID } });
     download.on("progress", (progress, _message, details) => {
       logger.info(
         `Download ${MODEL_ID}: ${progress}% | ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`

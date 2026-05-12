@@ -79,7 +79,7 @@ export function cliTaskShowsProgressBar(status: string): boolean {
   return status === "PROCESSING" || status === "STREAMING" || status === "ABORTING";
 }
 
-/** Optional per-file progress (e.g. {@link DownloadModelTask}.files). */
+/** Optional per-file progress (e.g. {@link ModelDownloadTask}.files). */
 export interface TaskFileProgressRow {
   readonly file: string;
   readonly progress: number;

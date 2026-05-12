@@ -29,16 +29,10 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
   private limiter: ILimiter | undefined;
 
   /**
-   * @param queueName Diagnostic label kept on the strategy for log/abort
-   *   messages. The previous storage-queue path used it as a registry key;
-   *   that path is gone but the label is still useful for traces.
    * @param concurrency Maximum number of in-flight jobs across the shared
    *   limiter.
    */
-  constructor(
-    readonly queueName: string,
-    private readonly concurrency: number = 1
-  ) {}
+  constructor(private readonly concurrency: number = 1) {}
 
   async execute(
     jobInput: AiJobInput<TaskInput>,
@@ -89,7 +83,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
       }
       const next = await limiter.getNextAvailableTime();
       const delay = Math.max(0, next.getTime() - Date.now());
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(delay, 50)));
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.max(20, Math.min(delay, 200))));
       token = await limiter.tryAcquire();
     }
     void token;

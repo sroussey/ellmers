@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 
 import {
   ensureAvailable,
@@ -19,11 +18,11 @@ import {
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-export const WebBrowser_TextRewriter: AiProviderStreamFn<
+export const WebBrowser_TextRewriter: AiProviderRunFn<
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
   WebBrowserModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextRewriterTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const factory = getApi("Rewriter", typeof Rewriter !== "undefined" ? Rewriter : undefined);
   await ensureAvailable("Rewriter", factory);
   const config = getConfig(model);
@@ -37,7 +36,7 @@ export const WebBrowser_TextRewriter: AiProviderStreamFn<
       signal,
       context: input.prompt,
     });
-    yield* snapshotStreamToTextDeltas<TextRewriterTaskOutput>(stream, "text", (text) => ({ text }));
+    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(stream, "text", (text) => ({ text }))) { emit(e); }
   } finally {
     rewriter.destroy();
   }

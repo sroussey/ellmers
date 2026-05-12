@@ -26,7 +26,3 @@ export * from "./model/ModelSchema";
 // Capability vocabulary — needed by provider subclasses overriding
 // `inferCapabilities` and `workerRunFnSpecs` from the worker barrel.
 export * from "./capability/Capabilities";
-
-// Streaming helpers needed by worker-side run-fns to bridge SDK progress
-// callbacks into phase stream events.
-export * from "./capability/bridgeProgress";

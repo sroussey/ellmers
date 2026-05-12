@@ -5,11 +5,10 @@
  */
 
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
@@ -38,15 +37,11 @@ interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
  * to choose the chat vs. prompt path — safe because AiChatTask always provides
  * `messages` and TextGenerationTask never does.
  */
-export const Gemini_TextGeneration_Stream: AiProviderStreamFn<
+export const Gemini_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   GeminiModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timerLabel = `gemini:TextGeneration:${getModelName(model)}`;
   logger.time(timerLabel, { model: getModelName(model) });
@@ -79,7 +74,7 @@ export const Gemini_TextGeneration_Stream: AiProviderStreamFn<
       for await (const chunk of result.stream) {
         const text = chunk.text();
         if (text) {
-          yield { type: "text-delta", port: "text", textDelta: text };
+          emit({ type: "text-delta", port: "text", textDelta: text });
         }
       }
     } else {
@@ -101,12 +96,12 @@ export const Gemini_TextGeneration_Stream: AiProviderStreamFn<
       for await (const chunk of result.stream) {
         const text = chunk.text();
         if (text) {
-          yield { type: "text-delta", port: "text", textDelta: text };
+          emit({ type: "text-delta", port: "text", textDelta: text });
         }
       }
     }
 
-    yield { type: "finish", data: {} as TextGenerationTaskOutput };
+    emit({ type: "finish", data: {} as TextGenerationTaskOutput });
   } finally {
     logger.timeEnd(timerLabel, { model: getModelName(model) });
   }

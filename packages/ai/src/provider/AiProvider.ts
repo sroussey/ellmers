@@ -9,7 +9,6 @@ import { globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig, ModelRecord } from "../model/ModelSchema";
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
 } from "./AiProviderRegistry";
@@ -126,40 +125,22 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   abstract readonly supportsBrowser: boolean;
 
   /**
-   * Legacy-shape (AsyncIterable streaming) capability-set run-fn registrations
-   * injected via the constructor. Required for inline mode and worker-server
-   * registration when the provider has not yet been ported to the new
-   * promise+emit shape; not needed for worker-mode registration on the main
-   * thread (where the proxies are derived from the same registrations on the
-   * worker).
-   */
-  protected readonly runFns?: readonly AiProviderLegacyStreamFnRegistration<
-    any,
-    any,
-    TModelConfig
-  >[];
-
-  /**
-   * New-shape (promise+emit) capability-set run-fn registrations injected via
-   * the constructor. Providers opt in to the new shape one at a time; until
-   * they are ported, the legacy {@link runFns} field continues to work via
-   * the {@link AiProviderRegistry.registerLegacyStreamFn} adapter.
+   * Promise+emit capability-set run-fn registrations injected via the constructor.
+   * Required for inline and worker-server registration. Not needed for worker-mode
+   * registration on the main thread (proxies are derived from {@link workerRunFnSpecs}).
    */
   protected readonly promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[];
 
   /**
    * Map of task type names to their preview run functions.
-   * Injected via constructor alongside `runFns`. Only needed for tasks that
-   * provide lightweight previews via executePreview().
+   * Only needed for tasks that provide lightweight previews via executePreview().
    */
   protected readonly previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>;
 
   constructor(
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<any, any, TModelConfig>[],
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>,
-    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[]
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
   ) {
-    this.runFns = runFns;
     this.previewTasks = previewTasks;
     this.promiseRunFns = promiseRunFns;
   }
@@ -188,7 +169,7 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * @param options - Registration options (worker for worker-backed, queue config)
    */
   async register(options: AiProviderRegisterOptions = {}): Promise<void> {
-    const isInline = !!this.runFns || !!this.promiseRunFns;
+    const isInline = !!this.promiseRunFns;
     const context: AiProviderRegisterContext = { ...options, isInline };
 
     // Tear down any prior registration under this name BEFORE onInitialize so
@@ -205,16 +186,15 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
     await this.onInitialize(context);
 
     if (isInline) {
-      if (!this.runFns && !this.promiseRunFns) {
+      if (!this.promiseRunFns) {
         throw new Error(
-          `AiProvider "${this.name}": at least one of runFns or promiseRunFns must be ` +
-            `provided via the constructor for inline registration.`
+          `AiProvider "${this.name}": promiseRunFns must be provided via the constructor for inline registration.`
         );
       }
     } else {
       if (!options.worker) {
         throw new Error(
-          `AiProvider "${this.name}": worker is required when no runFns are provided (worker-backed registration). ` +
+          `AiProvider "${this.name}": worker is required when no promiseRunFns are provided (worker-backed registration). ` +
             `Pass worker: new Worker(...) or worker: () => new Worker(...).`
         );
       }
@@ -244,11 +224,6 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
         registry.registerAsWorkerRunFn(this.name, spec.serves);
       }
     } else {
-      if (this.runFns) {
-        for (const reg of this.runFns) {
-          registry.registerLegacyStreamFn(this.name, reg as AiProviderLegacyStreamFnRegistration);
-        }
-      }
       if (this.promiseRunFns) {
         for (const reg of this.promiseRunFns) {
           registry.registerRunFn(this.name, reg as AiProviderRunFnRegistration);
@@ -280,15 +255,10 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * support override this to advertise the same `serves` sets that the
    * worker-side {@link registerOnWorkerServer} call will register.
    *
-   * The base implementation derives specs from `runFns` if they are present
-   * (rare on the main thread for worker-backed providers, but valid when a
-   * provider chooses to advertise its capability-sets without owning the run
-   * functions on the main thread).
+   * The base implementation derives specs from `promiseRunFns` when present.
    */
   protected workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
-    const legacy = this.runFns?.map((r) => ({ serves: r.serves })) ?? [];
-    const promise = this.promiseRunFns?.map((r) => ({ serves: r.serves })) ?? [];
-    return [...legacy, ...promise];
+    return this.promiseRunFns?.map((r) => ({ serves: r.serves })) ?? [];
   }
 
   /**
@@ -296,28 +266,18 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    * Call this inside a Web Worker to make the provider's functions
    * available for remote invocation from the main thread.
    *
-   * Requires `runFns` to have been provided via the constructor. Each
+   * Requires `promiseRunFns` to have been provided via the constructor. Each
    * registration is exposed under the deterministic key produced by
    * {@link workerKeyForServes} so the main-thread proxy resolves to the
-   * matching generator.
+   * matching run function.
    *
    * @param workerServer - The WorkerServer instance to register on
    */
   registerOnWorkerServer(workerServer: WorkerServer): void {
-    if (!this.runFns && !this.promiseRunFns) {
+    if (!this.promiseRunFns) {
       throw new Error(
-        `AiProvider "${this.name}": at least one of runFns or promiseRunFns must be ` +
-          `provided via the constructor for worker server registration.`
+        `AiProvider "${this.name}": promiseRunFns must be provided via the constructor for worker server registration.`
       );
-    }
-    if (this.runFns) {
-      for (const reg of this.runFns) {
-        const key = workerKeyForServes(reg.serves);
-        workerServer.registerStreamFunction(
-          key,
-          reg.runFn as (...args: any[]) => AsyncIterable<any>
-        );
-      }
     }
     if (this.promiseRunFns) {
       for (const reg of this.promiseRunFns) {

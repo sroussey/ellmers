@@ -6,24 +6,19 @@
 
 import type { TaskType } from "@google/generative-ai";
 import type {
-  AiProviderStreamFn,
+  AiProviderRunFn,
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 
-export const Gemini_TextEmbedding_Stream: AiProviderStreamFn<
+export const Gemini_TextEmbedding_Stream: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   GeminiModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<TextEmbeddingTaskOutput>> {
+> = async (input, model, _signal, emit) => {
   const logger = getLogger();
   const timerLabel = `gemini:TextEmbedding:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
@@ -45,12 +40,12 @@ export const Gemini_TextEmbedding_Stream: AiProviderStreamFn<
           taskType,
         })),
       });
-      yield {
+      emit({
         type: "finish",
         data: {
           vector: result.embeddings.map((e) => new Float32Array(e.values)),
         },
-      };
+      });
       return;
     }
 
@@ -59,10 +54,10 @@ export const Gemini_TextEmbedding_Stream: AiProviderStreamFn<
       taskType,
     });
 
-    yield {
+    emit({
       type: "finish",
       data: { vector: new Float32Array(result.embedding.values) },
-    };
+    });
   } finally {
     logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
   }

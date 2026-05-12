@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderLegacyStreamFnRegistration, ToolCallingTaskInput } from "@workglow/ai";
+import type { AiProviderRunFnRegistration, ToolCallingTaskInput } from "@workglow/ai";
 import { getClient } from "./Ollama_Client.browser";
 import {
   OLLAMA_MODEL_INFO,
@@ -49,7 +49,7 @@ export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(
 export const Ollama_ModelInfo_Stream = createOllamaModelInfoStream(getClient);
 export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient);
 
-export const OLLAMA_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
+export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

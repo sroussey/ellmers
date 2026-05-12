@@ -6,8 +6,8 @@
 
 import { AiProvider } from "@workglow/ai/worker";
 import type {
-  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
+  AiProviderRunFnRegistration,
   Capability,
   ModelRecord,
 } from "@workglow/ai/worker";
@@ -26,7 +26,7 @@ export class TensorFlowMediaPipeProvider extends AiProvider<TFMPModelConfig> {
   readonly supportsBrowser = true;
 
   constructor(
-    runFns?: readonly AiProviderLegacyStreamFnRegistration<
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,7 +39,7 @@ export class TensorFlowMediaPipeProvider extends AiProvider<TFMPModelConfig> {
       AiProviderPreviewRunFn<any, any, TFMPModelConfig>
     >
   ) {
-    super(runFns, previewTasks);
+    super(promiseRunFns, previewTasks);
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
