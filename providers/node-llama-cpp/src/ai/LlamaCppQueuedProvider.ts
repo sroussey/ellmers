@@ -6,8 +6,8 @@
 
 import { QueuedAiProvider } from "@workglow/ai";
 import type {
+  AiProviderLegacyStreamFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderRunFnRegistration,
   Capability,
   ModelConfig,
   ModelRecord,
@@ -28,7 +28,7 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
   readonly supportsBrowser = false;
 
   constructor(
-    runFns?: readonly AiProviderRunFnRegistration<
+    runFns?: readonly AiProviderLegacyStreamFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

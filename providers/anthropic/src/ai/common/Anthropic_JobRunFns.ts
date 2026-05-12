@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
+import type {
+  AiProviderLegacyStreamFnRegistration,
+  AiProviderPreviewRunFn,
+} from "@workglow/ai";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import {
   ANTHROPIC_COUNT_TOKENS,
@@ -38,7 +41,7 @@ import { Anthropic_ToolCalling_Stream } from "./Anthropic_ToolCalling";
  *
  * Note: Anthropic does NOT support embeddings, image generation, or image editing.
  */
-export const ANTHROPIC_RUN_FNS: readonly AiProviderRunFnRegistration<
+export const ANTHROPIC_RUN_FNS: readonly AiProviderLegacyStreamFnRegistration<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
