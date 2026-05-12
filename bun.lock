@@ -8,6 +8,7 @@
         "caniuse-lite": "^1.0.30001792",
       },
       "devDependencies": {
+        "@sqliteai/sqlite-vector": "catalog:",
         "@types/bun": "^1.3.13",
         "@types/node": "^24.12.3",
         "@typescript-eslint/eslint-plugin": "^8.59.2",
@@ -29,6 +30,15 @@
         "turbo": "^2.9.12",
         "typescript": "6.0.3",
         "vitest": "^4.1.5",
+      },
+      "optionalDependencies": {
+        "@sqliteai/sqlite-vector-darwin-arm64": "^0.9.95",
+        "@sqliteai/sqlite-vector-darwin-x86_64": "^0.9.95",
+        "@sqliteai/sqlite-vector-linux-arm64": "^0.9.95",
+        "@sqliteai/sqlite-vector-linux-arm64-musl": "^0.9.95",
+        "@sqliteai/sqlite-vector-linux-x86_64": "^0.9.95",
+        "@sqliteai/sqlite-vector-linux-x86_64-musl": "^0.9.95",
+        "@sqliteai/sqlite-vector-win32-x86_64": "^0.9.95",
       },
     },
     "examples/cli": {
@@ -264,6 +274,7 @@
       "devDependencies": {
         "@electric-sql/pglite": "catalog:",
         "@modelcontextprotocol/sdk": "catalog:",
+        "@sqliteai/sqlite-vector": "catalog:",
         "@supabase/supabase-js": "catalog:",
         "@types/pg": "^8.18.0",
         "@workglow/ai": "workspace:*",
