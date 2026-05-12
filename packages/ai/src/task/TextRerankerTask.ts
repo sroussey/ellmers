@@ -67,9 +67,9 @@ export type TextRerankerTaskConfig = TaskConfig<TextRerankerTaskInput>;
 /**
  * AiTask for cross-encoder reranking. Providers register a run-fn for this
  * task type (e.g. HuggingFace Transformers using a `text-classification`
- * cross-encoder pipeline on `[query, doc]` pairs). `createAiKbStrategy`
- * uses this task to power `kb.searchWithRerank()` when a reranker model
- * is configured on the KB.
+ * cross-encoder pipeline on `[query, doc]` pairs). `createStandardKbStrategy`
+ * invokes this task as the rerank stage of `kb.search()` when the KB is
+ * configured with `searchMode: "rerank"` and has a `rerankerModel` set.
  */
 export class TextRerankerTask extends AiTask<
   TextRerankerTaskInput,

@@ -39,8 +39,11 @@ export interface CreateStandardKbStrategyOptions {
   /** Override KB's searchMode at strategy-build time. */
   readonly searchMode?: SearchMode;
   /**
-   * For `searchMode === "rerank"`: how many candidates to retrieve before
-   * reranking. Defaults to `max(topK * 5, 20)`.
+   * Multiplier applied to `topK` to size the first-stage candidate pool
+   * when `searchMode === "rerank"`. The reranker then narrows the pool
+   * back down to `topK`. Defaults to `5`, i.e. first stage fetches
+   * `topK * 5` candidates (with a `topK` floor so it never returns fewer
+   * than `topK`).
    */
   readonly firstStageMultiplier?: number;
 }
@@ -105,10 +108,9 @@ export function createStandardKbStrategy(
 
   return {
     async ingest(kb, doc): Promise<Document> {
-      if (!doc.doc_id) {
-        // Let storage auto-generate by writing the document first.
-        await kb.upsertDocument(doc);
-      }
+      // Single write — `upsertDocument` returns the stored doc with the
+      // auto-generated id assigned, so we don't need a second round-trip
+      // when `doc.doc_id` is initially missing.
       const stored = await kb.upsertDocument(doc);
       const docId = stored.doc_id!;
       // Replace existing chunks for this doc so re-ingest is idempotent.

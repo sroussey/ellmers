@@ -345,7 +345,7 @@ export async function registerHuggingfaceLocalModels(): Promise<void> {
       model_id: "onnx:Xenova/bge-reranker-base:q8",
       title: "BGE Reranker Base",
       description: "Cross-encoder reranker model for relevance scoring",
-      tasks: ["TextClassificationTask", "RerankerTask"],
+      tasks: ["TextClassificationTask", "RerankerTask", "TextRerankerTask"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text-classification",
