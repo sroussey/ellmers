@@ -14,7 +14,7 @@ import {
 } from "@workglow/knowledge-base";
 
 import type { ChunkRecord, DocumentNode, SectionNode, TokenBudget } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -417,9 +417,10 @@ export class HierarchicalChunkerTask extends Task<
 
 export const hierarchicalChunker = (
   input: HierarchicalChunkerTaskInput,
-  config?: HierarchicalChunkerTaskConfig
+  config?: HierarchicalChunkerTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new HierarchicalChunkerTask(config).run(input);
+  return new HierarchicalChunkerTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { ModelRecord } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -148,8 +148,12 @@ export class ModelSearchTask extends Task<
 /**
  * Search for models using a provider-specific search function.
  */
-export const modelSearch = (input: ModelSearchTaskInput, config?: ModelSearchTaskConfig) => {
-  return new ModelSearchTask(config).run(input);
+export const modelSearch = (
+  input: ModelSearchTaskInput,
+  config?: ModelSearchTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new ModelSearchTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

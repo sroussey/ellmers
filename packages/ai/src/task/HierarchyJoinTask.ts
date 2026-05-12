@@ -8,7 +8,7 @@ import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-b
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const inputSchema = {
@@ -214,8 +214,12 @@ export class HierarchyJoinTask extends Task<
   }
 }
 
-export const hierarchyJoin = (input: HierarchyJoinTaskInput, config?: HierarchyJoinTaskConfig) => {
-  return new HierarchyJoinTask(config).run(input);
+export const hierarchyJoin = (
+  input: HierarchyJoinTaskInput,
+  config?: HierarchyJoinTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new HierarchyJoinTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

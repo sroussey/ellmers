@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
@@ -79,9 +79,10 @@ export class ImageEmbeddingTask extends AiVisionTask<
  */
 export const imageEmbedding = (
   input: ImageEmbeddingTaskInput,
-  config?: ImageEmbeddingTaskConfig
+  config?: ImageEmbeddingTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ImageEmbeddingTask(config).run(input);
+  return new ImageEmbeddingTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

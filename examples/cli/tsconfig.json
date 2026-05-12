@@ -3,8 +3,27 @@
   "include": ["src/**/*"],
   "exclude": ["dist"],
   "compilerOptions": {
+    "composite": true,
     "outDir": "dist",
     "rootDir": "./src",
     "jsx": "react-jsx"
-  }
+  },
+  "references": [
+    { "path": "../../packages/util" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/task-graph" },
+    { "path": "../../packages/tasks" },
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/mcp" },
+    { "path": "../../packages/browser-control" },
+    { "path": "../../providers/anthropic" },
+    { "path": "../../providers/bun-webview" },
+    { "path": "../../providers/google-gemini" },
+    { "path": "../../providers/huggingface-inference" },
+    { "path": "../../providers/huggingface-transformers" },
+    { "path": "../../providers/node-llama-cpp" },
+    { "path": "../../providers/ollama" },
+    { "path": "../../providers/openai" },
+    { "path": "../../providers/playwright" }
+  ]
 }

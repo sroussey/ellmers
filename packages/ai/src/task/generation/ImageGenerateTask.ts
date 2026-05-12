@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -62,8 +62,11 @@ export class ImageGenerateTask extends AiImageOutputTask<
   }
 }
 
-export const imageGenerate = (input: ImageGenerateTaskInput, config?: ImageGenerateTaskConfig) =>
-  new ImageGenerateTask(config).run(input);
+export const imageGenerate = (
+  input: ImageGenerateTaskInput,
+  config?: ImageGenerateTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => new ImageGenerateTask(config).run(input, runConfig);
 
 declare module "@workglow/task-graph" {
   interface Workflow {

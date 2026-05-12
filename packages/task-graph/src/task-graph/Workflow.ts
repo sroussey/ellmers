@@ -9,7 +9,7 @@ import { EventEmitter, ServiceRegistry } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ConditionFn } from "../task/ConditionalTask";
 import { GraphAsTask } from "../task/GraphAsTask";
-import type { ITask, ITaskConstructor } from "../task/ITask";
+import type { IRunConfig, ITask, ITaskConstructor } from "../task/ITask";
 import type { StreamEvent } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import type { TaskEntitlements } from "../task/TaskEntitlements";
@@ -168,9 +168,10 @@ export class Workflow<
     const helper = function (
       this: Workflow<any, any>,
       input: Partial<I> = {},
-      config: Partial<C> = {}
+      config: Partial<C> = {},
+      runConfig?: Partial<IRunConfig>
     ) {
-      this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config);
+      this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config, runConfig);
       // Preserve input type from the start of the chain
       // If this is the first task, set both input and output types
       // Otherwise, only update the output type (input type is preserved from 'this')
@@ -545,12 +546,15 @@ export class Workflow<
   public addTask<I extends DataPorts, O extends DataPorts, C extends TaskConfig<I> = TaskConfig<I>>(
     taskClass: ITaskConstructor<I, O, C>,
     input?: Partial<I>,
-    config?: Partial<C>
+    config?: Partial<C>,
+    runConfig?: Partial<IRunConfig>
   ): Workflow<Input, Output> {
-    return this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config) as Workflow<
-      Input,
-      Output
-    >;
+    return this._builder.addTaskWithAutoConnect<I, O, C>(
+      taskClass,
+      input,
+      config,
+      runConfig
+    ) as Workflow<Input, Output>;
   }
 
   // ========================================================================
@@ -569,8 +573,12 @@ export class Workflow<
     I extends DataPorts,
     O extends DataPorts,
     C extends TaskConfig<I> = TaskConfig<I>,
-  >(taskClass: ITaskConstructor<I, O, C>, config: Partial<C> = {}): Workflow<I, O> {
-    return this._builder.addLoopTask<I, O, C>(taskClass, config);
+  >(
+    taskClass: ITaskConstructor<I, O, C>,
+    config: Partial<C> = {},
+    runConfig?: Partial<IRunConfig>
+  ): Workflow<I, O> {
+    return this._builder.addLoopTask<I, O, C>(taskClass, config, runConfig);
   }
 
   /**

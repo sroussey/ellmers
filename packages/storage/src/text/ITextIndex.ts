@@ -42,32 +42,38 @@ export interface ITextIndex {
    * removed first. `docId` is captured so {@link removeByDocument} can cascade
    * deletions.
    */
-  add(chunkId: string, docId: string, fields: TextFields): void;
+  add(chunkId: string, docId: string, fields: TextFields): void | Promise<void>;
 
   /**
    * Remove all postings for a single chunk. No-op if the chunk is not
    * indexed.
    */
-  remove(chunkId: string): void;
+  remove(chunkId: string): void | Promise<void>;
 
   /**
    * Remove all chunks belonging to a document. Used by
    * `KnowledgeBase.deleteDocument`.
    */
-  removeByDocument(docId: string): void;
+  removeByDocument(docId: string): void | Promise<void>;
 
   /** Drop all postings and reset all statistics. */
-  clear(): void;
+  clear(): void | Promise<void>;
 
   /** Number of chunks currently indexed. */
-  size(): number;
+  size(): number | Promise<number>;
 
   /**
    * Score the corpus against `query` and return the top-K chunks. The score
    * is BM25(F)-style — unbounded above, always non-negative — and is
    * suitable for rank-based fusion (e.g. RRF) without normalisation.
+   *
+   * May return a `Promise` for backends with server-side state (e.g. a
+   * Postgres FTS index talking to a database over the network).
    */
-  search(query: string, options?: TextSearchOptions): TextSearchResult[];
+  search(
+    query: string,
+    options?: TextSearchOptions
+  ): TextSearchResult[] | Promise<TextSearchResult[]>;
 
   /**
    * Serialise the index to a JSON-safe value. Round-trips with
@@ -78,4 +84,28 @@ export interface ITextIndex {
 
   /** Replace the index's state with a value previously produced by {@link toJSON}. */
   fromJSON(state: unknown): void;
+
+  /**
+   * Optional reindex lifecycle hooks. Backends with server-side state
+   * (e.g. a Postgres-side `tsvector` table) implement these so
+   * `KnowledgeBase.reindexText` can wrap the rebuild in a database
+   * transaction and roll back atomically on error — there is no in-memory
+   * snapshot to fall back to for such backends, so the
+   * {@link toJSON}/{@link fromJSON} rollback path is not enough.
+   *
+   * In-memory backends (e.g. {@link BM25Index}) can omit these; the
+   * reindex flow falls back to the JSON snapshot path when the hooks are
+   * absent.
+   *
+   * Contract:
+   *  - `beginRebuild` opens a rebuild scope. Subsequent {@link clear} /
+   *    {@link add} calls must be visible only inside the scope until
+   *    {@link commitRebuild}.
+   *  - `commitRebuild` finalises the rebuild atomically.
+   *  - `abortRebuild` discards in-flight rebuild state and restores the
+   *    pre-`beginRebuild` index contents.
+   */
+  beginRebuild?(): Promise<void> | void;
+  commitRebuild?(): Promise<void> | void;
+  abortRebuild?(): Promise<void> | void;
 }

@@ -5,7 +5,7 @@
  */
 
 import { CreateWorkflow, GraphAsTask, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   cosineSimilarity,
   DataPortSchema,
@@ -148,9 +148,10 @@ export class VectorSimilarityTask extends GraphAsTask<
 
 export const similarity = (
   input: VectorSimilarityTaskInput,
-  config?: VectorSimilarityTaskConfig
+  config?: VectorSimilarityTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new VectorSimilarityTask(config).run(input);
+  return new VectorSimilarityTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

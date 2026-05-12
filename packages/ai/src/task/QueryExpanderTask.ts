@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 export const QueryExpansionMethod = {
@@ -212,8 +212,12 @@ export class QueryExpanderTask extends Task<
   }
 }
 
-export const queryExpander = (input: QueryExpanderTaskInput, config?: QueryExpanderTaskConfig) => {
-  return new QueryExpanderTask(config).run(input);
+export const queryExpander = (
+  input: QueryExpanderTaskInput,
+  config?: QueryExpanderTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new QueryExpanderTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

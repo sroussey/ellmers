@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -85,9 +85,10 @@ export class TextQuestionAnswerTask extends StreamingAiTask<
  */
 export const textQuestionAnswer = (
   input: TextQuestionAnswerTaskInput,
-  config?: TextQuestionAnswerTaskConfig
+  config?: TextQuestionAnswerTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new TextQuestionAnswerTask(config).run(input);
+  return new TextQuestionAnswerTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

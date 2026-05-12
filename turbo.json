@@ -4,34 +4,9 @@
     "tsconfig.json"
   ],
   "tasks": {
-    "build-clean": {
-      "cache": false
-    },
-    "build-package": {
-      "dependsOn": [
-        "build-clean",
-        "^build-package"
-      ],
-      "inputs": [
-        "src/**/*.ts",
-        "src/**/*.tsx",
-        "src/**/*.json",
-        "tsconfig.json",
-        "package.json",
-        "build*.ts"
-      ],
-      "outputs": [
-        "dist/**/*.js",
-        "dist/**/*.js.map",
-        "dist/**/*.d.ts",
-        "dist/**/*.d.ts.map",
-        "tsconfig.tsbuildinfo"
-      ]
-    },
     "build-js": {
       "dependsOn": [
-        "build-clean",
-        "^build-js"
+        "^build-types"
       ],
       "inputs": [
         "src/**/*.ts",
@@ -48,7 +23,6 @@
     },
     "build-types": {
       "dependsOn": [
-        "build-clean",
         "^build-types"
       ],
       "inputs": [
@@ -66,10 +40,10 @@
     },
     "build-example": {
       "dependsOn": [
-        "build-clean",
-        "build-package",
-        "^build-package",
-        "^build-example"
+        "build-js",
+        "build-types",
+        "^build-js",
+        "^build-types"
       ],
       "inputs": [
         "src/**/*.ts",
@@ -89,19 +63,31 @@
     },
     "dev": {
       "persistent": true,
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "^build-types"
+      ]
     },
     "watch": {
       "persistent": true,
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "^build-types"
+      ]
     },
     "watch-js": {
       "persistent": true,
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "^build-types"
+      ]
     },
     "watch-types": {
       "persistent": true,
-      "cache": false
+      "cache": false,
+      "dependsOn": [
+        "^build-types"
+      ]
     }
   }
 }

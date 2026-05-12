@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 export const SegmentationMethod = {
@@ -419,9 +419,10 @@ export class TopicSegmenterTask extends Task<
 
 export const topicSegmenter = (
   input: TopicSegmenterTaskInput,
-  config?: TopicSegmenterTaskConfig
+  config?: TopicSegmenterTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new TopicSegmenterTask(config).run(input);
+  return new TopicSegmenterTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

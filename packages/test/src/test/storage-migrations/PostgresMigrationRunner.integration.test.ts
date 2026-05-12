@@ -37,11 +37,6 @@ describe("PostgresMigrationRunner", () => {
   runMigrationRunnerContract<Pool>({
     name: "Postgres",
     timeout: 30_000,
-    // PostgresMigrationRunner relies on the bookkeeping PK to resolve
-    // concurrent runs — race losers ROLLBACK and treat 23505 as success,
-    // but their up() has already executed. Mark concurrent serialization
-    // as expected failure until a JS-layer mutex is added.
-    expectedFailures: ["concurrentRunsSerialize"],
     factory: async () => {
       const pglite = new PGlite();
       const db = pglite as unknown as Pool;

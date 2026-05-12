@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
@@ -115,9 +115,10 @@ export class ImageSegmentationTask extends AiVisionTask<
  */
 export const imageSegmentation = (
   input: ImageSegmentationTaskInput,
-  config?: ImageSegmentationTaskConfig
+  config?: ImageSegmentationTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new ImageSegmentationTask(config).run(input);
+  return new ImageSegmentationTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

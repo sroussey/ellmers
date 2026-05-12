@@ -5,7 +5,7 @@
  */
 
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -65,8 +65,12 @@ export class UnloadModelTask extends AiTask<
  * @param input - Input containing model(s) to unload
  * @returns Promise resolving to the unloaded model(s)
  */
-export const unloadModel = (input: UnloadModelTaskRunInput, config?: UnloadModelTaskConfig) => {
-  return new UnloadModelTask(config).run(input);
+export const unloadModel = (
+  input: UnloadModelTaskRunInput,
+  config?: UnloadModelTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new UnloadModelTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

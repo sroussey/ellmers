@@ -20,5 +20,17 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  "exclude": ["dist"]
+  "exclude": ["dist"],
+  "references": [
+    { "path": "../../packages/util" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/job-queue" },
+    { "path": "../../packages/task-graph" },
+    { "path": "../../packages/knowledge-base" },
+    { "path": "../../packages/tasks" },
+    { "path": "../../packages/ai" },
+    { "path": "../../packages/indexeddb" },
+    { "path": "../../providers/huggingface-transformers" },
+    { "path": "../../providers/tf-mediapipe" }
+  ]
 }

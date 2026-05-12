@@ -10,19 +10,23 @@
   "description": "Postgres backends for @workglow/storage and @workglow/job-queue.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
-    "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun'",
+    "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb,text-br,text-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun' 'bun run watch-text-browser' 'bun run watch-text-node-bun'",
     "watch-storage-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "watch-storage-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
     "watch-jq-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "watch-jq-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
+    "watch-text-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/text ./src/text/browser.ts",
+    "watch-text-node-bun": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist/text ./src/text/node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run build-storage-browser' 'bun run build-storage-node-bun' 'bun run build-jq-browser' 'bun run build-jq-node-bun'",
+    "build-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb,text-br,text-nb' 'bun run build-storage-browser' 'bun run build-storage-node-bun' 'bun run build-jq-browser' 'bun run build-jq-node-bun' 'bun run build-text-browser' 'bun run build-text-node-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-storage-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/browser.ts",
     "build-storage-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/storage ./src/storage/node.ts",
     "build-jq-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
     "build-jq-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/node.ts",
+    "build-text-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/text ./src/text/browser.ts",
+    "build-text-node-bun": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/text ./src/text/node.ts",
     "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "bun test"
@@ -51,6 +55,18 @@
       },
       "types": "./dist/job-queue/node.d.ts",
       "import": "./dist/job-queue/node.js"
+    },
+    "./text": {
+      "browser": {
+        "types": "./dist/text/browser.d.ts",
+        "import": "./dist/text/browser.js"
+      },
+      "bun": {
+        "types": "./dist/text/node.d.ts",
+        "import": "./dist/text/node.js"
+      },
+      "types": "./dist/text/node.d.ts",
+      "import": "./dist/text/node.js"
     }
   },
   "peerDependencies": {

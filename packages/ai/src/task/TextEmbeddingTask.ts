@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig } from "@workglow/task-graph";
+import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
@@ -87,9 +87,10 @@ export class TextEmbeddingTask extends AiTask<
  */
 export const textEmbedding = async (
   input: TextEmbeddingTaskInput,
-  config?: TextEmbeddingTaskConfig
+  config?: TextEmbeddingTaskConfig,
+  runConfig?: Partial<IRunConfig>
 ) => {
-  return new TextEmbeddingTask(config).run(input);
+  return new TextEmbeddingTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {

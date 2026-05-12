@@ -102,6 +102,45 @@ describe("ScopedTabularStorage", () => {
     });
   });
 
+  describe("constructor contract", () => {
+    test("throws when inner PK omits kb_id (single-column PK)", () => {
+      const SchemaNoKbInPk = {
+        type: "object",
+        properties: {
+          doc_id: { type: "string" },
+          kb_id: { type: "string" },
+          data: { type: "string" },
+        },
+        required: ["doc_id"],
+        additionalProperties: true,
+      } as const;
+      const inner = new InMemoryTabularStorage(SchemaNoKbInPk as any, ["doc_id"] as any, []);
+      expect(() => new ScopedTabularStorage(inner, "kb-x")).toThrow(/kb_id/);
+    });
+
+    test("accepts inner PK that includes kb_id (shared-table schemas)", () => {
+      // Implicit in beforeEach scopeA/scopeB, but assert directly.
+      expect(() => new ScopedTabularStorage(sharedStorage, "kb-x")).not.toThrow();
+    });
+
+    test("warns when inner storage does not expose primaryKeyNames", () => {
+      // Custom storage stub that doesn't extend BaseTabularStorage and
+      // therefore has no `primaryKeyNames` field. The constructor should
+      // log a warning but NOT throw.
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const customInner = {
+          // Minimal stub — we never actually call any methods in this test.
+        } as any;
+        expect(() => new ScopedTabularStorage(customInner, "kb-x")).not.toThrow();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toMatch(/primaryKeyNames is not exposed/);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
   describe("getBulk isolation", () => {
     test("getBulk returns only own scope's rows when keys collide across scopes", async () => {
       await scopeA.put({ doc_id: "x", data: "from-A" });
@@ -141,6 +180,39 @@ describe("ScopedTabularStorage", () => {
       expect(emittedKeys).toEqual([{ doc_id: "e1" }, { doc_id: "missing" }]);
       expect(emittedRows).toEqual(result);
       expect(emittedRows.every((r: any) => r.kb_id === undefined)).toBe(true);
+    });
+
+    test("delegates to inner.getBulk in one round trip (IN-tuple WHERE optimization)", async () => {
+      // Contract: ScopedTabularStorage's constructor enforces kb_id is in PK,
+      // so getBulk can safely delegate to the inner's batched IN-tuple form
+      // rather than fanning out per-key. This test asserts that delegation
+      // happens — a regression to per-key fan-out would slow shared-table
+      // production deployments noticeably.
+      await scopeA.put({ doc_id: "fast1", data: "a" });
+      await scopeA.put({ doc_id: "fast2", data: "a" });
+
+      // Note: we assert `inner.getBulk` is called exactly once with all keys.
+      // We intentionally do NOT assert `inner.get` was not called — the
+      // `BaseTabularStorage.getBulk` default implementation fans out to
+      // `this.get` internally for backends without a batched override (e.g.
+      // InMemory). The contract we lock in here is: the scoped wrapper
+      // makes ONE `inner.getBulk(scopedKeys)` call rather than N
+      // `inner.get(...)` calls of its own — which is what unlocks the
+      // IN-tuple WHERE optimization on SQL backends that DO override
+      // `getBulk`. A regression to per-key fan-out from the wrapper would
+      // show as N calls here, not 1.
+      const spy = vi.spyOn(sharedStorage, "getBulk");
+      const result = await scopeA.getBulk([{ doc_id: "fast1" }, { doc_id: "fast2" }] as any);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      const [calledKeys] = spy.mock.calls[0];
+      expect(calledKeys).toEqual([
+        { doc_id: "fast1", kb_id: "kb-a" },
+        { doc_id: "fast2", kb_id: "kb-a" },
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result.every((r: any) => r.kb_id === undefined)).toBe(true);
+      spy.mockRestore();
     });
   });
 
