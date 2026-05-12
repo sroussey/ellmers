@@ -225,7 +225,15 @@ export class AiJob<
    * forwarding every emitted event to the caller-supplied `emit`. The Promise
    * carries no data — output rides on the `finish` event (or accumulated
    * deltas + trailing empty `finish` for streaming capabilities).
+   *
+   * AiJob no longer fits Job<Input, Output>'s `execute(input, ctx): Promise<Output>`
+   * contract because the new dispatch shape is `execute(input, ctx, emit): Promise<void>`.
+   * The storage-queue path that depended on the Job contract was removed in
+   * QueuedExecutionStrategy. AiJob still uses Job's progress-event / status
+   * machinery, so we keep the inheritance but accept the intentional override
+   * signature mismatch.
    */
+  // @ts-expect-error — intentional signature change; see comment above.
   override async execute(
     input: Input,
     context: IJobExecuteContext,
