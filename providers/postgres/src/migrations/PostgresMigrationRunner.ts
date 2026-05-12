@@ -37,6 +37,19 @@ type ConnectablePool = Pool & {
 };
 
 /**
+ * In-process serialization of `run()` calls per `Pool` wrapper. Keyed by
+ * the wrapper object (not the underlying database), so two separate pools
+ * pointing at the same database — or runners in different processes — do
+ * not contend through this map. Cross-instance races are handled by the
+ * bookkeeping PK check below (a 23505 from a concurrent INSERT is caught
+ * and treated as "already applied"). Without this in-process mutex,
+ * multiple runners sharing one pool would each invoke `up()` before the
+ * 23505 was raised. The map is a WeakMap so disposing the pool releases
+ * the entry.
+ */
+const runLocks = new WeakMap<object, Promise<unknown>>();
+
+/**
  * Runs versioned migrations against a PostgreSQL pool.
  *
  * Each migration runs inside a single connection's transaction so the
@@ -47,9 +60,12 @@ type ConnectablePool = Pool & {
  * `connect()` (it is single-client by construction), so we fall back to
  * the raw pool — BEGIN/COMMIT on it still hit the same backing connection.
  *
- * A unique constraint on `(component, version)` makes concurrent runners
- * safe: the loser of a race raises a duplicate-key error (`23505`) and we
- * treat that as "already applied".
+ * Concurrent `run()` calls against the same pool are serialized through a
+ * JS-layer mutex so racing runners see each others' bookkeeping rows before
+ * deciding to invoke `up()`. The unique constraint on `(component, version)`
+ * remains a defense-in-depth check — a 23505 from a separate process (or a
+ * different pool instance backed by the same database) is still treated as
+ * "already applied".
  */
 export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
   constructor(private readonly db: Pool) {}
@@ -91,6 +107,20 @@ export class PostgresMigrationRunner implements IMigrationRunner<Pool> {
   async run(
     migrations: ReadonlyArray<IMigration<Pool>>,
     options: RunMigrationsOptions = {}
+  ): Promise<ReadonlyArray<IMigration<Pool>>> {
+    const key = this.db as unknown as object;
+    const prev = runLocks.get(key) ?? Promise.resolve();
+    const result = prev.then(() => this.runInternal(migrations, options));
+    runLocks.set(
+      key,
+      result.catch(() => undefined)
+    );
+    return result;
+  }
+
+  private async runInternal(
+    migrations: ReadonlyArray<IMigration<Pool>>,
+    options: RunMigrationsOptions
   ): Promise<ReadonlyArray<IMigration<Pool>>> {
     await this.ensureBookkeepingTable();
     const sorted = sortMigrations(migrations);
