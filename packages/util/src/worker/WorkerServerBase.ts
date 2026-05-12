@@ -87,6 +87,15 @@ export class WorkerServerBase {
 
   private functions: Record<string, (...args: any[]) => Promise<any>> = {};
   private streamFunctions: Record<string, (...args: any[]) => AsyncIterable<any>> = {};
+  private runFunctions: Record<
+    string,
+    (
+      input: unknown,
+      model: unknown,
+      signal: AbortSignal,
+      emit: (event: unknown) => void
+    ) => Promise<void>
+  > = {};
   private previewFunctions: Record<string, (input: any, model: any) => Promise<any>> = {};
 
   // Keep track of each request's AbortController
@@ -139,6 +148,7 @@ export class WorkerServerBase {
       type: "ready",
       functions: Object.keys(this.functions),
       streamFunctions: Object.keys(this.streamFunctions),
+      runFunctions: Object.keys(this.runFunctions),
       previewFunctions: Object.keys(this.previewFunctions),
     });
   }
@@ -172,15 +182,36 @@ export class WorkerServerBase {
     this.streamFunctions[name] = fn;
   }
 
+  /**
+   * Register a Promise+emit run function for the new run-fn shape. The function
+   * receives an `emit` callback that posts events as `stream_chunk` messages on
+   * the worker port and resolves with no value when complete. Use this in place
+   * of {@link registerStreamFunction} for newly-ported provider run-fns.
+   */
+  registerRunFunction(
+    name: string,
+    fn: (
+      input: unknown,
+      model: unknown,
+      signal: AbortSignal,
+      emit: (event: unknown) => void
+    ) => Promise<void>
+  ): void {
+    this.runFunctions[name] = fn;
+  }
+
   // Handle messages from the main thread
   async handleMessage(event: { type: string; data: any }) {
-    const { id, type, functionName, args, stream, preview } = event.data;
+    const { id, type, functionName, args, stream, run, preview } = event.data;
     if (type === "abort") {
       return await this.handleAbort(id);
     }
     if (type === "call") {
       if (stream) {
         return await this.handleStreamCall(id, functionName, args);
+      }
+      if (run) {
+        return await this.handleRunCall(id, functionName, args);
       }
       if (preview) {
         return await this.handlePreviewCall(id, functionName, args);
@@ -292,6 +323,36 @@ export class WorkerServerBase {
       }
     } else {
       this.postError(id, `Function ${functionName} not found`);
+    }
+  }
+
+  /**
+   * Handle a Promise+emit run call. Resolves to `undefined` when the run-fn
+   * settles; emitted events are forwarded as `stream_chunk` messages. This is
+   * the new run-fn shape that replaces async-generator stream functions.
+   */
+  async handleRunCall(id: string, functionName: string, [input, model]: [any, any]) {
+    if (!(functionName in this.runFunctions)) {
+      this.postError(id, `Run function ${functionName} not found`);
+      return;
+    }
+    const abortController = new AbortController();
+    this.requestControllers.set(id, abortController);
+    const fn = this.runFunctions[functionName];
+
+    const emit = (event: unknown) => {
+      if (this.completedRequests.has(id)) return;
+      this.postStreamChunk(id, event);
+    };
+
+    try {
+      await fn(input, model, abortController.signal, emit);
+      this.postResult(id, undefined); // signals completion; no payload
+    } catch (error) {
+      this.postError(id, error);
+    } finally {
+      this.requestControllers.delete(id);
+      this.scheduleCompletedRequestCleanup(id);
     }
   }
 
