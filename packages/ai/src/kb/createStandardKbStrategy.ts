@@ -13,7 +13,7 @@ import type {
   ISearchOptions,
   SearchMode,
 } from "@workglow/knowledge-base";
-import { toInsertChunkEntities } from "@workglow/knowledge-base";
+import { chunkText, toInsertChunkEntities } from "@workglow/knowledge-base";
 import type { TypedArray } from "@workglow/util/schema";
 
 import { HierarchicalChunkerTask } from "../task/HierarchicalChunkerTask";
@@ -55,6 +55,14 @@ export interface CreateStandardKbStrategyOptions {
  * `queryEmbeddingModel` / `rerankerModel`) and config fields
  * (`chunkStrategy` / `searchMode`) on every call, so updates to the KB
  * record take effect immediately on the next op.
+ *
+ * Score semantics: results carry `scoreType` matching the retrieval
+ * mode — `"cosine"` for similarity, `"rrf"` for hybrid, `"rerank"` for
+ * both reranker-model and heuristic fallback paths. **Cross-encoder
+ * rerank scores are raw logits**, not probabilities or similarities, and
+ * they are NOT comparable to cosine / BM25 / RRF scores. Always check
+ * `scoreType` before applying a score threshold; the strategy itself
+ * ignores `ISearchOptions.scoreThreshold` in the rerank branch.
  *
  * For custom RAG flows (per-tenant scoping, alternative chunkers, etc.)
  * write your own `IKbAiStrategy` — this factory is the "good defaults"
@@ -108,13 +116,28 @@ export function createStandardKbStrategy(
 
   return {
     async ingest(kb, doc): Promise<Document> {
-      // Single write — `upsertDocument` returns the stored doc with the
-      // auto-generated id assigned, so we don't need a second round-trip
-      // when `doc.doc_id` is initially missing.
+      // Order matters: delete old chunks BEFORE rewriting the document.
+      // If upsertDocument or any later step fails partway through, the
+      // worst the KB can be left in is "doc row preserved, chunks
+      // removed" rather than "new doc row pointing at old stale chunks"
+      // — chunks always reflect the in-flight ingest, never a previous
+      // version. The text-index removal piggy-backs on
+      // deleteChunksForDocument, so RRF rankings can't end up surfacing
+      // chunks that no longer exist either.
+      const initialDocId = doc.doc_id;
+      if (initialDocId) {
+        await kb.deleteChunksForDocument(initialDocId);
+      }
       const stored = await kb.upsertDocument(doc);
       const docId = stored.doc_id!;
-      // Replace existing chunks for this doc so re-ingest is idempotent.
-      await kb.deleteChunksForDocument(docId);
+      if (!initialDocId) {
+        // Fresh-id case: chunks under this new id can't pre-exist in a
+        // well-behaved storage backend, but call delete unconditionally
+        // so the post-condition ("after ingest returns, the doc owns
+        // exactly the newly-embedded chunks") holds even if a backend
+        // recycles ids or a stale row survived a prior aborted run.
+        await kb.deleteChunksForDocument(docId);
+      }
 
       const chunker = new HierarchicalChunkerTask();
       const chunkResult = await chunker.run({
@@ -204,12 +227,18 @@ export function createStandardKbStrategy(
           });
       if (firstStage.length === 0) return [];
 
-      const docs = firstStage.map((c) => {
-        const meta = c.metadata as Record<string, unknown> | undefined;
-        const text = meta?.text;
-        return typeof text === "string" ? text : JSON.stringify(meta ?? {});
-      });
+      // `chunkText` enforces the metadata.text contract — chunks missing
+      // text throw with the offending chunk_id rather than silently
+      // feeding `JSON.stringify(metadata)` to the reranker, which would
+      // produce meaningless relevance scores.
+      const docs = firstStage.map(chunkText);
 
+      // Note: `scoreThreshold` is intentionally NOT honored in the rerank
+      // branch. The first stage already filtered by score; cross-encoder
+      // logits live on a completely different scale (often negative) and
+      // a cosine-style threshold would either drop everything or nothing.
+      // Callers wanting a rerank-relative cutoff should clip on the
+      // returned `score` themselves after inspecting `scoreType`.
       if (kb.rerankerModel) {
         const result = await new TextRerankerTask().run({
           query,
@@ -225,12 +254,15 @@ export function createStandardKbStrategy(
           return {
             ...candidate,
             score: typeof newScore === "number" ? newScore : candidate.score,
+            scoreType: "rerank" as const,
           };
         });
       }
 
       // No reranker model configured but mode is "rerank" — fall back to a
-      // local heuristic so callers still get a usable ordering.
+      // local heuristic so callers still get a usable ordering. We still
+      // tag the result with scoreType: "rerank" because callers asked for
+      // rerank semantics; the score scale isn't comparable to cosine/RRF.
       const heuristic = await new RerankerTask().run({
         query,
         chunks: docs,
@@ -246,6 +278,7 @@ export function createStandardKbStrategy(
         return {
           ...candidate,
           score: newScores[rank] ?? candidate.score,
+          scoreType: "rerank" as const,
         };
       });
     },

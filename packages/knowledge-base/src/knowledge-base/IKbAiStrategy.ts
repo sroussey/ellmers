@@ -50,6 +50,15 @@ export interface IKbAiStrategy {
    * Run a text query and return matching chunks. The strategy picks the
    * retrieval flavor (similarity, hybrid, reranker, plain text) — callers
    * don't choose per-call.
+   *
+   * The returned `score` is only comparable within a single result list,
+   * and only when results share a `scoreType`. The standard strategy
+   * tags rerank results with `scoreType: "rerank"` — cross-encoder
+   * logits are NOT comparable to cosine/BM25/RRF scores, so callers
+   * MUST inspect `scoreType` before applying any score threshold. In
+   * particular, `ISearchOptions.scoreThreshold` is not honored under
+   * `searchMode === "rerank"` because there's no meaningful default
+   * threshold across rerankers.
    */
   search(
     kb: IKbStrategyTarget,

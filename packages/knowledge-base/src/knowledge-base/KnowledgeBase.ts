@@ -360,6 +360,19 @@ export class KnowledgeBase {
   // Strategy installation
   // ===========================================================================
 
+  /**
+   * Install (or replace) the AI strategy used by `upsert`/`delete`/`search`.
+   *
+   * Replacing the strategy does NOT affect operations already in flight.
+   * Each public op (`upsert`/`delete`/`search`/`reindex`) resolves its
+   * strategy at entry via {@link requireStrategy} and holds that reference
+   * for its lifetime; a concurrent `setAiStrategy(B)` mid-`upsert(A)`
+   * leaves the in-progress upsert running on strategy A and routes the
+   * next public op to strategy B.
+   *
+   * Pass `undefined` to detach the strategy — subsequent public-op calls
+   * throw with a setup hint instead of running.
+   */
   setAiStrategy(strategy: IKbAiStrategy | undefined): void {
     this.aiStrategy = strategy;
   }
@@ -368,6 +381,14 @@ export class KnowledgeBase {
     return this.aiStrategy;
   }
 
+  /**
+   * Snapshot the currently installed strategy or throw if none.
+   *
+   * Returns the field value as-is — callers should hold the returned
+   * reference for the duration of one public op so a concurrent
+   * `setAiStrategy(...)` doesn't swap the strategy mid-operation. See
+   * {@link setAiStrategy} for the full concurrency contract.
+   */
   private requireStrategy(forOp: string): IKbAiStrategy {
     if (!this.aiStrategy) {
       throw new Error(
@@ -385,29 +406,37 @@ export class KnowledgeBase {
   /**
    * Ingest a document end-to-end: chunk + embed + write. Delegates to the
    * installed strategy.
+   *
+   * The strategy is snapshotted at entry: a concurrent `setAiStrategy(...)`
+   * during the upsert won't redirect the in-flight call to the new
+   * strategy. See {@link setAiStrategy}.
    */
   async upsert(doc: Document): Promise<Document> {
-    return this.requireStrategy("upsert").ingest(this, doc);
+    const strategy = this.requireStrategy("upsert");
+    return strategy.ingest(this, doc);
   }
 
   /**
-   * Remove a document and its chunks. Delegates to the installed strategy.
-   * Method name uses `[Symbol.iterator]`-style indirection because `delete`
-   * is a JS keyword — call it via `kb.delete(...)` directly; TypeScript
-   * accepts the method name even though the bare `delete` operator does
-   * something different.
+   * Remove a document and its chunks. Delegates to the installed strategy
+   * (snapshotted at entry — see {@link setAiStrategy}).
    */
   async delete(doc_id: string): Promise<void> {
-    return this.requireStrategy("delete").delete(this, doc_id);
+    const strategy = this.requireStrategy("delete");
+    return strategy.delete(this, doc_id);
   }
 
   /**
    * Run a text query. Retrieval flavor (text / similarity / hybrid /
    * rerank) is decided by the installed strategy — typically derived from
    * this KB's `searchMode` field.
+   *
+   * The strategy is snapshotted at entry: a concurrent `setAiStrategy(...)`
+   * during the search won't redirect the in-flight call. See
+   * {@link setAiStrategy}.
    */
   async search(query: string, options?: ISearchOptions): Promise<ChunkSearchResult[]> {
-    return this.requireStrategy("search").search(this, query, options);
+    const strategy = this.requireStrategy("search");
+    return strategy.search(this, query, options);
   }
 
   // ===========================================================================
@@ -742,6 +771,11 @@ export class KnowledgeBase {
 
   /**
    * Re-index every document by re-running ingest. Requires a strategy.
+   *
+   * The strategy is captured once at entry — every doc in the run uses
+   * the same strategy, even if `setAiStrategy(...)` is called concurrently
+   * partway through the loop. The next `reindex()` call would pick up
+   * the new strategy. See {@link setAiStrategy}.
    */
   async reindex(): Promise<number> {
     const strategy = this.requireStrategy("reindex");
