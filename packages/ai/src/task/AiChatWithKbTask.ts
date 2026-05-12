@@ -6,12 +6,14 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
+import { createEmitQueue } from "../capability/emitQueue";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -525,23 +527,35 @@ export class AiChatWithKbTask extends StreamingAiTask<
         const turnJobInput = await this.getJobInput(perTurnInput);
         const strategy = getAiProviderRegistry().getStrategy(model);
 
-        for await (const event of strategy.executeStream(
-          turnJobInput as any,
-          context,
-          this.runConfig.runnerId
-        )) {
+        const queue = createEmitQueue<StreamEvent<AiChatWithKbTaskOutput>>();
+        const emit: AiEmit<AiChatWithKbTaskOutput> = (event) => {
           if (event.type === "text-delta") {
             assistantText += (event as any).textDelta;
-            yield {
+            queue.push({
               ...event,
               port: (event as any).port ?? "text",
-            } as StreamEvent<AiChatWithKbTaskOutput>;
+            } as StreamEvent<AiChatWithKbTaskOutput>);
           } else if (event.type === "finish") {
             // swallow — we emit our own finish at the end
           } else {
-            yield event as StreamEvent<AiChatWithKbTaskOutput>;
+            queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
           }
+        };
+        const runPromise = strategy
+          .execute(
+            turnJobInput as any,
+            context,
+            this.runConfig.runnerId,
+            emit as AiEmit<TaskOutput>
+          )
+          .then(
+            () => queue.close(),
+            (err) => queue.fail(err)
+          );
+        for await (const event of queue.iterable) {
+          yield event;
         }
+        await runPromise;
       }
 
       const assistantMsg: ChatMessage = {
