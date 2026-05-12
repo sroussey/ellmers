@@ -37,7 +37,7 @@ import {
 } from "@workglow/huggingface-transformers/ai-runtime";
 import { createKnowledgeBase, KnowledgeBase } from "@workglow/knowledge-base";
 import { getTaskQueueRegistry, setTaskQueueRegistry, Workflow } from "@workglow/task-graph";
-import { setLogger } from "@workglow/util";
+import { ResourceScope, setLogger } from "@workglow/util";
 import { join } from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 export { FileLoaderTask } from "@workglow/tasks";
@@ -59,6 +59,10 @@ describe("End-to-End RAG Pipeline", () => {
   const sampleFileName = "history_of_the_united_states.md";
 
   let kb: KnowledgeBase;
+  // Shared across every workflow.run() in this file so loaded models stay
+  // warm until afterAll. Without this, each workflow's auto-created scope
+  // disposes (unloads) every model the workflow used as soon as run() returns.
+  let resourceScope: ResourceScope;
   const logger = getTestingLogger();
   setLogger(logger);
 
@@ -66,9 +70,11 @@ describe("End-to-End RAG Pipeline", () => {
     // Setup task queue and model repository
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
     await registerHuggingfaceLocalModels();
+
+    resourceScope = new ResourceScope();
 
     // Create unified KnowledgeBase with 1024 dimensions for Qwen3 model
     kb = await createKnowledgeBase({
@@ -82,7 +88,8 @@ describe("End-to-End RAG Pipeline", () => {
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
-    clearPipelineCache();
+    await resourceScope.disposeAll();
+    await clearPipelineCache();
   });
 
   it("should ingest document through complete pipeline", async () => {
@@ -121,7 +128,7 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(ingestionWorkflow.error).toBe("");
 
-    const result = await ingestionWorkflow.run();
+    const result = await ingestionWorkflow.run({}, { resourceScope });
 
     expect(result).toBeDefined();
     expect(result.count).toBeGreaterThan(0);
@@ -161,7 +168,7 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(retrievalWorkflow.error).toBe("");
 
-    const result = (await retrievalWorkflow.run()) as ContextBuilderTaskOutput;
+    const result = (await retrievalWorkflow.run({}, { resourceScope })) as ContextBuilderTaskOutput;
 
     expect(result).toBeDefined();
     expect(result.context).toBeDefined();
@@ -219,7 +226,7 @@ describe("End-to-End RAG Pipeline", () => {
         scoreThreshold: 0.0,
       });
 
-      const result = (await workflow.run()) as ChunkRetrievalTaskOutput;
+      const result = (await workflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
 
       expect(result.chunks).toBeDefined();
 
@@ -257,7 +264,7 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(expanderWorkflow.error).toBe("");
 
-    const expanderResult = (await expanderWorkflow.run()) as QueryExpanderTaskOutput;
+    const expanderResult = (await expanderWorkflow.run({}, { resourceScope })) as QueryExpanderTaskOutput;
 
     expect(expanderResult).toBeDefined();
     expect(expanderResult.query).toBeDefined();
@@ -283,7 +290,7 @@ describe("End-to-End RAG Pipeline", () => {
           topK: 2,
         });
 
-      const result = (await retrievalWorkflow.run()) as RerankerTaskOutput;
+      const result = (await retrievalWorkflow.run({}, { resourceScope })) as RerankerTaskOutput;
       totalChunksFound += result.count;
     }
 
@@ -303,7 +310,7 @@ describe("End-to-End RAG Pipeline", () => {
       scoreThreshold: 0.0,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run()) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
     expect(retrievalResult.chunks.length).toBeGreaterThan(0);
 
     const formats = ["simple", "numbered", "xml", "markdown"] as const;
@@ -319,7 +326,7 @@ describe("End-to-End RAG Pipeline", () => {
 
       expect(contextWorkflow.error).toBe("");
 
-      const contextResult = (await contextWorkflow.run()) as ContextBuilderTaskOutput;
+      const contextResult = (await contextWorkflow.run({}, { resourceScope })) as ContextBuilderTaskOutput;
 
       expect(contextResult.context).toBeDefined();
       expect(contextResult.chunksUsed).toBeGreaterThan(0);
@@ -349,7 +356,7 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(hybridWorkflow.error).toBe("");
 
-    const result = (await hybridWorkflow.run()) as ChunkRetrievalTaskOutput;
+    const result = (await hybridWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
 
     expect(result).toBeDefined();
     expect(result.chunks).toBeDefined();
@@ -383,7 +390,7 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(hierarchyWorkflow.error).toBe("");
 
-    const result = (await hierarchyWorkflow.run()) as HierarchyJoinTaskOutput;
+    const result = (await hierarchyWorkflow.run({}, { resourceScope })) as HierarchyJoinTaskOutput;
 
     expect(result).toBeDefined();
     expect(result.metadata).toBeDefined();

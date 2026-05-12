@@ -6,5 +6,5 @@
 
 export async function clearHftInlinePipelineCache(): Promise<void> {
   const { clearPipelineCache } = await import("./HFT_Pipeline");
-  clearPipelineCache();
+  await clearPipelineCache();
 }
