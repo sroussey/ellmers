@@ -61,7 +61,28 @@ export type AiProviderStreamFn<
 ) => AsyncIterable<StreamEvent<Output>>;
 
 /**
- * A capability-set registration for a provider streaming run function.
+ * Promise+emit run-fn shape. Output flows through `emit`; the Promise carries
+ * no data and signals completion only. For one-shot capabilities the run-fn
+ * emits a single `finish` event whose `data` carries the result. For streaming
+ * capabilities the run-fn emits delta events and ends with an empty `finish`.
+ * The run-fn MUST NOT accumulate — accumulation lives only at terminal
+ * consumer sites (`AiTask.execute`, `StreamProcessor` `ctx.shouldAccumulate`).
+ */
+export type AiProviderRunFn<
+  Input extends TaskInput = TaskInput,
+  Output extends TaskOutput = TaskOutput,
+  Model extends ModelConfig = ModelConfig,
+> = (
+  input: Input,
+  model: Model | undefined,
+  signal: AbortSignal,
+  emit: AiEmit<Output>,
+  outputSchema?: JsonSchema,
+  sessionId?: string
+) => Promise<void>;
+
+/**
+ * A capability-set registration for a provider Promise+emit run function.
  *
  * `serves` is the closed set of {@link Capability} values that the run function can
  * fulfil in a single invocation. The dispatcher matches a task's `requires` array
@@ -71,14 +92,31 @@ export type AiProviderStreamFn<
  *
  * Example:
  * ```ts
- * { serves: ["text.generation"], runFn: streamPlainGeneration }
- * { serves: ["text.generation", "tool-use"], runFn: streamGenerationWithTools }
+ * { serves: ["text.generation"], runFn: runPlainGeneration }
+ * { serves: ["text.generation", "tool-use"], runFn: runGenerationWithTools }
  * ```
  *
  * A `requires: ["text.generation"]` lookup picks the plain entry; a
  * `requires: ["text.generation", "tool-use"]` lookup picks the tool-aware one.
  */
 export interface AiProviderRunFnRegistration<
+  Input extends TaskInput = TaskInput,
+  Output extends TaskOutput = TaskOutput,
+  Model extends ModelConfig = ModelConfig,
+> {
+  readonly serves: readonly Capability[];
+  readonly runFn: AiProviderRunFn<Input, Output, Model>;
+}
+
+/**
+ * A capability-set registration for a legacy async-generator stream run
+ * function. Used only through {@link AiProviderRegistry.registerLegacyStreamFn},
+ * which wraps the generator with a pure event forwarder so dispatch always
+ * sees the new {@link AiProviderRunFn} shape.
+ *
+ * Migration only. Removed once every provider moves to {@link AiProviderRunFn}.
+ */
+export interface AiProviderLegacyStreamFnRegistration<
   Input extends TaskInput = TaskInput,
   Output extends TaskOutput = TaskOutput,
   Model extends ModelConfig = ModelConfig,
@@ -239,7 +277,7 @@ export class AiProviderRegistry {
   }
 
   /**
-   * Registers a streaming run function under a capability-set for the given
+   * Registers a Promise+emit run function under a capability-set for the given
    * provider. Multiple registrations per provider are supported -- dispatch
    * picks the smallest `serves` set that is a superset of the task's `requires`.
    *
@@ -247,6 +285,13 @@ export class AiProviderRegistry {
    * @param registration - `{ serves, runFn }` describing what this run function fulfils
    */
   registerRunFn(providerName: string, registration: AiProviderRunFnRegistration): void {
+    this.registerRunFnInternal(providerName, registration);
+  }
+
+  private registerRunFnInternal(
+    providerName: string,
+    registration: AiProviderRunFnRegistration
+  ): void {
     const list = this.runFnsByProvider.get(providerName);
     if (list) {
       list.push(registration);
@@ -256,10 +301,41 @@ export class AiProviderRegistry {
   }
 
   /**
-   * Registers a worker-proxied streaming run function under a capability-set.
-   * The proxy delegates to the worker by streaming `WorkerManager.callWorkerStreamFunction`
-   * keyed by {@link workerKeyForServes}(serves) so the worker-side `registerOnWorkerServer`
-   * resolves to the same registration.
+   * Registers an old-shape (async-generator) run-fn under a capability set.
+   * Wraps the generator with a pure event forwarder: each yielded event is
+   * passed to `emit`; the Promise resolves when the generator completes. No
+   * accumulation, no materialization — the new-shape contract maps directly
+   * onto the old-shape termination convention (the generator emits its own
+   * `finish` event and then ends iteration).
+   *
+   * Migration only. Once every provider moves to {@link registerRunFn}, both
+   * this method and {@link AiProviderStreamFn} are deleted.
+   */
+  registerLegacyStreamFn(
+    providerName: string,
+    registration: AiProviderLegacyStreamFnRegistration
+  ): void {
+    const oldFn = registration.runFn;
+    const adapted: AiProviderRunFn = async (
+      input,
+      model,
+      signal,
+      emit,
+      outputSchema,
+      sessionId
+    ) => {
+      for await (const event of oldFn(input, model, signal, outputSchema, sessionId)) {
+        emit(event);
+      }
+    };
+    this.registerRunFnInternal(providerName, { serves: registration.serves, runFn: adapted });
+  }
+
+  /**
+   * Registers a worker-proxied run function under a capability-set.
+   * Stubbed in this commit; restored in plan Task 8 to delegate via
+   * `WorkerManager.callWorkerRunFunction` keyed by
+   * {@link workerKeyForServes}(serves).
    *
    * @param providerName - The provider name the proxy is registered under
    * @param serves - The capability-set this proxy fulfils (must match the
@@ -268,29 +344,30 @@ export class AiProviderRegistry {
    */
   registerAsWorkerRunFn(providerName: string, serves: readonly Capability[]): void {
     const key = workerKeyForServes(serves);
-    const proxy: AiProviderStreamFn = async function* (
+    const proxy: AiProviderRunFn = async (
       input: TaskInput,
       model: ModelConfig | undefined,
       signal: AbortSignal,
+      emit: AiEmit,
       outputSchema?: JsonSchema,
       sessionId?: string
-    ) {
+    ): Promise<void> => {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
-      yield* workerManager.callWorkerStreamFunction<StreamEvent<TaskOutput>>(
+      await workerManager.callWorkerRunFunction<StreamEvent<TaskOutput>>(
         providerName,
         key,
         [input, model, outputSchema, sessionId],
-        { signal }
+        { signal, emit }
       );
     };
-    this.registerRunFn(providerName, { serves, runFn: proxy });
+    this.registerRunFnInternal(providerName, { serves, runFn: proxy });
   }
 
   /**
-   * Resolves a registered streaming run function for `providerName` whose
-   * `serves` set is a superset of `requires`. When multiple registrations
-   * match, the most-specific one wins (smallest `serves.length`); ties are
-   * broken by registration order.
+   * Resolves a registered run function for `providerName` whose `serves` set
+   * is a superset of `requires`. When multiple registrations match, the
+   * most-specific one wins (smallest `serves.length`); ties are broken by
+   * registration order.
    *
    * Empty `requires` matches every registration; the first registered (smallest
    * after the stable sort) is returned.
@@ -300,7 +377,7 @@ export class AiProviderRegistry {
   getRunFnFor<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
     providerName: string,
     requires: readonly Capability[]
-  ): AiProviderStreamFn<Input, Output> | undefined {
+  ): AiProviderRunFn<Input, Output> | undefined {
     const list = this.runFnsByProvider.get(providerName);
     if (!list || list.length === 0) {
       return undefined;
@@ -319,7 +396,7 @@ export class AiProviderRegistry {
       if (lenDiff !== 0) return lenDiff;
       return a.index - b.index;
     });
-    return matches[0].reg.runFn as AiProviderStreamFn<Input, Output>;
+    return matches[0].reg.runFn as AiProviderRunFn<Input, Output>;
   }
 
   /**

@@ -531,6 +531,89 @@ export class WorkerManager {
       this.endWorkerActivity(workerName);
     }
   }
+
+  /**
+   * Calls a new-shape run function on a registered worker. Returns
+   * `Promise<void>`; the run-fn's emitted events arrive via the caller-supplied
+   * `emit` callback (passed via `options.emit`). The Promise resolves on the
+   * worker's terminal `result` message and rejects on `error`.
+   *
+   * Wire protocol: same `stream_chunk` messages as {@link callWorkerStreamFunction}
+   * for events; the terminal `result` message carries `data: undefined` and
+   * signals completion. `postMessage` ordering on the same port guarantees all
+   * `stream_chunk` messages arrive before the terminal `result`, so the local
+   * message handler drains them before resolving.
+   */
+  async callWorkerRunFunction<T>(
+    workerName: string,
+    functionName: string,
+    args: unknown[],
+    options: { signal?: AbortSignal; emit: (event: T) => void }
+  ): Promise<void> {
+    await this.ensureWorkerReady(workerName);
+    const worker = this.workers.get(workerName);
+    if (!worker) throw new Error(`Worker ${workerName} not found.`);
+    this.beginWorkerActivity(workerName);
+
+    try {
+      const requestId = crypto.randomUUID();
+      let resolveFn: () => void;
+      let rejectFn: (e: unknown) => void;
+      const completion = new Promise<void>((res, rej) => {
+        resolveFn = res;
+        rejectFn = rej;
+      });
+
+      const handleMessage = (event: MessageEvent) => {
+        const { id, type, data } = event.data;
+        if (id !== requestId) return;
+        if (type === "stream_chunk") {
+          options.emit(data as T);
+        } else if (type === "result") {
+          // `result` here carries undefined data — the protocol uses the same
+          // terminal message as today's stream path, with `data: undefined`
+          // indicating completion.
+          resolveFn();
+        } else if (type === "error") {
+          const err =
+            typeof data === "object" && data !== null
+              ? Object.assign(new Error(data.message ?? String(data)), {
+                  name: data.name ?? "Error",
+                })
+              : new Error(String(data));
+          rejectFn(err);
+        }
+      };
+
+      const handleAbort = () => {
+        worker.postMessage({ id: requestId, type: "abort" });
+      };
+
+      const cleanup = () => {
+        worker.removeEventListener("message", handleMessage);
+        options.signal?.removeEventListener("abort", handleAbort);
+      };
+
+      worker.addEventListener("message", handleMessage);
+      if (options.signal) {
+        if (options.signal.aborted) {
+          cleanup();
+          throw new Error("Operation aborted");
+        }
+        options.signal.addEventListener("abort", handleAbort, { once: true });
+      }
+
+      worker.postMessage({ id: requestId, type: "call", functionName, args, run: true });
+
+      try {
+        await completion;
+      } finally {
+        cleanup();
+      }
+    } finally {
+      this.endWorkerActivity(workerName);
+    }
+  }
 }
 
 export const WORKER_MANAGER = createServiceToken<WorkerManager>("worker.manager");
