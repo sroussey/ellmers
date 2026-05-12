@@ -245,10 +245,13 @@ export class KnowledgeBase {
    * after {@link installTextIndex} on a KB that already has chunks, or after
    * a tokenizer / field-weight configuration change.
    *
-   * Atomic: snapshots the index state via `toJSON()` before mutating, and
-   * rolls back via `fromJSON()` on any failure (`getAll`, `clear`, or `add`).
-   * The previous index contents are preserved unless this method returns
-   * successfully.
+   * Atomic: indices that expose the optional `beginRebuild`/`commitRebuild`/
+   * `abortRebuild` lifecycle hooks (e.g. backends with server-side state
+   * like a Postgres FTS table) wrap the rebuild in those hooks so the
+   * commit is a database transaction. Indices that omit the hooks (e.g.
+   * the in-memory `BM25Index`) fall back to the existing `toJSON()` /
+   * `fromJSON()` snapshot rollback. Either way, the previous index
+   * contents are preserved unless this method returns successfully.
    */
   async reindexText(): Promise<void> {
     const index = this.textIndex;
@@ -259,10 +262,37 @@ export class KnowledgeBase {
       const fields = chunkTextFields(entity.metadata);
       if (fields) writes.push({ chunkId: entity.chunk_id, docId: entity.doc_id, fields });
     }
+
+    const hasTxnHooks =
+      typeof index.beginRebuild === "function" &&
+      typeof index.commitRebuild === "function" &&
+      typeof index.abortRebuild === "function";
+
+    if (hasTxnHooks) {
+      await index.beginRebuild!();
+      try {
+        await index.clear();
+        for (const w of writes) {
+          await index.add(w.chunkId, w.docId, w.fields);
+        }
+        await index.commitRebuild!();
+      } catch (err) {
+        try {
+          await index.abortRebuild!();
+        } catch {
+          // Suppress abort failures; original error is what callers care about.
+        }
+        throw err;
+      }
+      return;
+    }
+
     const snapshot = index.toJSON();
     try {
-      index.clear();
-      for (const w of writes) index.add(w.chunkId, w.docId, w.fields);
+      await index.clear();
+      for (const w of writes) {
+        await index.add(w.chunkId, w.docId, w.fields);
+      }
     } catch (err) {
       index.fromJSON(snapshot);
       throw err;
@@ -281,21 +311,28 @@ export class KnowledgeBase {
     const index = this.textIndex;
     if (!index) return;
     const fields = chunkTextFields(stored.metadata);
-    try {
-      if (fields) {
-        index.add(stored.chunk_id, stored.doc_id, fields);
-      } else {
-        // Chunk has no indexable text — drop any stale postings from a
-        // prior version that did. Required for upsert correctness when text
-        // is cleared on update.
-        index.remove(stored.chunk_id);
-      }
-    } catch (err) {
+    const warn = (err: unknown): void => {
       console.warn(
         `KnowledgeBase[${this.name}]: text index write failed for chunk ${stored.chunk_id}; ` +
           `index is now stale for this chunk. Call kb.reindexText() to recover. ` +
           `Error: ${err instanceof Error ? err.message : String(err)}`
       );
+    };
+    try {
+      const result = fields
+        ? index.add(stored.chunk_id, stored.doc_id, fields)
+        : // Chunk has no indexable text — drop any stale postings from a
+          // prior version that did. Required for upsert correctness when text
+          // is cleared on update.
+          index.remove(stored.chunk_id);
+      // Backends with server-side state return a Promise; we still want
+      // fire-and-forget semantics (a failed mirror must not fail the upsert),
+      // so attach a catch instead of awaiting.
+      if (result && typeof (result as Promise<unknown>).then === "function") {
+        (result as Promise<unknown>).catch(warn);
+      }
+    } catch (err) {
+      warn(err);
     }
   }
 
@@ -485,7 +522,9 @@ export class KnowledgeBase {
    */
   async deleteChunksForDocument(doc_id: string): Promise<void> {
     await this.chunkStorage.deleteSearch({ doc_id });
-    this.textIndex?.removeByDocument(doc_id);
+    if (this.textIndex) {
+      await this.textIndex.removeByDocument(doc_id);
+    }
   }
 
   /**
@@ -568,7 +607,9 @@ export class KnowledgeBase {
 
     const [vectorResults, textResults] = await Promise.all([
       this.similaritySearch(query, { topK: poolSize, filter }),
-      Promise.resolve(index.search(textQuery, { topK: poolSize })),
+      Promise.resolve(index.search(textQuery, { topK: poolSize })) as Promise<
+        Awaited<ReturnType<ITextIndex["search"]>>
+      >,
     ]);
 
     const vectorWeightClamped = Number.isFinite(vectorWeight)
@@ -658,7 +699,7 @@ export class KnowledgeBase {
     const { topK = 10, filter, candidatePoolMultiplier = 2 } = options;
     const safePoolMultiplier = Math.max(1, candidatePoolMultiplier);
     const poolSize = filter ? Math.max(topK, Math.ceil(topK * safePoolMultiplier)) : topK;
-    const hits = index.search(query, { topK: poolSize });
+    const hits = await index.search(query, { topK: poolSize });
     if (hits.length === 0) return [];
 
     const hydrated = await this.chunkStorage.getBulk(
@@ -814,7 +855,9 @@ export class KnowledgeBase {
    */
   async clearChunks(): Promise<void> {
     await this.chunkStorage.deleteAll();
-    this.textIndex?.clear();
+    if (this.textIndex) {
+      await this.textIndex.clear();
+    }
   }
 
   /**
