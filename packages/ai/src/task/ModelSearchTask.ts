@@ -8,8 +8,8 @@ import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
-import { collectStream } from "../capability/collectStream";
 import type { ModelRecord } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
@@ -156,7 +156,9 @@ export class ModelSearchTask extends Task<
         `Provider "${input.provider}" has no run function serving "provider.model-search".`
       );
     }
-    return collectStream<ModelSearchTaskOutput>(runFn(input, undefined, context.signal));
+    const { emit, result } = accumulatingEmit<ModelSearchTaskOutput>();
+    await runFn(input, undefined, context.signal, emit);
+    return result();
   }
 }
 
