@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export * from "./accumulatingEmit";
 export * from "./AiEmit";
 export * from "./bridgeProgress";
 export * from "./Capabilities";
