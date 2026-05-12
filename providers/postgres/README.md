@@ -6,6 +6,7 @@ Postgres backends for @workglow/storage and @workglow/job-queue.
 
 - Postgres implementation of `@workglow/storage` interfaces
 - Postgres implementation of `@workglow/job-queue` interfaces
+- Postgres-native `ITextIndex` for `@workglow/knowledge-base` hybrid search
 - Persistent storage for tasks, vectors, and queues
 
 ## Installation
@@ -27,6 +28,33 @@ import { PostgresQueueStorage } from "@workglow/postgres/job-queue";
 const storage = new PostgresTabularStorage(connectionConfig);
 const queue = new PostgresQueueStorage(connectionConfig);
 ```
+
+### Postgres-native hybrid search
+
+`PostgresFtsTextIndex` is an `ITextIndex` backed by a single side table per
+KB indexed by a GIN `tsvector` (Postgres FTS). Plug it into a
+`KnowledgeBase` to get `kb.hybridSearch()` / `kb.textSearch()` without
+loading every chunk into memory at reindex time.
+
+```typescript
+import { createKnowledgeBase } from "@workglow/knowledge-base";
+import { PostgresFtsTextIndex } from "@workglow/postgres/text";
+
+const textIndex = new PostgresFtsTextIndex(pool, "my_kb_fts");
+// One-time DDL: CREATE TABLE + GIN index, idempotent.
+await textIndex.setupDatabase();
+
+const kb = await createKnowledgeBase({
+  name: "my-kb",
+  vectorDimensions: 768,
+  textIndex,
+});
+```
+
+`reindexText` wraps the rebuild in a Postgres transaction via the
+`ITextIndex.beginRebuild` / `commitRebuild` / `abortRebuild` hooks, so a
+failed rebuild rolls back atomically. `toJSON` / `fromJSON` are no-ops:
+the table is the snapshot.
 
 ## License
 
