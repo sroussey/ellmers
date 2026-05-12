@@ -98,7 +98,7 @@ export class QueryExpanderTask extends Task<
    */
   public static readonly requires: readonly Capability[] = [
     "text.generation",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Query Expander";
   public static override description = "Expand queries to improve retrieval coverage";

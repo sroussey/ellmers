@@ -6,9 +6,8 @@
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { Capability } from "../capability/Capabilities";
 import {
   DataPortSchema,
   FromSchema,
@@ -16,6 +15,7 @@ import {
   TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeSingleOrArray } from "./base/AiTaskSchemas";
 
 const inputSchema = {
@@ -82,8 +82,7 @@ export class ChunkVectorUpsertTask extends Task<
 > {
   public static override type = "ChunkVectorUpsertTask";
   /** Pure-compute upsert task — uses storage, not a provider capability. */
-  public static readonly requires: readonly Capability[] =
-    [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Document";
   public static override title = "Add to Vector Store";
   public static override description =

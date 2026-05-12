@@ -55,9 +55,7 @@ export class DownloadModelTask extends AiTask<
    * `DownloadModelTask` for cloud models surfaces as a runtime "no run-fn
    * for provider serving model.download" error.
    */
-  public static override readonly requires: readonly Capability[] = [
-    "model.download",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["model.download"] as const satisfies Capability[];
 
   /**
    * Provider-lifecycle override: `requires: ["model.download"]` routes the

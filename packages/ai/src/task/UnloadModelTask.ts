@@ -55,9 +55,7 @@ export class UnloadModelTask extends AiTask<
    * one and `UnloadModelTask` for cloud models is a no-op (or surfaces as a
    * runtime "no run-fn for provider serving model.unload" error).
    */
-  public static override readonly requires: readonly Capability[] = [
-    "model.unload",
-  ] as const satisfies readonly Capability[];
+  public static override readonly requires = ["model.unload"] as const satisfies Capability[];
 
   /**
    * Provider-lifecycle override: `requires: ["model.unload"]` routes the

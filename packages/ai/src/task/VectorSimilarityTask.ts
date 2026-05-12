@@ -104,8 +104,7 @@ export class VectorSimilarityTask extends GraphAsTask<
 > {
   static override readonly type = "VectorSimilarityTask";
   /** Pure-compute vector similarity — no provider capability required. */
-  public static readonly requires: readonly Capability[] =
-    [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   static override readonly category = "Vector";
   static override readonly title = "Vector Similarity";
   public static override description =

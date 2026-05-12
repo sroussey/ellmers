@@ -86,9 +86,9 @@ export class ModelInfoTask extends AiTask<
 > {
   public static override type = "ModelInfoTask";
   /** Capabilities required of the model; gated in {@link AiTask.execute}. */
-  public static override readonly requires: readonly Capability[] = [
+  public static override readonly requires = [
     "provider.model-info",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   public static override category = "AI Model";
   public static override cacheable = false;
   public static override title = "Model Info";

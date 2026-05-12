@@ -6,8 +6,8 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
@@ -84,8 +84,7 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
    * capability gating; the audit test in `index.test.ts` only inspects the
    * field shape.
    */
-  public static readonly requires: readonly Capability[] =
-    [] as const satisfies readonly Capability[];
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =

@@ -212,9 +212,7 @@ describe("AiTask strict capability gating", () => {
   it("throws when model.capabilities is missing a capability the task requires", async () => {
     class GatedTask extends AiTask {
       static override readonly type = "GatedTestTask";
-      static override readonly requires = [
-        "text.generation",
-      ] as const satisfies readonly Capability[];
+      static override readonly requires = ["text.generation"] as const satisfies Capability[];
       static override inputSchema() {
         return taskInputSchema;
       }
@@ -259,9 +257,7 @@ describe("AiTask strict capability gating", () => {
 
       class PassingTask extends AiTask {
         static override readonly type = "PassingTestTask";
-        static override readonly requires = [
-          "text.embedding",
-        ] as const satisfies readonly Capability[];
+        static override readonly requires = ["text.embedding"] as const satisfies Capability[];
         static override inputSchema() {
           return taskInputSchema;
         }

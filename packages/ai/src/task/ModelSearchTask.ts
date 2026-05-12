@@ -124,7 +124,7 @@ export class ModelSearchTask extends Task<
    */
   public static readonly requires: readonly Capability[] = [
     "provider.model-search",
-  ] as const satisfies readonly Capability[];
+  ] as const satisfies Capability[];
   public static override category = "AI Model";
   public static override title = "Model Search";
   public static override description = "Search for models using provider-specific search functions";
