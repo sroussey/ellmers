@@ -14,11 +14,9 @@ import {
   withJobErrorDiagnostics,
 } from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util/worker";
 import type { JsonSchema } from "@workglow/util/schema";
+import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
-import { collectStream } from "../capability/collectStream";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import {
@@ -223,117 +221,65 @@ export class AiJob<
   Output extends TaskOutput = TaskOutput,
 > extends Job<Input, Output> {
   /**
-   * Executes the job using the provided function.
+   * Executes the job by dispatching to the registered run function and
+   * forwarding every emitted event to the caller-supplied `emit`. The Promise
+   * carries no data — output rides on the `finish` event (or accumulated
+   * deltas + trailing empty `finish` for streaming capabilities).
    */
-  override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
+  override async execute(
+    input: Input,
+    context: IJobExecuteContext,
+    emit: AiEmit<Output>
+  ): Promise<void> {
     if (context.signal.aborted || this.status === JobStatus.ABORTING) {
       throw new AbortSignalJobError("Abort signal aborted before execution of job");
     }
 
-    let abortHandler: (() => void) | undefined;
-
-    try {
-      const abortPromise = new Promise<never>((_resolve, reject) => {
-        const handler = () => {
-          reject(new AbortSignalJobError("Abort signal seen, ending job"));
-        };
-
-        context.signal.addEventListener("abort", handler, { once: true });
-        abortHandler = () => context.signal.removeEventListener("abort", handler);
-      });
-
-      const runFn = async () => {
-        const fn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
-          input.aiProvider,
-          input.requires
-        );
-        if (!fn) {
-          throw new Error(
-            `No run function found for provider "${input.aiProvider}" serving capabilities ` +
-              `[${input.requires.join(", ")}] (task: ${input.taskType}).`
-          );
-        }
-        const model = input.taskInput.model;
-        // Second abort check after resolving run function (covers async gap)
-        if (context.signal.aborted) {
-          throw new AbortSignalJobError("Job aborted");
-        }
-
-        // Apply timeout via AbortSignal.timeout combined with the caller's signal
-        const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
-        const timeoutSignal = AbortSignal.timeout(timeoutMs);
-        const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
-
-        // Streaming-only world: invoke the generator and collect via collectStream.
-        // Non-streaming consumers (this method) get a single materialised Output;
-        // streaming consumers go through executeStream() and bypass collectStream.
-        const stream = fn(
-          input.taskInput,
-          model,
-          combinedSignal,
-          input.outputSchema,
-          input.sessionId
-        );
-        return await collectStream<Output>(stream);
-      };
-      const runFnPromise = runFn();
-
-      return await Promise.race([runFnPromise, abortPromise]);
-    } catch (err) {
-      throw classifyProviderError(err, input.taskType, input.aiProvider);
-    } finally {
-      // Clean up the abort event listener to prevent memory leaks
-      if (abortHandler) {
-        abortHandler();
-      }
-      await yieldMacrotask();
-    }
-  }
-
-  /**
-   * Streaming execution: yields StreamEvents from the provider's stream function.
-   * Falls back to non-streaming execute() if no stream function is registered.
-   *
-   * On mid-stream errors, logs the failure and re-throws the classified error
-   * without emitting a `finish` event — callers iterating the async iterable
-   * detect termination via the thrown error rather than a synthetic finish.
-   * Delta accumulation is the responsibility of the caller (e.g. TaskRunner).
-   */
-  async *executeStream(
-    input: Input,
-    context: IJobExecuteContext
-  ): AsyncIterable<StreamEvent<Output>> {
-    if (context.signal.aborted || this.status === JobStatus.ABORTING) {
-      throw new AbortSignalJobError("Abort signal aborted before streaming execution of job");
-    }
-
-    const streamFn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
+    const fn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
       input.aiProvider,
       input.requires
     );
-
-    if (!streamFn) {
-      const result = await this.execute(input, context);
-      yield { type: "finish", data: result } as StreamEvent<Output>;
-      return;
+    if (!fn) {
+      throw new Error(
+        `No run function found for provider "${input.aiProvider}" serving capabilities ` +
+          `[${input.requires.join(", ")}] (task: ${input.taskType}).`
+      );
     }
 
-    const model = input.taskInput.model;
-
-    // Apply timeout via AbortSignal.timeout combined with the caller's signal
+    // Manual timeout (replaces AbortSignal.timeout — that one's timer is
+    // uncancellable per Web spec, leaks per call). Manual timeout + explicit
+    // listener pair (replaces AbortSignal.any, which retains downstream
+    // listeners on the parent signal).
     const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
+    const localController = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      localController.abort(new Error("AI job timed out"));
+    }, timeoutMs);
+    const onParentAbort = () => {
+      localController.abort(context.signal.reason);
+    };
+    context.signal.addEventListener("abort", onParentAbort, { once: true });
 
     try {
-      yield* streamFn(input.taskInput, model, combinedSignal, input.outputSchema, input.sessionId);
-    } catch (err) {
-      const logger = getLogger();
-      logger.warn(
-        `AiJob: Stream error for ${input.taskType} (${input.aiProvider}): ${err instanceof Error ? err.message : String(err)}`
+      if (context.signal.aborted) {
+        throw new AbortSignalJobError("Job aborted");
+      }
+      const model = input.taskInput.model;
+      await fn(
+        input.taskInput,
+        model,
+        localController.signal,
+        emit,
+        input.outputSchema,
+        input.sessionId
       );
+    } catch (err) {
       throw classifyProviderError(err, input.taskType, input.aiProvider);
     } finally {
+      clearTimeout(timeoutHandle);
+      context.signal.removeEventListener("abort", onParentAbort);
+      // Macrotask boundary so native finalizers (ONNX session memory, WASM
+      // handles) drain between calls. See spec §"yieldMacrotask".
       await yieldMacrotask();
     }
   }
