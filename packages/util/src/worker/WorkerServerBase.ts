@@ -104,6 +104,11 @@ export class WorkerServerBase {
   private requestControllers = new Map<string, AbortController>();
   // Keep track of requests that have already been responded to
   private completedRequests = new Set<string>();
+  // Track abort messages that arrived before the corresponding call started so
+  // the imminent handler can apply them immediately. Bounded to prevent
+  // unbounded growth from buggy clients that send aborts for ids that never
+  // arrive (see {@link scheduleCompletedRequestCleanup} for the matching cap).
+  private pendingAborts = new Set<string>();
 
   private postResult = (id: string, result: any) => {
     if (this.completedRequests.has(id)) {
@@ -232,6 +237,43 @@ export class WorkerServerBase {
       // Send error response back to main thread so the promise rejects
       this.postError(id, "Operation aborted");
       this.scheduleCompletedRequestCleanup(id);
+      return;
+    }
+    // Abort arrived before the call started running (race on the message
+    // port). Record the id so the imminent handle*Call can abort its
+    // controller as soon as it's constructed, and surface the rejection
+    // to the caller immediately.
+    this.recordPendingAbort(id);
+    this.postError(id, "Operation aborted");
+    this.scheduleCompletedRequestCleanup(id);
+  }
+
+  /**
+   * If a prior `abort` arrived for `id` before the call started, abort the
+   * supplied controller immediately and drop the pending marker. Returns
+   * `true` when an abort was consumed so callers may exit fast.
+   */
+  private consumePendingAbort(id: string, controller: AbortController): boolean {
+    if (!this.pendingAborts.delete(id)) return false;
+    controller.abort();
+    return true;
+  }
+
+  /**
+   * Records `id` as having received an abort that has not yet been matched to
+   * a controller. Bounded at 1000 entries; oldest are dropped first so a
+   * misbehaving client cannot leak memory by sending aborts for ids that
+   * never arrive.
+   */
+  private recordPendingAbort(id: string): void {
+    this.pendingAborts.add(id);
+    if (this.pendingAborts.size > 1000) {
+      const iter = this.pendingAborts.values();
+      for (let i = 0; i < 500; i++) {
+        const entry = iter.next();
+        if (entry.done) break;
+        this.pendingAborts.delete(entry.value);
+      }
     }
   }
 
@@ -262,6 +304,8 @@ export class WorkerServerBase {
     try {
       const abortController = new AbortController();
       this.requestControllers.set(id, abortController);
+      // Honour any abort message that beat the call to the worker.
+      this.consumePendingAbort(id, abortController);
 
       const fn = this.functions[functionName];
       const postProgress = (progress: number, message?: string, details?: any) => {
@@ -291,6 +335,7 @@ export class WorkerServerBase {
       try {
         const abortController = new AbortController();
         this.requestControllers.set(id, abortController);
+        this.consumePendingAbort(id, abortController);
 
         const fn = this.streamFunctions[functionName];
         const iterable = fn(input, model, abortController.signal);
@@ -312,6 +357,7 @@ export class WorkerServerBase {
       try {
         const abortController = new AbortController();
         this.requestControllers.set(id, abortController);
+        this.consumePendingAbort(id, abortController);
 
         const fn = this.functions[functionName];
         const noopProgress = () => {};
@@ -346,6 +392,7 @@ export class WorkerServerBase {
     }
     const abortController = new AbortController();
     this.requestControllers.set(id, abortController);
+    this.consumePendingAbort(id, abortController);
     const fn = this.runFunctions[functionName];
 
     const emit = (event: unknown) => {
