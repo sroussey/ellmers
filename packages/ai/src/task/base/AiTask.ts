@@ -177,8 +177,8 @@ export class AiTask<
     // task's own `requires` so we don't gate the lifecycle hook on the task.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const unloadFn = registry.getRunFnFor(model.provider, ["model.dispose"]);
-      if (unloadFn) {
+      const disposeFn = registry.getRunFnFor(model.provider, ["model.dispose"]);
+      if (disposeFn) {
         const modelPath =
           (model as ModelConfig & { model?: string }).model ??
           (model.provider_config as Record<string, unknown> | undefined)?.["model_path"] ??
@@ -187,7 +187,7 @@ export class AiTask<
         executeContext.resourceScope.register(resourceKey, async () => {
           // Phase 6: run-fns now return Promise<void> and emit via the
           // AiEmit callback. We don't care about events here, so use noopEmit.
-          await unloadFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
+          await disposeFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
         });
       }
     }
