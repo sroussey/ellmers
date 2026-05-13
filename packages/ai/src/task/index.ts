@@ -13,6 +13,7 @@ export * from "./base/AiImageOutputTask";
 export * from "./base/AiTask";
 export * from "./base/AiTaskSchemas";
 export * from "./base/responseFormat";
+export * from "./base/runWithIterable";
 export * from "./base/StreamingAiTask";
 export * from "./ChatMessage";
 export * from "./ChunkRetrievalTask";
