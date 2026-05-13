@@ -22,4 +22,4 @@ jobs:
           bun-version: latest
       - run: bun i
       - run: bun run build
-      - run: bunx pkg-pr-new publish './packages/util' './packages/storage' './packages/job-queue' './packages/task-graph' './packages/knowledge-base' './packages/tasks' './packages/ai' './packages/browser-control' './packages/indexeddb' './packages/javascript' './packages/mcp' './packages/workglow' './examples/cli' './providers/openai' './providers/anthropic' './providers/google-gemini' './providers/ollama' './providers/huggingface-transformers' './providers/huggingface-inference' './providers/node-llama-cpp' './providers/tf-mediapipe' './providers/chrome-ai' './providers/postgres' './providers/sqlite' './providers/supabase'
+      - run: bunx pkg-pr-new publish ./packages/* ./providers/* ./examples/cli
