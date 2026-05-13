@@ -32,7 +32,7 @@ function syntheticImage(width: number, height: number, fillR: number): ImageValu
   return imageValueFromBuffer(buf, "raw-rgba", width, height);
 }
 
-describe.skip("Image generation preview chain", () => {
+describe("Image generation preview chain", () => {
   beforeEach(() => {
     setAiProviderRegistry(new AiProviderRegistry());
     getAiProviderRegistry().setDefaultStrategy(new DirectExecutionStrategy());

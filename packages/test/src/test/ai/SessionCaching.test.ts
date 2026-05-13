@@ -4,14 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  accumulatingEmit,
-  AiJob,
-  AiProvider,
-  AiProviderRegistry,
-  getAiProviderRegistry,
-  setAiProviderRegistry,
-} from "@workglow/ai";
 import type {
   AiJobInput,
   AiProviderRunFn,
@@ -20,6 +12,14 @@ import type {
   ModelConfig,
   ToolCallingTaskInput,
   ToolDefinition,
+} from "@workglow/ai";
+import {
+  accumulatingEmit,
+  AiJob,
+  AiProvider,
+  AiProviderRegistry,
+  getAiProviderRegistry,
+  setAiProviderRegistry,
 } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
@@ -32,7 +32,7 @@ const mock = vi.fn;
 const TEST_PROVIDER = "session-test-provider";
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
-describe.skip("SessionCaching", () => {
+describe("SessionCaching", () => {
   const logger = getTestingLogger();
   setLogger(logger);
   let registry: AiProviderRegistry;
@@ -123,7 +123,14 @@ describe.skip("SessionCaching", () => {
     it("should receive sessionId as the last parameter when provided", async () => {
       let capturedSessionId: string | undefined;
 
-      const streamFn: AiProviderRunFn = async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
+      const streamFn: AiProviderRunFn = async (
+        _input,
+        _model,
+        _signal,
+        emit,
+        _outputSchema,
+        sessionId
+      ) => {
         capturedSessionId = sessionId;
         emit({
           type: "finish",
@@ -160,7 +167,14 @@ describe.skip("SessionCaching", () => {
     it("should receive undefined sessionId when not provided", async () => {
       let capturedSessionId: string | undefined = "should-be-overwritten";
 
-      const streamFn: AiProviderRunFn = async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
+      const streamFn: AiProviderRunFn = async (
+        _input,
+        _model,
+        _signal,
+        emit,
+        _outputSchema,
+        sessionId
+      ) => {
         capturedSessionId = sessionId;
         emit({ type: "finish", data: {} } as StreamEvent<TaskOutput>);
       };
@@ -244,7 +258,14 @@ describe.skip("SessionCaching", () => {
     it("should pass sessionId from AiJobInput to the stream function", async () => {
       let capturedSessionId: string | undefined;
 
-      const streamFn: AiProviderRunFn = async (_input, _model, _signal, emit, _outputSchema, sessionId) => {
+      const streamFn: AiProviderRunFn = async (
+        _input,
+        _model,
+        _signal,
+        emit,
+        _outputSchema,
+        sessionId
+      ) => {
         capturedSessionId = sessionId;
         emit({
           type: "text-delta",
@@ -445,7 +466,7 @@ describe.skip("SessionCaching", () => {
   });
 });
 
-describe.skip("Session caching: sessionId on task input", () => {
+describe("Session caching: sessionId on task input", () => {
   it("ToolCallingTaskInput accepts optional sessionId", () => {
     const input: ToolCallingTaskInput = {
       model: "test-model",
@@ -468,7 +489,7 @@ describe.skip("Session caching: sessionId on task input", () => {
   });
 });
 
-describe.skip("Session caching: session ID computation", () => {
+describe("Session caching: session ID computation", () => {
   it("prefix-rewind hash is deterministic for same tools + systemPrompt", async () => {
     const tools = [
       { name: "tool_a", description: "A", inputSchema: { type: "object" } },

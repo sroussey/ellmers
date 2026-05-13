@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  AiProviderRunFnRegistration,
-  Capability,
-} from "@workglow/ai";
+import type { AiProviderRunFn, AiProviderRunFnRegistration, Capability } from "@workglow/ai";
 import {
   accumulatingEmit,
   AiJob,
@@ -61,7 +57,7 @@ function makeReg(
   return { serves, runFn };
 }
 
-describe.skip("AiProviderRegistry", () => {
+describe("AiProviderRegistry", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   let server: JobQueueServer<AiJobInput<TaskInput>, TaskOutput>;

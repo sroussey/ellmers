@@ -5,11 +5,10 @@
  */
 
 import type {
+  AiProviderPreviewRunFn,
   AiProviderRunFn,
   AiProviderRunFnRegistration,
-  AiProviderPreviewRunFn,
 } from "@workglow/ai";
-import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   LLAMACPP_COUNT_TOKENS,
   LLAMACPP_JSON_MODE,
@@ -23,17 +22,18 @@ import {
   LLAMACPP_TEXT_SUMMARY,
   LLAMACPP_TOOL_USE,
 } from "./LlamaCpp_CapabilitySets";
+import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 
 export {
   disposeLlamaCppResources,
-  loadSdk,
-  getLlamaCppSdk,
-  getLlamaInstance,
-  getOrCreateTextContext,
-  getOrCreateEmbeddingContext,
-  getOrLoadModel,
   getActualModelPath,
   getConfigKey,
+  getLlamaCppSdk,
+  getLlamaInstance,
+  getOrCreateEmbeddingContext,
+  getOrCreateTextContext,
+  getOrLoadModel,
+  loadSdk,
   resolvedPaths,
   streamFromSession,
 } from "./LlamaCpp_Runtime";
@@ -51,6 +51,12 @@ import { LlamaCpp_TextSummary_Stream } from "./LlamaCpp_TextSummary";
 import { LlamaCpp_ToolCalling_Stream } from "./LlamaCpp_ToolCalling";
 import { LlamaCpp_Unload } from "./LlamaCpp_Unload";
 
+function defaultAbortError(): Error {
+  const err = new Error("The operation was aborted");
+  err.name = "AbortError";
+  return err;
+}
+
 /** Unified `["text.generation"]` run-fn — chat vs prompt discrimination. */
 const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +65,10 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<
   any,
   LlamaCppModelConfig
 > = async (input, model, signal, emit, outputSchema, sessionId) => {
+  if (signal.aborted) {
+    throw signal.reason ?? defaultAbortError();
+  }
+
   const maybeMessages = (input as { messages?: unknown }).messages;
   if (Array.isArray(maybeMessages) && maybeMessages.length > 0) {
     await LlamaCpp_Chat_Stream(input, model, signal, emit, outputSchema, sessionId);

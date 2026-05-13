@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
-describe.skip("AiChatWithKbTask — schema and registration", () => {
+describe("AiChatWithKbTask — schema and registration", () => {
   it("has required static properties", () => {
     expect(AiChatWithKbTask.type).toBe("AiChatWithKbTask");
     expect(AiChatWithKbTask.category).toBe("AI Chat");
@@ -308,7 +308,7 @@ describe("AiChatWithKbTask — embedding-backed retrieval", () => {
 // Single-turn happy-path tests
 // ========================================================================
 
-describe.skip("AiChatWithKbTask — single turn", () => {
+describe("AiChatWithKbTask — single turn", () => {
   it("retrieves, emits per-chunk references with 1-based indices, and streams the provider", async () => {
     const fake = makeFakeKb({
       id: "kb1",
@@ -518,7 +518,7 @@ describe.skip("AiChatWithKbTask — single turn", () => {
   });
 });
 
-describe.skip("AiChatWithKbTask — no-match branches", () => {
+describe("AiChatWithKbTask — no-match branches", () => {
   it("emits noMatchReply and skips the provider when zero chunks survive", async () => {
     const fake = makeFakeKb({ id: "kb-empty", results: [] });
     let providerCalls = 0;
@@ -685,7 +685,7 @@ describe.skip("AiChatWithKbTask — no-match branches", () => {
   });
 });
 
-describe.skip("AiChatWithKbTask — multi-turn", () => {
+describe("AiChatWithKbTask — multi-turn", () => {
   it("re-runs retrieval each turn against the latest user message", async () => {
     const fake = makeFakeKb({
       id: "kb-multi",
@@ -907,7 +907,7 @@ describe.skip("AiChatWithKbTask — multi-turn", () => {
   });
 });
 
-describe.skip("AiChatWithKbTask — responseFormat", () => {
+describe("AiChatWithKbTask — responseFormat", () => {
   it("schema declares responseFormat with default 'text'", () => {
     const schema = AiChatWithKbTask.inputSchema() as any;
     expect(schema.properties.responseFormat).toBeDefined();

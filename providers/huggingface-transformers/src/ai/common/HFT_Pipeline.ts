@@ -376,6 +376,9 @@ export async function getPipeline(
   signal?: AbortSignal,
   progressScaleMax: number = 10
 ): Promise<any> {
+  if (signal?.aborted) {
+    throw signal?.reason ?? new Error("Aborted");
+  }
   const cacheKey = getPipelineCacheKey(model);
   if (pipelines.has(cacheKey)) {
     getLogger().debug("HFT pipeline cache hit", { cacheKey });

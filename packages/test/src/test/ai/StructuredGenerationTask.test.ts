@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 // Fixtures
 // ============================================================================
 
-const JSON_MODE: readonly Capability[] = ["text.generation", "json-mode"];
+const JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
 
 function mkContext(): IExecuteContext {
   const controller = new AbortController();
@@ -43,14 +43,16 @@ function mkContext(): IExecuteContext {
       register: (_key: string, _fn: () => Promise<void>) => {},
       dispose: async () => {},
     } as any,
-  } as unknown as IExecuteContext;
+  } as IExecuteContext;
 }
 
 function mkModel(): ModelConfig {
   return {
     provider: "fake-structured",
     model: "fake-model",
-  } as unknown as ModelConfig;
+    capabilities: JSON_MODE,
+    provider_config: {},
+  } as ModelConfig;
 }
 
 class FakeStructuredProvider extends AiProvider {
@@ -111,7 +113,7 @@ async function drain<T>(iter: AsyncIterable<T>): Promise<T[]> {
 // Static + registration
 // ============================================================================
 
-describe.skip("StructuredGenerationTask — schema and registration", () => {
+describe("StructuredGenerationTask — schema and registration", () => {
   it("declares maxRetries input with default 2", () => {
     const schema = StructuredGenerationTask.inputSchema() as any;
     expect(schema.properties.maxRetries).toBeDefined();
@@ -128,7 +130,7 @@ describe.skip("StructuredGenerationTask — schema and registration", () => {
 // Validation (no retry)
 // ============================================================================
 
-describe.skip("StructuredGenerationTask — validation", () => {
+describe("StructuredGenerationTask — validation", () => {
   it("returns the object unchanged when it matches the schema", async () => {
     const good = { name: "Alice", age: 30 };
     const { unregister } = registerFakeStructuredProvider([good]);
@@ -198,7 +200,7 @@ describe.skip("StructuredGenerationTask — validation", () => {
 // Retry with feedback
 // ============================================================================
 
-describe.skip("StructuredGenerationTask — retry", () => {
+describe("StructuredGenerationTask — retry", () => {
   it("retries on validation failure and succeeds on a later attempt", async () => {
     const bad = { name: "Alice", age: "thirty" };
     const good = { name: "Alice", age: 30 };
@@ -323,7 +325,7 @@ describe.skip("StructuredGenerationTask — retry", () => {
 // Schema-of-schema check
 // ============================================================================
 
-describe.skip("StructuredGenerationTask — schema compile errors", () => {
+describe("StructuredGenerationTask — schema compile errors", () => {
   it("fails fast with a TaskConfigurationError when outputSchema is null", async () => {
     // No provider registration — the compile error should hit before the
     // provider is ever called. compileSchema() is lenient with most "bad"

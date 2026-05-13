@@ -18,9 +18,9 @@ import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/u
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
-const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
+const TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
 
-describe.skip("AiChatTask — schema and registration", () => {
+describe("AiChatTask — schema and registration", () => {
   it("has required static properties", () => {
     expect(AiChatTask.type).toBe("AiChatTask");
     expect(AiChatTask.category).toBe("AI Chat");
@@ -74,6 +74,7 @@ function mkModel(): ModelConfig {
   return {
     provider: "fake-chat",
     model: "fake-model",
+    capabilities: TEXT_GENERATION,
   } as unknown as ModelConfig;
 }
 
@@ -144,9 +145,14 @@ async function accumulateChatStream(
   return { text: finalText, messages, iterations, events };
 }
 
-describe.skip("AiChatTask — streaming output accumulation", () => {
+describe("AiChatTask — streaming output accumulation", () => {
   it("drives the stream to completion and accumulates final output via deltas", async () => {
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       emit({ type: "text-delta", port: "text", textDelta: "ok" });
       emit({ type: "finish", data: {} as any });
     };
@@ -180,9 +186,14 @@ describe.skip("AiChatTask — streaming output accumulation", () => {
   });
 });
 
-describe.skip("AiChatTask — connector resolution", () => {
+describe("AiChatTask — connector resolution", () => {
   it("throws a helpful error when HUMAN_CONNECTOR is not registered", async () => {
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       emit({ type: "text-delta", port: "text", textDelta: "ok" });
       emit({ type: "finish", data: {} as any });
     };
@@ -213,10 +224,15 @@ describe.skip("AiChatTask — connector resolution", () => {
   });
 });
 
-describe.skip("AiChatTask — chat loop", () => {
+describe("AiChatTask — chat loop", () => {
   it("runs one turn then stops on decline", async () => {
     const calls: number[] = [];
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       calls.push(1);
       emit({ type: "text-delta", port: "text", textDelta: "Hello" });
       emit({ type: "text-delta", port: "text", textDelta: " there" });
@@ -257,7 +273,12 @@ describe.skip("AiChatTask — chat loop", () => {
 
   it("runs two turns when connector accepts a follow-up", async () => {
     let callIdx = 0;
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       callIdx++;
       emit({ type: "text-delta", port: "text", textDelta: `Turn ${callIdx}` });
       emit({ type: "finish", data: {} as any });
@@ -300,7 +321,12 @@ describe.skip("AiChatTask — chat loop", () => {
 
   it("maxIterations cap terminates the loop after exactly N turns", async () => {
     let callIdx = 0;
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       callIdx++;
       emit({ type: "text-delta", port: "text", textDelta: `T${callIdx}` });
       emit({ type: "finish", data: {} as any });
@@ -405,7 +431,12 @@ describe.skip("AiChatTask — chat loop", () => {
       }
     }
 
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       emit({ type: "text-delta", port: "text", textDelta: "ok" });
       emit({ type: "finish", data: {} as any });
     };
@@ -439,7 +470,12 @@ describe.skip("AiChatTask — chat loop", () => {
   });
 
   it("accepts ContentBlock[] as prompt and preserves block shape in history", async () => {
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_input, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       emit({ type: "text-delta", port: "text", textDelta: "response" });
       emit({ type: "finish", data: {} as any });
     };
@@ -479,7 +515,7 @@ describe.skip("AiChatTask — chat loop", () => {
   });
 });
 
-describe.skip("AiChatTask — responseFormat", () => {
+describe("AiChatTask — responseFormat", () => {
   it("schema declares responseFormat with default 'text'", () => {
     const schema = AiChatTask.inputSchema() as any;
     expect(schema.properties.responseFormat).toBeDefined();
@@ -489,7 +525,12 @@ describe.skip("AiChatTask — responseFormat", () => {
 
   it("when 'markdown', appends the markdown addendum to the per-turn system prompt", async () => {
     let capturedSystemPrompt: string | undefined;
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (taskInput, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
         (m) => m.role === "system"
       );
@@ -522,7 +563,12 @@ describe.skip("AiChatTask — responseFormat", () => {
 
   it("when 'text' (or omitted), the per-turn system prompt is the raw input.systemPrompt", async () => {
     let capturedSystemPrompt: string | undefined;
-    const stream: AiProviderRunFn<any, any, ModelConfig> = async (taskInput, _model, _signal, emit) => {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
         (m) => m.role === "system"
       );

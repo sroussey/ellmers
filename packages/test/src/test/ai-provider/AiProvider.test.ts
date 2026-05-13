@@ -102,7 +102,7 @@ class StaticTaskTypesProvider extends AiProvider {
   }
 }
 
-describe.skip("AiProvider", () => {
+describe("AiProvider", () => {
   let logger = getTestingLogger();
   setLogger(logger);
   let aiProviderRegistry: AiProviderRegistry;
@@ -334,7 +334,7 @@ describe.skip("AiProvider", () => {
       ]);
 
       const mockWorkerServer = {
-        registerStreamFunction: vi.fn(),
+        registerRunFunction: vi.fn(),
         registerPreviewFunction: vi.fn(),
       };
 
@@ -342,12 +342,12 @@ describe.skip("AiProvider", () => {
 
       // workerKeyForServes(["text.generation"]) → "text.generation"
       // workerKeyForServes(["text.embedding"]) → "text.embedding"
-      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledTimes(2);
-      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledWith(
+      expect(mockWorkerServer.registerRunFunction).toHaveBeenCalledTimes(2);
+      expect(mockWorkerServer.registerRunFunction).toHaveBeenCalledWith(
         "text.generation",
         mockGenFn
       );
-      expect(mockWorkerServer.registerStreamFunction).toHaveBeenCalledWith(
+      expect(mockWorkerServer.registerRunFunction).toHaveBeenCalledWith(
         "text.embedding",
         mockEmbedFn
       );
@@ -357,7 +357,7 @@ describe.skip("AiProvider", () => {
       const provider = new StaticTaskTypesProvider();
 
       const mockWorkerServer = {
-        registerStreamFunction: vi.fn(),
+        registerRunFunction: vi.fn(),
         registerPreviewFunction: vi.fn(),
       };
 

@@ -38,7 +38,7 @@ export function runAiProviderConformance(opts: AiProviderConformanceOpts): void 
     }
   }
 
-  describe.skip(`AiProvider conformance: ${opts.name}`, () => {
+  describe.skipIf(opts.skip)(`AiProvider conformance: ${opts.name}`, () => {
     let handle: ConformanceHandle | undefined;
     const getHandle = (): ConformanceHandle => {
       if (!handle) throw new Error("conformance handle not initialized");

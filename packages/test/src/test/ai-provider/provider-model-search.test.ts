@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
 import type { AiProviderRunFn } from "@workglow/ai";
+import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
 import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
 import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
@@ -45,7 +45,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe.skip("provider model search samples", () => {
+describe("provider model search samples", () => {
   test("ModelSearchTask input schema marks credential_key as a credential", () => {
     const schema = ModelSearchTask.inputSchema();
     expect(schema).toMatchObject({
@@ -97,7 +97,10 @@ describe.skip("provider model search samples", () => {
     }) as unknown as typeof fetch;
 
     const { results } = (await collectStream(
-      await runFnToIterable(Gemini_ModelSearch, { query: "live", credential_key: "test-gemini-key" })
+      await runFnToIterable(Gemini_ModelSearch, {
+        query: "live",
+        credential_key: "test-gemini-key",
+      })
     )) as { results: ModelSearchResult[] };
 
     expect(requestedUrl).toContain("key=test-gemini-key");

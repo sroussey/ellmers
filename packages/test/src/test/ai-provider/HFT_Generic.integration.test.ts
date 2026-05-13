@@ -9,17 +9,17 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const TEXT_MODEL_ID = "onnx:onnx-community/Qwen2.5-1.5B-Instruct:q4";
 const THINKING_MODEL_ID = "onnx:LiquidAI/LFM2.5-1.2B-Thinking-WebGPU:q4";
@@ -112,7 +112,7 @@ runAiProviderConformance({
     tools: true,
     structured: true,
     embeddings: true,
-    sessions: false,
+    sessions: true,
     abortMidStream: true,
   },
   models: {
