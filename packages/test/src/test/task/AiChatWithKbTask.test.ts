@@ -235,7 +235,7 @@ describe("AiChatWithKbTask — embedding-backed retrieval", () => {
       },
     });
     registry.registerRunFn("fake-chat-kb", {
-      serves: ["model.download-remove"],
+      serves: ["model.dispose"],
       runFn: async (_input, _model, _signal, emit) => {
         unloadCalls++;
         emit({ type: "finish", data: {} as any });
