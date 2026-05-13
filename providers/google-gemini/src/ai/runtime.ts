@@ -11,6 +11,8 @@
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */
+// organize-imports-ignore
+
 export * from "./common/Gemini_Client";
 export * from "./registerGeminiInline";
 export * from "./registerGeminiWorker";

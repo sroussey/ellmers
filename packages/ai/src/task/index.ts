@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// organize-imports-ignore
+
 import { TaskRegistry } from "@workglow/task-graph";
 import { AiChatTask } from "./AiChatTask";
 import { AiChatWithKbTask } from "./AiChatWithKbTask";

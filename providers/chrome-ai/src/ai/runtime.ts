@@ -10,5 +10,7 @@
  *
  * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */
+// organize-imports-ignore
+
 export * from "./registerWebBrowserInline";
 export * from "./registerWebBrowserWorker";

@@ -5,6 +5,8 @@
  */
 
 // Load adaptive first so Workflow.prototype.add/subtract/multiply/divide/sum are registered
+// organize-imports-ignore
+
 import "./task/adaptive";
 
 export * from "./task/adaptive";

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// organize-imports-ignore
+
 import "./codec.node";
 import "./task/image/registerImageTextRenderer.node";
 // Install the DNS-resolving, connection-pinning SafeFetch implementation.
