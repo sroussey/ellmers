@@ -47,7 +47,7 @@
     "publish-all": "bun ./scripts/bunsrc-workspace.ts dist && bun run format && bun run rebuild && bun run test && bun run bunset && bun run publish-login && bun run publish-workspaces",
     "publish-login": "npm login",
     "publish-workspaces": "bun ./scripts/publish-workspaces.ts",
-    "prepare": "husky"
+    "prepare": "[ -n \"$CI\" ] || husky"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001792"
