@@ -42,10 +42,22 @@ export interface CreateStandardKbStrategyOptions {
    * Multiplier applied to `topK` to size the first-stage candidate pool
    * when `searchMode === "rerank"`. The reranker then narrows the pool
    * back down to `topK`. Defaults to `5`, i.e. first stage fetches
-   * `topK * 5` candidates (with a `topK` floor so it never returns fewer
-   * than `topK`).
+   * `topK * 5` candidates. Used together with `firstStageMinimum` —
+   * the actual first-stage size is `max(topK * firstStageMultiplier,
+   * firstStageMinimum)`, so a tiny `topK` (e.g. `1`) still yields a
+   * meaningful candidate pool for the reranker to choose from instead of
+   * collapsing to a single candidate.
    */
   readonly firstStageMultiplier?: number;
+  /**
+   * Minimum first-stage candidate pool size when `searchMode === "rerank"`.
+   * Defaults to `20`. Prevents the rerank pool from collapsing to
+   * `topK` for very small `topK` values where `topK * firstStageMultiplier`
+   * would still be too few candidates for the reranker to do useful work.
+   * The effective first-stage size is
+   * `max(topK * firstStageMultiplier, firstStageMinimum)`.
+   */
+  readonly firstStageMinimum?: number;
 }
 
 /**
@@ -77,6 +89,7 @@ export function createStandardKbStrategy(
     reservedTokens: options.chunker?.reservedTokens ?? 10,
   } as const;
   const firstStageMultiplier = options.firstStageMultiplier ?? 5;
+  const firstStageMinimum = options.firstStageMinimum ?? 20;
 
   const resolveSearchMode = (kb: IKbStrategyTarget): SearchMode => {
     if (options.searchMode) return options.searchMode;
@@ -200,7 +213,12 @@ export function createStandardKbStrategy(
       }
 
       // mode === "rerank"
-      const firstStageTopK = Math.max(topK * firstStageMultiplier, topK);
+      // First-stage pool is `topK * firstStageMultiplier`, but never
+      // smaller than `firstStageMinimum`. The floor matters for small
+      // `topK`: with `topK=1, multiplier=5` the raw product is 5, which
+      // robs the reranker of any real choice. The minimum keeps the
+      // candidate pool meaningful regardless of how small `topK` is.
+      const firstStageTopK = Math.max(topK * firstStageMultiplier, firstStageMinimum);
       const firstStage: ChunkSearchResult[] = kb.supportsHybridSearch()
         ? await kb.hybridSearch(vector, {
             textQuery: query,
