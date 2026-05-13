@@ -71,8 +71,7 @@ describe("AiJob memory bound", () => {
     const after = rss();
     const growthMB = (after - baseline) / (1024 * 1024);
     // Generous bound: under 50MB growth over 200 dispatches is "bounded."
-    // True leaks under the previous shape grew RSS unboundedly with each
-    // call (see scratch/bridgeProgress-leak-repro.md).
+    // True leaks under the previous shape grew RSS unboundedly with each call.
     expect(growthMB).toBeLessThan(50);
   }, 30_000);
 });
