@@ -35,6 +35,13 @@ const inputSchema = {
       title: "Metadata Filter",
       description: "Filter results by chunk metadata fields.",
     },
+    scoreThreshold: {
+      type: "number",
+      title: "Score Threshold",
+      description:
+        "Minimum score to include a result. Honored by similarity and hybrid search modes; ignored by the strategy in rerank mode (cross-encoder logits aren't comparable to cosine/RRF scores).",
+      minimum: 0,
+    },
   },
   required: ["knowledgeBase", "query"],
   additionalProperties: false,
@@ -124,9 +131,14 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
     input: KbSearchTaskInput,
     _context: IExecuteContext
   ): Promise<KbSearchTaskOutput> {
-    const { knowledgeBase, query, topK = 5, filter } = input;
+    const { knowledgeBase, query, topK = 5, filter, scoreThreshold } = input;
     const kb = knowledgeBase as KnowledgeBase;
-    const results = await kb.search(query, { topK, filter });
+    // Forward `scoreThreshold` to the strategy. The standard strategy
+    // honors it in similarity / hybrid modes and intentionally ignores
+    // it in rerank mode (cross-encoder logits aren't on the same scale
+    // as cosine / RRF, so a single numeric threshold would either drop
+    // everything or nothing).
+    const results = await kb.search(query, { topK, filter, scoreThreshold });
     return {
       results,
       // `chunkText` enforces the metadata.text contract — any chunk
