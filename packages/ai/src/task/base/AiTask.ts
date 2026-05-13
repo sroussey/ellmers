@@ -171,13 +171,22 @@ export class AiTask<
     }
     const output = result();
 
-    // Register a disposer so the caller can unload the model when done. The
-    // unload path is wired via the "model.download-remove" capability so providers opt
-    // in by registering a run-fn whose `serves` set contains it; bypasses the
-    // task's own `requires` so we don't gate the lifecycle hook on the task.
+    // Register a disposer so the caller can unload the model when done.
+    //
+    // We prefer `model.dispose` (a future capability reserved for a
+    // RAM-only-evict semantic that keeps the on-disk copy) but fall back to
+    // `model.download-remove`, which providers actually register today for
+    // their uncache path. Without the fallback the disposer silently
+    // never runs and worker-resident models leak across the resource
+    // scope's lifetime.
+    //
+    // This intentionally bypasses the task's own `requires` so the
+    // lifecycle hook isn't gated on the task's capability set.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const disposeFn = registry.getRunFnFor(model.provider, ["model.dispose"]);
+      const disposeFn =
+        registry.getRunFnFor(model.provider, ["model.dispose"]) ??
+        registry.getRunFnFor(model.provider, ["model.download-remove"]);
       if (disposeFn) {
         const modelPath =
           (model as ModelConfig & { model?: string }).model ??
