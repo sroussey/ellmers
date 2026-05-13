@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  AiEmit,
+  IAiExecutionStrategy,
+} from "@workglow/ai";
+import { runWithIterable } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-
-import type { AiEmit, IAiExecutionStrategy } from "@workglow/ai";
-import { runWithIterable } from "../../../../ai/src/task/base/runWithIterable";
 
 interface CapturedRun {
   signal: AbortSignal;
@@ -21,13 +23,13 @@ interface CapturedRun {
 
 function createCapturingStrategy(): { strategy: IAiExecutionStrategy; runs: CapturedRun[] } {
   const runs: CapturedRun[] = [];
-  let enteredResolver: (() => void) | undefined;
   const strategy: IAiExecutionStrategy = {
     async execute(_jobInput, context, _runnerId, emit) {
       let resolve!: () => void;
       const blocker = new Promise<void>((r) => {
         resolve = r;
       });
+      let enteredResolver: (() => void) | undefined;
       const entered = new Promise<void>((r) => (enteredResolver = r));
       runs.push({ signal: context.signal, emit, resolveRun: resolve, entered });
       enteredResolver?.();
