@@ -6,14 +6,13 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
-import type { IExecuteContext, StreamEvent, TaskOutput } from "@workglow/task-graph";
+import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
-import { createEmitQueue } from "../capability/emitQueue";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -23,6 +22,7 @@ import {
   KB_INLINE_CITATION_DIRECTIVE,
   type ResponseFormat,
 } from "./base/responseFormat";
+import { runWithIterable } from "./base/runWithIterable";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
@@ -559,37 +559,37 @@ export class AiChatWithKbTask extends StreamingAiTask<
         const turnJobInput = await this.getJobInput(perTurnInput);
         const strategy = getAiProviderRegistry().getStrategy(model);
 
-        const queue = createEmitQueue<StreamEvent<AiChatWithKbTaskOutput>>();
-        const emit: AiEmit<AiChatWithKbTaskOutput> = (event) => {
-          if (event.type === "text-delta") {
-            assistantText += (event as any).textDelta;
-            queue.push({
-              ...event,
-              port: (event as any).port ?? "text",
-            } as StreamEvent<AiChatWithKbTaskOutput>);
-          } else if (event.type === "finish") {
-            // Invariant: inner turn run-fns must be text.generation only; finish.data
-            // from inner turns is intentionally discarded. If json-mode capability is
-            // ever added to inner dispatch, this swallow must be revisited.
-          } else {
-            queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
-          }
-        };
-        const runPromise = strategy
-          .execute(
-            turnJobInput as any,
-            context,
-            this.runConfig.runnerId,
-            emit as AiEmit<TaskOutput>
-          )
-          .then(
-            () => queue.close(),
-            (err) => queue.fail(err)
-          );
-        for await (const event of queue.iterable) {
+        // Drive the inner turn through `runWithIterable` so a consumer
+        // break / context abort cancels the provider stream rather than
+        // leaving it running into a closed queue. The emit factory does
+        // the per-port wrapping and swallows inner-turn `finish` events
+        // (the outer `finish` is emitted at the end).
+        const iterable = runWithIterable<AiChatWithKbTaskOutput>(
+          strategy,
+          turnJobInput as any,
+          context,
+          this.runConfig.runnerId,
+          (queue): AiEmit<AiChatWithKbTaskOutput> =>
+            (event) => {
+              if (event.type === "text-delta") {
+                assistantText += (event as any).textDelta;
+                queue.push({
+                  ...event,
+                  port: (event as any).port ?? "text",
+                } as StreamEvent<AiChatWithKbTaskOutput>);
+              } else if (event.type === "finish") {
+                // Invariant: inner turn run-fns must be text.generation only;
+                // finish.data from inner turns is intentionally discarded. If
+                // json-mode capability is ever added to inner dispatch, this
+                // swallow must be revisited.
+              } else {
+                queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
+              }
+            }
+        );
+        for await (const event of iterable) {
           yield event;
         }
-        await runPromise;
       }
 
       const assistantMsg: ChatMessage = {
