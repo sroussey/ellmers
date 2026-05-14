@@ -7,8 +7,7 @@
  * Import this module (or @workglow/mcp/tasks from a browser entry) before using MCP tasks.
  */
 
-import { mcpClientFactory, mcpServerConfigSchema } from "@workglow/mcp/util";
-import { registerMcpTaskDeps } from "@workglow/mcp/util";
+import { mcpClientFactory, mcpServerConfigSchema, registerMcpTaskDeps } from "@workglow/mcp/util";
 
 registerMcpTaskDeps({
   mcpClientFactory,

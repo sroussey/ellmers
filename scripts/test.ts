@@ -24,6 +24,7 @@ type Runner = (typeof KNOWN_RUNNERS)[number];
 
 const KNOWN_SECTIONS = [
   "graph",
+  // "browser",
   "task",
   "storage",
   "queue",
@@ -110,6 +111,7 @@ const SECTION_DIRS: Record<Section, string[]> = {
   mcp: [join(TEST_BASE, "mcp")],
   rag: [join(TEST_BASE, "rag")],
   resource: [join(TEST_BASE, "resource")],
+  // browser: [join(TEST_BASE, "browser")],
 };
 
 function showHelp(): void {
