@@ -109,12 +109,17 @@ export class WorkerServerBase {
   private completedRequests = new Set<string>();
   // Track abort messages that arrived before the corresponding call started so
   // the imminent handler can apply them immediately. Each entry's value is the
-  // wall-clock timestamp (ms) at which the abort was recorded; entries are
-  // evicted by TTL (see {@link PENDING_ABORT_TTL_MS}) rather than by
-  // insertion order so a noisy/malicious client spamming aborts cannot
-  // displace a legitimate pending abort before its matching `call` arrives.
-  // A hard cap (see {@link PENDING_ABORT_HARD_CAP}) provides a memory
-  // safety-net by evicting the oldest-by-timestamp half when exceeded.
+  // wall-clock timestamp (ms) at which the abort was recorded. Stale entries
+  // are cleaned up by three complementary mechanisms (no inline O(n) sweep):
+  //   1. A per-id `setTimeout` scheduled in {@link recordPendingAbort} drops
+  //      the entry after {@link PENDING_ABORT_TTL_MS}.
+  //   2. {@link consumePendingAbort} re-checks the timestamp at consume-time
+  //      and treats an over-TTL marker as absent (belt-and-braces for the
+  //      window between TTL-expiry and the per-id timer firing).
+  //   3. A hard cap (see {@link PENDING_ABORT_HARD_CAP}) evicts the
+  //      oldest-by-timestamp half when exceeded — a memory safety-net for
+  //      a noisy/malicious client that spams aborts faster than the per-id
+  //      timers fire.
   private pendingAborts = new Map<string, number>();
   // Track scheduled per-id cleanup timers so they don't pin the event loop
   // open longer than necessary and so subclasses with a dispose hook can
@@ -283,24 +288,23 @@ export class WorkerServerBase {
    * to a controller. Stores a wall-clock timestamp so entries are evicted
    * by TTL (see {@link PENDING_ABORT_TTL_MS}) rather than by insertion
    * order — a noisy/malicious client spamming aborts can no longer evict
-   * a legitimate pending abort before its matching `call` arrives. A hard
-   * cap (see {@link PENDING_ABORT_HARD_CAP}) provides a memory safety-net
-   * by evicting the oldest-by-timestamp half when exceeded.
+   * a legitimate pending abort before its matching `call` arrives.
+   *
+   * Cleanup strategy (amortised O(1) per call, no inline sweep):
+   *   - A per-id `setTimeout` drops this entry once TTL elapses.
+   *   - {@link consumePendingAbort} re-checks the timestamp at consume time.
+   *   - If the map exceeds {@link PENDING_ABORT_HARD_CAP}, the oldest half
+   *     is evicted in one pass — a memory safety-net for pathological
+   *     bursts that outrun the per-id timers.
    */
   private recordPendingAbort(id: string): void {
     const now = Date.now();
     this.pendingAborts.set(id, now);
 
-    // Inline sweep: drop any entries older than the TTL.
-    const ttl = WorkerServerBase.PENDING_ABORT_TTL_MS;
-    for (const [key, ts] of this.pendingAborts) {
-      if (now - ts > ttl) {
-        this.pendingAborts.delete(key);
-      }
-    }
-
-    // Memory safety-net: if still over the hard cap, evict the half with
-    // the lowest timestamps (i.e. the most stale entries).
+    // Memory safety-net: if over the hard cap, evict the half with the
+    // lowest timestamps (i.e. the most stale entries). This runs only on
+    // the rare overflow path; the per-id `setTimeout` below handles the
+    // common case in amortised O(1).
     const cap = WorkerServerBase.PENDING_ABORT_HARD_CAP;
     if (this.pendingAborts.size > cap) {
       const entries = [...this.pendingAborts.entries()];
