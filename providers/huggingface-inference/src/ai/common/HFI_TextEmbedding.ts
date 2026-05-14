@@ -17,12 +17,11 @@ export const HFI_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfInferenceModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timerLabel = `hfi:TextEmbedding:${model?.provider_config?.model_name}`;
   logger.time(timerLabel, { model: model?.provider_config?.model_name });
 
-  update_progress(0, "Starting HF Inference text embedding");
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -39,11 +38,14 @@ export const HFI_TextEmbedding: AiProviderRunFn<
       )
     );
 
-    update_progress(100, "Completed HF Inference text embedding");
     logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name, batch: true });
-    return {
-      vector: embeddings.map((embedding) => new Float32Array(embedding as unknown as number[])),
-    };
+    emit({
+      type: "finish",
+      data: {
+        vector: embeddings.map((embedding) => new Float32Array(embedding as unknown as number[])),
+      },
+    });
+    return;
   }
 
   const embedding = await client.featureExtraction(
@@ -54,7 +56,9 @@ export const HFI_TextEmbedding: AiProviderRunFn<
     { signal }
   );
 
-  update_progress(100, "Completed HF Inference text embedding");
   logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
-  return { vector: new Float32Array(embedding as unknown as number[]) };
+  emit({
+    type: "finish",
+    data: { vector: new Float32Array(embedding as unknown as number[]) },
+  });
 };

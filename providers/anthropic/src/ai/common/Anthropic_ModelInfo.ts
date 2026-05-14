@@ -7,24 +7,12 @@
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
-export const Anthropic_ModelInfo: AiProviderRunFn<
+export const Anthropic_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   AnthropicModelConfig
-> = async (input) => {
-  if (input.detail === "dimensions") {
-    return {
-      model: input.model,
-      is_local: false,
-      is_remote: true,
-      supports_browser: true,
-      supports_node: true,
-      is_cached: false,
-      is_loaded: false,
-      file_sizes: null,
-    };
-  }
-  return {
+> = async (input, _model, _signal, emit) => {
+  const result: ModelInfoTaskOutput = {
     model: input.model,
     is_local: false,
     is_remote: true,
@@ -34,4 +22,5 @@ export const Anthropic_ModelInfo: AiProviderRunFn<
     is_loaded: false,
     file_sizes: null,
   };
+  emit({ type: "finish", data: result });
 };

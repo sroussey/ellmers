@@ -17,7 +17,7 @@ export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   WebBrowserModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async (input, _model, signal, emit) => {
   const factory = getApi(
     "LanguageDetector",
     typeof LanguageDetector !== "undefined" ? LanguageDetector : undefined
@@ -30,8 +30,7 @@ export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
     const languages = detected
       .map((d) => ({ language: d.detectedLanguage, score: d.confidence }))
       .slice(0, input.maxLanguages ?? 5);
-    update_progress(100, "Completed language detection");
-    return { languages };
+    emit({ type: "finish", data: { languages } });
   } finally {
     detector.destroy();
   }

@@ -18,8 +18,8 @@ export const HFT_ImageToText: AiProviderRunFn<
   ImageToTextTaskInput,
   ImageToTextTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const captioner: ImageToTextPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async (input, model, signal, emit) => {
+  const captioner = (await getPipeline(model!, emit, {}, signal)) as ImageToTextPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await captioner(imageArg, {
     max_new_tokens: input.maxTokens,
@@ -27,7 +27,10 @@ export const HFT_ImageToText: AiProviderRunFn<
 
   const text = Array.isArray(result[0]) ? result[0][0]?.generated_text : result[0]?.generated_text;
 
-  return {
-    text: text || "",
-  };
+  emit({
+    type: "finish",
+    data: {
+      text: text || "",
+    },
+  });
 };

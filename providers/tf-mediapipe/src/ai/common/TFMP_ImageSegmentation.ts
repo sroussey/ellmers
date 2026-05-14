@@ -18,9 +18,9 @@ export const TFMP_ImageSegmentation: AiProviderRunFn<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { ImageSegmenter } = await loadTfmpTasksVisionSDK();
-  const imageSegmenter = await getModelTask(model!, {}, onProgress, signal, ImageSegmenter);
+  const imageSegmenter = await getModelTask(model!, {}, emit, signal, ImageSegmenter);
   const result = imageSegmenter.segment(input.image as any);
 
   if (!result.categoryMask) {
@@ -39,7 +39,5 @@ export const TFMP_ImageSegmentation: AiProviderRunFn<
     },
   ];
 
-  return {
-    masks,
-  };
+  emit({ type: "finish", data: { masks } });
 };

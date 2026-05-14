@@ -18,14 +18,14 @@ export const TFMP_TextClassification: AiProviderRunFn<
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { TextClassifier } = await loadTfmpTasksTextSDK();
   const TextClassification = await getModelTask(
     model!,
     {
       maxCategories: input.maxCategories,
     },
-    onProgress,
+    emit,
     signal,
     TextClassifier
   );
@@ -40,7 +40,5 @@ export const TFMP_TextClassification: AiProviderRunFn<
     score: category.score,
   }));
 
-  return {
-    categories,
-  };
+  emit({ type: "finish", data: { categories } });
 };

@@ -52,7 +52,7 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
       provider: ANTHROPIC,
       title: m.value,
       description: "",
-      tasks: [],
+      capabilities: [],
       provider_config: { model_name: m.value },
       metadata: {},
     },
@@ -60,10 +60,10 @@ function mapModelList(models: AnthropicModelListItem[]): ModelSearchResultItem[]
   }));
 }
 
-export const Anthropic_ModelSearch: AiProviderRunFn<
+export const Anthropic_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async (input, _model, _signal, emit) => {
   let models: AnthropicModelListItem[];
   if (!input.credential_key) {
     models = ANTHROPIC_FALLBACK;
@@ -71,5 +71,5 @@ export const Anthropic_ModelSearch: AiProviderRunFn<
     models = await listAnthropicModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
-  return { results: mapModelList(models) };
+  emit({ type: "finish", data: { results: mapModelList(models) } });
 };

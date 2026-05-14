@@ -18,14 +18,14 @@ export const TFMP_ImageClassification: AiProviderRunFn<
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { ImageClassifier } = await loadTfmpTasksVisionSDK();
   const imageClassifier = await getModelTask(
     model!,
     {
       maxResults: input.maxCategories,
     },
-    onProgress,
+    emit,
     signal,
     ImageClassifier
   );
@@ -42,7 +42,5 @@ export const TFMP_ImageClassification: AiProviderRunFn<
     })
   );
 
-  return {
-    categories,
-  };
+  emit({ type: "finish", data: { categories } });
 };

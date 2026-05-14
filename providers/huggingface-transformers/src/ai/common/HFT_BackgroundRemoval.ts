@@ -32,15 +32,18 @@ export const HFT_BackgroundRemoval: AiProviderRunFn<
   BackgroundRemovalTaskInput,
   BackgroundRemovalTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const remover: BackgroundRemovalPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async (input, model, signal, emit) => {
+  const remover = (await getPipeline(model!, emit, {}, signal)) as BackgroundRemovalPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await remover(imageArg);
 
   const resultImage = Array.isArray(result) ? result[0] : result;
   const dataUri = `data:image/png;base64,${rawImageToBase64Png(resultImage)}`;
 
-  return {
-    image: await dataUriToImageValue(dataUri),
-  };
+  emit({
+    type: "finish",
+    data: {
+      image: await dataUriToImageValue(dataUri),
+    },
+  });
 };

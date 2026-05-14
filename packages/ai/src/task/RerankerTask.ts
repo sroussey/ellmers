@@ -6,8 +6,9 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
   type: "object",
@@ -117,6 +118,15 @@ interface RankedItem {
  */
 export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, RerankerTaskConfig> {
   public static override type = "RerankerTask";
+  /**
+   * Informational: capability this task uses. NOT enforced by the dispatcher —
+   * RerankerTask extends `Task` (not `AiTask`) and implements its own `execute()`,
+   * so `gateOrThrow` is never called against this value. The audit test in
+   * `task/index.test.ts` validates the value is a known {@link Capability}.
+   */
+  public static readonly requires: readonly Capability[] = [
+    "text.reranking",
+  ] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Reranker";
   public static override description = "Rerank retrieved chunks to improve relevance";

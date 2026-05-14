@@ -6,8 +6,8 @@
 
 import type {
   AiProviderRunFn,
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
 } from "@workglow/ai";
 import { HTF_CACHE_NAME } from "./HFT_Constants";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
@@ -73,16 +73,15 @@ async function deleteModelCacheFromFilesystem(model: HfTransformersOnnxModelConf
  * Core implementation for unloading a Hugging Face Transformers model.
  * This is shared between inline and worker implementations.
  */
-export const HFT_Unload: AiProviderRunFn<
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+export const HFT_DownloadRemove: AiProviderRunFn<
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, _signal) => {
-  // Delete the pipeline from the in-memory map
+> = async (input, model, _signal, emit) => {
+  // Delete the pipeline from the in-memory map. Intermediate progress callbacks dropped:
+  // one-shot run-fns signal completion via the finish event.
   const cacheKey = getPipelineCacheKey(model!);
-  if (removeCachedPipeline(cacheKey)) {
-    onProgress(50, "Pipeline removed from memory");
-  }
+  await removeCachedPipeline(cacheKey);
 
   const model_path = model!.provider_config.model_path;
 
@@ -93,9 +92,6 @@ export const HFT_Unload: AiProviderRunFn<
   } else {
     await deleteModelCacheFromFilesystem(model!);
   }
-  onProgress(100, "Model cache deleted");
 
-  return {
-    model: input.model!,
-  };
+  emit({ type: "finish", data: { model: input.model! } });
 };

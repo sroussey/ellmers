@@ -25,7 +25,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M",
-      tasks: ["TextGenerationTask", "TextRewriterTask"],
+      capabilities: ["text.generation", "text.rewriter"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -48,7 +48,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M",
-      tasks: ["TextGenerationTask", "TextRewriterTask"],
+      capabilities: ["text.generation", "text.rewriter"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -71,7 +71,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M",
-      tasks: ["TextGenerationTask", "TextRewriterTask"],
+      capabilities: ["text.generation", "text.rewriter"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -82,11 +82,11 @@ export const runGenericModelRepositoryTests = (
     });
 
     // Search for models by task
-    const models = await repo.findModelsByTask("TextGenerationTask");
+    const models = await repo.findModelsByTask("text.generation");
     expect(models).toBeDefined();
     expect(models?.length).toEqual(1);
     expect(models?.[0].model_id).toEqual("onnx:Xenova/LaMini-Flan-T5-783M:q8");
-    expect(models?.[0].tasks).toEqual(["TextGenerationTask", "TextRewriterTask"]);
+    expect(models?.[0].capabilities).toEqual(["text.generation", "text.rewriter"]);
     expect(models?.[0].provider).toEqual(HF_TRANSFORMERS_ONNX);
     expect(models?.[0].provider_config?.pipeline).toEqual("text2text-generation");
     expect(models?.[0].provider_config?.model_path).toEqual("Xenova/LaMini-Flan-T5-783M");
@@ -99,7 +99,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -129,7 +129,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "test:bad-types",
       title: "Test",
       description: "Test",
-      tasks: "not-an-array",
+      capabilities: "not-an-array",
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {},
       metadata: {},
@@ -144,7 +144,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "LaMini-Flan-T5-783M",
       description: "LaMini-Flan-T5-783M",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -157,7 +157,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:Xenova/LaMini-Flan-T5-783M:q8",
       title: "Updated Title",
       description: "Updated Description",
-      tasks: ["TextGenerationTask", "TextRewriterTask"],
+      capabilities: ["text.generation", "text.rewriter"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: {
         pipeline: "text2text-generation",
@@ -169,7 +169,7 @@ export const runGenericModelRepositoryTests = (
     const updated = await repo.findByName("onnx:Xenova/LaMini-Flan-T5-783M:q8");
     expect(updated).toBeDefined();
     expect(updated?.title).toEqual("Updated Title");
-    expect(updated?.tasks?.length).toEqual(2);
+    expect(updated?.capabilities?.length).toEqual(2);
   });
 
   it("updateModel rejects non-existent model", async () => {
@@ -178,7 +178,7 @@ export const runGenericModelRepositoryTests = (
       model_id: "onnx:does-not-exist",
       title: "Test",
       description: "Test",
-      tasks: ["TextGenerationTask"],
+      capabilities: ["text.generation"],
       provider: HF_TRANSFORMERS_ONNX,
       provider_config: { pipeline: "text2text-generation", model_path: "test" },
       metadata: {},

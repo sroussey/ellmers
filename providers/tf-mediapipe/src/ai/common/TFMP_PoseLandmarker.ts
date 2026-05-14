@@ -18,7 +18,7 @@ export const TFMP_PoseLandmarker: AiProviderRunFn<
   PoseLandmarkerTaskInput,
   PoseLandmarkerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { PoseLandmarker } = await loadTfmpTasksVisionSDK();
   const poseLandmarker = await getModelTask(
     model!,
@@ -29,7 +29,7 @@ export const TFMP_PoseLandmarker: AiProviderRunFn<
       minTrackingConfidence: input.minTrackingConfidence,
       outputSegmentationMasks: input.outputSegmentationMasks,
     },
-    onProgress,
+    emit,
     signal,
     PoseLandmarker
   );
@@ -69,7 +69,5 @@ export const TFMP_PoseLandmarker: AiProviderRunFn<
     return pose;
   });
 
-  return {
-    poses,
-  };
+  emit({ type: "finish", data: { poses } });
 };

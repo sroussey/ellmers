@@ -9,17 +9,17 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const TEXT_MODEL_ID = "onnx:onnx-community/Qwen2.5-1.5B-Instruct:q4";
 const THINKING_MODEL_ID = "onnx:LiquidAI/LFM2.5-1.2B-Thinking-WebGPU:q4";
@@ -30,7 +30,7 @@ const textModel: HfTransformersOnnxModelRecord = {
   model_id: TEXT_MODEL_ID,
   title: "Qwen2.5-1.5B-Instruct",
   description: "Instruction-tuned model with native tool calling support",
-  tasks: ["TextGenerationTask", "StructuredGenerationTask", "AgentTask"],
+  capabilities: ["text.generation", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
@@ -45,7 +45,7 @@ const instructModel: HfTransformersOnnxModelRecord = {
   model_id: INSTRUCT_MODEL_ID,
   title: "LFM2.5-1.2B-Instruct-WebGPU",
   description: "Liquid 1.2B Instruct WebGPU",
-  tasks: ["TextGenerationTask", "ToolCallingTask", "StructuredGenerationTask", "AgentTask"],
+  capabilities: ["text.generation", "tool-use", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
@@ -60,7 +60,7 @@ const thinkingModel: HfTransformersOnnxModelRecord = {
   model_id: THINKING_MODEL_ID,
   title: "LFM2.5-1.2B-Thinking-WebGPU",
   description: "Liquid 1.2B Thinking WebGPU",
-  tasks: ["TextGenerationTask", "ToolCallingTask", "StructuredGenerationTask", "AgentTask"],
+  capabilities: ["text.generation", "tool-use", "json-mode"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "text-generation",
@@ -75,7 +75,7 @@ const embeddingModel: HfTransformersOnnxModelRecord = {
   model_id: EMBED_MODEL_ID,
   title: "All-MiniLM-L6-v2 (384D)",
   description: "Sentence embedding model for the embeddings conformance assertion",
-  tasks: ["TextEmbeddingTask"],
+  capabilities: ["text.embedding"],
   provider: HF_TRANSFORMERS_ONNX,
   provider_config: {
     pipeline: "feature-extraction",
@@ -95,7 +95,7 @@ runAiProviderConformance({
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      clearPipelineCache();
+      await clearPipelineCache();
       await registerHuggingFaceTransformersInline();
       await getGlobalModelRepository().addModel(textModel);
       await getGlobalModelRepository().addModel(thinkingModel);
@@ -112,7 +112,7 @@ runAiProviderConformance({
     tools: true,
     structured: true,
     embeddings: true,
-    sessions: false,
+    sessions: true,
     abortMidStream: true,
   },
   models: {

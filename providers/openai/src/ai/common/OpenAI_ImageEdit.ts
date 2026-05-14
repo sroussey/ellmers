@@ -6,15 +6,12 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   ImageEditTaskInput,
   ImageEditTaskOutput,
   ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
-import { getLogger } from "@workglow/util/worker";
 
 import { dataUriToImageValue, imageValueToPngBytes } from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./OpenAI_Client";
@@ -111,55 +108,16 @@ async function buildEditPayload(
   return payload;
 }
 
-export const OpenAI_ImageEdit: AiProviderRunFn<
-  ImageEditTaskInput,
-  ImageEditTaskOutput,
-  OpenAiModelConfig
-> = async (input, model, update_progress, signal) => {
-  const logger = getLogger();
-  const timer = `openai:ImageEdit:${getModelName(model)}`;
-  logger.time(timer);
-  update_progress(0, "Starting OpenAI image edit");
-
-  const client = await getClient(model);
-
-  try {
-    const payload = await buildEditPayload(input, model);
-    const resp = (await (client.images.edit as Function)(payload, { signal })) as {
-      data?: Array<{ b64_json?: string }>;
-    };
-    const b64 = resp.data?.[0]?.b64_json;
-    if (!b64) {
-      throw new ImageGenerationProviderError(modelIdOf(model), "Empty response (no b64_json)");
-    }
-    const image = await decodeB64Png(b64);
-    update_progress(100, "Completed OpenAI image edit");
-    logger.timeEnd(timer);
-    return { image };
-  } catch (err) {
-    if (
-      err instanceof ImageGenerationProviderError ||
-      err instanceof ImageGenerationContentPolicyError
-    ) {
-      throw err;
-    }
-    const msg = err instanceof Error ? err.message : "unknown error";
-    if (/safety|policy|moderation/i.test(msg)) {
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
-    }
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
-  }
-};
-
 /**
- * Streaming edit path. Yields snapshot events for each partial + final image, then finish.
- * SDK v6.35+ supports `stream: true` on `images.edit` for GPT image models.
+ * Streaming run-fn for `["image.editing"]`. SDK v6.35+ supports
+ * `stream: true` on `images.edit` for GPT image models — emits snapshot
+ * events for each partial + final image, then finish.
  */
-export const OpenAI_ImageEdit_Stream: AiProviderStreamFn<
+export const OpenAI_ImageEdit_Stream: AiProviderRunFn<
   ImageEditTaskInput,
   ImageEditTaskOutput,
   OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ImageEditTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
 
   try {
@@ -174,9 +132,9 @@ export const OpenAI_ImageEdit_Stream: AiProviderStreamFn<
       const b64 = event.b64_json;
       if (!b64) continue;
       const image = await decodeB64Png(b64);
-      yield { type: "snapshot", data: { image } } as StreamEvent<ImageEditTaskOutput>;
+      emit({ type: "snapshot", data: { image } } as Parameters<typeof emit>[0]);
     }
-    yield { type: "finish", data: {} as ImageEditTaskOutput };
+    emit({ type: "finish", data: {} as ImageEditTaskOutput });
   } catch (err) {
     if (
       err instanceof ImageGenerationProviderError ||

@@ -6,11 +6,9 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 
 import {
   ensureAvailable,
@@ -24,34 +22,7 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
   WebBrowserModelConfig
-> = async (input, model, update_progress, signal) => {
-  const factory = getApi(
-    "Summarizer",
-    (globalThis as any)?.ai?.summarizer ??
-      (typeof Summarizer !== "undefined" ? Summarizer : undefined)
-  );
-  await ensureAvailable("Summarizer", factory);
-  const config = getConfig(model);
-
-  const summarizer = await factory.create({
-    type: config.summary_type,
-    length: config.summary_length,
-    format: config.summary_format,
-  });
-  try {
-    const text = await summarizer.summarize(input.text, { signal });
-    update_progress(100, "Completed text summarization");
-    return { text };
-  } finally {
-    summarizer.destroy();
-  }
-};
-
-export const WebBrowser_TextSummary_Stream: AiProviderStreamFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  WebBrowserModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextSummaryTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const factory = getApi("Summarizer", typeof Summarizer !== "undefined" ? Summarizer : undefined);
   await ensureAvailable("Summarizer", factory);
   const config = getConfig(model);
@@ -63,7 +34,7 @@ export const WebBrowser_TextSummary_Stream: AiProviderStreamFn<
   });
   try {
     const stream = summarizer.summarizeStreaming(input.text, { signal });
-    yield* snapshotStreamToTextDeltas<TextSummaryTaskOutput>(stream, "text", (text) => ({ text }));
+    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(stream, "text", (text) => ({ text }))) { emit(e); }
   } finally {
     summarizer.destroy();
   }

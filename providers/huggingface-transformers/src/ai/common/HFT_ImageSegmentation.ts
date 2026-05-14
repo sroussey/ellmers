@@ -22,8 +22,8 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const segmenter: ImageSegmentationPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async (input, model, signal, emit) => {
+  const segmenter = (await getPipeline(model!, emit, {}, signal)) as ImageSegmentationPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await segmenter(imageArg, {
     threshold: input.threshold,
@@ -40,7 +40,10 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
     }))
   );
 
-  return {
-    masks: processedMasks,
-  };
+  emit({
+    type: "finish",
+    data: {
+      masks: processedMasks,
+    },
+  });
 };

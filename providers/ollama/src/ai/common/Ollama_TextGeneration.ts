@@ -6,70 +6,50 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
-export function createOllamaTextGeneration(
-  getClient: GetClient
-): AiProviderRunFn<TextGenerationTaskInput, TextGenerationTaskOutput, OllamaModelConfig> {
-  const run: AiProviderRunFn<
-    TextGenerationTaskInput,
-    TextGenerationTaskOutput,
-    OllamaModelConfig
-  > = async (input, model, update_progress, signal) => {
-    signal?.throwIfAborted?.();
-    update_progress(0, "Starting Ollama text generation");
-    const client = await getClient(model);
-    const modelName = getOllamaModelName(model);
-
-    const onAbort = () => client.abort?.();
-    signal?.addEventListener("abort", onAbort, { once: true });
-    try {
-      // Re-check after the listener is attached to close the
-      // attach-vs-aborted race.
-      signal?.throwIfAborted?.();
-      const response = await client.chat({
-        model: modelName,
-        messages: [{ role: "user", content: input.prompt }],
-        options: {
-          temperature: input.temperature,
-          top_p: input.topP,
-          num_predict: input.maxTokens,
-          frequency_penalty: input.frequencyPenalty,
-          presence_penalty: input.presencePenalty,
-        },
-      });
-      update_progress(100, "Completed Ollama text generation");
-      return { text: response.message.content };
-    } finally {
-      signal?.removeEventListener("abort", onAbort);
-    }
-  };
-  return run;
+interface UnifiedTextGenerationInput extends TextGenerationTaskInput {
+  readonly messages?: readonly { readonly role: string; readonly content: string }[];
+  readonly systemPrompt?: string;
 }
 
+/**
+ * Streaming run-fn factory for the `["text.generation"]` capability. Returns
+ * an async generator that yields `text-delta` events and a final empty
+ * `finish` event (consumer accumulates).
+ *
+ * Discriminates on `Array.isArray(input.messages) && input.messages.length > 0`
+ * so {@link AiChatTask} (chat path) and {@link TextGenerationTask}
+ * (prompt-only path) share the same registered run-fn.
+ */
 export function createOllamaTextGenerationStream(
   getClient: GetClient
-): AiProviderStreamFn<TextGenerationTaskInput, TextGenerationTaskOutput, OllamaModelConfig> {
-  return async function* (
-    input,
-    model,
-    signal
-  ): AsyncIterable<StreamEvent<TextGenerationTaskOutput>> {
+): AiProviderRunFn<TextGenerationTaskInput, TextGenerationTaskOutput, OllamaModelConfig> {
+  return async (input, model, signal, emit) => {
     signal?.throwIfAborted?.();
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
+    const unified = input as UnifiedTextGenerationInput;
+    const hasMessages = Array.isArray(unified.messages) && unified.messages.length > 0;
+
+    const messages = hasMessages
+      ? [
+          ...(unified.systemPrompt
+            ? [{ role: "system", content: unified.systemPrompt }]
+            : []),
+          ...unified.messages!.map((m) => ({ role: m.role, content: m.content })),
+        ]
+      : [{ role: "user", content: input.prompt }];
 
     const stream = await client.chat({
       model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
+      messages,
       options: {
         temperature: input.temperature,
         top_p: input.topP,
@@ -80,20 +60,18 @@ export function createOllamaTextGenerationStream(
       stream: true,
     });
 
-    const onAbort = () => stream.abort();
+    const onAbort = (): void => stream.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      // Re-check after the listener is attached to close the
-      // attach-vs-aborted race.
       if (signal?.aborted) stream.abort();
       signal?.throwIfAborted?.();
       for await (const chunk of stream) {
         const delta = chunk.message.content;
         if (delta) {
-          yield { type: "text-delta", port: "text", textDelta: delta };
+          emit({ type: "text-delta", port: "text", textDelta: delta });
         }
       }
-      yield { type: "finish", data: {} as TextGenerationTaskOutput };
+      emit({ type: "finish", data: {} as TextGenerationTaskOutput });
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

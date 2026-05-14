@@ -6,60 +6,30 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 
-export const Anthropic_StructuredGeneration: AiProviderRunFn<
+/**
+ * Streaming run-fn for the `["text.generation", "json-mode"]` capability.
+ *
+ * Anthropic implements structured generation via tool-use under the hood:
+ * a synthetic `structured_output` tool forces the model to emit JSON conforming
+ * to the output schema. We accumulate the `input_json_delta` stream events and
+ * yield `object-delta` for consumers that want incremental updates. The final
+ * `finish` event carries the parsed object in `finish.data.object` per the
+ * documented streaming-convention exception for structured generation (CLAUDE.md
+ * lines 201-205): the `StructuredGenerationTask` consumer reads the parsed
+ * object from `finish.data` directly instead of accumulating deltas.
+ */
+export const Anthropic_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   AnthropicModelConfig
-> = async (input, model, update_progress, signal, outputSchema) => {
-  update_progress(0, "Starting Anthropic structured generation");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const schema = input.outputSchema ?? outputSchema;
-
-  const response = await client.messages.create(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt as string }],
-      tools: [
-        {
-          name: "structured_output",
-          description: "Output structured data conforming to the schema",
-          input_schema: schema as any,
-        },
-      ],
-      tool_choice: { type: "tool" as const, name: "structured_output" },
-      max_tokens: getMaxTokens(input, model),
-    },
-    { signal }
-  );
-
-  const toolBlock = response.content.find((b: any) => b.type === "tool_use") as any;
-  const object = toolBlock?.input ?? {};
-
-  update_progress(100, "Completed Anthropic structured generation");
-  return { object };
-};
-
-export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
-  StructuredGenerationTaskInput,
-  StructuredGenerationTaskOutput,
-  AnthropicModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  outputSchema
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit, outputSchema) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -88,7 +58,7 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
       accumulatedJson += event.delta.partial_json;
       const partial = parsePartialJson(accumulatedJson);
       if (partial !== undefined) {
-        yield { type: "object-delta", port: "object", objectDelta: partial };
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
@@ -99,5 +69,8 @@ export const Anthropic_StructuredGeneration_Stream: AiProviderStreamFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  // Exception: structured generation MUST populate finish.data.object so the
+  // StructuredGenerationTask consumer can read the parsed object without a
+  // JSON streaming parser. See CLAUDE.md streaming-convention-exception note.
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

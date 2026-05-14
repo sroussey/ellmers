@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  ModelInfoTaskInput,
+  ModelInfoTaskOutput,
+} from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getActualModelPath,
@@ -17,7 +21,7 @@ export const LlamaCpp_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   LlamaCppModelConfig
-> = async (input, model) => {
+> = async (input, model, _signal, emit) => {
   if (!model) throw new Error("Model config is required for ModelInfoTask.");
 
   if (input.detail === "dimensions") {
@@ -25,18 +29,22 @@ export const LlamaCpp_ModelInfo: AiProviderRunFn<
     const native_dimensions =
       typeof pc.native_dimensions === "number" ? pc.native_dimensions : undefined;
     const mrl = typeof pc.mrl === "boolean" ? pc.mrl : false;
-    return {
-      model: input.model,
-      is_local: true,
-      is_remote: false,
-      supports_browser: false,
-      supports_node: true,
-      is_cached: false,
-      is_loaded: false,
-      file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl ? { mrl } : {}),
-    };
+    emit({
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: true,
+        is_remote: false,
+        supports_browser: false,
+        supports_node: true,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl ? { mrl } : {}),
+      },
+    });
+    return;
   }
 
   const modelPath = getActualModelPath(model);
@@ -56,14 +64,17 @@ export const LlamaCpp_ModelInfo: AiProviderRunFn<
     }
   }
 
-  return {
-    model: input.model,
-    is_local: true,
-    is_remote: false,
-    supports_browser: false,
-    supports_node: true,
-    is_cached,
-    is_loaded,
-    file_sizes,
-  };
+  emit({
+    type: "finish",
+    data: {
+      model: input.model,
+      is_local: true,
+      is_remote: false,
+      supports_browser: false,
+      supports_node: true,
+      is_cached,
+      is_loaded,
+      file_sizes,
+    },
+  });
 };

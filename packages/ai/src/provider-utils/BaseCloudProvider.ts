@@ -7,8 +7,7 @@
 import type { AiProvider } from "../provider/AiProvider";
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
+  AiProviderRunFnRegistration,
 } from "../provider/AiProviderRegistry";
 import type { ModelConfig } from "../model/ModelSchema";
 
@@ -18,12 +17,11 @@ import type { ModelConfig } from "../model/ModelSchema";
  * Shared across each provider's worker- and main-thread class shells so the
  * declarations live in one place and only the constructor base differs.
  */
-export interface CloudProviderMetadata<TaskTypes extends readonly string[] = readonly string[]> {
+export interface CloudProviderMetadata {
   readonly name: string;
   readonly displayName: string;
   readonly isLocal?: boolean;
   readonly supportsBrowser?: boolean;
-  readonly taskTypes: TaskTypes;
 }
 
 /**
@@ -33,9 +31,7 @@ export interface CloudProviderMetadata<TaskTypes extends readonly string[] = rea
  */
 type AiProviderCtor<TModelConfig extends ModelConfig> = abstract new (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tasks?: Record<string, AiProviderRunFn<any, any, TModelConfig>>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  streamTasks?: Record<string, AiProviderStreamFn<any, any, TModelConfig>>,
+  promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
 ) => AiProvider<TModelConfig>;
@@ -46,26 +42,23 @@ type AiProviderCtor<TModelConfig extends ModelConfig> = abstract new (
  *
  * Each cloud provider package keeps two thin shells (worker + main-thread)
  * and supplies the appropriate `AiProvider` import to this factory. The
- * generated class implements `name`, `displayName`, `isLocal`,
- * `supportsBrowser`, and `taskTypes` from the metadata literal; the
- * constructor is inherited unchanged from the base.
+ * generated class implements `name`, `displayName`, `isLocal`, and
+ * `supportsBrowser` from the metadata literal; the constructor is inherited
+ * unchanged from the base.
  */
-export function createCloudProviderClass<
-  TModelConfig extends ModelConfig,
-  T extends readonly string[],
->(Base: AiProviderCtor<TModelConfig>, meta: CloudProviderMetadata<T>) {
+export function createCloudProviderClass<TModelConfig extends ModelConfig>(
+  Base: AiProviderCtor<TModelConfig>,
+  meta: CloudProviderMetadata
+) {
   abstract class CloudProvider extends Base {
     readonly name = meta.name;
     readonly displayName = meta.displayName;
     readonly isLocal = meta.isLocal ?? false;
     readonly supportsBrowser = meta.supportsBrowser ?? true;
-    readonly taskTypes: T = meta.taskTypes;
   }
   return CloudProvider as unknown as new (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tasks?: Record<string, AiProviderRunFn<any, any, TModelConfig>>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, TModelConfig>>,
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, TModelConfig>[],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, TModelConfig>>
   ) => AiProvider<TModelConfig> & {
@@ -73,6 +66,5 @@ export function createCloudProviderClass<
     readonly displayName: string;
     readonly isLocal: boolean;
     readonly supportsBrowser: boolean;
-    readonly taskTypes: T;
   };
 }

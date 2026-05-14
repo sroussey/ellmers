@@ -5,9 +5,13 @@
  */
 
 import { getAiProviderRegistry, getGlobalModelRepository, textGeneration } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 export function textGenerationSmokeBlock(
   opts: AiProviderConformanceOpts,
@@ -15,7 +19,7 @@ export function textGenerationSmokeBlock(
 ): void {
   describe.skipIf(!opts.models.textGeneration)("TextGeneration smoke", () => {
     it(
-      "non-streaming returns non-empty text",
+      "task-level textGeneration() returns non-empty text",
       async () => {
         const result = await textGeneration({
           model: opts.models.textGeneration!,
@@ -35,26 +39,28 @@ export function textGenerationSmokeBlock(
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+        const streamFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
         expect(streamFn).toBeDefined();
 
         let textDeltaCount = 0;
         let finishCount = 0;
         let sawEventAfterFinish = false;
-        for await (const ev of streamFn!(
-          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-          model!,
-          new AbortController().signal,
-          undefined,
-          undefined
-        )) {
+        const emit = (ev: StreamEvent<TaskOutput>): void => {
           if (finishCount > 0) {
             sawEventAfterFinish = true;
           }
           const e = ev as { type: string };
           if (e.type === "text-delta") textDeltaCount += 1;
           if (e.type === "finish") finishCount += 1;
-        }
+        };
+        await streamFn!(
+          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+          model!,
+          new AbortController().signal,
+          emit,
+          undefined,
+          undefined
+        );
 
         expect(textDeltaCount).toBeGreaterThanOrEqual(1);
         expect(finishCount).toBe(1);

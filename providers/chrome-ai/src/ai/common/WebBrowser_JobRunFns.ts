@@ -4,39 +4,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import type { AiProviderRunFnRegistration } from "@workglow/ai";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
-import { WebBrowser_ModelSearch } from "./WebBrowser_ModelSearch";
+import {
+  WEB_BROWSER_MODEL_INFO,
+  WEB_BROWSER_MODEL_SEARCH,
+  WEB_BROWSER_TEXT_GENERATION,
+  WEB_BROWSER_TEXT_LANGUAGE_DETECTION,
+  WEB_BROWSER_TEXT_REWRITER,
+  WEB_BROWSER_TEXT_SUMMARY,
+  WEB_BROWSER_TEXT_TRANSLATION,
+} from "./WebBrowser_CapabilitySets";
 
 import { WebBrowser_ModelInfo } from "./WebBrowser_ModelInfo";
-import {
-  WebBrowser_TextGeneration,
-  WebBrowser_TextGeneration_Stream,
-} from "./WebBrowser_TextGeneration";
+import { WebBrowser_ModelSearch } from "./WebBrowser_ModelSearch";
+import { WebBrowser_TextGeneration } from "./WebBrowser_TextGeneration";
 import { WebBrowser_TextLanguageDetection } from "./WebBrowser_TextLanguageDetection";
-import { WebBrowser_TextRewriter, WebBrowser_TextRewriter_Stream } from "./WebBrowser_TextRewriter";
-import { WebBrowser_TextSummary, WebBrowser_TextSummary_Stream } from "./WebBrowser_TextSummary";
-import {
-  WebBrowser_TextTranslation,
-  WebBrowser_TextTranslation_Stream,
-} from "./WebBrowser_TextTranslation";
+import { WebBrowser_TextRewriter } from "./WebBrowser_TextRewriter";
+import { WebBrowser_TextSummary } from "./WebBrowser_TextSummary";
+import { WebBrowser_TextTranslation } from "./WebBrowser_TextTranslation";
 
-export const WEB_BROWSER_TASKS: Record<string, AiProviderRunFn<any, any, WebBrowserModelConfig>> = {
-  ModelInfoTask: WebBrowser_ModelInfo,
-  TextSummaryTask: WebBrowser_TextSummary,
-  TextLanguageDetectionTask: WebBrowser_TextLanguageDetection,
-  TextTranslationTask: WebBrowser_TextTranslation,
-  TextGenerationTask: WebBrowser_TextGeneration,
-  TextRewriterTask: WebBrowser_TextRewriter,
-  ModelSearchTask: WebBrowser_ModelSearch,
-};
-
-export const WEB_BROWSER_STREAM_TASKS: Record<
-  string,
-  AiProviderStreamFn<any, any, WebBrowserModelConfig>
-> = {
-  TextSummaryTask: WebBrowser_TextSummary_Stream,
-  TextTranslationTask: WebBrowser_TextTranslation_Stream,
-  TextGenerationTask: WebBrowser_TextGeneration_Stream,
-  TextRewriterTask: WebBrowser_TextRewriter_Stream,
-};
+export const WEB_BROWSER_RUN_FNS: readonly AiProviderRunFnRegistration<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  WebBrowserModelConfig
+>[] = [
+  { serves: WEB_BROWSER_TEXT_GENERATION, runFn: WebBrowser_TextGeneration },
+  { serves: WEB_BROWSER_TEXT_REWRITER, runFn: WebBrowser_TextRewriter },
+  { serves: WEB_BROWSER_TEXT_SUMMARY, runFn: WebBrowser_TextSummary },
+  { serves: WEB_BROWSER_TEXT_TRANSLATION, runFn: WebBrowser_TextTranslation },
+  { serves: WEB_BROWSER_TEXT_LANGUAGE_DETECTION, runFn: WebBrowser_TextLanguageDetection },
+  { serves: WEB_BROWSER_MODEL_SEARCH, runFn: WebBrowser_ModelSearch },
+  { serves: WEB_BROWSER_MODEL_INFO, runFn: WebBrowser_ModelInfo },
+];

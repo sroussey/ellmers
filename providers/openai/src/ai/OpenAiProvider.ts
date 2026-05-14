@@ -5,31 +5,30 @@
  */
 
 import { AiProvider } from "@workglow/ai/worker";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
 import { OPENAI } from "./common/OpenAI_Constants";
+import { inferOpenAiCapabilities, openAiWorkerRunFnSpecs } from "./common/OpenAI_Capabilities";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
-
-const OPENAI_WORKER_TASK_TYPES = [
-  "TextGenerationTask",
-  "TextEmbeddingTask",
-  "TextRewriterTask",
-  "TextSummaryTask",
-  "CountTokensTask",
-  "ModelInfoTask",
-  "StructuredGenerationTask",
-  "ToolCallingTask",
-  "ModelSearchTask",
-] as const;
 
 /**
  * Worker-server registration for OpenAI cloud models. Imports `AiProvider`
  * from `@workglow/ai/worker` so the SDK is only loaded in the worker.
+ *
+ * The class extends the {@link createCloudProviderClass} mixin (which
+ * supplies `name` / `displayName` / `isLocal` / `supportsBrowser`) and adds
+ * the OpenAI-specific {@link AiProvider.inferCapabilities} and
+ * {@link AiProvider.workerRunFnSpecs} overrides.
  */
-export class OpenAiProvider extends createCloudProviderClass<
-  OpenAiModelConfig,
-  typeof OPENAI_WORKER_TASK_TYPES
->(AiProvider, {
+export class OpenAiProvider extends createCloudProviderClass<OpenAiModelConfig>(AiProvider, {
   name: OPENAI,
   displayName: "OpenAI",
-  taskTypes: OPENAI_WORKER_TASK_TYPES,
-}) {}
+}) {
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferOpenAiCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return openAiWorkerRunFnSpecs();
+  }
+}

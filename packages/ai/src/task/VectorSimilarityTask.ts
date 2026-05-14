@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, GraphAsTask, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   cosineSimilarity,
   DataPortSchema,
@@ -15,6 +15,7 @@ import {
   TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 export const SimilarityFn = {
   COSINE: "cosine",
@@ -102,6 +103,8 @@ export class VectorSimilarityTask extends GraphAsTask<
   VectorSimilarityTaskConfig
 > {
   static override readonly type = "VectorSimilarityTask";
+  /** Pure-compute vector similarity — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   static override readonly category = "Vector";
   static override readonly title = "Vector Similarity";
   public static override description =

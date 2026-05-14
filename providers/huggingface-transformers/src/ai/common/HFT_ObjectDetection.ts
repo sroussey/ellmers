@@ -26,42 +26,49 @@ export const HFT_ObjectDetection: AiProviderRunFn<
   ObjectDetectionTaskInput,
   ObjectDetectionTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   if (model?.provider_config?.pipeline === "zero-shot-object-detection") {
     if (!input.labels || !Array.isArray(input.labels) || input.labels.length === 0) {
       throw new Error("Zero-shot object detection requires labels");
     }
-    const zeroShotDetector: ZeroShotObjectDetectionPipeline = await getPipeline(
+    const zeroShotDetector = (await getPipeline(
       model!,
-      onProgress,
+      emit,
       {},
       signal
-    );
+    )) as ZeroShotObjectDetectionPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await zeroShotDetector(imageArg, Array.from(input.labels!), {
       threshold: input.threshold,
     });
 
-    return {
-      detections: result.map((d: any) => ({
-        label: d.label,
-        score: d.score,
-        box: d.box,
-      })),
-    };
+    emit({
+      type: "finish",
+      data: {
+        detections: result.map((d: any) => ({
+          label: d.label,
+          score: d.score,
+          box: d.box,
+        })),
+      },
+    });
+    return;
   }
 
-  const detector: ObjectDetectionPipeline = await getPipeline(model!, onProgress, {}, signal);
+  const detector = (await getPipeline(model!, emit, {}, signal)) as ObjectDetectionPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const detections = await detector(imageArg, {
     threshold: input.threshold,
   });
 
-  return {
-    detections: detections.map((d) => ({
-      label: d.label,
-      score: d.score,
-      box: d.box,
-    })),
-  };
+  emit({
+    type: "finish",
+    data: {
+      detections: detections.map((d) => ({
+        label: d.label,
+        score: d.score,
+        box: d.box,
+      })),
+    } as unknown as ObjectDetectionTaskOutput,
+  });
 };

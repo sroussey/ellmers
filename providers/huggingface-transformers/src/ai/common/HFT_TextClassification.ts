@@ -20,7 +20,7 @@ export const HFT_TextClassification: AiProviderRunFn<
   TextClassificationTaskInput,
   TextClassificationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   if (model?.provider_config?.pipeline === "zero-shot-classification") {
     if (
       !input.candidateLabels ||
@@ -30,36 +30,43 @@ export const HFT_TextClassification: AiProviderRunFn<
       throw new Error("Zero-shot text classification requires candidate labels");
     }
 
-    const zeroShotClassifier: ZeroShotClassificationPipeline = await getPipeline(
+    const zeroShotClassifier = (await getPipeline(
       model!,
-      onProgress,
+      emit,
       {},
       signal
-    );
+    )) as ZeroShotClassificationPipeline;
     const result: any = await zeroShotClassifier(input.text, input.candidateLabels as string[], {});
 
-    return {
-      categories: result.labels.map((label: string, idx: number) => ({
-        label,
-        score: result.scores[idx],
-      })),
-    };
+    emit({
+      type: "finish",
+      data: {
+        categories: result.labels.map((label: string, idx: number) => ({
+          label,
+          score: result.scores[idx],
+        })),
+      },
+    });
+    return;
   }
 
-  const TextClassification: TextClassificationPipeline = await getPipeline(
+  const TextClassification = (await getPipeline(
     model!,
-    onProgress,
+    emit,
     {},
     signal
-  );
+  )) as TextClassificationPipeline;
   const result = await TextClassification(input.text, {
     top_k: input.maxCategories || undefined,
   });
 
-  return {
-    categories: result.map((category) => ({
-      label: category.label,
-      score: category.score,
-    })),
-  };
+  emit({
+    type: "finish",
+    data: {
+      categories: result.map((category) => ({
+        label: category.label,
+        score: category.score,
+      })),
+    },
+  });
 };

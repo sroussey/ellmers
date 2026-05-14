@@ -17,22 +17,25 @@ export const HFT_TextNamedEntityRecognition: AiProviderRunFn<
   TextNamedEntityRecognitionTaskInput,
   TextNamedEntityRecognitionTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const textNamedEntityRecognition: TokenClassificationPipeline = await getPipeline(
+> = async (input, model, signal, emit) => {
+  const textNamedEntityRecognition = (await getPipeline(
     model!,
-    onProgress,
+    emit,
     {},
     signal
-  );
+  )) as TokenClassificationPipeline;
   const results = await textNamedEntityRecognition(input.text, {
     ignore_labels: input.blockList as string[] | undefined,
   });
 
-  return {
-    entities: results.map((entity) => ({
-      entity: entity.entity,
-      score: entity.score,
-      word: entity.word,
-    })),
-  };
+  emit({
+    type: "finish",
+    data: {
+      entities: results.map((entity) => ({
+        entity: entity.entity,
+        score: entity.score,
+        word: entity.word,
+      })),
+    },
+  });
 };

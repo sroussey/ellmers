@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelConfig } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
+  Capability,
+  ModelConfig,
+} from "@workglow/ai";
 import {
   AiProvider,
   getAiProviderRegistry,
@@ -19,6 +24,8 @@ import { describe, expect, it } from "vitest";
 // ============================================================================
 // Fixtures
 // ============================================================================
+
+const JSON_MODE = ["text.generation", "json-mode"] as const satisfies Capability[];
 
 function mkContext(): IExecuteContext {
   const controller = new AbortController();
@@ -36,14 +43,16 @@ function mkContext(): IExecuteContext {
       register: (_key: string, _fn: () => Promise<void>) => {},
       dispose: async () => {},
     } as any,
-  } as unknown as IExecuteContext;
+  } as IExecuteContext;
 }
 
 function mkModel(): ModelConfig {
   return {
     provider: "fake-structured",
     model: "fake-model",
-  } as unknown as ModelConfig;
+    capabilities: JSON_MODE,
+    provider_config: {},
+  } as ModelConfig;
 }
 
 class FakeStructuredProvider extends AiProvider {
@@ -51,13 +60,17 @@ class FakeStructuredProvider extends AiProvider {
   override readonly displayName = "Fake Structured";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
-  override readonly taskTypes = ["StructuredGenerationTask"] as const;
+
+  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+    super(runFns);
+  }
 }
 
 /**
- * Registers a fake provider that, per attempt, yields a final object-delta
- * with the scripted payload and a finish event. `attempts` is an ordered
- * list of payloads — one per invocation.
+ * Registers a fake provider that, per attempt, yields a partial object-delta
+ * with the scripted payload and a finish event whose `data.object` carries the
+ * full parsed payload (per the json-mode finish convention). `attempts` is an
+ * ordered list of payloads — one per invocation.
  */
 function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, unknown>>): {
   calls: ReadonlyArray<string>;
@@ -65,18 +78,18 @@ function registerFakeStructuredProvider(attempts: ReadonlyArray<Record<string, u
 } {
   const calls: string[] = [];
   let index = 0;
-  const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (input) {
+  const stream: AiProviderRunFn<any, any, ModelConfig> = async (input, _model, _signal, emit) => {
     calls.push(input.prompt as string);
     const payload = attempts[Math.min(index, attempts.length - 1)];
     index++;
-    yield { type: "object-delta", port: "object", objectDelta: payload };
-    yield { type: "finish", data: {} as any };
+    emit({ type: "object-delta", port: "object", objectDelta: payload });
+    emit({ type: "finish", data: { object: payload } as any });
   };
 
   const registry = getAiProviderRegistry();
-  const provider = new FakeStructuredProvider();
+  const provider = new FakeStructuredProvider([{ serves: JSON_MODE, runFn: stream }]);
   registry.registerProvider(provider);
-  registry.registerStreamFn("fake-structured", "StructuredGenerationTask", stream);
+  registry.registerRunFn("fake-structured", { serves: JSON_MODE, runFn: stream });
   return { calls, unregister: () => registry.unregisterProvider("fake-structured") };
 }
 

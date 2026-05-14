@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { DataflowJson } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import type { DataflowJson } from "../TaskJSON";
 
 describe("DataflowJson transforms field", () => {
   it("accepts an optional transforms array", () => {

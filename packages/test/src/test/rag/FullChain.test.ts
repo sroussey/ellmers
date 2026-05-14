@@ -12,6 +12,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { registerTasks } from "../../binding/RegisterTasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("Complete chainable workflow", () => {
   let logger = getTestingLogger();
   setLogger(logger);
@@ -20,6 +22,7 @@ describe("Complete chainable workflow", () => {
   });
 
   it("should chain from parsing to storage without loops", async () => {
+    const s = snap();
     const markdown = `# Test Document
 
 ## Section 1
@@ -58,9 +61,11 @@ This is the second section with more content.`;
     // Verify output structure matches expectations
     expect(result.chunks.length).toBe(result.count);
     expect(result.text.length).toBe(result.count);
+    report("full-chain: parse+chunk", s);
   });
 
   it("should demonstrate data flow through chain", async () => {
+    const s = snap();
     const markdown = "# Title\n\nParagraph content.";
 
     const result = await new Workflow()
@@ -92,9 +97,11 @@ This is the second section with more content.`;
     for (const chunk of chunks) {
       expect(chunk.doc_id).toBe(result.doc_id);
     }
+    report("full-chain: data-flow", s);
   });
 
   it("should allow doc_id override for variant creation", async () => {
+    const s = snap();
     const markdown = "# Test\n\nContent.";
     const customId = uuid4();
 
@@ -116,5 +123,6 @@ This is the second section with more content.`;
     for (const chunk of result.chunks) {
       expect(chunk.doc_id).toBe(customId);
     }
+    report("full-chain: doc-id-override", s);
   });
 });

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -15,6 +15,7 @@ import {
   TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
   type: "object",
@@ -105,6 +106,8 @@ export class VectorQuantizeTask extends Task<
   VectorQuantizeTaskConfig
 > {
   public static override type = "VectorQuantizeTask";
+  /** Pure-compute vector quantization — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Vector";
   public static override title = "Quantize";
   public static override description = "Quantize vectors to reduce storage and improve performance";

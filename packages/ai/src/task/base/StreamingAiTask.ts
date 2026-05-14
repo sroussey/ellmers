@@ -16,6 +16,7 @@ import { AiTask } from "./AiTask";
 import type { AiTaskInput } from "./AiTask";
 import { getAiProviderRegistry } from "../../provider/AiProviderRegistry";
 import type { ModelConfig } from "../../model/ModelSchema";
+import { runWithIterable } from "./runWithIterable";
 
 /**
  * A base class for streaming AI tasks.
@@ -37,11 +38,15 @@ import type { ModelConfig } from "../../model/ModelSchema";
  * (direct or queued), which in turn forwards it to the provider stream function.
  * When the signal fires, the underlying provider SDK tears down its connection
  * and the inner `for await` exits; this generator then returns or throws
- * promptly. Partial accumulated text / object state may still remain in task
- * or runner state after abort (the runner does not clear `runOutputData`) and
- * MUST be treated as invalid unless the final run status is `COMPLETED`.
- * Subclasses overriding `executeStream()` MUST preserve this contract: forward
- * `context.signal`, and either return or throw promptly after abort.
+ * promptly. Consumer-driven cancellation (an early `break` from the
+ * `for await` consuming this generator) is also propagated: see
+ * {@link runWithIterable} for the mechanism that converts a closed
+ * consumer into an aborted provider signal. Partial accumulated text /
+ * object state may still remain in task or runner state after abort (the
+ * runner does not clear `runOutputData`) and MUST be treated as invalid
+ * unless the final run status is `COMPLETED`. Subclasses overriding
+ * `executeStream()` MUST preserve this contract: forward `context.signal`,
+ * and either return or throw promptly after abort.
  */
 export class StreamingAiTask<
   Input extends AiTaskInput = AiTaskInput,
@@ -81,6 +86,10 @@ export class StreamingAiTask<
         "StreamingAiTask: Model was not resolved to ModelConfig - this indicates a bug in the resolution system"
       );
     }
+
+    // Strict gating: mirrors AiTask.execute — both paths must check before dispatch.
+    this.gateOrThrow(model);
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
@@ -107,8 +116,20 @@ export class StreamingAiTask<
     // GPU acquisition, provider API connect time.
     yield { type: "phase", message: preparingLabel, progress: undefined } as StreamEvent<Output>;
 
+    // Drive the strategy through `runWithIterable` so consumer abort
+    // propagates to the provider stream. The factory just forwards events
+    // into the queue verbatim; per-port wrapping happens on the consumer
+    // side below.
+    const iterable = runWithIterable<Output>(
+      strategy,
+      jobInput,
+      context,
+      this.runConfig.runnerId,
+      (queue) => (event) => queue.push(event as StreamEvent<Output>)
+    );
+
     let firstDataSeen = false;
-    for await (const event of strategy.executeStream(jobInput, context, this.runConfig.runnerId)) {
+    for await (const event of iterable) {
       if (
         !firstDataSeen &&
         (event.type === "text-delta" || event.type === "object-delta" || event.type === "snapshot")

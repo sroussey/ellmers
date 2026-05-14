@@ -11,12 +11,15 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+import { snap, report } from "../../binding/testTiming";
+
 describe("HierarchicalChunker", () => {
   let logger = getTestingLogger();
   setLogger(logger);
 
   describe("HierarchicalChunkerTask", () => {
     it("should chunk a simple document hierarchically", async () => {
+      const s = snap();
       const markdown = `# Section 1
 
   This is a paragraph that should fit in one chunk.
@@ -51,9 +54,11 @@ describe("HierarchicalChunker", () => {
         expect(chunk.nodePath.length).toBeGreaterThan(0);
         expect(chunk.depth).toBeGreaterThanOrEqual(0);
       }
+      report("hier-chunk: simple", s);
     });
 
     it("should respect token budgets", async () => {
+      const s = snap();
       // Create a long text that requires splitting
       const longText = "Lorem ipsum dolor sit amet. ".repeat(100);
       const markdown = `# Section\n\n${longText}`;
@@ -78,9 +83,11 @@ describe("HierarchicalChunker", () => {
         const tokens = estimateTokens(chunk.text);
         expect(tokens).toBeLessThanOrEqual(maxTokens);
       }
+      report("hier-chunk: token-budget", s);
     });
 
     it("should create overlapping chunks", async () => {
+      const s = snap();
       const text = "Word ".repeat(200);
       const markdown = `# Section\n\n${text}`;
 
@@ -112,9 +119,11 @@ describe("HierarchicalChunker", () => {
 
         expect(hasOverlap).toBe(true);
       }
+      report("hier-chunk: overlap", s);
     });
 
     it("should handle flat strategy", async () => {
+      const s = snap();
       const markdown = `# Section 1
 
   Paragraph 1.
@@ -138,9 +147,11 @@ describe("HierarchicalChunker", () => {
 
       // Flat strategy should still produce chunks
       expect(result.count).toBeGreaterThan(0);
+      report("hier-chunk: flat-strategy", s);
     });
 
     it("should maintain node paths in chunks", async () => {
+      const s = snap();
       const markdown = `# Section 1
 
   ## Subsection 1.1
@@ -167,9 +178,11 @@ describe("HierarchicalChunker", () => {
         // First element should be root node ID
         expect(chunk.nodePath[0]).toBe(root.nodeId);
       }
+      report("hier-chunk: node-paths", s);
     });
 
     it("prepends a section-only heading breadcrumb (excludes doc root title)", async () => {
+      const s = snap();
       const markdown = `# Outer Section
 
 ## Inner Subsection
@@ -198,9 +211,11 @@ Body text under the inner subsection.`;
       expect(
         result.chunks.some((c) => c.text.includes("Body text under the inner subsection"))
       ).toBe(true);
+      report("hier-chunk: breadcrumb", s);
     });
 
     it("keeps prefix+body within the chunk token budget when splitting long leaves", async () => {
+      const s = snap();
       // Long body forces multiple chunks; breadcrumb tokens must be charged against
       // the budget so no chunk exceeds maxTokens after prepending the prefix.
       const longText = "Lorem ipsum dolor sit amet. ".repeat(100);
@@ -225,9 +240,11 @@ Body text under the inner subsection.`;
         // And the whole chunk (prefix + body) must respect the token budget.
         expect(estimateTokens(chunk.text)).toBeLessThanOrEqual(maxTokens);
       }
+      report("hier-chunk: prefix-budget", s);
     });
 
     it("stamps sectionTitles onto every chunk so the chat layer can build #anchor URLs", async () => {
+      const s = snap();
       const markdown = `# Outer Section
 
 ## Inner Subsection
@@ -267,9 +284,11 @@ More body text.`;
       const otherChunk = result.chunks.find((c) => c.text.includes("More body text"));
       expect(otherChunk).toBeDefined();
       expect(otherChunk!.sectionTitles).toEqual(["Outer Section", "Another Subsection"]);
+      report("hier-chunk: section-titles", s);
     });
 
     it("does not prepend the document title in flat strategy", async () => {
+      const s = snap();
       const markdown = `# Section 1
 
 Paragraph 1.
@@ -298,25 +317,31 @@ Paragraph 2.`;
       for (const chunk of result.chunks) {
         expect(chunk.text.includes("FlatDoc")).toBe(false);
       }
+      report("hier-chunk: flat-no-title", s);
     });
   });
 
   describe("Token estimation", () => {
     it("should estimate tokens approximately", () => {
+      const s = snap();
       const text = "This is a test string";
       const tokens = estimateTokens(text);
 
       // Rough approximation: 1 token ~= 4 characters
       const expected = Math.ceil(text.length / 4);
       expect(tokens).toBe(expected);
+      report("token-est: approximate", s);
     });
 
     it("should handle empty strings", () => {
+      const s = snap();
       const tokens = estimateTokens("");
       expect(tokens).toBe(0);
+      report("token-est: empty", s);
     });
 
     it("should increase token count with text length", () => {
+      const s = snap();
       const shortText = "Hello";
       const longText = "Hello world this is a much longer text";
 
@@ -324,6 +349,7 @@ Paragraph 2.`;
       const longTokens = estimateTokens(longText);
 
       expect(longTokens).toBeGreaterThan(shortTokens);
+      report("token-est: length-proportional", s);
     });
   });
 });

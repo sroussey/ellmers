@@ -16,7 +16,7 @@ function modelConfig(modelName: string): any {
     provider: HF_INFERENCE,
     title: "",
     description: "",
-    tasks: ["ImageEditTask"],
+    capabilities: ["image.editing"],
     provider_config: { model_name: modelName },
     metadata: {},
   };

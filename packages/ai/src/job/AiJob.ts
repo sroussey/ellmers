@@ -14,9 +14,9 @@ import {
   withJobErrorDiagnostics,
 } from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
-import { getLogger } from "@workglow/util/worker";
 import type { JsonSchema } from "@workglow/util/schema";
+import type { AiEmit } from "../capability/AiEmit";
+import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import {
@@ -31,6 +31,18 @@ const DEFAULT_AI_TIMEOUT_MS = 120_000;
 /** Local inference (CPU/WASM) often needs several minutes (downloads, load, multi-turn tool follow-up). */
 const LOCAL_INFERENCE_DEFAULT_TIMEOUT_MS = 300_000;
 
+/**
+ * Cross-runtime macrotask yield. Tight microtask-only `await` chains starve
+ * V8 GC + FinalizationRegistry callbacks, which on ONNX/WASM workloads pins
+ * native handles (session memory, KV cache) for the lifetime of the suite
+ * rather than releasing them per call. One macrotask boundary per AI job
+ * lets the event loop drain those finalizers between calls.
+ */
+const yieldMacrotask: () => Promise<void> =
+  typeof setImmediate === "function"
+    ? () => new Promise<void>((resolve) => setImmediate(resolve))
+    : () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 function resolveAiJobTimeoutMs(aiProvider: string, explicitMs: number | undefined): number {
   if (explicitMs !== undefined) {
     return explicitMs;
@@ -42,10 +54,21 @@ function resolveAiJobTimeoutMs(aiProvider: string, explicitMs: number | undefine
 }
 
 /**
- * Input data for the AiJob
+ * Input data for the AiJob.
+ *
+ * `taskType` is retained as observability / queue-key metadata only — dispatch
+ * resolves the run function via `requires` against the provider's capability-set
+ * registrations. Both fields travel together so logs and queue keys remain stable
+ * even though the registry is now keyed by capability sets.
  */
 export interface AiJobInput<Input extends TaskInput = TaskInput> {
   taskType: string;
+  /**
+   * Capability set the job requires from the provider. The dispatcher passes
+   * this to {@link AiProviderRegistry.getRunFnFor} to resolve a streaming run
+   * function. An empty array matches the smallest registration available.
+   */
+  requires: readonly Capability[];
   aiProvider: string;
   taskInput: Input & { model: ModelConfig };
   /** JSON Schema for structured output, when the task declares x-structured-output. */
@@ -198,105 +221,76 @@ export class AiJob<
   Output extends TaskOutput = TaskOutput,
 > extends Job<Input, Output> {
   /**
-   * Executes the job using the provided function.
+   * Executes the job by dispatching to the registered run function and
+   * forwarding every emitted event to the caller-supplied `emit`. The Promise
+   * carries no data — output rides on the `finish` event (or accumulated
+   * deltas + trailing empty `finish` for streaming capabilities).
+   *
+   * AiJob no longer fits Job<Input, Output>'s `execute(input, ctx): Promise<Output>`
+   * contract because the new dispatch shape is `execute(input, ctx, emit): Promise<void>`.
+   * The storage-queue path that depended on the Job contract was removed in
+   * QueuedExecutionStrategy. AiJob still uses Job's progress-event / status
+   * machinery, so we keep the inheritance but accept the intentional override
+   * signature mismatch.
+   *
+   * @override Deliberate signature deviation: adds `emit` param, returns `Promise<void>`.
    */
-  override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
+  // @ts-expect-error — intentional signature change; see comment above.
+  override async execute(
+    input: Input,
+    context: IJobExecuteContext,
+    emit: AiEmit<Output>
+  ): Promise<void> {
     if (context.signal.aborted || this.status === JobStatus.ABORTING) {
       throw new AbortSignalJobError("Abort signal aborted before execution of job");
     }
 
-    let abortHandler: (() => void) | undefined;
+    const fn = getAiProviderRegistry().getRunFnFor<Input["taskInput"], Output>(
+      input.aiProvider,
+      input.requires
+    );
+    if (!fn) {
+      throw new Error(
+        `No run function found for provider "${input.aiProvider}" serving capabilities ` +
+          `[${input.requires.join(", ")}] (task: ${input.taskType}).`
+      );
+    }
+
+    // Manual timeout (replaces AbortSignal.timeout — that one's timer is
+    // uncancellable per Web spec, leaks per call). Manual timeout + explicit
+    // listener pair (replaces AbortSignal.any, which retains downstream
+    // listeners on the parent signal).
+    const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
+    const localController = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      localController.abort(new Error("AI job timed out"));
+    }, timeoutMs);
+    const onParentAbort = () => {
+      localController.abort(context.signal.reason);
+    };
+    context.signal.addEventListener("abort", onParentAbort, { once: true });
 
     try {
-      const abortPromise = new Promise<never>((_resolve, reject) => {
-        const handler = () => {
-          reject(new AbortSignalJobError("Abort signal seen, ending job"));
-        };
-
-        context.signal.addEventListener("abort", handler, { once: true });
-        abortHandler = () => context.signal.removeEventListener("abort", handler);
-      });
-
-      const runFn = async () => {
-        const fn = getAiProviderRegistry().getDirectRunFn<Input["taskInput"], Output>(
-          input.aiProvider,
-          input.taskType
-        );
-        const model = input.taskInput.model;
-        // Second abort check after resolving run function (covers async gap)
-        if (context.signal.aborted) {
-          throw new AbortSignalJobError("Job aborted");
-        }
-
-        // Apply timeout via AbortSignal.timeout combined with the caller's signal
-        const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
-        const timeoutSignal = AbortSignal.timeout(timeoutMs);
-        const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
-
-        return await fn(
-          input.taskInput,
-          model,
-          context.updateProgress,
-          combinedSignal,
-          input.outputSchema,
-          input.sessionId
-        );
-      };
-      const runFnPromise = runFn();
-
-      return await Promise.race([runFnPromise, abortPromise]);
+      if (context.signal.aborted) {
+        throw new AbortSignalJobError("Job aborted");
+      }
+      const model = input.taskInput.model;
+      await fn(
+        input.taskInput,
+        model,
+        localController.signal,
+        emit,
+        input.outputSchema,
+        input.sessionId
+      );
     } catch (err) {
       throw classifyProviderError(err, input.taskType, input.aiProvider);
     } finally {
-      // Clean up the abort event listener to prevent memory leaks
-      if (abortHandler) {
-        abortHandler();
-      }
-    }
-  }
-
-  /**
-   * Streaming execution: yields StreamEvents from the provider's stream function.
-   * Falls back to non-streaming execute() if no stream function is registered.
-   * On mid-stream errors, logs the failure, yields a finish event with the last
-   * finish payload received (or an empty object if none was received), then
-   * re-throws the classified error. Delta accumulation is the responsibility of
-   * the caller (e.g. TaskRunner).
-   */
-  async *executeStream(
-    input: Input,
-    context: IJobExecuteContext
-  ): AsyncIterable<StreamEvent<Output>> {
-    if (context.signal.aborted || this.status === JobStatus.ABORTING) {
-      throw new AbortSignalJobError("Abort signal aborted before streaming execution of job");
-    }
-
-    const streamFn = getAiProviderRegistry().getStreamFn<Input["taskInput"], Output>(
-      input.aiProvider,
-      input.taskType
-    );
-
-    if (!streamFn) {
-      const result = await this.execute(input, context);
-      yield { type: "finish", data: result } as StreamEvent<Output>;
-      return;
-    }
-
-    const model = input.taskInput.model;
-
-    // Apply timeout via AbortSignal.timeout combined with the caller's signal
-    const timeoutMs = resolveAiJobTimeoutMs(input.aiProvider, input.timeoutMs);
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const combinedSignal = AbortSignal.any([context.signal, timeoutSignal]);
-
-    try {
-      yield* streamFn(input.taskInput, model, combinedSignal, input.outputSchema, input.sessionId);
-    } catch (err) {
-      const logger = getLogger();
-      logger.warn(
-        `AiJob: Stream error for ${input.taskType} (${input.aiProvider}): ${err instanceof Error ? err.message : String(err)}`
-      );
-      throw classifyProviderError(err, input.taskType, input.aiProvider);
+      clearTimeout(timeoutHandle);
+      context.signal.removeEventListener("abort", onParentAbort);
+      // Macrotask boundary so native finalizers (ONNX session memory, WASM
+      // handles) drain between calls. See spec §"yieldMacrotask".
+      await yieldMacrotask();
     }
   }
 }

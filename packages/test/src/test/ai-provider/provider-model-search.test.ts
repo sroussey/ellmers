@@ -4,26 +4,40 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ModelSearchTask } from "@workglow/ai";
-import { Anthropic_ModelSearch } from "@workglow/anthropic/ai";
-import { Gemini_ModelSearch } from "@workglow/google-gemini/ai";
+import type { AiProviderRunFn } from "@workglow/ai";
+import { collectStream, createEmitQueue, ModelSearchTask } from "@workglow/ai";
+import { Anthropic_ModelSearch_Stream as Anthropic_ModelSearch } from "@workglow/anthropic/ai";
+import { Gemini_ModelSearch_Stream as Gemini_ModelSearch } from "@workglow/google-gemini/ai";
 import { HFI_ModelSearch } from "@workglow/huggingface-inference/ai";
-import { OpenAI_ModelSearch } from "@workglow/openai/ai";
+import { OpenAI_ModelSearch_Stream as OpenAI_ModelSearch } from "@workglow/openai/ai";
 import { TENSORFLOW_MEDIAPIPE, TFMP_ModelSearch } from "@workglow/tf-mediapipe/ai";
 import { afterEach, describe, expect, test } from "vitest";
 
 const originalFetch = globalThis.fetch;
 
+async function runFnToIterable(fn: AiProviderRunFn<any, any>, input: any) {
+  const q = createEmitQueue<any>();
+  fn(input, undefined as any, new AbortController().signal, (e) => q.push(e)).then(
+    () => q.close(),
+    (e) => q.fail(e)
+  );
+  return q.iterable;
+}
+
+interface ModelSearchResult {
+  readonly id: string;
+  readonly label?: string;
+  readonly description?: string;
+  readonly record?: unknown;
+}
+
 async function modelIdsForSearch(
-  search: typeof OpenAI_ModelSearch,
+  search: AiProviderRunFn<any, any>,
   query: string
 ): Promise<string[]> {
-  const { results } = await search(
-    { query } as any,
-    undefined as any,
-    undefined as any,
-    undefined as any
-  );
+  const { results } = (await collectStream(await runFnToIterable(search, { query }))) as {
+    results: ModelSearchResult[];
+  };
   return results.map((model) => model.id);
 }
 
@@ -82,12 +96,12 @@ describe("provider model search samples", () => {
       });
     }) as unknown as typeof fetch;
 
-    const { results } = await Gemini_ModelSearch(
-      { query: "live", credential_key: "test-gemini-key" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(Gemini_ModelSearch, {
+        query: "live",
+        credential_key: "test-gemini-key",
+      })
+    )) as { results: ModelSearchResult[] };
 
     expect(requestedUrl).toContain("key=test-gemini-key");
     expect(results.map((model) => model.id)).toContain("gemini-live-test");
@@ -100,11 +114,8 @@ describe("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      Gemini_ModelSearch(
-        { query: "live", credential_key: "bad-gemini-key" } as any,
-        undefined as any,
-        undefined as any,
-        undefined as any
+      runFnToIterable(Gemini_ModelSearch, { query: "live", credential_key: "bad-gemini-key" }).then(
+        collectStream
       )
     ).rejects.toThrow("Gemini API returned 401");
   });
@@ -128,12 +139,9 @@ describe("provider model search samples", () => {
       ]);
     }) as unknown as typeof fetch;
 
-    const { results } = await HFI_ModelSearch(
-      { query: "live", credential_key: "test-hf-key" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(HFI_ModelSearch, { query: "live", credential_key: "test-hf-key" })
+    )) as { results: ModelSearchResult[] };
 
     expect(authorization).toBe("Bearer test-hf-key");
     expect(results.map((model) => model.id)).toContain("org/live-hfi-model");
@@ -144,22 +152,16 @@ describe("provider model search samples", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
 
     await expect(
-      HFI_ModelSearch(
-        { query: "live", credential_key: "bad-hf-key" } as any,
-        undefined as any,
-        undefined as any,
-        undefined as any
+      runFnToIterable(HFI_ModelSearch, { query: "live", credential_key: "bad-hf-key" }).then(
+        collectStream
       )
     ).rejects.toThrow("HuggingFace API returned 401");
   });
 
   test("TensorFlow MediaPipe search includes known model records", async () => {
-    const { results } = await TFMP_ModelSearch(
-      { provider: TENSORFLOW_MEDIAPIPE, query: "pose" } as any,
-      undefined as any,
-      undefined as any,
-      undefined as any
-    );
+    const { results } = (await collectStream(
+      await runFnToIterable(TFMP_ModelSearch, { provider: TENSORFLOW_MEDIAPIPE, query: "pose" })
+    )) as { results: ModelSearchResult[] };
 
     expect(results).toContainEqual(
       expect.objectContaining({
@@ -168,7 +170,7 @@ describe("provider model search samples", () => {
         record: expect.objectContaining({
           provider: TENSORFLOW_MEDIAPIPE,
           title: "Pose Landmarker",
-          tasks: ["PoseLandmarkerTask"],
+          capabilities: ["vision.pose-landmarks"],
           provider_config: expect.objectContaining({
             task_engine: "vision",
             pipeline: "vision-pose-landmarker",

@@ -21,7 +21,7 @@ const WEB_BROWSER_MODELS: Array<{ label: string; value: string }> = [
 export const WebBrowser_ModelSearch: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async (input, _model, _signal, emit) => {
   const models = filterLabeledModelsByQuery(WEB_BROWSER_MODELS, input.query);
   const results: ModelSearchResultItem[] = models.map((m) => ({
     id: m.value,
@@ -32,18 +32,18 @@ export const WebBrowser_ModelSearch: AiProviderRunFn<
       provider: WEB_BROWSER,
       title: m.value,
       description: "",
-      tasks: [
-        "ModelInfoTask",
-        "TextGenerationTask",
-        "TextSummaryTask",
-        "TextLanguageDetectionTask",
-        "TextTranslationTask",
-        "TextRewriterTask",
+      capabilities: [
+        "model.info",
+        "text.generation",
+        "text.summary",
+        "text.language-detection",
+        "text.translation",
+        "text.rewriter",
       ],
       provider_config: {},
       metadata: {},
     },
     raw: m,
   }));
-  return { results };
+  emit({ type: "finish", data: { results } });
 };

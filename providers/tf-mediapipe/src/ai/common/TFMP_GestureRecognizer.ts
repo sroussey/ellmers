@@ -18,7 +18,7 @@ export const TFMP_GestureRecognizer: AiProviderRunFn<
   GestureRecognizerTaskInput,
   GestureRecognizerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { GestureRecognizer } = await loadTfmpTasksVisionSDK();
   const gestureRecognizer = await getModelTask(
     model!,
@@ -28,7 +28,7 @@ export const TFMP_GestureRecognizer: AiProviderRunFn<
       minHandPresenceConfidence: input.minHandPresenceConfidence,
       minTrackingConfidence: input.minTrackingConfidence,
     },
-    onProgress,
+    emit,
     signal,
     GestureRecognizer
   );
@@ -59,7 +59,5 @@ export const TFMP_GestureRecognizer: AiProviderRunFn<
     })),
   }));
 
-  return {
-    hands,
-  };
+  emit({ type: "finish", data: { hands } });
 };

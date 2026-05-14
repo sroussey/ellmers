@@ -45,6 +45,8 @@ export { FileLoaderTask } from "@workglow/tasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { registerHuggingfaceLocalModels } from "../../samples/ONNXModelSamples";
 
+import { report, snap } from "../../binding/testTiming";
+
 describe("End-to-End RAG Pipeline", () => {
   // In CI, skip summary/NER in document enricher to avoid flaky ONNX model downloads
   const isCI = !!process.env.CI;
@@ -70,7 +72,7 @@ describe("End-to-End RAG Pipeline", () => {
     // Setup task queue and model repository
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
     await registerHuggingfaceLocalModels();
 
@@ -84,14 +86,18 @@ describe("End-to-End RAG Pipeline", () => {
   });
 
   afterAll(async () => {
+    const beforeDispose = snap();
     kb.destroy();
     await getTaskQueueRegistry().stopQueues();
     await getTaskQueueRegistry().clearQueues();
     await setTaskQueueRegistry(null);
     await resourceScope.disposeAll();
+    await clearPipelineCache();
+    report("e2e-rag: dispose", beforeDispose);
   });
 
   it("should ingest document through complete pipeline", async () => {
+    const s = snap();
     const sampleFilePath = join(__dirname, sampleFileName);
 
     logger.info(`\n=== Stage 1: Document Ingestion ===`);
@@ -138,9 +144,11 @@ describe("End-to-End RAG Pipeline", () => {
     logger.info(`  -> Document ID: ${result.doc_id}`);
     logger.info(`  -> Stored ${result.count} vectors`);
     logger.info(`  -> Chunk IDs: ${result.chunk_ids.slice(0, 3).join(", ")}...`);
+    report("e2e-rag: ingest", s);
   }, 160000);
 
   it("should retrieve relevant chunks via query workflow", async () => {
+    const s = snap();
     const query = "What caused the Civil War?";
 
     logger.info(`\n=== Stage 2: Query Retrieval ===`);
@@ -192,9 +200,11 @@ describe("End-to-End RAG Pipeline", () => {
     ];
     const hasRelevantContent = relevantTerms.some((term) => contextLower.includes(term));
     expect(hasRelevantContent).toBe(true);
+    report("e2e-rag: retrieval", s);
   }, 120000);
 
   it("should answer questions about US history", async () => {
+    const s = snap();
     const questions = [
       {
         query: "When did the American Revolution begin?",
@@ -247,9 +257,11 @@ describe("End-to-End RAG Pipeline", () => {
     }
 
     expect(totalQueriesWithResults).toBeGreaterThanOrEqual(1);
+    report("e2e-rag: qa-history", s);
   }, 180000);
 
   it("should use QueryExpander to generate query variations", async () => {
+    const s = snap();
     const query = "What were the major battles of World War II?";
 
     logger.info(`\n=== QueryExpander RAG Task ===`);
@@ -263,7 +275,10 @@ describe("End-to-End RAG Pipeline", () => {
 
     expect(expanderWorkflow.error).toBe("");
 
-    const expanderResult = (await expanderWorkflow.run({}, { resourceScope })) as QueryExpanderTaskOutput;
+    const expanderResult = (await expanderWorkflow.run(
+      {},
+      { resourceScope }
+    )) as QueryExpanderTaskOutput;
 
     expect(expanderResult).toBeDefined();
     expect(expanderResult.query).toBeDefined();
@@ -294,9 +309,11 @@ describe("End-to-End RAG Pipeline", () => {
     }
 
     expect(totalChunksFound).toBeGreaterThan(0);
+    report("e2e-rag: query-expander", s);
   }, 180000);
 
   it("should use ContextBuilder with different formats", async () => {
+    const s = snap();
     const query = "What was the Declaration of Independence?";
 
     logger.info(`\n=== ContextBuilder Format Options ===`);
@@ -309,7 +326,10 @@ describe("End-to-End RAG Pipeline", () => {
       scoreThreshold: 0.0,
     });
 
-    const retrievalResult = (await retrievalWorkflow.run({}, { resourceScope })) as ChunkRetrievalTaskOutput;
+    const retrievalResult = (await retrievalWorkflow.run(
+      {},
+      { resourceScope }
+    )) as ChunkRetrievalTaskOutput;
     expect(retrievalResult.chunks.length).toBeGreaterThan(0);
 
     const formats = ["simple", "numbered", "xml", "markdown"] as const;
@@ -325,14 +345,19 @@ describe("End-to-End RAG Pipeline", () => {
 
       expect(contextWorkflow.error).toBe("");
 
-      const contextResult = (await contextWorkflow.run({}, { resourceScope })) as ContextBuilderTaskOutput;
+      const contextResult = (await contextWorkflow.run(
+        {},
+        { resourceScope }
+      )) as ContextBuilderTaskOutput;
 
       expect(contextResult.context).toBeDefined();
       expect(contextResult.chunksUsed).toBeGreaterThan(0);
     }
+    report("e2e-rag: context-builder", s);
   }, 120000);
 
   it("should use ChunkRetrieval in hybrid mode for combined vector + text search", async () => {
+    const s = snap();
     const query = "Civil War slavery abolition Lincoln";
 
     logger.info(`\n=== ChunkRetrieval (hybrid) ===`);
@@ -340,6 +365,7 @@ describe("End-to-End RAG Pipeline", () => {
     // In-memory KB does not support hybrid search; skip cleanly.
     if (!kb.supportsHybridSearch()) {
       logger.info("Skipping: knowledge base does not support hybrid search");
+      report("e2e-rag: hybrid", s);
       return;
     }
 
@@ -366,9 +392,11 @@ describe("End-to-End RAG Pipeline", () => {
     const relevantTerms = ["civil", "war", "slavery", "lincoln", "union", "emancipation"];
     const foundTerms = relevantTerms.filter((term) => allChunksText.includes(term));
     expect(foundTerms.length).toBeGreaterThan(0);
+    report("e2e-rag: hybrid", s);
   }, 120000);
 
   it("should use HierarchyJoinTask to enrich results with document context", async () => {
+    const s = snap();
     const query = "American Revolution independence";
 
     logger.info(`\n=== HierarchyJoinTask ===`);
@@ -395,9 +423,11 @@ describe("End-to-End RAG Pipeline", () => {
     expect(result.metadata).toBeDefined();
     expect(Array.isArray(result.metadata)).toBe(true);
     expect(result.count).toBe(result.metadata.length);
+    report("e2e-rag: hierarchy-join", s);
   }, 120000);
 
   it("should demonstrate workflow composability", async () => {
+    const s = snap();
     logger.info(`\n=== Workflow Composability Test ===`);
 
     const ingestionWorkflow = new Workflow()
@@ -443,5 +473,6 @@ describe("End-to-End RAG Pipeline", () => {
     const hybridTasks = hybridRetrievalWorkflow.graph.getTasks();
     expect(hybridTasks.length).toBe(3);
     expect(hybridRetrievalWorkflow.error).toBe("");
+    report("e2e-rag: composability", s);
   });
 });

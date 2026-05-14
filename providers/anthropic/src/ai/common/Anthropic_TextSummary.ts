@@ -6,44 +6,17 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
-export const Anthropic_TextSummary: AiProviderRunFn<
+export const Anthropic_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
   AnthropicModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting Anthropic text summarization");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const response = await client.messages.create(
-    {
-      model: modelName,
-      system: "Summarize the following text concisely.",
-      messages: [{ role: "user", content: input.text }],
-      max_tokens: getMaxTokens({}, model),
-    },
-    { signal }
-  );
-
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-
-  update_progress(100, "Completed Anthropic text summarization");
-  return { text };
-};
-
-export const Anthropic_TextSummary_Stream: AiProviderStreamFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  AnthropicModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextSummaryTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -59,8 +32,8 @@ export const Anthropic_TextSummary_Stream: AiProviderStreamFn<
 
   for await (const event of stream) {
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield { type: "text-delta", port: "text", textDelta: event.delta.text };
+      emit({ type: "text-delta", port: "text", textDelta: event.delta.text });
     }
   }
-  yield { type: "finish", data: {} as TextSummaryTaskOutput };
+  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
 };

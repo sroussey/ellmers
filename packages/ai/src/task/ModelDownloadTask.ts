@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
 const modelSchema = TypeModel("model");
 
-const DownloadModelInputSchema = {
+const ModelDownloadInputSchema = {
   type: "object",
   properties: {
     model: modelSchema,
@@ -21,7 +23,7 @@ const DownloadModelInputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-const DownloadModelOutputSchema = {
+const ModelDownloadOutputSchema = {
   type: "object",
   properties: {
     model: modelSchema,
@@ -30,9 +32,9 @@ const DownloadModelOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type DownloadModelTaskRunInput = FromSchema<typeof DownloadModelInputSchema>;
-export type DownloadModelTaskRunOutput = FromSchema<typeof DownloadModelOutputSchema>;
-export type DownloadModelTaskConfig = TaskConfig<DownloadModelTaskRunInput>;
+export type ModelDownloadTaskRunInput = FromSchema<typeof ModelDownloadInputSchema>;
+export type ModelDownloadTaskRunOutput = FromSchema<typeof ModelDownloadOutputSchema>;
+export type ModelDownloadTaskConfig = TaskConfig<ModelDownloadTaskRunInput>;
 
 /**
  * Download a model from a remote source and cache it locally.
@@ -40,27 +42,48 @@ export type DownloadModelTaskConfig = TaskConfig<DownloadModelTaskRunInput>;
  * @remarks
  * This task has a side effect of downloading the model and caching it locally outside of the task system
  */
-export class DownloadModelTask extends AiTask<
-  DownloadModelTaskRunInput,
-  DownloadModelTaskRunOutput,
-  DownloadModelTaskConfig
+export class ModelDownloadTask extends AiTask<
+  ModelDownloadTaskRunInput,
+  ModelDownloadTaskRunOutput,
+  ModelDownloadTaskConfig
 > {
-  public static override type = "DownloadModelTask";
+  public static override type = "ModelDownloadTask";
+  /**
+   * Resolves to the provider's `["model.download"]` run-fn registration.
+   * Local providers (HFT, LlamaCpp) opt-in by registering a run-fn with
+   * `serves: ["model.download"]`; cloud providers don't register one and
+   * `ModelDownloadTask` for cloud models surfaces as a runtime "no run-fn
+   * for provider serving model.download" error.
+   */
+  public static override readonly requires = ["model.download"] as const satisfies Capability[];
+
+  /**
+   * Provider-lifecycle override: `requires: ["model.download"]` routes the
+   * dispatcher to the provider's download run-fn, but the *model* record
+   * doesn't need to advertise `model.download` in its `capabilities` —
+   * a model that's not yet downloaded by definition can't carry that flag
+   * yet. Skip the capability gate; the dispatcher's `getRunFnFor` lookup
+   * (against the provider, not the model record) is the real check.
+   */
+  protected override gateOrThrow(_model: ModelConfig): void {
+    // intentional no-op
+  }
+
   public static override category = "AI Model";
   public static override title = "Download Model";
   public static override description =
     "Downloads and caches AI models locally with progress tracking";
   public static override inputSchema(): DataPortSchema {
-    return DownloadModelInputSchema satisfies DataPortSchema;
+    return ModelDownloadInputSchema satisfies DataPortSchema;
   }
   public static override outputSchema(): DataPortSchema {
-    return DownloadModelOutputSchema satisfies DataPortSchema;
+    return ModelDownloadOutputSchema satisfies DataPortSchema;
   }
   public static override cacheable = false;
 
   public files: { file: string; progress: number }[] = [];
 
-  constructor(config: Partial<DownloadModelTaskConfig> = {}) {
+  constructor(config: Partial<ModelDownloadTaskConfig> = {}) {
     super(config);
     this.on("progress", this.processProgress.bind(this));
     this.on("start", () => {
@@ -119,21 +142,21 @@ export class DownloadModelTask extends AiTask<
  * @returns Promise resolving to the downloaded model(s)
  */
 export const downloadModel = (
-  input: DownloadModelTaskRunInput,
-  config?: DownloadModelTaskConfig,
+  input: ModelDownloadTaskRunInput,
+  config?: ModelDownloadTaskConfig,
   runConfig?: Partial<IRunConfig>
 ) => {
-  return new DownloadModelTask(config).run(input, runConfig);
+  return new ModelDownloadTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {
   interface Workflow {
     downloadModel: CreateWorkflow<
-      DownloadModelTaskRunInput,
-      DownloadModelTaskRunOutput,
-      DownloadModelTaskConfig
+      ModelDownloadTaskRunInput,
+      ModelDownloadTaskRunOutput,
+      ModelDownloadTaskConfig
     >;
   }
 }
 
-Workflow.prototype.downloadModel = CreateWorkflow(DownloadModelTask);
+Workflow.prototype.downloadModel = CreateWorkflow(ModelDownloadTask);

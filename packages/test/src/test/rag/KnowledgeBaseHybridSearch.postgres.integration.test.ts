@@ -9,7 +9,17 @@ import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { PostgresFtsTextIndex } from "@workglow/postgres/text";
 import { uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("hybrid-pg", _snap);
+});
 
 const dimensions = 3;
 
@@ -42,7 +52,9 @@ describe("KnowledgeBase hybrid search backed by PostgresFtsTextIndex", () => {
   });
 
   afterAll(async () => {
+    const beforeDispose = snap();
     await (db as unknown as PGlite).close();
+    report("hybrid-pg: dispose", beforeDispose);
   });
 
   it("auto-indexes text fields on upsertChunk and exposes them via textSearch", async () => {

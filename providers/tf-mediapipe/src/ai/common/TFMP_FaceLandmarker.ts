@@ -18,7 +18,7 @@ export const TFMP_FaceLandmarker: AiProviderRunFn<
   FaceLandmarkerTaskInput,
   FaceLandmarkerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { FaceLandmarker } = await loadTfmpTasksVisionSDK();
   const faceLandmarker = await getModelTask(
     model!,
@@ -30,7 +30,7 @@ export const TFMP_FaceLandmarker: AiProviderRunFn<
       outputFaceBlendshapes: input.outputFaceBlendshapes,
       outputFacialTransformationMatrixes: input.outputFacialTransformationMatrixes,
     },
-    onProgress,
+    emit,
     signal,
     FaceLandmarker
   );
@@ -63,7 +63,5 @@ export const TFMP_FaceLandmarker: AiProviderRunFn<
     return face;
   });
 
-  return {
-    faces,
-  };
+  emit({ type: "finish", data: { faces } });
 };

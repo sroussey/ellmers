@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeModel, TypePoseLandmark } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -145,6 +146,10 @@ export class PoseLandmarkerTask extends AiVisionTask<
   PoseLandmarkerTaskConfig
 > {
   public static override type = "PoseLandmarkerTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires = [
+    "vision.pose-landmarks",
+  ] as const satisfies Capability[];
   public static override category = "AI Vision";
   public static override title = "Pose Landmarker";
   public static override description =

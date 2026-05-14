@@ -4,16 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AiProviderRunFn, AiProviderRunFnRegistration, Capability } from "@workglow/ai";
 import {
+  accumulatingEmit,
   AiJob,
   AiJobInput,
   AiProviderRegistry,
   getAiProviderRegistry,
   setAiProviderRegistry,
 } from "@workglow/ai";
-import { JobQueueClient, JobQueueServer, RateLimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
 import type { IQueueStorage } from "@workglow/job-queue";
+import {
+  InMemoryQueueStorage,
+  InMemoryRateLimiterStorage,
+  JobQueueClient,
+  JobQueueServer,
+  RateLimiter,
+} from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
   setTaskQueueRegistry,
@@ -25,10 +32,30 @@ import { setLogger } from "@workglow/util";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-const mock = vi.fn;
-
 // Constants for testing
 const TEST_PROVIDER = "test-provider";
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
+
+/**
+ * Build a one-shot run-fn that resolves to `result` via a single
+ * `finish` event. Records its inputs for assertions.
+ */
+function makeFinishStreamFn(
+  result: TaskOutput,
+  spy?: (...args: unknown[]) => void
+): AiProviderRunFn {
+  return async (input, model, signal, emit) => {
+    spy?.(input, model, signal);
+    emit({ type: "finish", data: result });
+  };
+}
+
+function makeReg(
+  serves: readonly Capability[],
+  runFn: AiProviderRunFn
+): AiProviderRunFnRegistration {
+  return { serves, runFn };
+}
 
 describe("AiProviderRegistry", () => {
   let logger = getTestingLogger();
@@ -43,7 +70,9 @@ describe("AiProviderRegistry", () => {
     await storage.migrate();
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
-      AiJob<AiJobInput<TaskInput>, TaskOutput>,
+      // AiJob's `execute` signature changed in the Promise+emit refactor and no
+      // longer matches Job's base signature (see @ts-expect-error on AiJob.execute).
+      AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
         storage,
         queueName: TEST_PROVIDER,
@@ -82,53 +111,66 @@ describe("AiProviderRegistry", () => {
   });
 
   describe("registerRunFn", () => {
-    test("should register a run function for a task type and model provider", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
+    test("should register a run function for a capability set and provider", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
 
-      expect(aiProviderRegistry.runFnRegistry.get("text-generation")?.get(TEST_PROVIDER)).toBe(
-        mockRunFn
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBe(runFn);
+    });
+
+    test("should create provider entry if it does not exist", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(["text.embedding"], runFn));
+
+      const regs = aiProviderRegistry.getRunFnRegistrations(TEST_PROVIDER);
+      expect(regs).toHaveLength(1);
+      expect(regs[0].serves).toEqual(["text.embedding"]);
+      expect(regs[0].runFn).toBe(runFn);
+    });
+  });
+
+  describe("getRunFnFor", () => {
+    test("should return registered run function for matching capability set", () => {
+      const runFn = makeFinishStreamFn({ success: true });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBe(runFn);
+    });
+
+    test("should return undefined when no registration matches the requires set", () => {
+      aiProviderRegistry.registerRunFn(
+        TEST_PROVIDER,
+        makeReg(["text.embedding"], makeFinishStreamFn({}))
       );
+
+      const retrieved = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(retrieved).toBeUndefined();
     });
 
-    test("should create task type object if it does not exist", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "new-task", mockRunFn);
-
-      expect(aiProviderRegistry.runFnRegistry.get("new-task")).toBeDefined();
-      expect(aiProviderRegistry.runFnRegistry.get("new-task")?.get(TEST_PROVIDER)).toBe(mockRunFn);
-    });
-  });
-
-  describe("getDirectRunFn", () => {
-    test("should return registered run function", () => {
-      const mockRunFn = mock(() => Promise.resolve({ success: true }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
-
-      const retrievedFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      expect(retrievedFn).toBe(mockRunFn);
-    });
-
-    test("should throw error for unregistered task type", () => {
-      expect(() => {
-        aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "nonexistent");
-      }).toThrow('No run function found for task type "nonexistent" and provider "test-provider"');
+    test("should return undefined for unregistered provider", () => {
+      const retrieved = aiProviderRegistry.getRunFnFor("unknown-provider", TEXT_GENERATION);
+      expect(retrieved).toBeUndefined();
     });
   });
 
-  describe("jobAsTaskRunFn", () => {
-    test("should create a job wrapper and queue it", async () => {
-      const mockRunFn = mock(() => Promise.resolve({ result: "success" }));
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
-      const wrappedFn = aiProviderRegistry.getDirectRunFn(TEST_PROVIDER, "text-generation");
-      const result = await wrappedFn(
+  describe("capability-set dispatch", () => {
+    test("accumulatingEmit captures finish.data for a registered one-shot run-fn", async () => {
+      const runFn = makeFinishStreamFn({ result: "success" });
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
+      const wrappedFn = aiProviderRegistry.getRunFnFor(TEST_PROVIDER, TEXT_GENERATION);
+      expect(wrappedFn).toBeDefined();
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await wrappedFn!(
         { text: "test input" },
         undefined,
-        () => {},
-        new AbortController().signal
+        new AbortController().signal,
+        emit,
+        undefined,
+        undefined
       );
-      expect(result).toEqual({ result: "success" });
-      expect(mockRunFn).toHaveBeenCalled();
+      expect(getResult()).toEqual({ result: "success" });
     });
   });
 
@@ -148,16 +190,15 @@ describe("AiProviderRegistry", () => {
 
   describe("AiJob", () => {
     test("should execute registered function with correct parameters", async () => {
-      const mockRunFn = mock((...args) => {
-        return Promise.resolve({ result: "success" });
-      });
+      const spy = vi.fn();
+      const runFn = makeFinishStreamFn({ result: "success" }, spy);
 
-      aiProviderRegistry.registerRunFn(TEST_PROVIDER, "text-generation", mockRunFn);
+      aiProviderRegistry.registerRunFn(TEST_PROVIDER, makeReg(TEXT_GENERATION, runFn));
       const model = {
         model_id: "test:test-model:v1",
         title: "test-model",
         description: "test-model",
-        tasks: ["text-generation"],
+        capabilities: ["text.generation"],
         provider: TEST_PROVIDER,
         provider_config: {
           pipeline: "text-generation",
@@ -172,16 +213,23 @@ describe("AiProviderRegistry", () => {
         input: {
           aiProvider: TEST_PROVIDER,
           taskType: "text-generation",
+          requires: TEXT_GENERATION,
           taskInput: { text: "test", model },
         },
       });
 
-      const result = await job.execute(job.input, {
-        signal: controller.signal,
-        updateProgress: async () => {},
-      });
+      const { emit, result: getResult } = accumulatingEmit<TaskOutput>();
+      await job.execute(
+        job.input,
+        {
+          signal: controller.signal,
+          updateProgress: async () => {},
+        },
+        emit
+      );
 
-      expect(result).toEqual({ result: "success" });
+      expect(getResult()).toEqual({ result: "success" });
+      expect(spy).toHaveBeenCalled();
     });
   });
 });

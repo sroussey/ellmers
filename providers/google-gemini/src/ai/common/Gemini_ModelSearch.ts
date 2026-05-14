@@ -16,10 +16,10 @@ import { GOOGLE_GEMINI } from "./Gemini_Constants";
 interface GeminiModelEntry {
   readonly label: string;
   readonly value: string;
-  readonly tasks?: readonly string[];
+  readonly capabilities?: readonly string[];
 }
 
-const GEMINI_MODELS: readonly GeminiModelEntry[] = [
+export const GEMINI_FALLBACK_MODELS: readonly GeminiModelEntry[] = [
   { label: "gemini-3.1-pro-preview", value: "gemini-3.1-pro-preview" },
   { label: "gemini-3-flash-preview", value: "gemini-3-flash-preview" },
   { label: "gemini-3.1-flash-lite-preview", value: "gemini-3.1-flash-lite-preview" },
@@ -29,28 +29,28 @@ const GEMINI_MODELS: readonly GeminiModelEntry[] = [
   {
     label: "gemini-embedding-2",
     value: "gemini-embedding-2",
-    tasks: ["TextEmbeddingTask"],
+    capabilities: ["text.embedding"],
   },
   {
     label: "gemini-embedding-001",
     value: "gemini-embedding-001",
-    tasks: ["TextEmbeddingTask"],
+    capabilities: ["text.embedding"],
   },
   // Image-output models
   {
     label: "gemini-3.1-flash-image-preview",
     value: "gemini-3.1-flash-image-preview",
-    tasks: ["ImageGenerateTask", "ImageEditTask"],
+    capabilities: ["image.generation", "image.editing"],
   },
   {
     label: "gemini-3-pro-image-preview",
     value: "gemini-3-pro-image-preview",
-    tasks: ["ImageGenerateTask", "ImageEditTask"],
+    capabilities: ["image.generation", "image.editing"],
   },
   {
     label: "imagen-4.0-generate-001",
     value: "imagen-4.0-generate-001",
-    tasks: ["ImageGenerateTask"],
+    capabilities: ["image.generation"],
   },
 ];
 
@@ -61,13 +61,13 @@ interface GeminiApiModel {
   readonly supportedGenerationMethods?: readonly string[];
 }
 
-function tasksForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
-  const staticEntry = GEMINI_MODELS.find((m) => m.value === id);
-  if (staticEntry?.tasks) return [...staticEntry.tasks];
+function capabilitiesForGeminiApiModel(model: GeminiApiModel, id: string): string[] {
+  const staticEntry = GEMINI_FALLBACK_MODELS.find((m) => m.value === id);
+  if (staticEntry?.capabilities) return [...staticEntry.capabilities];
 
   const methods = model.supportedGenerationMethods ?? [];
   if (methods.some((method) => method.toLowerCase().includes("embed"))) {
-    return ["TextEmbeddingTask"];
+    return ["text.embedding"];
   }
   return [];
 }
@@ -84,7 +84,7 @@ function mapGeminiModel(model: GeminiApiModel): ModelSearchResultItem {
       provider: GOOGLE_GEMINI,
       title,
       description: model.description ?? "",
-      tasks: tasksForGeminiApiModel(model, id),
+      capabilities: capabilitiesForGeminiApiModel(model, id),
       provider_config: { model_name: id },
       metadata: {},
     },
@@ -108,24 +108,25 @@ async function listGeminiModels(
   return (body.models ?? []).map(mapGeminiModel);
 }
 
-export const Gemini_ModelSearch: AiProviderRunFn<
+export const Gemini_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input, _model, _onProgress, signal) => {
+> = async (input, _model, signal, emit) => {
   const q = normalizedModelSearchQuery(input.query);
   if (input.credential_key) {
     const models = await listGeminiModels(input.credential_key, signal);
     const results = q
       ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q))
       : models;
-    return { results };
+    emit({ type: "finish", data: { results } });
+    return;
   }
 
   const filtered = q
-    ? GEMINI_MODELS.filter(
+    ? GEMINI_FALLBACK_MODELS.filter(
         (m) => m.value.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
       )
-    : GEMINI_MODELS;
+    : GEMINI_FALLBACK_MODELS;
   const results: ModelSearchResultItem[] = filtered.map((m) => ({
     id: m.value,
     label: m.label,
@@ -135,11 +136,11 @@ export const Gemini_ModelSearch: AiProviderRunFn<
       provider: GOOGLE_GEMINI,
       title: m.value,
       description: "",
-      tasks: m.tasks ? [...m.tasks] : [],
+      capabilities: m.capabilities ? [...m.capabilities] : [],
       provider_config: { model_name: m.value },
       metadata: {},
     },
     raw: m,
   }));
-  return { results };
+  emit({ type: "finish", data: { results } });
 };

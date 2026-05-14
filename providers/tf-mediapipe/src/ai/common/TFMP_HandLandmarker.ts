@@ -18,7 +18,7 @@ export const TFMP_HandLandmarker: AiProviderRunFn<
   HandLandmarkerTaskInput,
   HandLandmarkerTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { HandLandmarker } = await loadTfmpTasksVisionSDK();
   const handLandmarker = await getModelTask(
     model!,
@@ -28,7 +28,7 @@ export const TFMP_HandLandmarker: AiProviderRunFn<
       minHandPresenceConfidence: input.minHandPresenceConfidence,
       minTrackingConfidence: input.minTrackingConfidence,
     },
-    onProgress,
+    emit,
     signal,
     HandLandmarker
   );
@@ -55,7 +55,5 @@ export const TFMP_HandLandmarker: AiProviderRunFn<
     })),
   }));
 
-  return {
-    hands,
-  };
+  emit({ type: "finish", data: { hands } });
 };

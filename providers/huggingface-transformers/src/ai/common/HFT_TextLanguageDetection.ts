@@ -17,21 +17,24 @@ export const HFT_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const TextClassification: TextClassificationPipeline = await getPipeline(
+> = async (input, model, signal, emit) => {
+  const TextClassification = (await getPipeline(
     model!,
-    onProgress,
+    emit,
     {},
     signal
-  );
+  )) as TextClassificationPipeline;
   const result = await TextClassification(input.text, {
     top_k: input.maxLanguages || undefined,
   });
 
-  return {
-    languages: result.map((category) => ({
-      language: category.label,
-      score: category.score,
-    })),
-  };
+  emit({
+    type: "finish",
+    data: {
+      languages: result.map((category) => ({
+        language: category.label,
+        score: category.score,
+      })),
+    },
+  });
 };

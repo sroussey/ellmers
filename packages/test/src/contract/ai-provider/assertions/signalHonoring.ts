@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
+import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 import { itExpectFail } from "../../itExpectFail";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 function isAbortError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -27,23 +31,28 @@ export function signalHonoringBlock(
 
   describe.skipIf(!opts.models.textGeneration)("Signal honoring", () => {
     itNonStreaming(
-      "non-streaming runFn rejects with AbortError when aborted before invocation",
+      "run-fn rejects with AbortError when aborted before invocation",
       async () => {
         const registry = getAiProviderRegistry();
         const repo = getGlobalModelRepository();
         const model = await repo.findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const runFn = registry.getDirectRunFn(model!.provider, "TextGenerationTask");
+        const runFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
+        expect(
+          runFn,
+          `provider "${model!.provider}" has no run-fn for ["text.generation"]`
+        ).toBeDefined();
         const ac = new AbortController();
         ac.abort();
 
         let caught: unknown;
         try {
-          await runFn(
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
             { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
             model!,
-            () => {},
             ac.signal,
+            emit,
             undefined,
             undefined
           );
@@ -58,28 +67,28 @@ export function signalHonoringBlock(
 
     if (!skipMid) {
       itMidStream(
-        "streaming iterator terminates within abortGraceMs * 4 when aborted mid-stream",
+        "streaming run-fn terminates within abortGraceMs * 4 when aborted mid-stream",
         async () => {
           const registry = getAiProviderRegistry();
           const repo = getGlobalModelRepository();
           const model = await repo.findByName(opts.models.textGeneration!);
           expect(model).toBeDefined();
-          const streamFn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+          const streamFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
           if (!streamFn) return; // capability mismatch — covered by capabilityHonesty
           const ac = new AbortController();
           const start = Date.now();
           setTimeout(() => ac.abort(), fixture.abortGraceMs);
 
           try {
-            for await (const _ev of streamFn(
+            const emit = (_e: StreamEvent<TaskOutput>): void => {};
+            await streamFn(
               { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
               model!,
               ac.signal,
+              emit,
               undefined,
               undefined
-            )) {
-              void _ev;
-            }
+            );
           } catch (err) {
             if (!isAbortError(err)) throw err;
           }

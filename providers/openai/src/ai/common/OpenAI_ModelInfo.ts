@@ -14,11 +14,16 @@ const OPENAI_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
   "text-embedding-ada-002": { native_dimensions: 1536, mrl: false },
 };
 
-export const OpenAI_ModelInfo: AiProviderRunFn<
+/**
+ * One-shot run-fn for `["model.info"]`. Returns a synchronous
+ * info record from the in-process embedding-dimensions table; OpenAI does not
+ * expose an HTTP endpoint for this metadata. Emits a single `finish` event.
+ */
+export const OpenAI_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   OpenAiModelConfig
-> = async (input, model) => {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -35,7 +40,27 @@ export const OpenAI_ModelInfo: AiProviderRunFn<
       }
     }
 
-    return {
+    emit({
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: false,
+        is_remote: true,
+        supports_browser: true,
+        supports_node: true,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl !== undefined ? { mrl } : {}),
+      },
+    });
+    return;
+  }
+
+  emit({
+    type: "finish",
+    data: {
       model: input.model,
       is_local: false,
       is_remote: true,
@@ -44,19 +69,6 @@ export const OpenAI_ModelInfo: AiProviderRunFn<
       is_cached: false,
       is_loaded: false,
       file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl !== undefined ? { mrl } : {}),
-    };
-  }
-
-  return {
-    model: input.model,
-    is_local: false,
-    is_remote: true,
-    supports_browser: true,
-    supports_node: true,
-    is_cached: false,
-    is_loaded: false,
-    file_sizes: null,
-  };
+    },
+  });
 };

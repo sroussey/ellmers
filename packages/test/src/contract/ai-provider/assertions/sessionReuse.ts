@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
+import type { TaskOutput } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts, ConformanceFixture, ConformanceHandle } from "../types";
 import { itExpectFail } from "../../itExpectFail";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
 export function sessionReuseBlock(
   opts: AiProviderConformanceOpts,
@@ -39,25 +43,35 @@ export function sessionReuseBlock(
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const runFn = registry.getDirectRunFn(model!.provider, "TextGenerationTask");
+        const runFn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
+        expect(
+          runFn,
+          `provider "${model!.provider}" has no run-fn for ["text.generation"]`
+        ).toBeDefined();
 
         const sessionId = `conformance-${Date.now()}`;
-        await runFn(
-          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-          model!,
-          () => {},
-          new AbortController().signal,
-          undefined,
-          sessionId
-        );
-        await runFn(
-          { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
-          model!,
-          () => {},
-          new AbortController().signal,
-          undefined,
-          sessionId
-        );
+        {
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
+            { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+            model!,
+            new AbortController().signal,
+            emit,
+            undefined,
+            sessionId
+          );
+        }
+        {
+          const { emit } = accumulatingEmit<TaskOutput>();
+          await runFn!(
+            { prompt: fixture.textPrompt, maxTokens: fixture.maxTokens },
+            model!,
+            new AbortController().signal,
+            emit,
+            undefined,
+            sessionId
+          );
+        }
 
         const newEntries = map.size - sizeBefore;
         expect(newEntries).toBe(1);

@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Tensor, TextGenerationPipeline } from "@huggingface/transformers";
+import type { TextGenerationPipeline } from "@huggingface/transformers";
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   ChatMessage,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -18,7 +17,6 @@ import {
   filterValidToolCalls,
   toTextFlatMessages,
 } from "@workglow/ai/worker";
-import type { StreamEvent } from "@workglow/task-graph";
 import {
   adaptParserResult,
   forcedToolSelection,
@@ -29,11 +27,7 @@ import {
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import type { HftPrefixRewindSession } from "./HFT_Pipeline";
 import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
+import { createStreamingTextStreamer } from "./HFT_Streaming";
 import { createToolCallMarkupFilter } from "./HFT_ToolMarkup";
 
 // ============================================================================
@@ -303,95 +297,8 @@ export const HFT_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal, _outputSchema, sessionId) => {
-  const generateText: TextGenerationPipeline = await getPipeline(model!, onProgress, {}, signal);
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-
-  const hfTokenizer = generateText.tokenizer;
-  const hfModel = generateText.model;
-
-  const streamer = createTextStreamer(hfTokenizer, onProgress, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-  const modelFamily = detectModelFamilyFromConfig(model!);
-  const { prompt, responsePrefix } = buildPromptAndPrefix(hfTokenizer, input, modelFamily);
-
-  const inputs = hfTokenizer(prompt, { return_tensor: true });
-
-  // Session cache: prefix-rewind for tool calling
-  const modelPath = model!.provider_config.model_path;
-  let session = sessionId ? getHftSession(sessionId) : undefined;
-  let past_key_values: any = undefined;
-
-  if (sessionId && !session) {
-    // First call with this session: encode the prefix and cache it
-    const { DynamicCache } = await loadTransformersSDK();
-    const cache = new DynamicCache();
-    await hfModel.generate({
-      ...inputs,
-      max_new_tokens: 0,
-      past_key_values: cache,
-    });
-    // Snapshot the prefix entries so we can create fresh caches on each rewind
-    const baseEntries: Record<string, any> = {};
-    for (const key of Object.keys(cache)) {
-      baseEntries[key] = cache[key];
-    }
-    const newSession: HftPrefixRewindSession = {
-      mode: "prefix-rewind",
-      baseEntries,
-      baseSeqLength: cache.get_seq_length(),
-      modelPath,
-    };
-    setHftSession(sessionId, newSession);
-    session = newSession;
-  }
-
-  if (session?.mode === "prefix-rewind") {
-    // Create a fresh DynamicCache from the prefix snapshot for this call
-    const { DynamicCache } = await loadTransformersSDK();
-    past_key_values = new DynamicCache(session.baseEntries);
-  }
-
-  const output = (await hfModel.generate({
-    ...inputs,
-    max_new_tokens: input.maxTokens ?? 1024,
-    streamer,
-    stopping_criteria: [stopping_criteria],
-    ...(past_key_values ? { past_key_values } : {}),
-  })) as Tensor;
-  const promptLen = inputs.input_ids.dims[1];
-  const seqLen = output.dims[1];
-
-  const newTokens = output.slice(0, [promptLen, seqLen], null);
-  const decoded = hfTokenizer.decode(newTokens, {
-    skip_special_tokens: false,
-  });
-  const parseableText = responsePrefix ? `${responsePrefix}${decoded}` : decoded;
-  const { text, toolCalls } = adaptParserResult(
-    parseToolCalls(parseableText, { parser: modelFamily })
-  );
-  return {
-    text,
-    toolCalls: filterValidToolCalls(normalizeParsedToolCalls(input, toolCalls), input.tools),
-  };
-};
-
-export const HFT_ToolCalling_Stream: AiProviderStreamFn<
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-  HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
-  const noopProgress = () => {};
-  const generateText: TextGenerationPipeline = await getPipeline(model!, noopProgress, {}, signal);
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+  const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
   const modelFamily = detectModelFamilyFromConfig(model!);
   const { prompt, responsePrefix } = buildPromptAndPrefix(
@@ -400,11 +307,21 @@ export const HFT_ToolCalling_Stream: AiProviderStreamFn<
     modelFamily
   );
 
-  // Two queues: the inner queue receives raw tokens from the TextStreamer,
-  // the outer queue receives filtered text-delta events (markup stripped).
-  const innerQueue = createStreamEventQueue<StreamEvent<ToolCallingTaskOutput>>();
-  const outerQueue = createStreamEventQueue<StreamEvent<ToolCallingTaskOutput>>();
-  const streamer = createStreamingTextStreamer(generateText.tokenizer, innerQueue, TextStreamer);
+  // Accumulate raw tokens for post-hoc tool-call parsing, and feed each
+  // delta through a markup filter that emits cleaned text-delta events.
+  let fullText = "";
+  const filter = createToolCallMarkupFilter((text) => {
+    emit({ type: "text-delta", port: "text", textDelta: text });
+  });
+
+  const streamer = createStreamingTextStreamer(
+    generateText.tokenizer,
+    (text) => {
+      fullText += text;
+      filter.feed(text);
+    },
+    TextStreamer
+  );
   const stopping_criteria = new InterruptableStoppingCriteria();
   if (signal) {
     signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
@@ -447,52 +364,18 @@ export const HFT_ToolCalling_Stream: AiProviderStreamFn<
     past_key_values = new DynamicCache(session.baseEntries);
   }
 
-  let fullText = "";
-  const filter = createToolCallMarkupFilter((text) => {
-    outerQueue.push({ type: "text-delta", port: "text", textDelta: text });
-  });
-
-  // Intercept raw text-delta events: accumulate the full text for post-hoc
-  // parsing and feed tokens through the markup filter before forwarding.
-  const originalPush = innerQueue.push;
-  innerQueue.push = (event: StreamEvent<ToolCallingTaskOutput>) => {
-    if (event.type === "text-delta" && "textDelta" in event) {
-      fullText += event.textDelta;
-      filter.feed(event.textDelta);
-    } else {
-      outerQueue.push(event);
-    }
-    originalPush(event);
-  };
-
-  const originalDone = innerQueue.done;
-  innerQueue.done = () => {
+  try {
+    await generateText(prompt, {
+      max_new_tokens: input.maxTokens ?? 1024,
+      temperature: input.temperature ?? undefined,
+      return_full_text: false,
+      streamer,
+      stopping_criteria: [stopping_criteria],
+      ...(past_key_values ? { past_key_values } : {}),
+    });
+  } finally {
     filter.flush();
-    outerQueue.done();
-    originalDone();
-  };
-
-  const originalError = innerQueue.error;
-  innerQueue.error = (e: Error) => {
-    filter.flush();
-    outerQueue.error(e);
-    originalError(e);
-  };
-
-  const pipelinePromise = generateText(prompt, {
-    max_new_tokens: input.maxTokens ?? 1024,
-    temperature: input.temperature ?? undefined,
-    return_full_text: false,
-    streamer,
-    stopping_criteria: [stopping_criteria],
-    ...(past_key_values ? { past_key_values } : {}),
-  }).then(
-    () => innerQueue.done(),
-    (err: Error) => innerQueue.error(err)
-  );
-
-  yield* outerQueue.iterable;
-  await pipelinePromise;
+  }
 
   // Parse the accumulated text for tool calls using the model-family-aware parser.
   // For models that use a generation prefix, prepend it so the parser sees the
@@ -507,11 +390,11 @@ export const HFT_ToolCalling_Stream: AiProviderStreamFn<
   );
 
   if (validToolCalls.length > 0) {
-    yield { type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] };
+    emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
   }
 
-  yield {
+  emit({
     type: "finish",
     data: { text: cleanedText, toolCalls: validToolCalls } as ToolCallingTaskOutput,
-  };
+  });
 };

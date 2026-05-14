@@ -22,6 +22,16 @@ import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage
 import { uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("scoped-store", _snap);
+});
+
 describe("ScopedTabularStorage", () => {
   let sharedStorage: InMemoryTabularStorage<
     typeof SharedDocumentStorageSchema,

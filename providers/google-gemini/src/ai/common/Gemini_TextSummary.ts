@@ -6,41 +6,17 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 
-export const Gemini_TextSummary: AiProviderRunFn<
+export const Gemini_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
   GeminiModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting Gemini text summarization");
-  const GoogleGenerativeAI = await loadGeminiSDK();
-  const genAI = new GoogleGenerativeAI(getApiKey(model));
-  const genModel = genAI.getGenerativeModel({
-    model: getModelName(model),
-    systemInstruction: "Summarize the following text concisely.",
-  });
-
-  const result = await genModel.generateContent({
-    contents: [{ role: "user", parts: [{ text: input.text }] }],
-  });
-
-  const text = result.response.text();
-  update_progress(100, "Completed Gemini text summarization");
-  return { text };
-};
-
-export const Gemini_TextSummary_Stream: AiProviderStreamFn<
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-  GeminiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<TextSummaryTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const GoogleGenerativeAI = await loadGeminiSDK();
   const genAI = new GoogleGenerativeAI(getApiKey(model));
   const genModel = genAI.getGenerativeModel({
@@ -56,8 +32,8 @@ export const Gemini_TextSummary_Stream: AiProviderStreamFn<
   for await (const chunk of result.stream) {
     const text = chunk.text();
     if (text) {
-      yield { type: "text-delta", port: "text", textDelta: text };
+      emit({ type: "text-delta", port: "text", textDelta: text });
     }
   }
-  yield { type: "finish", data: {} as TextSummaryTaskOutput };
+  emit({ type: "finish", data: {} as TextSummaryTaskOutput });
 };

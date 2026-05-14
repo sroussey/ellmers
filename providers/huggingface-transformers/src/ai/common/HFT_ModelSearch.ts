@@ -12,8 +12,8 @@ import { parseOnnxQuantizations } from "./HFT_OnnxDtypes";
 export const HFT_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> = async (
   input,
   _model,
-  _onProgress,
-  signal
+  signal,
+  emit
 ) => {
   const entries = await searchHfModels(
     input.query?.trim() ?? "",
@@ -42,5 +42,5 @@ export const HFT_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchT
 
     return item;
   });
-  return { results };
+  emit({ type: "finish", data: { results } });
 };

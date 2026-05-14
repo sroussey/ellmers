@@ -18,14 +18,14 @@ export const TFMP_ObjectDetection: AiProviderRunFn<
   ObjectDetectionTaskInput,
   ObjectDetectionTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { ObjectDetector } = await loadTfmpTasksVisionSDK();
   const objectDetector = await getModelTask(
     model!,
     {
       scoreThreshold: input.threshold,
     },
-    onProgress,
+    emit,
     signal,
     ObjectDetector
   );
@@ -46,7 +46,5 @@ export const TFMP_ObjectDetection: AiProviderRunFn<
     },
   }));
 
-  return {
-    detections,
-  };
+  emit({ type: "finish", data: { detections } });
 };

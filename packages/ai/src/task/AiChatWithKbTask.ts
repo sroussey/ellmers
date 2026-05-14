@@ -11,6 +11,8 @@ import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { AiEmit } from "../capability/AiEmit";
+import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
@@ -20,10 +22,12 @@ import {
   KB_INLINE_CITATION_DIRECTIVE,
   type ResponseFormat,
 } from "./base/responseFormat";
+import { runWithIterable } from "./base/runWithIterable";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
 import { KbSearchTask } from "./KbSearchTask";
+import { TextEmbeddingTask } from "./TextEmbeddingTask";
 
 // ========================================================================
 // Public types
@@ -90,6 +94,13 @@ export const AiChatWithKbInputSchema = {
   type: "object",
   properties: {
     model: modelSchema,
+    embeddingModel: {
+      ...TypeModel("model:TextEmbeddingTask"),
+      title: "Embedding Model",
+      description:
+        "Optional text embedding model used to retrieve directly inside this chat run. " +
+        "When omitted, each knowledge base's onSearch callback handles retrieval.",
+    },
     prompt: {
       oneOf: [
         { type: "string", title: "Prompt", description: "The initial user message" },
@@ -266,6 +277,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
   AiChatWithKbTaskOutput
 > {
   public static override type = "AiChatWithKbTask";
+  public static override readonly requires = ["text.generation"] as const satisfies Capability[];
   protected static override readonly streamingPhaseLabel = "Replying";
   public static override category = "AI Chat";
   public static override title = "AI Chat (Knowledge Base)";
@@ -302,6 +314,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
     }
     return {
       taskType: "AiChatWithKbTask",
+      requires: (this.constructor as typeof AiChatWithKbTask).requires,
       aiProvider: model.provider,
       taskInput: input as AiChatWithKbTaskInput & { model: ModelConfig },
       sessionId: this._sessionId,
@@ -320,6 +333,8 @@ export class AiChatWithKbTask extends StreamingAiTask<
       throw new Error("AiChatWithKbTask: model was not resolved to ModelConfig");
     }
     const connector = resolveHumanConnector(context);
+
+    const embeddingModel = input.embeddingModel as ModelConfig | undefined;
 
     // Build initial history.
     const history: ChatMessage[] = [];
@@ -386,6 +401,22 @@ export class AiChatWithKbTask extends StreamingAiTask<
         results: ChunkSearchResult[];
       }> = [];
       if (lastUserText.length > 0) {
+        let queryVector: Float32Array | undefined;
+        if (embeddingModel) {
+          const embeddingTask = context.own(new TextEmbeddingTask());
+          const embeddingResult = await embeddingTask.run(
+            {
+              text: lastUserText,
+              model: embeddingModel,
+            },
+            { resourceScope: context.resourceScope }
+          );
+          const vector = Array.isArray(embeddingResult.vector)
+            ? embeddingResult.vector[0]
+            : embeddingResult.vector;
+          queryVector = vector instanceof Float32Array ? vector : new Float32Array(vector);
+        }
+
         perKbResults = await Promise.all(
           (input.knowledgeBaseIds ?? []).map(async (kbId) => {
             const kb = getKnowledgeBase(kbId);
@@ -393,17 +424,23 @@ export class AiChatWithKbTask extends StreamingAiTask<
               console.warn(`[AiChatWithKbTask] knowledge base "${kbId}" not registered`);
               return { kbId, kbLabel: kbId, kb: undefined, results: [] as ChunkSearchResult[] };
             }
-            const search = context.own(new KbSearchTask());
-            const out = await search.run({
-              knowledgeBase: kb as KnowledgeBase,
-              query: lastUserText,
-              topK,
-            });
+            let results: ChunkSearchResult[];
+            if (queryVector) {
+              results = await (kb as KnowledgeBase).similaritySearch(queryVector, { topK });
+            } else {
+              const search = context.own(new KbSearchTask());
+              const out = await search.run({
+                knowledgeBase: kb as KnowledgeBase,
+                query: lastUserText,
+                topK,
+              });
+              results = out.results;
+            }
             return {
               kbId,
               kbLabel: kb.title || kbId,
               kb: kb as KnowledgeBase,
-              results: out.results,
+              results,
             };
           })
         );
@@ -522,22 +559,36 @@ export class AiChatWithKbTask extends StreamingAiTask<
         const turnJobInput = await this.getJobInput(perTurnInput);
         const strategy = getAiProviderRegistry().getStrategy(model);
 
-        for await (const event of strategy.executeStream(
+        // Drive the inner turn through `runWithIterable` so a consumer
+        // break / context abort cancels the provider stream rather than
+        // leaving it running into a closed queue. The emit factory does
+        // the per-port wrapping and swallows inner-turn `finish` events
+        // (the outer `finish` is emitted at the end).
+        const iterable = runWithIterable<AiChatWithKbTaskOutput>(
+          strategy,
           turnJobInput as any,
           context,
-          this.runConfig.runnerId
-        )) {
-          if (event.type === "text-delta") {
-            assistantText += (event as any).textDelta;
-            yield {
-              ...event,
-              port: (event as any).port ?? "text",
-            } as StreamEvent<AiChatWithKbTaskOutput>;
-          } else if (event.type === "finish") {
-            // swallow — we emit our own finish at the end
-          } else {
-            yield event as StreamEvent<AiChatWithKbTaskOutput>;
-          }
+          this.runConfig.runnerId,
+          (queue): AiEmit<AiChatWithKbTaskOutput> =>
+            (event) => {
+              if (event.type === "text-delta") {
+                assistantText += (event as any).textDelta;
+                queue.push({
+                  ...event,
+                  port: (event as any).port ?? "text",
+                } as StreamEvent<AiChatWithKbTaskOutput>);
+              } else if (event.type === "finish") {
+                // Invariant: inner turn run-fns must be text.generation only;
+                // finish.data from inner turns is intentionally discarded. If
+                // json-mode capability is ever added to inner dispatch, this
+                // swallow must be revisited.
+              } else {
+                queue.push(event as StreamEvent<AiChatWithKbTaskOutput>);
+              }
+            }
+        );
+        for await (const event of iterable) {
+          yield event;
         }
       }
 

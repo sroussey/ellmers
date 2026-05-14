@@ -13,8 +13,8 @@ import type {
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
 } from "@workglow/ai";
-import type { ImageValue } from "@workglow/util/media";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
+import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
@@ -26,32 +26,36 @@ export const HFT_ImageClassification: AiProviderRunFn<
   ImageClassificationTaskInput,
   ImageClassificationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   if (model?.provider_config?.pipeline === "zero-shot-image-classification") {
     if (!input.categories || !Array.isArray(input.categories) || input.categories.length === 0) {
       console.warn("Zero-shot image classification requires categories", input);
       throw new Error("Zero-shot image classification requires categories");
     }
-    const zeroShotClassifier: ZeroShotImageClassificationPipeline = await getPipeline(
+    const zeroShotClassifier = (await getPipeline(
       model!,
-      onProgress,
+      emit,
       {},
       signal
-    );
+    )) as ZeroShotImageClassificationPipeline;
     const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
     const result = await zeroShotClassifier(imageArg, input.categories! as string[], {});
 
     const results = Array.isArray(result) ? result : [result];
 
-    return {
-      categories: results.map((r) => ({
-        label: r.label,
-        score: r.score,
-      })),
-    };
+    emit({
+      type: "finish",
+      data: {
+        categories: results.map((r) => ({
+          label: r.label,
+          score: r.score,
+        })),
+      },
+    });
+    return;
   }
 
-  const classifier: ImageClassificationPipeline = await getPipeline(model!, onProgress, {}, signal);
+  const classifier = (await getPipeline(model!, emit, {}, signal)) as ImageClassificationPipeline;
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await classifier(imageArg, {
     top_k: input.maxCategories,
@@ -59,10 +63,13 @@ export const HFT_ImageClassification: AiProviderRunFn<
 
   const results = Array.isArray(result) ? result : [result];
 
-  return {
-    categories: results.map((r: any) => ({
-      label: r.label,
-      score: r.score,
-    })),
-  };
+  emit({
+    type: "finish",
+    data: {
+      categories: results.map((r: any) => ({
+        label: r.label,
+        score: r.score,
+      })),
+    },
+  });
 };

@@ -17,23 +17,27 @@ import { getPipeline } from "./HFT_Pipeline";
 /**
  * Core implementation for text embedding using Hugging Face Transformers.
  * This is shared between inline and worker implementations.
+ *
+ * Model download progress (first-call cold start) is forwarded as `phase`
+ * stream events via the `emit` callback passed to {@link getPipeline}; subsequent
+ * calls are near-instant because the pipeline is cached.
  */
 export const HFT_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const uuid = crypto.randomUUID();
   const timerLabel = `hft:TextEmbedding:${model?.provider_config.model_path}:${uuid}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const generateEmbedding: FeatureExtractionPipeline = await getPipeline(
+  const generateEmbedding = (await getPipeline(
     model!,
-    onProgress,
+    emit,
     {},
     signal
-  );
+  )) as FeatureExtractionPipeline;
 
   logger.debug("HFT TextEmbedding: pipeline ready, generating embedding", {
     model: model?.provider_config.model_path,
@@ -78,7 +82,8 @@ export const HFT_TextEmbedding: AiProviderRunFn<
     );
 
     logger.timeEnd(timerLabel, { batchSize: numTexts, dimensions: vectorDim });
-    return { vector: vectors };
+    emit({ type: "finish", data: { vector: vectors } });
+    return;
   }
 
   // Output[number] text input - validate dimensions
@@ -95,5 +100,5 @@ export const HFT_TextEmbedding: AiProviderRunFn<
   }
 
   logger.timeEnd(timerLabel, { dimensions: hfVector.size });
-  return { vector: hfVector.data as TypedArray };
+  emit({ type: "finish", data: { vector: hfVector.data as TypedArray } });
 };

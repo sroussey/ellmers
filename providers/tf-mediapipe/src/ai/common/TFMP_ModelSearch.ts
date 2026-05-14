@@ -22,7 +22,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Universal Sentence Encoder",
       description: "Universal Sentence Encoder",
-      tasks: ["TextEmbeddingTask"],
+      capabilities: ["text.embedding"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-tasks/text_embedder/universal_sentence_encoder.tflite",
@@ -41,7 +41,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "MediaPipe Language Detector",
       description: "MediaPipe Language Detector",
-      tasks: ["TextLanguageDetectionTask"],
+      capabilities: ["text.language-detection"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/language_detector/language_detector/float32/latest/language_detector.tflite",
@@ -60,7 +60,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "MediaPipe BERT Text Classifier",
       description: "MediaPipe BERT Text Classifier",
-      tasks: ["TextClassificationTask"],
+      capabilities: ["text.classification"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-tasks/text_classifier/bert_text_classifier.tflite",
@@ -79,7 +79,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "MediaPipe Image Embedder",
       description: "MediaPipe Image Embedder",
-      tasks: ["ImageEmbeddingTask"],
+      capabilities: ["image.embedding"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite",
@@ -98,7 +98,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "EfficientNet Lite0",
       description: "Image classification model",
-      tasks: ["ImageClassificationTask"],
+      capabilities: ["image.classification"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/float32/1/efficientnet_lite0.tflite",
@@ -117,7 +117,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Efficient Object Detector Lite0",
       description: "Object detection model",
-      tasks: ["ObjectDetectionTask"],
+      capabilities: ["image.object-detection"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite",
@@ -136,7 +136,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Efficient Image Segmenter Lite0",
       description: "Image segmentation model",
-      tasks: ["ImageSegmentationTask"],
+      capabilities: ["image.segmentation"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-assets/deeplabv3.tflite?generation=1661875711618421",
@@ -155,7 +155,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Face Landmarker",
       description: "Detects 478 facial landmarks with blendshapes",
-      tasks: ["FaceLandmarkerTask"],
+      capabilities: ["vision.face-landmarks"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
@@ -174,7 +174,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Gesture Recognizer",
       description: "Recognizes hand gestures such as thumbs up and victory",
-      tasks: ["GestureRecognizerTask"],
+      capabilities: ["vision.gesture"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
@@ -193,7 +193,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Hand Landmarker",
       description: "Detects 21 hand landmarks",
-      tasks: ["HandLandmarkerTask"],
+      capabilities: ["vision.hand-landmarks"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
@@ -212,7 +212,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
       provider: TENSORFLOW_MEDIAPIPE,
       title: "Pose Landmarker",
       description: "Detects 33 body pose landmarks",
-      tasks: ["PoseLandmarkerTask"],
+      capabilities: ["vision.pose-landmarks"],
       provider_config: {
         model_path:
           "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
@@ -228,7 +228,7 @@ const TFMP_MODEL_RESULTS: ModelSearchResultItem[] = [
 export function createTFMPModelSearch(
   providerId: string
 ): AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> {
-  return async (input) => {
+  return async (input, _model, _signal, emit) => {
     const results = filterModelSearchResultsByQuery(
       TFMP_MODEL_RESULTS.map((result) => ({
         ...result,
@@ -236,7 +236,7 @@ export function createTFMPModelSearch(
       })),
       input.query
     );
-    return { results };
+    emit({ type: "finish", data: { results } });
   };
 }
 

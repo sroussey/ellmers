@@ -5,7 +5,17 @@
  */
 
 import { slugifyHeading } from "@workglow/knowledge-base";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { snap, report } from "../../binding/testTiming";
+
+let _snap = snap();
+beforeEach(() => {
+  _snap = snap();
+});
+afterEach(() => {
+  report("slugify", _snap);
+});
 
 describe("slugifyHeading", () => {
   it("preserves identifier-shaped headings verbatim", () => {

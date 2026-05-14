@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ChunkRecord, ChunkSearchResult } from "@workglow/knowledge-base";
 import { KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { ChunkRecord } from "@workglow/knowledge-base";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
 import {
   DataPortSchema,
   FromSchema,
@@ -16,9 +16,9 @@ import {
   TypedArraySchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { TextEmbeddingTask } from "./TextEmbeddingTask";
-import type { ChunkSearchResult } from "@workglow/knowledge-base";
 
 const inputSchema = {
   type: "object",
@@ -192,6 +192,8 @@ export class ChunkRetrievalTask extends Task<
   ChunkRetrievalTaskConfig
 > {
   public static override type = "ChunkRetrievalTask";
+  /** Pure-compute retrieval task — uses storage, not a provider capability. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Chunk Retrieval";
   public static override description =

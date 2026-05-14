@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -56,6 +57,8 @@ export class CountTokensTask extends AiTask<
   CountTokensTaskConfig
 > {
   public static override type = "CountTokensTask";
+  /** Capability required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires = ["model.count-tokens"] as const satisfies Capability[];
   public static override category = "AI Text";
   public static override title = "Count Tokens";
   public static override description =

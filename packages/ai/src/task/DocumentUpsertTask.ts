@@ -11,9 +11,10 @@ import {
   KnowledgeBase,
   TypeKnowledgeBase,
 } from "@workglow/knowledge-base";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
   type: "object",
@@ -89,6 +90,8 @@ export class DocumentUpsertTask extends Task<
   DocumentUpsertTaskConfig
 > {
   public static override type = "DocumentUpsertTask";
+  /** Storage task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Document";
   public static override title = "Add Document";
   public static override description = "Persist a parsed document tree to a knowledge base";

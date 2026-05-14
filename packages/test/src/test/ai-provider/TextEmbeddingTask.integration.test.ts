@@ -5,9 +5,9 @@
  */
 
 import {
-  DownloadModelTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
@@ -31,7 +31,7 @@ describe("TextEmbeddingTask with real models", () => {
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
   });
 
@@ -50,7 +50,7 @@ describe("TextEmbeddingTask with real models", () => {
         model_id: "onnx:Xenova/gte-small:q8",
         title: "gte-small",
         description: "Xenova/gte-small quantized to 8bit",
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "feature-extraction",
@@ -64,7 +64,7 @@ describe("TextEmbeddingTask with real models", () => {
       await getGlobalModelRepository().addModel(model);
 
       // First download the model
-      const download = new DownloadModelTask({
+      const download = new ModelDownloadTask({
         defaults: { model: "onnx:Xenova/gte-small:q8" },
       });
       let lastProgress: number | undefined = -1;
@@ -105,7 +105,7 @@ describe("TextEmbeddingTask with real models", () => {
         model_id: "onnx:Xenova/bge-base-en-v1.5:q8",
         title: "bge-base-en-v1.5",
         description: "Xenova/bge-base-en-v1.5 quantized to 8bit",
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "feature-extraction",

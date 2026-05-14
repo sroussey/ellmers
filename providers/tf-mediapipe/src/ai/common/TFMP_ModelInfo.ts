@@ -17,7 +17,7 @@ export const TFMP_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   TFMPModelConfig
-> = async (input, model) => {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -30,31 +30,38 @@ export const TFMP_ModelInfo: AiProviderRunFn<
         native_dimensions = known.native_dimensions;
       }
     }
-    return {
-      model: input.model,
-      is_local: true,
-      is_remote: false,
-      supports_browser: true,
-      supports_node: false,
-      is_cached: false,
-      is_loaded: false,
-      file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl ? { mrl } : {}),
-    };
+    emit({
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: true,
+        is_remote: false,
+        supports_browser: true,
+        supports_node: false,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl ? { mrl } : {}),
+      },
+    });
+    return;
   }
 
   const model_path = model!.provider_config.model_path;
   const is_loaded = modelTaskCache.has(model_path);
 
-  return {
-    model: input.model,
-    is_local: true,
-    is_remote: false,
-    supports_browser: true,
-    supports_node: false,
-    is_cached: is_loaded,
-    is_loaded,
-    file_sizes: null,
-  };
+  emit({
+    type: "finish",
+    data: {
+      model: input.model,
+      is_local: true,
+      is_remote: false,
+      supports_browser: true,
+      supports_node: false,
+      is_cached: is_loaded,
+      is_loaded,
+      file_sizes: null,
+    },
+  });
 };

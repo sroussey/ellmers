@@ -5,9 +5,15 @@
  */
 
 import { getAiProviderRegistry, getGlobalModelRepository, textEmbedding } from "@workglow/ai";
+import type { Capability } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts } from "../types";
+
+const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
+const TOOL_USE: readonly Capability[] = ["text.generation", "tool-use"];
+const STRUCTURED: readonly Capability[] = ["text.generation", "json-mode"];
+const TEXT_EMBEDDING: readonly Capability[] = ["text.embedding"];
 
 export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
   describe("Capability honesty", () => {
@@ -21,7 +27,7 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const fn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+        const fn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
         expect(fn).toBeUndefined();
       },
       opts.timeout
@@ -33,7 +39,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        expect(() => registry.getDirectRunFn(model!.provider, "ToolCallingTask")).toThrow();
+        const fn = registry.getRunFnFor(model!.provider, TOOL_USE);
+        expect(fn).toBeUndefined();
       },
       opts.timeout
     );
@@ -44,7 +51,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        expect(() => registry.getDirectRunFn(model!.provider, "TextEmbeddingTask")).toThrow();
+        const fn = registry.getRunFnFor(model!.provider, TEXT_EMBEDDING);
+        expect(fn).toBeUndefined();
       },
       opts.timeout
     );
@@ -55,9 +63,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        expect(() =>
-          registry.getDirectRunFn(model!.provider, "StructuredGenerationTask")
-        ).toThrow();
+        const fn = registry.getRunFnFor(model!.provider, STRUCTURED);
+        expect(fn).toBeUndefined();
       },
       opts.timeout
     );
@@ -74,7 +81,7 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.textGeneration!);
         expect(model).toBeDefined();
-        const fn = registry.getStreamFn(model!.provider, "TextGenerationTask");
+        const fn = registry.getRunFnFor(model!.provider, TEXT_GENERATION);
         expect(fn).toBeDefined();
       },
       opts.timeout
@@ -86,7 +93,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.toolCalling!);
         expect(model).toBeDefined();
-        expect(() => registry.getDirectRunFn(model!.provider, "ToolCallingTask")).not.toThrow();
+        const fn = registry.getRunFnFor(model!.provider, TOOL_USE);
+        expect(fn).toBeDefined();
       },
       opts.timeout
     );
@@ -97,9 +105,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.structured!);
         expect(model).toBeDefined();
-        expect(() =>
-          registry.getDirectRunFn(model!.provider, "StructuredGenerationTask")
-        ).not.toThrow();
+        const fn = registry.getRunFnFor(model!.provider, STRUCTURED);
+        expect(fn).toBeDefined();
       },
       opts.timeout
     );
@@ -110,7 +117,8 @@ export function capabilityHonestyBlock(opts: AiProviderConformanceOpts): void {
         const registry = getAiProviderRegistry();
         const model = await getGlobalModelRepository().findByName(opts.models.embeddings!);
         expect(model).toBeDefined();
-        expect(() => registry.getDirectRunFn(model!.provider, "TextEmbeddingTask")).not.toThrow();
+        const fn = registry.getRunFnFor(model!.provider, TEXT_EMBEDDING);
+        expect(fn).toBeDefined();
 
         const result = await textEmbedding({
           model: opts.models.embeddings!,

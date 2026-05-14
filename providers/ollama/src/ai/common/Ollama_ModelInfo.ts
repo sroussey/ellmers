@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  ModelInfoTaskInput,
+  ModelInfoTaskOutput,
+} from "@workglow/ai";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
@@ -18,10 +22,10 @@ const OLLAMA_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
   "snowflake-arctic-embed": { native_dimensions: 1024, mrl: false },
 };
 
-export function createOllamaModelInfo(
+export function createOllamaModelInfoStream(
   getClient: GetClient
 ): AiProviderRunFn<ModelInfoTaskInput, ModelInfoTaskOutput, OllamaModelConfig> {
-  return async (input, model) => {
+  return async (input, model, signal, emit) => {
     if (input.detail === "dimensions") {
       if (!model) throw new Error("Model config is required for ModelInfoTask.");
       const pc = model.provider_config as Record<string, unknown>;
@@ -29,7 +33,6 @@ export function createOllamaModelInfo(
         typeof pc.native_dimensions === "number" ? pc.native_dimensions : undefined;
       let mrl = typeof pc.mrl === "boolean" ? pc.mrl : undefined;
 
-      // Step 2: Try Ollama show API for embedding size
       if (native_dimensions === undefined) {
         try {
           const client = await getClient(model);
@@ -40,14 +43,12 @@ export function createOllamaModelInfo(
             native_dimensions = details.embedding_length;
           }
         } catch {
-          // Model not available — fall through
+          // Model not available — fall through to lookup table.
         }
       }
 
-      // Step 3: Lookup table fallback
       if (native_dimensions === undefined) {
         const modelName = (pc.model_name as string) ?? "";
-        // Strip tag suffix for lookup (e.g. "nomic-embed-text:latest" → "nomic-embed-text")
         const baseName = modelName.split(":")[0];
         const known = OLLAMA_EMBEDDING_DIMENSIONS[baseName];
         if (known) {
@@ -56,18 +57,22 @@ export function createOllamaModelInfo(
         }
       }
 
-      return {
-        model: input.model,
-        is_local: true,
-        is_remote: false,
-        supports_browser: true,
-        supports_node: true,
-        is_cached: false,
-        is_loaded: false,
-        file_sizes: null,
-        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-        ...(mrl !== undefined ? { mrl } : {}),
-      };
+      emit({
+        type: "finish",
+        data: {
+          model: input.model,
+          is_local: true,
+          is_remote: false,
+          supports_browser: true,
+          supports_node: true,
+          is_cached: false,
+          is_loaded: false,
+          file_sizes: null,
+          ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+          ...(mrl !== undefined ? { mrl } : {}),
+        } as ModelInfoTaskOutput,
+      });
+      return;
     }
 
     const client = await getClient(model);
@@ -95,15 +100,18 @@ export function createOllamaModelInfo(
       // ps() not available or failed
     }
 
-    return {
-      model: input.model,
-      is_local: true,
-      is_remote: false,
-      supports_browser: true,
-      supports_node: true,
-      is_cached,
-      is_loaded,
-      file_sizes,
-    };
+    emit({
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: true,
+        is_remote: false,
+        supports_browser: true,
+        supports_node: true,
+        is_cached,
+        is_loaded,
+        file_sizes,
+      },
+    });
   };
 }

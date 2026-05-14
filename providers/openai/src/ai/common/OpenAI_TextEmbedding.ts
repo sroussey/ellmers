@@ -4,45 +4,46 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  TextEmbeddingTaskInput,
-  TextEmbeddingTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, TextEmbeddingTaskInput, TextEmbeddingTaskOutput } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
-export const OpenAI_TextEmbedding: AiProviderRunFn<
+/**
+ * One-shot run-fn for `["text.embedding"]`. Calls the OpenAI
+ * embeddings endpoint and emits a single `finish` event carrying the vector
+ * (or array of vectors when `input.text` is an array).
+ */
+export const OpenAI_TextEmbedding_Stream: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   OpenAiModelConfig
-> = async (input, model, update_progress, signal) => {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
-  const timerLabel = `openai:TextEmbedding:${model?.provider_config?.model_name}`;
-  logger.time(timerLabel, { model: model?.provider_config?.model_name });
+  const timerLabel = `openai:TextEmbedding:${getModelName(model)}`;
+  logger.time(timerLabel, { model: getModelName(model) });
+  try {
+    const client = await getClient(model);
+    const modelName = getModelName(model);
 
-  update_progress(0, "Starting OpenAI text embedding");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
+    const response = await client.embeddings.create(
+      {
+        model: modelName,
+        input: input.text,
+      },
+      { signal }
+    );
 
-  const response = await client.embeddings.create(
-    {
-      model: modelName,
-      input: input.text,
-    },
-    { signal }
-  );
+    const result: TextEmbeddingTaskOutput = Array.isArray(input.text)
+      ? ({
+          vector: response.data.map(
+            (item: { embedding: number[] }) => new Float32Array(item.embedding)
+          ),
+        } as unknown as TextEmbeddingTaskOutput)
+      : ({ vector: new Float32Array(response.data[0].embedding) } as TextEmbeddingTaskOutput);
 
-  update_progress(100, "Completed OpenAI text embedding");
-  logger.timeEnd(timerLabel, { model: model?.provider_config?.model_name });
-
-  if (Array.isArray(input.text)) {
-    return {
-      vector: response.data.map(
-        (item: { embedding: number[] }) => new Float32Array(item.embedding)
-      ),
-    };
+    emit({ type: "finish", data: result });
+  } finally {
+    logger.timeEnd(timerLabel, { model: getModelName(model) });
   }
-  return { vector: new Float32Array(response.data[0].embedding) };
 };

@@ -4,33 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { StreamEvent } from "@workglow/task-graph";
-import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
+import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema, ServiceRegistry } from "@workglow/util/worker";
+import { createServiceToken, globalServiceRegistry, WORKER_MANAGER } from "@workglow/util/worker";
+import type { AiEmit } from "../capability/AiEmit";
+import type { Capability } from "../capability/Capabilities";
 import { DirectExecutionStrategy } from "../execution/DirectExecutionStrategy";
-import type { IAiExecutionStrategy, AiStrategyResolver } from "../execution/IAiExecutionStrategy";
+import type { AiStrategyResolver, IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
 import type { AiProvider } from "./AiProvider";
-
-/**
- * Type for the run function for the AiJob.
- * The optional `outputSchema` is provided when the task declares structured output
- * (via `x-structured-output: true`). Providers use it to request schema-conformant
- * JSON output from the model API.
- */
-export type AiProviderRunFn<
-  Input extends TaskInput = TaskInput,
-  Output extends TaskOutput = TaskOutput,
-  Model extends ModelConfig = ModelConfig,
-> = (
-  input: Input,
-  model: Model | undefined,
-  update_progress: (progress: number, message?: string, details?: any) => void,
-  signal: AbortSignal,
-  outputSchema?: JsonSchema,
-  sessionId?: string
-) => Promise<Output>;
 
 /**
  * Type for the preview run function for AiTask.executePreview().
@@ -43,29 +26,16 @@ export type AiProviderPreviewRunFn<
   Model extends ModelConfig = ModelConfig,
 > = (input: Input, model: Model | undefined) => Promise<Output | undefined>;
 
+
 /**
- * Type for the streaming run function for the AiJob.
- * Returns an AsyncIterable of StreamEvents instead of a Promise.
- * No `update_progress` callback -- for streaming providers, the stream itself IS the progress signal.
- * The optional `outputSchema` is provided for structured output tasks.
- *
- * Streaming primitive: this is the canonical authoring surface for provider streams.
- * Implementations MUST be `async function*` generators returning `AsyncIterable`.
- * Do not return a `ReadableStream` -- `ReadableStream` is an engine-internal primitive
- * used only at the dataflow edge for fan-out via `tee()`.
- *
- * Finish convention: yield `{ type: "finish", data: {} as Output }` at the end.
- * Do not accumulate deltas into the finish payload -- the `StreamingAiTask` / `TaskRunner`
- * consumer handles accumulation.
- *
- * @cancel The provided `signal` MUST be forwarded to the underlying SDK or fetch.
- * Generators MUST stop yielding promptly after `signal.aborted` becomes true -- either
- * because the underlying SDK tears down the connection, or because the generator checks
- * `signal.aborted` at loop boundaries. Use `try { ... } finally { ... }` to release any
- * resources (readers, timers) -- `finally` runs when the consumer stops iterating on abort.
- * On abort, the consumer will throw `TaskAbortedError`; do not swallow abort errors.
+ * Promise+emit run-fn shape. Output flows through `emit`; the Promise carries
+ * no data and signals completion only. For one-shot capabilities the run-fn
+ * emits a single `finish` event whose `data` carries the result. For streaming
+ * capabilities the run-fn emits delta events and ends with an empty `finish`.
+ * The run-fn MUST NOT accumulate — accumulation lives only at terminal
+ * consumer sites (`AiTask.execute`, `StreamProcessor` `ctx.shouldAccumulate`).
  */
-export type AiProviderStreamFn<
+export type AiProviderRunFn<
   Input extends TaskInput = TaskInput,
   Output extends TaskOutput = TaskOutput,
   Model extends ModelConfig = ModelConfig,
@@ -73,9 +43,49 @@ export type AiProviderStreamFn<
   input: Input,
   model: Model | undefined,
   signal: AbortSignal,
+  emit: AiEmit<Output>,
   outputSchema?: JsonSchema,
   sessionId?: string
-) => AsyncIterable<StreamEvent<Output>>;
+) => Promise<void>;
+
+/**
+ * A capability-set registration for a provider Promise+emit run function.
+ *
+ * `serves` is the closed set of {@link Capability} values that the run function can
+ * fulfil in a single invocation. The dispatcher matches a task's `requires` array
+ * against `serves` using superset semantics (`requires.every(r => serves.includes(r))`)
+ * and selects the most-specific match (smallest `serves` length wins, ties broken by
+ * registration order).
+ *
+ * Example:
+ * ```ts
+ * { serves: ["text.generation"], runFn: runPlainGeneration }
+ * { serves: ["text.generation", "tool-use"], runFn: runGenerationWithTools }
+ * ```
+ *
+ * A `requires: ["text.generation"]` lookup picks the plain entry; a
+ * `requires: ["text.generation", "tool-use"]` lookup picks the tool-aware one.
+ */
+export interface AiProviderRunFnRegistration<
+  Input extends TaskInput = TaskInput,
+  Output extends TaskOutput = TaskOutput,
+  Model extends ModelConfig = ModelConfig,
+> {
+  readonly serves: readonly Capability[];
+  readonly runFn: AiProviderRunFn<Input, Output, Model>;
+}
+
+
+/**
+ * Build the deterministic key used to register a `serves` set on a worker server
+ * and to dispatch worker calls to it. Sorted alphabetically + comma-joined so the
+ * key is stable across registrations and worker boundaries.
+ *
+ * Example: `["tool-use", "text.generation"]` → `"text.generation,tool-use"`.
+ */
+export function workerKeyForServes(serves: readonly Capability[]): string {
+  return [...serves].sort().join(",");
+}
 
 /**
  * Registry that manages provider-specific task execution functions and job queues.
@@ -83,11 +93,19 @@ export type AiProviderStreamFn<
  * for different model providers and task types.
  */
 export class AiProviderRegistry {
-  runFnRegistry: Map<string, Map<string, AiProviderRunFn<any, any>>> = new Map();
-  streamFnRegistry: Map<string, Map<string, AiProviderStreamFn<any, any>>> = new Map();
-  previewRunFnRegistry: Map<string, Map<string, AiProviderPreviewRunFn<any, any>>> = new Map();
-  private providers: Map<string, AiProvider<any>> = new Map();
-  private strategyResolvers: Map<string, AiStrategyResolver> = new Map();
+  /**
+   * All capability-set registrations grouped by provider name. Each provider may
+   * register multiple registrations whose `serves` sets cover different capability
+   * combinations; lookup picks the most-specific superset of `requires`.
+   */
+  private readonly runFnsByProvider: Map<string, AiProviderRunFnRegistration<any, any>[]> =
+    new Map();
+  private readonly previewRunFnRegistry: Map<
+    string,
+    Map<string, AiProviderPreviewRunFn<any, any>>
+  > = new Map();
+  private readonly providers: Map<string, AiProvider<any>> = new Map();
+  private readonly strategyResolvers: Map<string, AiStrategyResolver> = new Map();
   private defaultStrategy: IAiExecutionStrategy | undefined;
 
   /**
@@ -106,13 +124,7 @@ export class AiProviderRegistry {
   unregisterProvider(name: string): void {
     this.providers.delete(name);
     this.strategyResolvers.delete(name);
-    // Remove all run functions for this provider
-    for (const [, providerMap] of this.runFnRegistry) {
-      providerMap.delete(name);
-    }
-    for (const [, providerMap] of this.streamFnRegistry) {
-      providerMap.delete(name);
-    }
+    this.runFnsByProvider.delete(name);
     for (const [, providerMap] of this.previewRunFnRegistry) {
       providerMap.delete(name);
     }
@@ -203,115 +215,119 @@ export class AiProviderRegistry {
   }
 
   /**
-   * Stable-sorted provider ids that have a direct run function registered for `taskType`.
-   * Use this when the UI or validation should only offer providers that can execute a task
-   * (e.g. {@link ModelSearchTask}).
+   * Stable-sorted provider ids whose registry contains at least one registration
+   * whose `serves` set is a superset of `requires`. Use this when the UI or
+   * validation should only offer providers that can execute a particular
+   * capability set (e.g. {@link ModelSearchTask}).
    */
-  getProviderIdsForTask(taskType: string): string[] {
-    const taskMap = this.runFnRegistry.get(taskType);
-    if (!taskMap) return [];
-    return [...taskMap.keys()].sort();
-  }
-
-  /**
-   * Registers a task execution function for a specific task type and model provider
-   * @param taskType - The type of task (e.g., 'text-generation', 'embedding')
-   * @param modelProvider - The provider of the model (e.g., 'hf-transformers', 'tf-mediapipe', 'openai', etc)
-   * @param runFn - The function that executes the task
-   */
-  registerRunFn<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
-    modelProvider: string,
-    taskType: string,
-    runFn: AiProviderRunFn<Input, Output>
-  ) {
-    if (!this.runFnRegistry.has(taskType)) {
-      this.runFnRegistry.set(taskType, new Map());
+  getProviderIdsForCapabilities(requires: readonly Capability[]): string[] {
+    const out: string[] = [];
+    for (const [providerName, regs] of this.runFnsByProvider) {
+      if (regs.some((r) => requires.every((cap) => r.serves.includes(cap)))) {
+        out.push(providerName);
+      }
     }
-    this.runFnRegistry.get(taskType)!.set(modelProvider, runFn);
-  }
-
-  registerAsWorkerRunFn<
-    Input extends TaskInput = TaskInput,
-    Output extends TaskOutput = TaskOutput,
-  >(modelProvider: string, taskType: string) {
-    const workerFn: AiProviderRunFn<Input, Output> = async (
-      input: Input,
-      model: ModelConfig | undefined,
-      update_progress: (progress: number, message?: string, details?: any) => void,
-      signal?: AbortSignal,
-      outputSchema?: JsonSchema,
-      sessionId?: string
-    ) => {
-      const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
-      const result = await workerManager.callWorkerFunction<Output>(
-        modelProvider,
-        taskType,
-        [input, model, outputSchema, sessionId],
-        {
-          signal: signal,
-          onProgress: update_progress,
-        }
-      );
-      return result;
-    };
-    this.registerRunFn<Input, Output>(modelProvider, taskType, workerFn);
+    return out.sort();
   }
 
   /**
-   * Registers a streaming execution function for a specific task type and model provider.
-   * @param modelProvider - The provider of the model (e.g., 'openai', 'anthropic', etc.)
-   * @param taskType - The type of task (e.g., 'TextGenerationTask')
-   * @param streamFn - The async generator function that yields StreamEvents
+   * Registers a Promise+emit run function under a capability-set for the given
+   * provider. Multiple registrations per provider are supported -- dispatch
+   * picks the smallest `serves` set that is a superset of the task's `requires`.
+   *
+   * @param providerName - The provider name (e.g., "OPENAI")
+   * @param registration - `{ serves, runFn }` describing what this run function fulfils
    */
-  registerStreamFn<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
-    modelProvider: string,
-    taskType: string,
-    streamFn: AiProviderStreamFn<Input, Output>
-  ) {
-    if (!this.streamFnRegistry.has(taskType)) {
-      this.streamFnRegistry.set(taskType, new Map());
+  registerRunFn(providerName: string, registration: AiProviderRunFnRegistration): void {
+    this.registerRunFnInternal(providerName, registration);
+  }
+
+  private registerRunFnInternal(
+    providerName: string,
+    registration: AiProviderRunFnRegistration
+  ): void {
+    const list = this.runFnsByProvider.get(providerName);
+    if (list) {
+      list.push(registration);
+    } else {
+      this.runFnsByProvider.set(providerName, [registration]);
     }
-    this.streamFnRegistry.get(taskType)!.set(modelProvider, streamFn);
   }
 
   /**
-   * Registers a worker-proxied streaming function for a specific task type and model provider.
-   * Creates a proxy that delegates streaming to a Web Worker via WorkerManager.
-   * The proxy calls `callWorkerStreamFunction()` which sends a `stream: true` call message
-   * and yields `stream_chunk` messages from the worker as an AsyncIterable.
+   * Registers a worker-proxied run function under a capability-set.
+   * Stubbed in this commit; restored in plan Task 8 to delegate via
+   * `WorkerManager.callWorkerRunFunction` keyed by
+   * {@link workerKeyForServes}(serves).
+   *
+   * @param providerName - The provider name the proxy is registered under
+   * @param serves - The capability-set this proxy fulfils (must match the
+   *   worker-side registration's `serves` exactly so the deterministic
+   *   `workerKeyForServes` lookup resolves on both sides)
    */
-  registerAsWorkerStreamFn<
-    Input extends TaskInput = TaskInput,
-    Output extends TaskOutput = TaskOutput,
-  >(modelProvider: string, taskType: string) {
-    const streamFn: AiProviderStreamFn<Input, Output> = async function* (
-      input: Input,
+  registerAsWorkerRunFn(providerName: string, serves: readonly Capability[]): void {
+    const key = workerKeyForServes(serves);
+    const proxy: AiProviderRunFn = async (
+      input: TaskInput,
       model: ModelConfig | undefined,
       signal: AbortSignal,
+      emit: AiEmit,
       outputSchema?: JsonSchema,
       sessionId?: string
-    ) {
+    ): Promise<void> => {
       const workerManager = globalServiceRegistry.get(WORKER_MANAGER);
-      yield* workerManager.callWorkerStreamFunction<StreamEvent<Output>>(
-        modelProvider,
-        taskType,
+      await workerManager.callWorkerRunFunction<StreamEvent<TaskOutput>>(
+        providerName,
+        key,
         [input, model, outputSchema, sessionId],
-        { signal }
+        { signal, emit }
       );
     };
-    this.registerStreamFn<Input, Output>(modelProvider, taskType, streamFn);
+    this.registerRunFnInternal(providerName, { serves, runFn: proxy });
   }
 
   /**
-   * Retrieves the streaming execution function for a task type and model provider.
-   * Returns undefined if no streaming function is registered (fallback to non-streaming).
+   * Resolves a registered run function for `providerName` whose `serves` set
+   * is a superset of `requires`. When multiple registrations match, the
+   * most-specific one wins (smallest `serves.length`); ties are broken by
+   * registration order.
+   *
+   * Empty `requires` matches every registration; the first registered (smallest
+   * after the stable sort) is returned.
+   *
+   * @returns The run function, or `undefined` if no registration matches.
    */
-  getStreamFn<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
-    modelProvider: string,
-    taskType: string
-  ): AiProviderStreamFn<Input, Output> | undefined {
-    const taskTypeMap = this.streamFnRegistry.get(taskType);
-    return taskTypeMap?.get(modelProvider) as AiProviderStreamFn<Input, Output> | undefined;
+  getRunFnFor<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
+    providerName: string,
+    requires: readonly Capability[]
+  ): AiProviderRunFn<Input, Output> | undefined {
+    const list = this.runFnsByProvider.get(providerName);
+    if (!list || list.length === 0) {
+      return undefined;
+    }
+    const matches: { reg: AiProviderRunFnRegistration<any, any>; index: number }[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const reg = list[i];
+      if (requires.every((cap) => reg.serves.includes(cap))) {
+        matches.push({ reg, index: i });
+      }
+    }
+    if (matches.length === 0) return undefined;
+    // Stable sort: smallest serves length first; preserve registration order on tie.
+    matches.sort((a, b) => {
+      const lenDiff = a.reg.serves.length - b.reg.serves.length;
+      if (lenDiff !== 0) return lenDiff;
+      return a.index - b.index;
+    });
+    return matches[0].reg.runFn as AiProviderRunFn<Input, Output>;
+  }
+
+  /**
+   * Returns the raw list of registrations for a provider (for diagnostics and
+   * tests). Returns an empty array when the provider has none.
+   */
+  getRunFnRegistrations(providerName: string): readonly AiProviderRunFnRegistration<any, any>[] {
+    return this.runFnsByProvider.get(providerName) ?? [];
   }
 
   /**
@@ -361,32 +377,6 @@ export class AiProviderRegistry {
   ): AiProviderPreviewRunFn<Input, Output> | undefined {
     const taskTypeMap = this.previewRunFnRegistry.get(taskType);
     return taskTypeMap?.get(modelProvider) as AiProviderPreviewRunFn<Input, Output> | undefined;
-  }
-
-  /**
-   * Retrieves the direct execution function for a task type and model
-   * Bypasses the job queue system for immediate execution
-   */
-  getDirectRunFn<Input extends TaskInput = TaskInput, Output extends TaskOutput = TaskOutput>(
-    modelProvider: string,
-    taskType: string
-  ) {
-    const taskTypeMap = this.runFnRegistry.get(taskType);
-    const runFn = taskTypeMap?.get(modelProvider) as AiProviderRunFn<Input, Output> | undefined;
-    if (!runFn) {
-      const installedProviders = this.getInstalledProviderIds();
-      const providersForTask = this.getProviderIdsForTask(taskType);
-      const hint =
-        providersForTask.length > 0
-          ? ` Providers supporting "${taskType}": [${providersForTask.join(", ")}].`
-          : installedProviders.length > 0
-            ? ` Installed providers: [${installedProviders.join(", ")}] (none support "${taskType}").`
-            : " No providers are registered. Call provider.register() before running AI tasks.";
-      throw new Error(
-        `No run function found for task type "${taskType}" and provider "${modelProvider}".${hint}`
-      );
-    }
-    return runFn;
   }
 }
 

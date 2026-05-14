@@ -9,7 +9,6 @@
  * provider-registered strategy (direct or queued).
  */
 
-import { Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
   IExecutePreviewContext,
@@ -29,6 +28,10 @@ import {
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
 
+import { accumulatingEmit } from "../../capability/accumulatingEmit";
+import type { AiEmit } from "../../capability/AiEmit";
+import { noopEmit } from "../../capability/AiEmit";
+import type { Capability } from "../../capability/Capabilities";
 import { AiJob, AiJobInput } from "../../job/AiJob";
 import { MODEL_REPOSITORY } from "../../model/ModelRegistry";
 import type { ModelRepository } from "../../model/ModelRepository";
@@ -68,6 +71,13 @@ export class AiTask<
   public static override type: string = "AiTask";
   public static override hasDynamicEntitlements: boolean = true;
 
+  /**
+   * Capabilities this task requires from the model selected at execution time.
+   * Gates strictly: throws unless `model.capabilities ⊇ task.requires`.
+   * An empty array passes vacuously (pure-compute subclasses that don't dispatch).
+   */
+  public static readonly requires: readonly Capability[] = [];
+
   public static override entitlements(): TaskEntitlements {
     return {
       entitlements: [{ id: Entitlements.AI_INFERENCE, reason: "Runs AI model inference" }],
@@ -104,6 +114,24 @@ export class AiTask<
   // Execution
   // ========================================================================
 
+  /**
+   * Throws TaskConfigurationError if the model lacks any capability listed in
+   * the task class's static `requires`. Both execute() and executeStream() must
+   * call this before dispatch — gating is task-side, not strategy-side.
+   */
+  protected gateOrThrow(model: ModelConfig): void {
+    const taskClass = this.constructor as typeof AiTask;
+    const requires = taskClass.requires;
+    const modelCaps = (model.capabilities as readonly Capability[] | undefined) ?? [];
+    const missing = requires.filter((r) => !modelCaps.includes(r));
+    if (missing.length > 0) {
+      throw new TaskConfigurationError(
+        `Model "${model.model_id ?? "(inline config)"}" is missing capabilities required by ` +
+          `${taskClass.type}: ${missing.join(", ")}.`
+      );
+    }
+  }
+
   override async execute(
     input: Input,
     executeContext: IExecuteContext
@@ -115,26 +143,58 @@ export class AiTask<
       );
     }
 
+    // Strict gating: the model must declare every capability this task requires.
+    this.gateOrThrow(model);
+
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
-    const output = await strategy.execute(jobInput, executeContext, this.runConfig.runnerId);
+    const { emit: observeEvent, result } = accumulatingEmit<Output>();
+    const progressUpdates: Promise<void>[] = [];
+    let progressError: unknown;
+    const emit: AiEmit<Output> = (event) => {
+      if (event.type === "phase") {
+        progressUpdates.push(
+          executeContext.updateProgress(event.progress, event.message).catch((err: unknown) => {
+            progressError ??= err;
+          })
+        );
+      }
+      observeEvent(event);
+    };
+    await strategy.execute(jobInput, executeContext, this.runConfig.runnerId, emit as AiEmit);
+    if (progressUpdates.length > 0) {
+      await Promise.all(progressUpdates);
+      if (progressError !== undefined) {
+        throw progressError;
+      }
+    }
+    const output = result();
 
-    // Register a disposer so the caller can unload the model when done.
+    // Register a disposer so the caller can release the in-memory model when
+    // done. The disposer is wired via the "model.dispose" capability —
+    // distinct from "model.download-remove" (which deletes the on-disk
+    // copy). Providers opt in by registering a run-fn whose `serves` set
+    // contains "model.dispose"; bypasses the task's own `requires` so we
+    // don't gate the lifecycle hook on the task.
     if (executeContext.resourceScope) {
       const registry = getAiProviderRegistry();
-      const provider = registry.getProvider(model.provider);
-      const unloadFn = provider?.getRunFn("UnloadModelTask");
-      if (unloadFn) {
-        const modelPath = model.provider_config?.model_path ?? model.model;
+      const disposeFn = registry.getRunFnFor(model.provider, ["model.dispose"]);
+      if (disposeFn) {
+        const modelPath =
+          (model as ModelConfig & { model?: string }).model ??
+          (model.provider_config as Record<string, unknown> | undefined)?.["model_path"] ??
+          model.model_id;
         const resourceKey = `ai:${model.provider}:${modelPath}`;
         executeContext.resourceScope.register(resourceKey, async () => {
-          await unloadFn({ model }, model, () => {}, AbortSignal.timeout(30_000));
+          // Phase 6: run-fns now return Promise<void> and emit via the
+          // AiEmit callback. We don't care about events here, so use noopEmit.
+          await disposeFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
         });
       }
     }
 
-    return output as Output;
+    return output;
   }
 
   // ========================================================================
@@ -149,9 +209,11 @@ export class AiTask<
     const model = input.model as ModelConfig;
 
     const runtype = (this.constructor as any).runtype ?? (this.constructor as any).type;
+    const taskClass = this.constructor as typeof AiTask;
 
     const jobInput: AiJobInput<Input> = {
       taskType: runtype,
+      requires: taskClass.requires,
       aiProvider: model.provider,
       taskInput: input as Input & { model: ModelConfig },
     };
@@ -188,7 +250,7 @@ export class AiTask<
   /**
    * Creates a new Job instance for direct execution (without a queue).
    */
-  async createJob(input: Input, queueName?: string): Promise<Job<AiJobInput<Input>, Output>> {
+  async createJob(input: Input, queueName?: string): Promise<AiJob<AiJobInput<Input>, Output>> {
     const jobInput = await this.getJobInput(input);
     const resolvedQueueName = queueName ?? (await this.getDefaultQueueName(input));
     if (!resolvedQueueName) {
@@ -259,13 +321,17 @@ export class AiTask<
     for (const [key] of modelTaskProperties) {
       const model = input[key];
       if (typeof model === "object" && model !== null) {
-        const tasks = (model as ModelConfig).tasks;
-        if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
-          const modelId = (model as ModelConfig).model_id ?? "(inline config)";
-          throw new TaskConfigurationError(
-            `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
-              `Model supports: [${tasks.join(", ")}]`
-          );
+        const taskClass = this.constructor as typeof AiTask;
+        const requires = taskClass.requires;
+        const capabilities = (model as ModelConfig).capabilities as string[] | undefined;
+        if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
+          if (!requires.every((r) => capabilities.includes(r))) {
+            const modelId = (model as ModelConfig).model_id ?? "(inline config)";
+            throw new TaskConfigurationError(
+              `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
+                `Requires: [${requires.join(", ")}]; model has: [${capabilities.join(", ")}]`
+            );
+          }
         }
       } else if (model !== undefined && model !== null) {
         throw new TaskConfigurationError(
@@ -321,9 +387,13 @@ export class AiTask<
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
           const model = requestedModel as ModelConfig;
-          const tasks = model.tasks;
-          if (Array.isArray(tasks) && tasks.length > 0 && !tasks.includes(this.type)) {
-            (input as any)[key] = undefined;
+          const taskClass = this.constructor as typeof AiTask;
+          const requires = taskClass.requires;
+          const capabilities = model.capabilities as string[] | undefined;
+          if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
+            if (!requires.every((r) => capabilities.includes(r))) {
+              (input as any)[key] = undefined;
+            }
           }
         }
       }

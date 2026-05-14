@@ -6,48 +6,60 @@
 
 import type {
   AiProviderRunFn,
-  DownloadModelTaskRunInput,
-  DownloadModelTaskRunOutput,
+  ModelDownloadTaskRunInput,
+  ModelDownloadTaskRunOutput,
 } from "@workglow/ai";
 import { LLAMACPP_DEFAULT_MODELS_DIR } from "./LlamaCpp_Constants";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import { getConfigKey, loadSdk, resolvedPaths } from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_Download: AiProviderRunFn<
-  DownloadModelTaskRunInput,
-  DownloadModelTaskRunOutput,
+  ModelDownloadTaskRunInput,
+  ModelDownloadTaskRunOutput,
   LlamaCppModelConfig
-> = async (input, model, update_progress, _signal) => {
-  if (!model) throw new Error("Model config is required for DownloadModelTask.");
+> = async (input, model, _signal, emit) => {
+  if (!model) throw new Error("Model config is required for ModelDownloadTask.");
 
   const { createModelDownloader } = await loadSdk();
   const config = model.provider_config;
   const modelUri = config.model_url ?? config.model_path;
   const dirPath = config.models_dir ?? LLAMACPP_DEFAULT_MODELS_DIR;
 
-  update_progress(0, "Creating model downloader");
-
   const downloader = await createModelDownloader({ modelUri, dirPath });
 
-  const progressInterval = setInterval(() => {
+  const downloadPromise = downloader.download();
+  let modelPath: string | undefined;
+  let downloadError: unknown;
+  downloadPromise.then(
+    (p) => {
+      modelPath = p;
+    },
+    (e) => {
+      downloadError = e;
+    }
+  );
+
+  // Poll progress while download is in flight, emitting phase events.
+  let settled = false;
+  downloadPromise.finally(() => {
+    settled = true;
+  });
+
+  while (!settled) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    if (settled) break;
     const total = downloader.totalSize;
     const downloaded = downloader.downloadedSize;
     if (total && total > 0 && downloaded !== undefined) {
       const pct = Math.min(99, Math.round((downloaded / total) * 100));
-      update_progress(pct, "Downloading model", { file: modelUri, progress: pct });
+      emit({ type: "phase", message: "Downloading model", progress: pct });
     }
-  }, 500);
-
-  let modelPath: string;
-  try {
-    modelPath = await downloader.download();
-  } finally {
-    clearInterval(progressInterval);
   }
+
+  if (downloadError) throw downloadError;
+  if (modelPath === undefined) throw new Error("Model download failed: no path returned");
 
   resolvedPaths.set(getConfigKey(model), modelPath);
 
-  update_progress(100, "Model downloaded", { file: modelUri, progress: 100 });
-
-  return { model: input.model! };
+  emit({ type: "finish", data: { model: input.model! } });
 };

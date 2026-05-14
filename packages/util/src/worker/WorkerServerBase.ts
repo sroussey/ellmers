@@ -87,12 +87,28 @@ export class WorkerServerBase {
 
   private functions: Record<string, (...args: any[]) => Promise<any>> = {};
   private streamFunctions: Record<string, (...args: any[]) => AsyncIterable<any>> = {};
+  private runFunctions: Record<
+    string,
+    (
+      input: unknown,
+      model: unknown,
+      signal: AbortSignal,
+      emit: (event: unknown) => void,
+      outputSchema?: unknown,
+      sessionId?: string
+    ) => Promise<void>
+  > = {};
   private previewFunctions: Record<string, (input: any, model: any) => Promise<any>> = {};
 
   // Keep track of each request's AbortController
   private requestControllers = new Map<string, AbortController>();
   // Keep track of requests that have already been responded to
   private completedRequests = new Set<string>();
+  // Track abort messages that arrived before the corresponding call started so
+  // the imminent handler can apply them immediately. Bounded to prevent
+  // unbounded growth from buggy clients that send aborts for ids that never
+  // arrive (see {@link scheduleCompletedRequestCleanup} for the matching cap).
+  private pendingAborts = new Set<string>();
 
   private postResult = (id: string, result: any) => {
     if (this.completedRequests.has(id)) {
@@ -139,6 +155,7 @@ export class WorkerServerBase {
       type: "ready",
       functions: Object.keys(this.functions),
       streamFunctions: Object.keys(this.streamFunctions),
+      runFunctions: Object.keys(this.runFunctions),
       previewFunctions: Object.keys(this.previewFunctions),
     });
   }
@@ -172,15 +189,38 @@ export class WorkerServerBase {
     this.streamFunctions[name] = fn;
   }
 
+  /**
+   * Register a Promise+emit run function for the new run-fn shape. The function
+   * receives an `emit` callback that posts events as `stream_chunk` messages on
+   * the worker port and resolves with no value when complete. Use this in place
+   * of {@link registerStreamFunction} for newly-ported provider run-fns.
+   */
+  registerRunFunction(
+    name: string,
+    fn: (
+      input: unknown,
+      model: unknown,
+      signal: AbortSignal,
+      emit: (event: unknown) => void,
+      outputSchema?: unknown,
+      sessionId?: string
+    ) => Promise<void>
+  ): void {
+    this.runFunctions[name] = fn;
+  }
+
   // Handle messages from the main thread
   async handleMessage(event: { type: string; data: any }) {
-    const { id, type, functionName, args, stream, preview } = event.data;
+    const { id, type, functionName, args, stream, run, preview } = event.data;
     if (type === "abort") {
       return await this.handleAbort(id);
     }
     if (type === "call") {
       if (stream) {
         return await this.handleStreamCall(id, functionName, args);
+      }
+      if (run) {
+        return await this.handleRunCall(id, functionName, args);
       }
       if (preview) {
         return await this.handlePreviewCall(id, functionName, args);
@@ -197,6 +237,43 @@ export class WorkerServerBase {
       // Send error response back to main thread so the promise rejects
       this.postError(id, "Operation aborted");
       this.scheduleCompletedRequestCleanup(id);
+      return;
+    }
+    // Abort arrived before the call started running (race on the message
+    // port). Record the id so the imminent handle*Call can abort its
+    // controller as soon as it's constructed, and surface the rejection
+    // to the caller immediately.
+    this.recordPendingAbort(id);
+    this.postError(id, "Operation aborted");
+    this.scheduleCompletedRequestCleanup(id);
+  }
+
+  /**
+   * If a prior `abort` arrived for `id` before the call started, abort the
+   * supplied controller immediately and drop the pending marker. Returns
+   * `true` when an abort was consumed so callers may exit fast.
+   */
+  private consumePendingAbort(id: string, controller: AbortController): boolean {
+    if (!this.pendingAborts.delete(id)) return false;
+    controller.abort();
+    return true;
+  }
+
+  /**
+   * Records `id` as having received an abort that has not yet been matched to
+   * a controller. Bounded at 1000 entries; oldest are dropped first so a
+   * misbehaving client cannot leak memory by sending aborts for ids that
+   * never arrive.
+   */
+  private recordPendingAbort(id: string): void {
+    this.pendingAborts.add(id);
+    if (this.pendingAborts.size > 1000) {
+      const iter = this.pendingAborts.values();
+      for (let i = 0; i < 500; i++) {
+        const entry = iter.next();
+        if (entry.done) break;
+        this.pendingAborts.delete(entry.value);
+      }
     }
   }
 
@@ -227,6 +304,8 @@ export class WorkerServerBase {
     try {
       const abortController = new AbortController();
       this.requestControllers.set(id, abortController);
+      // Honour any abort message that beat the call to the worker.
+      this.consumePendingAbort(id, abortController);
 
       const fn = this.functions[functionName];
       const postProgress = (progress: number, message?: string, details?: any) => {
@@ -256,6 +335,7 @@ export class WorkerServerBase {
       try {
         const abortController = new AbortController();
         this.requestControllers.set(id, abortController);
+        this.consumePendingAbort(id, abortController);
 
         const fn = this.streamFunctions[functionName];
         const iterable = fn(input, model, abortController.signal);
@@ -277,6 +357,7 @@ export class WorkerServerBase {
       try {
         const abortController = new AbortController();
         this.requestControllers.set(id, abortController);
+        this.consumePendingAbort(id, abortController);
 
         const fn = this.functions[functionName];
         const noopProgress = () => {};
@@ -292,6 +373,41 @@ export class WorkerServerBase {
       }
     } else {
       this.postError(id, `Function ${functionName} not found`);
+    }
+  }
+
+  /**
+   * Handle a Promise+emit run call. Resolves to `undefined` when the run-fn
+   * settles; emitted events are forwarded as `stream_chunk` messages. This is
+   * the new run-fn shape that replaces async-generator stream functions.
+   */
+  async handleRunCall(
+    id: string,
+    functionName: string,
+    [input, model, outputSchema, sessionId]: [any, any, any, any]
+  ) {
+    if (!(functionName in this.runFunctions)) {
+      this.postError(id, `Run function ${functionName} not found`);
+      return;
+    }
+    const abortController = new AbortController();
+    this.requestControllers.set(id, abortController);
+    this.consumePendingAbort(id, abortController);
+    const fn = this.runFunctions[functionName];
+
+    const emit = (event: unknown) => {
+      if (this.completedRequests.has(id)) return;
+      this.postStreamChunk(id, event);
+    };
+
+    try {
+      await fn(input, model, abortController.signal, emit, outputSchema, sessionId);
+      this.postResult(id, undefined); // signals completion; no payload
+    } catch (error) {
+      this.postError(id, error);
+    } finally {
+      this.requestControllers.delete(id);
+      this.scheduleCompletedRequestCleanup(id);
     }
   }
 

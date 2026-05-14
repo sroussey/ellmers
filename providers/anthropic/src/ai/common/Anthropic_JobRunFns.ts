@@ -4,53 +4,63 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import type {
+  AiProviderRunFnRegistration,
+  AiProviderPreviewRunFn,
+} from "@workglow/ai";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
-import { Anthropic_ModelSearch } from "./Anthropic_ModelSearch";
+import {
+  ANTHROPIC_COUNT_TOKENS,
+  ANTHROPIC_JSON_MODE,
+  ANTHROPIC_MODEL_INFO,
+  ANTHROPIC_MODEL_SEARCH,
+  ANTHROPIC_TEXT_GENERATION,
+  ANTHROPIC_TEXT_REWRITER,
+  ANTHROPIC_TEXT_SUMMARY,
+  ANTHROPIC_TOOL_USE,
+} from "./Anthropic_CapabilitySets";
 
 export { getClient, getMaxTokens, getModelName, loadAnthropicSDK } from "./Anthropic_Client";
 
-import { Anthropic_Chat, Anthropic_Chat_Stream } from "./Anthropic_Chat";
-import { Anthropic_CountTokens, Anthropic_CountTokens_Preview } from "./Anthropic_CountTokens";
-import { Anthropic_ModelInfo } from "./Anthropic_ModelInfo";
-import {
-  Anthropic_StructuredGeneration,
-  Anthropic_StructuredGeneration_Stream,
-} from "./Anthropic_StructuredGeneration";
-import {
-  Anthropic_TextGeneration,
-  Anthropic_TextGeneration_Stream,
-} from "./Anthropic_TextGeneration";
-import { Anthropic_TextRewriter, Anthropic_TextRewriter_Stream } from "./Anthropic_TextRewriter";
-import { Anthropic_TextSummary, Anthropic_TextSummary_Stream } from "./Anthropic_TextSummary";
-import { Anthropic_ToolCalling, Anthropic_ToolCalling_Stream } from "./Anthropic_ToolCalling";
+import { Anthropic_CountTokens_Preview, Anthropic_CountTokens_Stream } from "./Anthropic_CountTokens";
+import { Anthropic_ModelInfo_Stream } from "./Anthropic_ModelInfo";
+import { Anthropic_ModelSearch_Stream } from "./Anthropic_ModelSearch";
+import { Anthropic_StructuredGeneration_Stream } from "./Anthropic_StructuredGeneration";
+import { Anthropic_TextGeneration_Stream } from "./Anthropic_TextGeneration";
+import { Anthropic_TextRewriter_Stream } from "./Anthropic_TextRewriter";
+import { Anthropic_TextSummary_Stream } from "./Anthropic_TextSummary";
+import { Anthropic_ToolCalling_Stream } from "./Anthropic_ToolCalling";
 
-export const ANTHROPIC_TASKS: Record<string, AiProviderRunFn<any, any, AnthropicModelConfig>> = {
-  AiChatTask: Anthropic_Chat,
-  CountTokensTask: Anthropic_CountTokens,
-  ModelInfoTask: Anthropic_ModelInfo,
-  TextGenerationTask: Anthropic_TextGeneration,
-  TextRewriterTask: Anthropic_TextRewriter,
-  TextSummaryTask: Anthropic_TextSummary,
-  StructuredGenerationTask: Anthropic_StructuredGeneration,
-  ToolCallingTask: Anthropic_ToolCalling,
-  ModelSearchTask: Anthropic_ModelSearch,
-};
-
-export const ANTHROPIC_STREAM_TASKS: Record<
-  string,
-  AiProviderStreamFn<any, any, AnthropicModelConfig>
-> = {
-  AiChatTask: Anthropic_Chat_Stream,
-  TextGenerationTask: Anthropic_TextGeneration_Stream,
-  TextRewriterTask: Anthropic_TextRewriter_Stream,
-  TextSummaryTask: Anthropic_TextSummary_Stream,
-  StructuredGenerationTask: Anthropic_StructuredGeneration_Stream,
-  ToolCallingTask: Anthropic_ToolCalling_Stream,
-};
+/**
+ * Capability-set run-fn registrations for the Anthropic provider. Order is
+ * significant only as a tiebreaker — the dispatcher prefers the smallest
+ * `serves` set that is a superset of the task's `requires`, so the bare
+ * `["text.generation"]` entry wins for a plain {@link TextGenerationTask} or
+ * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
+ * for {@link ToolCallingTask}.
+ *
+ * Note: Anthropic does NOT support embeddings, image generation, or image editing.
+ */
+export const ANTHROPIC_RUN_FNS: readonly AiProviderRunFnRegistration<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  AnthropicModelConfig
+>[] = [
+  { serves: ANTHROPIC_TEXT_GENERATION, runFn: Anthropic_TextGeneration_Stream },
+  { serves: ANTHROPIC_TOOL_USE, runFn: Anthropic_ToolCalling_Stream },
+  { serves: ANTHROPIC_JSON_MODE, runFn: Anthropic_StructuredGeneration_Stream },
+  { serves: ANTHROPIC_TEXT_REWRITER, runFn: Anthropic_TextRewriter_Stream },
+  { serves: ANTHROPIC_TEXT_SUMMARY, runFn: Anthropic_TextSummary_Stream },
+  { serves: ANTHROPIC_COUNT_TOKENS, runFn: Anthropic_CountTokens_Stream },
+  { serves: ANTHROPIC_MODEL_SEARCH, runFn: Anthropic_ModelSearch_Stream },
+  { serves: ANTHROPIC_MODEL_INFO, runFn: Anthropic_ModelInfo_Stream },
+];
 
 export const ANTHROPIC_PREVIEW_TASKS: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, AnthropicModelConfig>
 > = {
   CountTokensTask: Anthropic_CountTokens_Preview,

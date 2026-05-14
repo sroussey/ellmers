@@ -42,7 +42,7 @@ describe("Zero-Shot Classification Tasks", () => {
   setLogger(logger);
   beforeEach(async () => {
     await setTaskQueueRegistry(null);
-    clearPipelineCache();
+    await clearPipelineCache();
   });
 
   describe("TextClassificationTask - Zero-Shot", () => {
@@ -53,7 +53,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -75,7 +76,7 @@ describe("Zero-Shot Classification Tasks", () => {
         model_id: "onnx:Xenova/mobilebert-uncased-mnli:q8",
         title: "MobileBERT MNLI",
         description: "Zero-shot text classification model",
-        tasks: ["TextClassificationTask"],
+        capabilities: ["text.classification"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "zero-shot-classification",
@@ -115,7 +116,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -137,7 +139,7 @@ describe("Zero-Shot Classification Tasks", () => {
         model_id: "onnx:Xenova/vit-base-patch16-224:q8",
         title: "ViT Base Patch16 224",
         description: "Image classification model",
-        tasks: ["ImageClassificationTask"],
+        capabilities: ["image.classification"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-classification",
@@ -172,7 +174,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -194,7 +197,7 @@ describe("Zero-Shot Classification Tasks", () => {
         model_id: "onnx:Xenova/clip-vit-base-patch32:q8",
         title: "CLIP ViT Base Patch32",
         description: "Zero-shot image classification model",
-        tasks: ["ImageClassificationTask"],
+        capabilities: ["image.classification"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "zero-shot-image-classification",
@@ -239,7 +242,8 @@ describe("Zero-Shot Classification Tasks", () => {
       );
       await storage.migrate();
 
-      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob, {
+      // AiJob's execute signature diverges from Job's base; cast is intentional.
+      const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
         storage,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
@@ -261,7 +265,7 @@ describe("Zero-Shot Classification Tasks", () => {
         model_id: "onnx:Xenova/owlvit-base-patch32:q8",
         title: "OWL-ViT Base Patch32",
         description: "Zero-shot object detection model",
-        tasks: ["ObjectDetectionTask"],
+        capabilities: ["image.object-detection"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "zero-shot-object-detection",

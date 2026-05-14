@@ -14,11 +14,10 @@ import { getOllamaModelName } from "./Ollama_ModelUtil";
 
 type GetClient = (model: OllamaModelConfig | undefined) => Promise<any>;
 
-export function createOllamaTextEmbedding(
+export function createOllamaTextEmbeddingStream(
   getClient: GetClient
 ): AiProviderRunFn<TextEmbeddingTaskInput, TextEmbeddingTaskOutput, OllamaModelConfig> {
-  return async (input, model, update_progress, _signal) => {
-    update_progress(0, "Starting Ollama text embedding");
+  return async (input, model, _signal, emit) => {
     const client = await getClient(model);
     const modelName = getOllamaModelName(model);
 
@@ -29,13 +28,10 @@ export function createOllamaTextEmbedding(
       input: texts,
     });
 
-    update_progress(100, "Completed Ollama text embedding");
+    const data: TextEmbeddingTaskOutput = Array.isArray(input.text)
+      ? { vector: response.embeddings.map((e: number[]) => new Float32Array(e)) }
+      : { vector: new Float32Array(response.embeddings[0]) };
 
-    if (Array.isArray(input.text)) {
-      return {
-        vector: response.embeddings.map((e: number[]) => new Float32Array(e)),
-      };
-    }
-    return { vector: new Float32Array(response.embeddings[0]) };
+    emit({ type: "finish", data });
   };
 }

@@ -4,13 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ChatMessage, ModelConfig } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  AiProviderRunFnRegistration,
+  Capability,
+  ChatMessage,
+  ModelConfig,
+} from "@workglow/ai";
 import { AiChatTask, AiProvider, getAiProviderRegistry, registerAiTasks } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskRegistry } from "@workglow/task-graph";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
+
+const TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
 
 describe("AiChatTask — schema and registration", () => {
   it("has required static properties", () => {
@@ -66,6 +74,7 @@ function mkModel(): ModelConfig {
   return {
     provider: "fake-chat",
     model: "fake-model",
+    capabilities: TEXT_GENERATION,
   } as unknown as ModelConfig;
 }
 
@@ -86,14 +95,17 @@ class FakeChatProvider extends AiProvider {
   override readonly displayName = "Fake Chat";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
-  override readonly taskTypes = ["AiChatTask"] as const;
+
+  constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
+    super(runFns);
+  }
 }
 
-function registerFakeChatProvider(stream: AiProviderStreamFn<any, any, ModelConfig>): () => void {
+function registerFakeChatProvider(runFn: AiProviderRunFn<any, any, ModelConfig>): () => void {
   const registry = getAiProviderRegistry();
-  const provider = new FakeChatProvider();
+  const provider = new FakeChatProvider([{ serves: TEXT_GENERATION, runFn }]);
   registry.registerProvider(provider);
-  registry.registerStreamFn("fake-chat", "AiChatTask", stream);
+  registry.registerRunFn("fake-chat", { serves: TEXT_GENERATION, runFn });
   return () => registry.unregisterProvider("fake-chat");
 }
 
@@ -135,9 +147,14 @@ async function accumulateChatStream(
 
 describe("AiChatTask — streaming output accumulation", () => {
   it("drives the stream to completion and accumulates final output via deltas", async () => {
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -171,9 +188,14 @@ describe("AiChatTask — streaming output accumulation", () => {
 
 describe("AiChatTask — connector resolution", () => {
   it("throws a helpful error when HUMAN_CONNECTOR is not registered", async () => {
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -205,11 +227,16 @@ describe("AiChatTask — connector resolution", () => {
 describe("AiChatTask — chat loop", () => {
   it("runs one turn then stops on decline", async () => {
     const calls: number[] = [];
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       calls.push(1);
-      yield { type: "text-delta", port: "text", textDelta: "Hello" };
-      yield { type: "text-delta", port: "text", textDelta: " there" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "Hello" });
+      emit({ type: "text-delta", port: "text", textDelta: " there" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -246,10 +273,15 @@ describe("AiChatTask — chat loop", () => {
 
   it("runs two turns when connector accepts a follow-up", async () => {
     let callIdx = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       callIdx++;
-      yield { type: "text-delta", port: "text", textDelta: `Turn ${callIdx}` };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: `Turn ${callIdx}` });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -289,10 +321,15 @@ describe("AiChatTask — chat loop", () => {
 
   it("maxIterations cap terminates the loop after exactly N turns", async () => {
     let callIdx = 0;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
       callIdx++;
-      yield { type: "text-delta", port: "text", textDelta: `T${callIdx}` };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: `T${callIdx}` });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -331,12 +368,8 @@ describe("AiChatTask — chat loop", () => {
   });
 
   it("aborts mid-turn when context.signal fires", async () => {
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (
-      _in,
-      _m,
-      signal: AbortSignal
-    ) {
-      yield { type: "text-delta", port: "text", textDelta: "start" };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (_in, _m, signal, emit) => {
+      emit({ type: "text-delta", port: "text", textDelta: "start" });
       // Simulate an in-flight provider call that checks the signal.
       await new Promise<void>((_resolve, reject) => {
         const onAbort = () => {
@@ -345,7 +378,7 @@ describe("AiChatTask — chat loop", () => {
         };
         signal.addEventListener("abort", onAbort);
       });
-      yield { type: "finish", data: {} as any };
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -398,9 +431,14 @@ describe("AiChatTask — chat loop", () => {
       }
     }
 
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -432,9 +470,14 @@ describe("AiChatTask — chat loop", () => {
   });
 
   it("accepts ContentBlock[] as prompt and preserves block shape in history", async () => {
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* () {
-      yield { type: "text-delta", port: "text", textDelta: "response" };
-      yield { type: "finish", data: {} as any };
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      _input,
+      _model,
+      _signal,
+      emit
+    ) => {
+      emit({ type: "text-delta", port: "text", textDelta: "response" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -482,13 +525,18 @@ describe("AiChatTask — responseFormat", () => {
 
   it("when 'markdown', appends the markdown addendum to the per-turn system prompt", async () => {
     let capturedSystemPrompt: string | undefined;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
         (m) => m.role === "system"
       );
       capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {
@@ -515,13 +563,18 @@ describe("AiChatTask — responseFormat", () => {
 
   it("when 'text' (or omitted), the per-turn system prompt is the raw input.systemPrompt", async () => {
     let capturedSystemPrompt: string | undefined;
-    const stream: AiProviderStreamFn<any, any, ModelConfig> = async function* (taskInput: any) {
+    const stream: AiProviderRunFn<any, any, ModelConfig> = async (
+      taskInput,
+      _model,
+      _signal,
+      emit
+    ) => {
       const sys = (taskInput.messages as ChatMessage[] | undefined)?.find(
         (m) => m.role === "system"
       );
       capturedSystemPrompt = sys?.content[0]?.type === "text" ? sys.content[0].text : "";
-      yield { type: "text-delta", port: "text", textDelta: "ok" };
-      yield { type: "finish", data: {} as any };
+      emit({ type: "text-delta", port: "text", textDelta: "ok" });
+      emit({ type: "finish", data: {} as any });
     };
     const unregister = registerFakeChatProvider(stream);
     try {

@@ -14,7 +14,7 @@ export const TFMP_FaceDetector: AiProviderRunFn<
   FaceDetectorTaskInput,
   FaceDetectorTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { FaceDetector } = await loadTfmpTasksVisionSDK();
   const faceDetector = await getModelTask(
     model!,
@@ -22,7 +22,7 @@ export const TFMP_FaceDetector: AiProviderRunFn<
       minDetectionConfidence: input.minDetectionConfidence,
       minSuppressionThreshold: input.minSuppressionThreshold,
     },
-    onProgress,
+    emit,
     signal,
     FaceDetector
   );
@@ -48,7 +48,5 @@ export const TFMP_FaceDetector: AiProviderRunFn<
     score: detection.categories?.[0]?.score || 0,
   }));
 
-  return {
-    faces,
-  };
+  emit({ type: "finish", data: { faces } });
 };

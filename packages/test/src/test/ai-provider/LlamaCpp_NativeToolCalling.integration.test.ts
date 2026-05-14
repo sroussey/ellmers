@@ -11,8 +11,11 @@
  * silently embed tool calls in the response text instead.
  */
 
-import { getLlama, LlamaChat, resolveModelFile } from "node-llama-cpp";
+import { loadSdk } from "@workglow/node-llama-cpp/ai-runtime";
 import { afterAll, describe, it } from "vitest";
+
+type LlamaCppSDK = Awaited<ReturnType<typeof loadSdk>>;
+type LlamaInstance = Awaited<ReturnType<LlamaCppSDK["getLlama"]>>;
 
 const models = [
   { label: "LFM2 1.2B Tool", url: "hf:LiquidAI/LFM2-1.2B-Tool-GGUF:Q8_0" },
@@ -33,9 +36,9 @@ const functions = {
   },
 };
 
-describe.skip("node-llama-cpp native function calling", () => {
+describe("node-llama-cpp native function calling", () => {
   const timeout = 10 * 60 * 1000;
-  let llama: Awaited<ReturnType<typeof getLlama>> | undefined;
+  let llama: LlamaInstance | undefined;
 
   afterAll(async () => {
     await llama?.dispose();
@@ -45,6 +48,7 @@ describe.skip("node-llama-cpp native function calling", () => {
     it(
       label,
       async () => {
+        const { getLlama, LlamaChat, resolveModelFile } = await loadSdk();
         llama ??= await getLlama();
         const modelPath = await resolveModelFile(url, "./models");
         const model = await llama.loadModel({ modelPath });

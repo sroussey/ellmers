@@ -6,15 +6,17 @@
 
 import { QueuedAiProvider } from "@workglow/ai";
 import type {
-  IAiExecutionStrategy,
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
   AiProviderRegisterOptions,
   AiProviderQueueConcurrency,
+  AiProviderRunFnRegistration,
+  Capability,
+  IAiExecutionStrategy,
   ModelConfig,
+  ModelRecord,
 } from "@workglow/ai";
 import { HF_TRANSFORMERS_ONNX, HF_TRANSFORMERS_ONNX_CPU } from "./common/HFT_Constants";
+import { hftWorkerRunFnSpecs, inferHftCapabilities } from "./common/HFT_Capabilities";
 import type { HfTransformersOnnxModelConfig } from "./common/HFT_ModelSchema";
 import { deleteHftSession } from "./common/HFT_Pipeline";
 
@@ -23,10 +25,6 @@ const GPU_DEVICES = new Set(["webgpu", "gpu", "metal"]);
 /** Default concurrent WASM/CPU ONNX jobs in production (ONNX Runtime / wasm backend). */
 const HFT_CPU_QUEUE_CONCURRENCY_PRODUCTION = 4;
 
-/**
- * When true, use a single worker for the CPU/WASM queue so tests do not contend on the
- * shared HF cache and ONNX wasm (Vitest, Jest, NODE_ENV=test, Bun test).
- */
 function hftIsAutomatedTestEnvironment(): boolean {
   if (typeof process === "undefined") {
     return false;
@@ -58,11 +56,10 @@ function resolveHftCpuQueueConcurrency(
 }
 
 /**
- * Main-thread registration (inline or worker-backed).
- * WebGPU/GPU/Metal models use the `gpu` slot (or a numeric `queue.concurrency`, default 1).
- * WASM/CPU models use a separate {@link HF_TRANSFORMERS_ONNX_CPU} queue with higher
- * concurrency (4 in production, 1 under automated tests) to limit ONNX worker contention.
- * Set `cpu` in `queue.concurrency` to override the default.
+ * Main-thread registration (inline or worker-backed) for the HFT provider.
+ * WebGPU/GPU/Metal models use the `gpu` slot (or a numeric `queue.concurrency`,
+ * default 1). WASM/CPU models use a separate {@link HF_TRANSFORMERS_ONNX_CPU}
+ * queue with higher concurrency (4 in production, 1 under automated tests).
  */
 export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTransformersOnnxModelConfig> {
   readonly name = HF_TRANSFORMERS_ONNX;
@@ -72,39 +69,29 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
 
   private cpuStrategy: IAiExecutionStrategy | undefined;
 
-  readonly taskTypes = [
-    "AiChatTask",
-    "DownloadModelTask",
-    "UnloadModelTask",
-    "ModelInfoTask",
-    "CountTokensTask",
-    "TextEmbeddingTask",
-    "TextGenerationTask",
-    "TextQuestionAnswerTask",
-    "TextLanguageDetectionTask",
-    "TextClassificationTask",
-    "TextFillMaskTask",
-    "TextNamedEntityRecognitionTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "TextTranslationTask",
-    "ImageSegmentationTask",
-    "ImageToTextTask",
-    "BackgroundRemovalTask",
-    "ImageEmbeddingTask",
-    "ImageClassificationTask",
-    "ObjectDetectionTask",
-    "ToolCallingTask",
-    "StructuredGenerationTask",
-    "ModelSearchTask",
-  ] as const;
-
   constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, HfTransformersOnnxModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, HfTransformersOnnxModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>>
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      HfTransformersOnnxModelConfig
+    >[],
+    previewTasks?: Record<
+      string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      AiProviderPreviewRunFn<any, any, HfTransformersOnnxModelConfig>
+    >
   ) {
-    super(tasks, streamTasks, previewTasks);
+    super(promiseRunFns, previewTasks);
+  }
+
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferHftCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return hftWorkerRunFnSpecs();
   }
 
   override createSession(_model: ModelConfig): string {

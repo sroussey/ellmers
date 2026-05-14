@@ -5,6 +5,7 @@
  */
 
 import type { DynamicCache, PretrainedModelOptions, ProgressInfo } from "@huggingface/transformers";
+import type { StreamPhase } from "@workglow/task-graph";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 
@@ -183,7 +184,7 @@ function abortableFetch(url: string, options?: RequestInit): Promise<Response> {
   );
 }
 
-const pipelines = new Map<string, any>();
+const pipelines = new Map<string, Awaited<ReturnType<TransformersSDKModule["pipeline"]>>>();
 
 // ============================================================================
 // Session cache for multi-turn conversations
@@ -281,18 +282,64 @@ const IMAGE_PIPELINE_TYPES = new Set([
 export const HFT_NULL_PROCESSOR_PREFIX = "HFT_NULL_PROCESSOR:";
 
 /**
- * Clear all cached pipelines
+ * Clear all cached pipelines. Best-effort calls `.dispose()` on each pipeline's
+ * underlying ONNX model so its native (WASM) memory is released immediately —
+ * dropping the JS reference alone leaks ONNX sessions, which accumulate across
+ * test files and OOM-kill the next file's pipeline load. Any dispose Promise
+ * is intentionally not awaited (synchronous API is required by the many
+ * callers); native free happens synchronously inside dispose.
  */
-export function clearPipelineCache(): void {
+/**
+ * Clear all cached pipelines. Best-effort awaits `model.dispose()` on each
+ * pipeline so its ONNX sessions release their WASM memory before the cache
+ * is cleared. transformers.js's dispose is async (it awaits `session.release()`
+ * on every session in `model.sessions`); calling it synchronously would
+ * fire-and-forget the WASM release.
+ */
+export async function clearPipelineCache(): Promise<void> {
+  const snapshot = Array.from(pipelines.values());
   pipelines.clear();
+  await Promise.allSettled(
+    snapshot.map(async (pipeline) => {
+      try {
+        const model = pipeline?.model;
+        await model?.dispose?.();
+      } catch {
+        // Best-effort: a dispose failure on one pipeline must not block others.
+      }
+    })
+  );
 }
 
 export function hasCachedPipeline(cacheKey: string): boolean {
   return pipelines.has(cacheKey);
 }
 
-export function removeCachedPipeline(cacheKey: string): boolean {
-  return pipelines.delete(cacheKey);
+/**
+ * Remove a pipeline from the cache and asynchronously dispose its underlying
+ * ONNX sessions. transformers.js's `model.dispose()` is async — it iterates
+ * `model.sessions` and awaits `session.release?.()` on each, which is what
+ * actually frees the WASM session memory. Dropping the JS reference alone
+ * leaks ONNX sessions because the WASM heap doesn't shrink in response to V8
+ * GC; explicit `release()` is required.
+ *
+ * Returns the model.dispose() promise; callers that can await it should
+ * (e.g. inside HFT_DownloadRemove's async generator) so the WASM release completes
+ * before the next operation. Best-effort: dispose failure does not prevent
+ * cache eviction.
+ */
+export async function removeCachedPipeline(cacheKey: string): Promise<boolean> {
+  const pipeline = pipelines.get(cacheKey);
+  const deleted = pipelines.delete(cacheKey);
+  if (pipeline) {
+    try {
+      const model = pipeline?.model;
+      await model?.dispose?.();
+    } catch {
+      // Best-effort: dispose failure must not propagate.
+    }
+  }
+  return deleted;
 }
 
 /** True when running in a browser or Web Worker. Transformers.js only accepts device "wasm" or "webgpu" in the browser build. */
@@ -324,11 +371,14 @@ export function getPipelineCacheKey(model: HfTransformersOnnxModelConfig): strin
  */
 export async function getPipeline(
   model: HfTransformersOnnxModelConfig,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   options: PretrainedModelOptions = {},
   signal?: AbortSignal,
   progressScaleMax: number = 10
 ): Promise<any> {
+  if (signal?.aborted) {
+    throw signal?.reason ?? new Error("Aborted");
+  }
   const cacheKey = getPipelineCacheKey(model);
   if (pipelines.has(cacheKey)) {
     getLogger().debug("HFT pipeline cache hit", { cacheKey });
@@ -351,7 +401,7 @@ export async function getPipeline(
 
   const loadPromise = doGetPipeline(
     model,
-    onProgress,
+    emit,
     options,
     progressScaleMax,
     cacheKey,
@@ -365,7 +415,7 @@ export async function getPipeline(
 
 const doGetPipeline = async (
   model: HfTransformersOnnxModelConfig,
-  onProgress: (progress: number, message?: string, details?: any) => void,
+  emit: (event: StreamPhase) => void,
   options: PretrainedModelOptions,
   progressScaleMax: number,
   cacheKey: string,
@@ -373,41 +423,15 @@ const doGetPipeline = async (
 ) => {
   // Throttle state for progress events
   let lastProgressTime = 0;
-  type FilesByteMap = Record<string, { loaded: number; total: number }>;
-  let pendingProgress: {
-    progress: number;
-    file: string;
-    fileProgress: number;
-    filesMap?: FilesByteMap;
-  } | null = null;
+  let pendingProgress: number | null = null;
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
   const THROTTLE_MS = 160;
-
-  const buildProgressDetails = (
-    file: string,
-    fileProgress: number,
-    filesMap?: FilesByteMap
-  ): { file: string; progress: number; files?: FilesByteMap } => {
-    const details: { file: string; progress: number; files?: FilesByteMap } = {
-      file,
-      progress: fileProgress,
-    };
-    if (filesMap && Object.keys(filesMap).length > 0) {
-      details.files = filesMap;
-    }
-    return details;
-  };
 
   /**
    * Sends a progress event, throttled to avoid flooding the worker channel.
    * Always sends first event and final (>=progressScaleMax) immediately.
    */
-  const sendProgress = (
-    progress: number,
-    file: string,
-    fileProgress: number,
-    filesMap?: FilesByteMap
-  ): void => {
+  const sendProgress = (progress: number): void => {
     const now = Date.now();
     const timeSinceLastEvent = now - lastProgressTime;
     const isFirst = lastProgressTime === 0;
@@ -419,28 +443,23 @@ const doGetPipeline = async (
         throttleTimer = null;
       }
       pendingProgress = null;
-      onProgress(
-        Math.round(progress),
-        "Downloading model",
-        buildProgressDetails(file, fileProgress, filesMap)
-      );
+      emit({ type: "phase", message: "Downloading model", progress: Math.round(progress) });
       lastProgressTime = now;
       return;
     }
 
     if (timeSinceLastEvent < THROTTLE_MS) {
-      pendingProgress = { progress, file, fileProgress, filesMap };
+      pendingProgress = progress;
       if (!throttleTimer) {
         const timeRemaining = Math.max(1, THROTTLE_MS - timeSinceLastEvent);
         throttleTimer = setTimeout(() => {
           throttleTimer = null;
-          if (pendingProgress) {
-            const p = pendingProgress;
-            onProgress(
-              Math.round(p.progress),
-              "Downloading model",
-              buildProgressDetails(p.file, p.fileProgress, p.filesMap)
-            );
+          if (pendingProgress !== null) {
+            emit({
+              type: "phase",
+              message: "Downloading model",
+              progress: Math.round(pendingProgress),
+            });
             lastProgressTime = Date.now();
             pendingProgress = null;
           }
@@ -449,11 +468,7 @@ const doGetPipeline = async (
       return;
     }
 
-    onProgress(
-      Math.round(progress),
-      "Downloading model",
-      buildProgressDetails(file, fileProgress, filesMap)
-    );
+    emit({ type: "phase", message: "Downloading model", progress: Math.round(progress) });
     lastProgressTime = now;
     pendingProgress = null;
   };
@@ -478,32 +493,8 @@ const doGetPipeline = async (
     if (abortSignal?.aborted) return;
 
     if (status.status === "progress_total") {
-      const totalStatus = status;
-      const scaledProgress = (totalStatus.progress * progressScaleMax) / 100;
-
-      // Find the currently active file (one still downloading)
-      let activeFile = "";
-      let activeFileProgress = 0;
-      const files: Record<string, { loaded: number; total: number }> | undefined =
-        totalStatus.files;
-      if (files) {
-        for (const [file, info] of Object.entries(files)) {
-          if (info.loaded < info.total) {
-            activeFile = file;
-            activeFileProgress = info.total > 0 ? (info.loaded / info.total) * 100 : 0;
-            break;
-          }
-        }
-        if (!activeFile) {
-          const fileNames = Object.keys(files);
-          if (fileNames.length > 0) {
-            activeFile = fileNames[fileNames.length - 1];
-            activeFileProgress = 100;
-          }
-        }
-      }
-
-      sendProgress(scaledProgress, activeFile, activeFileProgress, files);
+      const scaledProgress = (status.progress * progressScaleMax) / 100;
+      sendProgress(scaledProgress);
     }
   };
 
@@ -561,18 +552,12 @@ const doGetPipeline = async (
       throttleTimer = null;
     }
     // pendingProgress may have been set by progressCallback during the pipeline() await
-    const finalPending = pendingProgress as {
-      progress: number;
-      file: string;
-      fileProgress: number;
-      filesMap?: FilesByteMap;
-    } | null;
-    if (finalPending) {
-      onProgress(
-        Math.round(finalPending.progress),
-        "Downloading model",
-        buildProgressDetails(finalPending.file, finalPending.fileProgress, finalPending.filesMap)
-      );
+    if (pendingProgress !== null) {
+      emit({
+        type: "phase",
+        message: "Downloading model",
+        progress: Math.round(pendingProgress),
+      });
       pendingProgress = null;
     }
 

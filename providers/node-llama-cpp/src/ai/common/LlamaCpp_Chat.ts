@@ -8,10 +8,8 @@ import type {
   AiChatProviderInput,
   AiChatProviderOutput,
   AiProviderRunFn,
-  AiProviderStreamFn,
   ChatMessage,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
   getConfigKey,
@@ -79,59 +77,14 @@ function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
 }
 
 // ============================================================================
-// Non-streaming run function
-// ============================================================================
-
-export const LlamaCpp_Chat: AiProviderRunFn<
-  AiChatProviderInput,
-  AiChatProviderOutput,
-  LlamaCppModelConfig
-> = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
-  if (!model) throw new Error("Model config is required for AiChatTask.");
-
-  update_progress(0, "Loading model");
-  const { session, sequence } = await getOrCreateChatSession(sessionId, model, input.systemPrompt);
-  update_progress(10, "Generating response");
-
-  const userText = lastUserText(input.messages ?? []);
-
-  try {
-    const text = await session.prompt(userText, {
-      signal,
-      ...llamaCppSeedPromptSpread(model.provider_config),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxTokens !== undefined && { maxTokens: input.maxTokens }),
-    });
-    update_progress(100, "Chat turn complete");
-    return { text };
-  } finally {
-    // For ephemeral sessions (no sessionId), dispose resources immediately.
-    if (!sessionId) {
-      try {
-        await session.dispose({ disposeSequence: false });
-      } catch {}
-      try {
-        await sequence.dispose();
-      } catch {}
-    }
-  }
-};
-
-// ============================================================================
 // Streaming run function
 // ============================================================================
 
-export const LlamaCpp_Chat_Stream: AiProviderStreamFn<
+export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   LlamaCppModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<AiChatProviderOutput>> {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   if (!model) throw new Error("Model config is required for AiChatTask.");
 
   const { session, sequence } = await getOrCreateChatSession(sessionId, model, input.systemPrompt);
@@ -172,9 +125,9 @@ export const LlamaCpp_Chat_Stream: AiProviderStreamFn<
       resolver = undefined;
     }
     while (queue.length > 0) {
-      yield { type: "text-delta", port: "text", textDelta: queue.shift()! };
+      emit({ type: "text-delta", port: "text", textDelta: queue.shift()! });
     }
   }
   await promptPromise;
-  yield { type: "finish", data: {} as AiChatProviderOutput };
+  emit({ type: "finish", data: {} as AiChatProviderOutput });
 };

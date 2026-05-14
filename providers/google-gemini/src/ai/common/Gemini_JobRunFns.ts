@@ -4,59 +4,71 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderPreviewRunFn, AiProviderRunFn, AiProviderStreamFn } from "@workglow/ai";
+import type {
+  AiProviderRunFnRegistration,
+  AiProviderPreviewRunFn,
+} from "@workglow/ai";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
-import { Gemini_ModelSearch } from "./Gemini_ModelSearch";
+import {
+  GEMINI_COUNT_TOKENS,
+  GEMINI_IMAGE_EDITING,
+  GEMINI_IMAGE_GENERATION,
+  GEMINI_JSON_MODE,
+  GEMINI_MODEL_INFO,
+  GEMINI_MODEL_SEARCH,
+  GEMINI_TEXT_EMBEDDING,
+  GEMINI_TEXT_GENERATION,
+  GEMINI_TEXT_REWRITER,
+  GEMINI_TEXT_SUMMARY,
+  GEMINI_TOOL_USE,
+} from "./Gemini_CapabilitySets";
 
 export { loadGeminiSDK, getApiKey, getModelName } from "./Gemini_Client";
 export { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
-import { Gemini_Chat, Gemini_Chat_Stream } from "./Gemini_Chat";
-import { Gemini_CountTokens, Gemini_CountTokens_Preview } from "./Gemini_CountTokens";
-import { Gemini_ImageEdit, Gemini_ImageEdit_Stream } from "./Gemini_ImageEdit";
-import { Gemini_ImageGenerate, Gemini_ImageGenerate_Stream } from "./Gemini_ImageGenerate";
-import { Gemini_ModelInfo } from "./Gemini_ModelInfo";
-import {
-  Gemini_StructuredGeneration,
-  Gemini_StructuredGeneration_Stream,
-} from "./Gemini_StructuredGeneration";
-import { Gemini_TextEmbedding } from "./Gemini_TextEmbedding";
-import { Gemini_TextGeneration, Gemini_TextGeneration_Stream } from "./Gemini_TextGeneration";
-import { Gemini_TextRewriter, Gemini_TextRewriter_Stream } from "./Gemini_TextRewriter";
-import { Gemini_TextSummary, Gemini_TextSummary_Stream } from "./Gemini_TextSummary";
-import { Gemini_ToolCalling, Gemini_ToolCalling_Stream } from "./Gemini_ToolCalling";
+import { Gemini_CountTokens_Preview, Gemini_CountTokens_Stream } from "./Gemini_CountTokens";
+import { Gemini_ImageEdit_Stream } from "./Gemini_ImageEdit";
+import { Gemini_ImageGenerate_Stream } from "./Gemini_ImageGenerate";
+import { Gemini_ModelInfo_Stream } from "./Gemini_ModelInfo";
+import { Gemini_ModelSearch_Stream } from "./Gemini_ModelSearch";
+import { Gemini_StructuredGeneration_Stream } from "./Gemini_StructuredGeneration";
+import { Gemini_TextEmbedding_Stream } from "./Gemini_TextEmbedding";
+import { Gemini_TextGeneration_Stream } from "./Gemini_TextGeneration";
+import { Gemini_TextRewriter_Stream } from "./Gemini_TextRewriter";
+import { Gemini_TextSummary_Stream } from "./Gemini_TextSummary";
+import { Gemini_ToolCalling_Stream } from "./Gemini_ToolCalling";
 
-export const GEMINI_TASKS: Record<string, AiProviderRunFn<any, any, GeminiModelConfig>> = {
-  AiChatTask: Gemini_Chat,
-  CountTokensTask: Gemini_CountTokens,
-  ModelInfoTask: Gemini_ModelInfo,
-  TextGenerationTask: Gemini_TextGeneration,
-  TextEmbeddingTask: Gemini_TextEmbedding,
-  TextRewriterTask: Gemini_TextRewriter,
-  TextSummaryTask: Gemini_TextSummary,
-  StructuredGenerationTask: Gemini_StructuredGeneration,
-  ToolCallingTask: Gemini_ToolCalling,
-  ModelSearchTask: Gemini_ModelSearch,
-  ImageGenerateTask: Gemini_ImageGenerate,
-  ImageEditTask: Gemini_ImageEdit,
-};
-
-export const GEMINI_STREAM_TASKS: Record<
-  string,
-  AiProviderStreamFn<any, any, GeminiModelConfig>
-> = {
-  AiChatTask: Gemini_Chat_Stream,
-  TextGenerationTask: Gemini_TextGeneration_Stream,
-  TextRewriterTask: Gemini_TextRewriter_Stream,
-  TextSummaryTask: Gemini_TextSummary_Stream,
-  StructuredGenerationTask: Gemini_StructuredGeneration_Stream,
-  ToolCallingTask: Gemini_ToolCalling_Stream,
-  ImageGenerateTask: Gemini_ImageGenerate_Stream,
-  ImageEditTask: Gemini_ImageEdit_Stream,
-};
+/**
+ * Capability-set run-fn registrations for the Google Gemini provider. Order is
+ * significant only as a tiebreaker — the dispatcher prefers the smallest
+ * `serves` set that is a superset of the task's `requires`, so the bare
+ * `["text.generation"]` entry wins for a plain {@link TextGenerationTask} or
+ * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
+ * for {@link ToolCallingTask}.
+ */
+export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  GeminiModelConfig
+>[] = [
+  { serves: GEMINI_TEXT_GENERATION, runFn: Gemini_TextGeneration_Stream },
+  { serves: GEMINI_TOOL_USE, runFn: Gemini_ToolCalling_Stream },
+  { serves: GEMINI_JSON_MODE, runFn: Gemini_StructuredGeneration_Stream },
+  { serves: GEMINI_TEXT_REWRITER, runFn: Gemini_TextRewriter_Stream },
+  { serves: GEMINI_TEXT_SUMMARY, runFn: Gemini_TextSummary_Stream },
+  { serves: GEMINI_TEXT_EMBEDDING, runFn: Gemini_TextEmbedding_Stream },
+  { serves: GEMINI_IMAGE_GENERATION, runFn: Gemini_ImageGenerate_Stream },
+  { serves: GEMINI_IMAGE_EDITING, runFn: Gemini_ImageEdit_Stream },
+  { serves: GEMINI_COUNT_TOKENS, runFn: Gemini_CountTokens_Stream },
+  { serves: GEMINI_MODEL_SEARCH, runFn: Gemini_ModelSearch_Stream },
+  { serves: GEMINI_MODEL_INFO, runFn: Gemini_ModelInfo_Stream },
+];
 
 export const GEMINI_PREVIEW_TASKS: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, GeminiModelConfig>
 > = {
   CountTokensTask: Gemini_CountTokens_Preview,

@@ -6,59 +6,24 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
-export const OpenAI_StructuredGeneration: AiProviderRunFn<
+/**
+ * Streaming run-fn for `["text.generation", "json-mode"]`. Emits
+ * `object-delta` events with progressively-completed partial JSON snapshots
+ * on the `object` port, ending with a `finish` event carrying the parsed
+ * final object.
+ */
+export const OpenAI_StructuredGeneration_Stream: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   OpenAiModelConfig
-> = async (input, model, update_progress, signal, outputSchema) => {
-  update_progress(0, "Starting OpenAI structured generation");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const schema = input.outputSchema ?? outputSchema;
-
-  const response = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages: [{ role: "user", content: input.prompt }],
-      response_format: {
-        type: "json_schema" as any,
-        json_schema: {
-          name: "structured_output",
-          schema: schema,
-          strict: true,
-        },
-      } as any,
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-    },
-    { signal }
-  );
-
-  const content = response.choices[0]?.message?.content ?? "{}";
-  update_progress(100, "Completed OpenAI structured generation");
-  return { object: JSON.parse(content) };
-};
-
-export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
-  StructuredGenerationTaskInput,
-  StructuredGenerationTaskOutput,
-  OpenAiModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  outputSchema
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
+> = async (input, model, signal, emit, outputSchema) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -69,13 +34,13 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
       model: modelName,
       messages: [{ role: "user", content: input.prompt }],
       response_format: {
-        type: "json_schema" as any,
+        type: "json_schema" as never,
         json_schema: {
           name: "structured_output",
           schema: schema,
           strict: true,
         },
-      } as any,
+      } as never,
       max_completion_tokens: input.maxTokens,
       temperature: input.temperature,
       stream: true,
@@ -90,7 +55,7 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
       accumulatedJson += delta;
       const partial = parsePartialJson(accumulatedJson);
       if (partial !== undefined) {
-        yield { type: "object-delta", port: "object", objectDelta: partial };
+        emit({ type: "object-delta", port: "object", objectDelta: partial });
       }
     }
   }
@@ -101,5 +66,5 @@ export const OpenAI_StructuredGeneration_Stream: AiProviderStreamFn<
   } catch {
     finalObject = parsePartialJson(accumulatedJson) ?? {};
   }
-  yield { type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object: finalObject } as StructuredGenerationTaskOutput });
 };

@@ -65,7 +65,7 @@ Create a `workflow.json` file:
 ```json
 [
   {
-    "type": "DownloadModel",
+    "type": "ModelDownload",
     "config": {
       "model": ["onnx:Xenova/LaMini-Flan-T5-783M:q8"]
     }

@@ -16,23 +16,20 @@ export const LlamaCpp_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   LlamaCppModelConfig
-> = async (input, model, update_progress, _signal) => {
+> = async (input, model, _signal, emit) => {
   if (!model) throw new Error("Model config is required for TextEmbeddingTask.");
 
-  update_progress(0, "Loading embedding model");
   const context = await getOrCreateEmbeddingContext(model);
 
   const texts = Array.isArray(input.text) ? input.text : [input.text];
-  update_progress(10, "Computing embeddings");
 
   const embeddings = await Promise.all(
     texts.map((text) => context.getEmbeddingFor(text).then((e) => new Float32Array(e.vector)))
   );
 
-  update_progress(100, "Embeddings complete");
-
   if (Array.isArray(input.text)) {
-    return { vector: embeddings };
+    emit({ type: "finish", data: { vector: embeddings } });
+    return;
   }
-  return { vector: embeddings[0] };
+  emit({ type: "finish", data: { vector: embeddings[0] } });
 };

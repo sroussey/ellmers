@@ -18,9 +18,9 @@ export const TFMP_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const { TextEmbedder } = await loadTfmpTasksTextSDK();
-  const textEmbedder = await getModelTask(model!, {}, onProgress, signal, TextEmbedder);
+  const textEmbedder = await getModelTask(model!, {}, emit, signal, TextEmbedder);
 
   if (Array.isArray(input.text)) {
     const embeddings = input.text.map((text) => {
@@ -33,9 +33,8 @@ export const TFMP_TextEmbedding: AiProviderRunFn<
       return Float32Array.from(result.embeddings[0].floatEmbedding);
     });
 
-    return {
-      vector: embeddings,
-    };
+    emit({ type: "finish", data: { vector: embeddings } });
+    return;
   }
 
   const result = textEmbedder.embed(input.text);
@@ -46,7 +45,5 @@ export const TFMP_TextEmbedding: AiProviderRunFn<
 
   const embedding = Float32Array.from(result.embeddings[0].floatEmbedding);
 
-  return {
-    vector: embedding,
-  };
+  emit({ type: "finish", data: { vector: embedding } });
 };

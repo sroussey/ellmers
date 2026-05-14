@@ -8,8 +8,9 @@ import type { ChunkRecord } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 
 export const ChunkingStrategy = {
   FIXED: "fixed",
@@ -109,6 +110,8 @@ export class TextChunkerTask extends Task<
   TextChunkerTaskConfig
 > {
   public static override type = "TextChunkerTask";
+  /** Pure-compute chunking task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Document";
   public static override title = "Text Chunker";
   public static override description =

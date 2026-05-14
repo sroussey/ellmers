@@ -14,10 +14,11 @@ import {
 } from "@workglow/knowledge-base";
 
 import type { ChunkRecord, DocumentNode, SectionNode, TokenBudget } from "@workglow/knowledge-base";
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { CountTokensTask } from "./CountTokensTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -122,6 +123,8 @@ export class HierarchicalChunkerTask extends Task<
   HierarchicalChunkerTaskConfig
 > {
   public static override type = "HierarchicalChunkerTask";
+  /** Pure-compute chunking task — no provider capability required. */
+  public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
   public static override category = "Document";
   public static override title = "Hierarchical Chunker";
   public static override description = "Chunk documents hierarchically respecting token budgets";

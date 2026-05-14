@@ -6,53 +6,50 @@
 
 import { AiProvider } from "@workglow/ai/worker";
 import type {
+  AiProviderRunFnRegistration,
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
+  Capability,
+  ModelConfig,
+  ModelRecord,
 } from "@workglow/ai/worker";
-import type { ModelConfig } from "@workglow/ai/worker";
 import { LOCAL_LLAMACPP } from "./common/LlamaCpp_Constants";
+import {
+  inferLlamaCppCapabilities,
+  llamaCppWorkerRunFnSpecs,
+} from "./common/LlamaCpp_Capabilities";
 import type { LlamaCppModelConfig } from "./common/LlamaCpp_ModelSchema";
 import { deleteLlamaCppSession } from "./common/LlamaCpp_Runtime";
 
-/**
- * AI provider for running GGUF models locally via node-llama-cpp.
- *
- * Supports model downloading, unloading, text generation, text embedding,
- * text rewriting, and text summarization using llama.cpp under the hood.
- *
- * This provider is server-side only (Node.js/Bun) — it requires native binaries
- * and cannot run in the browser.
- *
- * Models are cached in memory after the first load. Use UnloadModelTask to
- * release memory when a model is no longer needed.
- */
+/** Worker-server registration for node-llama-cpp (Node/Bun only — native binaries). */
 export class LlamaCppProvider extends AiProvider<LlamaCppModelConfig> {
   readonly name = LOCAL_LLAMACPP;
   readonly displayName = "Local llama.cpp";
   readonly isLocal = true;
   readonly supportsBrowser = false;
 
-  readonly taskTypes = [
-    "DownloadModelTask",
-    "UnloadModelTask",
-    "ModelInfoTask",
-    "CountTokensTask",
-    "AiChatTask",
-    "TextGenerationTask",
-    "TextEmbeddingTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "ModelSearchTask",
-  ] as const;
-
   constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, LlamaCppModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, LlamaCppModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>>
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      LlamaCppModelConfig
+    >[],
+    previewTasks?: Record<
+      string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>
+    >
   ) {
-    super(tasks, streamTasks, previewTasks);
+    super(promiseRunFns, previewTasks);
+  }
+
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferLlamaCppCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return llamaCppWorkerRunFnSpecs();
   }
 
   override createSession(_model: ModelConfig): string {

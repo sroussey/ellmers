@@ -18,7 +18,7 @@ export const TFMP_TextLanguageDetection: AiProviderRunFn<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
   TFMPModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const maxLanguages = input.maxLanguages === 0 ? -1 : input.maxLanguages;
 
   const { LanguageDetector } = await loadTfmpTasksTextSDK();
@@ -27,7 +27,7 @@ export const TFMP_TextLanguageDetection: AiProviderRunFn<
     {
       maxLanguages,
     },
-    onProgress,
+    emit,
     signal,
     LanguageDetector
   );
@@ -42,7 +42,5 @@ export const TFMP_TextLanguageDetection: AiProviderRunFn<
     score: language.probability,
   }));
 
-  return {
-    languages,
-  };
+  emit({ type: "finish", data: { languages } });
 };

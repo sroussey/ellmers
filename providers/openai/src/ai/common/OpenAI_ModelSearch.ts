@@ -36,9 +36,9 @@ const OPENAI_FALLBACK: Array<{ label: string; value: string }> = [
   { label: "o1-mini", value: "o1-mini" },
 ];
 
-const OPENAI_IMAGE_MODELS: Array<{ value: string; tasks: string[] }> = [
-  { value: "gpt-image-2", tasks: ["ImageGenerateTask", "ImageEditTask"] },
-  { value: "dall-e-3", tasks: ["ImageGenerateTask"] },
+const OPENAI_IMAGE_MODELS: Array<{ value: string; capabilities: string[] }> = [
+  { value: "gpt-image-2", capabilities: ["image.generation", "image.editing"] },
+  { value: "dall-e-3", capabilities: ["image.generation"] },
 ];
 
 async function listOpenAiModels(credentialKey: string): Promise<OpenAiModelListItem[]> {
@@ -71,7 +71,7 @@ function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
         provider: OPENAI,
         title: m.value,
         description: "",
-        tasks: imageEntry?.tasks ?? [],
+        capabilities: imageEntry?.capabilities ?? [],
         provider_config: { model_name: m.value },
         metadata: {},
       },
@@ -80,10 +80,15 @@ function mapModelList(models: OpenAiModelListItem[]): ModelSearchResultItem[] {
   });
 }
 
-export const OpenAI_ModelSearch: AiProviderRunFn<
+/**
+ * One-shot run-fn for `["model.search"]`. Emits a
+ * single `finish` event with the search results. When no credential key is
+ * provided, falls back to a curated static list of well-known OpenAI models.
+ */
+export const OpenAI_ModelSearch_Stream: AiProviderRunFn<
   ModelSearchTaskInput,
   ModelSearchTaskOutput
-> = async (input) => {
+> = async (input, _model, _signal, emit) => {
   let models: OpenAiModelListItem[];
   if (!input.credential_key) {
     models = OPENAI_FALLBACK;
@@ -91,5 +96,5 @@ export const OpenAI_ModelSearch: AiProviderRunFn<
     models = await listOpenAiModels(input.credential_key);
   }
   models = filterLabeledModelsByQuery(models, input.query);
-  return { results: mapModelList(models) };
+  emit({ type: "finish", data: { results: mapModelList(models) } });
 };

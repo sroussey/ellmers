@@ -13,11 +13,11 @@ const GEMINI_EMBEDDING_DIMENSIONS: Record<string, { native_dimensions: number; m
   "embedding-001": { native_dimensions: 768, mrl: false },
 };
 
-export const Gemini_ModelInfo: AiProviderRunFn<
+export const Gemini_ModelInfo_Stream: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   GeminiModelConfig
-> = async (input, model) => {
+> = async (input, model, _signal, emit) => {
   if (input.detail === "dimensions") {
     const pc = model?.provider_config as Record<string, unknown>;
     let native_dimensions =
@@ -31,7 +31,26 @@ export const Gemini_ModelInfo: AiProviderRunFn<
         mrl = mrl ?? known.mrl;
       }
     }
-    return {
+    emit({
+      type: "finish",
+      data: {
+        model: input.model,
+        is_local: false,
+        is_remote: true,
+        supports_browser: true,
+        supports_node: true,
+        is_cached: false,
+        is_loaded: false,
+        file_sizes: null,
+        ...(native_dimensions !== undefined ? { native_dimensions } : {}),
+        ...(mrl !== undefined ? { mrl } : {}),
+      },
+    });
+    return;
+  }
+  emit({
+    type: "finish",
+    data: {
       model: input.model,
       is_local: false,
       is_remote: true,
@@ -40,18 +59,6 @@ export const Gemini_ModelInfo: AiProviderRunFn<
       is_cached: false,
       is_loaded: false,
       file_sizes: null,
-      ...(native_dimensions !== undefined ? { native_dimensions } : {}),
-      ...(mrl !== undefined ? { mrl } : {}),
-    };
-  }
-  return {
-    model: input.model,
-    is_local: false,
-    is_remote: true,
-    supports_browser: true,
-    supports_node: true,
-    is_cached: false,
-    is_loaded: false,
-    file_sizes: null,
-  };
+    },
+  });
 };

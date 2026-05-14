@@ -6,16 +6,13 @@
 
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   ChatMessage,
   ToolCall,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
-  ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
@@ -92,94 +89,11 @@ function mapAnthropicToolChoice(
   return { type: "tool", name: toolChoice };
 }
 
-export const Anthropic_ToolCalling: AiProviderRunFn<
+export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   AnthropicModelConfig
-> = async (input, model, update_progress, signal, _outputSchema, sessionId) => {
-  update_progress(0, "Starting Anthropic tool calling");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const tools = input.tools.map((t: ToolDefinition) => ({
-    name: t.name,
-    description: buildToolDescription(t),
-    input_schema: t.inputSchema as any,
-  }));
-
-  const toolChoice = mapAnthropicToolChoice(input.toolChoice);
-
-  const messages = buildAnthropicMessages(input.messages, input.prompt);
-
-  const params: any = {
-    model: modelName,
-    messages,
-    max_tokens: getMaxTokens(input, model),
-    temperature: input.temperature,
-  };
-
-  if (input.systemPrompt) {
-    params.system = input.systemPrompt;
-  }
-
-  if (toolChoice !== undefined) {
-    params.tools = tools;
-    params.tool_choice = toolChoice;
-  }
-
-  if (sessionId) {
-    // Add cache_control breakpoints for Anthropic prompt caching
-    if (params.system) {
-      params.system = [
-        {
-          type: "text",
-          text: params.system,
-          cache_control: { type: "ephemeral" },
-        },
-      ];
-    }
-    if (params.tools && params.tools.length > 0) {
-      const lastIdx = params.tools.length - 1;
-      params.tools[lastIdx] = {
-        ...params.tools[lastIdx],
-        cache_control: { type: "ephemeral" },
-      };
-    }
-  }
-
-  const response = await client.messages.create(params, { signal });
-
-  const text = response.content
-    .filter((b: any) => b.type === "text")
-    .map((b: any) => b.text)
-    .join("");
-
-  const toolCalls: ToolCalls = [];
-  response.content
-    .filter((b: any) => b.type === "tool_use")
-    .forEach((b: any) => {
-      toolCalls.push({
-        id: b.id as string,
-        name: b.name as string,
-        input: (b.input as Record<string, unknown>) ?? {},
-      });
-    });
-
-  update_progress(100, "Completed Anthropic tool calling");
-  return { text, toolCalls: filterValidToolCalls(toolCalls, input.tools) };
-};
-
-export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-  AnthropicModelConfig
-> = async function* (
-  input,
-  model,
-  signal,
-  _outputSchema,
-  sessionId
-): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -238,6 +152,15 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
   const toolCallsInStreamOrder = (): ToolCall[] =>
     [...toolCallsByBlockIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
 
+  /**
+   * Defence-in-depth: drop tool calls whose name isn't in the declared tool
+   * set before yielding to the consumer. Anthropic's tool API normally
+   * respects `input.tools`, but a stray response from a model that
+   * hallucinates a function name would otherwise propagate to dispatch.
+   */
+  const validatedToolCallsInStreamOrder = (): ToolCall[] =>
+    filterValidToolCalls(toolCallsInStreamOrder(), input.tools);
+
   for await (const event of stream) {
     if (event.type === "content_block_start") {
       const block = event.content_block;
@@ -256,7 +179,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
       const index = event.index as number;
       const delta = event.delta as any;
       if (delta.type === "text_delta") {
-        yield { type: "text-delta", port: "text", textDelta: delta.text };
+        emit({ type: "text-delta", port: "text", textDelta: delta.text });
       } else if (delta.type === "input_json_delta") {
         const meta = blockMeta.get(index);
         if (meta) {
@@ -273,11 +196,11 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
             name: meta.name ?? "",
             input: parsedInput,
           });
-          yield {
+          emit({
             type: "object-delta",
             port: "toolCalls",
-            objectDelta: toolCallsInStreamOrder(),
-          };
+            objectDelta: validatedToolCallsInStreamOrder(),
+          });
         }
       }
     } else if (event.type === "content_block_stop") {
@@ -292,15 +215,15 @@ export const Anthropic_ToolCalling_Stream: AiProviderStreamFn<
         }
         const id = meta.id ?? "";
         toolCallsByBlockIndex.set(index, { id, name: meta.name ?? "", input: finalInput });
-        yield {
+        emit({
           type: "object-delta",
           port: "toolCalls",
-          objectDelta: toolCallsInStreamOrder(),
-        };
+          objectDelta: validatedToolCallsInStreamOrder(),
+        });
       }
       blockMeta.delete(index);
     }
   }
 
-  yield { type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput };
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

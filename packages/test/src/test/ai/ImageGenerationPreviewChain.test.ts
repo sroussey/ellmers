@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderStreamFn, ModelConfig } from "@workglow/ai";
+import type { AiProviderRunFn, ModelConfig } from "@workglow/ai";
 import {
   AiProviderRegistry,
   DirectExecutionStrategy,
@@ -51,25 +51,28 @@ describe("Image generation preview chain", () => {
     // arrive while it's awaiting a runPreview() iteration, only the last value
     // wins (intentional backpressure — UIs show latest, not stale frames). To
     // verify intermediate snapshots flow through, the producer must pace itself
-    // to the consumer. Each yield waits until the consumer has actually
+    // to the consumer. Each emit waits until the consumer has actually
     // observed it before emitting the next.
-    const stream: AiProviderStreamFn = async function* () {
+    const stream: AiProviderRunFn = async (_input, _model, _signal, emit) => {
       for (let i = 0; i < partials.length; i++) {
-        yield { type: "snapshot", data: { image: partials[i] } } as any;
+        emit({ type: "snapshot", data: { image: partials[i] } } as any);
         while (grayPreviewSamples.length <= i) {
           await sleep(1);
         }
       }
-      yield { type: "finish", data: {} } as any;
+      emit({ type: "finish", data: {} } as any);
     };
-    getAiProviderRegistry().registerStreamFn(MOCK_PROVIDER, "ImageGenerateTask", stream);
+    getAiProviderRegistry().registerRunFn(MOCK_PROVIDER, {
+      serves: ["image.generation"],
+      runFn: stream,
+    });
 
     const model: ModelConfig = {
       model_id: "mock/img-1",
       provider: MOCK_PROVIDER,
       title: "",
       description: "",
-      tasks: ["ImageGenerateTask"],
+      capabilities: ["image.generation"],
       provider_config: {},
       metadata: {},
     };

@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskConfig, IRunConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { Capability } from "../capability/Capabilities";
 import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -168,6 +169,8 @@ export class GestureRecognizerTask extends AiVisionTask<
   GestureRecognizerTaskConfig
 > {
   public static override type = "GestureRecognizerTask";
+  /** Capabilities required of the model; gated in {@link AiTask.execute}. */
+  public static override readonly requires = ["vision.gesture"] as const satisfies Capability[];
   public static override category = "AI Vision";
   public static override title = "Gesture Recognizer";
   public static override description =

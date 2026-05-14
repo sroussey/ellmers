@@ -38,7 +38,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
   setLogger(logger);
   beforeEach(async () => {
     await setTaskQueueRegistry(null);
-    clearPipelineCache();
+    await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
     setGlobalModelRepository(new InMemoryModelRepository());
   });
@@ -54,7 +54,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/segformer-b0-finetuned-ade-512-512",
         title: "Segformer B0 ADE",
         description: "Image segmentation model",
-        tasks: ["ImageSegmentationTask"],
+        capabilities: ["image.segmentation"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-segmentation",
@@ -88,7 +88,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/vit-base-patch16-224:q8",
         title: "ViT Base Patch16 224",
         description: "Image classification model",
-        tasks: ["ImageClassificationTask"],
+        capabilities: ["image.classification"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-classification",
@@ -120,7 +120,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/clip-vit-base-patch32:q8",
         title: "CLIP ViT Base Patch32",
         description: "Zero-shot image classification model",
-        tasks: ["ImageClassificationTask"],
+        capabilities: ["image.classification"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "zero-shot-image-classification",
@@ -151,7 +151,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/clip-vit-base-patch32:q8",
         title: "CLIP ViT Base Patch32",
         description: "Image embedding model",
-        tasks: ["ImageEmbeddingTask"],
+        capabilities: ["image.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-feature-extraction",
@@ -179,7 +179,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/clip-vit-base-patch32:q8",
         title: "CLIP ViT Base Patch32",
         description: "Image embedding model",
-        tasks: ["ImageEmbeddingTask"],
+        capabilities: ["image.embedding"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-feature-extraction",
@@ -215,7 +215,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/detr-resnet-50:q8",
         title: "DETR ResNet-50",
         description: "Object detection model",
-        tasks: ["ObjectDetectionTask"],
+        capabilities: ["image.object-detection"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "object-detection",
@@ -245,7 +245,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
         model_id: "onnx:Xenova/vit-gpt2-image-captioning:q8",
         title: "ViT GPT2 Image Captioning",
         description: "Image to text model",
-        tasks: ["ImageToTextTask"],
+        capabilities: ["image.to-text"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-to-text",
@@ -293,7 +293,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
 //           model_id: "tfmp:efficientnet-lite0:f32",
 //           title: "EfficientNet Lite0",
 //           description: "Image classification model",
-//           tasks: ["ImageClassificationTask"],
+//           capabilities: ["image.classification"],
 //           provider: TENSORFLOW_MEDIAPIPE,
 //           provider_config: {
 //             task_engine: "vision",
@@ -328,7 +328,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
 //           model_id: "tfmp:mobilenet-v3:f32",
 //           title: "MobileNet V3",
 //           description: "Image embedding model",
-//           tasks: ["ImageEmbeddingTask"],
+//           capabilities: ["image.embedding"],
 //           provider: TENSORFLOW_MEDIAPIPE,
 //           provider_config: {
 //             task_engine: "vision",
@@ -363,7 +363,7 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
 //           model_id: "tfmp:efficientdet-lite0:f32",
 //           title: "EfficientDet Lite0",
 //           description: "Object detection model",
-//           tasks: ["ObjectDetectionTask"],
+//           capabilities: ["image.object-detection"],
 //           provider: TENSORFLOW_MEDIAPIPE,
 //           provider_config: {
 //             task_engine: "vision",

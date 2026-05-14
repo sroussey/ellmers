@@ -7,57 +7,32 @@
 import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
+  ToolCalls,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import {
   accumulateOpenAIStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
-  parseOpenAIToolCallMessage,
 } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
 
-export const OpenAI_ToolCalling: AiProviderRunFn<
+/**
+ * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the OpenAI
+ * chat-completions endpoint with `stream: true` and forwards delta events via
+ * {@link accumulateOpenAIStream}, which emits `text-delta` and tool-call
+ * `object-delta` events plus a final empty `finish`.
+ *
+ * Defence-in-depth: each tool-call `object-delta` is filtered against
+ * `input.tools` so a hallucinated function name never reaches the consumer.
+ */
+export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   OpenAiModelConfig
-> = async (input, model, update_progress, signal) => {
-  update_progress(0, "Starting OpenAI tool calling");
-  const client = await getClient(model);
-  const modelName = getModelName(model);
-
-  const tools = buildOpenAITools(input.tools);
-  const messages = toOpenAIMessages(input);
-  const toolChoice = mapOpenAIToolChoice(input.toolChoice, true);
-
-  const response = await client.chat.completions.create(
-    {
-      model: modelName,
-      messages,
-      max_completion_tokens: input.maxTokens,
-      temperature: input.temperature,
-      tools,
-      tool_choice: toolChoice,
-    },
-    { signal }
-  );
-
-  const text = response.choices[0]?.message?.content ?? "";
-  const toolCalls = parseOpenAIToolCallMessage(response.choices[0]?.message?.tool_calls);
-
-  update_progress(100, "Completed OpenAI tool calling");
-  return { text, toolCalls: filterValidToolCalls(toolCalls, input.tools) };
-};
-
-export const OpenAI_ToolCalling_Stream: AiProviderStreamFn<
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-  OpenAiModelConfig
-> = async function* (input, model, signal): AsyncIterable<StreamEvent<ToolCallingTaskOutput>> {
+> = async (input, model, signal, emit) => {
   const client = await getClient(model);
   const modelName = getModelName(model);
 
@@ -78,5 +53,14 @@ export const OpenAI_ToolCalling_Stream: AiProviderStreamFn<
     { signal }
   );
 
-  yield* accumulateOpenAIStream(stream);
+  for await (const event of accumulateOpenAIStream(stream)) {
+    if (event.type === "object-delta" && event.port === "toolCalls") {
+      const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
+      if (validated.length > 0) {
+        emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
+      }
+      continue;
+    }
+    emit(event);
+  }
 };

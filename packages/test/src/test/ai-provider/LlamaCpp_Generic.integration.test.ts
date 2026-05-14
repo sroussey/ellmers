@@ -5,13 +5,13 @@
  */
 
 import {
-  DownloadModelTask,
   getGlobalModelRepository,
   InMemoryModelRepository,
+  ModelDownloadTask,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import type { LlamaCppModelRecord } from "@workglow/node-llama-cpp/ai";
+import { LOCAL_LLAMACPP } from "@workglow/node-llama-cpp/ai";
 import {
   disposeLlamaCppResources,
   llamaCppSessions,
@@ -22,14 +22,14 @@ import {
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
 const llmModel: LlamaCppModelRecord = {
   model_id: "llamacpp:SmolLM2-135M-Instruct:Q4_K_M",
   title: "SmolLM2 135M Instruct",
   description: "A 135M parameter instruction-following model, quantized Q4_K_M (~85 MB)",
-  tasks: ["DownloadModelTask", "TextGenerationTask", "TextRewriterTask", "TextSummaryTask"],
+  capabilities: ["text.generation", "text.rewriter", "text.summary"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/SmolLM2-135M-Instruct-Q4_K_M.gguf",
@@ -46,14 +46,7 @@ const toolModel: LlamaCppModelRecord = {
   title: "Qwen2.5 Coder 1.5B Instruct",
   description:
     "A 1.5B parameter instruction-following model with tool calling support, quantized Q4_K_M",
-  tasks: [
-    "DownloadModelTask",
-    "TextGenerationTask",
-    "TextRewriterTask",
-    "TextSummaryTask",
-    "ToolCallingTask",
-    "StructuredGenerationTask",
-  ],
+  capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF.Q4_K_M.gguf",
@@ -69,7 +62,7 @@ const embeddingModel: LlamaCppModelRecord = {
   model_id: "llamacpp:bge-small-en-v1.5:Q8_0",
   title: "BGE Small EN v1.5",
   description: "A small English text embedding model, quantized Q8_0 (~34 MB)",
-  tasks: ["DownloadModelTask", "TextEmbeddingTask"],
+  capabilities: ["text.embedding"],
   provider: LOCAL_LLAMACPP,
   provider_config: {
     model_path: "./models/bge-small-en-v1.5-Q8_0.gguf",
@@ -94,7 +87,7 @@ runAiProviderConformance({
       await getGlobalModelRepository().addModel(toolModel);
       await getGlobalModelRepository().addModel(embeddingModel);
       for (const modelId of [llmModel.model_id, toolModel.model_id, embeddingModel.model_id]) {
-        const download = new DownloadModelTask({ defaults: { model: modelId } });
+        const download = new ModelDownloadTask({ defaults: { model: modelId } });
         download.on("progress", (progress, _message, details) => {
           logger.info(
             `Download ${modelId}: ${progress}% | ${details?.file || "?"} @ ${(details?.progress || 0).toFixed(1)}%`

@@ -44,7 +44,7 @@ const PROVIDER_HFT_FILES = [
   "HFT_Generic",
   "HFTransformersBinding",
   "HFT_TextGenerationAbort",
-  "DownloadModelAbort",
+  "ModelDownloadAbort",
   "TextEmbeddingTask",
   "ZeroShotTasks",
   "VisionTasks",
@@ -67,6 +67,21 @@ function isLlamaCppProviderIntegrationFile(filePath: string): boolean {
 function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean {
   const n = files.filter(isLlamaCppProviderIntegrationFile).length;
   return n > 1;
+}
+
+/** RAG ONNX/HuggingFace integration tests load multiple ONNX pipelines per file;
+ * default parallelism makes two files load pipelines concurrently and OOM-kills the
+ * GitHub-hosted runner (`bun test --parallel=1` is required even though it doubles
+ * wall-clock time — the job timeout-minutes covers the extra runtime). */
+function isRagOnnxIntegrationFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.includes("/rag/") && normalized.includes(".integration.");
+}
+
+function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
+  return (
+    shouldRunLlamaCppIntegrationFilesSequentially(files) || files.some(isRagOnnxIntegrationFile)
+  );
 }
 
 const SECTION_DIRS: Record<Section, string[]> = {
@@ -168,6 +183,15 @@ function collectFiles(
   return files;
 }
 
+/** Run fast unit files before integration/e2e so ONNX-heavy suites start with a cleaner heap and predictable progress order. */
+function orderFilteredTestFiles(files: string[]): string[] {
+  if (files.length === 0) return files;
+  const isHeavy = (f: string) => f.includes(".integration.") || f.includes(".e2e.");
+  const light = files.filter((f) => !isHeavy(f)).sort((a, b) => a.localeCompare(b));
+  const heavy = files.filter(isHeavy).sort((a, b) => a.localeCompare(b));
+  return [...light, ...heavy];
+}
+
 async function runBunTest(files: string[]): Promise<number> {
   const args = buildBunTestArgs(files);
   const proc = Bun.spawn(args, {
@@ -183,7 +207,7 @@ async function runBunTest(files: string[]): Promise<number> {
 
 function buildBunTestArgs(files: string[]): string[] {
   const parallelFlag: string =
-    files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)
+    files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)
       ? "--parallel=1"
       : "--parallel";
   // Match vitest's testTimeout: Bun's default is 5s per test, which is easy to exceed in HF/Sqlite work
@@ -195,13 +219,18 @@ function buildBunTestArgs(files: string[]): string[] {
 function buildVitestArgs(files: string[]): string[] {
   // When no file filter: run all. Otherwise pass relative paths as name filters.
   const relFiles = files.length > 0 ? files.map((f) => relative(ROOT, f)) : [];
-  const args = ["npx", "vitest", "run", ...relFiles];
-  if (files.length > 0 && shouldRunLlamaCppIntegrationFilesSequentially(files)) {
+  const args = ["npx", "vitest", "run"];
+  if (files.length > 0 && shouldLimitParallelismForHeavyIntegration(files)) {
+    // One file at a time avoids OOM-kills when multiple ONNX-heavy suites load
+    // pipelines in parallel — applies to both local and CI runners (GitHub-hosted
+    // ubuntu-latest has ~7 GB RAM, easily exhausted by 2x ONNX feature-extraction
+    // pipelines). The job's timeout-minutes covers the longer serial wall-clock.
     args.push("--no-file-parallelism");
   }
   if (process.env.CI) {
     args.push("--coverage");
   }
+  args.push(...relFiles);
   return args;
 }
 
@@ -271,7 +300,9 @@ const dirs =
   sections.length > 0
     ? sections.flatMap((s) => SECTION_DIRS[s])
     : Object.values(SECTION_DIRS).flat();
-const files: string[] = needsFileFilter ? collectFiles(dirs, kinds, sections) : [];
+const files: string[] = needsFileFilter
+  ? orderFilteredTestFiles(collectFiles(dirs, kinds, sections))
+  : [];
 
 if (needsFileFilter && files.length === 0) {
   const kindLabel = kinds.length > 0 ? kinds.join("+") : "all";

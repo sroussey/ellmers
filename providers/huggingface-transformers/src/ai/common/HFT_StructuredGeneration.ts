@@ -4,27 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  Message,
-  TextGenerationOutput,
-  TextGenerationPipeline,
-} from "@huggingface/transformers";
+import type { Message, TextGenerationPipeline } from "@huggingface/transformers";
 import type {
   AiProviderRunFn,
-  AiProviderStreamFn,
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
-import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline, loadTransformersSDK } from "./HFT_Pipeline";
-import {
-  createStreamEventQueue,
-  createStreamingTextStreamer,
-  createTextStreamer,
-} from "./HFT_Streaming";
-import { extractGeneratedText } from "./HFT_TextOutput";
+import { createStreamingTextStreamer } from "./HFT_Streaming";
 
 function buildStructuredGenerationPrompt(input: StructuredGenerationTaskInput): string {
   const schemaStr = JSON.stringify(input.outputSchema, null, 2);
@@ -74,8 +63,8 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
-  const generateText: TextGenerationPipeline = await getPipeline(model!, onProgress, {}, signal);
+> = async (input, model, signal, emit) => {
+  const generateText = (await getPipeline(model!, emit, {}, signal)) as TextGenerationPipeline;
   const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
 
   const prompt = buildStructuredGenerationPrompt(input);
@@ -86,61 +75,6 @@ export const HFT_StructuredGeneration: AiProviderRunFn<
     tokenize: false,
     add_generation_prompt: true,
   }) as string;
-
-  const streamer = createTextStreamer(generateText.tokenizer, onProgress, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
-
-  let results = await generateText(formattedPrompt, {
-    max_new_tokens: input.maxTokens ?? 1024,
-    temperature: input.temperature ?? undefined,
-    return_full_text: false,
-    streamer,
-    stopping_criteria: [stopping_criteria],
-  });
-
-  if (!Array.isArray(results)) {
-    results = [results];
-  }
-
-  const responseText = extractGeneratedText(
-    (results[0] as TextGenerationOutput[number])?.generated_text
-  ).trim();
-
-  const object = extractJsonFromText(responseText);
-  return { object };
-};
-
-export const HFT_StructuredGeneration_Stream: AiProviderStreamFn<
-  StructuredGenerationTaskInput,
-  StructuredGenerationTaskOutput,
-  HfTransformersOnnxModelConfig
-> = async function* (
-  input,
-  model,
-  signal
-): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
-  const noopProgress = () => {};
-  const generateText: TextGenerationPipeline = await getPipeline(model!, noopProgress, {}, signal);
-  const { TextStreamer, InterruptableStoppingCriteria } = await loadTransformersSDK();
-
-  const prompt = buildStructuredGenerationPrompt(input);
-
-  const messages: Message[] = [{ role: "user", content: prompt }];
-
-  const formattedPrompt = generateText.tokenizer.apply_chat_template(messages, {
-    tokenize: false,
-    add_generation_prompt: true,
-  }) as string;
-
-  const queue = createStreamEventQueue<StreamEvent<StructuredGenerationTaskOutput>>();
-  const streamer = createStreamingTextStreamer(generateText.tokenizer, queue, TextStreamer);
-  const stopping_criteria = new InterruptableStoppingCriteria();
-  if (signal) {
-    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
-  }
 
   let fullText = "";
   // Incrementally maintain cleaned text to avoid O(n²) full-string regex on every token.
@@ -150,10 +84,9 @@ export const HFT_StructuredGeneration_Stream: AiProviderStreamFn<
   let inThinkBlock = false;
   let jsonStart = -1; // index into cleanedText where the first '{' was found
 
-  const originalPush = queue.push;
-  queue.push = (event: StreamEvent<StructuredGenerationTaskOutput>) => {
-    if (event.type === "text-delta" && "textDelta" in event) {
-      const delta = event.textDelta as string;
+  const streamer = createStreamingTextStreamer(
+    generateText.tokenizer,
+    (delta) => {
       fullText += delta;
 
       // Process the delta through the state machine to update cleanedText
@@ -187,32 +120,27 @@ export const HFT_StructuredGeneration_Stream: AiProviderStreamFn<
       if (jsonStart !== -1) {
         const partial = parsePartialJson(cleanedText.slice(jsonStart));
         if (partial !== undefined) {
-          originalPush({
-            type: "object-delta",
-            port: "object",
-            objectDelta: partial,
-          } as StreamEvent<StructuredGenerationTaskOutput>);
+          emit({ type: "object-delta", port: "object", objectDelta: partial });
           return;
         }
       }
-    }
-    originalPush(event);
-  };
+      emit({ type: "text-delta", port: "text", textDelta: delta });
+    },
+    TextStreamer
+  );
+  const stopping_criteria = new InterruptableStoppingCriteria();
+  if (signal) {
+    signal.addEventListener("abort", () => stopping_criteria.interrupt(), { once: true });
+  }
 
-  const pipelinePromise = generateText(formattedPrompt, {
+  await generateText(formattedPrompt, {
     max_new_tokens: input.maxTokens ?? 1024,
     temperature: input.temperature ?? undefined,
     return_full_text: false,
     streamer,
     stopping_criteria: [stopping_criteria],
-  }).then(
-    () => queue.done(),
-    (err: Error) => queue.error(err)
-  );
-
-  yield* queue.iterable;
-  await pipelinePromise;
+  });
 
   const object = extractJsonFromText(fullText);
-  yield { type: "finish", data: { object } as StructuredGenerationTaskOutput };
+  emit({ type: "finish", data: { object } as StructuredGenerationTaskOutput });
 };

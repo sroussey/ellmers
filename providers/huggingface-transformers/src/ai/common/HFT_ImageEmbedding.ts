@@ -23,17 +23,12 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,
   HfTransformersOnnxModelConfig
-> = async (input, model, onProgress, signal) => {
+> = async (input, model, signal, emit) => {
   const logger = getLogger();
   const timerLabel = `hft:ImageEmbedding:${model?.provider_config.model_path}`;
   logger.time(timerLabel, { model: model?.provider_config.model_path });
 
-  const embedder: ImageFeatureExtractionPipeline = await getPipeline(
-    model!,
-    onProgress,
-    {},
-    signal
-  );
+  const embedder = (await getPipeline(model!, emit, {}, signal)) as ImageFeatureExtractionPipeline;
 
   logger.debug("HFT ImageEmbedding: pipeline ready, generating embedding", {
     model: model?.provider_config.model_path,
@@ -47,14 +42,16 @@ export const HFT_ImageEmbedding: AiProviderRunFn<
       vectors.push(result.data as TypedArray);
     }
     logger.timeEnd(timerLabel, { count: vectors.length });
-    return { vector: vectors } as ImageEmbeddingTaskOutput;
+    emit({ type: "finish", data: { vector: vectors } as ImageEmbeddingTaskOutput });
+    return;
   }
 
   const imageArg = await imageValueToBlob(input.image as unknown as ImageValue);
   const result = await embedder(imageArg);
 
   logger.timeEnd(timerLabel, { dimensions: result?.data?.length });
-  return {
-    vector: result.data as TypedArray,
-  } as ImageEmbeddingTaskOutput;
+  emit({
+    type: "finish",
+    data: { vector: result.data as TypedArray } as ImageEmbeddingTaskOutput,
+  });
 };

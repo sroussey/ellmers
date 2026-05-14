@@ -47,20 +47,33 @@ async function getEncoder(modelName: string) {
   return _encoderCache.get(modelName)!;
 }
 
-export const OpenAI_CountTokens: AiProviderRunFn<
-  CountTokensTaskInput,
-  CountTokensTaskOutput,
-  OpenAiModelConfig
-> = async (input, model) => {
+async function countTokens(
+  input: CountTokensTaskInput,
+  model: OpenAiModelConfig | undefined
+): Promise<CountTokensTaskOutput> {
   const enc = await getEncoder(getModelName(model));
   const tokens = enc.encode(input.text);
   return { count: tokens.length };
+}
+
+/**
+ * One-shot run-fn for `["model.count-tokens"]`. Emits a single
+ * `finish` event carrying the token count.
+ */
+export const OpenAI_CountTokens_Stream: AiProviderRunFn<
+  CountTokensTaskInput,
+  CountTokensTaskOutput,
+  OpenAiModelConfig
+> = async (input, model, _signal, emit) => {
+  const result = await countTokens(input, model);
+  emit({ type: "finish", data: result });
 };
 
+/** Lightweight preview path used by `AiTask.executePreview()`. */
 export const OpenAI_CountTokens_Preview: AiProviderPreviewRunFn<
   CountTokensTaskInput,
   CountTokensTaskOutput,
   OpenAiModelConfig
 > = async (input, model) => {
-  return OpenAI_CountTokens(input, model, () => {}, new AbortController().signal);
+  return countTokens(input, model);
 };

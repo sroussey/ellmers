@@ -6,24 +6,24 @@
 
 import type {
   AiProviderPreviewRunFn,
-  AiProviderRunFn,
-  AiProviderStreamFn,
+  AiProviderRunFnRegistration,
+  Capability,
+  ModelRecord,
 } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
 import { WEB_BROWSER } from "./common/WebBrowser_Constants";
+import {
+  inferWebBrowserCapabilities,
+  webBrowserWorkerRunFnSpecs,
+} from "./common/WebBrowser_Capabilities";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
 
 /**
  * AI provider for Chrome Built-in AI APIs (Gemini Nano on-device).
  *
  * Browser-only provider — no external SDK needed, the APIs are browser globals.
- *
- * Supports summarization, language detection, translation, text generation
- * (Prompt API), and text rewriting via Chrome's Built-in AI APIs.
- *
- * Task run functions are injected via the constructor so that the provider
- * class itself has no runtime dependency on Chrome globals (it can be
- * instantiated on the main thread in worker mode without errors).
+ * Used both for worker-server registration and for main-thread shell use
+ * (no queue — direct execution).
  */
 export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly name = WEB_BROWSER;
@@ -31,21 +31,28 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly isLocal = true;
   readonly supportsBrowser = true;
 
-  readonly taskTypes = [
-    "ModelInfoTask",
-    "TextSummaryTask",
-    "TextLanguageDetectionTask",
-    "TextTranslationTask",
-    "TextGenerationTask",
-    "TextRewriterTask",
-    "ModelSearchTask",
-  ] as const;
-
   constructor(
-    tasks?: Record<string, AiProviderRunFn<any, any, WebBrowserModelConfig>>,
-    streamTasks?: Record<string, AiProviderStreamFn<any, any, WebBrowserModelConfig>>,
-    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>>
+    promiseRunFns?: readonly AiProviderRunFnRegistration<
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      any,
+      WebBrowserModelConfig
+    >[],
+    previewTasks?: Record<
+      string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>
+    >
   ) {
-    super(tasks, streamTasks, previewTasks);
+    super(promiseRunFns, previewTasks);
+  }
+
+  override inferCapabilities(model: ModelRecord): readonly Capability[] {
+    return inferWebBrowserCapabilities(model);
+  }
+
+  protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
+    return webBrowserWorkerRunFnSpecs();
   }
 }

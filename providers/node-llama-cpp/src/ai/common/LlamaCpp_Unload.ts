@@ -6,8 +6,8 @@
 
 import type {
   AiProviderRunFn,
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
 } from "@workglow/ai";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -19,11 +19,11 @@ import {
 } from "./LlamaCpp_Runtime";
 
 export const LlamaCpp_Unload: AiProviderRunFn<
-  UnloadModelTaskRunInput,
-  UnloadModelTaskRunOutput,
+  ModelDownloadRemoveTaskRunInput,
+  ModelDownloadRemoveTaskRunOutput,
   LlamaCppModelConfig
-> = async (input, model, update_progress, _signal) => {
-  if (!model) throw new Error("Model config is required for UnloadModelTask.");
+> = async (input, model, _signal, emit) => {
+  if (!model) throw new Error("Model config is required for ModelDownloadRemoveTask.");
 
   const modelPath = getActualModelPath(model);
 
@@ -34,24 +34,19 @@ export const LlamaCpp_Unload: AiProviderRunFn<
   if (ctx) {
     await ctx.dispose();
     llamaCppTextContexts.delete(modelPath);
-    update_progress(33, "Text context disposed");
   }
 
   const embCtx = llamaCppEmbeddingContexts.get(modelPath);
   if (embCtx) {
     await embCtx.dispose();
     llamaCppEmbeddingContexts.delete(modelPath);
-    update_progress(66, "Embedding context disposed");
   }
 
   const cachedModel = llamaCppModels.get(modelPath);
   if (cachedModel) {
     await cachedModel.dispose();
     llamaCppModels.delete(modelPath);
-    update_progress(100, "Model unloaded from memory");
-  } else {
-    update_progress(100, "Model was not loaded");
   }
 
-  return { model: input.model! };
+  emit({ type: "finish", data: { model: input.model! } });
 };
