@@ -30,6 +30,63 @@ function isScored(v: unknown): v is { label?: string; score: number } {
 }
 
 /**
+ * Serialize an offending shape for the error payload. We cap the length to
+ * keep error messages bounded — a misconfigured model could otherwise dump
+ * unbounded data into logs.
+ */
+function truncateShape(value: unknown): string {
+  try {
+    const json = JSON.stringify(value);
+    if (typeof json !== "string") return String(value);
+    return json.length > 200 ? `${json.slice(0, 200)}…` : json;
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Validate a transformers.js text-classification pipeline output and
+ * extract per-document scores. Each entry must be either a `{ score }`
+ * object or a non-empty array of such objects (transformers.js returns
+ * the array form when `top_k > 1`).
+ *
+ * Exported so the shape contract can be exercised in tests directly,
+ * without needing to spin up a real pipeline or mock the loader. Throws
+ * {@link KbRerankerOutputError} on mismatch — silently coercing to 0
+ * would hide real model config bugs.
+ *
+ * @param rawResults Whatever the pipeline call returned. Typed as
+ *   `unknown` so the caller is forced through this validation.
+ * @param modelPath Used in the error message to point operators at the
+ *   misconfigured model.
+ */
+export function validateAndExtractRerankerScores(
+  rawResults: unknown,
+  modelPath: string | undefined
+): number[] {
+  if (!Array.isArray(rawResults)) {
+    throw new KbRerankerOutputError(
+      `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
+      truncateShape(rawResults)
+    );
+  }
+
+  const scores: number[] = new Array(rawResults.length);
+  for (let i = 0; i < rawResults.length; i++) {
+    const entry = rawResults[i];
+    const candidate = Array.isArray(entry) ? entry[0] : entry;
+    if (!isScored(candidate)) {
+      throw new KbRerankerOutputError(
+        `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
+        truncateShape(entry)
+      );
+    }
+    scores[i] = candidate.score;
+  }
+  return scores;
+}
+
+/**
  * Cross-encoder reranker run-fn. Loads a `text-classification` pipeline
  * (the way transformers.js exposes cross-encoder models like
  * `Xenova/bge-reranker-base`) and scores each `[query, doc]` pair.
@@ -38,9 +95,9 @@ function isScored(v: unknown): v is { label?: string; score: number } {
  * in the original input order so callers can join back to their candidate
  * list without re-sorting.
  *
- * Each pipeline result entry is validated at runtime: either a `{ score }`
- * object or a non-empty array of such objects (transformers.js returns the
- * array form when `top_k > 1`). On mismatch we throw
+ * Each pipeline result entry is validated at runtime via
+ * {@link validateAndExtractRerankerScores}: either a `{ score }` object or
+ * a non-empty array of such objects. On mismatch we throw
  * {@link KbRerankerOutputError} with the model path and a truncated shape
  * snippet — silently coercing missing scores to 0 would hide real model
  * config bugs.
@@ -63,31 +120,16 @@ export const HFT_TextReranker: AiProviderRunFn<
   // array of scored entries per pair when `top_k > 1`).
   const pairs = input.documents.map((doc) => ({ text: input.query, text_pair: doc }));
 
-  // Type as `unknown` so we are forced to validate. Do NOT use `as unknown as
-  // (...) => Promise<...>` here — that cast erases the typing safety net.
+  // Type as `unknown` so we are forced through the shape guard. Do NOT use
+  // `as unknown as (...) => Promise<...>` here — that cast erases the
+  // typing safety net and was the original bug.
   const callable = reranker as unknown as (
     inputs: ReadonlyArray<{ text: string; text_pair: string }>,
     options?: Record<string, unknown>
   ) => Promise<unknown>;
   const rawResults: unknown = await callable(pairs, { top_k: 1 });
 
-  if (!Array.isArray(rawResults)) {
-    throw new KbRerankerOutputError(
-      `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
-      truncateShape(rawResults)
-    );
-  }
-
-  const scores: number[] = rawResults.map((entry) => {
-    const candidate = Array.isArray(entry) ? entry[0] : entry;
-    if (!isScored(candidate)) {
-      throw new KbRerankerOutputError(
-        `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
-        truncateShape(entry)
-      );
-    }
-    return candidate.score;
-  });
+  const scores = validateAndExtractRerankerScores(rawResults, modelPath);
 
   const indices = scores
     .map((score, idx) => ({ score, idx }))
@@ -99,18 +141,3 @@ export const HFT_TextReranker: AiProviderRunFn<
   logger.timeEnd(timerLabel, { docs: input.documents.length });
   return { scores, indices: limited };
 };
-
-/**
- * Serialize an offending shape for the error payload. We cap the length to
- * keep error messages bounded — a misconfigured model could otherwise dump
- * unbounded data into logs.
- */
-function truncateShape(value: unknown): string {
-  try {
-    const json = JSON.stringify(value);
-    if (typeof json !== "string") return String(value);
-    return json.length > 200 ? `${json.slice(0, 200)}…` : json;
-  } catch {
-    return String(value);
-  }
-}
