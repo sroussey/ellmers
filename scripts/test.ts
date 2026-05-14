@@ -32,43 +32,13 @@ const KNOWN_SECTIONS = [
   "ai",
   "provider",
   "provider-hft",
-  "provider-llamacpp",
+  "provider-nodellama",
   "provider-api",
   "mcp",
   "rag",
   "resource",
 ] as const;
 type Section = (typeof KNOWN_SECTIONS)[number];
-
-const PROVIDER_HFT_FILES = [
-  "HFT_ArrayInput",
-  "HFT_Generic",
-  "HFTransformersBinding",
-  "HFT_TextGenerationAbort",
-  "ModelDownloadAbort",
-  "TextEmbeddingTask",
-  "ZeroShotTasks",
-  "VisionTasks",
-];
-
-const PROVIDER_LLAMACPP_FILES = [
-  "LlamaCpp_Generic",
-  "LlamaCppProviderIntegration",
-  "LlamaCpp_ChatWrapper",
-  "LlamaCppQueuedProviderIntegration",
-  "LlamaCpp_NativeToolCalling",
-];
-
-/** node-llama-cpp/ipull downloads use shared ./models paths; parallel test files corrupt the same .gguf.ipull partial. */
-function isLlamaCppProviderIntegrationFile(filePath: string): boolean {
-  const base = filePath.split("/").pop() ?? filePath;
-  return (PROVIDER_LLAMACPP_FILES as readonly string[]).some((stem) => base.startsWith(`${stem}.`));
-}
-
-function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean {
-  const n = files.filter(isLlamaCppProviderIntegrationFile).length;
-  return n > 1;
-}
 
 /** RAG ONNX/HuggingFace integration tests load multiple ONNX pipelines per file;
  * default parallelism makes two files load pipelines concurrently and OOM-kills the
@@ -105,14 +75,26 @@ const SECTION_DIRS: Record<Section, string[]> = {
   util: [join(TEST_BASE, "util"), join(TEST_BASE, "human")],
   ai: [join(TEST_BASE, "ai"), join(TEST_BASE, "ai-model")],
   provider: [join(TEST_BASE, "ai-provider")],
-  "provider-hft": [join(TEST_BASE, "ai-provider")],
-  "provider-llamacpp": [join(TEST_BASE, "ai-provider")],
-  "provider-api": [join(TEST_BASE, "ai-provider")],
+  "provider-hft": [join(TEST_BASE, "ai-provider-hft")],
+  "provider-nodellama": [join(TEST_BASE, "ai-provider-nodellama")],
+  "provider-api": [join(TEST_BASE, "ai-provider-api")],
   mcp: [join(TEST_BASE, "mcp")],
   rag: [join(TEST_BASE, "rag")],
   resource: [join(TEST_BASE, "resource")],
   // browser: [join(TEST_BASE, "browser")],
 };
+
+/** node-llama-cpp/ipull downloads use shared ./models paths; parallel test files corrupt the same .gguf.ipull partial. */
+function isLlamaCppProviderIntegrationFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  const base = normalized.split("/").pop() ?? normalized;
+  return normalized.includes("/ai-provider-nodellama/") && base.includes(".integration.test.ts");
+}
+
+function shouldRunLlamaCppIntegrationFilesSequentially(files: string[]): boolean {
+  const n = files.filter(isLlamaCppProviderIntegrationFile).length;
+  return n > 1;
+}
 
 function showHelp(): void {
   console.log(`Usage: bun scripts/test.ts [kinds...] [sections...] [runners...] [options]
@@ -150,17 +132,6 @@ function matchesKind(filePath: string, kinds: readonly Kind[]): boolean {
   return false;
 }
 
-function matchesProviderSubsection(filePath: string, section: Section): boolean {
-  const base = filePath.split("/").pop() ?? filePath;
-  const stem = base.replace(/\..*$/, "");
-  if (section === "provider-hft") return PROVIDER_HFT_FILES.includes(stem);
-  if (section === "provider-llamacpp") return PROVIDER_LLAMACPP_FILES.includes(stem);
-  if (section === "provider-api") {
-    return !PROVIDER_HFT_FILES.includes(stem) && !PROVIDER_LLAMACPP_FILES.includes(stem);
-  }
-  return true;
-}
-
 function collectFiles(
   dirs: string[],
   kinds: readonly Kind[],
@@ -169,15 +140,9 @@ function collectFiles(
   const seen = new Set<string>();
   const files: string[] = [];
   const glob = new Bun.Glob("**/*.test.ts");
-  const providerSubsections = sections.filter(
-    (s) => s === "provider-hft" || s === "provider-llamacpp" || s === "provider-api"
-  );
   for (const dir of dirs) {
     for (const file of glob.scanSync({ cwd: dir, absolute: true, onlyFiles: true })) {
       if (seen.has(file) || !matchesKind(file, kinds)) continue;
-      if (providerSubsections.length > 0 && file.includes("/ai-provider/")) {
-        if (!providerSubsections.some((s) => matchesProviderSubsection(file, s))) continue;
-      }
       seen.add(file);
       files.push(file);
     }

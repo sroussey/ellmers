@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerHfImageValidator } from "@workglow/huggingface-inference/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
+import { registerHfImageValidator } from "@workglow/huggingface-inference/ai";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const HF_INFERENCE = "HF_INFERENCE";
 

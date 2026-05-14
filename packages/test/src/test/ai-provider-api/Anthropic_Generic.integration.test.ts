@@ -9,20 +9,19 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { OPENAI } from "@workglow/openai/ai";
-import { registerOpenAiInline } from "@workglow/openai/ai-runtime";
+import { ANTHROPIC } from "@workglow/anthropic/ai";
+import { registerAnthropicInline } from "@workglow/anthropic/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
-const RUN = !!process.env.OPENAI_API_KEY;
-const MODEL_ID = "openai:gpt-4o-mini";
-const EMBED_MODEL_ID = "openai:text-embedding-3-small";
+const RUN = !!process.env.ANTHROPIC_API_KEY;
+const MODEL_ID = "anthropic:claude-haiku";
 
 runAiProviderConformance({
-  name: "OpenAI",
+  name: "Anthropic",
   skip: !RUN,
   timeout: 30_000,
   factory: async () => ({
@@ -31,23 +30,14 @@ runAiProviderConformance({
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerOpenAiInline();
+      await registerAnthropicInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "GPT-4o Mini",
-        description: "OpenAI GPT-4o Mini",
+        title: "Claude Haiku",
+        description: "Anthropic Claude Haiku",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
-        provider: OPENAI as typeof OPENAI,
-        provider_config: { model_name: "gpt-4o-mini" },
-        metadata: {},
-      });
-      await getGlobalModelRepository().addModel({
-        model_id: EMBED_MODEL_ID,
-        title: "Text Embedding 3 Small",
-        description: "OpenAI text-embedding-3-small (1536D)",
-        capabilities: ["text.embedding"],
-        provider: OPENAI as typeof OPENAI,
-        provider_config: { model_name: "text-embedding-3-small" },
+        provider: ANTHROPIC as typeof ANTHROPIC,
+        provider_config: { model_name: "claude-haiku-4-5-20251001" },
         metadata: {},
       });
     },
@@ -60,7 +50,7 @@ runAiProviderConformance({
     streaming: true,
     tools: true,
     structured: true,
-    embeddings: true,
+    embeddings: false,
     sessions: false,
     abortMidStream: true,
   },
@@ -68,6 +58,5 @@ runAiProviderConformance({
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
     structured: MODEL_ID,
-    embeddings: EMBED_MODEL_ID,
   },
 });

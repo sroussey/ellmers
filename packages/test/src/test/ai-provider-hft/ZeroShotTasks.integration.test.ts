@@ -9,6 +9,7 @@
 // to GpuImage before the vision tasks see them.
 import "@workglow/tasks";
 
+import type { AiJobInput } from "@workglow/ai";
 import {
   AiJob,
   getGlobalModelRepository,
@@ -18,18 +19,21 @@ import {
   setGlobalModelRepository,
   textClassification,
 } from "@workglow/ai";
-import type { AiJobInput } from "@workglow/ai";
+import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
 import {
   clearPipelineCache,
   HF_TRANSFORMERS_ONNX,
   HF_TRANSFORMERS_ONNX_CPU,
   registerHuggingFaceTransformersInline,
 } from "@workglow/huggingface-transformers/ai-runtime";
-import type { HfTransformersOnnxModelRecord } from "@workglow/huggingface-transformers/ai-runtime";
-import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/job-queue";
-import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
+import {
+  ConcurrencyLimiter,
+  InMemoryQueueStorage,
+  JobQueueClient,
+  JobQueueServer,
+} from "@workglow/job-queue";
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
+import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

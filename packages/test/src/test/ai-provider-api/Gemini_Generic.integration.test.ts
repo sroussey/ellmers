@@ -9,45 +9,45 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { HF_INFERENCE } from "@workglow/huggingface-inference/ai";
-import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-runtime";
+import { GOOGLE_GEMINI } from "@workglow/google-gemini/ai";
+import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
-const RUN = !!process.env.HF_TOKEN;
-const MODEL_ID = "hf-inference:meta-llama/Llama-3.1-8B-Instruct";
-const EMBED_MODEL_ID = "hf-inference:sentence-transformers/all-MiniLM-L6-v2";
+const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
+const MODEL_ID = "gemini:gemini-2.5-flash";
+const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
 
 runAiProviderConformance({
-  name: "HuggingFace Inference",
+  name: "Google Gemini",
   skip: !RUN,
-  timeout: 60_000,
+  timeout: 30_000,
   factory: async () => ({
     register: async () => {
       const logger = getTestingLogger();
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerHfInferenceInline();
+      await registerGeminiInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Llama 3.1 8B Instruct (HF Inference)",
-        description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
-        capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use"],
-        provider: HF_INFERENCE as typeof HF_INFERENCE,
-        provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
+        title: "Gemini 2.5 Flash",
+        description: "Google Gemini 2.5 Flash",
+        capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
+        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
+        provider_config: { model_name: "gemini-2.5-flash" },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({
         model_id: EMBED_MODEL_ID,
-        title: "All-MiniLM-L6-v2 (HF Inference)",
-        description: "sentence-transformers/all-MiniLM-L6-v2 via HF Inference",
+        title: "Gemini Embedding 001",
+        description: "Google Gemini embedding model",
         capabilities: ["text.embedding"],
-        provider: HF_INFERENCE as typeof HF_INFERENCE,
-        provider_config: { model_name: "sentence-transformers/all-MiniLM-L6-v2" },
+        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
+        provider_config: { model_name: "gemini-embedding-001" },
         metadata: {},
       });
     },
@@ -59,7 +59,7 @@ runAiProviderConformance({
   capabilities: {
     streaming: true,
     tools: true,
-    structured: false,
+    structured: true,
     embeddings: true,
     sessions: false,
     abortMidStream: true,
@@ -67,6 +67,7 @@ runAiProviderConformance({
   models: {
     textGeneration: MODEL_ID,
     toolCalling: MODEL_ID,
+    structured: MODEL_ID,
     embeddings: EMBED_MODEL_ID,
   },
 });

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from "vitest";
 import { createEmitQueue } from "@workglow/ai";
 import { createOllamaTextGenerationStream } from "@workglow/ollama/ai-runtime";
+import { describe, expect, it, vi } from "vitest";
 
 type FakeStream = {
   abort: ReturnType<typeof vi.fn>;

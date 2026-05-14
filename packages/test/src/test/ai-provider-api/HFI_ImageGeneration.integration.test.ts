@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeAll } from "vitest";
-import { ImageGenerateTask, ImageEditTask } from "@workglow/ai";
+import { ImageEditTask, ImageGenerateTask } from "@workglow/ai";
 import { registerHfInferenceInline } from "@workglow/huggingface-inference/ai-runtime";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const RUN = !!process.env.HF_TOKEN;
 

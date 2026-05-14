@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerGeminiImageValidator } from "@workglow/google-gemini/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
+import { registerGeminiImageValidator } from "@workglow/google-gemini/ai";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("Gemini image validator", () => {
   beforeEach(() => {

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { registerOpenAiImageValidator } from "@workglow/openai/ai";
 import { AiImageOutputTask, ImageEditTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
+import { registerOpenAiImageValidator } from "@workglow/openai/ai";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("OpenAI image validator", () => {
   beforeEach(() => {

@@ -26,4 +26,25 @@ describe("scripts/test.ts", () => {
     expect(stdout).not.toContain('""');
     expect(stdout).not.toContain(".integration.test.ts");
   });
+
+  test("provider-nodellama vitest dry-run disables file parallelism", async () => {
+    const proc = Bun.spawn(
+      ["bun", "scripts/test.ts", "integration", "provider-nodellama", "vitest", "--dry-run"],
+      {
+        cwd: import.meta.dir + "/..",
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    );
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("--no-file-parallelism");
+  });
 });

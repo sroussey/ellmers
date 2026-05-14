@@ -9,20 +9,20 @@ import {
   InMemoryModelRepository,
   setGlobalModelRepository,
 } from "@workglow/ai";
-import { GOOGLE_GEMINI } from "@workglow/google-gemini/ai";
-import { registerGeminiInline } from "@workglow/google-gemini/ai-runtime";
+import { OPENAI } from "@workglow/openai/ai";
+import { registerOpenAiInline } from "@workglow/openai/ai-runtime";
 import { setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 
-import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runAiProviderConformance } from "../../contract/ai-provider/runAiProviderConformance";
 
-const RUN = !!process.env.GOOGLE_API_KEY || !!process.env.GEMINI_API_KEY;
-const MODEL_ID = "gemini:gemini-2.5-flash";
-const EMBED_MODEL_ID = "gemini:gemini-embedding-001";
+const RUN = !!process.env.OPENAI_API_KEY;
+const MODEL_ID = "openai:gpt-4o-mini";
+const EMBED_MODEL_ID = "openai:text-embedding-3-small";
 
 runAiProviderConformance({
-  name: "Google Gemini",
+  name: "OpenAI",
   skip: !RUN,
   timeout: 30_000,
   factory: async () => ({
@@ -31,23 +31,23 @@ runAiProviderConformance({
       setLogger(logger);
       await setTaskQueueRegistry(null);
       setGlobalModelRepository(new InMemoryModelRepository());
-      await registerGeminiInline();
+      await registerOpenAiInline();
       await getGlobalModelRepository().addModel({
         model_id: MODEL_ID,
-        title: "Gemini 2.5 Flash",
-        description: "Google Gemini 2.5 Flash",
+        title: "GPT-4o Mini",
+        description: "OpenAI GPT-4o Mini",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use", "json-mode"],
-        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-2.5-flash" },
+        provider: OPENAI as typeof OPENAI,
+        provider_config: { model_name: "gpt-4o-mini" },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({
         model_id: EMBED_MODEL_ID,
-        title: "Gemini Embedding 001",
-        description: "Google Gemini embedding model",
+        title: "Text Embedding 3 Small",
+        description: "OpenAI text-embedding-3-small (1536D)",
         capabilities: ["text.embedding"],
-        provider: GOOGLE_GEMINI as typeof GOOGLE_GEMINI,
-        provider_config: { model_name: "gemini-embedding-001" },
+        provider: OPENAI as typeof OPENAI,
+        provider_config: { model_name: "text-embedding-3-small" },
         metadata: {},
       });
     },
