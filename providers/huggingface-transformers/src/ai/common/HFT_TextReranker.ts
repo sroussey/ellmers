@@ -5,11 +5,7 @@
  */
 
 import type { TextClassificationPipeline } from "@huggingface/transformers";
-import type {
-  AiProviderRunFn,
-  TextRerankerTaskInput,
-  TextRerankerTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, TextRerankerTaskInput, TextRerankerTaskOutput } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
@@ -38,13 +34,14 @@ export const HFT_TextReranker: AiProviderRunFn<
   // { text, text_pair } objects for sentence-pair tasks (which cross-encoder
   // rerankers are). The pipeline returns one score per input pair.
   const pairs = input.documents.map((doc) => ({ text: input.query, text_pair: doc }));
-  const rawResults = (await (reranker as unknown as (
-    inputs: Array<{ text: string; text_pair: string }>,
-    options?: Record<string, unknown>
-  ) => Promise<Array<{ label: string; score: number } | Array<{ label: string; score: number }>>>)(
-    pairs,
-    { top_k: 1 }
-  )) as Array<{ label: string; score: number } | Array<{ label: string; score: number }>>;
+  const rawResults = (await (
+    reranker as unknown as (
+      inputs: Array<{ text: string; text_pair: string }>,
+      options?: Record<string, unknown>
+    ) => Promise<Array<{ label: string; score: number } | Array<{ label: string; score: number }>>>
+  )(pairs, { top_k: 1 })) as Array<
+    { label: string; score: number } | Array<{ label: string; score: number }>
+  >;
 
   const scores: number[] = rawResults.map((r) => {
     if (Array.isArray(r)) {

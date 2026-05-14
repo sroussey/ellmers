@@ -33,8 +33,7 @@ const inputSchema = {
     },
     model: TypeModel("model:TextRerankerTask", {
       title: "Reranker Model",
-      description:
-        "Cross-encoder reranker model (e.g. bge-reranker, Cohere rerank). Required.",
+      description: "Cross-encoder reranker model (e.g. bge-reranker, Cohere rerank). Required.",
     }),
   },
   required: ["query", "documents", "model"],
@@ -82,9 +81,7 @@ export class TextRerankerTask extends AiTask<
   public static override title = "Text Reranker";
   public static override description =
     "Score documents against a query using a cross-encoder reranker model";
-  public static readonly requires: readonly Capability[] = [
-    "text.reranking",
-  ] as const satisfies Capability[];
+  public static override readonly requires = ["text.reranking"] as const satisfies Capability[];
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

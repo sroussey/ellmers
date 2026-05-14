@@ -4,10 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createStandardKbStrategy } from "@workglow/ai";
-import { getAiProviderRegistry } from "@workglow/ai";
-import { getGlobalModelRepository } from "@workglow/ai";
-import type { ModelRecord } from "@workglow/ai";
+import type { AiProviderRunFn, ModelRecord, TextEmbeddingTaskInput } from "@workglow/ai";
+import {
+  createStandardKbStrategy,
+  getAiProviderRegistry,
+  getGlobalModelRepository,
+} from "@workglow/ai";
+import type {
+  ChunkVectorStorage,
+  DocumentTabularStorage,
+  InsertChunkVectorEntity,
+} from "@workglow/knowledge-base";
 import {
   ChunkVectorPrimaryKey,
   ChunkVectorStorageSchema,
@@ -17,11 +24,6 @@ import {
   KnowledgeBase,
   StructuralParser,
   createKnowledgeBase,
-} from "@workglow/knowledge-base";
-import type {
-  ChunkVectorStorage,
-  DocumentTabularStorage,
-  InsertChunkVectorEntity,
 } from "@workglow/knowledge-base";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import { uuid4 } from "@workglow/util";
@@ -38,16 +40,24 @@ const TEST_EMBED_MODEL_ID = "test:strategy:embed";
 describe("createStandardKbStrategy", () => {
   beforeAll(async () => {
     const registry = getAiProviderRegistry();
-    registry.registerRunFn(TEST_PROVIDER, "TextEmbeddingTask", async (input) => {
+    const runFn: AiProviderRunFn = async (input, _model, _signal, emit) => {
       // Deterministic 3-D unit vector keyed off the first text character;
       // we don't need vector meaning here, only that embedTexts resolves.
-      const texts = Array.isArray((input as { text: unknown }).text)
-        ? ((input as { text: string[] }).text as string[])
-        : [((input as { text: string }).text as string) ?? ""];
+      const embeddingInput = input as TextEmbeddingTaskInput;
+      const texts = Array.isArray(embeddingInput.text)
+        ? embeddingInput.text
+        : [embeddingInput.text ?? ""];
       const vectors = texts.map(() => new Float32Array([1, 0, 0]));
-      return {
-        vector: vectors.length === 1 ? vectors[0] : vectors,
-      } as unknown as Record<string, unknown>;
+      emit({
+        type: "finish",
+        data: {
+          vector: vectors.length === 1 ? vectors[0] : vectors,
+        },
+      });
+    };
+    registry.registerRunFn(TEST_PROVIDER, {
+      serves: ["text.embedding"],
+      runFn,
     });
 
     const modelRepo = getGlobalModelRepository();
@@ -55,7 +65,7 @@ describe("createStandardKbStrategy", () => {
     if (!existing) {
       await modelRepo.addModel({
         model_id: TEST_EMBED_MODEL_ID,
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         title: "Strategy test embed model",
         description: "Stub embed model used by createStandardKbStrategy tests",
         provider: TEST_PROVIDER,
