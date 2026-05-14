@@ -208,73 +208,75 @@ describe("WorkerServerBase pendingAborts eviction policy", () => {
     expect(seenAborted).toEqual([false]);
   });
 
-  it(
-    "hard-cap safety: most-recent ids are preserved, oldest are evicted",
-    async () => {
-      vi.useFakeTimers();
-      const HARD_CAP = 10_000;
-      const server = new WorkerServerBase();
+  it("hard-cap safety: most-recent ids are preserved, oldest are evicted", async () => {
+    vi.useFakeTimers();
+    // Use an injected small cap so the test exercises the overflow eviction
+    // path with ~100 entries instead of ~10,000. The full-size 10k path is
+    // empirically too slow under vitest's fake-timer heap on CI runners
+    // (every recordPendingAbort schedules a setTimeout — O(log n) per insert
+    // — and the constant factors stack up). The eviction logic itself is
+    // identical regardless of cap size.
+    const HARD_CAP = 100;
+    const server = new WorkerServerBase({ pendingAbortHardCap: HARD_CAP });
 
-      // Step the clock by 1ms per insertion so the timestamps are strictly
-      // monotonic and the oldest-first eviction has a well-defined order.
-      // (All insertions stay inside the 30s TTL window.)
-      for (let i = 0; i < HARD_CAP + 10; i++) {
-        await server.handleMessage({
-          type: "message",
-          data: { type: "abort", id: `cap-${i}` },
-        });
-        vi.advanceTimersByTime(1);
-      }
-
-      // Reach into the private map to verify size invariants. The hard cap
-      // eviction triggers when size > HARD_CAP and removes half — leaving
-      // the set bounded at most at HARD_CAP after the trim.
-      const pending = (server as unknown as { pendingAborts: Map<string, number> }).pendingAborts;
-      expect(pending.size).toBeLessThanOrEqual(HARD_CAP);
-
-      // Newest id was just inserted; it must survive.
-      const newestId = `cap-${HARD_CAP + 9}`;
-      expect(pending.has(newestId)).toBe(true);
-
-      // Oldest id was evicted in the oldest-by-timestamp half.
-      const oldestId = "cap-0";
-      expect(pending.has(oldestId)).toBe(false);
-
-      // Behavioural check via the public consume path: register a run-fn and
-      // dispatch a call for the newest id. It should still be aborted.
-      const seenAbortedNewest: boolean[] = [];
-      server.registerRunFunction("dummyRunNewest", async (_input, _model, signal) => {
-        seenAbortedNewest.push(signal.aborted);
-      });
+    // Step the clock by 1ms per insertion so the timestamps are strictly
+    // monotonic and the oldest-first eviction has a well-defined order.
+    // (All insertions stay inside the 30s TTL window.)
+    for (let i = 0; i < HARD_CAP + 10; i++) {
       await server.handleMessage({
         type: "message",
-        data: {
-          type: "call",
-          id: newestId,
-          functionName: "dummyRunNewest",
-          run: true,
-          args: [{}, undefined, undefined, undefined],
-        },
+        data: { type: "abort", id: `cap-${i}` },
       });
-      expect(seenAbortedNewest).toEqual([true]);
+      vi.advanceTimersByTime(1);
+    }
 
-      // And a call for the oldest id should NOT be aborted (marker evicted).
-      const seenAbortedOldest: boolean[] = [];
-      server.registerRunFunction("dummyRunOldest", async (_input, _model, signal) => {
-        seenAbortedOldest.push(signal.aborted);
-      });
-      await server.handleMessage({
-        type: "message",
-        data: {
-          type: "call",
-          id: oldestId,
-          functionName: "dummyRunOldest",
-          run: true,
-          args: [{}, undefined, undefined, undefined],
-        },
-      });
-      expect(seenAbortedOldest).toEqual([false]);
-    },
-    60_000,
-  );
+    // Reach into the private map to verify size invariants. The hard cap
+    // eviction triggers when size > HARD_CAP and removes half — leaving
+    // the set bounded at most at HARD_CAP after the trim.
+    const pending = (server as unknown as { pendingAborts: Map<string, number> }).pendingAborts;
+    expect(pending.size).toBeLessThanOrEqual(HARD_CAP);
+
+    // Newest id was just inserted; it must survive.
+    const newestId = `cap-${HARD_CAP + 9}`;
+    expect(pending.has(newestId)).toBe(true);
+
+    // Oldest id was evicted in the oldest-by-timestamp half.
+    const oldestId = "cap-0";
+    expect(pending.has(oldestId)).toBe(false);
+
+    // Behavioural check via the public consume path: register a run-fn and
+    // dispatch a call for the newest id. It should still be aborted.
+    const seenAbortedNewest: boolean[] = [];
+    server.registerRunFunction("dummyRunNewest", async (_input, _model, signal) => {
+      seenAbortedNewest.push(signal.aborted);
+    });
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: newestId,
+        functionName: "dummyRunNewest",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+    expect(seenAbortedNewest).toEqual([true]);
+
+    // And a call for the oldest id should NOT be aborted (marker evicted).
+    const seenAbortedOldest: boolean[] = [];
+    server.registerRunFunction("dummyRunOldest", async (_input, _model, signal) => {
+      seenAbortedOldest.push(signal.aborted);
+    });
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: oldestId,
+        functionName: "dummyRunOldest",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+    expect(seenAbortedOldest).toEqual([false]);
+  });
 });

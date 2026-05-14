@@ -78,15 +78,46 @@ function extractTransferables(obj: any) {
 }
 
 /**
+ * Construction-time options for {@link WorkerServerBase}.
+ *
+ * All fields are optional and safe to omit — defaults match the previous
+ * hard-coded values. Subclasses (platform-specific `WorkerServer` classes)
+ * accept the same shape and forward it via `super(options)`.
+ */
+export interface WorkerServerBaseOptions {
+  /**
+   * Maximum number of pending-abort markers retained in memory. Once the
+   * `pendingAborts` map exceeds this cap, the oldest-by-timestamp half is
+   * evicted in one pass — a memory safety-net for pathological abort bursts
+   * that outrun the per-id TTL timers. Defaults to `10_000`.
+   *
+   * Exposed as an option primarily as a test seam: tests that exercise the
+   * overflow eviction path can use a tiny cap (e.g. `100`) and insert ~110
+   * entries in milliseconds instead of pushing 10,010 entries through
+   * vitest's fake-timer heap.
+   */
+  readonly pendingAbortHardCap?: number;
+}
+
+/**
  * WorkerServerBase is a class that handles messages from the main thread to the worker.
  * It is used to register functions that can be called from the main thread.
  * It also handles the transfer of transferables to the main thread.
  */
 export class WorkerServerBase {
-  constructor() {} // overridden in subclasses
+  constructor(options: WorkerServerBaseOptions = {}) {
+    this.pendingAbortHardCap =
+      options.pendingAbortHardCap ?? WorkerServerBase.PENDING_ABORT_HARD_CAP;
+  }
 
   private static readonly PENDING_ABORT_TTL_MS = 30_000;
   private static readonly PENDING_ABORT_HARD_CAP = 10_000;
+
+  /**
+   * Per-instance hard cap on `pendingAborts` map size. Initialised from the
+   * constructor option (defaults to {@link PENDING_ABORT_HARD_CAP}).
+   */
+  private readonly pendingAbortHardCap: number;
 
   private functions: Record<string, (...args: any[]) => Promise<any>> = {};
   private streamFunctions: Record<string, (...args: any[]) => AsyncIterable<any>> = {};
@@ -293,7 +324,7 @@ export class WorkerServerBase {
    * Cleanup strategy (amortised O(1) per call, no inline sweep):
    *   - A per-id `setTimeout` drops this entry once TTL elapses.
    *   - {@link consumePendingAbort} re-checks the timestamp at consume time.
-   *   - If the map exceeds {@link PENDING_ABORT_HARD_CAP}, the oldest half
+   *   - If the map exceeds {@link pendingAbortHardCap}, the oldest half
    *     is evicted in one pass — a memory safety-net for pathological
    *     bursts that outrun the per-id timers.
    */
@@ -305,7 +336,7 @@ export class WorkerServerBase {
     // lowest timestamps (i.e. the most stale entries). This runs only on
     // the rare overflow path; the per-id `setTimeout` below handles the
     // common case in amortised O(1).
-    const cap = WorkerServerBase.PENDING_ABORT_HARD_CAP;
+    const cap = this.pendingAbortHardCap;
     if (this.pendingAborts.size > cap) {
       const entries = [...this.pendingAborts.entries()];
       entries.sort((a, b) => a[1] - b[1]); // oldest first
