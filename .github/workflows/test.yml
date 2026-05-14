@@ -409,16 +409,10 @@ jobs:
       - name: Report Coverage
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: davelosert/vitest-coverage-report-action@v2
-      - name: Delete Vitest coverage fragments
-        if: always()
-        uses: geekyeggo/delete-artifact@v6
-        with:
-          name: coverage-vitest-*
 
   cleanup:
     runs-on: ubuntu-latest
-    needs:
-      [
+    needs: [
         # test-bun-unit,
         # test-bun-integration,
         # test-bun-rag,
@@ -431,8 +425,18 @@ jobs:
         test-vitest-ai-provider-hft,
         test-vitest-ai-provider-llamacpp,
         test-vitest-ai-provider-api,
+        merge-vitest-coverage,
       ]
     steps:
-      - uses: geekyeggo/delete-artifact@v6
+      - name: Delete build artifacts
+        uses: geekyeggo/delete-artifact@v6
         with:
           name: build-output
+      - name: Delete Vitest coverage fragments
+        uses: geekyeggo/delete-artifact@v6
+        with:
+          name: coverage-vitest-*
+      - name: Delete merged Vitest coverage
+        uses: geekyeggo/delete-artifact@v6
+        with:
+          name: vitest-coverage-merged
