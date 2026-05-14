@@ -30,6 +30,18 @@ import type { ISearchOptions } from "./KnowledgeBase";
  * `kb.upsertDocument` / `kb.upsertChunksBulk` / `kb.similaritySearch` etc.
  * go through virtual dispatch — subclasses (e.g. `ScopedKnowledgeBase`)
  * can intercept the low-level ops without the strategy knowing.
+ *
+ * **Trust model.** Strategies are TRUSTED CODE. An installed strategy
+ * receives an {@link IKbStrategyTarget} that exposes the KB's full
+ * low-level storage surface (`upsertDocument`, `deleteChunksForDocument`,
+ * `upsertChunksBulk`, `similaritySearch`, `hybridSearch`). These
+ * operations bypass any application-level access control (e.g.
+ * user/project scoping enforced by `ScopedKnowledgeBase`) because
+ * scoping is implemented via virtual dispatch on the *target instance*,
+ * and a malicious or buggy strategy can violate the contract by routing
+ * data through a different KB. Do NOT load strategies from untrusted
+ * sources, user input, or remote registries. Install only strategies you
+ * ship in trusted application code.
  */
 export interface IKbAiStrategy {
   /**
@@ -71,6 +83,18 @@ export interface IKbAiStrategy {
  * The narrow KB surface strategies operate against. Spells out exactly the
  * building-block methods strategies need so the public KB API
  * (`upsert`/`delete`/`search`) stays the only surface callers see.
+ *
+ * **Trust model.** This interface is the full low-level storage surface a
+ * strategy can reach: `upsertDocument`, `deleteChunksForDocument`,
+ * `upsertChunksBulk`, `similaritySearch`, `hybridSearch`. These
+ * operations bypass any application-level access control (e.g.
+ * user/project scoping enforced by `ScopedKnowledgeBase`) because
+ * scoping is implemented via virtual dispatch on the *target instance*,
+ * and a malicious or buggy strategy can violate the contract by routing
+ * data through a different KB. Treat installed strategies as TRUSTED
+ * CODE — do NOT load them from untrusted sources, user input, or remote
+ * registries. Install only strategies you ship in trusted application
+ * code. See {@link IKbAiStrategy} for the full trust model.
  */
 export interface IKbStrategyTarget {
   readonly name: string;
