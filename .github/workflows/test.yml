@@ -110,7 +110,7 @@ jobs:
           path: .
       - name: Run rag tests via bun
         env:
-            WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:bun:rag
 
   test-bun-ai-provider-hft:
