@@ -85,6 +85,9 @@ function extractTransferables(obj: any) {
 export class WorkerServerBase {
   constructor() {} // overridden in subclasses
 
+  private static readonly PENDING_ABORT_TTL_MS = 30_000;
+  private static readonly PENDING_ABORT_HARD_CAP = 10_000;
+
   private functions: Record<string, (...args: any[]) => Promise<any>> = {};
   private streamFunctions: Record<string, (...args: any[]) => AsyncIterable<any>> = {};
   private runFunctions: Record<
@@ -105,10 +108,18 @@ export class WorkerServerBase {
   // Keep track of requests that have already been responded to
   private completedRequests = new Set<string>();
   // Track abort messages that arrived before the corresponding call started so
-  // the imminent handler can apply them immediately. Bounded to prevent
-  // unbounded growth from buggy clients that send aborts for ids that never
-  // arrive (see {@link scheduleCompletedRequestCleanup} for the matching cap).
-  private pendingAborts = new Set<string>();
+  // the imminent handler can apply them immediately. Each entry's value is the
+  // wall-clock timestamp (ms) at which the abort was recorded; entries are
+  // evicted by TTL (see {@link PENDING_ABORT_TTL_MS}) rather than by
+  // insertion order so a noisy/malicious client spamming aborts cannot
+  // displace a legitimate pending abort before its matching `call` arrives.
+  // A hard cap (see {@link PENDING_ABORT_HARD_CAP}) provides a memory
+  // safety-net by evicting the oldest-by-timestamp half when exceeded.
+  private pendingAborts = new Map<string, number>();
+  // Track scheduled per-id cleanup timers so they don't pin the event loop
+  // open longer than necessary and so subclasses with a dispose hook can
+  // clear them. Mirrors the pattern used by `scheduleCompletedRequestCleanup`.
+  private pendingAbortTimers = new Set<ReturnType<typeof setTimeout>>();
 
   private postResult = (id: string, result: any) => {
     if (this.completedRequests.has(id)) {
@@ -249,32 +260,65 @@ export class WorkerServerBase {
   }
 
   /**
-   * If a prior `abort` arrived for `id` before the call started, abort the
-   * supplied controller immediately and drop the pending marker. Returns
-   * `true` when an abort was consumed so callers may exit fast.
+   * If a prior `abort` arrived for `id` before the call started, and that
+   * abort is still within the TTL window, abort the supplied controller
+   * immediately and drop the pending marker. Returns `true` when an abort
+   * was consumed so callers may exit fast. Expired markers are silently
+   * dropped (returns `false`).
    */
   private consumePendingAbort(id: string, controller: AbortController): boolean {
-    if (!this.pendingAborts.delete(id)) return false;
+    const ts = this.pendingAborts.get(id);
+    if (ts === undefined) return false;
+    this.pendingAborts.delete(id);
+    if (Date.now() - ts > WorkerServerBase.PENDING_ABORT_TTL_MS) {
+      // Marker expired between recording and consumption — treat as absent.
+      return false;
+    }
     controller.abort();
     return true;
   }
 
   /**
-   * Records `id` as having received an abort that has not yet been matched to
-   * a controller. Bounded at 1000 entries; oldest are dropped first so a
-   * misbehaving client cannot leak memory by sending aborts for ids that
-   * never arrive.
+   * Records `id` as having received an abort that has not yet been matched
+   * to a controller. Stores a wall-clock timestamp so entries are evicted
+   * by TTL (see {@link PENDING_ABORT_TTL_MS}) rather than by insertion
+   * order — a noisy/malicious client spamming aborts can no longer evict
+   * a legitimate pending abort before its matching `call` arrives. A hard
+   * cap (see {@link PENDING_ABORT_HARD_CAP}) provides a memory safety-net
+   * by evicting the oldest-by-timestamp half when exceeded.
    */
   private recordPendingAbort(id: string): void {
-    this.pendingAborts.add(id);
-    if (this.pendingAborts.size > 1000) {
-      const iter = this.pendingAborts.values();
-      for (let i = 0; i < 500; i++) {
-        const entry = iter.next();
-        if (entry.done) break;
-        this.pendingAborts.delete(entry.value);
+    const now = Date.now();
+    this.pendingAborts.set(id, now);
+
+    // Inline sweep: drop any entries older than the TTL.
+    const ttl = WorkerServerBase.PENDING_ABORT_TTL_MS;
+    for (const [key, ts] of this.pendingAborts) {
+      if (now - ts > ttl) {
+        this.pendingAborts.delete(key);
       }
     }
+
+    // Memory safety-net: if still over the hard cap, evict the half with
+    // the lowest timestamps (i.e. the most stale entries).
+    const cap = WorkerServerBase.PENDING_ABORT_HARD_CAP;
+    if (this.pendingAborts.size > cap) {
+      const entries = [...this.pendingAborts.entries()];
+      entries.sort((a, b) => a[1] - b[1]); // oldest first
+      const toEvict = Math.floor(entries.length / 2);
+      for (let i = 0; i < toEvict; i++) {
+        this.pendingAborts.delete(entries[i][0]);
+      }
+    }
+
+    // Mirror `scheduleCompletedRequestCleanup`: schedule a one-shot timer
+    // to drop this id after its TTL elapses. Stored so dispose-style hooks
+    // can clear pending timers; otherwise they GC naturally.
+    const timer = setTimeout(() => {
+      this.pendingAborts.delete(id);
+      this.pendingAbortTimers.delete(timer);
+    }, WorkerServerBase.PENDING_ABORT_TTL_MS);
+    this.pendingAbortTimers.add(timer);
   }
 
   /**

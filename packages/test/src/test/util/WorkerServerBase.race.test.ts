@@ -5,7 +5,7 @@
  */
 
 import { WorkerServerBase } from "@workglow/util/worker";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface PostedMessage {
   readonly type: string;
@@ -127,5 +127,150 @@ describe("WorkerServerBase abort-before-call race", () => {
     });
 
     expect(seenAborted).toEqual([true]);
+  });
+});
+
+describe("WorkerServerBase pendingAborts eviction policy", () => {
+  let stub: { captured: PostedMessage[]; restore(): void };
+
+  beforeEach(() => {
+    stub = installPostMessageStub();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    stub.restore();
+  });
+
+  it("eviction-correctness: a legitimate pending abort survives a flood of other-id aborts", async () => {
+    vi.useFakeTimers();
+    const server = new WorkerServerBase();
+    const seenAborted: boolean[] = [];
+    server.registerRunFunction("dummyRun", async (_input, _model, signal) => {
+      seenAborted.push(signal.aborted);
+    });
+
+    // Flood: 1500 distinct abort ids in a single synchronous tick.
+    // Under the old FIFO policy this would have evicted the first 500 entries
+    // (including `a-500`); under TTL-based eviction the marker for `a-500`
+    // is still alive because no entry is older than the TTL.
+    for (let i = 0; i < 1500; i++) {
+      await server.handleMessage({
+        type: "message",
+        data: { type: "abort", id: `a-${i}` },
+      });
+    }
+
+    // Now dispatch the matching call for an id that the old policy would
+    // have evicted (`a-500`). The run-fn must observe an already-aborted
+    // signal, proving the pending marker survived the flood.
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: "a-500",
+        functionName: "dummyRun",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+
+    expect(seenAborted).toEqual([true]);
+  });
+
+  it("TTL-expiry: pending abort marker is dropped after 30s, run-fn runs un-aborted", async () => {
+    vi.useFakeTimers();
+    const server = new WorkerServerBase();
+    const seenAborted: boolean[] = [];
+    server.registerRunFunction("dummyRun", async (_input, _model, signal) => {
+      seenAborted.push(signal.aborted);
+    });
+
+    await server.handleMessage({
+      type: "message",
+      data: { type: "abort", id: "a-late" },
+    });
+
+    // Past the TTL window — the marker for `a-late` must have expired.
+    vi.advanceTimersByTime(31_000);
+
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: "a-late",
+        functionName: "dummyRun",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+
+    expect(seenAborted).toEqual([false]);
+  });
+
+  it("hard-cap safety: most-recent ids are preserved, oldest are evicted", async () => {
+    vi.useFakeTimers();
+    const HARD_CAP = 10_000;
+    const server = new WorkerServerBase();
+
+    // Step the clock by 1ms per insertion so the timestamps are strictly
+    // monotonic and the oldest-first eviction has a well-defined order.
+    // (All insertions stay inside the 30s TTL window.)
+    for (let i = 0; i < HARD_CAP + 10; i++) {
+      await server.handleMessage({
+        type: "message",
+        data: { type: "abort", id: `cap-${i}` },
+      });
+      vi.advanceTimersByTime(1);
+    }
+
+    // Reach into the private map to verify size invariants. The hard cap
+    // eviction triggers when size > HARD_CAP and removes half — leaving
+    // the set bounded at most at HARD_CAP after the trim.
+    const pending = (server as unknown as { pendingAborts: Map<string, number> }).pendingAborts;
+    expect(pending.size).toBeLessThanOrEqual(HARD_CAP);
+
+    // Newest id was just inserted; it must survive.
+    const newestId = `cap-${HARD_CAP + 9}`;
+    expect(pending.has(newestId)).toBe(true);
+
+    // Oldest id was evicted in the oldest-by-timestamp half.
+    const oldestId = "cap-0";
+    expect(pending.has(oldestId)).toBe(false);
+
+    // Behavioural check via the public consume path: register a run-fn and
+    // dispatch a call for the newest id. It should still be aborted.
+    const seenAbortedNewest: boolean[] = [];
+    server.registerRunFunction("dummyRunNewest", async (_input, _model, signal) => {
+      seenAbortedNewest.push(signal.aborted);
+    });
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: newestId,
+        functionName: "dummyRunNewest",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+    expect(seenAbortedNewest).toEqual([true]);
+
+    // And a call for the oldest id should NOT be aborted (marker evicted).
+    const seenAbortedOldest: boolean[] = [];
+    server.registerRunFunction("dummyRunOldest", async (_input, _model, signal) => {
+      seenAbortedOldest.push(signal.aborted);
+    });
+    await server.handleMessage({
+      type: "message",
+      data: {
+        type: "call",
+        id: oldestId,
+        functionName: "dummyRunOldest",
+        run: true,
+        args: [{}, undefined, undefined, undefined],
+      },
+    });
+    expect(seenAbortedOldest).toEqual([false]);
   });
 });
