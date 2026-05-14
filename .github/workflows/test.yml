@@ -40,140 +40,140 @@ jobs:
             examples/*/dist/**
           retention-days: 1
 
-  test-bun-unit:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: canary
-      - run: bun i
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run unit tests via bun
-        run: bun run test:bun:unit
+  # test-bun-unit:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run unit tests via bun
+  #       run: bun run test:bun:unit
 
-  test-bun-integration:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run integration tests via bun
-        env:
-          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:bun:integration
+  # test-bun-integration:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run integration tests via bun
+  #       env:
+  #         WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
+  #       run: bun run test:bun:integration
 
-  test-bun-rag:
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-      - name: Cache ONNX / Hugging Face model downloads
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/huggingface
-          key: libs-hf-models-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            libs-hf-models-${{ runner.os }}-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run rag tests via bun
-        env:
-          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:bun:rag
+  # test-bun-rag:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   timeout-minutes: 25
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Cache ONNX / Hugging Face model downloads
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cache/huggingface
+  #         key: libs-hf-models-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+  #         restore-keys: |
+  #           libs-hf-models-${{ runner.os }}-
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run rag tests via bun
+  #       env:
+  #         WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
+  #       run: bun run test:bun:rag
 
-  test-bun-ai-provider-hft:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run HuggingFace Transformers provider tests via bun
-        run: bun run test:bun:ai-provider-hft
+  # test-bun-ai-provider-hft:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run HuggingFace Transformers provider tests via bun
+  #       run: bun run test:bun:ai-provider-hft
 
-  test-bun-ai-provider-llamacpp:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run LlamaCpp provider tests via bun
-        run: bun run test:bun:ai-provider-llamacpp
+  # test-bun-ai-provider-llamacpp:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run LlamaCpp provider tests via bun
+  #       run: bun run test:bun:ai-provider-llamacpp
 
-  test-bun-ai-provider-api:
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun i
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: build-output
-          path: .
-      - name: Run API provider tests via bun
-        env:
-          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
-        run: bun run test:bun:ai-provider-api
+  # test-bun-ai-provider-api:
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - uses: actions/setup-node@v6
+  #       with:
+  #         node-version: 24
+  #     - uses: oven-sh/setup-bun@v2
+  #       with:
+  #         bun-version: latest
+  #     - run: bun i
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: build-output
+  #         path: .
+  #     - name: Run API provider tests via bun
+  #       env:
+  #         WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
+  #       run: bun run test:bun:ai-provider-api
 
   test-vitest-unit:
     runs-on: ubuntu-latest
@@ -419,15 +419,15 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       [
-        test-bun-unit,
+        # test-bun-unit,
+        # test-bun-integration,
+        # test-bun-rag,
+        # test-bun-ai-provider-hft,
+        # test-bun-ai-provider-llamacpp,
+        # test-bun-ai-provider-api,
         test-vitest-unit,
-        test-bun-integration,
         test-vitest-integration,
-        test-bun-rag,
         test-vitest-rag,
-        test-bun-ai-provider-hft,
-        test-bun-ai-provider-llamacpp,
-        test-bun-ai-provider-api,
         test-vitest-ai-provider-hft,
         test-vitest-ai-provider-llamacpp,
         test-vitest-ai-provider-api,
