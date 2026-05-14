@@ -177,6 +177,9 @@ export interface KnowledgeBaseOptions {
  * of these goes through virtual dispatch, so subclasses (e.g. a
  * tenant-scoped KB) can intercept any of them without the strategy
  * knowing.
+ *
+ * See {@link IKbAiStrategy} for the strategy trust model — installed
+ * strategies are TRUSTED CODE and must not come from untrusted sources.
  */
 export class KnowledgeBase {
   readonly name: string;
@@ -223,6 +226,9 @@ export class KnowledgeBase {
 
   /**
    * Install (or replace) the AI strategy used by `upsert`/`delete`/`search`.
+   *
+   * See {@link IKbAiStrategy} for the strategy trust model — strategies
+   * receive the KB's full low-level storage surface and are TRUSTED CODE.
    *
    * Replacing the strategy does NOT affect operations already in flight.
    * Each public op (`upsert`/`delete`/`search`/`reindex`) resolves its
