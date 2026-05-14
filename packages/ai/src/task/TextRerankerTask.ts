@@ -65,6 +65,26 @@ export type TextRerankerTaskOutput = FromSchema<typeof outputSchema>;
 export type TextRerankerTaskConfig = TaskConfig<TextRerankerTaskInput>;
 
 /**
+ * Thrown by reranker provider run-fns when the underlying ML pipeline
+ * returns output that doesn't match the expected `{ label, score }`
+ * shape (or array thereof when `top_k > 1`). Co-located with the task
+ * definition so callers can `instanceof`-test against a single import
+ * regardless of which provider is installed.
+ *
+ * `actualShape` is a truncated, JSON-stringified snippet of the offending
+ * entry — enough to point an operator at the misconfigured model without
+ * dumping arbitrary tensors into logs.
+ */
+export class KbRerankerOutputError extends Error {
+  public readonly actualShape: unknown;
+  constructor(message: string, actualShape: unknown) {
+    super(message);
+    this.name = "KbRerankerOutputError";
+    this.actualShape = actualShape;
+  }
+}
+
+/**
  * AiTask for cross-encoder reranking. Providers register a run-fn for this
  * task type (e.g. HuggingFace Transformers using a `text-classification`
  * cross-encoder pipeline on `[query, doc]` pairs). `createStandardKbStrategy`

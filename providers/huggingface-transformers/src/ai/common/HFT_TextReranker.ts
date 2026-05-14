@@ -10,9 +10,24 @@ import type {
   TextRerankerTaskInput,
   TextRerankerTaskOutput,
 } from "@workglow/ai";
+import { KbRerankerOutputError } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
+
+/**
+ * Narrow guard: an entry from the text-classification pipeline must be an
+ * object with a numeric `score`. We deliberately do not require `label`
+ * to be present because some downstream models omit it; only `score` is
+ * load-bearing for reranking.
+ */
+function isScored(v: unknown): v is { label?: string; score: number } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { score?: unknown }).score === "number"
+  );
+}
 
 /**
  * Cross-encoder reranker run-fn. Loads a `text-classification` pipeline
@@ -22,6 +37,13 @@ import { getPipeline } from "./HFT_Pipeline";
  * Output `indices` is sorted best-first; `scores` is the per-document score
  * in the original input order so callers can join back to their candidate
  * list without re-sorting.
+ *
+ * Each pipeline result entry is validated at runtime: either a `{ score }`
+ * object or a non-empty array of such objects (transformers.js returns the
+ * array form when `top_k > 1`). On mismatch we throw
+ * {@link KbRerankerOutputError} with the model path and a truncated shape
+ * snippet — silently coercing missing scores to 0 would hide real model
+ * config bugs.
  */
 export const HFT_TextReranker: AiProviderRunFn<
   TextRerankerTaskInput,
@@ -29,29 +51,42 @@ export const HFT_TextReranker: AiProviderRunFn<
   HfTransformersOnnxModelConfig
 > = async (input, model, onProgress, signal) => {
   const logger = getLogger();
-  const timerLabel = `hft:TextReranker:${model?.provider_config.model_path}`;
+  const modelPath = model?.provider_config.model_path;
+  const timerLabel = `hft:TextReranker:${modelPath}`;
   logger.time(timerLabel, { docs: input.documents.length });
 
   const reranker: TextClassificationPipeline = await getPipeline(model!, onProgress, {}, signal);
 
   // Transformers.js' text-classification pipeline accepts an array of
   // { text, text_pair } objects for sentence-pair tasks (which cross-encoder
-  // rerankers are). The pipeline returns one score per input pair.
+  // rerankers are). The pipeline returns one score per input pair (or an
+  // array of scored entries per pair when `top_k > 1`).
   const pairs = input.documents.map((doc) => ({ text: input.query, text_pair: doc }));
-  const rawResults = (await (reranker as unknown as (
-    inputs: Array<{ text: string; text_pair: string }>,
-    options?: Record<string, unknown>
-  ) => Promise<Array<{ label: string; score: number } | Array<{ label: string; score: number }>>>)(
-    pairs,
-    { top_k: 1 }
-  )) as Array<{ label: string; score: number } | Array<{ label: string; score: number }>>;
 
-  const scores: number[] = rawResults.map((r) => {
-    if (Array.isArray(r)) {
-      // top_k > 1 returns array per input — take the best
-      return r[0]?.score ?? 0;
+  // Type as `unknown` so we are forced to validate. Do NOT use `as unknown as
+  // (...) => Promise<...>` here — that cast erases the typing safety net.
+  const callable = reranker as unknown as (
+    inputs: ReadonlyArray<{ text: string; text_pair: string }>,
+    options?: Record<string, unknown>
+  ) => Promise<unknown>;
+  const rawResults: unknown = await callable(pairs, { top_k: 1 });
+
+  if (!Array.isArray(rawResults)) {
+    throw new KbRerankerOutputError(
+      `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
+      truncateShape(rawResults)
+    );
+  }
+
+  const scores: number[] = rawResults.map((entry) => {
+    const candidate = Array.isArray(entry) ? entry[0] : entry;
+    if (!isScored(candidate)) {
+      throw new KbRerankerOutputError(
+        `HFT_TextReranker: unexpected pipeline output shape for model ${modelPath}`,
+        truncateShape(entry)
+      );
     }
-    return r.score;
+    return candidate.score;
   });
 
   const indices = scores
@@ -64,3 +99,18 @@ export const HFT_TextReranker: AiProviderRunFn<
   logger.timeEnd(timerLabel, { docs: input.documents.length });
   return { scores, indices: limited };
 };
+
+/**
+ * Serialize an offending shape for the error payload. We cap the length to
+ * keep error messages bounded — a misconfigured model could otherwise dump
+ * unbounded data into logs.
+ */
+function truncateShape(value: unknown): string {
+  try {
+    const json = JSON.stringify(value);
+    if (typeof json !== "string") return String(value);
+    return json.length > 200 ? `${json.slice(0, 200)}…` : json;
+  } catch {
+    return String(value);
+  }
+}
