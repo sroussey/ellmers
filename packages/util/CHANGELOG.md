@@ -1,5 +1,43 @@
 # @workglow/util
 
+## 0.2.35
+
+### Features
+
+#### ai,util/worker
+
+- Promise+emit run-fn shape foundation
+
+### Bug Fixes
+
+#### util/worker
+
+- apply aborts that arrive before the call starts
+
+#### ai,hft,test,ci
+
+- resolve RAG WASM/ONNX memory leaks
+
+### Refactors
+
+#### ai
+
+- finalize Promise+emit migration and cleanup
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

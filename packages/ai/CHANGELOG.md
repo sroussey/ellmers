@@ -1,5 +1,111 @@
 # @workglow/ai
 
+## 0.2.35
+
+### Features
+
+#### ai/task
+
+- runWithIterable helper that propagates consumer abort
+
+#### ai,util/worker
+
+- Promise+emit run-fn shape foundation
+
+#### ai,test,ci
+
+- bridgeProgress utility and large-model integration test harness
+
+#### ai
+
+- introduce capability-based dispatch (Phases 0-4)
+- enhance AiChatWithKbTask and HierarchicalChunkerTask with section handling and slugification
+- chat task responseFormat input — markdown addendum, inline citation, URL-aware chunks
+- KbSearchTask + AiChatWithKbTask + AiChatTask cleanup
+
+#### ai,task-graph
+
+- thread runConfig through CreateWorkflow and AI wrappers (#490)
+
+#### knowledge-base
+
+- hybrid search via RRF over BM25F text index (#478)
+
+### Bug Fixes
+
+#### test,ai
+
+- align AiChatWithKbTask disposer test with model.dispose lookup
+
+#### ai/chat-kb
+
+- route per-turn dispatch through runWithIterable
+
+#### ai/chat
+
+- route per-turn dispatch through runWithIterable
+
+#### ai/task
+
+- propagate consumer abort through StreamingAiTask via runWithIterable
+
+#### ai,hft,test,ci
+
+- resolve RAG WASM/ONNX memory leaks
+
+#### ai,providers,test
+
+- Phase 5 review feedback and CI/test fixes
+
+#### ai
+
+- emit iterations on finish + composite kb:doc key + clarify text schema
+
+### Refactors
+
+- remove loadProviderSdk utility and streamline SDK loading in client implementations
+
+#### ai
+
+- rename local unloadFn to disposeFn in AiTask.execute
+- finalize Promise+emit migration and cleanup
+- migrate execution path to Promise+emit shape
+
+#### providers
+
+- migrate all providers to AiProviderRunFnRegistration[] (Phase 5)
+
+### Performance
+
+#### build
+
+- optimize turbo task graph and add TS project references (#489)
+
+### Tests
+
+#### ai,timing
+
+- align fixtures and add memory tooling for Promise+emit
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### ai
+
+- add organize-imports-ignore to ai barrels after rebase on main
+- export runWithIterable from the task barrel for tests / external use
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ### Bug Fixes

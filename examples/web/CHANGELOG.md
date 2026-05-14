@@ -1,5 +1,40 @@
 # @workglow/web
 
+## 0.2.35
+
+### Refactors
+
+#### ai
+
+- finalize Promise+emit migration and cleanup
+
+### Performance
+
+#### build
+
+- optimize turbo task graph and add TS project references (#489)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+
+#### dependencies
+
+- update package versions and lockfile, and remove bun tests from CI
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
+### Updated Dependencies
+
+- `react-resizable-panels`: ^4.11.1
+- `tailwind-merge`: ^3.6.0
+- `@tailwindcss/vite`: ^4.3.0
+- `tailwindcss`: ^4.3.0
+- `vite`: ^8.0.12
+
 ## 0.2.34
 
 ### Updated Dependencies

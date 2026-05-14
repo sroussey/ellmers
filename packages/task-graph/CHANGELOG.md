@@ -1,5 +1,39 @@
 # @workglow/task-graph
 
+## 0.2.35
+
+### Features
+
+#### ai,task-graph
+
+- thread runConfig through CreateWorkflow and AI wrappers (#490)
+
+### Bug Fixes
+
+#### ai,hft,test,ci
+
+- resolve RAG WASM/ONNX memory leaks
+
+### Performance
+
+#### build
+
+- optimize turbo task graph and add TS project references (#489)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

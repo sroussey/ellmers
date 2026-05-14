@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.2.35
+
+### Features
+
+#### ai,test,ci
+
+- bridgeProgress utility and large-model integration test harness
+
+#### ai
+
+- introduce capability-based dispatch (Phases 0-4)
+
+### Bug Fixes
+
+#### ai,hft,test,ci
+
+- resolve RAG WASM/ONNX memory leaks
+
+#### ai,providers,test
+
+- Phase 5 review feedback and CI/test fixes
+
+### Refactors
+
+- shared promise on import for optional ai provider libs
+- remove loadProviderSdk utility and streamline SDK loading in client implementations
+
+#### ai
+
+- finalize Promise+emit migration and cleanup
+- migrate execution path to Promise+emit shape
+
+#### providers
+
+- migrate all providers to AiProviderRunFnRegistration[] (Phase 5)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup comment references to things renamed
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

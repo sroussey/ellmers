@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.35
+
+### Features
+
+#### knowledge-base
+
+- hybrid search via RRF over BM25F text index (#478)
+
+### Documentation
+
+- add design for storage getBulk plural-get (#480)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

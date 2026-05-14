@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.35
+
+### Features
+
+#### ai
+
+- enhance AiChatWithKbTask and HierarchicalChunkerTask with section handling and slugification
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

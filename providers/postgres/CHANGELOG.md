@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.2.35
+
+### Features
+
+#### knowledge-base
+
+- hybrid search via RRF over BM25F text index (#478)
+
+### Bug Fixes
+
+#### knowledge-base,storage,postgres
+
+- cross-KB getBulk leak + restore Postgres-native hybrid search (#486)
+
+#### storage-migrations
+
+- serialize concurrent runs and roll back partial SQLite schema (#485)
+
+### Documentation
+
+- add design for storage getBulk plural-get (#480)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### format
+
+- organize-imports plugin + husky pre-commit hook (#488)
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
 ## 0.2.34
 
 ## 0.2.33

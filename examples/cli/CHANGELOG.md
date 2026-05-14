@@ -1,5 +1,37 @@
 # @workglow/cli
 
+## 0.2.35
+
+### Refactors
+
+#### ai
+
+- finalize Promise+emit migration and cleanup
+
+### Performance
+
+#### build
+
+- optimize turbo task graph and add TS project references (#489)
+
+### Chores
+
+- release 30 packages
+- release 30 packages
+- fixup some wrong links after rename
+
+#### dependencies
+
+- update package versions and lockfile, and remove bun tests from CI
+
+### CI
+
+- empty commit to retrigger main Build & Test
+
+### Updated Dependencies
+
+- `ink`: ^7.0.3
+
 ## 0.2.34
 
 ## 0.2.33
