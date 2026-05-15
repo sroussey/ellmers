@@ -74,7 +74,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
   });
 
   it("abort PENDING → immediate FAILED with abort_requested_at set", async () => {
-    const id = await storage.add({ input: { data: "x" }, run_after: null, completed_at: null });
+    const id = await storage.add({ input: { data: "x" }, visible_at: null, completed_at: null });
     expect(id).toBeDefined();
 
     // Job is PENDING before abort
@@ -92,7 +92,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
   });
 
   it("abort PROCESSING → sets abort_requested_at only, leaves status PROCESSING", async () => {
-    const id = await storage.add({ input: { data: "y" }, run_after: null, completed_at: null });
+    const id = await storage.add({ input: { data: "y" }, visible_at: null, completed_at: null });
     // Claim it
     await storage.next("worker-1");
 
@@ -108,12 +108,12 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
   });
 
   it("lease expiry re-claim: second worker claims job after first lease expires", async () => {
-    const id = await storage.add({ input: { data: "z" }, run_after: null, completed_at: null });
+    const id = await storage.add({ input: { data: "z" }, visible_at: null, completed_at: null });
 
     // Claim with a very short lease (10ms)
     const claimed1 = await storage.next("worker-1", { leaseMs: 10 });
     expect(claimed1?.id).toBe(id);
-    expect(claimed1?.worker_id).toBe("worker-1");
+    expect(claimed1?.lease_owner).toBe("worker-1");
 
     // Second worker immediately — should NOT claim (lease still active)
     const tooEarly = await storage.next("worker-2", { leaseMs: 30000 });
@@ -125,12 +125,12 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
     // Now worker-2 should reclaim it
     const claimed2 = await storage.next("worker-2", { leaseMs: 30000 });
     expect(claimed2?.id).toBe(id);
-    expect(claimed2?.worker_id).toBe("worker-2");
+    expect(claimed2?.lease_owner).toBe("worker-2");
     expect(claimed2?.status).toBe(JobStatus.PROCESSING);
   });
 
   it("extendLease keeps job alive past original expiry", async () => {
-    const id = await storage.add({ input: { data: "w" }, run_after: null, completed_at: null });
+    const id = await storage.add({ input: { data: "w" }, visible_at: null, completed_at: null });
 
     // Claim with a short lease (20ms)
     const claimed = await storage.next("worker-a", { leaseMs: 20 });
@@ -150,11 +150,11 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
     // worker-a's job should still be PROCESSING and owned by worker-a
     const job = await storage.get(id);
     expect(job?.status).toBe(JobStatus.PROCESSING);
-    expect(job?.worker_id).toBe("worker-a");
+    expect(job?.lease_owner).toBe("worker-a");
   });
 
   it("extendLease throws if lease is not owned by worker", async () => {
-    const id = await storage.add({ input: { data: "v" }, run_after: null, completed_at: null });
+    const id = await storage.add({ input: { data: "v" }, visible_at: null, completed_at: null });
     await storage.next("worker-x");
 
     await expect(storage.extendLease(id, "worker-y", 5000)).rejects.toThrow(/extendLease failed/);
@@ -172,7 +172,7 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
 
     await server.start();
 
-    const handle = await client.submit({ taskType: "long_running", data: "abort-test" });
+    const handle = await client.send({ taskType: "long_running", data: "abort-test" });
 
     // Wait for PROCESSING
     for (let i = 0; i < 200; i++) {

@@ -109,10 +109,10 @@ export function postgresQueueMigrations(
             status job_status NOT NULL default 'PENDING',
             input jsonb NOT NULL,
             output jsonb,
-            run_attempts integer default 0,
-            max_retries integer default 20,
-            run_after timestamp with time zone DEFAULT now(),
-            last_ran_at timestamp with time zone,
+            attempts integer default 0,
+            max_attempts integer default 10,
+            visible_at timestamp with time zone DEFAULT now(),
+            last_attempted_at timestamp with time zone,
             created_at timestamp with time zone DEFAULT now(),
             deadline_at timestamp with time zone,
             completed_at timestamp with time zone,
@@ -121,17 +121,17 @@ export function postgresQueueMigrations(
             progress real DEFAULT 0,
             progress_message text DEFAULT '',
             progress_details jsonb,
-            worker_id text
+            lease_owner text
           )
         `);
 
         await db.query(`
           CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx
-            ON ${tableName} (${prefixIndexPrefix}id, status, run_after)
+            ON ${tableName} (${prefixIndexPrefix}id, status, visible_at)
         `);
         await db.query(`
           CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx
-            ON ${tableName} (${prefixIndexPrefix}queue, status, run_after)
+            ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at)
         `);
         await db.query(`
           CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx
@@ -197,6 +197,32 @@ export function postgresQueueMigrations(
           ALTER TABLE ${tableName}
             ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone,
             ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone
+        `);
+      },
+    },
+    {
+      component,
+      version: 3,
+      description:
+        "Rename columns: run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner",
+      async up(db: Pool) {
+        // Only rename if the old column names still exist (skip on fresh installs)
+        await db.query(`
+          DO $$
+          DECLARE col_exists boolean;
+          BEGIN
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name='${tableName}' AND column_name='run_after'
+            ) INTO col_exists;
+            IF col_exists THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_after TO visible_at';
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN last_ran_at TO last_attempted_at';
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_attempts TO attempts';
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN max_retries TO max_attempts';
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN worker_id TO lease_owner';
+            END IF;
+          END $$
         `);
       },
     },

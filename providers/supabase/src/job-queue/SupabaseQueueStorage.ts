@@ -198,10 +198,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       status job_status NOT NULL default 'PENDING',
       input jsonb NOT NULL,
       output jsonb,
-      run_attempts integer default 0,
-      max_retries integer default 20,
-      run_after timestamp with time zone DEFAULT now(),
-      last_ran_at timestamp with time zone,
+      attempts integer default 0,
+      max_attempts integer default 10,
+      visible_at timestamp with time zone DEFAULT now(),
+      last_attempted_at timestamp with time zone,
       created_at timestamp with time zone DEFAULT now(),
       deadline_at timestamp with time zone,
       completed_at timestamp with time zone,
@@ -210,7 +210,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress real DEFAULT 0,
       progress_message text DEFAULT '',
       progress_details jsonb,
-      worker_id text,
+      lease_owner text,
       abort_requested_at timestamp with time zone,
       lease_expires_at timestamp with time zone
     )`;
@@ -223,10 +223,15 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       }
     }
 
-    // Add new columns to existing tables (idempotent via IF NOT EXISTS workaround)
+    // Add new columns to existing tables and rename old columns (idempotent)
     const alterSqls = [
       `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone`,
       `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone`,
+      `ALTER TABLE ${this.tableName} RENAME COLUMN run_after TO visible_at`,
+      `ALTER TABLE ${this.tableName} RENAME COLUMN last_ran_at TO last_attempted_at`,
+      `ALTER TABLE ${this.tableName} RENAME COLUMN run_attempts TO attempts`,
+      `ALTER TABLE ${this.tableName} RENAME COLUMN max_retries TO max_attempts`,
+      `ALTER TABLE ${this.tableName} RENAME COLUMN worker_id TO lease_owner`,
     ];
     for (const sql of alterSqls) {
       const { error } = await this.client.rpc("exec_sql", { query: sql });
@@ -239,8 +244,8 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
     // Create indexes with prefix columns prepended
     const indexes = [
-      `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, run_after)`,
-      `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, run_after)`,
+      `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
+      `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
     ];
 
@@ -270,7 +275,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.run_after = now;
+    job.visible_at = now;
 
     const prefixInsertValues = this.getPrefixInsertValues();
 
@@ -281,10 +286,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         queue: job.queue,
         fingerprint: job.fingerprint,
         input: job.input,
-        run_after: job.run_after,
+        visible_at: job.visible_at,
         created_at: job.created_at,
         deadline_at: job.deadline_at,
-        max_retries: job.max_retries,
+        max_attempts: job.max_attempts,
         job_run_id: job.job_run_id,
         progress: job.progress,
         progress_message: job.progress_message,
@@ -344,7 +349,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
     query = this.applyPrefixFilters(query);
 
-    const { data, error } = await query.order("run_after", { ascending: true }).limit(num);
+    const { data, error } = await query.order("visible_at", { ascending: true }).limit(num);
 
     if (error) throw error;
     return (data as JobStorageFormat<Input, Output>[]) ?? [];
@@ -372,19 +377,19 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     const sql = `
       UPDATE ${this.tableName}
       SET status = '${JobStatus.PROCESSING}',
-          last_ran_at = NOW() AT TIME ZONE 'UTC',
-          worker_id = '${escapedWorkerId}',
+          last_attempted_at = NOW() AT TIME ZONE 'UTC',
+          lease_owner = '${escapedWorkerId}',
           lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond')
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
         WHERE queue = '${escapedQueueName}'
         AND (
-          (status = '${JobStatus.PENDING}' AND run_after <= NOW() AT TIME ZONE 'UTC')
+          (status = '${JobStatus.PENDING}' AND visible_at <= NOW() AT TIME ZONE 'UTC')
           OR (status = '${JobStatus.PROCESSING}' AND (lease_expires_at IS NULL OR lease_expires_at < NOW() AT TIME ZONE 'UTC'))
         )
         ${prefixConditions}
-        ORDER BY run_after ASC
+        ORDER BY visible_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
@@ -405,7 +410,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Extend the lease on a currently PROCESSING job.
    * @param id - The ID of the job to extend the lease for
-   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
@@ -423,7 +428,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         SET lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(ms)} * INTERVAL '1 millisecond')
         WHERE id = ${numericId}
           AND queue = '${this.escapeSqlString(this.validateSqlValue(this.queueName, "queueName"))}'
-          AND worker_id = '${escapedWorkerId}'
+          AND lease_owner = '${escapedWorkerId}'
           AND status = '${JobStatus.PROCESSING}'
           ${prefixConditions}
         RETURNING id`;
@@ -479,7 +484,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Marks a job as complete with its output or error.
    * Enhanced error handling:
-   * - For a retryable error, increments run_attempts and updates run_after.
+   * - For a retryable error, increments attempts and updates visible_at.
    * - Marks a job as FAILED immediately for permanent or generic errors.
    */
   public async complete(jobDetails: JobStorageFormat<Input, Output>): Promise<void> {
@@ -495,7 +500,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           progress_message: "",
           progress_details: null,
           completed_at: now,
-          last_ran_at: now,
+          last_attempted_at: now,
         })
         .eq("id", jobDetails.id)
         .eq("queue", this.queueName);
@@ -508,31 +513,32 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     // Read current attempts to compute next value deterministically
     let getQuery = this.client
       .from(this.tableName)
-      .select("run_attempts, max_retries")
+      .select("attempts, max_attempts")
       .eq("id", jobDetails.id as number)
       .eq("queue", this.queueName);
     getQuery = this.applyPrefixFilters(getQuery);
     const { data: current, error: getError } = await getQuery.single();
     if (getError) throw getError;
-    const currentAttempts = (current?.run_attempts as number | undefined) ?? 0;
-    const maxRetries = (current?.max_retries as number | undefined) ?? jobDetails.max_retries ?? 10;
+    const currentAttempts = (current?.attempts as number | undefined) ?? 0;
+    const maxAttempts =
+      (current?.max_attempts as number | undefined) ?? jobDetails.max_attempts ?? 10;
     const nextAttempts = currentAttempts + 1;
 
     if (jobDetails.status === JobStatus.PENDING) {
-      // Check if the next attempt would exceed max retries
-      if (nextAttempts > maxRetries) {
+      // Check if the next attempt would exceed max attempts
+      if (nextAttempts > maxAttempts) {
         // Update to FAILED status instead of rescheduling
         let failQuery = this.client
           .from(this.tableName)
           .update({
             status: JobStatus.FAILED,
-            error: "Max retries reached",
-            error_code: "MAX_RETRIES_REACHED",
+            error: "Max attempts reached",
+            error_code: "MAX_ATTEMPTS_REACHED",
             progress: 100,
             progress_message: "",
             progress_details: null,
             completed_at: now,
-            last_ran_at: now,
+            last_attempted_at: now,
           })
           .eq("id", jobDetails.id)
           .eq("queue", this.queueName);
@@ -549,12 +555,12 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           error: jobDetails.error ?? null,
           error_code: jobDetails.error_code ?? null,
           status: jobDetails.status,
-          run_after: jobDetails.run_after!,
+          visible_at: jobDetails.visible_at!,
           progress: 0,
           progress_message: "",
           progress_details: null,
-          run_attempts: nextAttempts,
-          last_ran_at: now,
+          attempts: nextAttempts,
+          last_attempted_at: now,
         })
         .eq("id", jobDetails.id)
         .eq("queue", this.queueName);
@@ -575,9 +581,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           progress: 100,
           progress_message: "",
           progress_details: null,
-          run_attempts: nextAttempts,
+          attempts: nextAttempts,
           completed_at: now,
-          last_ran_at: now,
+          last_attempted_at: now,
         })
         .eq("id", jobDetails.id)
         .eq("queue", this.queueName);
@@ -595,9 +601,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         output: jobDetails.output ?? null,
         error: jobDetails.error ?? null,
         error_code: jobDetails.error_code ?? null,
-        run_after: jobDetails.run_after ?? null,
-        run_attempts: nextAttempts,
-        last_ran_at: now,
+        visible_at: jobDetails.visible_at ?? null,
+        attempts: nextAttempts,
+        last_attempted_at: now,
       })
       .eq("id", jobDetails.id)
       .eq("queue", this.queueName);
@@ -614,7 +620,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       .from(this.tableName)
       .update({
         status: JobStatus.PENDING,
-        worker_id: null,
+        lease_owner: null,
         progress: 0,
         progress_message: "",
         progress_details: null,

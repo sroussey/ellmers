@@ -64,14 +64,14 @@ export function runGenericPrefixedQueueStorageTests(
       // Add job to storage1 (user1)
       const job1Id = await storage1.add({
         input: { data: "user1-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
       // Add job to storage2 (user2)
       const job2Id = await storage2.add({
         input: { data: "user2-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -89,19 +89,19 @@ export function runGenericPrefixedQueueStorageTests(
     it("should process jobs independently per prefix", async () => {
       await storage1.add({
         input: { data: "user1-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
-      // Small delay to ensure different run_after timestamps for ordering
+      // Small delay to ensure different visible_at timestamps for ordering
       await sleep(10);
       await storage1.add({
         input: { data: "user1-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await storage2.add({
         input: { data: "user2-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -124,12 +124,12 @@ export function runGenericPrefixedQueueStorageTests(
     it("should delete only jobs matching prefix", async () => {
       await storage1.add({
         input: { data: "user1-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await storage2.add({
         input: { data: "user2-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -178,17 +178,17 @@ export function runGenericPrefixedQueueStorageTests(
     it("should isolate jobs by both prefix values", async () => {
       const job1Id = await storage1.add({
         input: { data: "user1-project100" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const job2Id = await storage2.add({
         input: { data: "user1-project200" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const job3Id = await storage3.add({
         input: { data: "user2-project100" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -211,17 +211,17 @@ export function runGenericPrefixedQueueStorageTests(
     it("should filter peek results by both prefixes", async () => {
       await storage1.add({
         input: { data: "user1-project100-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await storage1.add({
         input: { data: "user1-project100-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await storage2.add({
         input: { data: "user1-project200-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -262,12 +262,12 @@ export function runGenericPrefixedQueueStorageTests(
     it("should isolate jobs by queue name even with same prefixes", async () => {
       const jobAId = await storageQueueA.add({
         input: { data: "queue-a-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const jobBId = await storageQueueB.add({
         input: { data: "queue-b-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -316,17 +316,17 @@ export function runGenericPrefixedQueueStorageTests(
     it("should isolate jobs across multiple queues with different prefix values", async () => {
       const job1Id = await queue1.add({
         input: { data: "queue1-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const job2Id = await queue2.add({
         input: { data: "queue2-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const job3Id = await queue3.add({
         input: { data: "queue3-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -350,23 +350,23 @@ export function runGenericPrefixedQueueStorageTests(
     it("should process jobs independently across multiple queues", async () => {
       await queue1.add({
         input: { data: "queue1-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await sleep(10);
       await queue1.add({
         input: { data: "queue1-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue2.add({
         input: { data: "queue2-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue3.add({
         input: { data: "queue3-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -393,22 +393,22 @@ export function runGenericPrefixedQueueStorageTests(
     it("should delete jobs independently across multiple queues", async () => {
       await queue1.add({
         input: { data: "queue1-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue1.add({
         input: { data: "queue1-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue2.add({
         input: { data: "queue2-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue3.add({
         input: { data: "queue3-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -424,27 +424,27 @@ export function runGenericPrefixedQueueStorageTests(
     it("should peek jobs independently across multiple queues", async () => {
       await queue1.add({
         input: { data: "queue1-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue1.add({
         input: { data: "queue1-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue2.add({
         input: { data: "queue2-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue3.add({
         input: { data: "queue3-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queue3.add({
         input: { data: "queue3-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -486,17 +486,17 @@ export function runGenericPrefixedQueueStorageTests(
     it("should isolate jobs across multiple queues without prefixes", async () => {
       const jobAId = await queueA.add({
         input: { data: "queue-a-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const jobBId = await queueB.add({
         input: { data: "queue-b-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const jobCId = await queueC.add({
         input: { data: "queue-c-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -520,23 +520,23 @@ export function runGenericPrefixedQueueStorageTests(
     it("should process jobs independently across queues without prefixes", async () => {
       await queueA.add({
         input: { data: "queue-a-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await sleep(10);
       await queueA.add({
         input: { data: "queue-a-job2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queueB.add({
         input: { data: "queue-b-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await queueC.add({
         input: { data: "queue-c-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -577,7 +577,7 @@ export function runGenericPrefixedQueueStorageTests(
       // Add a single job to the queue
       await storage.add({
         input: { data: "single-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -616,10 +616,10 @@ export function runGenericPrefixedQueueStorageTests(
       for (let i = 0; i < numJobs; i++) {
         await storage.add({
           input: { data: `job-${i}` },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
-        // Small delay to ensure different run_after timestamps
+        // Small delay to ensure different visible_at timestamps
         await sleep(5);
       }
 
@@ -677,17 +677,17 @@ export function runGenericPrefixedQueueStorageTests(
     it("should isolate jobs across queues with different prefix configurations", async () => {
       const jobNoPrefixId = await queueNoPrefix.add({
         input: { data: "no-prefix-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const jobSinglePrefixId = await queueSinglePrefix.add({
         input: { data: "single-prefix-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       const jobTwoPrefixesId = await queueTwoPrefixes.add({
         input: { data: "two-prefixes-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -730,19 +730,19 @@ export function runGenericPrefixedQueueStorageTests(
     it("should process jobs independently across queues with mixed configurations", async () => {
       await queueNoPrefix.add({
         input: { data: "no-prefix-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await sleep(10);
       await queueSinglePrefix.add({
         input: { data: "single-prefix-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await sleep(10);
       await queueTwoPrefixes.add({
         input: { data: "two-prefixes-job1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 

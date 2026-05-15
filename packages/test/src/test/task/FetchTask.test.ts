@@ -135,9 +135,9 @@ describe("FetchUrlTask", () => {
     mockFetch.mockImplementation(() => Promise.resolve(createMockResponse(mockResponse)));
 
     // Add jobs to queue via client
-    await client.submit({ url: "https://api.example.com/1" });
-    await client.submit({ url: "https://api.example.com/2" });
-    await client.submit({ url: "https://api.example.com/3" });
+    await client.send({ url: "https://api.example.com/1" });
+    await client.send({ url: "https://api.example.com/2" });
+    await client.send({ url: "https://api.example.com/3" });
 
     // Start the server and wait for processing
     await server.start();

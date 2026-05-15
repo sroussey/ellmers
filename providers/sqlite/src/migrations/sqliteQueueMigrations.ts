@@ -39,10 +39,10 @@ export function sqliteQueueMigrations(
             status TEXT NOT NULL default 'PENDING',
             input TEXT NOT NULL,
             output TEXT,
-            run_attempts INTEGER default 0,
-            max_retries INTEGER default 23,
-            run_after TEXT NOT NULL,
-            last_ran_at TEXT,
+            attempts INTEGER default 0,
+            max_attempts INTEGER default 10,
+            visible_at TEXT NOT NULL,
+            last_attempted_at TEXT,
             created_at TEXT NOT NULL,
             completed_at TEXT,
             deadline_at TEXT,
@@ -51,10 +51,10 @@ export function sqliteQueueMigrations(
             progress REAL DEFAULT 0,
             progress_message TEXT DEFAULT '',
             progress_details TEXT NULL,
-            worker_id TEXT
+            lease_owner TEXT
           );
 
-          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, run_after);
+          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at);
           CREATE INDEX IF NOT EXISTS job_queue_fingerprint${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, fingerprint, status);
           CREATE INDEX IF NOT EXISTS job_queue_job_run_id${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, job_run_id);
         `);
@@ -69,6 +69,31 @@ export function sqliteQueueMigrations(
           ALTER TABLE ${tableName} ADD COLUMN abort_requested_at TEXT;
           ALTER TABLE ${tableName} ADD COLUMN lease_expires_at TEXT;
         `);
+      },
+    },
+    {
+      component,
+      version: 3,
+      description:
+        "Rename columns: run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner",
+      up(db: Sqlite.Database) {
+        // Only rename if the old column names still exist (skip on fresh installs)
+        const cols: string[] = db
+          .prepare<[], { name: string }>(`PRAGMA table_info(${tableName})`)
+          .all()
+          .map((r) => r.name);
+        const renames: [string, string][] = [
+          ["run_after", "visible_at"],
+          ["last_ran_at", "last_attempted_at"],
+          ["run_attempts", "attempts"],
+          ["max_retries", "max_attempts"],
+          ["worker_id", "lease_owner"],
+        ];
+        for (const [oldName, newName] of renames) {
+          if (cols.includes(oldName)) {
+            db.exec(`ALTER TABLE ${tableName} RENAME COLUMN ${oldName} TO ${newName};`);
+          }
+        }
       },
     },
   ];

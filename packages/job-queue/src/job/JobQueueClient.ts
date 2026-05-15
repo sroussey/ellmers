@@ -154,16 +154,18 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Submit a job to the queue
+   * Send a job to the queue
    */
-  public async submit(
+  public async send(
     input: Input,
     options?: {
       readonly jobRunId?: string;
       readonly fingerprint?: string;
-      readonly maxRetries?: number;
-      readonly runAfter?: Date;
-      readonly deadlineAt?: Date;
+      readonly maxAttempts?: number;
+      /** Delay in seconds before the job becomes visible for processing */
+      readonly delaySeconds?: number;
+      /** Timeout in seconds after which the job deadline is exceeded */
+      readonly timeoutSeconds?: number;
     }
   ): Promise<JobHandle<Output>> {
     const job: JobStorageFormat<Input, Output> = {
@@ -171,9 +173,15 @@ export class JobQueueClient<Input, Output> {
       input,
       job_run_id: options?.jobRunId,
       fingerprint: options?.fingerprint,
-      max_retries: options?.maxRetries ?? 10,
-      run_after: options?.runAfter?.toISOString() ?? new Date().toISOString(),
-      deadline_at: options?.deadlineAt?.toISOString() ?? null,
+      max_attempts: options?.maxAttempts ?? 10,
+      visible_at:
+        options?.delaySeconds != null
+          ? new Date(Date.now() + options.delaySeconds * 1000).toISOString()
+          : new Date().toISOString(),
+      deadline_at:
+        options?.timeoutSeconds != null
+          ? new Date(Date.now() + options.timeoutSeconds * 1000).toISOString()
+          : null,
       completed_at: null,
       status: JobStatus.PENDING,
     };
@@ -189,18 +197,18 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Submit multiple jobs to the queue
+   * Send multiple jobs to the queue
    */
-  public async submitBatch(
+  public async sendBatch(
     inputs: readonly Input[],
     options?: {
       readonly jobRunId?: string;
-      readonly maxRetries?: number;
+      readonly maxAttempts?: number;
     }
   ): Promise<readonly JobHandle<Output>[]> {
     const handles: JobHandle<Output>[] = [];
     for (const input of inputs) {
-      const handle = await this.submit(input, options);
+      const handle = await this.send(input, options);
       handles.push(handle);
     }
     return handles;
@@ -480,8 +488,8 @@ export class JobQueueClient<Input, Output> {
    * Called by server when a job is retried
    * @internal
    */
-  public handleJobRetry(jobId: unknown, runAfter: Date): void {
-    this.events.emit("job_retry", this.queueName, jobId, runAfter);
+  public handleJobRetry(jobId: unknown, visibleAt: Date): void {
+    this.events.emit("job_retry", this.queueName, jobId, visibleAt);
   }
 
   /**
@@ -552,8 +560,8 @@ export class JobQueueClient<Input, Output> {
         this.handleJobDisabled(jobId);
       } else if (newStatus === JobStatus.PENDING && oldStatus === JobStatus.PROCESSING) {
         // Retry
-        const runAfter = change.new.run_after ? new Date(change.new.run_after) : new Date();
-        this.handleJobRetry(jobId, runAfter);
+        const visibleAt = change.new.visible_at ? new Date(change.new.visible_at) : new Date();
+        this.handleJobRetry(jobId, visibleAt);
       }
 
       // Progress update

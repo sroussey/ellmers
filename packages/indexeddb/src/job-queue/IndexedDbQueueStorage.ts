@@ -151,7 +151,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     jobWithPrefixes.progress_message = "";
     jobWithPrefixes.progress_details = null;
     jobWithPrefixes.created_at = now;
-    jobWithPrefixes.run_after = now;
+    jobWithPrefixes.visible_at = now;
 
     // Add prefix values to the job
     for (const [key, value] of Object.entries(this.prefixValues)) {
@@ -215,7 +215,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readonly");
     const store = tx.objectStore(this.tableName);
-    const index = store.index("queue_status_run_after");
+    const index = store.index("queue_status_visible_at");
     const prefixKeyValues = this.getPrefixKeyValues();
 
     return new Promise((resolve, reject) => {
@@ -283,8 +283,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
         const tryClaimJob = (job: JobStorageFormat<Input, Output> & Record<string, unknown>) => {
           job.status = JobStatus.PROCESSING;
-          job.last_ran_at = now;
-          job.worker_id = claimToken;
+          job.last_attempted_at = now;
+          job.lease_owner = claimToken;
           job.lease_expires_at = leaseExpiry;
 
           try {
@@ -299,7 +299,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         };
 
         // First: look for a PENDING job ready to run
-        const pendingIndex = store.index("queue_status_run_after");
+        const pendingIndex = store.index("queue_status_visible_at");
         const pendingRequest = pendingIndex.openCursor(
           IDBKeyRange.bound(
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, ""],
@@ -335,7 +335,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
         const tryExpiredLeaseScan = () => {
           // Scan PROCESSING jobs to find one with an expired lease
-          const processingIndex = store.index("queue_status_run_after");
+          const processingIndex = store.index("queue_status_visible_at");
           const processingRequest = processingIndex.openCursor(
             IDBKeyRange.bound(
               [...prefixKeyValues, this.queueName, JobStatus.PROCESSING, ""],
@@ -392,7 +392,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       return undefined;
     }
 
-    if (verifiedJob.worker_id !== claimToken) {
+    if (verifiedJob.lease_owner !== claimToken) {
       return undefined;
     }
 
@@ -406,12 +406,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   /**
    * Extend the lease on a currently PROCESSING job.
    * @param id - The ID of the job to extend the lease for
-   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
     const job = await this.get(id);
-    if (!job || job.status !== JobStatus.PROCESSING || job.worker_id !== workerId) {
+    if (!job || job.status !== JobStatus.PROCESSING || job.lease_owner !== workerId) {
       throw new Error(
         `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
       );
@@ -461,8 +461,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
           );
           return;
         }
-        const currentAttempts = existing.run_attempts ?? 0;
-        job.run_attempts = currentAttempts + 1;
+        const currentAttempts = existing.attempts ?? 0;
+        job.attempts = currentAttempts + 1;
         // Ensure queue is set correctly
         job.queue = this.queueName;
 
@@ -496,7 +496,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     if (!job) return;
 
     job.status = JobStatus.PENDING;
-    job.worker_id = null;
+    job.lease_owner = null;
     job.progress = 0;
     job.progress_message = "";
     job.progress_details = null;
@@ -652,7 +652,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
-   * Persists a job to the store without modifying run_attempts or other completion logic.
+   * Persists a job to the store without modifying attempts or other completion logic.
    */
   private async put(job: JobStorageFormat<Input, Output>): Promise<void> {
     const db = await this.getDb();

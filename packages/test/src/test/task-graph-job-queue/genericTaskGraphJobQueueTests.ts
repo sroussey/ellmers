@@ -100,9 +100,9 @@ export class TestJobTask extends Task<
         throw new Error(`Queue "${queueName}" not found`);
       }
 
-      const handle = await registeredQueue.client.submit(input, {
+      const handle = await registeredQueue.client.send(input, {
         jobRunId: this.runConfig.runnerId,
-        maxRetries: 10,
+        maxAttempts: 10,
       });
 
       cleanup = handle.onProgress(

@@ -130,7 +130,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.run_after = now;
+    job.visible_at = now;
 
     const prefixColumnNames = getPrefixColumnNames(this.prefixes);
     const { columns: prefixColumnsInsert, placeholders: prefixParamPlaceholders } =
@@ -140,19 +140,19 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
 
     const sql = `
       INSERT INTO ${this.tableName}(
-        ${prefixColumnsInsert}queue, 
-        fingerprint, 
-        input, 
-        run_after,
+        ${prefixColumnsInsert}queue,
+        fingerprint,
+        input,
+        visible_at,
         created_at,
         deadline_at,
-        max_retries, 
-        job_run_id, 
-        progress, 
-        progress_message, 
+        max_attempts,
+        job_run_id,
+        progress,
+        progress_message,
         progress_details
       )
-      VALUES 
+      VALUES
         (${prefixParamPlaceholders}$${baseParamStart},$${baseParamStart + 1},$${baseParamStart + 2},$${baseParamStart + 3},$${baseParamStart + 4},$${baseParamStart + 5},$${baseParamStart + 6},$${baseParamStart + 7},$${baseParamStart + 8},$${baseParamStart + 9},$${baseParamStart + 10})
       RETURNING id`;
     const params = [
@@ -160,10 +160,10 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       job.queue,
       job.fingerprint,
       JSON.stringify(job.input),
-      job.run_after,
+      job.visible_at,
       job.created_at,
       job.deadline_at,
-      job.max_retries,
+      job.max_attempts,
       job.job_run_id,
       job.progress,
       job.progress_message,
@@ -216,7 +216,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
         FROM ${this.tableName}
         WHERE queue = $1
         AND status = $2${prefixConditions}
-        ORDER BY run_after ASC
+        ORDER BY visible_at ASC
         LIMIT $3
         FOR UPDATE SKIP LOCKED`,
       [this.queueName, status, num, ...prefixParams]
@@ -247,19 +247,19 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       `
       UPDATE ${this.tableName}
       SET status = $1,
-          last_ran_at = NOW() AT TIME ZONE 'UTC',
-          worker_id = $4,
+          last_attempted_at = NOW() AT TIME ZONE 'UTC',
+          lease_owner = $4,
           lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond')
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
         WHERE queue = $3
         AND (
-          (status = $5 AND run_after <= NOW() AT TIME ZONE 'UTC')
+          (status = $5 AND visible_at <= NOW() AT TIME ZONE 'UTC')
           OR (status = $6 AND (lease_expires_at IS NULL OR lease_expires_at < NOW() AT TIME ZONE 'UTC'))
         )
         ${prefixConditions}
-        ORDER BY run_after ASC
+        ORDER BY visible_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
@@ -281,7 +281,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Extend the lease on a currently PROCESSING job.
    * @param id - The ID of the job to extend the lease for
-   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
@@ -289,7 +289,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     const result = await this.db.query(
       `UPDATE ${this.tableName}
          SET lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($1 * INTERVAL '1 millisecond')
-         WHERE id = $2 AND queue = $3 AND worker_id = $4 AND status = 'PROCESSING'${prefixConditions}`,
+         WHERE id = $2 AND queue = $3 AND lease_owner = $4 AND status = 'PROCESSING'${prefixConditions}`,
       [ms, id, this.queueName, workerId, ...prefixParams]
     );
     if (!result || result.rowCount === 0) {
@@ -321,7 +321,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Marks a job as complete with its output or error.
    * Enhanced error handling:
-   * - For a retryable error, increments run_attempts and updates run_after.
+   * - For a retryable error, increments attempts and updates visible_at.
    * - Marks a job as FAILED immediately for permanent or generic errors.
    */
   public async complete(jobDetails: JobStorageFormat<Input, Output>): Promise<void> {
@@ -345,21 +345,21 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       await this.db.query(
         `UPDATE ${this.tableName} 
           SET 
-            error = $1, 
+            error = $1,
             error_code = $2,
-            status = $3, 
-            run_after = $4, 
+            status = $3,
+            visible_at = $4,
             progress = 0,
             progress_message = '',
             progress_details = NULL,
-            run_attempts = run_attempts + 1, 
-            last_ran_at = NOW() AT TIME ZONE 'UTC'
+            attempts = attempts + 1,
+            last_attempted_at = NOW() AT TIME ZONE 'UTC'
           WHERE id = $5 AND queue = $6${prefixConditions}`,
         [
           jobDetails.error,
           jobDetails.error_code,
           jobDetails.status,
-          jobDetails.run_after,
+          jobDetails.visible_at,
           jobDetails.id,
           this.queueName,
           ...prefixParams,
@@ -378,9 +378,9 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
               progress = 100,
               progress_message = '',
               progress_details = NULL,
-              run_attempts = run_attempts + 1, 
+              attempts = attempts + 1,
               completed_at = NOW() AT TIME ZONE 'UTC',
-              last_ran_at = NOW() AT TIME ZONE 'UTC'
+              last_attempted_at = NOW() AT TIME ZONE 'UTC'
           WHERE id = $5 AND queue = $6${prefixConditions}`,
         [
           jobDetails.output ? JSON.stringify(jobDetails.output) : null,
@@ -459,7 +459,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * Releases a claimed job back to PENDING without incrementing attempts.
    * @param jobId - The id of the claimed job to release.
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
@@ -468,7 +468,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       `
       UPDATE ${this.tableName}
         SET status = 'PENDING',
-            worker_id = NULL,
+            lease_owner = NULL,
             progress = 0,
             progress_message = '',
             progress_details = NULL

@@ -32,10 +32,11 @@ export function storageToClass<Input, Output>(
   details: JobStorageFormat<Input, Output>,
   jobClass: JobClass<Input, Output>,
   options?: {
+    /** @deprecated renamed to includeLeaseOwner; both names accepted */
     readonly includeWorkerId?: boolean;
   }
 ): Job<Input, Output> {
-  const includeWorkerId = options?.includeWorkerId ?? true;
+  const includeLeaseOwner = options?.includeWorkerId ?? true;
   return new jobClass({
     id: details.id,
     jobRunId: details.job_run_id,
@@ -43,10 +44,10 @@ export function storageToClass<Input, Output>(
     fingerprint: details.fingerprint,
     input: details.input as Input,
     output: details.output as Output,
-    runAfter: toDate(details.run_after),
+    visibleAt: toDate(details.visible_at),
     createdAt: toDate(details.created_at)!,
     deadlineAt: toDate(details.deadline_at),
-    lastRanAt: toDate(details.last_ran_at),
+    lastAttemptedAt: toDate(details.last_attempted_at),
     completedAt: toDate(details.completed_at),
     progress: details.progress || 0,
     progressMessage: details.progress_message || "",
@@ -54,9 +55,9 @@ export function storageToClass<Input, Output>(
     status: details.status as JobStatus,
     error: details.error ?? null,
     errorCode: details.error_code ?? null,
-    runAttempts: details.run_attempts ?? 0,
-    maxRetries: details.max_retries ?? 10,
-    ...(includeWorkerId ? { workerId: details.worker_id ?? null } : {}),
+    attempts: details.attempts ?? 0,
+    maxAttempts: details.max_attempts ?? 10,
+    ...(includeLeaseOwner ? { leaseOwner: details.lease_owner ?? null } : {}),
     abort_requested_at: details.abort_requested_at ?? null,
     lease_expires_at: details.lease_expires_at ?? null,
   });
@@ -80,17 +81,17 @@ export function classToStorage<Input, Output>(
     output: job.output ?? null,
     error: job.error === null ? null : String(job.error),
     error_code: job.errorCode || null,
-    run_attempts: job.runAttempts ?? 0,
-    max_retries: job.maxRetries ?? 10,
-    run_after: dateToISOString(job.runAfter) ?? now,
+    attempts: job.attempts ?? 0,
+    max_attempts: job.maxAttempts ?? 10,
+    visible_at: dateToISOString(job.visibleAt) ?? now,
     created_at: dateToISOString(job.createdAt) ?? now,
     deadline_at: dateToISOString(job.deadlineAt),
-    last_ran_at: dateToISOString(job.lastRanAt),
+    last_attempted_at: dateToISOString(job.lastAttemptedAt),
     completed_at: dateToISOString(job.completedAt),
     progress: job.progress ?? 0,
     progress_message: job.progressMessage ?? "",
     progress_details: job.progressDetails ?? null,
-    worker_id: job.workerId ?? null,
+    lease_owner: job.leaseOwner ?? null,
     abort_requested_at: job.abort_requested_at ?? null,
     lease_expires_at: job.lease_expires_at ?? null,
   };
