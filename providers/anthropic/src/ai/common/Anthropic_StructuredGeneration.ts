@@ -10,8 +10,8 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
+import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 
 /**
  * Streaming run-fn for the `["text.generation", "json-mode"]` capability.

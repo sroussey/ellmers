@@ -40,9 +40,7 @@ export function createOllamaTextGenerationStream(
 
     const messages = hasMessages
       ? [
-          ...(unified.systemPrompt
-            ? [{ role: "system", content: unified.systemPrompt }]
-            : []),
+          ...(unified.systemPrompt ? [{ role: "system", content: unified.systemPrompt }] : []),
           ...unified.messages!.map((m) => ({ role: m.role, content: m.content })),
         ]
       : [{ role: "user", content: input.prompt }];

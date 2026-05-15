@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IQueueStorage, JobHandle } from "@workglow/job-queue";
 import {
   AbortSignalJobError,
   IJobExecuteContext,
@@ -16,8 +17,6 @@ import {
   PermanentJobError,
   RetryableJobError,
 } from "@workglow/job-queue";
-import type { JobHandle } from "@workglow/job-queue";
-import type { IQueueStorage } from "@workglow/job-queue";
 import type { ISpan, ITelemetryProvider } from "@workglow/util";
 import {
   BaseError,

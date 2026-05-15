@@ -5,8 +5,12 @@
  */
 
 import { registerAiTasks } from "@workglow/ai";
-import { installDevToolsFormatters, isDarkMode } from "@workglow/task-graph";
-import { registerBaseTasks, Workflow } from "@workglow/task-graph";
+import {
+  installDevToolsFormatters,
+  isDarkMode,
+  registerBaseTasks,
+  Workflow,
+} from "@workglow/task-graph";
 import { registerCommonTasks } from "@workglow/tasks";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";

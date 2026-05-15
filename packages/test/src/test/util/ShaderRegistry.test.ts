@@ -3,8 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, vi } from "vitest";
 import { createShaderCache } from "@workglow/util/media";
+import { describe, expect, test, vi } from "vitest";
 
 describe("ShaderRegistry", () => {
   test("compiles a shader once per source string (cached by source)", () => {

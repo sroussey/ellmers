@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextEmbeddingTaskInput, TextEmbeddingTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  TextEmbeddingTaskInput,
+  TextEmbeddingTaskOutput,
+} from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * One-shot run-fn for `["text.embedding"]`. Calls the OpenAI

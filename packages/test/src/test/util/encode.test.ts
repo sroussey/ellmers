@@ -3,10 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
-import "@workglow/util/media";
 import "@workglow/tasks";
+import "@workglow/util/media";
 import { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];

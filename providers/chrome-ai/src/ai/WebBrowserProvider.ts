@@ -11,11 +11,11 @@ import type {
   ModelRecord,
 } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
-import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import {
   inferWebBrowserCapabilities,
   webBrowserWorkerRunFnSpecs,
 } from "./common/WebBrowser_Capabilities";
+import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
 
 /**

@@ -10,9 +10,5 @@ import { WEB_BROWSER_RUN_FNS } from "./common/WebBrowser_JobRunFns";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 
 export async function registerWebBrowserInline(options?: AiProviderRegisterOptions): Promise<void> {
-  await registerProviderInline(
-    new WebBrowserProvider(WEB_BROWSER_RUN_FNS),
-    "Web browser",
-    options
-  );
+  await registerProviderInline(new WebBrowserProvider(WEB_BROWSER_RUN_FNS), "Web browser", options);
 }

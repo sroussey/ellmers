@@ -646,9 +646,7 @@ export class KnowledgeBase {
       .map(([chunkId]) => chunkId);
 
     if (missing.length > 0) {
-      const hydrated = await this.chunkStorage.getBulk(
-        missing.map((chunk_id) => ({ chunk_id }))
-      );
+      const hydrated = await this.chunkStorage.getBulk(missing.map((chunk_id) => ({ chunk_id })));
       const byId = new Map<string, ChunkVectorEntity>();
       for (const entity of hydrated as ChunkVectorEntity[]) {
         byId.set(entity.chunk_id, entity);
@@ -702,9 +700,7 @@ export class KnowledgeBase {
     const hits = await index.search(query, { topK: poolSize });
     if (hits.length === 0) return [];
 
-    const hydrated = await this.chunkStorage.getBulk(
-      hits.map((h) => ({ chunk_id: h.chunkId }))
-    );
+    const hydrated = await this.chunkStorage.getBulk(hits.map((h) => ({ chunk_id: h.chunkId })));
     const byId = new Map<string, ChunkVectorEntity>();
     for (const entity of hydrated as ChunkVectorEntity[]) {
       byId.set(entity.chunk_id, entity);

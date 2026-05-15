@@ -5,8 +5,8 @@
  */
 
 import { Dataflow, TaskGraph, Workflow } from "@workglow/task-graph";
-import { CycleError } from "@workglow/util/graph";
 import { setLogger } from "@workglow/util";
+import { CycleError } from "@workglow/util/graph";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import { ProcessItemTask, RefineTask } from "../task/TestTasks";

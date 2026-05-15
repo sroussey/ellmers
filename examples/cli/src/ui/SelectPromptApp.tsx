@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
-import { Box, Text, useInput, useWindowSize } from "ink";
 import { Select } from "@inkjs/ui";
+import { Box, Text, useInput, useWindowSize } from "ink";
+import React from "react";
 
 interface SelectPromptAppProps {
   readonly message?: string;

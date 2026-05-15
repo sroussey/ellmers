@@ -7,11 +7,11 @@
 import { PGlite } from "@electric-sql/pglite";
 import { RateLimiter } from "@workglow/job-queue";
 import { PostgresQueueStorage, PostgresRateLimiterStorage } from "@workglow/postgres/job-queue";
+import { setLogger } from "@workglow/util";
 import { Pool } from "pg";
 import { afterAll, describe } from "vitest";
-import { runGenericJobQueueTests } from "./genericJobQueueTests";
-import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericJobQueueTests } from "./genericJobQueueTests";
 
 const db = new PGlite() as unknown as Pool;
 

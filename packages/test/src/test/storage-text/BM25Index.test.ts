@@ -99,8 +99,7 @@ describe("BM25Index", () => {
     it("favours shorter documents on otherwise equal matches (length norm)", () => {
       const idx = new BM25Index();
       const short = "rabbit fence";
-      const long =
-        "rabbit fence " + "stuffing word ".repeat(50);
+      const long = "rabbit fence " + "stuffing word ".repeat(50);
       addDoc(idx, "short", "d1", short);
       addDoc(idx, "long", "d2", long);
 
@@ -289,7 +288,10 @@ describe("BM25Index", () => {
     it("custom tokenizer is used at index- and query-time", () => {
       const tokenizer = {
         tokenize: (s: string) =>
-          s.split(/[^A-Za-z]+/).filter((t) => t.length > 0).map((t) => t.toUpperCase()),
+          s
+            .split(/[^A-Za-z]+/)
+            .filter((t) => t.length > 0)
+            .map((t) => t.toUpperCase()),
       };
       const idx = new BM25Index({ tokenizer });
       idx.add("c1", "d1", { text: "RABBIT" });

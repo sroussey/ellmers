@@ -11,8 +11,8 @@ import type {
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 export const Gemini_TextEmbedding_Stream: AiProviderRunFn<
   TextEmbeddingTaskInput,

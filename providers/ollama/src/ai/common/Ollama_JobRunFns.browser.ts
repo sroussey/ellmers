@@ -5,7 +5,6 @@
  */
 
 import type { AiProviderRunFnRegistration, ToolCallingTaskInput } from "@workglow/ai";
-import { getClient } from "./Ollama_Client.browser";
 import {
   OLLAMA_MODEL_INFO,
   OLLAMA_MODEL_SEARCH,
@@ -15,6 +14,7 @@ import {
   OLLAMA_TEXT_SUMMARY,
   OLLAMA_TOOL_USE,
 } from "./Ollama_CapabilitySets";
+import { getClient } from "./Ollama_Client.browser";
 import { createOllamaModelInfoStream } from "./Ollama_ModelInfo";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { createOllamaModelSearchStream } from "./Ollama_ModelSearch";

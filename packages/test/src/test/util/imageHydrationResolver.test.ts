@@ -3,8 +3,8 @@
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { describe, expect, test } from "vitest";
 import { isImageValue, normalizeToImageValue } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 describe("imageHydrationResolver", () => {
   test("normalizeToImageValue passes through ImageValue", async () => {

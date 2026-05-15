@@ -5,11 +5,11 @@
  */
 
 import { ChunkingStrategy, textChunker } from "@workglow/ai";
-import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("TextChunkerTask", () => {
   let logger = getTestingLogger();

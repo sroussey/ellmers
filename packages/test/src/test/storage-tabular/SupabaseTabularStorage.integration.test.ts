@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { StorageValidationError } from "@workglow/storage";
+import { SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";

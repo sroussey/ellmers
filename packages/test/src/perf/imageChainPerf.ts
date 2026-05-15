@@ -3,7 +3,6 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import "@workglow/util/media";
 import "@workglow/tasks";
 import {
   ImageBlurTask,
@@ -14,6 +13,7 @@ import {
   ImageSepiaTask,
   ImageTextTask,
 } from "@workglow/tasks";
+import "@workglow/util/media";
 import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
 
 const SIZES = [

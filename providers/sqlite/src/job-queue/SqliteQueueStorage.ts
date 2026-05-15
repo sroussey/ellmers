@@ -4,9 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Sqlite } from "@workglow/sqlite/storage";
-import { createServiceToken, makeFingerprint, sleep, uuid4 } from "@workglow/util";
-import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,
   JobStorageFormat,
@@ -15,6 +12,8 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
+import { JobStatus } from "@workglow/job-queue";
+import type { Sqlite } from "@workglow/sqlite/storage";
 import {
   assertPrefixesSafe,
   buildPrefixInsertFragments,
@@ -22,6 +21,7 @@ import {
   getPrefixParamValues,
   SqliteDialect,
 } from "@workglow/storage";
+import { createServiceToken, makeFingerprint, sleep, uuid4 } from "@workglow/util";
 import { SqliteMigrationRunner } from "../migrations/SqliteMigrationRunner";
 import { sqliteQueueMigrations } from "../migrations/sqliteQueueMigrations";
 

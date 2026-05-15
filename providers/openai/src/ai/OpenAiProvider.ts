@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai/worker";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import { OPENAI } from "./common/OpenAI_Constants";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import { AiProvider } from "@workglow/ai/worker";
 import { inferOpenAiCapabilities, openAiWorkerRunFnSpecs } from "./common/OpenAI_Capabilities";
+import { OPENAI } from "./common/OpenAI_Constants";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
 
 /**

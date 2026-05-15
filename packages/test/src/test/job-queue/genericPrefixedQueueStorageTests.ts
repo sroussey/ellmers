@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobStatus } from "@workglow/job-queue";
 import type { IQueueStorage, PrefixColumn, QueueStorageOptions } from "@workglow/job-queue";
+import { JobStatus } from "@workglow/job-queue";
 import { sleep, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 

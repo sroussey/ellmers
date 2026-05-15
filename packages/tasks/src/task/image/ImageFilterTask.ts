@@ -3,10 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { Task } from "@workglow/task-graph";
 import type { IExecuteContext, IExecutePreviewContext, TaskConfig } from "@workglow/task-graph";
-import { applyFilter, CpuImage, GpuImageFactory, hasFilterOp } from "@workglow/util/media";
+import { Task } from "@workglow/task-graph";
 import type { GpuImage, ImageValue } from "@workglow/util/media";
+import { applyFilter, CpuImage, GpuImageFactory, hasFilterOp } from "@workglow/util/media";
 
 export interface ImageFilterInput {
   image: ImageValue;

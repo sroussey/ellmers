@@ -13,8 +13,8 @@ import {
   type IEntitlementProfile,
 } from "@workglow/task-graph";
 
-import { runEntitlementProfileConformance } from "../../contract/entitlement-profile/runEntitlementProfileConformance";
 import { createControllableSignalSource } from "../../contract/entitlement-profile/fixtures";
+import { runEntitlementProfileConformance } from "../../contract/entitlement-profile/runEntitlementProfileConformance";
 
 /**
  * A custom profile backed by a mutable grant set. The accompanying

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AnyTabularStorage, ITabularMigration } from "@workglow/storage";
 import { InMemoryTabularStorage } from "@workglow/storage";
-import type { ITabularMigration, AnyTabularStorage } from "@workglow/storage";
 import { runTabularMigrationContract } from "../../contract/tabular-migrations/runTabularMigrationContract";
 
 runTabularMigrationContract({

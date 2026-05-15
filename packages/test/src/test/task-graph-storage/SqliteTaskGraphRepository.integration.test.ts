@@ -8,8 +8,8 @@ import { Sqlite } from "@workglow/sqlite/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe } from "vitest";
 import { SqliteTaskGraphRepository } from "../../binding/SqliteTaskGraphRepository";
-import { runGenericTaskGraphRepositoryTests } from "./genericTaskGraphRepositoryTests";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericTaskGraphRepositoryTests } from "./genericTaskGraphRepositoryTests";
 
 describe("SqliteTaskGraphRepository", async () => {
   await Sqlite.init();

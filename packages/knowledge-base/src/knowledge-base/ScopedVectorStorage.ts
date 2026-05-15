@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AnyVectorStorage,
-  IVectorStorage,
-  VectorSearchOptions,
-} from "@workglow/storage";
+import type { AnyVectorStorage, IVectorStorage, VectorSearchOptions } from "@workglow/storage";
 import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
 import { ScopedTabularStorage } from "./ScopedTabularStorage";
 

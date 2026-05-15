@@ -4,14 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InMemoryModelRepository, MODEL_REPOSITORY } from "@workglow/ai";
 import type { ModelRecord, ModelRepository } from "@workglow/ai";
-import { Dataflow, Task, TaskGraph } from "@workglow/task-graph";
+import { InMemoryModelRepository, MODEL_REPOSITORY } from "@workglow/ai";
 import type { TaskInput } from "@workglow/task-graph";
+import { Dataflow, Task, TaskGraph } from "@workglow/task-graph";
 import type { ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { setLogger } from "@workglow/util";
+import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   EmbeddingConsumerTask,
   EmbeddingModelProviderTask,
@@ -21,8 +23,6 @@ import {
   PlainStringProviderTask,
   TextGenerationModelProviderTask,
 } from "../task/TestTasks";
-import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 /**
  * Test model fixtures for embedding models

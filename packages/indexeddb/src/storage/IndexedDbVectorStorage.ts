@@ -4,6 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  AnyVectorStorage,
+  ClientProvidedKeysOption,
+  IVectorStorage,
+  VectorSearchOptions,
+} from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -13,15 +20,8 @@ import type {
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
-import { IndexedDbTabularStorage } from "./IndexedDbTabularStorage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
-import type {
-  ClientProvidedKeysOption,
-  AnyVectorStorage,
-  IVectorStorage,
-  VectorSearchOptions,
-} from "@workglow/storage";
 import type { MigrationOptions } from "./IndexedDbTable";
+import { IndexedDbTabularStorage } from "./IndexedDbTabularStorage";
 
 export const IDB_VECTOR_REPOSITORY = createServiceToken<AnyVectorStorage>(
   "storage.vectorRepository.indexedDb"

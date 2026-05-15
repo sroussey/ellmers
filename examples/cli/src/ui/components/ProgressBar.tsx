@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from "react";
 import { Text } from "ink";
+import React, { useEffect, useState } from "react";
 import { useCliTheme } from "../CliThemeContext";
 
 interface ProgressBarProps {

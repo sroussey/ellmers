@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ConsoleLogger, NullLogger } from "@workglow/util";
 import type { ILogger, LogLevel } from "@workglow/util";
+import { ConsoleLogger, NullLogger } from "@workglow/util";
 
 function getEnv(name: string): string | undefined {
   if (typeof process !== "undefined" && process.env) {

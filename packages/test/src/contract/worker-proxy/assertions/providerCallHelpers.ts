@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { Capability } from "@workglow/ai";
 import {
   collectStream,
   createEmitQueue,
@@ -11,7 +12,6 @@ import {
   getGlobalModelRepository,
   textGeneration,
 } from "@workglow/ai";
-import type { Capability } from "@workglow/ai";
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
@@ -81,7 +81,10 @@ export async function* streamProviderTextGeneration(
     (e) => q.push(e as StreamEvent<TaskOutput>),
     undefined,
     undefined
-  ).then(() => q.close(), (err) => q.fail(err));
+  ).then(
+    () => q.close(),
+    (err) => q.fail(err)
+  );
   try {
     for await (const event of q.iterable) {
       yield event;

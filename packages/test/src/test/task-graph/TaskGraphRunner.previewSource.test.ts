@@ -3,14 +3,14 @@
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
 import {
   imageValueFromBuffer,
   registerPreviewResizeFn,
   setPreviewBudget,
   type ImageValue,
 } from "@workglow/util/media";
-import { Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 class TestImageSource extends Task<Record<string, unknown>, { image: ImageValue }> {
   public static override readonly type = "TestImageSource";

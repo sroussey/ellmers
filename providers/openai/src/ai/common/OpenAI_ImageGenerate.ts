@@ -14,8 +14,8 @@ import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from 
 import type { ImageValue } from "@workglow/util/media";
 
 import { dataUriToImageValue } from "@workglow/ai/provider-utils";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /** Maps the normalized aspect ratio to gpt-image-2 / DALL-E supported sizes. */
 function aspectRatioToSize(

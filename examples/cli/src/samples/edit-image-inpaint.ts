@@ -5,8 +5,8 @@
  */
 
 import { ImageEditTask } from "@workglow/ai";
-import { TaskGraph } from "@workglow/task-graph";
 import type { TaskGraphTabularRepository } from "@workglow/task-graph";
+import { TaskGraph } from "@workglow/task-graph";
 
 export const IMAGE_EDIT_INPAINT_SAMPLE_ID = "edit-image-inpaint";
 

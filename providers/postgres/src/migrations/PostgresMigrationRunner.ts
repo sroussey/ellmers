@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Pool } from "../storage/_postgres/node-bun";
 import {
   type IMigration,
   type IMigrationRunner,
@@ -12,6 +11,7 @@ import {
   MIGRATIONS_TABLE,
   sortMigrations,
 } from "@workglow/storage";
+import type { Pool } from "../storage/_postgres/node-bun";
 
 /**
  * Minimal "queryable" shape implemented by both a checked-out node-postgres

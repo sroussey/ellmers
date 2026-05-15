@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TaskGraph, TaskStatus, Workflow } from "@workglow/task-graph";
 import { javaScript, JavaScriptTask } from "@workglow/javascript/task";
-import { describe, expect, test } from "vitest";
+import { TaskGraph, TaskStatus, Workflow } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("JavaScriptTask", () => {

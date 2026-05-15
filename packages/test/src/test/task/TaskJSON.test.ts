@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  TaskConfig,
+  TaskDeserializationOptions,
+  TaskGraphItemJson,
+  TaskGraphJson,
+} from "@workglow/task-graph";
 import {
   ConditionalTask,
   createGraphFromGraphJSON,
@@ -19,12 +25,6 @@ import {
   WhileTask,
 } from "@workglow/task-graph";
 import { LambdaTask } from "@workglow/tasks";
-import type {
-  TaskConfig,
-  TaskDeserializationOptions,
-  TaskGraphItemJson,
-  TaskGraphJson,
-} from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 

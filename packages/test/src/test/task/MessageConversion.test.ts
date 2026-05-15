@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { toOpenAIMessages, toTextFlatMessages } from "@workglow/ai";
 import type { ToolCallingTaskInput, ToolDefinition } from "@workglow/ai";
+import { toOpenAIMessages, toTextFlatMessages } from "@workglow/ai";
 import { describe, expect, test } from "vitest";
 
 const dummyTools: ToolDefinition[] = [

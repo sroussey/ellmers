@@ -9,8 +9,8 @@ import type {
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
 } from "@workglow/ai";
-import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
+import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 export const HFI_TextGeneration_Stream: AiProviderRunFn<
   TextGenerationTaskInput,

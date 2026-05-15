@@ -3,7 +3,6 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import { ImageTextTask } from "@workglow/tasks";
 import {
@@ -12,6 +11,7 @@ import {
   setPreviewBudget,
   type ImageValue,
 } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 function rawValue(data: Uint8ClampedArray, w: number, h: number, previewScale = 1.0): ImageValue {
   const buf = Buffer.from(data.buffer, data.byteOffset, data.byteLength);

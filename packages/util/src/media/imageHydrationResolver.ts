@@ -4,9 +4,9 @@
  * All Rights Reserved
  */
 import { registerInputResolver } from "../di/InputResolverRegistry";
+import type { ServiceRegistry } from "../di/ServiceRegistry";
 import { globalServiceRegistry } from "../di/ServiceRegistry";
 import { normalizeToImageValue } from "./imageValue";
-import type { ServiceRegistry } from "../di/ServiceRegistry";
 
 /**
  * Resolver for `format: "image"` ports. Accepts the cross-boundary wire

@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { RawPixelBuffer, ImageChannels } from "@workglow/util/media";
+import type { ImageChannels, RawPixelBuffer } from "@workglow/util/media";
 import { decodeBufferToRaw, encodeRawPixels } from "@workglow/util/media";
 
+import type { ImageRasterCodec } from "@workglow/util/media";
 import {
   MAX_DECODED_PIXELS,
   MAX_INPUT_BYTES_NODE,
@@ -17,7 +18,6 @@ import {
   extractDataUriMimeType,
   normalizeOutputMimeType,
 } from "./imageCodecLimits";
-import type { ImageRasterCodec } from "@workglow/util/media";
 
 /** Local copy of the deleted `@workglow/util/media#parseDataUri` helper. Kept
  *  inline so the codec doesn't depend on a util export that was removed when

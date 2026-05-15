@@ -5,21 +5,21 @@
  */
 
 import type {
-  IBrowserContext,
   AccessibilityTree,
+  AriaRole,
   BrowserConnectOptions,
-  NavigateOptions,
   ClickOptions,
-  SnapshotOptions,
-  ScreenshotOptions,
-  WaitOptions,
+  DialogAction,
+  DialogInfo,
   DownloadOptions,
   DownloadResult,
-  DialogInfo,
-  DialogAction,
-  TabInfo,
   ElementRef,
-  AriaRole,
+  IBrowserContext,
+  NavigateOptions,
+  ScreenshotOptions,
+  SnapshotOptions,
+  TabInfo,
+  WaitOptions,
 } from "@workglow/browser-control/task";
 
 export interface CallRecord {

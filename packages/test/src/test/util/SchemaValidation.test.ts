@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { setLogger } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import {
   validateDataPortSchema,
   validateFormatAnnotations,
   validateSchema,
 } from "@workglow/util/schema";
-import type { DataPortSchema } from "@workglow/util/schema";
-import { setLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 

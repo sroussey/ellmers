@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai";
 import type { Capability, ModelRecord } from "@workglow/ai";
+import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import { OPENAI } from "./common/OpenAI_Constants";
 import { inferOpenAiCapabilities, openAiWorkerRunFnSpecs } from "./common/OpenAI_Capabilities";
+import { OPENAI } from "./common/OpenAI_Constants";
 import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
 
 /**
@@ -17,13 +17,10 @@ import type { OpenAiModelConfig } from "./common/OpenAI_ModelSchema";
  * (constructed empty so the base class registers worker proxies). No queue
  * is created — OpenAI uses {@link DirectExecutionStrategy}.
  */
-export class OpenAiQueuedProvider extends createCloudProviderClass<OpenAiModelConfig>(
-  AiProvider,
-  {
-    name: OPENAI,
-    displayName: "OpenAI",
-  }
-) {
+export class OpenAiQueuedProvider extends createCloudProviderClass<OpenAiModelConfig>(AiProvider, {
+  name: OPENAI,
+  displayName: "OpenAI",
+}) {
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferOpenAiCapabilities(model);
   }

@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DataPortSchema } from "@workglow/util/schema";
 import type { ServiceRegistry } from "@workglow/util";
 import { getInputCompactors } from "@workglow/util";
-import { getSchemaFormat, getFormatPrefix, getObjectSchema } from "./InputResolver";
+import type { DataPortSchema } from "@workglow/util/schema";
+import { getFormatPrefix, getObjectSchema, getSchemaFormat } from "./InputResolver";
 
 /**
  * Configuration for the input compactor

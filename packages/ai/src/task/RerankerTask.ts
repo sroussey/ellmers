@@ -217,7 +217,9 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
       }
 
       const exactMatchBonus = hasQueryWords && chunkLower.includes(queryLower) ? 0.5 : 0;
-      const normalizedKeywordScore = hasQueryWords ? Math.min(keywordScore / (queryWords.length * 3), 1) : 0;
+      const normalizedKeywordScore = hasQueryWords
+        ? Math.min(keywordScore / (queryWords.length * 3), 1)
+        : 0;
       const positionPenalty = Math.log(index + 1) / 10;
 
       const combinedScore =

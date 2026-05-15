@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
 import { Text, useAnimation } from "ink";
+import React from "react";
 
 /** Braille-pattern frames (same family as cli-spinners “dots”). */
 export const CLI_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;

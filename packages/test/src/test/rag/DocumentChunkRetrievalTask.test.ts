@@ -14,7 +14,7 @@ import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("ChunkRetrievalTask", () => {
   let logger = getTestingLogger();

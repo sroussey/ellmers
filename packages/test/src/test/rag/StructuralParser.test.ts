@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { NodeKind, StructuralParser } from "@workglow/knowledge-base";
 import type { SectionNode } from "@workglow/knowledge-base";
-import { describe, expect, it } from "vitest";
+import { NodeKind, StructuralParser } from "@workglow/knowledge-base";
 import { setLogger } from "@workglow/util";
+import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("StructuralParser", () => {
   let logger = getTestingLogger();

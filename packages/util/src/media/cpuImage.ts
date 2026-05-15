@@ -3,11 +3,11 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
+import type { GpuImageEncodeFormat, GpuImage as IGpuImage } from "./gpuImage";
+import { getImageRasterCodec } from "./imageRasterCodecRegistry";
 import type { ImageChannels } from "./imageTypes";
-import type { GpuImage as IGpuImage, GpuImageEncodeFormat } from "./gpuImage";
 import type { ImageValue, NodeImageValue } from "./imageValue";
 import { isBrowserImageValue, isNodeImageValue } from "./imageValue";
-import { getImageRasterCodec } from "./imageRasterCodecRegistry";
 import type { RawPixelBuffer } from "./rawPixelBuffer";
 
 export type { RawPixelBuffer } from "./rawPixelBuffer";

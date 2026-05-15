@@ -84,10 +84,7 @@ describe("ScopedTabularStorage over PostgresTabularStorage", () => {
       expect(aMap.has(COLLIDE_Z)).toBe(false);
       expect(fromA.every((r: any) => r.kb_id === undefined)).toBe(true);
 
-      const fromB = await scopeB.getBulk([
-        { doc_id: COLLIDE_X },
-        { doc_id: COLLIDE_Z },
-      ] as any);
+      const fromB = await scopeB.getBulk([{ doc_id: COLLIDE_X }, { doc_id: COLLIDE_Z }] as any);
       expect(fromB).toHaveLength(2);
       const bMap = new Map(fromB.map((r: any) => [r.doc_id, r.data]));
       expect(bMap.get(COLLIDE_X)).toBe("from-B");
@@ -105,10 +102,7 @@ describe("ScopedTabularStorage over PostgresTabularStorage", () => {
 
         expect(fn).toHaveBeenCalledTimes(1);
         const [emittedKeys, emittedRows] = fn.mock.calls[0];
-        expect(emittedKeys).toEqual([
-          { doc_id: COLLIDE_X },
-          { doc_id: COLLIDE_MISSING },
-        ]);
+        expect(emittedKeys).toEqual([{ doc_id: COLLIDE_X }, { doc_id: COLLIDE_MISSING }]);
         expect(emittedRows).toEqual(result);
         expect(emittedRows.every((r: any) => r.kb_id === undefined)).toBe(true);
       } finally {

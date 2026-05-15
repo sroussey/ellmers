@@ -5,8 +5,8 @@
  */
 
 import { InMemoryKvStorage, LazyEncryptedCredentialStore } from "@workglow/storage";
-import { beforeEach, describe, expect, it } from "vitest";
 import { setLogger } from "@workglow/util";
+import { beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("LazyEncryptedCredentialStore", () => {

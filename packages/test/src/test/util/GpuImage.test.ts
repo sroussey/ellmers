@@ -3,10 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import type { GpuImage, GpuImageBackend } from "@workglow/util/media";
 import { GpuImageFactory, imageValueFromBuffer, ImageValueSchema } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 describe("GpuImage interface", () => {
   test("backend tag is one of the three allowed strings", () => {

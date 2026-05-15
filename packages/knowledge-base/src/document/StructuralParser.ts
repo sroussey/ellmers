@@ -5,8 +5,8 @@
  */
 
 import { uuid4 } from "@workglow/util";
-import { NodeKind } from "./DocumentSchema";
 import type { DocumentRootNode, ParagraphNode, SectionNode } from "./DocumentSchema";
+import { NodeKind } from "./DocumentSchema";
 
 /**
  * Parse markdown into a hierarchical DocumentNode tree

@@ -12,8 +12,8 @@
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
 import { HFT_PREVIEW_TASKS, HFT_RUN_FNS } from "./common/HFT_JobRunFns";
-import { HuggingFaceTransformersProvider } from "./HuggingFaceTransformersProvider";
 import { loadTransformersSDK } from "./common/HFT_Pipeline";
+import { HuggingFaceTransformersProvider } from "./HuggingFaceTransformersProvider";
 
 export async function registerHuggingFaceTransformersWorker(): Promise<void> {
   const sdk = await loadTransformersSDK();
@@ -24,7 +24,9 @@ export async function registerHuggingFaceTransformersWorker(): Promise<void> {
   env.backends!.onnx!.wasm!.proxy = true;
   await registerProviderWorker(
     (ws) =>
-      new HuggingFaceTransformersProvider(HFT_RUN_FNS, HFT_PREVIEW_TASKS).registerOnWorkerServer(ws),
+      new HuggingFaceTransformersProvider(HFT_RUN_FNS, HFT_PREVIEW_TASKS).registerOnWorkerServer(
+        ws
+      ),
     "HuggingFaceTransformers"
   );
 }

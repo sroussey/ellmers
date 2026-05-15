@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
-  MAX_CURSOR_LENGTH,
   decodeCursor,
   encodeCursor,
+  MAX_CURSOR_LENGTH,
   StorageValidationError,
 } from "@workglow/storage";
+import { describe, expect, it } from "vitest";
 
 // Pinned in the unit test rather than imported from `@workglow/storage`:
 // the cursor format version is an implementation detail of the codec

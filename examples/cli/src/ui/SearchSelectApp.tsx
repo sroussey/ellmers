@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import { Spinner, TextInput } from "@inkjs/ui";
 import { Box, Text, useInput, useWindowSize } from "ink";
-import { TextInput, Spinner } from "@inkjs/ui";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 export interface SearchSelectItem {
   readonly id: string;

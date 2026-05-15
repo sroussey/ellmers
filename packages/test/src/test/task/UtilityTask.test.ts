@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JsonPathTask, TemplateTask, DateFormatTask, RegexTask } from "@workglow/tasks";
-import { describe, expect, test } from "vitest";
+import { DateFormatTask, JsonPathTask, RegexTask, TemplateTask } from "@workglow/tasks";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("UtilityTask", () => {

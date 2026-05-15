@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FallbackTask,
   GraphAsTask,
@@ -17,6 +16,7 @@ import {
   WhileTask,
 } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ============================================================================
 // Spy task fixtures

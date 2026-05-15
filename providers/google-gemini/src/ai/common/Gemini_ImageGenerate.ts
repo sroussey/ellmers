@@ -15,8 +15,8 @@ import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
 import { dataUriToImageValue } from "@workglow/ai/provider-utils";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 function modelIdOf(model: ModelConfig | undefined): string {
   return (

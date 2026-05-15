@@ -3,8 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, beforeEach } from "vitest";
 import { getGpuDevice, resetGpuDeviceForTests } from "@workglow/util/media";
+import { beforeEach, describe, expect, test } from "vitest";
 
 describe.skipIf(typeof navigator === "undefined" || !("gpu" in navigator))("GpuDevice", () => {
   beforeEach(() => {

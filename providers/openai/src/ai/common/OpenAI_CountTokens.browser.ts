@@ -10,9 +10,9 @@ import type {
   CountTokensTaskInput,
   CountTokensTaskOutput,
 } from "@workglow/ai";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
-import { getModelName } from "./OpenAI_Client";
 import type { Tiktoken, TiktokenModel } from "js-tiktoken";
+import { getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 let _tiktoken: typeof import("js-tiktoken") | undefined;
 

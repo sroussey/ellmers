@@ -6,8 +6,8 @@
 
 import { TaskGraph, TaskStatus, Workflow } from "@workglow/task-graph";
 import { merge, MergeTask } from "@workglow/tasks";
-import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("MergeTask", () => {

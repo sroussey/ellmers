@@ -7,10 +7,10 @@
 import type {
   AnyTabularStorage,
   CoveringIndexQueryOptions,
-  PageCursor,
   DeleteSearchCriteria,
   ITabularStorage,
   Page,
+  PageCursor,
   PageRequest,
   QueryOptions,
   SearchCriteria,

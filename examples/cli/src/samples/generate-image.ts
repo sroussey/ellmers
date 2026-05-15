@@ -5,8 +5,8 @@
  */
 
 import { ImageGenerateTask } from "@workglow/ai";
-import { TaskGraph } from "@workglow/task-graph";
 import type { TaskGraphTabularRepository } from "@workglow/task-graph";
+import { TaskGraph } from "@workglow/task-graph";
 
 export const IMAGE_GENERATE_SAMPLE_ID = "generate-image";
 

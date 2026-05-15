@@ -6,8 +6,8 @@
 
 import type { IExecuteContext, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { AiEmit } from "../capability/AiEmit";
-import { AiJob } from "../job/AiJob";
 import type { AiJobInput } from "../job/AiJob";
+import { AiJob } from "../job/AiJob";
 import type { IAiExecutionStrategy } from "./IAiExecutionStrategy";
 
 /**

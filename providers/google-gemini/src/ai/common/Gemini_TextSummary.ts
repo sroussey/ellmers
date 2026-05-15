@@ -4,13 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-} from "@workglow/ai";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
 export const Gemini_TextSummary_Stream: AiProviderRunFn<
   TextSummaryTaskInput,

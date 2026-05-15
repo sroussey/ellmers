@@ -3,7 +3,6 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, beforeEach } from "vitest";
 import {
   getGpuDevice,
   imageValueFromBitmap,
@@ -13,6 +12,7 @@ import {
   type ApplyParams,
   type WebGpuImage as WebGpuImageType,
 } from "@workglow/util/media";
+import { beforeEach, describe, expect, test } from "vitest";
 
 const isBrowser = typeof window !== "undefined";
 

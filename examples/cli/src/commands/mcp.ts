@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { searchMcpRegistryPage } from "@workglow/mcp/tasks";
 import type { McpSearchResultItem } from "@workglow/mcp/tasks";
+import { searchMcpRegistryPage } from "@workglow/mcp/tasks";
 import type { Command } from "commander";
-import { editStringInExternalEditor } from "../editInEditor";
 import { loadConfig } from "../config";
-import { parseDynamicFlags, generateSchemaHelpText, resolveInput, validateInput } from "../input";
+import { editStringInExternalEditor } from "../editInEditor";
+import { generateSchemaHelpText, parseDynamicFlags, resolveInput, validateInput } from "../input";
 import { promptMissingInput } from "../input/prompt";
 import { createMcpStorage, McpServerRecordSchema } from "../storage";
-import { renderSearchSelect, renderSelectPrompt } from "../ui/render";
 import type { SearchSelectItem } from "../ui/render";
+import { renderSearchSelect, renderSelectPrompt } from "../ui/render";
 import { formatError, formatTable } from "../util";
 
 interface McpSearchSelectItem extends SearchSelectItem {

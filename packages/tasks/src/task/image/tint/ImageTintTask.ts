@@ -3,11 +3,11 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { CreateWorkflow, type TaskConfig, Workflow } from "@workglow/task-graph";
+import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema, type ColorObject } from "@workglow/util/media";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
-import type { TintParams } from "./tint.cpu";
 import { ColorValueSchema } from "../ImageSchemas";
+import type { TintParams } from "./tint.cpu";
 
 const inputSchema = {
   type: "object",

@@ -6,13 +6,13 @@
 
 import { HierarchicalChunkerTaskOutput } from "@workglow/ai";
 import { ChunkRecord } from "@workglow/knowledge-base";
-import { setLogger, uuid4 } from "@workglow/util";
 import { Workflow } from "@workglow/task-graph";
+import { setLogger, uuid4 } from "@workglow/util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { registerTasks } from "../../binding/RegisterTasks";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 describe("Complete chainable workflow", () => {
   let logger = getTestingLogger();

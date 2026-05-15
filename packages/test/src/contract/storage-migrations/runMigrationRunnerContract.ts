@@ -41,6 +41,7 @@ export function runMigrationRunnerContract<DB>(opts: MigrationRunnerContractOpts
   });
 }
 
+export { createMigrationCallRecorder } from "./types";
 export type {
   BuildMigrationFn,
   BuildMigrationOptions,
@@ -49,4 +50,3 @@ export type {
   MigrationContractHandle,
   MigrationRunnerContractOpts,
 } from "./types";
-export { createMigrationCallRecorder } from "./types";

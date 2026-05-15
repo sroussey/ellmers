@@ -10,12 +10,12 @@
  * task-graph package.
  */
 export type {
-  StreamEvent,
-  StreamTextDelta,
-  StreamObjectDelta,
-  StreamSnapshot,
-  StreamFinish,
   StreamError,
-  StreamPhase,
+  StreamEvent,
+  StreamFinish,
   StreamMode,
+  StreamObjectDelta,
+  StreamPhase,
+  StreamSnapshot,
+  StreamTextDelta,
 } from "@workglow/task-graph";

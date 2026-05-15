@@ -2381,4 +2381,4 @@ function parseIdent(liberal) {
   return finishNode(node, "Identifier");
 }
 
-export { version, parse };
+export { parse, version };

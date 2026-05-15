@@ -6,9 +6,9 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
+import { registerHfImageValidator } from "./common/HFI_ImageValidation";
 import { HFI_RUN_FNS } from "./common/HFI_JobRunFns";
 import { HfInferenceQueuedProvider } from "./HfInferenceQueuedProvider";
-import { registerHfImageValidator } from "./common/HFI_ImageValidation";
 
 export async function registerHfInferenceInline(
   options?: AiProviderRegisterOptions

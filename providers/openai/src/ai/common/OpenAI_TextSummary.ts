@@ -5,8 +5,8 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.summary"]`. Emits `text-delta` events on

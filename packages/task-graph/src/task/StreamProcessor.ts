@@ -10,9 +10,9 @@ import type { ITask } from "./ITask";
 import type { StreamEvent, StreamMode } from "./StreamTypes";
 import { getOutputStreamMode, getStreamingPorts } from "./StreamTypes";
 import { TaskAbortedError, TaskError } from "./TaskError";
+import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
 import { TaskStatus } from "./TaskTypes";
-import type { TaskRunContext } from "./TaskRunContext";
 
 /**
  * Per-call run-state inputs shared by StreamProcessor.run. Bundles facade

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { TaskGraphJson } from "@workglow/task-graph";
 import {
   createGraphFromDependencyJSON,
   createGraphFromGraphJSON,
@@ -16,7 +17,6 @@ import {
   TaskConfigurationError,
   Workflow,
 } from "@workglow/task-graph";
-import type { TaskGraphJson } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
 const inputSchema = {

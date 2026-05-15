@@ -5,8 +5,8 @@
  */
 
 import { evaluateCondition, getNestedValue } from "@workglow/task-graph";
-import { describe, expect, it } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 // ============================================================================

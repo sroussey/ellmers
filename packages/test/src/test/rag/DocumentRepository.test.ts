@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  ChunkVectorStorage,
+  DocumentTabularStorage,
+  SectionNode,
+} from "@workglow/knowledge-base";
 import {
   ChunkVectorPrimaryKey,
   ChunkVectorStorageSchema,
@@ -15,17 +20,12 @@ import {
   StructuralParser,
   createKnowledgeBase,
 } from "@workglow/knowledge-base";
-import type {
-  ChunkVectorStorage,
-  DocumentTabularStorage,
-  SectionNode,
-} from "@workglow/knowledge-base";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 let _snap = snap();
 beforeEach(() => {

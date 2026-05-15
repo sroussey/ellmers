@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken } from "@workglow/util";
-import type { Pool } from "@workglow/postgres/storage";
-import type { PrefixColumn } from "@workglow/job-queue";
 import type {
   IRateLimiterStorage,
+  PrefixColumn,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import type { Pool } from "@workglow/postgres/storage";
 import {
   assertPrefixesSafe,
   buildPrefixWhereClause,
@@ -19,6 +18,7 @@ import {
   getPrefixParamValues,
   PostgresDialect,
 } from "@workglow/storage";
+import { createServiceToken } from "@workglow/util";
 import { PostgresMigrationRunner } from "../migrations/PostgresMigrationRunner";
 import { postgresRateLimiterMigrations } from "../migrations/postgresRateLimiterMigrations";
 

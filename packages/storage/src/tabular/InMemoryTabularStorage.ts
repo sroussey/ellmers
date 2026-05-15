@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { createServiceToken, makeFingerprint, uuid4 } from "@workglow/util";
+import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
+import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
 import {
   BaseTabularStorage,
   ClientProvidedKeysOption,
   KeyGenerationStrategy,
 } from "./BaseTabularStorage";
-import { type ITabularMigration, type ITabularMigrationApplier } from "../migrations";
+import { pickCoveringIndex } from "./coveringIndexPicker";
 import { InMemoryTabularMigrationApplier } from "./InMemoryTabularMigrationApplier";
 import {
   AnyTabularStorage,
@@ -26,7 +27,6 @@ import {
   TabularChangePayload,
   TabularSubscribeOptions,
 } from "./ITabularStorage";
-import { pickCoveringIndex } from "./coveringIndexPicker";
 
 export const MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.inMemory"

@@ -3,14 +3,14 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { ImageChannels } from "./imageTypes";
-import type { GpuImage as IGpuImage, GpuImageEncodeFormat } from "./gpuImage";
+import { getGpuDevice } from "./gpuDevice.browser";
+import type { GpuImageEncodeFormat, GpuImage as IGpuImage } from "./gpuImage";
 import { registerGpuImageFactory } from "./gpuImage";
+import type { ImageChannels } from "./imageTypes";
 import type { ImageValue } from "./imageValue";
 import { imageValueFromBitmap, isBrowserImageValue, isNodeImageValue } from "./imageValue";
-import { getGpuDevice } from "./gpuDevice.browser";
-import { getTexturePool } from "./texturePool.browser";
 import { getShaderCache, PASSTHROUGH_SHADER_SRC } from "./shaderRegistry.browser";
+import { getTexturePool } from "./texturePool.browser";
 
 const TEX_FORMAT: GPUTextureFormat = "rgba8unorm";
 

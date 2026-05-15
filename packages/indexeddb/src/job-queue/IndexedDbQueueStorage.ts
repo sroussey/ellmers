@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
-import { HybridSubscriptionManager } from "@workglow/storage";
-import { openIdb } from "../storage/openIdb";
-import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
-import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
-import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,
   JobStorageFormat,
@@ -18,6 +12,12 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
+import { JobStatus } from "@workglow/job-queue";
+import { HybridSubscriptionManager } from "@workglow/storage";
+import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
+import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
+import { indexedDbQueueMigrations } from "../migrations/indexedDbQueueMigrations";
+import { openIdb } from "../storage/openIdb";
 
 export const INDEXED_DB_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.indexedDb"

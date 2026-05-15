@@ -8,10 +8,10 @@
  */
 
 import type { Client } from "@modelcontextprotocol/sdk/client";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import type { DataPortSchemaObject } from "@workglow/util/schema";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
+import type { DataPortSchemaObject } from "@workglow/util/schema";
 import type { McpAuthConfig } from "./McpAuthTypes";
 
 /** Configuration for connecting to an MCP server (superset of all platform transports). */

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InMemoryKvStorage, EncryptedKvCredentialStore } from "@workglow/storage";
-import { beforeEach, describe, expect, it } from "vitest";
+import { EncryptedKvCredentialStore, InMemoryKvStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import { beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("EncryptedKvCredentialStore", () => {

@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataflow, TaskGraph } from "@workglow/task-graph";
 import {
   BrowserNavigateTask,
   BrowserSessionRegistry,
   BrowserSessionTask,
   BrowserSnapshotTask,
 } from "@workglow/browser-control/task";
+import { Dataflow, TaskGraph } from "@workglow/task-graph";
 import { registerCommonTasks } from "@workglow/tasks";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

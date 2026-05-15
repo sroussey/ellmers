@@ -6,8 +6,8 @@
 
 import type { ChunkRecord, DocumentNode } from "@workglow/knowledge-base";
 import { Document, NodeKind } from "@workglow/knowledge-base";
-import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("Document", () => {

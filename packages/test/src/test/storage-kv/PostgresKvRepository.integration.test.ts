@@ -9,8 +9,8 @@ import { PostgresKvStorage } from "@workglow/postgres/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
 import { afterAll, describe } from "vitest";
-import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
 const db = new PGlite() as unknown as Pool;
 

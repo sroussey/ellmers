@@ -3,12 +3,12 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
-import "@workglow/util/media";
+import { TaskOutputRepository, type TaskInput, type TaskOutput } from "@workglow/task-graph";
 import "@workglow/tasks";
 import { ImageBlurTask } from "@workglow/tasks";
+import "@workglow/util/media";
 import { CpuImage, imageValueFromBuffer, type ImageValue } from "@workglow/util/media";
-import { TaskOutputRepository, type TaskInput, type TaskOutput } from "@workglow/task-graph";
+import { describe, expect, test } from "vitest";
 
 class MapRepo extends TaskOutputRepository {
   store = new Map<string, TaskOutput>();

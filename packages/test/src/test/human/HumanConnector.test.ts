@@ -5,7 +5,7 @@
  */
 
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
-import { HUMAN_CONNECTOR, resolveHumanConnector, ServiceRegistry, Container } from "@workglow/util";
+import { Container, HUMAN_CONNECTOR, resolveHumanConnector, ServiceRegistry } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 class NoopConnector implements IHumanConnector {

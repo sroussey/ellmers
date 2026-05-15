@@ -7,7 +7,7 @@
 import { slugifyHeading } from "@workglow/knowledge-base";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 let _snap = snap();
 beforeEach(() => {

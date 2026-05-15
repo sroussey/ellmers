@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai/worker";
 import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
@@ -12,8 +11,9 @@ import type {
   ModelConfig,
   ModelRecord,
 } from "@workglow/ai/worker";
-import { HF_TRANSFORMERS_ONNX } from "./common/HFT_Constants";
+import { AiProvider } from "@workglow/ai/worker";
 import { hftWorkerRunFnSpecs, inferHftCapabilities } from "./common/HFT_Capabilities";
+import { HF_TRANSFORMERS_ONNX } from "./common/HFT_Constants";
 import type { HfTransformersOnnxModelConfig } from "./common/HFT_ModelSchema";
 import { deleteHftSession } from "./common/HFT_Pipeline";
 

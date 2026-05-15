@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import type { ImageValue } from "@workglow/util/media";
 import type { ModelConfig } from "@workglow/ai";
 import { AiImageOutputTask } from "@workglow/ai";
+import type { ImageValue } from "@workglow/util/media";
+import { describe, expect, it } from "vitest";
 
 // Test subclass: overrides the abstract bits with concrete schemas.
 class TestImageTask extends AiImageOutputTask<{

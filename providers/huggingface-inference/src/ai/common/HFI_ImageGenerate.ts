@@ -14,9 +14,9 @@ import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from 
 import { getLogger } from "@workglow/util/worker";
 
 import { blobToImageValue } from "@workglow/ai/provider-utils";
-import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
-import { getClient, getModelName } from "./HFI_Client";
 import { resolveHfImageDims } from "./HFI_AspectRatio";
+import { getClient, getModelName } from "./HFI_Client";
+import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 function modelIdOf(model: ModelConfig | undefined): string {
   return (

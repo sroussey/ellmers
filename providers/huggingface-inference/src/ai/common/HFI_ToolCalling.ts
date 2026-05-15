@@ -4,19 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { toOpenAIMessages } from "@workglow/ai/worker";
-import type {
-  AiProviderRunFn,
-  ToolCallingTaskInput,
-  ToolCallingTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ToolCallingTaskInput, ToolCallingTaskOutput } from "@workglow/ai";
 import {
   accumulateOpenAIStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
-import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
+import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName, getProvider } from "./HFI_Client";
+import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 export const HFI_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
@@ -47,5 +43,7 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
 
   const stream = client.chatCompletionStream(params, { signal });
 
-  for await (const e of accumulateOpenAIStream(stream)) { emit(e); }
+  for await (const e of accumulateOpenAIStream(stream)) {
+    emit(e);
+  }
 };

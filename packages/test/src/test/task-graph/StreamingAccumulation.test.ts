@@ -24,6 +24,7 @@
  *  - Cache: auto-enables accumulation
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
@@ -34,7 +35,6 @@ import {
   TaskGraphRunner,
   TaskStatus,
 } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Pool } from "../storage/_postgres/node-bun";
 import { JobStatus, type PrefixColumn } from "@workglow/job-queue";
 import {
   buildPrefixColumnsSql,
@@ -13,6 +12,7 @@ import {
   type IMigration,
   PostgresDialect,
 } from "@workglow/storage";
+import type { Pool } from "../storage/_postgres/node-bun";
 
 /**
  * Frozen v1 set of `job_status` enum values, captured at migration creation

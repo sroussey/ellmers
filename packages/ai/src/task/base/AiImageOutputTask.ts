@@ -24,18 +24,18 @@
  */
 
 import type {
-  TaskConfig,
-  IExecutePreviewContext,
   IExecuteContext,
+  IExecutePreviewContext,
   StreamEvent,
+  TaskConfig,
   TaskOutput,
 } from "@workglow/task-graph";
 import type { ImageValue } from "@workglow/util/media";
 
-import { StreamingAiTask } from "./StreamingAiTask";
-import type { AiTaskInput } from "./AiTask";
-import type { ModelConfig } from "../../model/ModelSchema";
 import { ProviderUnsupportedFeatureError } from "../../errors/ImageGenerationErrors";
+import type { ModelConfig } from "../../model/ModelSchema";
+import type { AiTaskInput } from "./AiTask";
+import { StreamingAiTask } from "./StreamingAiTask";
 
 export interface AiImageOutput extends TaskOutput {
   image: ImageValue;

@@ -6,12 +6,6 @@
 
 export { loadConfig, type CliConfig } from "./config";
 export {
-  createModelRepository,
-  createWorkflowRepository,
-  createAgentRepository,
-  createMcpStorage,
-} from "./storage";
-export {
   withCli,
   type Tasklike,
   type WithCliGraphHandle,
@@ -20,4 +14,10 @@ export {
   type WithCliTaskHandle,
   type WithCliWorkflowHandle,
 } from "./run-interactive";
+export {
+  createAgentRepository,
+  createMcpStorage,
+  createModelRepository,
+  createWorkflowRepository,
+} from "./storage";
 export { renderTaskInstanceRun, renderTaskRun, renderWorkflowRun } from "./ui/render";

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util/worker";
 import type { ToolCallingTaskInput } from "../task/ToolCallingTask";
 import type { ToolCalls } from "../task/ToolCallingUtils";
-import { getLogger } from "@workglow/util/worker";
 
 // ============================================================================
 // Types

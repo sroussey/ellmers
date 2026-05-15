@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { beforeAll, describe, expect, it } from "vitest";
-import { Sqlite } from "@workglow/sqlite/storage";
-import { SqliteTabularStorage } from "@workglow/sqlite/storage";
+import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import type { ITabularMigration } from "@workglow/storage";
+import { beforeAll, describe, expect, it } from "vitest";
 
 describe("SqliteTabular migration smoke", () => {
   beforeAll(async () => {

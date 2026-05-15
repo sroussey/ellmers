@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AiJobInput, AiProviderRunFn } from "@workglow/ai";
 import { AiJob, getAiProviderRegistry } from "@workglow/ai";
-import type { AiProviderRunFn, AiJobInput } from "@workglow/ai";
 import type { StreamEvent } from "@workglow/task-graph";
 import { afterEach, describe, expect, it } from "vitest";
 

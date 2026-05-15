@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { traced } from "@workglow/util";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -16,7 +17,6 @@ import type {
   SimplifyPrimaryKey,
 } from "../tabular/ITabularStorage";
 import { TelemetryTabularStorage } from "../tabular/TelemetryTabularStorage";
-import { traced } from "@workglow/util";
 import type { IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
 
 /**

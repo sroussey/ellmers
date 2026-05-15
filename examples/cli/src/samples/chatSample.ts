@@ -6,12 +6,12 @@
 
 import { AiChatTask } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "@workglow/huggingface-transformers/ai";
-import { TaskGraph } from "@workglow/task-graph";
 import type { TaskGraphTabularRepository } from "@workglow/task-graph";
+import { TaskGraph } from "@workglow/task-graph";
 
-import { ensureImageGenerateSample } from "./generate-image";
-import { ensureImageEditInpaintSample } from "./edit-image-inpaint";
 import { ensureImageEditComposeSample } from "./edit-image-compose";
+import { ensureImageEditInpaintSample } from "./edit-image-inpaint";
+import { ensureImageGenerateSample } from "./generate-image";
 
 export const CHAT_SAMPLE_ID = "chat";
 

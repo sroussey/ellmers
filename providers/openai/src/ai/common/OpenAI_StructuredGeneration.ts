@@ -10,8 +10,8 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`. Emits

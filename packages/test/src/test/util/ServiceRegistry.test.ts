@@ -5,7 +5,7 @@
  */
 
 import { Container, createServiceToken, ServiceRegistry } from "@workglow/util";
-import { describe, expect, it, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 describe("ServiceRegistry", () => {
   let registry: ServiceRegistry;

@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRunFn, TextGenerationTaskInput, TextGenerationTaskOutput } from "@workglow/ai";
+import type {
+  AiProviderRunFn,
+  TextGenerationTaskInput,
+  TextGenerationTaskOutput,
+} from "@workglow/ai";
 import { toOpenAIMessages } from "@workglow/ai/worker";
 import { getLogger } from "@workglow/util/worker";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Inputs that the unified `["text.generation"]` runFn handles. Both

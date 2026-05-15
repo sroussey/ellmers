@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { JSONValue } from "../tabular/ITabularStorage";
 import { traced } from "@workglow/util";
+import type { JSONValue } from "../tabular/ITabularStorage";
 import type { IKvStorage, KvEventListener, KvEventName, KvEventParameters } from "./IKvStorage";
 
 /**
@@ -32,9 +32,7 @@ export class TelemetryKvStorage<
     return traced("workglow.storage.kv.get", this.storageName, () => this.inner.get(key));
   }
   getBulk(keys: readonly Key[]): Promise<Combined[]> {
-    return traced("workglow.storage.kv.getBulk", this.storageName, () =>
-      this.inner.getBulk(keys)
-    );
+    return traced("workglow.storage.kv.getBulk", this.storageName, () => this.inner.getBulk(keys));
   }
   delete(key: Key): Promise<void> {
     return traced("workglow.storage.kv.delete", this.storageName, () => this.inner.delete(key));

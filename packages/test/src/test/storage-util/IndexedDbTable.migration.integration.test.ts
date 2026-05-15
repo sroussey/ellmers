@@ -9,9 +9,9 @@ import {
   ensureIndexedDbTable,
   ExpectedIndexDefinition,
 } from "@workglow/indexeddb/storage";
+import { setLogger } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("IndexedDbTable - Migration Tests", () => {

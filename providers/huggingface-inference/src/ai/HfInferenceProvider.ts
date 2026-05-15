@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai/worker";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import { HF_INFERENCE } from "./common/HFI_Constants";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import { AiProvider } from "@workglow/ai/worker";
 import {
   hfInferenceWorkerRunFnSpecs,
   inferHfInferenceCapabilities,
 } from "./common/HFI_Capabilities";
+import { HF_INFERENCE } from "./common/HFI_Constants";
 import type { HfInferenceModelConfig } from "./common/HFI_ModelSchema";
 
 /**

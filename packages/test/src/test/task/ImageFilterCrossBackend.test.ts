@@ -3,8 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
+import { applyFilter } from "@workglow/tasks";
 import "@workglow/util/media";
 import {
   CpuImage,
@@ -13,7 +13,7 @@ import {
   type ImageValue,
   type RawPixelBuffer,
 } from "@workglow/util/media";
-import { applyFilter } from "@workglow/tasks";
+import { describe, expect, test } from "vitest";
 
 const W = 32,
   H = 32;

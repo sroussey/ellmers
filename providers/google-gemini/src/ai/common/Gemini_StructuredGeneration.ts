@@ -10,8 +10,8 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { parsePartialJson } from "@workglow/util/worker";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 /**

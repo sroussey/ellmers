@@ -3,8 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { RawPixelBuffer } from "./rawPixelBuffer";
 import { getImageRasterCodec } from "./imageRasterCodecRegistry";
+import type { RawPixelBuffer } from "./rawPixelBuffer";
 
 async function rawPixelBufferToBytes(bin: RawPixelBuffer, mimeType: string): Promise<Uint8Array> {
   const dataUri = await getImageRasterCodec().encodeDataUri(bin, mimeType);

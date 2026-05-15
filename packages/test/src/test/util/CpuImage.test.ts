@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import { CpuImage } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 
 function makeBinary(w: number, h: number) {
   const data = new Uint8ClampedArray(w * h * 4);

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
+import { parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
 import { buildToolDescription } from "../task/ToolCallingUtils";
-import type { StreamEvent } from "@workglow/task-graph";
-import { parsePartialJson } from "@workglow/util/worker";
 
 /**
  * Shared helpers for providers that expose an OpenAI-compatible chat-completions

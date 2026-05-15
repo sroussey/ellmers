@@ -4,6 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { McpServerConfig } from "@workglow/mcp/util";
+import {
+  getMcpServerConfig,
+  getMcpServerTransport,
+  getMcpTaskDeps,
+  TypeMcpServer,
+} from "@workglow/mcp/util";
 import type { TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
@@ -16,11 +23,6 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
-import { getMcpServerConfig } from "@workglow/mcp/util";
-import { getMcpServerTransport } from "@workglow/mcp/util";
-import { TypeMcpServer } from "@workglow/mcp/util";
-import type { McpServerConfig } from "@workglow/mcp/util";
-import { getMcpTaskDeps } from "@workglow/mcp/util";
 import type { McpListTaskInput } from "./McpListTask";
 import { mcpList } from "./McpListTask";
 

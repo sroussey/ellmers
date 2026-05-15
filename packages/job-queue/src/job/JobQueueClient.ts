@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobStatus } from "../queue-storage/IQueueStorage";
+import { EventEmitter } from "@workglow/util";
 import type {
   IQueueStorage,
   JobStorageFormat,
   QueueChangePayload,
 } from "../queue-storage/IQueueStorage";
-import { EventEmitter } from "@workglow/util";
+import { JobStatus } from "../queue-storage/IQueueStorage";
 import { Job } from "./Job";
 import {
   AbortSignalJobError,

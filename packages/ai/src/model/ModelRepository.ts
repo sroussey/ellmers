@@ -6,8 +6,8 @@
 
 import { ITabularStorage } from "@workglow/storage";
 import { EventEmitter, EventParameters } from "@workglow/util";
-import { compileSchema } from "@workglow/util/schema";
 import type { DataPortSchemaObject, SchemaNode } from "@workglow/util/schema";
+import { compileSchema } from "@workglow/util/schema";
 
 import { ModelPrimaryKeyNames, ModelRecord, ModelRecordSchema } from "./ModelSchema";
 

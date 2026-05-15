@@ -29,9 +29,15 @@ export const WebBrowser_TextGeneration: AiProviderRunFn<
   });
   try {
     const stream = session.promptStreaming(input.prompt, { signal });
-    for await (const e of snapshotStreamToTextDeltas<TextGenerationTaskOutput>(stream, "text", (text) => ({
-      text,
-    }))) { emit(e); }
+    for await (const e of snapshotStreamToTextDeltas<TextGenerationTaskOutput>(
+      stream,
+      "text",
+      (text) => ({
+        text,
+      })
+    )) {
+      emit(e);
+    }
   } finally {
     session.destroy();
   }

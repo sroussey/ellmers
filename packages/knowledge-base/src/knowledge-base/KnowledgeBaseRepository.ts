@@ -5,11 +5,11 @@
  */
 
 import type { ITabularStorage } from "@workglow/storage";
-import { EventEmitter } from "@workglow/util";
 import type { EventParameters } from "@workglow/util";
+import { EventEmitter } from "@workglow/util";
 
-import { KnowledgeBasePrimaryKeyNames, KnowledgeBaseRecordSchema } from "./KnowledgeBaseSchema";
 import type { KnowledgeBaseRecord } from "./KnowledgeBaseSchema";
+import { KnowledgeBasePrimaryKeyNames, KnowledgeBaseRecordSchema } from "./KnowledgeBaseSchema";
 
 /**
  * Events that can be emitted by the KnowledgeBaseRepository

@@ -1,7 +1,6 @@
-import { Worker as NodeWorker, isMainThread, parentPort } from "worker_threads";
+import { URL as NodeURL, pathToFileURL } from "url";
 import type { WorkerOptions } from "worker_threads";
-import { pathToFileURL } from "url";
-import { URL as NodeURL } from "url";
+import { Worker as NodeWorker, isMainThread, parentPort } from "worker_threads";
 
 class WorkerPolyfill extends NodeWorker {
   constructor(scriptUrl: string | NodeURL, options?: WorkerOptions) {
@@ -24,8 +23,8 @@ class WorkerPolyfill extends NodeWorker {
 const Worker = isMainThread ? WorkerPolyfill : parentPort;
 export { Worker, parentPort };
 
-import { WorkerServerBase, WORKER_SERVER } from "./WorkerServerBase";
 import { globalServiceRegistry } from "../di";
+import { WORKER_SERVER, WorkerServerBase } from "./WorkerServerBase";
 export { WORKER_SERVER };
 export class WorkerServer extends WorkerServerBase {
   constructor() {
