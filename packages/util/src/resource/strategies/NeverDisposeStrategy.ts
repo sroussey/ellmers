@@ -23,6 +23,7 @@ export class NeverDisposeStrategy implements IDisposeStrategy {
     return disposer;
   }
 
+  /** No inactivity tracking — intentionally a no-op. */
   touch(_key: string): void {}
 
   async onRunComplete(_scope: ResourceScope): Promise<void> {

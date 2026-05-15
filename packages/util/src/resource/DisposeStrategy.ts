@@ -30,9 +30,9 @@ export interface IDisposeStrategy {
   onScopeDestroy(scope: ResourceScope): Promise<void>;
 }
 
-// Forward declarations — the concrete factories live in their own files to
-// keep each strategy focused. We re-export them from a namespace below so
-// callers can write `DisposeStrategy.inactivity(5 * 60_000)`.
+// Concrete implementations live in their own files to keep each strategy
+// focused. The factory namespace below lets callers write
+// `DisposeStrategy.inactivity(5 * 60_000)` without importing strategy classes directly.
 import { InactivityStrategy } from "./strategies/InactivityStrategy";
 import { NeverDisposeStrategy } from "./strategies/NeverDisposeStrategy";
 import { RunCompletionStrategy } from "./strategies/RunCompletionStrategy";
@@ -40,5 +40,6 @@ import { RunCompletionStrategy } from "./strategies/RunCompletionStrategy";
 export const DisposeStrategy = {
   runCompletion: (): IDisposeStrategy => new RunCompletionStrategy(),
   never: (): IDisposeStrategy => new NeverDisposeStrategy(),
-  inactivity: (idleMs: number): IDisposeStrategy => new InactivityStrategy(idleMs),
+  inactivity: (idleMs: number, onError?: (key: string, err: unknown) => void): IDisposeStrategy =>
+    new InactivityStrategy(idleMs, onError),
 } as const;

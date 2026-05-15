@@ -18,7 +18,10 @@ import type { ResourceScope } from "../ResourceScope";
 export class InactivityStrategy implements IDisposeStrategy {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly idleMs: number) {
+  constructor(
+    private readonly idleMs: number,
+    private readonly onError?: (key: string, err: unknown) => void
+  ) {
     if (!Number.isFinite(idleMs) || idleMs <= 0) {
       throw new RangeError(
         `InactivityStrategy: idleMs must be a positive finite number (got ${idleMs})`
@@ -49,7 +52,13 @@ export class InactivityStrategy implements IDisposeStrategy {
       if (existing !== undefined) clearTimeout(existing);
       const t = setTimeout(() => {
         this.timers.delete(key);
-        void scope.dispose(key).catch(() => {});
+        void scope.dispose(key).catch((err) => {
+          if (this.onError) {
+            this.onError(key, err);
+          } else {
+            console.error(`InactivityStrategy: dispose("${key}") failed`, err);
+          }
+        });
       }, this.idleMs);
       // Allow Node to exit while timers are pending.
       if (typeof (t as { unref?: () => void }).unref === "function") {
