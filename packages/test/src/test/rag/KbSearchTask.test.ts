@@ -63,4 +63,17 @@ describe("KbSearchTask scoreThreshold forwarding", () => {
     // that it's NOT a stale value carried over from a previous call.
     expect((forwardedOpts as { scoreThreshold?: number }).scoreThreshold).toBeUndefined();
   });
+
+  it("threads run context (signal) to kb.search", async () => {
+    const { kb, searchSpy } = await makeKbWithSearchSpy();
+
+    await kbSearch({ knowledgeBase: kb, query: "hello" });
+
+    expect(searchSpy).toHaveBeenCalledTimes(1);
+    const call = searchSpy.mock.calls[0];
+    // Third argument is the runConfig extracted from IExecuteContext.
+    const forwardedRunConfig = call[2];
+    expect(forwardedRunConfig).toBeDefined();
+    expect(forwardedRunConfig).toMatchObject({ signal: expect.any(AbortSignal) });
+  });
 });

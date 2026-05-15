@@ -129,22 +129,21 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
 
   override async execute(
     input: KbSearchTaskInput,
-    _context: IExecuteContext
+    context: IExecuteContext
   ): Promise<KbSearchTaskOutput> {
     const { knowledgeBase, query, topK = 5, filter, scoreThreshold } = input;
     const kb = knowledgeBase as KnowledgeBase;
-    // Forward `scoreThreshold` to the strategy. The standard strategy
-    // honors it in similarity / hybrid modes and intentionally ignores
-    // it in rerank mode (cross-encoder logits aren't on the same scale
-    // as cosine / RRF, so a single numeric threshold would either drop
-    // everything or nothing).
-    const results = await kb.search(query, { topK, filter, scoreThreshold });
+    const results = await kb.search(
+      query,
+      { topK, filter, scoreThreshold },
+      {
+        signal: context.signal,
+        resourceScope: context.resourceScope,
+        registry: context.registry,
+      }
+    );
     return {
       results,
-      // `chunkText` enforces the metadata.text contract — any chunk
-      // missing text throws with its chunk_id rather than silently
-      // emitting `JSON.stringify(metadata)` (which would surface as
-      // garbage to downstream consumers).
       chunks: results.map(chunkText),
       chunk_ids: results.map((r) => r.chunk_id),
       scores: results.map((r) => r.score),
