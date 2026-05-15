@@ -42,6 +42,15 @@ export const SQLITE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.sqlite"
 );
 
+const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
+  Float32Array,
+  Float64Array,
+  Int8Array,
+  Uint8Array,
+  Int16Array,
+  Uint16Array,
+};
+
 // SqliteTabularStorage is a key-value store that uses SQLite as the backend for
 // in app data.
 
@@ -235,6 +244,10 @@ export class SqliteTabularStorage<
       if (typeof Buffer !== "undefined" && value instanceof Buffer) {
         return super.jsToSqlValue(column, value);
       }
+      // Serialize TypedArrays as JSON arrays (not the integer-keyed object JSON.stringify produces)
+      if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+        return JSON.stringify(Array.from(value as unknown as ArrayLike<number>)) as ValueOptionType;
+      }
       // Convert ALL other objects and arrays to JSON string
       return JSON.stringify(value) as ValueOptionType;
     }
@@ -335,7 +348,23 @@ export class SqliteTabularStorage<
       if (isArray || isObject) {
         if (typeof value === "string") {
           try {
-            return JSON.parse(value) as Entity[keyof Entity];
+            const parsed = JSON.parse(value) as unknown;
+            // Reconstruct TypedArray if schema specifies it
+            if (isArray && typeof actualType !== "boolean") {
+              const fmt = typeof actualType.format === "string" ? actualType.format : "";
+              if (fmt.startsWith("TypedArray")) {
+                const ctorName =
+                  fmt === "TypedArray" ? "Float32Array" : fmt.slice("TypedArray:".length);
+                const Ctor = TYPED_ARRAY_CTORS[ctorName];
+                if (Ctor) {
+                  const nums: number[] = Array.isArray(parsed)
+                    ? (parsed as number[])
+                    : Object.values(parsed as Record<string, number>);
+                  return new Ctor(nums) as Entity[keyof Entity];
+                }
+              }
+            }
+            return parsed as Entity[keyof Entity];
           } catch (e) {
             // If parsing fails, return the value as-is (might be a string that looks like JSON)
             return value as Entity[keyof Entity];

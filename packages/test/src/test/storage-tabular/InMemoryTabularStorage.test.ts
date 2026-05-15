@@ -8,6 +8,11 @@ import { InMemoryTabularStorage } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -67,6 +72,27 @@ describe("InMemoryTabularStorage", () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runTabularStorageContract({
+    name: "InMemoryTabularStorage",
+    createStorage: async () =>
+      new InMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      ),
+    capabilities: {
+      supportsSubscriptions: true,
+      supportsVectorColumns: true,
+      supportsTransactions: false,
+      supportsQuery: true,
+    },
+    usesPolling: false,
+    createVectorStorage: async () =>
+      new InMemoryTabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>(
+        VectorItemSchema,
+        VectorItemPrimaryKeyNames
+      ),
+  });
 });
 
 describe("InMemoryTabularStorage.queryIndex", () => {

@@ -43,6 +43,15 @@ export const POSTGRES_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>
   "storage.tabularRepository.postgres"
 );
 
+const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
+  Float32Array,
+  Float64Array,
+  Int8Array,
+  Uint8Array,
+  Int16Array,
+  Uint16Array,
+};
+
 /**
  * Validates a vector-index numeric tuning value: undefined is allowed
  * (caller wants the pgvector default), otherwise it must be a finite,
@@ -460,13 +469,30 @@ export class PostgresTabularStorage<
         if (typeof value === "string") {
           try {
             // Parse the vector string format [1.0, 2.0, ...] to TypedArray
-            const array = JSON.parse(value);
-            return new Float32Array(array) as Entity[keyof Entity];
+            const parsed = JSON.parse(value) as number[] | unknown;
+            const nums: number[] = Array.isArray(parsed)
+              ? (parsed as number[])
+              : Object.values(parsed as Record<string, number>);
+            const ctorName =
+              typeof actualType.format === "string" && actualType.format !== "TypedArray"
+                ? actualType.format.slice("TypedArray:".length)
+                : "Float32Array";
+            const Ctor = TYPED_ARRAY_CTORS[ctorName] ?? Float32Array;
+            return new Ctor(nums) as Entity[keyof Entity];
           } catch (e) {
             console.warn(`Failed to parse vector for column ${column}:`, e);
           }
         }
-        // If it's already an object/TypedArray, return as-is
+        // Value returned from JSONB as a parsed JS array — reconstruct TypedArray
+        if (value && typeof value === "object" && Array.isArray(value)) {
+          const ctorName =
+            typeof actualType.format === "string" && actualType.format !== "TypedArray"
+              ? actualType.format.slice("TypedArray:".length)
+              : "Float32Array";
+          const Ctor = TYPED_ARRAY_CTORS[ctorName] ?? Float32Array;
+          return new Ctor(value as number[]) as Entity[keyof Entity];
+        }
+        // If it's already a TypedArray, return as-is
         if (value && typeof value === "object") {
           return value as Entity[keyof Entity];
         }

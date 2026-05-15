@@ -12,6 +12,12 @@ import {
 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
+import { CompoundPrimaryKeyNames, CompoundSchema } from "./genericTabularStorageTests";
 
 const TestSchema = {
   type: "object",
@@ -97,4 +103,34 @@ describe("TelemetryTabularStorage", () => {
     inner.emit("put", { id: 1, name: "test" });
     expect(fn).toHaveBeenCalled();
   });
+});
+
+runTabularStorageContract({
+  name: "TelemetryTabularStorage",
+  createStorage: async () => {
+    const inner = new InMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+    return new TelemetryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      "contract-test",
+      inner
+    );
+  },
+  capabilities: {
+    supportsSubscriptions: true,
+    supportsVectorColumns: true,
+    supportsTransactions: false,
+    supportsQuery: true,
+  },
+  createVectorStorage: async () => {
+    const inner = new InMemoryTabularStorage<
+      typeof VectorItemSchema,
+      typeof VectorItemPrimaryKeyNames
+    >(VectorItemSchema, VectorItemPrimaryKeyNames);
+    return new TelemetryTabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>(
+      "contract-vec",
+      inner
+    );
+  },
 });

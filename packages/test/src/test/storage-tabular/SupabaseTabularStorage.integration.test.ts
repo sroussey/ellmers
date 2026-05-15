@@ -9,6 +9,7 @@ import { SupabaseTabularStorage } from "@workglow/supabase/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContract } from "../../contract/tabular-storage/runTabularStorageContract";
 import { createSupabaseMockClient } from "../helpers/SupabaseMockClient";
 import {
   AllTypesPrimaryKeyNames,
@@ -104,4 +105,27 @@ describe("SupabaseTabularStorage", () => {
 
   // Subscription tests skipped for Supabase because mock client doesn't support realtime
   // In production, Supabase uses realtime subscriptions which require a real Supabase instance
+
+  runTabularStorageContract({
+    name: "SupabaseTabularStorage",
+    createStorage: async () => {
+      const storage = new SupabaseTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        client,
+        `contract_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
+    capabilities: {
+      supportsSubscriptions: false,
+      supportsVectorColumns: false,
+      supportsTransactions: false,
+      supportsQuery: true,
+    },
+  });
 });

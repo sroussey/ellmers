@@ -5,10 +5,11 @@
  */
 
 import { FsFolderTabularStorage } from "@workglow/storage";
-import { setLogger } from "@workglow/util";
+import { setLogger, uuid4 } from "@workglow/util";
 import { mkdirSync, rmSync } from "fs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runTabularStorageContract } from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -80,5 +81,23 @@ describe("FsFolderTabularStorage", () => {
         expect(error).toBeDefined();
       }
     });
+  });
+
+  runTabularStorageContract({
+    name: "FsFolderTabularStorage",
+    createStorage: async () =>
+      new FsFolderTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+        `.cache/test/contract/fs_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      ),
+    capabilities: {
+      supportsSubscriptions: true,
+      supportsVectorColumns: false,
+      supportsTransactions: false,
+      supportsQuery: false,
+    },
+    usesPolling: true,
+    pollingIntervalMs: 50,
   });
 });

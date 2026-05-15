@@ -8,6 +8,11 @@ import { CachedTabularStorage, InMemoryTabularStorage } from "@workglow/storage"
 import { setLogger } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   CompoundPrimaryKeyNames,
@@ -677,4 +682,38 @@ describe("CachedTabularStorage", () => {
       expect(cacheResults?.[0].id).toBe("1");
     });
   });
+});
+
+runTabularStorageContract({
+  name: "CachedTabularStorage",
+  createStorage: async () => {
+    const durable = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    return new CachedTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      durable,
+      undefined,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    );
+  },
+  capabilities: {
+    supportsSubscriptions: true,
+    supportsVectorColumns: true,
+    supportsTransactions: false,
+    supportsQuery: true,
+  },
+  createVectorStorage: async () => {
+    const durable = new InMemoryTabularStorage<
+      typeof VectorItemSchema,
+      typeof VectorItemPrimaryKeyNames
+    >(VectorItemSchema, VectorItemPrimaryKeyNames);
+    return new CachedTabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>(
+      durable,
+      undefined,
+      VectorItemSchema,
+      VectorItemPrimaryKeyNames
+    );
+  },
 });

@@ -12,6 +12,11 @@ import type { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
+import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
   AutoIncrementPrimaryKeyNames,
@@ -310,5 +315,36 @@ describe("PostgresTabularStorage", () => {
         await pglite.close();
       }
     });
+  });
+
+  runTabularStorageContract({
+    name: "PostgresTabularStorage",
+    createStorage: async () => {
+      const storage = new PostgresTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(db, `contract_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      return storage;
+    },
+    capabilities: {
+      supportsSubscriptions: false,
+      supportsVectorColumns: true,
+      supportsTransactions: true,
+      supportsQuery: true,
+    },
+    createVectorStorage: async () => {
+      const storage = new PostgresTabularStorage<
+        typeof VectorItemSchema,
+        typeof VectorItemPrimaryKeyNames
+      >(
+        db,
+        `contract_vec_${uuid4().replace(/-/g, "_")}`,
+        VectorItemSchema,
+        VectorItemPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
   });
 });
