@@ -34,8 +34,18 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
   get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined> {
     return traced("workglow.storage.queue.get", this.storageName, () => this.inner.get(id));
   }
-  next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
-    return traced("workglow.storage.queue.next", this.storageName, () => this.inner.next(workerId));
+  next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    return traced("workglow.storage.queue.next", this.storageName, () =>
+      this.inner.next(workerId, opts)
+    );
+  }
+  extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    return traced("workglow.storage.queue.extendLease", this.storageName, () =>
+      this.inner.extendLease(id, workerId, ms)
+    );
   }
   peek(status?: JobStatus, num?: number): Promise<Array<JobStorageFormat<Input, Output>>> {
     return traced("workglow.storage.queue.peek", this.storageName, () =>

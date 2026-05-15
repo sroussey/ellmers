@@ -312,7 +312,8 @@ export class JobQueueWorker<
    * Get the next job from the queue
    */
   protected async next(): Promise<QueueJob | undefined> {
-    const job = await this.storage.next(this.workerId);
+    const leaseMs = this.pollIntervalMs * 60;
+    const job = await this.storage.next(this.workerId, { leaseMs });
     if (!job) return undefined;
     return this.storageToClass(job) as QueueJob;
   }
@@ -457,19 +458,20 @@ export class JobQueueWorker<
   }
 
   /**
-   * Check for jobs that have been marked for abort and trigger their abort controllers.
-   *
-   * Only relevant for jobs running on THIS worker (we have an abort controller
-   * registered for them). When no jobs are active, the peek result is irrelevant
-   * — skip the storage round-trip entirely. Important for battery life on
-   * same-process deployments (browser/mobile) where workers spend most time idle.
+   * Check for in-process jobs that have abort_requested_at set and trigger
+   * their abort controllers. Only relevant for jobs running on THIS worker
+   * (we have an abort controller registered for them). When no jobs are active,
+   * the peek result is irrelevant — skip the storage round-trip entirely.
+   * Important for battery life on same-process deployments (browser/mobile)
+   * where workers spend most time idle.
    */
   protected async checkForAbortingJobs(): Promise<void> {
     if (this.activeJobAbortControllers.size === 0) {
       return;
     }
-    const abortingJobs = await this.storage.peek(JobStatus.ABORTING);
-    for (const jobData of abortingJobs) {
+    const processingJobs = await this.storage.peek(JobStatus.PROCESSING);
+    for (const jobData of processingJobs) {
+      if (!jobData.abort_requested_at) continue;
       const controller = this.activeJobAbortControllers.get(jobData.id);
       if (controller && !controller.signal.aborted) {
         controller.abort();
@@ -666,8 +668,8 @@ export class JobQueueWorker<
   /**
    * Release a job that {@link next} just claimed but that we won't process
    * because the worker was stopped mid-claim. Resets the row to PENDING so
-   * the next started worker can pick it up. `fixupJobs()` would otherwise
-   * skip it (it ignores rows owned by current-server worker IDs).
+   * the next started worker can pick it up. Lease expiry in `next()` would
+   * otherwise reclaim it after the lease expires.
    *
    * Uses `storage.releaseClaim()` rather than `storage.complete()` so the retry
    * budget isn't burned: the worker never actually attempted execution.
@@ -746,7 +748,7 @@ export class JobQueueWorker<
    * `completeJob` that won the race (the COMPLETED→FAILED overwrite bug).
    *
    * If the job is no longer in flight here, it has already settled — recheck
-   * storage and only write FAILED for non-terminal states (i.e. an ABORTING
+   * storage and only write FAILED for non-terminal states (i.e. a PROCESSING
    * row left over from a cross-process abort that this worker never picked up).
    */
   protected async handleAbort(jobId: unknown): Promise<void> {
@@ -787,10 +789,7 @@ export class JobQueueWorker<
     if (job.status === JobStatus.FAILED) {
       throw new PermanentJobError(`Job ${job.id} has failed`);
     }
-    if (
-      job.status === JobStatus.ABORTING ||
-      this.activeJobAbortControllers.get(job.id)?.signal.aborted
-    ) {
+    if (this.activeJobAbortControllers.get(job.id)?.signal.aborted) {
       throw new AbortSignalJobError(`Job ${job.id} is being aborted`);
     }
     if (job.deadlineAt && job.deadlineAt < new Date()) {

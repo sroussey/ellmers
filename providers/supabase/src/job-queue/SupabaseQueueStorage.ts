@@ -168,10 +168,14 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    */
   public async migrate(): Promise<void> {
     // Note: For Supabase, table creation should typically be done through migrations
-    // This setup assumes the table already exists or uses exec_sql RPC function
-    const createTypeSql = `CREATE TYPE job_status AS ENUM (${Object.values(JobStatus)
+    // This setup assumes the table already exists or uses exec_sql RPC function.
+    // ABORTING is included in the enum for backward compatibility with existing data,
+    // but the application no longer writes that value.
+    const enumValues = [...Object.values(JobStatus), "ABORTING"]
+      .filter((v, i, a) => a.indexOf(v) === i)
       .map((v) => `'${v}'`)
-      .join(",")})`;
+      .join(",");
+    const createTypeSql = `CREATE TYPE job_status AS ENUM (${enumValues})`;
 
     const { error: typeError } = await this.client.rpc("exec_sql", { query: createTypeSql });
     // Ignore error if type already exists (code 42710)
@@ -206,7 +210,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress real DEFAULT 0,
       progress_message text DEFAULT '',
       progress_details jsonb,
-      worker_id text
+      worker_id text,
+      abort_requested_at timestamp with time zone,
+      lease_expires_at timestamp with time zone
     )`;
 
     const { error: tableError } = await this.client.rpc("exec_sql", { query: createTableSql });
@@ -214,6 +220,20 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       // Ignore error if table already exists (code 42P07)
       if (tableError.code !== "42P07") {
         throw tableError;
+      }
+    }
+
+    // Add new columns to existing tables (idempotent via IF NOT EXISTS workaround)
+    const alterSqls = [
+      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone`,
+      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone`,
+    ];
+    for (const sql of alterSqls) {
+      const { error } = await this.client.rpc("exec_sql", { query: sql });
+      // Ignore errors (column may already exist)
+      if (error && error.code !== "42701") {
+        // 42701 = duplicate_column
+        // ignore
       }
     }
 
@@ -332,28 +352,38 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /**
    * Retrieves the next available job that is ready to be processed.
-   * Uses atomic UPDATE with subquery SELECT FOR UPDATE SKIP LOCKED to prevent race conditions.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    * @param workerId - Worker ID to associate with the job (required)
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job or undefined if no job is available
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const leaseMs = opts?.leaseMs ?? 30000;
     const prefixConditions = this.buildPrefixWhereSql();
     const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
     const validatedWorkerId = this.validateSqlValue(workerId, "workerId");
     const escapedQueueName = this.escapeSqlString(validatedQueueName);
     const escapedWorkerId = this.escapeSqlString(validatedWorkerId);
 
-    // Use the same atomic UPDATE...WHERE id = (SELECT...FOR UPDATE SKIP LOCKED) pattern as PostgresQueueStorage
     const sql = `
       UPDATE ${this.tableName}
-      SET status = '${JobStatus.PROCESSING}', last_ran_at = NOW() AT TIME ZONE 'UTC', worker_id = '${escapedWorkerId}'
+      SET status = '${JobStatus.PROCESSING}',
+          last_ran_at = NOW() AT TIME ZONE 'UTC',
+          worker_id = '${escapedWorkerId}',
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond')
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
         WHERE queue = '${escapedQueueName}'
-        AND status = '${JobStatus.PENDING}'
+        AND (
+          (status = '${JobStatus.PENDING}' AND run_after <= NOW() AT TIME ZONE 'UTC')
+          OR (status = '${JobStatus.PROCESSING}' AND (lease_expires_at IS NULL OR lease_expires_at < NOW() AT TIME ZONE 'UTC'))
+        )
         ${prefixConditions}
-        AND run_after <= NOW() AT TIME ZONE 'UTC'
         ORDER BY run_after ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -370,6 +400,42 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     }
 
     return data[0] as JobStorageFormat<Input, Output>;
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    const validatedWorkerId = this.validateSqlValue(workerId, "workerId");
+    const escapedWorkerId = this.escapeSqlString(validatedWorkerId);
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) {
+      throw new Error(`Invalid job id: ${id}`);
+    }
+
+    const prefixConditions = this.buildPrefixWhereSql();
+
+    const sql = `
+      UPDATE ${this.tableName}
+        SET lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(ms)} * INTERVAL '1 millisecond')
+        WHERE id = ${numericId}
+          AND queue = '${this.escapeSqlString(this.validateSqlValue(this.queueName, "queueName"))}'
+          AND worker_id = '${escapedWorkerId}'
+          AND status = '${JobStatus.PROCESSING}'
+          ${prefixConditions}`;
+
+    const { data, error } = await this.client.rpc("exec_sql", { query: sql });
+    if (error) throw error;
+
+    // exec_sql returns affected rows; if empty, the lease was lost
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
   }
 
   /**
@@ -520,7 +586,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       return;
     }
 
-    // Transitional states: PROCESSING/ABORTING etc - increment attempts like other stores
+    // Transitional states (e.g. PROCESSING) — increment attempts like other stores
     let query = this.client
       .from(this.tableName)
       .update({
@@ -599,22 +665,43 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Aborts a job by setting its status to "ABORTING".
-   * This method will signal the corresponding AbortController so that
-   * the job's execute() method (if it supports an AbortSignal parameter)
-   * can clean up and exit.
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    */
   public async abort(jobId: unknown): Promise<void> {
-    let query = this.client
-      .from(this.tableName)
-      .update({ status: JobStatus.ABORTING })
-      .eq("id", jobId)
-      .eq("queue", this.queueName);
+    const now = new Date().toISOString();
 
-    query = this.applyPrefixFilters(query);
-    const { error } = await query;
+    // Abort PENDING → FAILED immediately
+    {
+      let query = this.client
+        .from(this.tableName)
+        .update({
+          status: JobStatus.FAILED,
+          abort_requested_at: now,
+          completed_at: now,
+        })
+        .eq("id", jobId)
+        .eq("queue", this.queueName)
+        .eq("status", JobStatus.PENDING);
+      query = this.applyPrefixFilters(query);
+      const { error } = await query;
+      if (error) throw error;
+    }
 
-    if (error) throw error;
+    // Abort PROCESSING → set abort_requested_at only
+    {
+      let query = this.client
+        .from(this.tableName)
+        .update({ abort_requested_at: now })
+        .eq("id", jobId)
+        .eq("queue", this.queueName)
+        .eq("status", JobStatus.PROCESSING);
+      query = this.applyPrefixFilters(query);
+      const { error } = await query;
+      if (error) throw error;
+    }
   }
 
   /**

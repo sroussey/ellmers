@@ -310,16 +310,17 @@ export class JobQueueClient<Input, Output> {
    *
    * Same-process path: fires the in-memory abort controller on the attached
    * server — `handleAbort` will write FAILED directly, so we skip the
-   * `storage.abort(…)` ABORTING write. Writing both would race (last-writer-
-   * wins) and can leave the row stuck at ABORTING on async storages.
+   * `storage.abort(…)` write. Writing both would race (last-writer-wins) and
+   * can leave the row in an inconsistent state on async storages.
    *
    * Cross-process path (or job not currently running on any local worker):
-   * write ABORTING to storage so the remote worker's poll picks it up.
+   * write abort_requested_at to storage so the remote worker's poll picks it
+   * up (or mark FAILED immediately if the job is still PENDING).
    *
    * Crash window: if the process dies after the in-memory abort fires but
-   * before `failJob` writes FAILED, the row stays PROCESSING. `fixupJobs()`
-   * resets it to PENDING on next start and the job will re-run. Make handlers
-   * idempotent (or use `uniquenessKey`) if that's not acceptable.
+   * before `failJob` writes FAILED, the row stays PROCESSING. Lease expiry
+   * in `next()` will re-claim it on the next start so the job will re-run.
+   * Make handlers idempotent if that's not acceptable.
    */
   public async abort(jobId: unknown): Promise<void> {
     if (!jobId) throw new JobNotFoundError("Cannot abort undefined job");

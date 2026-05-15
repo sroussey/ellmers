@@ -227,35 +227,76 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /**
    * Retrieves the next available job that is ready to be processed.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    * @param workerId - Worker ID to associate with the job (required)
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job or undefined if no job is available
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
-    // Parameters: $1=status, $2=queue, $3=status, $4=worker_id, $5+=prefix params
-    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(5);
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const leaseMs = opts?.leaseMs ?? 30000;
+    // Parameters: $1=PROCESSING, $2=now+leaseMs interval, $3=queue, $4=workerId, $5=PENDING, $6=PROCESSING, $7+=prefix params
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(7);
     const result = await this.db.query<
       JobStorageFormat<Input, Output>,
       Array<string | number | JobStatus | null>
     >(
       `
-      UPDATE ${this.tableName} 
-      SET status = $1, last_ran_at = NOW() AT TIME ZONE 'UTC', worker_id = $4
+      UPDATE ${this.tableName}
+      SET status = $1,
+          last_ran_at = NOW() AT TIME ZONE 'UTC',
+          worker_id = $4,
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond')
       WHERE id = (
-        SELECT id 
-        FROM ${this.tableName} 
-        WHERE queue = $2 
-        AND status = $3
+        SELECT id
+        FROM ${this.tableName}
+        WHERE queue = $3
+        AND (
+          (status = $5 AND run_after <= NOW() AT TIME ZONE 'UTC')
+          OR (status = $6 AND (lease_expires_at IS NULL OR lease_expires_at < NOW() AT TIME ZONE 'UTC'))
+        )
         ${prefixConditions}
-        AND run_after <= NOW() AT TIME ZONE 'UTC'
-        ORDER BY run_after ASC 
-        FOR UPDATE SKIP LOCKED 
+        ORDER BY run_after ASC
+        FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
       RETURNING *`,
-      [JobStatus.PROCESSING, this.queueName, JobStatus.PENDING, workerId, ...prefixParams]
+      [
+        JobStatus.PROCESSING,
+        leaseMs,
+        this.queueName,
+        workerId,
+        JobStatus.PENDING,
+        JobStatus.PROCESSING,
+        ...prefixParams,
+      ]
     );
 
     return result?.rows?.[0] ?? undefined;
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(5);
+    const result = await this.db.query(
+      `UPDATE ${this.tableName}
+         SET lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($1 * INTERVAL '1 millisecond')
+         WHERE id = $2 AND queue = $3 AND worker_id = $4 AND status = 'PROCESSING'${prefixConditions}`,
+      [ms, id, this.queueName, workerId, ...prefixParams]
+    );
+    if (!result || result.rowCount === 0) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
   }
 
   /**
@@ -387,20 +428,34 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Aborts a job by setting its status to "ABORTING".
-   * This method will signal the corresponding AbortController so that
-   * the job's execute() method (if it supports an AbortSignal parameter)
-   * can clean up and exit.
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    */
   public async abort(jobId: unknown): Promise<void> {
-    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
-    await this.db.query(
-      `
-      UPDATE ${this.tableName} 
-      SET status = 'ABORTING' 
-      WHERE id = $1 AND queue = $2${prefixConditions}`,
-      [jobId, this.queueName, ...prefixParams]
-    );
+    // Abort PENDING → FAILED immediately
+    {
+      const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(4);
+      await this.db.query(
+        `UPDATE ${this.tableName}
+           SET status = 'FAILED',
+               abort_requested_at = NOW() AT TIME ZONE 'UTC',
+               completed_at = NOW() AT TIME ZONE 'UTC'
+           WHERE id = $1 AND queue = $2 AND status = $3${prefixConditions}`,
+        [jobId, this.queueName, JobStatus.PENDING, ...prefixParams]
+      );
+    }
+    // Abort PROCESSING → set abort_requested_at only
+    {
+      const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(4);
+      await this.db.query(
+        `UPDATE ${this.tableName}
+           SET abort_requested_at = NOW() AT TIME ZONE 'UTC'
+           WHERE id = $1 AND queue = $2 AND status = $3${prefixConditions}`,
+        [jobId, this.queueName, JobStatus.PROCESSING, ...prefixParams]
+      );
+    }
   }
 
   /**

@@ -248,9 +248,9 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
-   * Retrieves the next job from the queue using optimistic locking. In case multiple workers
-   * claim the same job, the first worker to claim it will process it and the other workers will return undefined.
-   * This ONLY happens if workers are running in multiple tabs.
+   * Retrieves the next job from the queue using optimistic locking.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    *
    * IndexedDB uses snapshot isolation, so concurrent transactions can both see the same
    * PENDING job. To prevent processing the same job multiple times, this method:
@@ -259,14 +259,19 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
    * 3. If another worker claimed it first (different claim token), returns undefined
    *
    * @param workerId - Worker ID to associate with the job (required)
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns A promise that resolves to the next job or undefined if the queue is empty.
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readwrite");
     const store = tx.objectStore(this.tableName);
-    const index = store.index("queue_status_run_after");
     const now = new Date().toISOString();
+    const leaseMs = opts?.leaseMs ?? 30000;
+    const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
     const prefixKeyValues = this.getPrefixKeyValues();
 
     // This ensures we can verify that we actually won the race to claim this job
@@ -274,7 +279,28 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
     const jobToReturn = await new Promise<JobStorageFormat<Input, Output> | undefined>(
       (resolve, reject) => {
-        const cursorRequest = index.openCursor(
+        let claimedJob: JobStorageFormat<Input, Output> | undefined;
+
+        const tryClaimJob = (job: JobStorageFormat<Input, Output> & Record<string, unknown>) => {
+          job.status = JobStatus.PROCESSING;
+          job.last_ran_at = now;
+          job.worker_id = claimToken;
+          job.lease_expires_at = leaseExpiry;
+
+          try {
+            const updateRequest = store.put(job);
+            updateRequest.onsuccess = () => {
+              claimedJob = job;
+            };
+            updateRequest.onerror = () => {};
+          } catch {
+            // ignore
+          }
+        };
+
+        // First: look for a PENDING job ready to run
+        const pendingIndex = store.index("queue_status_run_after");
+        const pendingRequest = pendingIndex.openCursor(
           IDBKeyRange.bound(
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, ""],
             [...prefixKeyValues, this.queueName, JobStatus.PENDING, now],
@@ -283,23 +309,16 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
           )
         );
 
-        let claimedJob: JobStorageFormat<Input, Output> | undefined;
-        let cursorStopped = false;
-
-        cursorRequest.onsuccess = (e) => {
+        pendingRequest.onsuccess = (e) => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (!cursor) {
-            // Cursor exhausted - resolve with whatever we found (or undefined)
+            // No PENDING job found — try expired-lease PROCESSING job
+            if (!claimedJob) {
+              tryExpiredLeaseScan();
+            }
             return;
           }
-
-          // If we already found and updated a job, stop iterating
-          if (cursorStopped) {
-            return;
-          }
-
           const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
-          // Verify the job belongs to this queue, matches prefixes, and is still in PENDING state
           if (
             job.queue !== this.queueName ||
             job.status !== JobStatus.PENDING ||
@@ -308,34 +327,50 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
             cursor.continue();
             return;
           }
-
-          // Claim the job with our unique token
-          job.status = JobStatus.PROCESSING;
-          job.last_ran_at = now;
-          job.worker_id = claimToken;
-
-          try {
-            const updateRequest = store.put(job);
-            updateRequest.onsuccess = () => {
-              claimedJob = job;
-              cursorStopped = true;
-              // Stop cursor iteration - we've claimed a job
-            };
-            updateRequest.onerror = (err) => {
-              console.error("Failed to update job status:", err);
-              cursor.continue();
-            };
-          } catch (err) {
-            console.error("Error updating job:", err);
-            cursor.continue();
-          }
+          tryClaimJob(job);
+          // Don't continue cursor — we attempted a claim
         };
 
-        cursorRequest.onerror = () => reject(cursorRequest.error);
+        pendingRequest.onerror = () => reject(pendingRequest.error);
+
+        const tryExpiredLeaseScan = () => {
+          // Scan PROCESSING jobs to find one with an expired lease
+          const processingIndex = store.index("queue_status_run_after");
+          const processingRequest = processingIndex.openCursor(
+            IDBKeyRange.bound(
+              [...prefixKeyValues, this.queueName, JobStatus.PROCESSING, ""],
+              [...prefixKeyValues, this.queueName, JobStatus.PROCESSING, "￿"],
+              false,
+              false
+            )
+          );
+
+          processingRequest.onsuccess = (e) => {
+            const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+            if (!cursor) return; // none found, tx.oncomplete will resolve with undefined
+            const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
+            if (
+              job.queue !== this.queueName ||
+              job.status !== JobStatus.PROCESSING ||
+              !this.matchesPrefixes(job)
+            ) {
+              cursor.continue();
+              return;
+            }
+            // Check for expired lease (null = expired per spec)
+            if (job.lease_expires_at && job.lease_expires_at >= now) {
+              cursor.continue();
+              return;
+            }
+            tryClaimJob(job);
+            // Don't continue — attempted a claim
+          };
+
+          processingRequest.onerror = () => reject(processingRequest.error);
+        };
 
         // Wait for transaction to complete before resolving
         tx.oncomplete = () => {
-          // Notify hybrid manager of local change
           if (claimedJob) {
             this.hybridManager?.notifyLocalChange();
           }
@@ -351,27 +386,38 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     }
 
     // Verify we actually won the race by re-reading the job
-    // This is the optimistic locking check - if another worker claimed it first,
-    // their claim token will be there instead of ours
     const verifiedJob = await this.get(jobToReturn.id);
 
     if (!verifiedJob) {
-      // Job was deleted - we lost the race
       return undefined;
     }
 
     if (verifiedJob.worker_id !== claimToken) {
-      // Another worker claimed this job - we lost the race
       return undefined;
     }
 
     if (verifiedJob.status !== JobStatus.PROCESSING) {
-      // Job status changed (e.g., another worker completed it already) - we lost the race
       return undefined;
     }
 
-    // We successfully claimed the job
     return verifiedJob;
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    const job = await this.get(id);
+    if (!job || job.status !== JobStatus.PROCESSING || job.worker_id !== workerId) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
+    job.lease_expires_at = new Date(Date.now() + ms).toISOString();
+    await this.put(job);
   }
 
   /**
@@ -459,14 +505,24 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
-   * Aborts a job in the queue.
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    */
   public async abort(id: unknown): Promise<void> {
     const job = await this.get(id);
     if (!job) return;
-
-    job.status = JobStatus.ABORTING;
-    await this.complete(job);
+    const now = new Date().toISOString();
+    if (job.status === JobStatus.PENDING) {
+      job.status = JobStatus.FAILED;
+      job.abort_requested_at = now;
+      job.completed_at = now;
+      await this.complete(job);
+    } else if (job.status === JobStatus.PROCESSING) {
+      job.abort_requested_at = now;
+      await this.put(job);
+    }
   }
 
   /**

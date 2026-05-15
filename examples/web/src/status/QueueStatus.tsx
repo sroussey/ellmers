@@ -13,7 +13,6 @@ export function QueueStatus({ queueType }: { queueType: string }) {
   const [pending, setPending] = useState<number>(0);
   const [processing, setProcessing] = useState<number>(0);
   const [completed, setCompleted] = useState<number>(0);
-  const [aborting, setAborting] = useState<number>(0);
   const [errors, setErrors] = useState<number>(0);
   const [disabled, setDisabled] = useState<number>(0);
 
@@ -26,7 +25,6 @@ export function QueueStatus({ queueType }: { queueType: string }) {
       setPending(await client.size(JobStatus.PENDING));
       setProcessing(await client.size(JobStatus.PROCESSING));
       setCompleted(await client.size(JobStatus.COMPLETED));
-      setAborting(await client.size(JobStatus.ABORTING));
       setErrors(await client.size(JobStatus.FAILED));
       setDisabled(await client.size(JobStatus.DISABLED));
     }
@@ -53,7 +51,6 @@ export function QueueStatus({ queueType }: { queueType: string }) {
     setPending(0);
     setProcessing(0);
     setCompleted(0);
-    setAborting(0);
     setErrors(0);
     setDisabled(0);
   }, [registeredQueue]);

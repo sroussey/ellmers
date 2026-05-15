@@ -159,9 +159,6 @@ export class JobQueueServer<
       );
     }
 
-    // Fix stuck jobs from previous runs
-    await this.fixupJobs();
-
     // Subscribe to storage changes to wake workers when new work arrives.
     // - Cross-process deployments rely on this for wake-up.
     // - Same-process attached clients are also primarily woken by the direct
@@ -562,51 +559,6 @@ export class JobQueueServer<
   }
 
   /**
-   * Fix stuck jobs from previous server runs.
-   * Jobs in PROCESSING or ABORTING state that are not owned by any of the current
-   * server's workers are considered orphaned and will be reset.
-   */
-  protected async fixupJobs(): Promise<void> {
-    try {
-      const stuckProcessingJobs = await this.storage.peek(JobStatus.PROCESSING);
-      const stuckAbortingJobs = await this.storage.peek(JobStatus.ABORTING);
-      const stuckJobs = [...stuckProcessingJobs, ...stuckAbortingJobs];
-
-      // Get the worker IDs of all workers managed by this server
-      const currentWorkerIds = new Set(this.getWorkerIds());
-
-      for (const jobData of stuckJobs) {
-        // Skip jobs that belong to workers in this server (they may still be processing)
-        if (jobData.worker_id && currentWorkerIds.has(jobData.worker_id)) {
-          continue;
-        }
-
-        const job = this.storageToClass(jobData);
-        if (job.runAttempts >= job.maxRetries) {
-          job.status = JobStatus.FAILED;
-          job.error = "Max retries reached";
-          job.errorCode = "MAX_RETRIES_REACHED";
-          // Clear worker_id since job is now failed
-          job.workerId = null;
-        } else {
-          job.status = JobStatus.PENDING;
-          job.runAfter = job.lastRanAt || new Date();
-          job.progress = 0;
-          job.progressMessage = "";
-          job.progressDetails = null;
-          job.error = "Server restarted";
-          // Clear worker_id so a new worker can claim this job
-          job.workerId = null;
-        }
-
-        await this.storage.complete(this.classToStorage(job));
-      }
-    } catch (error) {
-      console.error("Error in fixupJobs:", error);
-    }
-  }
-
-  /**
    * Convert storage format to Job class
    */
   protected storageToClass(details: JobStorageFormat<Input, Output>): Job<Input, Output> {
@@ -618,12 +570,5 @@ export class JobQueueServer<
    */
   protected classToStorage(job: Job<Input, Output>): JobStorageFormat<Input, Output> {
     return classToStorage(job, this.queueName);
-  }
-
-  /**
-   * Get the worker IDs of all workers managed by this server
-   */
-  public getWorkerIds(): string[] {
-    return this.workers.map((worker) => worker.workerId);
   }
 }
