@@ -111,13 +111,25 @@ interface RankedItem {
 }
 
 /**
- * Heuristic, model-free reranking. For real cross-encoder reranking use
- * {@link TextRerankerTask}, which dispatches to a provider-registered run-fn
- * (e.g. HuggingFace Transformers) for a configured reranker model.
- * `createStandardKbStrategy` invokes that path automatically when the KB has
- * a `rerankerModel` set under `searchMode: "rerank"`; this task is the
- * fallback when no reranker model is configured and a workflow still wants
- * some rerank-style scoring.
+ * Escape every regex metacharacter so a query token can be safely embedded
+ * in `new RegExp(token, "gi")`. Without this, user input like `foo(`,
+ * `\\`, `*abc`, or `[` causes `new RegExp` to throw `SyntaxError: Invalid
+ * regular expression`, surfacing a 500-shaped failure in `simpleRerank`
+ * rather than treating the token as a literal.
+ *
+ * The pattern matches the canonical TC39 proposal for `RegExp.escape` and
+ * the long-standing MDN snippet — `-` is included so the helper is safe to
+ * paste inside a character class as well.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\\-]/g, "\\$&");
+}
+
+/**
+ * Rerank retrieved chunks to improve relevance using in-process heuristics.
+ * Supports `simple` (keyword overlap + position) and `reciprocal-rank-fusion`.
+ * Note: a `cross-encoder` method will be added when a real cross-encoder
+ * task exists; until then, use a dedicated model task upstream.
  */
 export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, RerankerTaskConfig> {
   public static override type = "RerankerTask";
@@ -182,6 +194,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
   ): RankedItem[] {
     const queryLower = query.toLowerCase();
     const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+    const hasQueryWords = queryWords.length > 0;
 
     const items: RankedItem[] = chunks.map((chunk, index) => {
       const chunkLower = chunk.toLowerCase();
@@ -189,15 +202,22 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
 
       let keywordScore = 0;
       for (const word of queryWords) {
-        const regex = new RegExp(word, "gi");
+        // Skip pure-whitespace / empty tokens (defensive: split(/\s+/) +
+        // .filter(w => w.length > 0) above should already exclude them, but
+        // make the contract local).
+        if (word.length === 0 || /^\s+$/.test(word)) continue;
+        // Escape every regex metacharacter so user input like `foo(`, `\\`,
+        // `*abc`, or `[` is treated as a literal token rather than being
+        // parsed as a regex (which would throw `SyntaxError`).
+        const regex = new RegExp(escapeRegExp(word), "gi");
         const matches = chunkLower.match(regex);
         if (matches) {
           keywordScore += matches.length;
         }
       }
 
-      const exactMatchBonus = chunkLower.includes(queryLower) ? 0.5 : 0;
-      const normalizedKeywordScore = Math.min(keywordScore / (queryWords.length * 3), 1);
+      const exactMatchBonus = hasQueryWords && chunkLower.includes(queryLower) ? 0.5 : 0;
+      const normalizedKeywordScore = hasQueryWords ? Math.min(keywordScore / (queryWords.length * 3), 1) : 0;
       const positionPenalty = Math.log(index + 1) / 10;
 
       const combinedScore =
