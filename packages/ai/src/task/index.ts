@@ -36,6 +36,8 @@ export * from "./ImageClassificationTask";
 export * from "./ImageEmbeddingTask";
 export * from "./ImageSegmentationTask";
 export * from "./ImageToTextTask";
+export * from "./KbAddDocumentTask";
+export * from "./KbDeleteTask";
 export * from "./KbReindexTask";
 export * from "./KbSearchTask";
 export * from "./KbToDocumentsTask";

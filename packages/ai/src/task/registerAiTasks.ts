@@ -26,6 +26,8 @@ import { ImageClassificationTask } from "./ImageClassificationTask";
 import { ImageEmbeddingTask } from "./ImageEmbeddingTask";
 import { ImageSegmentationTask } from "./ImageSegmentationTask";
 import { ImageToTextTask } from "./ImageToTextTask";
+import { KbAddDocumentTask } from "./KbAddDocumentTask";
+import { KbDeleteTask } from "./KbDeleteTask";
 import { KbReindexTask } from "./KbReindexTask";
 import { KbSearchTask } from "./KbSearchTask";
 import { KbToDocumentsTask } from "./KbToDocumentsTask";
@@ -79,6 +81,8 @@ export const registerAiTasks = () => {
     HandLandmarkerTask,
     HierarchicalChunkerTask,
     HierarchyJoinTask,
+    KbAddDocumentTask,
+    KbDeleteTask,
     KbSearchTask,
     KbToDocumentsTask,
     ImageClassificationTask,
