@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IRunConfig } from "@workglow/task-graph";
 import type { TypedArray } from "@workglow/util/schema";
 import type { ChunkRecord } from "../chunk/ChunkSchema";
 import type {
@@ -50,13 +51,13 @@ export interface IKbAiStrategy {
    * embedding model, etc. Returns the stored document (possibly with a
    * newly-assigned doc_id).
    */
-  ingest(kb: IKbStrategyTarget, doc: Document): Promise<Document>;
+  ingest(kb: IKbStrategyTarget, doc: Document, runConfig?: Partial<IRunConfig>): Promise<Document>;
 
   /**
    * Remove a document and its chunks. The default cascading delete works
    * for most cases; override to add audit logging, soft delete, etc.
    */
-  delete(kb: IKbStrategyTarget, doc_id: string): Promise<void>;
+  delete(kb: IKbStrategyTarget, doc_id: string, runConfig?: Partial<IRunConfig>): Promise<void>;
 
   /**
    * Run a text query and return matching chunks. The strategy picks the
@@ -75,7 +76,8 @@ export interface IKbAiStrategy {
   search(
     kb: IKbStrategyTarget,
     query: string,
-    options?: ISearchOptions
+    options?: ISearchOptions,
+    runConfig?: Partial<IRunConfig>
   ): Promise<ChunkSearchResult[]>;
 }
 
