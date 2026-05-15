@@ -53,16 +53,19 @@ export class InactivityStrategy implements IDisposeStrategy {
     for (const key of scope.keys()) {
       const existing = this.timers.get(key);
       if (existing !== undefined) clearTimeout(existing);
-      const t = setTimeout(() => {
-        this.timers.delete(key);
-        void scope.dispose(key).catch((err) => {
-          if (this.onError) {
-            this.onError(key, err);
-          } else {
-            console.error(`InactivityStrategy: dispose("${key}") failed`, err);
-          }
-        });
-      }, this.idleMs);
+      const t = setTimeout(
+        () => {
+          this.timers.delete(key);
+          void scope.dispose(key).catch((err) => {
+            if (this.onError) {
+              this.onError(key, err);
+            } else {
+              console.error(`InactivityStrategy: dispose("${key}") failed`, err);
+            }
+          });
+        },
+        Math.min(this.idleMs, MAX_IDLE_MS)
+      );
       // Allow Node to exit while timers are pending.
       if (typeof (t as { unref?: () => void }).unref === "function") {
         (t as { unref: () => void }).unref();
