@@ -15,6 +15,9 @@ import type { ResourceScope } from "../ResourceScope";
  * `touch(key)` cancels any pending timer for that key. A fresh timer is then
  * armed on the next `onRunComplete` if the key is still registered.
  */
+/** Maximum safe value for `setTimeout` before the delay overflows (~24.8 days). */
+const MAX_IDLE_MS = 2_147_483_647;
+
 export class InactivityStrategy implements IDisposeStrategy {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -22,9 +25,9 @@ export class InactivityStrategy implements IDisposeStrategy {
     private readonly idleMs: number,
     private readonly onError?: (key: string, err: unknown) => void
   ) {
-    if (!Number.isFinite(idleMs) || idleMs <= 0) {
+    if (!Number.isFinite(idleMs) || idleMs <= 0 || idleMs > MAX_IDLE_MS) {
       throw new RangeError(
-        `InactivityStrategy: idleMs must be a positive finite number (got ${idleMs})`
+        `InactivityStrategy: idleMs must be a positive finite number ≤ ${MAX_IDLE_MS} (got ${idleMs})`
       );
     }
   }
