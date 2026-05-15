@@ -42,6 +42,9 @@ describe("RerankerTask.simpleRerank — query token escaping", () => {
       // Rerank must return a result of the same shape as the input.
       expect(result?.chunks?.length).toBe(chunks.length);
       expect(result?.scores?.length).toBe(chunks.length);
+      for (const score of result?.scores ?? []) {
+        expect(Number.isFinite(score)).toBe(true);
+      }
     }
   );
 

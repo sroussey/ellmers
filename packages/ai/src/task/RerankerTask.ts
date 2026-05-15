@@ -194,6 +194,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
   ): RankedItem[] {
     const queryLower = query.toLowerCase();
     const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 0);
+    const hasQueryWords = queryWords.length > 0;
 
     const items: RankedItem[] = chunks.map((chunk, index) => {
       const chunkLower = chunk.toLowerCase();
@@ -215,8 +216,8 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
         }
       }
 
-      const exactMatchBonus = chunkLower.includes(queryLower) ? 0.5 : 0;
-      const normalizedKeywordScore = Math.min(keywordScore / (queryWords.length * 3), 1);
+      const exactMatchBonus = hasQueryWords && chunkLower.includes(queryLower) ? 0.5 : 0;
+      const normalizedKeywordScore = hasQueryWords ? Math.min(keywordScore / (queryWords.length * 3), 1) : 0;
       const positionPenalty = Math.log(index + 1) / 10;
 
       const combinedScore =
