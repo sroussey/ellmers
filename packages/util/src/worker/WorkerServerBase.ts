@@ -81,8 +81,15 @@ function extractTransferables(obj: any) {
  * Construction-time options for {@link WorkerServerBase}.
  *
  * All fields are optional and safe to omit — defaults match the previous
- * hard-coded values. Subclasses (platform-specific `WorkerServer` classes)
- * accept the same shape and forward it via `super(options)`.
+ * hard-coded values.
+ *
+ * Reachable only via `new WorkerServerBase(...)` directly (used by tests
+ * that exercise eviction-path behaviour with a tiny cap). The platform-
+ * specific `WorkerServer` subclasses (`Worker.bun.ts`, `Worker.node.ts`,
+ * `Worker.browser.ts`) currently have zero-arg constructors and use the
+ * defaults; `new WorkerServer({ pendingAbortHardCap: ... })` will NOT
+ * compile against those subclasses. To override in production either
+ * bypass the subclass or extend it with a forwarding constructor.
  */
 export interface WorkerServerBaseOptions {
   /**
@@ -152,10 +159,21 @@ export class WorkerServerBase {
   //      a noisy/malicious client that spams aborts faster than the per-id
   //      timers fire.
   private pendingAborts = new Map<string, number>();
-  // Track scheduled per-id cleanup timers so they don't pin the event loop
-  // open longer than necessary and so subclasses with a dispose hook can
-  // clear them. Mirrors the pattern used by `scheduleCompletedRequestCleanup`.
-  private pendingAbortTimers = new Set<ReturnType<typeof setTimeout>>();
+  /**
+   * Per-id TTL-cleanup timer handles, keyed by request id. The contract:
+   *  - Exactly one timer per live entry in `pendingAborts`. `recordPendingAbort`
+   *    clears any prior timer for the same id before scheduling a new one, so
+   *    a re-recorded abort always gets a full fresh TTL (previously the stale
+   *    timer would still fire and delete the renewed entry early).
+   *  - `consumePendingAbort` clears and removes the timer when it consumes
+   *    (or treats as expired) a pending marker, so a consumed id never has
+   *    a stale timer queued.
+   *  - The hard-cap eviction path in `recordPendingAbort` also clears the
+   *    timer for each evicted id, bounding timer-handle memory together
+   *    with `pendingAborts` itself.
+   *  - The TTL-fire callback removes its own entry by id.
+   */
+  private pendingAbortTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   private postResult = (id: string, result: any) => {
     if (this.completedRequests.has(id)) {
@@ -301,11 +319,23 @@ export class WorkerServerBase {
    * immediately and drop the pending marker. Returns `true` when an abort
    * was consumed so callers may exit fast. Expired markers are silently
    * dropped (returns `false`).
+   *
+   * Always clears the per-id TTL timer from {@link pendingAbortTimers}
+   * before returning, regardless of whether the marker was live or
+   * expired — once a marker is consumed (or proven stale) its timer is
+   * stale too and should not fire later.
    */
   private consumePendingAbort(id: string, controller: AbortController): boolean {
     const ts = this.pendingAborts.get(id);
     if (ts === undefined) return false;
     this.pendingAborts.delete(id);
+    // Clear the per-id TTL timer: the marker is gone either way, so the
+    // queued setTimeout has nothing left to delete.
+    const timer = this.pendingAbortTimers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pendingAbortTimers.delete(id);
+    }
     if (Date.now() - ts > WorkerServerBase.PENDING_ABORT_TTL_MS) {
       // Marker expired between recording and consumption — treat as absent.
       return false;
@@ -322,38 +352,62 @@ export class WorkerServerBase {
    * a legitimate pending abort before its matching `call` arrives.
    *
    * Cleanup strategy (amortised O(1) per call, no inline sweep):
-   *   - A per-id `setTimeout` drops this entry once TTL elapses.
-   *   - {@link consumePendingAbort} re-checks the timestamp at consume time.
+   *   - A per-id `setTimeout` (tracked in {@link pendingAbortTimers},
+   *     keyed by id) drops this entry once TTL elapses. If `id` already
+   *     had a queued timer from a prior `recordPendingAbort`, that timer
+   *     is `clearTimeout`'d first so the renewed marker gets a full
+   *     fresh TTL rather than inheriting the stale +TTL of the original.
+   *   - {@link consumePendingAbort} re-checks the timestamp at consume
+   *     time and also clears the per-id timer so it can't fire later
+   *     against an unrelated id.
    *   - If the map exceeds {@link pendingAbortHardCap}, the oldest half
-   *     is evicted in one pass — a memory safety-net for pathological
-   *     bursts that outrun the per-id timers.
+   *     is evicted in one pass; each evicted id also has its timer
+   *     cleared, so timer-handle memory is bounded together with the
+   *     data map.
    */
   private recordPendingAbort(id: string): void {
     const now = Date.now();
     this.pendingAborts.set(id, now);
 
+    // Re-record for an id that already had a pending marker: clear the
+    // previous TTL timer so it can't fire at the original +TTL and
+    // delete the renewed entry early.
+    const prevTimer = this.pendingAbortTimers.get(id);
+    if (prevTimer !== undefined) {
+      clearTimeout(prevTimer);
+      this.pendingAbortTimers.delete(id);
+    }
+
     // Memory safety-net: if over the hard cap, evict the half with the
     // lowest timestamps (i.e. the most stale entries). This runs only on
     // the rare overflow path; the per-id `setTimeout` below handles the
-    // common case in amortised O(1).
+    // common case in amortised O(1). Each evicted id also has its TTL
+    // timer cleared so timer handles are bounded too.
     const cap = this.pendingAbortHardCap;
     if (this.pendingAborts.size > cap) {
       const entries = [...this.pendingAborts.entries()];
       entries.sort((a, b) => a[1] - b[1]); // oldest first
       const toEvict = Math.floor(entries.length / 2);
       for (let i = 0; i < toEvict; i++) {
-        this.pendingAborts.delete(entries[i][0]);
+        const evictId = entries[i][0];
+        this.pendingAborts.delete(evictId);
+        const evictTimer = this.pendingAbortTimers.get(evictId);
+        if (evictTimer !== undefined) {
+          clearTimeout(evictTimer);
+          this.pendingAbortTimers.delete(evictId);
+        }
       }
     }
 
     // Mirror `scheduleCompletedRequestCleanup`: schedule a one-shot timer
-    // to drop this id after its TTL elapses. Stored so dispose-style hooks
-    // can clear pending timers; otherwise they GC naturally.
+    // to drop this id after its TTL elapses. Keyed by id (not stored in
+    // a Set of handles) so re-record / consume / evict can all find and
+    // clear the right timer in O(1).
     const timer = setTimeout(() => {
       this.pendingAborts.delete(id);
-      this.pendingAbortTimers.delete(timer);
+      this.pendingAbortTimers.delete(id);
     }, WorkerServerBase.PENDING_ABORT_TTL_MS);
-    this.pendingAbortTimers.add(timer);
+    this.pendingAbortTimers.set(id, timer);
   }
 
   /**

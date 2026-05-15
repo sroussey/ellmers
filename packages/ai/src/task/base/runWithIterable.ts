@@ -47,12 +47,20 @@ export type RunWithIterableEmitFactory<Output extends TaskOutput> = (
  *    the parent's signal is untouched and its other consumers keep running.
  *
  * @example
- *   // Parent cancels: both parent.signal and the strategy stop.
+ *   // Cancellation is driven through an AbortController — AbortSignal has
+ *   // no public .abort() method, so callers must keep the controller in
+ *   // scope and call abort() on it (not on the signal).
+ *   const parentController = new AbortController();
+ *   const ctx: IExecuteContext = { ...baseContext, signal: parentController.signal };
+ *
+ *   const iter = runWithIterable(strategy, jobInput, ctx, runnerId, emitFactory);
+ *
+ *   // Parent cancels: both ctx.signal and the strategy stop.
  *   parentController.abort();
  *
  *   // Consumer break: only the strategy stops. parentController.signal
  *   // remains un-aborted and sibling tasks continue.
- *   for await (const e of runWithIterable(...)) { if (done) break; }
+ *   for await (const e of iter) { if (done) break; }
  */
 export async function* runWithIterable<Output extends TaskOutput>(
   strategy: IAiExecutionStrategy,
