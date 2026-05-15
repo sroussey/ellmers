@@ -425,7 +425,8 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           AND queue = '${this.escapeSqlString(this.validateSqlValue(this.queueName, "queueName"))}'
           AND worker_id = '${escapedWorkerId}'
           AND status = '${JobStatus.PROCESSING}'
-          ${prefixConditions}`;
+          ${prefixConditions}
+        RETURNING id`;
 
     const { data, error } = await this.client.rpc("exec_sql", { query: sql });
     if (error) throw error;

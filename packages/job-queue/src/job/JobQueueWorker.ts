@@ -75,6 +75,11 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * Defaults to 30s. Set to 0 to abort immediately.
    */
   readonly stopTimeoutMs?: number;
+  /**
+   * If true, the worker will call extendLease periodically while a job is
+   * executing. Extension interval is leaseMs * 0.5. Default: false.
+   */
+  readonly extendLeaseWhileRunning?: boolean;
 }
 
 /**
@@ -93,6 +98,7 @@ export class JobQueueWorker<
   protected readonly limiter: ILimiter;
   protected readonly pollIntervalMs: number;
   protected readonly stopTimeoutMs: number;
+  protected readonly extendLeaseWhileRunning: boolean;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
 
   protected running = false;
@@ -150,6 +156,7 @@ export class JobQueueWorker<
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
+    this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
   }
 
   /**
@@ -528,7 +535,27 @@ export class JobQueueWorker<
       const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
 
-      const output = await this.executeJob(job, abortController.signal);
+      const leaseMs = this.pollIntervalMs * 60;
+      let leaseInterval: ReturnType<typeof setInterval> | undefined;
+      if (this.extendLeaseWhileRunning) {
+        leaseInterval = setInterval(() => {
+          this.storage.extendLease(job.id, this.workerId, leaseMs).catch((err) => {
+            getLogger().error("extendLease failed during job execution:", {
+              error: err,
+              jobId: job.id,
+            });
+          });
+        }, leaseMs * 0.5);
+      }
+
+      let output: Output;
+      try {
+        output = await this.executeJob(job, abortController.signal);
+      } finally {
+        if (leaseInterval !== undefined) {
+          clearInterval(leaseInterval);
+        }
+      }
       await this.completeJob(job, output);
 
       const elapsed = Date.now() - startTime;
