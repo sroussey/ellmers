@@ -5,6 +5,7 @@
  */
 
 import type { ITextIndex, TextFields, VectorSearchOptions } from "@workglow/storage";
+import type { IRunConfig } from "@workglow/task-graph";
 import type { TypedArray } from "@workglow/util/schema";
 import type { ChunkRecord } from "../chunk/ChunkSchema";
 import type {
@@ -418,18 +419,18 @@ export class KnowledgeBase {
    * during the upsert won't redirect the in-flight call to the new
    * strategy. See {@link setAiStrategy}.
    */
-  async upsert(doc: Document): Promise<Document> {
+  async upsert(doc: Document, runConfig?: Partial<IRunConfig>): Promise<Document> {
     const strategy = this.requireStrategy("upsert");
-    return strategy.ingest(this, doc);
+    return strategy.ingest(this, doc, runConfig);
   }
 
   /**
    * Remove a document and its chunks. Delegates to the installed strategy
    * (snapshotted at entry — see {@link setAiStrategy}).
    */
-  async delete(doc_id: string): Promise<void> {
+  async delete(doc_id: string, runConfig?: Partial<IRunConfig>): Promise<void> {
     const strategy = this.requireStrategy("delete");
-    return strategy.delete(this, doc_id);
+    return strategy.delete(this, doc_id, runConfig);
   }
 
   /**
@@ -441,9 +442,13 @@ export class KnowledgeBase {
    * during the search won't redirect the in-flight call. See
    * {@link setAiStrategy}.
    */
-  async search(query: string, options?: ISearchOptions): Promise<ChunkSearchResult[]> {
+  async search(
+    query: string,
+    options?: ISearchOptions,
+    runConfig?: Partial<IRunConfig>
+  ): Promise<ChunkSearchResult[]> {
     const strategy = this.requireStrategy("search");
-    return strategy.search(this, query, options);
+    return strategy.search(this, query, options, runConfig);
   }
 
   // ===========================================================================
@@ -780,14 +785,14 @@ export class KnowledgeBase {
    * partway through the loop. The next `reindex()` call would pick up
    * the new strategy. See {@link setAiStrategy}.
    */
-  async reindex(): Promise<number> {
+  async reindex(runConfig?: Partial<IRunConfig>): Promise<number> {
     const strategy = this.requireStrategy("reindex");
     const docIds = await this.listDocuments();
     let count = 0;
     for (const doc_id of docIds) {
       const doc = await this.getDocument(doc_id);
       if (!doc) continue;
-      await strategy.ingest(this, doc);
+      await strategy.ingest(this, doc, runConfig);
       count++;
     }
     return count;
