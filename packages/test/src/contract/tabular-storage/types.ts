@@ -30,7 +30,8 @@ export const VectorItemSchema = {
 export type TabularStorageContractAssertion =
   | "subscribeToChanges"
   | "vectorColumnFormat"
-  | "withTransactionRollback";
+  | "withTransactionRollback"
+  | "countMatchesQuery";
 
 export interface TabularStorageContractOpts {
   readonly name: string;
