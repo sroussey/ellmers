@@ -10,6 +10,21 @@ import { createServiceToken } from "../di";
 export const WORKER_SERVER = createServiceToken<WorkerServerBase>("worker.server");
 
 /**
+ * Hard cap on the bookkeeping `Set`s that track {@link WorkerServerBase}
+ * pending aborts and completed request IDs. When the size exceeds this
+ * value, the oldest {@link EVICT_BATCH} entries are dropped (insertion-order
+ * — `Set`s preserve it) so a misbehaving client cannot leak memory.
+ */
+const HARD_CAP = 1000;
+
+/**
+ * Number of entries dropped per eviction batch when the bookkeeping `Set`s
+ * exceed {@link HARD_CAP}. Enough to amortise eviction cost across many
+ * future inserts while bounding the worst-case scan.
+ */
+const EVICT_BATCH = 500;
+
+/**
  * Extracts transferables from an object.
  * @param obj - The object to extract transferables from.
  * @returns An array of transferables.
@@ -261,19 +276,22 @@ export class WorkerServerBase {
 
   /**
    * Records `id` as having received an abort that has not yet been matched to
-   * a controller. Bounded at 1000 entries; oldest are dropped first so a
+   * a controller. Bounded at {@link HARD_CAP} entries; the oldest
+   * {@link EVICT_BATCH} are dropped first (FIFO via Set insertion order) so a
    * misbehaving client cannot leak memory by sending aborts for ids that
    * never arrive.
+   *
+   * Implementation note: snapshot the eviction list with `Array.from` *before*
+   * deleting. Iterating the live `Set` while deleting from it is permitted by
+   * the Map/Set spec but couples the iterator's internal cursor to mutation
+   * — a bug magnet (see issue history). The snapshot also lets the loop be
+   * trivially audited as FIFO.
    */
   private recordPendingAbort(id: string): void {
     this.pendingAborts.add(id);
-    if (this.pendingAborts.size > 1000) {
-      const iter = this.pendingAborts.values();
-      for (let i = 0; i < 500; i++) {
-        const entry = iter.next();
-        if (entry.done) break;
-        this.pendingAborts.delete(entry.value);
-      }
+    if (this.pendingAborts.size > HARD_CAP) {
+      const evict = Array.from(this.pendingAborts).slice(0, EVICT_BATCH);
+      for (const item of evict) this.pendingAborts.delete(item);
     }
   }
 
@@ -413,22 +431,20 @@ export class WorkerServerBase {
 
   /**
    * Schedule cleanup of a completed request ID. Uses a 5-second delay to
-   * handle late-arriving abort messages, and caps the completed set size
-   * to prevent unbounded growth.
+   * handle late-arriving abort messages, and caps the completed set size at
+   * {@link HARD_CAP} entries to prevent unbounded growth. As in
+   * {@link recordPendingAbort}, the eviction list is snapshotted via
+   * `Array.from` before deletion to avoid iterating-while-deleting.
    */
   private scheduleCompletedRequestCleanup(id: string): void {
     setTimeout(() => {
       this.completedRequests.delete(id);
     }, 5000);
 
-    // Safety cap: if the set grows too large, clear the oldest entries
-    if (this.completedRequests.size > 1000) {
-      const iter = this.completedRequests.values();
-      for (let i = 0; i < 500; i++) {
-        const entry = iter.next();
-        if (entry.done) break;
-        this.completedRequests.delete(entry.value);
-      }
+    // Safety cap: if the set grows too large, clear the oldest entries (FIFO).
+    if (this.completedRequests.size > HARD_CAP) {
+      const evict = Array.from(this.completedRequests).slice(0, EVICT_BATCH);
+      for (const item of evict) this.completedRequests.delete(item);
     }
   }
 }
