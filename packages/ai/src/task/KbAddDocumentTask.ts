@@ -78,7 +78,7 @@ export class KbAddDocumentTask extends Task<
     context: IExecuteContext
   ): Promise<KbAddDocumentTaskOutput> {
     const kb = input.knowledgeBase as KnowledgeBase;
-    const stored = await kb.upsert(input.document as Document, {
+    const stored = await kb.upsert(input.document, {
       signal: context.signal,
       resourceScope: context.resourceScope,
       registry: context.registry,
