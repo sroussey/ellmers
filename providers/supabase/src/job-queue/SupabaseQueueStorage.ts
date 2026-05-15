@@ -235,10 +235,11 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     ];
     for (const sql of alterSqls) {
       const { error } = await this.client.rpc("exec_sql", { query: sql });
-      // Ignore errors (column may already exist)
-      if (error && error.code !== "42701") {
-        // 42701 = duplicate_column
-        // ignore
+      // 42703 = undefined_column: expected on re-run after a RENAME COLUMN has
+      // already applied (the old column no longer exists). All other errors
+      // (permission denied, wrong table name, etc.) are re-thrown.
+      if (error && error.code !== "42703") {
+        throw new Error(`Failed to rename column: ${error.message}`);
       }
     }
 
@@ -526,7 +527,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
     if (jobDetails.status === JobStatus.PENDING) {
       // Check if the next attempt would exceed max attempts
-      if (nextAttempts > maxAttempts) {
+      if (nextAttempts >= maxAttempts) {
         // Update to FAILED status instead of rescheduling
         let failQuery = this.client
           .from(this.tableName)

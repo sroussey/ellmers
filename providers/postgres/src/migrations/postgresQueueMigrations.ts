@@ -213,7 +213,7 @@ export function postgresQueueMigrations(
           BEGIN
             SELECT EXISTS (
               SELECT 1 FROM information_schema.columns
-              WHERE table_name='${tableName}' AND column_name='run_after'
+              WHERE table_name='${tableName}' AND column_name='run_after' AND table_schema = current_schema()
             ) INTO col_exists;
             IF col_exists THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_after TO visible_at';
