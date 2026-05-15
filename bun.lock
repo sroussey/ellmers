@@ -199,10 +199,12 @@
       "version": "0.2.35",
       "devDependencies": {
         "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
       },
       "peerDependencies": {
         "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
         "@workglow/util": "workspace:*",
       },
     },
