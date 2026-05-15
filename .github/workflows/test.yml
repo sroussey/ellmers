@@ -133,7 +133,7 @@ jobs:
   #     - name: Run HuggingFace Transformers provider tests via bun
   #       run: bun run test:bun:ai-provider-hft
 
-  # test-bun-ai-provider-llamacpp:
+  # test-bun-ai-provider-nodellama:
   #   runs-on: ubuntu-latest
   #   needs: build
   #   steps:
@@ -151,7 +151,7 @@ jobs:
   #         name: build-output
   #         path: .
   #     - name: Run LlamaCpp provider tests via bun
-  #       run: bun run test:bun:ai-provider-llamacpp
+  #       run: bun run test:bun:ai-provider-nodellama
 
   # test-bun-ai-provider-api:
   #   runs-on: ubuntu-latest
@@ -292,7 +292,7 @@ jobs:
           path: vitest-ai-provider-hft-coverage.json
           retention-days: 1
 
-  test-vitest-ai-provider-llamacpp:
+  test-vitest-ai-provider-nodellama:
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -310,14 +310,14 @@ jobs:
           name: build-output
           path: .
       - name: Run LlamaCpp provider tests via vitest
-        run: bun run test:vitest:ai-provider-llamacpp
+        run: bun run test:vitest:ai-provider-nodellama
       - name: Copy Vitest coverage fragment
-        run: cp coverage/coverage-final.json vitest-ai-provider-llamacpp-coverage.json
+        run: cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
       - name: Upload Vitest coverage fragment
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-vitest-ai-provider-llamacpp
-          path: vitest-ai-provider-llamacpp-coverage.json
+          name: coverage-vitest-ai-provider-nodellama
+          path: vitest-ai-provider-nodellama-coverage.json
           retention-days: 1
 
   test-vitest-ai-provider-api:
@@ -357,7 +357,7 @@ jobs:
       - test-vitest-integration
       - test-vitest-rag
       - test-vitest-ai-provider-hft
-      - test-vitest-ai-provider-llamacpp
+      - test-vitest-ai-provider-nodellama
       - test-vitest-ai-provider-api
     steps:
       - uses: actions/checkout@v6
@@ -388,7 +388,7 @@ jobs:
           path: coverage-parts
       - uses: actions/download-artifact@v8
         with:
-          name: coverage-vitest-ai-provider-llamacpp
+          name: coverage-vitest-ai-provider-nodellama
           path: coverage-parts
       - uses: actions/download-artifact@v8
         with:
@@ -417,13 +417,13 @@ jobs:
         # test-bun-integration,
         # test-bun-rag,
         # test-bun-ai-provider-hft,
-        # test-bun-ai-provider-llamacpp,
+        # test-bun-ai-provider-nodellama,
         # test-bun-ai-provider-api,
         test-vitest-unit,
         test-vitest-integration,
         test-vitest-rag,
         test-vitest-ai-provider-hft,
-        test-vitest-ai-provider-llamacpp,
+        test-vitest-ai-provider-nodellama,
         test-vitest-ai-provider-api,
         merge-vitest-coverage,
       ]
