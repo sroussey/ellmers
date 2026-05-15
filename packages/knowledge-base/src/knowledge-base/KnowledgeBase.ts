@@ -790,7 +790,7 @@ export class KnowledgeBase {
     const docIds = await this.listDocuments();
     let count = 0;
     for (const doc_id of docIds) {
-      runConfig?.signal?.throwIfAborted();
+      if (runConfig?.signal?.aborted) throw runConfig.signal.reason;
       const doc = await this.getDocument(doc_id);
       if (!doc) continue;
       await strategy.ingest(this, doc, runConfig);
