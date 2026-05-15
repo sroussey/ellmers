@@ -5,7 +5,7 @@
  */
 
 import type { IJobStore, JobRecord, JobStatus, MessageId } from "@workglow/job-queue";
-import type { PendingWrite } from "./SqliteMessageQueue";
+import type { SqlitePendingWrite } from "./SqliteMessageQueue";
 import { SqliteQueueStorage } from "./SqliteQueueStorage";
 
 export class SqliteJobStore<Input, Output> implements IJobStore<Input, Output> {
@@ -13,11 +13,11 @@ export class SqliteJobStore<Input, Output> implements IJobStore<Input, Output> {
   public readonly core: SqliteQueueStorage<Input, Output>;
 
   /** @internal — shared transient buffer for saveResult/saveError. */
-  private readonly pending: Map<unknown, PendingWrite<Output>>;
+  private readonly pending: Map<unknown, SqlitePendingWrite<Output>>;
 
   constructor(
     core: SqliteQueueStorage<Input, Output>,
-    pending: Map<unknown, PendingWrite<Output>>
+    pending: Map<unknown, SqlitePendingWrite<Output>>
   ) {
     this.core = core;
     this.pending = pending;

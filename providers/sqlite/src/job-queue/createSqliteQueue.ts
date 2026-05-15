@@ -6,7 +6,7 @@
 
 import type { Sqlite } from "@workglow/sqlite/storage";
 import { SqliteJobStore } from "./SqliteJobStore";
-import { SqliteMessageQueue, type PendingWrite } from "./SqliteMessageQueue";
+import { SqliteMessageQueue, type SqlitePendingWrite } from "./SqliteMessageQueue";
 import { SqliteQueueStorage, type SqliteQueueStorageOptions } from "./SqliteQueueStorage";
 
 /**
@@ -25,7 +25,7 @@ export function createSqliteQueue<Input, Output>(
   core: SqliteQueueStorage<Input, Output>;
 } {
   const core = new SqliteQueueStorage<Input, Output>(db, queueName, opts);
-  const pending = new Map<unknown, PendingWrite<Output>>();
+  const pending = new Map<unknown, SqlitePendingWrite<Output>>();
   return {
     messageQueue: new SqliteMessageQueue<Input, Output>(core, pending),
     jobStore: new SqliteJobStore<Input, Output>(core, pending),

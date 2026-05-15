@@ -22,7 +22,7 @@ import { SqliteQueueStorage } from "./SqliteQueueStorage";
  * stage output/error until the terminal claim.ack()/fail() persists them in
  * a single complete() call (avoids double-bumping `attempts`).
  */
-export type PendingWrite<Output> = {
+export type SqlitePendingWrite<Output> = {
   output?: Output | null;
   error?: string | null;
   errorCode?: string | null;
@@ -32,7 +32,7 @@ export type PendingWrite<Output> = {
 class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Output>> {
   constructor(
     private readonly core: SqliteQueueStorage<Input, Output>,
-    private readonly pending: Map<unknown, PendingWrite<Output>>,
+    private readonly pending: Map<unknown, SqlitePendingWrite<Output>>,
     public readonly id: MessageId,
     public readonly body: JobStorageFormat<Input, Output>,
     public readonly attempts: number,
@@ -105,11 +105,11 @@ export class SqliteMessageQueue<Input, Output> implements IMessageQueue<
   public readonly core: SqliteQueueStorage<Input, Output>;
 
   /** @internal — shared transient buffer for saveResult/saveError. */
-  private readonly pending: Map<unknown, PendingWrite<Output>>;
+  private readonly pending: Map<unknown, SqlitePendingWrite<Output>>;
 
   constructor(
     core: SqliteQueueStorage<Input, Output>,
-    pending: Map<unknown, PendingWrite<Output>>
+    pending: Map<unknown, SqlitePendingWrite<Output>>
   ) {
     this.core = core;
     this.pending = pending;

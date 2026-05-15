@@ -7,7 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { QueueStorageOptions } from "@workglow/job-queue";
 import { SupabaseJobStore } from "./SupabaseJobStore";
-import { SupabaseMessageQueue, type PendingWrite } from "./SupabaseMessageQueue";
+import { SupabaseMessageQueue, type SupabasePendingWrite } from "./SupabaseMessageQueue";
 import { SupabaseQueueStorage } from "./SupabaseQueueStorage";
 
 /**
@@ -26,7 +26,7 @@ export function createSupabaseQueue<Input, Output>(
   core: SupabaseQueueStorage<Input, Output>;
 } {
   const core = new SupabaseQueueStorage<Input, Output>(client, queueName, opts);
-  const pending = new Map<unknown, PendingWrite<Output>>();
+  const pending = new Map<unknown, SupabasePendingWrite<Output>>();
   return {
     messageQueue: new SupabaseMessageQueue<Input, Output>(core, pending),
     jobStore: new SupabaseJobStore<Input, Output>(core, pending),
