@@ -28,6 +28,10 @@ bun run clean              # Remove dist, node_modules, .turbo, tsbuildinfo
 
 Bun workspaces + Turborepo. All packages live in `packages/`. Build order is managed by Turbo's dependency graph (`turbo.json`).
 
+### Product requirements & planning docs
+
+Cross-repo design specs and implementation plans live in the PRD repository (`/workspaces/workglow/prd/docs/superpowers/specs/` and `.../plans/`). Write new superpowers-style specs and plans there and commit in that repo.
+
 ### Dependency graph
 
 ```
