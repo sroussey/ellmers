@@ -1,5 +1,26 @@
 # @workglow/ai
 
+## 0.2.36
+
+### Features
+
+#### kb
+
+- pluggable strategy with model config, IRunConfig threading, and document tasks
+
+### Bug Fixes
+
+#### util/worker, ai/task
+
+- TTL-based pendingAborts eviction; clarify runWithIterable bond (#500)
+
+#### ai
+
+- avoid NaN reranker scores for empty queries
+- escape regex metacharacters in RerankerTask.simpleRerank
+- classify provider-error vs no-finish in AiTask.execute
+- replace runWithIterable Proxy with shallow clone
+
 ## 0.2.35
 
 ### Features

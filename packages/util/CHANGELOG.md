@@ -1,5 +1,17 @@
 # @workglow/util
 
+## 0.2.36
+
+### Bug Fixes
+
+#### util/worker, ai/task
+
+- TTL-based pendingAborts eviction; clarify runWithIterable bond (#500)
+
+#### util
+
+- snapshot-then-delete eviction in WorkerServerBase Set caps
+
 ## 0.2.35
 
 ### Features

@@ -1,5 +1,38 @@
 # @workglow/test
 
+## 0.2.36
+
+### Features
+
+#### kb
+
+- pluggable strategy with model config, IRunConfig threading, and document tasks
+
+#### hft
+
+- add text reranker capability with pipeline shape validation
+
+### Bug Fixes
+
+#### util/worker, ai/task
+
+- TTL-based pendingAborts eviction; clarify runWithIterable bond (#500)
+
+#### ai
+
+- avoid NaN reranker scores for empty queries
+- escape regex metacharacters in RerankerTask.simpleRerank
+- classify provider-error vs no-finish in AiTask.execute
+- replace runWithIterable Proxy with shallow clone
+
+#### util
+
+- snapshot-then-delete eviction in WorkerServerBase Set caps
+
+### Tests
+
+- move tests so we we don't need a list of files per provider in the test script
+
 ## 0.2.35
 
 ### Features

@@ -29,6 +29,7 @@ import {
   HFT_TEXT_LANGUAGE_DETECTION,
   HFT_TEXT_NER,
   HFT_TEXT_QUESTION_ANSWERING,
+  HFT_TEXT_RERANKING,
   HFT_TEXT_REWRITER,
   HFT_TEXT_SUMMARY,
   HFT_TEXT_TRANSLATION,
@@ -56,6 +57,7 @@ import { HFT_TextGeneration } from "./HFT_TextGeneration";
 import { HFT_TextLanguageDetection } from "./HFT_TextLanguageDetection";
 import { HFT_TextNamedEntityRecognition } from "./HFT_TextNamedEntityRecognition";
 import { HFT_TextQuestionAnswer } from "./HFT_TextQuestionAnswer";
+import { HFT_TextReranker } from "./HFT_TextReranker";
 import { HFT_TextRewriter } from "./HFT_TextRewriter";
 import { HFT_TextSummary } from "./HFT_TextSummary";
 import { HFT_TextTranslation } from "./HFT_TextTranslation";
@@ -109,6 +111,7 @@ export const HFT_RUN_FNS: readonly AiProviderRunFnRegistration<
   { serves: HFT_TEXT_EMBEDDING, runFn: HFT_TextEmbedding },
   { serves: HFT_TEXT_CLASSIFICATION, runFn: HFT_TextClassification },
   { serves: HFT_TEXT_LANGUAGE_DETECTION, runFn: HFT_TextLanguageDetection },
+  { serves: HFT_TEXT_RERANKING, runFn: HFT_TextReranker },
   { serves: HFT_TEXT_FILL_MASK, runFn: HFT_TextFillMask },
   { serves: HFT_TEXT_NER, runFn: HFT_TextNamedEntityRecognition },
   { serves: HFT_IMAGE_CLASSIFICATION, runFn: HFT_ImageClassification },

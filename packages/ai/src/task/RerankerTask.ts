@@ -50,7 +50,7 @@ const inputSchema = {
       type: "string",
       enum: ["reciprocal-rank-fusion", "simple"],
       title: "Reranking Method",
-      description: "Method to use for reranking",
+      description: "Heuristic reranking method",
       default: "simple",
     },
   },
@@ -144,7 +144,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
   ] as const satisfies Capability[];
   public static override category = "RAG";
   public static override title = "Reranker";
-  public static override description = "Rerank retrieved chunks to improve relevance";
+  public static override description = "Rerank retrieved chunks using in-process heuristics";
   public static override cacheable = true;
 
   public static override inputSchema(): DataPortSchema {
@@ -157,7 +157,7 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
 
   override async execute(
     input: RerankerTaskInput,
-    context: IExecuteContext
+    _context: IExecuteContext
   ): Promise<RerankerTaskOutput> {
     const { query, chunks, scores = [], metadata = [], topK, method = "simple" } = input;
 
@@ -217,7 +217,9 @@ export class RerankerTask extends Task<RerankerTaskInput, RerankerTaskOutput, Re
       }
 
       const exactMatchBonus = hasQueryWords && chunkLower.includes(queryLower) ? 0.5 : 0;
-      const normalizedKeywordScore = hasQueryWords ? Math.min(keywordScore / (queryWords.length * 3), 1) : 0;
+      const normalizedKeywordScore = hasQueryWords
+        ? Math.min(keywordScore / (queryWords.length * 3), 1)
+        : 0;
       const positionPenalty = Math.log(index + 1) / 10;
 
       const combinedScore =

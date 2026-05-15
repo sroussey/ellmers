@@ -22,4 +22,9 @@ jobs:
           bun-version: latest
       - run: bun i
       - run: bun run build
+      # Publish every workspace under packages/* and providers/* as a PR-
+      # preview package, plus the cli example. `pkg-pr-new` honors the
+      # `"private": true` flag on `@workglow/test`, so internal-only
+      # workspaces are silently skipped. The shell expands the globs into
+      # one positional argument per matched directory.
       - run: bunx pkg-pr-new publish ./packages/* ./providers/* ./examples/cli

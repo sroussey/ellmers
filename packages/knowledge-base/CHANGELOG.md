@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.2.36
+
+### Features
+
+#### kb
+
+- pluggable strategy with model config, IRunConfig threading, and document tasks
+
 ## 0.2.35
 
 ### Features

@@ -5,8 +5,8 @@
  */
 
 import { IVectorStorage } from "@workglow/storage";
-import { TypedArraySchema } from "@workglow/util/schema";
 import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
+import { TypedArraySchema } from "@workglow/util/schema";
 import type { ChunkRecord } from "./ChunkSchema";
 
 /**
@@ -41,6 +41,18 @@ export interface ChunkVectorEntity<
 
 /**
  * Type for inserting chunk vectors - chunk_id is optional (auto-generated)
+ *
+ * @remarks
+ * `metadata.text` is a load-bearing field — it carries the chunk's
+ * canonical text (the same string that was embedded to produce
+ * {@link ChunkVectorEntity.vector}). Downstream callers — notably
+ * cross-encoder rerankers and any UI that displays the chunk — read
+ * `metadata.text` directly via {@link chunkText}. Strategies that build
+ * `InsertChunkVectorEntity` from custom chunkers MUST populate
+ * `metadata.text` or rerank/display paths will throw. The standard
+ * strategy populates it via `toInsertChunkEntities` from
+ * `HierarchicalChunkerTask` output, which always emits `text` on each
+ * chunk.
  */
 export type InsertChunkVectorEntity<
   Metadata extends ChunkRecord = ChunkRecord,
@@ -63,7 +75,7 @@ export type ChunkVectorStorage = IVectorStorage<
 /**
  * Discriminator for the scoring function used to produce a
  * {@link ChunkSearchResult.score}. Callers (typically UI) use this to render
- * the score appropriately, since the three scorers live on different scales:
+ * the score appropriately, since the scorers live on different scales:
  *
  * - `"cosine"`: cosine similarity in `[-1, 1]`, typically `[0, 1]` for text
  *   embeddings. Absolute — higher means more similar.
@@ -73,8 +85,14 @@ export type ChunkVectorStorage = IVectorStorage<
  *   `2 / (rrfK + 1)` (~`0.033` with the default `rrfK=60`). Rank-based, not
  *   absolute — the magnitude is not a similarity, only an ordering signal.
  *   Not comparable across queries.
+ * - `"rerank"`: cross-encoder reranker output (e.g. bge-reranker, Cohere
+ *   rerank). Raw logit, not a probability and not comparable to cosine /
+ *   BM25 / RRF scores. Callers MUST inspect `scoreType` before applying
+ *   any score-threshold gate; cross-encoder scores often span wide negative
+ *   ranges that look invalid under a cosine-style threshold but are
+ *   perfectly normal here.
  */
-export type ScoreType = "cosine" | "bm25" | "rrf";
+export type ScoreType = "cosine" | "bm25" | "rrf" | "rerank";
 
 /**
  * Search result with score
@@ -83,3 +101,26 @@ export type ChunkSearchResult = ChunkVectorEntity & {
   score: number;
   scoreType?: ScoreType;
 };
+
+/**
+ * Extract the canonical chunk text from a search result.
+ *
+ * Reads `metadata.text` directly. Throws (with the offending chunk_id) if
+ * the field is missing — chunks without text can't be reranked, displayed,
+ * or fed into downstream NLP tasks. Use this helper everywhere a chunk's
+ * text is needed instead of inlining `metadata.text` access; it keeps the
+ * contract — "every chunk in the KB owns its source text in
+ * `metadata.text`" — enforced at exactly one place. See
+ * {@link InsertChunkVectorEntity} for the writer-side requirement.
+ */
+export function chunkText(c: { chunk_id: string; metadata?: ChunkRecord }): string {
+  const text = c.metadata?.text;
+  if (typeof text !== "string") {
+    throw new Error(
+      `chunkText: chunk ${c.chunk_id} is missing metadata.text. ` +
+        `Every chunk in a KnowledgeBase must carry its source text on metadata.text — ` +
+        `update the chunker / strategy that produced this chunk to populate it.`
+    );
+  }
+  return text;
+}

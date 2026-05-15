@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.36
+
+### Features
+
+#### hft
+
+- add text reranker capability with pipeline shape validation
+
 ## 0.2.35
 
 ### Features

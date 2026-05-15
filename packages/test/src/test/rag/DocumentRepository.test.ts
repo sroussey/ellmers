@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  ChunkVectorStorage,
+  DocumentTabularStorage,
+  SectionNode,
+} from "@workglow/knowledge-base";
 import {
   ChunkVectorPrimaryKey,
   ChunkVectorStorageSchema,
@@ -15,17 +20,12 @@ import {
   StructuralParser,
   createKnowledgeBase,
 } from "@workglow/knowledge-base";
-import type {
-  ChunkVectorStorage,
-  DocumentTabularStorage,
-  SectionNode,
-} from "@workglow/knowledge-base";
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 let _snap = snap();
 beforeEach(() => {
@@ -442,99 +442,95 @@ Paragraph.`;
       });
     });
 
-    describe("callbacks", () => {
-      it("should invoke onDocumentUpsert when a document is upserted", async () => {
-        const calls: Array<{ kbName: string; docId: string | undefined }> = [];
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-cb-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentUpsert: async (instance, doc) => {
-            calls.push({ kbName: instance.name, docId: doc.doc_id });
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# Test\n\nContent.", "Test");
-        const doc = new Document(root, { title: "Test" });
-
-        await kbWithCb.upsertDocument(doc);
-
-        expect(calls).toHaveLength(1);
-        expect(calls[0].kbName).toBe(kbWithCb.name);
-        expect(calls[0].docId).toBeDefined();
-      });
-
-      it("should invoke onDocumentDelete when a document is deleted", async () => {
-        const deletedIds: string[] = [];
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-del-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentDelete: async (_instance, doc_id) => {
-            deletedIds.push(doc_id);
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# T\n\nx.", "T");
-        const doc = new Document(root, { title: "T" });
-        const inserted = await kbWithCb.upsertDocument(doc);
-
-        await kbWithCb.deleteDocument(inserted.doc_id!);
-
-        expect(deletedIds).toEqual([inserted.doc_id]);
-      });
-
-      it("should reject upsertDocument when onDocumentUpsert throws, with storage already committed", async () => {
-        const kbWithCb = await createKnowledgeBase({
-          name: `test-kb-throw-${uuid4()}`,
-          vectorDimensions: 3,
-          register: false,
-          onDocumentUpsert: async () => {
-            throw new Error("callback boom");
-          },
-        });
-
-        const doc_id = uuid4();
-        const root = await StructuralParser.parseMarkdown(doc_id, "# T\n\nx.", "T");
-        const doc = new Document(root, { title: "T" });
-
-        await expect(kbWithCb.upsertDocument(doc)).rejects.toThrow("callback boom");
-
-        // Contract: storage is committed before the callback runs, so the document
-        // must still be retrievable even though upsertDocument rejected.
-        const retrieved = await kbWithCb.getDocument(doc.doc_id!);
-        expect(retrieved).toBeDefined();
-        expect(retrieved?.doc_id).toBe(doc.doc_id);
-      });
-
-      it("should throw a helpful error when kb.search() is called without onSearch", async () => {
+    describe("ai strategy", () => {
+      it("should throw a helpful error when kb.search() is called without a strategy", async () => {
         const bareKb = await createKnowledgeBase({
-          name: `test-kb-nosearch-${uuid4()}`,
+          name: `test-kb-nostrategy-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
         });
 
-        await expect(bareKb.search("hello")).rejects.toThrow(/onSearch/);
+        await expect(bareKb.search("hello")).rejects.toThrow(/AI strategy/);
       });
 
-      it("should invoke onSearch with the query and options when kb.search() is called", async () => {
-        const received: Array<{ query: string; topK: number | undefined }> = [];
-        const kbWithSearch = await createKnowledgeBase({
+      it("should delegate kb.search to the installed strategy", async () => {
+        const calls: Array<{ query: string; topK: number | undefined }> = [];
+        const kb = await createKnowledgeBase({
           name: `test-kb-search-${uuid4()}`,
           vectorDimensions: 3,
           register: false,
-          onSearch: async (_kb, query, options) => {
-            received.push({ query, topK: options?.topK });
+        });
+        kb.setAiStrategy({
+          ingest: async (_kb, doc) => doc,
+          delete: async () => {},
+          search: async (_kb, query, options) => {
+            calls.push({ query, topK: options?.topK });
             return [];
           },
         });
 
-        const results = await kbWithSearch.search("query text", { topK: 4 });
+        await kb.search("hello", { topK: 4 });
 
-        expect(received).toEqual([{ query: "query text", topK: 4 }]);
-        expect(results).toEqual([]);
+        expect(calls).toEqual([{ query: "hello", topK: 4 }]);
+      });
+
+      it("should delegate kb.upsert / kb.delete to the strategy", async () => {
+        const ingested: string[] = [];
+        const deleted: string[] = [];
+        const kb = await createKnowledgeBase({
+          name: `test-kb-ingest-${uuid4()}`,
+          vectorDimensions: 3,
+          register: false,
+        });
+        kb.setAiStrategy({
+          ingest: async (target, doc) => {
+            await target.upsertDocument(doc);
+            ingested.push(doc.doc_id ?? "");
+            return doc;
+          },
+          delete: async (target, doc_id) => {
+            deleted.push(doc_id);
+            await target.deleteDocument(doc_id);
+          },
+          search: async () => [],
+        });
+
+        const root = await StructuralParser.parseMarkdown(uuid4(), "# T\n\nx.", "T");
+        const doc = new Document(root, { title: "T" });
+        doc.setDocId("d1");
+        await kb.upsert(doc);
+        expect(ingested).toEqual(["d1"]);
+
+        await kb.delete("d1");
+        expect(deleted).toEqual(["d1"]);
+        expect(await kb.getDocument("d1")).toBeUndefined();
+      });
+
+      it("should expose model + chunk/search-mode config to the strategy", async () => {
+        let observed: { docModel?: string; mode?: string; chunk?: string } = {};
+        const kb = await createKnowledgeBase({
+          name: `test-kb-config-${uuid4()}`,
+          vectorDimensions: 3,
+          register: false,
+          docEmbeddingModel: "test:doc",
+          rerankerModel: "test:rerank",
+          chunkStrategy: "flat",
+          searchMode: "rerank",
+        });
+        kb.setAiStrategy({
+          ingest: async (_k, d) => d,
+          delete: async () => {},
+          search: async (target) => {
+            observed = {
+              docModel: target.docEmbeddingModel,
+              mode: target.searchMode,
+              chunk: target.chunkStrategy,
+            };
+            return [];
+          },
+        });
+        await kb.search("q");
+        expect(observed).toEqual({ docModel: "test:doc", mode: "rerank", chunk: "flat" });
       });
     });
   });
@@ -760,6 +756,167 @@ Paragraph.`;
       expect(() => Document.fromJSON(JSON.stringify({ ...stub, chunks: "not-an-array" }))).toThrow(
         "Document.fromJSON: 'chunks' must be an array if present"
       );
+    });
+  });
+
+  describe("strategy contract", () => {
+    it("captures the strategy at op entry — mid-search setAiStrategy(B) doesn't redirect an in-flight search", async () => {
+      const kb = await createKnowledgeBase({
+        name: `kb-strategy-snapshot-search-${uuid4()}`,
+        vectorDimensions: 3,
+        register: false,
+      });
+
+      let releaseA: () => void = () => {};
+      const aPending = new Promise<void>((resolve) => {
+        releaseA = resolve;
+      });
+      const aCalls: string[] = [];
+      const bCalls: string[] = [];
+
+      const strategyA = {
+        ingest: async (_kb: KnowledgeBase, d: Document) => d,
+        delete: async () => {},
+        search: async () => {
+          aCalls.push("search");
+          await aPending;
+          return [];
+        },
+      };
+      const strategyB = {
+        ingest: async (_kb: KnowledgeBase, d: Document) => d,
+        delete: async () => {},
+        search: async () => {
+          bCalls.push("search");
+          return [];
+        },
+      };
+
+      kb.setAiStrategy(strategyA);
+      const inFlight = kb.search("q1");
+      // Swap mid-flight; the in-flight call must still resolve via A.
+      kb.setAiStrategy(strategyB);
+      releaseA();
+      await inFlight;
+      expect(aCalls).toEqual(["search"]);
+      expect(bCalls).toEqual([]);
+
+      // Subsequent call routes to B as expected.
+      await kb.search("q2");
+      expect(aCalls).toEqual(["search"]);
+      expect(bCalls).toEqual(["search"]);
+    });
+
+    it("captures the strategy at op entry — mid-upsert setAiStrategy(B) doesn't redirect an in-flight upsert", async () => {
+      const kb = await createKnowledgeBase({
+        name: `kb-strategy-snapshot-upsert-${uuid4()}`,
+        vectorDimensions: 3,
+        register: false,
+      });
+
+      let releaseA: () => void = () => {};
+      const aPending = new Promise<void>((resolve) => {
+        releaseA = resolve;
+      });
+      const aCalls: string[] = [];
+      const bCalls: string[] = [];
+
+      const strategyA = {
+        ingest: async (_target: KnowledgeBase, d: Document) => {
+          aCalls.push("ingest");
+          await aPending;
+          return d;
+        },
+        delete: async () => {},
+        search: async () => [],
+      };
+      const strategyB = {
+        ingest: async (_target: KnowledgeBase, d: Document) => {
+          bCalls.push("ingest");
+          return d;
+        },
+        delete: async () => {},
+        search: async () => [],
+      };
+
+      kb.setAiStrategy(strategyA);
+      const root = await StructuralParser.parseMarkdown(uuid4(), "# T\n\nx.", "T");
+      const doc = new Document(root, { title: "T" });
+      doc.setDocId("doc-snapshot-upsert");
+      const inFlight = kb.upsert(doc);
+      kb.setAiStrategy(strategyB);
+      releaseA();
+      await inFlight;
+      expect(aCalls).toEqual(["ingest"]);
+      expect(bCalls).toEqual([]);
+    });
+
+    it("chunkText helper throws with chunk_id when metadata.text is missing", async () => {
+      const { chunkText } = await import("@workglow/knowledge-base");
+      expect(() =>
+        chunkText({
+          chunk_id: "c-no-text",
+          metadata: { custom: "x" } as unknown as Parameters<typeof chunkText>[0]["metadata"],
+        })
+      ).toThrow(/c-no-text/);
+    });
+
+    it("chunkText helper returns metadata.text when present", async () => {
+      const { chunkText } = await import("@workglow/knowledge-base");
+      const text = chunkText({
+        chunk_id: "c-has-text",
+        metadata: { text: "hello" } as unknown as Parameters<typeof chunkText>[0]["metadata"],
+      });
+      expect(text).toBe("hello");
+    });
+
+    it("captures the strategy once at reindex() entry — mid-loop swap doesn't redirect remaining iterations", async () => {
+      const kb = await createKnowledgeBase({
+        name: `kb-strategy-snapshot-reindex-${uuid4()}`,
+        vectorDimensions: 3,
+        register: false,
+      });
+
+      const aIngested: string[] = [];
+      const bIngested: string[] = [];
+      const strategyA = {
+        ingest: async (target: KnowledgeBase, d: Document) => {
+          aIngested.push(d.doc_id ?? "");
+          // Swap to B partway through; the reindex loop should keep
+          // ingesting via A for the rest of this run.
+          target.setAiStrategy(strategyB);
+          return d;
+        },
+        delete: async () => {},
+        search: async () => [],
+      };
+      const strategyB = {
+        ingest: async (_target: KnowledgeBase, d: Document) => {
+          bIngested.push(d.doc_id ?? "");
+          return d;
+        },
+        delete: async () => {},
+        search: async () => [],
+      };
+
+      // Seed three documents through the storage layer directly so they're
+      // present for reindex to iterate.
+      for (let i = 0; i < 3; i++) {
+        const root = await StructuralParser.parseMarkdown(uuid4(), `# D${i}\n\nx.`, `D${i}`);
+        const doc = new Document(root, { title: `D${i}` });
+        doc.setDocId(`doc-reindex-${i}`);
+        await kb.upsertDocument(doc);
+      }
+
+      kb.setAiStrategy(strategyA);
+      const processed = await kb.reindex();
+      expect(processed).toBe(3);
+      // All three iterations stayed on A even though A re-installed B
+      // after the first call.
+      expect(aIngested).toHaveLength(3);
+      expect(bIngested).toHaveLength(0);
+      // The KB's current strategy is now B (set during the loop).
+      expect(kb.getAiStrategy()).toBe(strategyB);
     });
   });
 });

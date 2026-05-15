@@ -1,7 +1,7 @@
 {
   "name": "@workglow/knowledge-base",
   "type": "module",
-  "version": "0.2.35",
+  "version": "0.2.36",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
@@ -27,10 +27,14 @@
   },
   "peerDependencies": {
     "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/task-graph": {
       "optional": false
     },
     "@workglow/util": {
@@ -39,6 +43,7 @@
   },
   "devDependencies": {
     "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "exports": {

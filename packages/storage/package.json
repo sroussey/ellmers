@@ -1,7 +1,7 @@
 {
   "name": "@workglow/storage",
   "type": "module",
-  "version": "0.2.35",
+  "version": "0.2.36",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
