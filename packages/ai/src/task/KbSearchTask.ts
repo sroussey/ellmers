@@ -5,7 +5,7 @@
  */
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
-import { TypeKnowledgeBase } from "@workglow/knowledge-base";
+import { chunkText, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
@@ -16,24 +16,30 @@ const inputSchema = {
   properties: {
     knowledgeBase: TypeKnowledgeBase({
       title: "Knowledge Base",
-      description: "The knowledge base instance to search in",
+      description: "Knowledge base to search.",
     }),
     query: {
       type: "string",
       title: "Query",
-      description: "Search query (the KB's onSearch handles embedding internally)",
+      description: "Search query text.",
     },
     topK: {
       type: "number",
       title: "Top K",
-      description: "Number of top results to return",
+      description: "Number of top results to return.",
       minimum: 1,
       default: 5,
     },
     filter: {
       type: "object",
       title: "Metadata Filter",
-      description: "Filter results by metadata fields",
+      description: "Filter results by chunk metadata fields.",
+    },
+    scoreThreshold: {
+      type: "number",
+      title: "Score Threshold",
+      description:
+        "Minimum score to include a result. Honored by similarity and hybrid search modes; ignored by the strategy in rerank mode (cross-encoder logits aren't comparable to cosine/RRF scores). Not constrained to a range — some embedding models (un-normalized dot product) produce scores outside [0, 1].",
     },
   },
   required: ["knowledgeBase", "query"],
@@ -53,28 +59,49 @@ const outputSchema = {
       title: "Results",
       description: "Matching chunks in score-desc order",
     },
+    chunks: {
+      type: "array",
+      items: { type: "string" },
+      title: "Chunks",
+      description: "The chunk text content, parallel to `results`",
+    },
+    chunk_ids: {
+      type: "array",
+      items: { type: "string" },
+      title: "Chunk IDs",
+      description: "The chunk ids, parallel to `results`",
+    },
+    scores: {
+      type: "array",
+      items: { type: "number" },
+      title: "Scores",
+      description: "Scores parallel to `results`",
+    },
     count: {
       type: "number",
       title: "Count",
       description: "Number of results returned",
     },
   },
-  required: ["results", "count"],
+  required: ["results", "chunks", "chunk_ids", "scores", "count"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
 export type KbSearchTaskInput = FromSchema<typeof inputSchema>;
 export type KbSearchTaskOutput = {
   readonly results: ChunkSearchResult[];
+  readonly chunks: string[];
+  readonly chunk_ids: string[];
+  readonly scores: number[];
   readonly count: number;
 };
 export type KbSearchTaskConfig = TaskConfig<KbSearchTaskInput>;
 
 /**
- * Observable wrapper around `kb.search(text, opts)` — the KB's `onSearch`
- * callback handles embedding and any custom retrieval logic. Distinct from
- * `ChunkRetrievalTask`, which embeds via an explicit model and calls
- * `kb.similaritySearch(vector)` (bypassing `onSearch`).
+ * High-level KB search task. Delegates to `kb.search(query, options)`; the
+ * KB and its installed strategy decide everything else (embedding model,
+ * retrieval mode, rerank). No model or kind input here — that's the
+ * point of moving the config onto the KB itself.
  */
 export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, KbSearchTaskConfig> {
   public static override type = "KbSearchTask";
@@ -88,7 +115,7 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
   public static override category = "RAG";
   public static override title = "KB Search";
   public static override description =
-    "Search a knowledge base for chunks matching a text query. Wraps the KB's `search` method (which embeds and retrieves via the KB's onSearch callback).";
+    "Search a knowledge base. The KB owns its embedding/reranker models and search mode internally.";
   public static override cacheable = true;
 
   public static override inputSchema(): DataPortSchema {
@@ -101,12 +128,26 @@ export class KbSearchTask extends Task<KbSearchTaskInput, KbSearchTaskOutput, Kb
 
   override async execute(
     input: KbSearchTaskInput,
-    _context: IExecuteContext
+    context: IExecuteContext
   ): Promise<KbSearchTaskOutput> {
-    const { knowledgeBase, query, topK = 5, filter } = input;
+    const { knowledgeBase, query, topK = 5, filter, scoreThreshold } = input;
     const kb = knowledgeBase as KnowledgeBase;
-    const results = await kb.search(query, { topK, filter });
-    return { results, count: results.length };
+    const results = await kb.search(
+      query,
+      { topK, filter, scoreThreshold },
+      {
+        signal: context.signal,
+        resourceScope: context.resourceScope,
+        registry: context.registry,
+      }
+    );
+    return {
+      results,
+      chunks: results.map(chunkText),
+      chunk_ids: results.map((r) => r.chunk_id),
+      scores: results.map((r) => r.score),
+      count: results.length,
+    };
   }
 }
 

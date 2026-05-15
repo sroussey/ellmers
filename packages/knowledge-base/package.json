@@ -27,10 +27,14 @@
   },
   "peerDependencies": {
     "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/task-graph": {
       "optional": false
     },
     "@workglow/util": {
@@ -39,6 +43,7 @@
   },
   "devDependencies": {
     "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
     "@workglow/util": "workspace:*"
   },
   "exports": {
