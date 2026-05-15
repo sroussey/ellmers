@@ -161,6 +161,7 @@ export class TaskGraph implements ITaskGraph {
       timeout: config?.timeout,
       maxTasks: config?.maxTasks,
       resourceScope: config?.resourceScope,
+      disposeStrategy: config?.disposeStrategy,
     });
   }
 
