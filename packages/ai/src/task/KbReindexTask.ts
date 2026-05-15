@@ -6,7 +6,7 @@
 
 import type { KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { TaskConfig } from "@workglow/task-graph";
+import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -79,8 +79,12 @@ export class KbReindexTask extends Task<
   }
 }
 
-export const kbReindex = async (input: KbReindexTaskInput, config?: KbReindexTaskConfig) => {
-  return new KbReindexTask(config).run(input);
+export const kbReindex = async (
+  input: KbReindexTaskInput,
+  config?: KbReindexTaskConfig,
+  runConfig?: Partial<IRunConfig>
+) => {
+  return new KbReindexTask(config).run(input, runConfig);
 };
 
 declare module "@workglow/task-graph" {
