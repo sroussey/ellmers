@@ -27,7 +27,10 @@ export const VectorItemSchema = {
  * adapters can mark as known failing. A typo in `expectedFailures` becomes
  * a TS error rather than a silently-ignored entry.
  */
-export type TabularStorageContractAssertion = "subscribeToChanges" | "vectorColumnFormat";
+export type TabularStorageContractAssertion =
+  | "subscribeToChanges"
+  | "vectorColumnFormat"
+  | "withTransactionRollback";
 
 export interface TabularStorageContractOpts {
   readonly name: string;
@@ -39,6 +42,7 @@ export interface TabularStorageContractOpts {
   readonly capabilities: {
     readonly supportsSubscriptions: boolean;
     readonly supportsVectorColumns: boolean;
+    readonly supportsTransactions: boolean;
   };
   /** Whether this storage uses polling (requires longer waits between steps). */
   readonly usesPolling?: boolean;

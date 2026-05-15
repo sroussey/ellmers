@@ -7,12 +7,14 @@
 import { describe } from "vitest";
 import { subscribeToChangesBlock } from "./assertions/subscribeToChanges";
 import { vectorColumnFormatBlock } from "./assertions/vectorColumnFormat";
+import { withTransactionRollbackBlock } from "./assertions/withTransactionRollback";
 import type { TabularStorageContractOpts } from "./types";
 
 export function runTabularStorageContract(opts: TabularStorageContractOpts): void {
   describe.skipIf(opts.skip)(`Tabular storage contract: ${opts.name}`, () => {
     subscribeToChangesBlock(opts);
     vectorColumnFormatBlock(opts);
+    withTransactionRollbackBlock(opts);
   });
 }
 

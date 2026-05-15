@@ -83,6 +83,7 @@ describe("InMemoryTabularStorage", () => {
     capabilities: {
       supportsSubscriptions: true,
       supportsVectorColumns: true,
+      supportsTransactions: false,
     },
     usesPolling: false,
     createVectorStorage: async () =>
