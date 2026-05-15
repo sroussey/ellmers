@@ -144,7 +144,7 @@ export class TaskRunner<
 
     const ownsScope = config.resourceScope === undefined;
     const effectiveConfig: IRunConfig = ownsScope
-      ? { ...config, resourceScope: new ResourceScope() }
+      ? { ...config, resourceScope: new ResourceScope({ strategy: config.disposeStrategy }) }
       : config;
     this.ownsResourceScope = ownsScope;
 
@@ -228,7 +228,7 @@ export class TaskRunner<
       }
     } finally {
       if (ownsScope) {
-        await effectiveConfig.resourceScope!.disposeAll();
+        await effectiveConfig.resourceScope!.runComplete();
         this.resourceScope = undefined;
       }
       this.ownsResourceScope = false;

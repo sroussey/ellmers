@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { EventEmitter, ResourceScope, ServiceRegistry } from "@workglow/util";
+import type {
+  EventEmitter,
+  IDisposeStrategy,
+  ResourceScope,
+  ServiceRegistry,
+} from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ITaskGraph } from "../task-graph/ITaskGraph";
@@ -135,6 +140,13 @@ export interface IRunConfig {
    * `disposeAll`.
    */
   resourceScope?: ResourceScope;
+
+  /**
+   * Strategy used to govern auto-created ResourceScope lifecycles. Only
+   * consulted when this run auto-creates a scope (i.e. `resourceScope` is
+   * not provided). Caller-passed scopes carry their own strategy.
+   */
+  disposeStrategy?: IDisposeStrategy;
 
   /**
    * When true, check entitlements via the registered IEntitlementEnforcer
