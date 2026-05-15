@@ -32,6 +32,16 @@ const isNonEmptyObject = (v: unknown): v is Record<string, unknown> =>
  * not use it inside run-fns, workers, AiJob, strategies, or dataflow nodes —
  * streams in this codebase can be conceptually unbounded.
  */
+/**
+ * Discriminating tag attached to the error thrown by
+ * {@link StreamEventAccumulator.materialize} when the underlying stream
+ * ended (cleanly or otherwise) without ever emitting a `finish` event.
+ * Callers (notably `AiTask.execute`) re-throw with this code preserved so
+ * upstream code can distinguish "provider produced no terminal event" from
+ * other provider failures.
+ */
+export const ACCUMULATOR_NO_FINISH = "ACCUMULATOR_NO_FINISH" as const;
+
 export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private readonly textAccumulator = new Map<string, string>();
   private readonly objectAccumulator = new Map<string, Record<string, unknown> | unknown[]>();
@@ -41,17 +51,25 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   private snapshotAccumulator: T | undefined;
   private finished = false;
   private finishData: T | undefined;
+  /**
+   * The `type` of the most recent observed event. Surfaced in the
+   * no-finish materialise error so operators can see what the stream
+   * trailed off with (e.g. `text-delta`, `phase`, `undefined`).
+   */
+  private lastEventType: string | undefined;
 
   observe(event: StreamEvent<T>): void {
     switch (event.type) {
       case "text-delta": {
         this.hasTextDeltas = true;
+        this.lastEventType = "text-delta";
         const e = event as Extract<StreamEvent<T>, { type: "text-delta" }>;
         this.textAccumulator.set(e.port, (this.textAccumulator.get(e.port) ?? "") + e.textDelta);
         return;
       }
       case "object-delta": {
         this.hasObjectDeltas = true;
+        this.lastEventType = "object-delta";
         const e = event as Extract<StreamEvent<T>, { type: "object-delta" }>;
         const delta = e.objectDelta;
         if (Array.isArray(delta)) {
@@ -75,12 +93,15 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
       }
       case "snapshot": {
         this.hasSnapshots = true;
+        this.lastEventType = "snapshot";
         this.snapshotAccumulator = (event as { data: T }).data;
         return;
       }
       case "phase":
+        this.lastEventType = "phase";
         return;
       case "error":
+        this.lastEventType = "error";
         throw (event as { error: unknown }).error;
       case "finish":
         this.observeFinish(event as Extract<StreamEvent<T>, { type: "finish" }>);
@@ -91,11 +112,19 @@ export class StreamEventAccumulator<T extends TaskOutput = TaskOutput> {
   observeFinish(event: Extract<StreamEvent<T>, { type: "finish" }>): void {
     this.finished = true;
     this.finishData = event.data;
+    this.lastEventType = "finish";
   }
 
   materialize(): T {
     if (!this.finished) {
-      throw new Error("StreamEventAccumulator: stream ended without a finish event.");
+      const lastEventType = this.lastEventType ?? "(none)";
+      const err = new Error(
+        `StreamEventAccumulator: stream ended without a finish event ` +
+          `(lastEventType=${lastEventType}).`
+      ) as Error & { code?: string; lastEventType?: string };
+      err.code = ACCUMULATOR_NO_FINISH;
+      err.lastEventType = lastEventType;
+      throw err;
     }
     if (this.hasTextDeltas && this.hasObjectDeltas) {
       throw new Error(
