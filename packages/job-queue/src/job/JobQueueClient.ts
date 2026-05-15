@@ -5,12 +5,15 @@
  */
 
 import { EventEmitter } from "@workglow/util";
+import type { IJobStore } from "../queue-storage/IJobStore";
+import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type {
   IQueueStorage,
   JobStorageFormat,
   QueueChangePayload,
 } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
+import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import { Job } from "./Job";
 import {
   AbortSignalJobError,
@@ -45,7 +48,13 @@ export interface JobHandle<Output> {
  * Options for creating a JobQueueClient
  */
 export interface JobQueueClientOptions<Input, Output> {
-  readonly storage: IQueueStorage<Input, Output>;
+  /**
+   * Legacy single-storage option. Provide either `storage` OR the paired
+   * `messageQueue`+`jobStore`.
+   */
+  readonly storage?: IQueueStorage<Input, Output>;
+  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore?: IJobStore<Input, Output>;
   readonly queueName: string;
 }
 
@@ -56,7 +65,9 @@ export interface JobQueueClientOptions<Input, Output> {
  */
 export class JobQueueClient<Input, Output> {
   public readonly queueName: string;
-  protected readonly storage: IQueueStorage<Input, Output>;
+  protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  protected readonly jobStore: IJobStore<Input, Output>;
+  protected readonly storage: IQueueStorage<Input, Output> | null;
   protected readonly events = new EventEmitter<JobQueueEventListeners<Input, Output>>();
   protected server: JobQueueServer<Input, Output> | null = null;
   protected storageUnsubscribe: (() => void) | null = null;
@@ -91,7 +102,20 @@ export class JobQueueClient<Input, Output> {
 
   constructor(options: JobQueueClientOptions<Input, Output>) {
     this.queueName = options.queueName;
-    this.storage = options.storage;
+    if (options.messageQueue && options.jobStore) {
+      this.messageQueue = options.messageQueue;
+      this.jobStore = options.jobStore;
+      this.storage = null;
+    } else if (options.storage) {
+      const wrapped = wrapQueueStorage(options.storage);
+      this.messageQueue = wrapped.messageQueue;
+      this.jobStore = wrapped.jobStore;
+      this.storage = options.storage;
+    } else {
+      throw new Error(
+        "JobQueueClient requires either `storage` or both `messageQueue` and `jobStore`"
+      );
+    }
   }
 
   /**
@@ -135,7 +159,10 @@ export class JobQueueClient<Input, Output> {
       return; // Already subscribed
     }
 
-    this.storageUnsubscribe = this.storage.subscribeToChanges(
+    const sub = this.messageQueue.subscribeToChanges;
+    if (!sub) return; // backend doesn't support subscriptions
+    this.storageUnsubscribe = sub.call(
+      this.messageQueue,
       (change: QueueChangePayload<Input, Output>) => {
         this.handleStorageChange(change);
       }
@@ -186,7 +213,7 @@ export class JobQueueClient<Input, Output> {
       status: JobStatus.PENDING,
     };
 
-    const id = await this.storage.add(job);
+    const id = await this.messageQueue.send(job);
 
     // Same-process fast path: poke the worker directly so it doesn't have to
     // wait for the poll interval (crucial for Sqlite/Postgres, whose
@@ -219,7 +246,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async getJob(id: unknown): Promise<Job<Input, Output> | undefined> {
     if (!id) throw new JobNotFoundError("Cannot get undefined job");
-    const job = await this.storage.get(id);
+    const job = await this.jobStore.get(id);
     if (!job) return undefined;
     return this.storageToClass(job);
   }
@@ -229,7 +256,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async getJobsByRunId(runId: string): Promise<readonly Job<Input, Output>[]> {
     if (!runId) throw new JobNotFoundError("Cannot get jobs by undefined runId");
-    const jobs = await this.storage.getByRunId(runId);
+    const jobs = await this.jobStore.getByRunId(runId);
     return jobs.map((job) => this.storageToClass(job));
   }
 
@@ -237,7 +264,7 @@ export class JobQueueClient<Input, Output> {
    * Peek at jobs in the queue
    */
   public async peek(status?: JobStatus, num?: number): Promise<readonly Job<Input, Output>[]> {
-    const jobs = await this.storage.peek(status, num);
+    const jobs = await this.jobStore.peek(status, num);
     return jobs.map((job) => this.storageToClass(job));
   }
 
@@ -245,7 +272,7 @@ export class JobQueueClient<Input, Output> {
    * Get the size of the queue
    */
   public async size(status?: JobStatus): Promise<number> {
-    return this.storage.size(status);
+    return this.jobStore.size(status);
   }
 
   /**
@@ -253,7 +280,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async outputForInput(input: Input): Promise<Output | null> {
     if (!input) throw new JobNotFoundError("Cannot get output for undefined input");
-    return this.storage.outputForInput(input);
+    return this.jobStore.outputForInput(input);
   }
 
   /**
@@ -335,7 +362,7 @@ export class JobQueueClient<Input, Output> {
     const firedLocally = this.server?.abortJob(jobId) ?? false;
     if (!firedLocally) {
       try {
-        await this.storage.abort(jobId);
+        await this.jobStore.abort(jobId);
       } finally {
         this.events.emit("job_aborting", this.queueName, jobId);
       }
