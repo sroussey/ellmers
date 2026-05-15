@@ -39,6 +39,10 @@ export class DelayLimiter implements ILimiter {
     }
   }
 
+  async complete(_token: unknown): Promise<void> {
+    // No-op — the delay window reservation must persist until the window expires.
+  }
+
   async getNextAvailableTime(): Promise<Date> {
     return this.nextAvailableTime;
   }

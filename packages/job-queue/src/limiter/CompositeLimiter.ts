@@ -62,6 +62,11 @@ export class CompositeLimiter implements ILimiter {
     await Promise.all(this.limiters.map((l, i) => l.release(token[i]).catch(() => {})));
   }
 
+  async complete(token: unknown): Promise<void> {
+    if (!Array.isArray(token)) return;
+    await Promise.all(this.limiters.map((l, i) => l.complete(token[i]).catch(() => {})));
+  }
+
   async getNextAvailableTime(): Promise<Date> {
     let maxDate = new Date(); // Assume now as the default
     for (const limiter of this.limiters) {

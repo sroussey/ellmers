@@ -26,6 +26,10 @@ export class NullLimiter implements ILimiter {
     // Do nothing
   }
 
+  async complete(_token: unknown): Promise<void> {
+    // Do nothing
+  }
+
   async getNextAvailableTime(): Promise<Date> {
     return new Date();
   }

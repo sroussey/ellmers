@@ -23,7 +23,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   private readonly windowSizeMs: number;
   private readonly idealInterval: number;
   private nextAvailableTime: number = Date.now();
-  private lastStartTime: number = 0;
   private durations: number[] = [];
   /** Promise chain used to serialize concurrent {@link tryAcquire} callers. */
   private acquireChain: Promise<unknown> = Promise.resolve();
@@ -63,7 +62,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
       const priorNextAvailable = this.nextAvailableTime;
       // Reserve the slot by advancing nextAvailableTime now (recordJobStart-style)
       // so a follow-up tryAcquire from another caller in the same tick blocks.
-      this.lastStartTime = now;
       if (this.durations.length === 0) {
         this.nextAvailableTime = now + this.idealInterval;
       } else {
@@ -97,6 +95,13 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     }
   }
 
+  /**
+   * No-op — rate window reservations must persist until the window expires.
+   */
+  async complete(_token: unknown): Promise<void> {
+    return Promise.resolve();
+  }
+
   async getNextAvailableTime(): Promise<Date> {
     return new Date(this.nextAvailableTime);
   }
@@ -111,6 +116,5 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   async clear(): Promise<void> {
     this.durations = [];
     this.nextAvailableTime = Date.now();
-    this.lastStartTime = 0;
   }
 }

@@ -61,6 +61,23 @@ export interface ILimiter {
    */
   release(token: unknown): Promise<void>;
 
+  /**
+   * Signal that the job which acquired this token has finished executing.
+   * Called on the normal completion path (success, error, retry) to release
+   * resources held for the duration of the job.
+   *
+   * Semantics differ from {@link release}: `release` undoes a reservation as
+   * if the job never ran; `complete` finalises a reservation that was actually
+   * used.
+   *
+   * - `ConcurrencyLimiter`: decrements the running-job counter so the next
+   *   job can acquire a slot.
+   * - `RateLimiter`: no-op — the window reservation was consumed and must
+   *   persist until the window expires.
+   * - All others: no-op.
+   */
+  complete(token: unknown): Promise<void>;
+
   getNextAvailableTime(): Promise<Date>;
   setNextAvailableTime(date: Date): Promise<void>;
   clear(): Promise<void>;

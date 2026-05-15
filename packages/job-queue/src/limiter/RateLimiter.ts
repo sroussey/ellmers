@@ -121,6 +121,14 @@ export class RateLimiter implements ILimiter {
     this.localBackoffUntilMs = 0;
   }
 
+  /**
+   * No-op for RateLimiter — the window reservation was consumed and must
+   * persist until the window expires.
+   */
+  async complete(_token: unknown): Promise<void> {
+    return Promise.resolve();
+  }
+
   protected addJitter(base: number): number {
     // full jitter in [base, 2*base)
     return base + Math.random() * base;

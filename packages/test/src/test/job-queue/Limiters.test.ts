@@ -187,12 +187,17 @@ describe("CompositeLimiter", () => {
     expect(await concurrency.tryAcquire()).not.toBeNull();
   });
 
-  it("should roll back partial acquisitions on failure", async () => {
-    const blocking = new ConcurrencyLimiter(0);
-    const normal = new NullLimiter();
-    const limiter = new CompositeLimiter([normal, blocking]);
-    // The composite must return null and not leave normal's slot acquired
-    expect(await limiter.tryAcquire()).toBeNull();
+  it("should roll back already-acquired slots when a later child fails", async () => {
+    const first = new ConcurrencyLimiter(1);
+    const second = new ConcurrencyLimiter(1);
+    // Saturate second so the composite will fail on it
+    await second.tryAcquire();
+    const composite = new CompositeLimiter([first, second]);
+    const result = await composite.tryAcquire();
+    expect(result).toBeNull();
+    // first's slot should have been rolled back — it can be acquired again
+    const token = await first.tryAcquire();
+    expect(token).not.toBeNull();
   });
 });
 

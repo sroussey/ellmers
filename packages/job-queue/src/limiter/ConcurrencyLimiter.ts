@@ -46,6 +46,10 @@ export class ConcurrencyLimiter implements ILimiter {
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 
+  async complete(_token: unknown): Promise<void> {
+    this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
+  }
+
   async getNextAvailableTime(): Promise<Date> {
     return this.currentRunningJobs > this.maxConcurrentJobs ? new Date() : new Date(Date.now() - 1);
   }

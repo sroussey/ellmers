@@ -562,6 +562,7 @@ export class JobQueueWorker<
       }
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
+      await this.limiter.complete(limiterToken);
       span?.end();
       this.inFlight.delete(job.id);
       resolveInFlight();
