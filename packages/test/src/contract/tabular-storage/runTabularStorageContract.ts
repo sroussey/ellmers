@@ -1,0 +1,17 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { describe } from "vitest";
+import { subscribeToChangesBlock } from "./assertions/subscribeToChanges";
+import type { TabularStorageContractOpts } from "./types";
+
+export function runTabularStorageContract(opts: TabularStorageContractOpts): void {
+  describe.skipIf(opts.skip)(`Tabular storage contract: ${opts.name}`, () => {
+    subscribeToChangesBlock(opts);
+  });
+}
+
+export type { TabularStorageContractAssertion, TabularStorageContractOpts } from "./types";
