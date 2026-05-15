@@ -5,7 +5,7 @@
  */
 
 import type { IJobStore, JobRecord, JobStatus, MessageId } from "@workglow/job-queue";
-import type { PendingWrite } from "./PostgresMessageQueue";
+import type { PostgresPendingWrite } from "./PostgresMessageQueue";
 import type { PostgresQueueStorage } from "./PostgresQueueStorage";
 
 export class PostgresJobStore<Input, Output> implements IJobStore<Input, Output> {
@@ -13,11 +13,11 @@ export class PostgresJobStore<Input, Output> implements IJobStore<Input, Output>
   public readonly core: PostgresQueueStorage<Input, Output>;
 
   /** @internal — shared transient buffer for saveResult/saveError. */
-  private readonly pending: Map<unknown, PendingWrite<Output>>;
+  private readonly pending: Map<unknown, PostgresPendingWrite<Output>>;
 
   constructor(
     core: PostgresQueueStorage<Input, Output>,
-    pending: Map<unknown, PendingWrite<Output>>
+    pending: Map<unknown, PostgresPendingWrite<Output>>
   ) {
     this.core = core;
     this.pending = pending;
@@ -28,11 +28,11 @@ export class PostgresJobStore<Input, Output> implements IJobStore<Input, Output>
   }
 
   async peek(status?: JobStatus, num?: number): Promise<readonly JobRecord<Input, Output>[]> {
-    return this.core.peek(status, num);
+    return this.core.peek(status as any, num);
   }
 
   size(status?: JobStatus): Promise<number> {
-    return this.core.size(status);
+    return this.core.size(status as any);
   }
 
   async getByRunId(runId: string): Promise<readonly JobRecord<Input, Output>[]> {
