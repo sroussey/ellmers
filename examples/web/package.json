@@ -48,7 +48,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "tailwindcss": "^4.3.0",
     "rollup-plugin-visualizer": "^7.0.1",
-    "vite": "^8.0.12",
+    "vite": "^8.0.13",
     "vite-plugin-wasm": "^3.6.0"
   },
   "publishConfig": {
