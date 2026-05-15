@@ -19,6 +19,7 @@ export * from "./common/HFT_Constants";
 export * from "./common/HFT_ModelSchema";
 export * from "./common/HFT_OnnxDtypes";
 export * from "./common/HFT_Pipeline";
+export * from "./common/HFT_TextReranker";
 export * from "./common/HFT_ToolMarkup";
 export * from "./registerHuggingFaceTransformersInline";
 export * from "./registerHuggingFaceTransformersWorker";
