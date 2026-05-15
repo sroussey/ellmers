@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiEmit,
-  AiJobInput,
-  IAiExecutionStrategy,
-} from "@workglow/ai";
+import type { AiEmit, AiJobInput, IAiExecutionStrategy } from "@workglow/ai";
 import { runWithIterable } from "@workglow/ai";
 import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
@@ -162,5 +158,80 @@ describe("runWithIterable consumer abort propagation", () => {
     // localAbort fires on the finally-block exit path.
     expect(context.signal.aborted).toBe(false);
     expect(events.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("hands the strategy a stable wrapper context (WeakMap-keyed identity is consistent)", async () => {
+    // Verifies the H2 fix: replacing the Proxy with a shallow clone gives the
+    // strategy a single stable object reference, so a WeakMap keyed on the
+    // `localContext` it sees observes the same identity for repeated reads.
+    const seenContexts: unknown[] = [];
+    const strategy: IAiExecutionStrategy = {
+      async execute(_jobInput, context, _runnerId, emit) {
+        seenContexts.push(context);
+        seenContexts.push(context); // same reference both times
+        emit({ type: "finish", data: {} } as StreamEvent<TaskOutput>);
+      },
+      abort() {},
+    };
+
+    const context = makeContext();
+    const iterable = runWithIterable<TaskOutput>(
+      strategy,
+      fakeJobInput,
+      context,
+      undefined,
+      (queue) => (event) => queue.push(event as StreamEvent<TaskOutput>)
+    );
+    for await (const _event of iterable) {
+      // drain
+    }
+
+    expect(seenContexts.length).toBe(2);
+    expect(seenContexts[0]).toBe(seenContexts[1]);
+    // The wrapper is NOT the original context (signal was substituted).
+    expect(seenContexts[0]).not.toBe(context);
+    // Use a WeakMap to confirm identity stability beyond `===`.
+    const map = new WeakMap<object, string>();
+    map.set(seenContexts[0] as object, "ok");
+    expect(map.get(seenContexts[1] as object)).toBe("ok");
+  });
+
+  it("propagates localAbort via wrappedContext.signal", async () => {
+    // Verifies that the shallow-cloned `wrappedContext.signal` is wired to
+    // `localAbort`: aborting through the consumer-return path fires the
+    // signal that the strategy received.
+    let capturedSignal: AbortSignal | undefined;
+    const strategy: IAiExecutionStrategy = {
+      async execute(_jobInput, context, _runnerId, emit) {
+        capturedSignal = context.signal;
+        emit({ type: "text-delta", port: "text", textDelta: "x" } as StreamEvent<TaskOutput>);
+        await new Promise<void>((_resolve, reject) => {
+          context.signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true }
+          );
+        });
+      },
+      abort() {},
+    };
+
+    const context = makeContext();
+    const iterable = runWithIterable<TaskOutput>(
+      strategy,
+      fakeJobInput,
+      context,
+      undefined,
+      (queue) => (event) => queue.push(event as StreamEvent<TaskOutput>)
+    );
+
+    for await (const _event of iterable) {
+      break; // triggers localAbort
+    }
+    await Promise.resolve();
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(true);
+    // Parent untouched.
+    expect(context.signal.aborted).toBe(false);
   });
 });

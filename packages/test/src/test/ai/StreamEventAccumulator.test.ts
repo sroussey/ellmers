@@ -94,4 +94,34 @@ describe("StreamEventAccumulator", () => {
     acc.observe({ type: "text-delta", port: "text", textDelta: "x" } as StreamEvent<Out>);
     expect(() => acc.materialize()).toThrow(/finish/i);
   });
+
+  it("tags no-finish failures with ACCUMULATOR_NO_FINISH code and lastEventType", () => {
+    const acc = new StreamEventAccumulator<Out>();
+    acc.observe({ type: "text-delta", port: "text", textDelta: "x" } as StreamEvent<Out>);
+    acc.observe({ type: "phase", message: "hi", progress: 0.1 } as StreamEvent<Out>);
+    let caught: unknown;
+    try {
+      acc.materialize();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    const err = caught as { code?: string; lastEventType?: string; message?: string };
+    expect(err.code).toBe("ACCUMULATOR_NO_FINISH");
+    expect(err.lastEventType).toBe("phase");
+    expect(err.message).toMatch(/lastEventType=phase/);
+  });
+
+  it("includes lastEventType=(none) when materialize is called with no events at all", () => {
+    const acc = new StreamEventAccumulator<Out>();
+    let caught: unknown;
+    try {
+      acc.materialize();
+    } catch (e) {
+      caught = e;
+    }
+    const err = caught as { code?: string; lastEventType?: string };
+    expect(err.code).toBe("ACCUMULATOR_NO_FINISH");
+    expect(err.lastEventType).toBe("(none)");
+  });
 });

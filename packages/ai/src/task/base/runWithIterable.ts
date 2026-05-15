@@ -6,8 +6,8 @@
 
 import type { IExecuteContext, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { AiEmit } from "../../capability/AiEmit";
-import { createEmitQueue } from "../../capability/emitQueue";
 import type { EmitQueue } from "../../capability/emitQueue";
+import { createEmitQueue } from "../../capability/emitQueue";
 import type { IAiExecutionStrategy } from "../../execution/IAiExecutionStrategy";
 import type { AiJobInput } from "../../job/AiJob";
 
@@ -33,8 +33,11 @@ export type RunWithIterableEmitFactory<Output extends TaskOutput> = (
  *      so the strategy sees the cancellation on its first signal check.
  *      Otherwise wire a `once: true` listener that mirrors parent aborts
  *      into `localAbort`. The listener is removed when the run settles.
- *   3. Replace `context.signal` on a shallow wrapper (other context fields
- *      pass through unchanged) and hand that to `strategy.execute`.
+ *   3. Build a shallow-cloned context with `signal` replaced (other context
+ *      fields pass through unchanged by reference) and hand that to
+ *      `strategy.execute`. A shallow clone — rather than a `Proxy` — is used
+ *      so the wrapper has a stable identity for callers that rely on
+ *      reference equality (e.g. `WeakMap`-keyed caches).
  *   4. Iterate the queue and yield events to the caller.
  *   5. In a `finally`, abort `localAbort`, fail the queue, and await the
  *      run promise. The `await` swallows the post-abort rejection — the
@@ -91,17 +94,16 @@ export async function* runWithIterable<Output extends TaskOutput>(
   // The strategy reads `signal` off the context; substitute our local one.
   // Keep every other field (own, registry, updateProgress, resourceScope,
   // inputStreams, …) referentially identical so behaviour outside cancel
-  // semantics is unchanged.
-  const localContext: IExecuteContext = new Proxy(context, {
-    get(target, prop, receiver) {
-      if (prop === "signal") return localAbort.signal;
-      return Reflect.get(target, prop, receiver);
-    },
-  });
+  // semantics is unchanged. A shallow clone (rather than a Proxy) is used so
+  // callers that rely on stable object identity (e.g. WeakMap-keyed caches
+  // that key on the wrapped value rather than the original `context`) see a
+  // single stable wrapper rather than a transparently-proxied view that
+  // bypasses identity checks for non-`signal` keys.
+  const wrappedContext: IExecuteContext = { ...context, signal: localAbort.signal };
 
   const emit = emitFactory(queue);
   const runPromise = strategy
-    .execute(jobInput, localContext, runnerId, emit as AiEmit<TaskOutput>)
+    .execute(jobInput, wrappedContext, runnerId, emit as AiEmit<TaskOutput>)
     .then(
       () => queue.close(),
       (err) => queue.fail(err)

@@ -546,22 +546,20 @@ export class WorkerServerBase {
 
   /**
    * Schedule cleanup of a completed request ID. Uses a 5-second delay to
-   * handle late-arriving abort messages, and caps the completed set size
-   * to prevent unbounded growth.
+   * handle late-arriving abort messages, and caps the completed set size at
+   * {@link HARD_CAP} entries to prevent unbounded growth. As in
+   * {@link recordPendingAbort}, the eviction list is snapshotted via
+   * `Array.from` before deletion to avoid iterating-while-deleting.
    */
   private scheduleCompletedRequestCleanup(id: string): void {
     setTimeout(() => {
       this.completedRequests.delete(id);
     }, 5000);
 
-    // Safety cap: if the set grows too large, clear the oldest entries
-    if (this.completedRequests.size > 1000) {
-      const iter = this.completedRequests.values();
-      for (let i = 0; i < 500; i++) {
-        const entry = iter.next();
-        if (entry.done) break;
-        this.completedRequests.delete(entry.value);
-      }
+    // Safety cap: if the set grows too large, clear the oldest entries (FIFO).
+    if (this.completedRequests.size > HARD_CAP) {
+      const evict = Array.from(this.completedRequests).slice(0, EVICT_BATCH);
+      for (const item of evict) this.completedRequests.delete(item);
     }
   }
 }

@@ -22,6 +22,7 @@ import {
   Task,
   TaskConfigSchema,
   TaskConfigurationError,
+  TaskError,
   TaskInput,
   hasStructuredOutput,
 } from "@workglow/task-graph";
@@ -162,14 +163,49 @@ export class AiTask<
       }
       observeEvent(event);
     };
-    await strategy.execute(jobInput, executeContext, this.runConfig.runnerId, emit as AiEmit);
+    let providerError: unknown;
+    try {
+      await strategy.execute(jobInput, executeContext, this.runConfig.runnerId, emit as AiEmit);
+    } catch (e) {
+      providerError = e;
+    }
     if (progressUpdates.length > 0) {
       await Promise.all(progressUpdates);
-      if (progressError !== undefined) {
+      if (progressError !== undefined && providerError === undefined) {
         throw progressError;
       }
     }
-    const output = result();
+    let output: Output | undefined;
+    try {
+      output = result();
+    } catch (e) {
+      // Materialisation failed (most commonly: stream ended without a `finish`
+      // event). If the provider already failed, prefer the original cause —
+      // the missing-finish symptom is just a downstream consequence. Wrap in
+      // a `TaskError` and propagate any discriminating `code` set by the
+      // accumulator (e.g. `ACCUMULATOR_NO_FINISH`).
+      const cause = providerError ?? e;
+      const matErr = e as { code?: string; message?: string; lastEventType?: string };
+      const wrapped = new TaskError(
+        providerError !== undefined
+          ? `AiTask: provider failed before stream completion (${matErr?.message ?? String(e)})`
+          : (matErr?.message ?? String(e))
+      ) as TaskError & { cause?: unknown; code?: string; lastEventType?: string };
+      wrapped.cause = cause;
+      if (providerError === undefined && matErr?.code) {
+        wrapped.code = matErr.code;
+        if (matErr.lastEventType !== undefined) {
+          wrapped.lastEventType = matErr.lastEventType;
+        }
+      }
+      throw wrapped;
+    }
+    if (providerError !== undefined) {
+      // Provider rejected after producing a usable accumulation (rare): still
+      // surface the original provider error to the caller so error-shape
+      // expectations are stable.
+      throw providerError;
+    }
 
     // Register a disposer so the caller can release the in-memory model when
     // done. The disposer is wired via the "model.dispose" capability —
