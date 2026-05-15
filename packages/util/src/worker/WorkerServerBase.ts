@@ -10,6 +10,18 @@ import { createServiceToken } from "../di";
 export const WORKER_SERVER = createServiceToken<WorkerServerBase>("worker.server");
 
 /**
+ * Hard cap on the completed-request bookkeeping `Set`.
+ * Once exceeded, the oldest {@link EVICT_BATCH} entries are dropped.
+ */
+const COMPLETED_REQUESTS_HARD_CAP = 1000;
+
+/**
+ * Number of completed-request entries dropped per eviction batch once
+ * {@link COMPLETED_REQUESTS_HARD_CAP} is exceeded.
+ */
+const EVICT_BATCH = 500;
+
+/**
  * Extracts transferables from an object.
  * @param obj - The object to extract transferables from.
  * @returns An array of transferables.
@@ -547,7 +559,7 @@ export class WorkerServerBase {
   /**
    * Schedule cleanup of a completed request ID. Uses a 5-second delay to
    * handle late-arriving abort messages, and caps the completed set size at
-   * {@link HARD_CAP} entries to prevent unbounded growth. As in
+   * {@link COMPLETED_REQUESTS_HARD_CAP} entries to prevent unbounded growth. As in
    * {@link recordPendingAbort}, the eviction list is snapshotted via
    * `Array.from` before deletion to avoid iterating-while-deleting.
    */
@@ -557,7 +569,7 @@ export class WorkerServerBase {
     }, 5000);
 
     // Safety cap: if the set grows too large, clear the oldest entries (FIFO).
-    if (this.completedRequests.size > HARD_CAP) {
+    if (this.completedRequests.size > COMPLETED_REQUESTS_HARD_CAP) {
       const evict = Array.from(this.completedRequests).slice(0, EVICT_BATCH);
       for (const item of evict) this.completedRequests.delete(item);
     }
