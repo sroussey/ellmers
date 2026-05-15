@@ -67,10 +67,14 @@ export class KbReindexTask extends Task<
 
   override async execute(
     input: KbReindexTaskInput,
-    _context: IExecuteContext
+    context: IExecuteContext
   ): Promise<KbReindexTaskOutput> {
     const kb = input.knowledgeBase as KnowledgeBase;
-    const count = await kb.reindex();
+    const count = await kb.reindex({
+      signal: context.signal,
+      resourceScope: context.resourceScope,
+      registry: context.registry,
+    });
     return { count };
   }
 }
