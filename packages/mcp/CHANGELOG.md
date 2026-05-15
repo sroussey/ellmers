@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.36
+
+### Bug Fixes
+
+- mcp
+
 ## 0.2.35
 
 ### Chores

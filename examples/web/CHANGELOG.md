@@ -1,5 +1,20 @@
 # @workglow/web
 
+## 0.2.36
+
+### Chores
+
+- update deps
+
+#### deps-dev
+
+- bump vite from 8.0.12 to 8.0.13
+
+### Updated Dependencies
+
+- `@vitejs/plugin-react`: ^6.0.2
+- `vite`: ^8.0.13
+
 ## 0.2.35
 
 ### Refactors
