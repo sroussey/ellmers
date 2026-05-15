@@ -102,7 +102,7 @@ export class InMemoryMessageQueue<Input, Output> implements IMessageQueue<
   public readonly core: InMemoryQueueStorage<Input, Output>;
 
   /** @internal — shared transient buffer for saveResult/saveError. */
-  public readonly pending: Map<unknown, PendingInMemoryWrite<Output>>;
+  private readonly pending: Map<unknown, PendingInMemoryWrite<Output>>;
 
   constructor(
     core: InMemoryQueueStorage<Input, Output>,
