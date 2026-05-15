@@ -190,7 +190,10 @@ export class TaskGraphRunner {
   ): Promise<GraphResultArray<ExecuteOutput>> {
     const ownsScope = config?.resourceScope === undefined;
     const effectiveConfig: TaskGraphRunConfig = ownsScope
-      ? { ...config, resourceScope: new ResourceScope() }
+      ? {
+          ...config,
+          resourceScope: new ResourceScope({ strategy: config?.disposeStrategy }),
+        }
       : config!;
 
     try {
@@ -233,7 +236,7 @@ export class TaskGraphRunner {
       return this.filterLeafResults(results);
     } finally {
       if (ownsScope) {
-        await effectiveConfig.resourceScope!.disposeAll();
+        await effectiveConfig.resourceScope!.runComplete();
         // Only clear our auto-created reference. Caller-passed scopes keep the
         // caller's lifecycle; `handleStart` overwrites the field on the next
         // run anyway via `effectiveConfig`.
