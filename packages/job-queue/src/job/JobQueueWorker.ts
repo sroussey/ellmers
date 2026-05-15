@@ -504,11 +504,6 @@ export class JobQueueWorker<
         })
       : undefined;
 
-    // Set when validateJobState fails and we release() the limiter slot
-    // ourselves — the finally block then skips recordJobCompletion to avoid
-    // double-decrementing limiters where release() and recordJobCompletion()
-    // both decrement (e.g. ConcurrencyLimiter).
-    let slotReleased = false;
     try {
       // The limiter slot was already atomically reserved by tryAcquire() in
       // the main loop (or processNext), so we no longer call recordJobStart
@@ -522,7 +517,6 @@ export class JobQueueWorker<
         // slot.
         try {
           await this.limiter.release(limiterToken);
-          slotReleased = true;
         } catch {
           // best-effort
         }
@@ -569,14 +563,8 @@ export class JobQueueWorker<
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
       span?.end();
-      try {
-        if (!slotReleased) {
-          await this.limiter.recordJobCompletion();
-        }
-      } finally {
-        this.inFlight.delete(job.id);
-        resolveInFlight();
-      }
+      this.inFlight.delete(job.id);
+      resolveInFlight();
     }
   }
 
@@ -680,12 +668,12 @@ export class JobQueueWorker<
    * the next started worker can pick it up. `fixupJobs()` would otherwise
    * skip it (it ignores rows owned by current-server worker IDs).
    *
-   * Uses `storage.release()` rather than `storage.complete()` so the retry
+   * Uses `storage.releaseClaim()` rather than `storage.complete()` so the retry
    * budget isn't burned: the worker never actually attempted execution.
    */
   protected async releaseClaimedJob(job: Job<Input, Output>): Promise<void> {
     try {
-      await this.storage.release(job.id);
+      await this.storage.releaseClaim(job.id);
     } catch (err) {
       getLogger().error("releaseClaimedJob errored:", { error: err });
     }

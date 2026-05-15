@@ -17,10 +17,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 describe("NullLimiter", () => {
   const limiter = new NullLimiter();
 
-  it("should always allow proceeding", async () => {
-    expect(await limiter.canProceed()).toBe(true);
-  });
-
   it("should always tryAcquire successfully", async () => {
     expect(await limiter.tryAcquire()).not.toBeNull();
     expect(await limiter.tryAcquire()).not.toBeNull();
@@ -30,9 +26,7 @@ describe("NullLimiter", () => {
     expect(limiter.scope).toBe("process");
   });
 
-  it("should not throw on any method call", async () => {
-    await expect(limiter.recordJobStart()).resolves.toBeUndefined();
-    await expect(limiter.recordJobCompletion()).resolves.toBeUndefined();
+  it("should not throw on release, setNextAvailableTime, or clear", async () => {
     await expect(limiter.release(null)).resolves.toBeUndefined();
     await expect(limiter.setNextAvailableTime(new Date())).resolves.toBeUndefined();
     await expect(limiter.clear()).resolves.toBeUndefined();
@@ -72,41 +66,32 @@ describe("ConcurrencyLimiter", () => {
     expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
-  it("should allow proceeding when under limit", async () => {
-    expect(await limiter.canProceed()).toBe(true);
+  it("tryAcquire should return null when at concurrency limit", async () => {
+    await limiter.tryAcquire();
+    await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 
-  it("should block when at concurrency limit", async () => {
-    await limiter.recordJobStart();
-    await limiter.recordJobStart();
-    expect(await limiter.canProceed()).toBe(false);
-  });
-
-  it("should allow again after job completion", async () => {
-    await limiter.recordJobStart();
-    await limiter.recordJobStart();
-    expect(await limiter.canProceed()).toBe(false);
-    await limiter.recordJobCompletion();
-    expect(await limiter.canProceed()).toBe(true);
-  });
-
-  it("should not go below zero running jobs", async () => {
-    await limiter.recordJobCompletion();
-    await limiter.recordJobCompletion();
-    expect(await limiter.canProceed()).toBe(true);
+  it("tryAcquire should succeed again after release", async () => {
+    const t1 = await limiter.tryAcquire();
+    const t2 = await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
+    await limiter.release(t1);
+    expect(await limiter.tryAcquire()).not.toBeNull();
+    await limiter.release(t2);
   });
 
   it("should reset on clear", async () => {
-    await limiter.recordJobStart();
-    await limiter.recordJobStart();
+    await limiter.tryAcquire();
+    await limiter.tryAcquire();
     await limiter.clear();
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should respect setNextAvailableTime", async () => {
     const future = new Date(Date.now() + 100_000);
     await limiter.setNextAvailableTime(future);
-    expect(await limiter.canProceed()).toBe(false);
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 });
 
@@ -127,80 +112,87 @@ describe("DelayLimiter", () => {
     expect(successes).toBe(1);
   });
 
-  it("should allow proceeding initially", async () => {
-    expect(await limiter.canProceed()).toBe(true);
+  it("should allow tryAcquire initially", async () => {
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
-  it("should block after recording a job start", async () => {
-    await limiter.recordJobStart();
-    expect(await limiter.canProceed()).toBe(false);
+  it("should block tryAcquire during delay window", async () => {
+    await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 
-  it("should allow proceeding after delay expires", async () => {
+  it("should allow tryAcquire after delay expires", async () => {
     const shortDelayLimiter = new DelayLimiter(10);
-    await shortDelayLimiter.recordJobStart();
+    await shortDelayLimiter.tryAcquire();
     await sleep(20);
-    expect(await shortDelayLimiter.canProceed()).toBe(true);
+    expect(await shortDelayLimiter.tryAcquire()).not.toBeNull();
   });
 
   it("should reset on clear", async () => {
-    await limiter.recordJobStart();
+    await limiter.tryAcquire();
     await limiter.clear();
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should only update nextAvailableTime if later", async () => {
     const past = new Date(Date.now() - 1000);
     await limiter.setNextAvailableTime(past);
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 });
 
 describe("CompositeLimiter", () => {
-  it("should proceed when all limiters agree", async () => {
+  it("should tryAcquire successfully when all limiters agree", async () => {
     const limiter = new CompositeLimiter([new NullLimiter(), new NullLimiter()]);
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
-  it("should block when any limiter blocks", async () => {
+  it("should return null from tryAcquire when any limiter is at capacity", async () => {
     const concurrency = new ConcurrencyLimiter(1);
-    await concurrency.recordJobStart();
+    await concurrency.tryAcquire();
     const limiter = new CompositeLimiter([new NullLimiter(), concurrency]);
-    expect(await limiter.canProceed()).toBe(false);
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 
   it("should addLimiter dynamically", async () => {
     const limiter = new CompositeLimiter();
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
     const blocking = new ConcurrencyLimiter(0);
     limiter.addLimiter(blocking);
-    expect(await limiter.canProceed()).toBe(false);
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 
-  it("should propagate recordJobStart to all limiters", async () => {
+  it("should propagate tryAcquire state to all child limiters", async () => {
     const concurrency = new ConcurrencyLimiter(2);
     const limiter = new CompositeLimiter([concurrency]);
-    await limiter.recordJobStart();
-    await limiter.recordJobStart();
-    expect(await concurrency.canProceed()).toBe(false);
+    await limiter.tryAcquire();
+    await limiter.tryAcquire();
+    expect(await concurrency.tryAcquire()).toBeNull();
   });
 
   it("should return latest getNextAvailableTime across limiters", async () => {
-    const delay1 = new DelayLimiter(10);
     const delay2 = new DelayLimiter(1000);
+    await delay2.tryAcquire();
     const before = Date.now();
-    await delay2.recordJobStart();
-    const limiter = new CompositeLimiter([delay1, delay2]);
+    const limiter = new CompositeLimiter([new DelayLimiter(10), delay2]);
     const nextTime = await limiter.getNextAvailableTime();
     expect(nextTime.getTime()).toBeGreaterThan(before + 500);
   });
 
   it("should propagate clear to all limiters", async () => {
     const concurrency = new ConcurrencyLimiter(1);
-    await concurrency.recordJobStart();
+    await concurrency.tryAcquire();
     const limiter = new CompositeLimiter([concurrency]);
     await limiter.clear();
-    expect(await concurrency.canProceed()).toBe(true);
+    expect(await concurrency.tryAcquire()).not.toBeNull();
+  });
+
+  it("should roll back partial acquisitions on failure", async () => {
+    const blocking = new ConcurrencyLimiter(0);
+    const normal = new NullLimiter();
+    const limiter = new CompositeLimiter([normal, blocking]);
+    // The composite must return null and not leave normal's slot acquired
+    expect(await limiter.tryAcquire()).toBeNull();
   });
 });
 
@@ -229,9 +221,9 @@ describe("EvenlySpacedRateLimiter", () => {
     );
   });
 
-  it("should allow proceeding initially", async () => {
+  it("should allow tryAcquire initially", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 1 });
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should report process scope", () => {
@@ -247,36 +239,35 @@ describe("EvenlySpacedRateLimiter", () => {
     expect(successes).toBe(1);
   });
 
-  it("should space requests by setting next available time", async () => {
+  it("should space requests by advancing next available time after tryAcquire", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 10 });
-    await limiter.recordJobStart();
+    await limiter.tryAcquire();
     // idealInterval = 10000/10 = 1000ms, so next available should be ~1s from now
     const nextTime = await limiter.getNextAvailableTime();
     expect(nextTime.getTime()).toBeGreaterThan(Date.now() + 500);
   });
 
-  it("should track job completion durations", async () => {
-    const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 1 });
-    await limiter.recordJobStart();
-    await limiter.recordJobCompletion();
-    // After recording completion, a second start should account for duration
-    await limiter.recordJobStart();
-    const nextTime = await limiter.getNextAvailableTime();
-    expect(nextTime.getTime()).toBeGreaterThanOrEqual(Date.now());
-  });
-
   it("should reset on clear", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 1, windowSizeInSeconds: 100 });
-    await limiter.recordJobStart();
-    expect(await limiter.canProceed()).toBe(false);
+    await limiter.tryAcquire();
+    expect(await limiter.tryAcquire()).toBeNull();
     await limiter.clear();
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 
   it("should only update nextAvailableTime if later via setNextAvailableTime", async () => {
     const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 10, windowSizeInSeconds: 1 });
     const past = new Date(Date.now() - 1000);
     await limiter.setNextAvailableTime(past);
-    expect(await limiter.canProceed()).toBe(true);
+    expect(await limiter.tryAcquire()).not.toBeNull();
+  });
+
+  it("release should roll back the slot so a follow-up tryAcquire succeeds", async () => {
+    const limiter = new EvenlySpacedRateLimiter({ maxExecutions: 1, windowSizeInSeconds: 100 });
+    const token = await limiter.tryAcquire();
+    expect(token).not.toBeNull();
+    expect(await limiter.tryAcquire()).toBeNull();
+    await limiter.release(token);
+    expect(await limiter.tryAcquire()).not.toBeNull();
   });
 });

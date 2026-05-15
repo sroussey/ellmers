@@ -27,15 +27,6 @@ export class CompositeLimiter implements ILimiter {
     this.limiters.push(limiter);
   }
 
-  async canProceed(): Promise<boolean> {
-    for (const limiter of this.limiters) {
-      if (!(await limiter.canProceed())) {
-        return false; // If any limiter says "no", proceed no further
-      }
-    }
-    return true; // All limiters agree
-  }
-
   /**
    * Atomic against the composite: acquires children sequentially and rolls
    * back any successfully-acquired prefix if a later child rejects, so the
@@ -69,14 +60,6 @@ export class CompositeLimiter implements ILimiter {
   async release(token: unknown): Promise<void> {
     if (!Array.isArray(token)) return;
     await Promise.all(this.limiters.map((l, i) => l.release(token[i]).catch(() => {})));
-  }
-
-  async recordJobStart(): Promise<void> {
-    await Promise.all(this.limiters.map((limiter) => limiter.recordJobStart()));
-  }
-
-  async recordJobCompletion(): Promise<void> {
-    await Promise.all(this.limiters.map((limiter) => limiter.recordJobCompletion()));
   }
 
   async getNextAvailableTime(): Promise<Date> {

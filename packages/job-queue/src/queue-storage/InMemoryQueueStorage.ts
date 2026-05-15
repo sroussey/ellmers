@@ -253,7 +253,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Releases a claimed job back to PENDING without incrementing run_attempts.
    * @param id - The id of the claimed job to release.
    */
-  public async release(id: unknown): Promise<void> {
+  public async releaseClaim(id: unknown): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
     if (job) {

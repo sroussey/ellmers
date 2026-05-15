@@ -41,12 +41,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     this.idealInterval = this.windowSizeMs / this.maxExecutions;
   }
 
-  /** Can we start a new job right now? */
-  async canProceed(): Promise<boolean> {
-    const now = Date.now();
-    return now >= this.nextAvailableTime;
-  }
-
   /**
    * Atomic acquire: serialized by an internal promise chain so two concurrent
    * acquirers cannot both observe `now >= nextAvailableTime` and both proceed.
@@ -100,38 +94,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     const t = token as { priorNextAvailable: number; advancedTo: number };
     if (this.nextAvailableTime === t.advancedTo) {
       this.nextAvailableTime = t.priorNextAvailable;
-    }
-  }
-
-  /** Record that a job is starting now. */
-  async recordJobStart(): Promise<void> {
-    const now = Date.now();
-    this.lastStartTime = now;
-
-    // If no timing data yet, assume zero run-time (ideal interval)
-    if (this.durations.length === 0) {
-      this.nextAvailableTime = now + this.idealInterval;
-    } else {
-      // Compute average run duration
-      const sum = this.durations.reduce((a, b) => a + b, 0);
-      const avgDuration = sum / this.durations.length;
-      // Schedule next start: ideal spacing minus average duration
-      const waitMs = Math.max(0, this.idealInterval - avgDuration);
-      this.nextAvailableTime = now + waitMs;
-    }
-  }
-
-  /**
-   * Call this when a job finishes.
-   * We measure its duration, update our running-average,
-   * and then compute how long to wait before the next job start.
-   */
-  async recordJobCompletion(): Promise<void> {
-    const now = Date.now();
-    const duration = now - this.lastStartTime;
-    this.durations.push(duration);
-    if (this.durations.length > this.maxExecutions) {
-      this.durations.shift();
     }
   }
 

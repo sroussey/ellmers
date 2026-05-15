@@ -26,18 +26,6 @@ export class NullLimiter implements ILimiter {
     // Do nothing
   }
 
-  async canProceed(): Promise<boolean> {
-    return true;
-  }
-
-  async recordJobStart(): Promise<void> {
-    // Do nothing
-  }
-
-  async recordJobCompletion(): Promise<void> {
-    // Do nothing
-  }
-
   async getNextAvailableTime(): Promise<Date> {
     return new Date();
   }

@@ -134,69 +134,6 @@ export class RateLimiter implements ILimiter {
   }
 
   /**
-   * Checks if a job can proceed based on rate limiting rules.
-   * @returns True if the job can proceed, false otherwise
-   */
-  async canProceed(): Promise<boolean> {
-    // First check if the window allows more executions
-    const windowStartTime = new Date(Date.now() - this.windowSizeInMilliseconds).toISOString();
-    const attemptCount = await this.storage.getExecutionCount(this.queueName, windowStartTime);
-    const canProceedNow = attemptCount < this.maxExecutions;
-
-    // If the window allows more executions, clear any backoff and proceed
-    if (canProceedNow) {
-      // Clear any existing nextAvailableTime backoff since the window allows more executions
-      const nextAvailableTime = await this.storage.getNextAvailableTime(this.queueName);
-      if (nextAvailableTime && new Date(nextAvailableTime).getTime() > Date.now()) {
-        // Clear the backoff by setting it to the past
-        const pastTime = new Date(Date.now() - 1000);
-        await this.storage.setNextAvailableTime(this.queueName, pastTime.toISOString());
-      }
-      this.currentBackoffDelay = this.initialBackoffDelay;
-      return true;
-    }
-
-    // Window is full, check if there's a backoff delay
-    const nextAvailableTime = await this.storage.getNextAvailableTime(this.queueName);
-    if (nextAvailableTime && new Date(nextAvailableTime).getTime() > Date.now()) {
-      this.increaseBackoff();
-      return false;
-    }
-
-    // Window is full but no backoff delay, so we can't proceed
-    this.increaseBackoff();
-    return false;
-  }
-
-  /**
-   * Records a new job attempt.
-   */
-  async recordJobStart(): Promise<void> {
-    await this.storage.recordExecution(this.queueName);
-
-    const windowStartTime = new Date(Date.now() - this.windowSizeInMilliseconds).toISOString();
-    const attemptCount = await this.storage.getExecutionCount(this.queueName, windowStartTime);
-
-    if (attemptCount >= this.maxExecutions) {
-      const backoffExpires = new Date(Date.now() + this.addJitter(this.currentBackoffDelay));
-      await this.setNextAvailableTime(backoffExpires);
-    } else {
-      // Window allows more executions, clear any existing nextAvailableTime by setting it to the past
-      const nextAvailableTime = await this.storage.getNextAvailableTime(this.queueName);
-      if (nextAvailableTime && new Date(nextAvailableTime).getTime() > Date.now()) {
-        // Clear the backoff since the window now allows more executions
-        // Set to a time in the past to effectively clear it
-        const pastTime = new Date(Date.now() - 1000);
-        await this.storage.setNextAvailableTime(this.queueName, pastTime.toISOString());
-      }
-    }
-  }
-
-  async recordJobCompletion(): Promise<void> {
-    // Implementation can be no-op as completion doesn't affect rate limiting
-  }
-
-  /**
    * Retrieves the next available time for the specific queue. Returns the
    * latest of: the rate-limit wall (oldest execution + window), any externally
    * set storage sentinel (explicit pause), and this instance's local backoff

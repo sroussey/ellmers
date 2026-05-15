@@ -120,46 +120,6 @@ describe("RateLimiter", () => {
     });
   });
 
-  describe("canProceed", () => {
-    it("should allow when execution count is below limit", async () => {
-      const limiter = new RateLimiter(storage, "queue", {
-        maxExecutions: 5,
-        windowSizeInSeconds: 60,
-      });
-      expect(await limiter.canProceed()).toBe(true);
-    });
-
-    it("should block when execution count meets limit", async () => {
-      storage._setExecutionCount(5);
-      const limiter = new RateLimiter(storage, "queue", {
-        maxExecutions: 5,
-        windowSizeInSeconds: 60,
-      });
-      expect(await limiter.canProceed()).toBe(false);
-    });
-  });
-
-  describe("recordJobStart", () => {
-    it("should call storage.recordExecution", async () => {
-      const limiter = new RateLimiter(storage, "queue", {
-        maxExecutions: 10,
-        windowSizeInSeconds: 60,
-      });
-      await limiter.recordJobStart();
-      expect(storage.recordExecution).toHaveBeenCalledWith("queue");
-    });
-  });
-
-  describe("recordJobCompletion", () => {
-    it("should be a no-op", async () => {
-      const limiter = new RateLimiter(storage, "queue", {
-        maxExecutions: 10,
-        windowSizeInSeconds: 60,
-      });
-      await expect(limiter.recordJobCompletion()).resolves.toBeUndefined();
-    });
-  });
-
   describe("clear", () => {
     it("should clear storage", async () => {
       const limiter = new RateLimiter(storage, "queue", {

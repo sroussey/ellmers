@@ -14,10 +14,6 @@ export class DelayLimiter implements ILimiter {
   private lastAcquireBaseline: number = 0;
   constructor(private delayInMilliseconds: number = 50) {}
 
-  async canProceed(): Promise<boolean> {
-    return Date.now() >= this.nextAvailableTime.getTime();
-  }
-
   /**
    * Token records the previous nextAvailableTime so release can roll back to
    * exactly the state before this acquire — even if other acquires (or
@@ -41,14 +37,6 @@ export class DelayLimiter implements ILimiter {
     if (this.nextAvailableTime.getTime() === this.lastAcquireBaseline + this.delayInMilliseconds) {
       this.nextAvailableTime = new Date(token);
     }
-  }
-
-  async recordJobStart(): Promise<void> {
-    this.nextAvailableTime = new Date(Date.now() + this.delayInMilliseconds);
-  }
-
-  async recordJobCompletion(): Promise<void> {
-    // No action needed.
   }
 
   async getNextAvailableTime(): Promise<Date> {

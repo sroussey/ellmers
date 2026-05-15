@@ -542,7 +542,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Releases a claimed job without consuming a retry attempt.
    */
-  public async release(jobId: unknown): Promise<void> {
+  public async releaseClaim(jobId: unknown): Promise<void> {
     let query = this.client
       .from(this.tableName)
       .update({

@@ -23,13 +23,6 @@ export class ConcurrencyLimiter implements ILimiter {
     this.maxConcurrentJobs = maxConcurrentJobs;
   }
 
-  async canProceed(): Promise<boolean> {
-    return (
-      this.currentRunningJobs < this.maxConcurrentJobs &&
-      Date.now() >= this.nextAllowedStartTime.getTime()
-    );
-  }
-
   /** Sentinel token; ConcurrencyLimiter has no per-row identity, just a counter. */
   private static readonly SENTINEL = Symbol("ConcurrencyLimiter.acquired");
 
@@ -50,14 +43,6 @@ export class ConcurrencyLimiter implements ILimiter {
 
   async release(token: unknown): Promise<void> {
     if (token !== ConcurrencyLimiter.SENTINEL) return;
-    this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
-  }
-
-  async recordJobStart(): Promise<void> {
-    this.currentRunningJobs++;
-  }
-
-  async recordJobCompletion(): Promise<void> {
     this.currentRunningJobs = Math.max(0, this.currentRunningJobs - 1);
   }
 
