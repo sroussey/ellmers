@@ -11,6 +11,11 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
 import { runGenericTabularStorageSubscriptionTests } from "./genericTabularStorageSubscriptionTests";
 import {
   AllTypesPrimaryKeyNames,
@@ -584,5 +589,33 @@ describe("IndexedDbTabularStorage", () => {
         /non-empty select/
       );
     });
+  });
+
+  runTabularStorageContract({
+    name: "IndexedDbTabularStorage",
+    createStorage: async () => {
+      const storage = new IndexedDbTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(`contract_test_${uuid4().replace(/-/g, "_")}`, CompoundSchema, CompoundPrimaryKeyNames);
+      await storage.setupDatabase();
+      return storage;
+    },
+    capabilities: {
+      supportsSubscriptions: true,
+      supportsVectorColumns: true,
+      supportsTransactions: false,
+      supportsQuery: true,
+    },
+    usesPolling: true,
+    pollingIntervalMs: 50,
+    createVectorStorage: async () => {
+      const storage = new IndexedDbTabularStorage<
+        typeof VectorItemSchema,
+        typeof VectorItemPrimaryKeyNames
+      >(`contract_vec_${uuid4().replace(/-/g, "_")}`, VectorItemSchema, VectorItemPrimaryKeyNames);
+      await storage.setupDatabase();
+      return storage;
+    },
   });
 });

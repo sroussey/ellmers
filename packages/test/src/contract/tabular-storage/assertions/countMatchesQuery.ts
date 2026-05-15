@@ -17,7 +17,7 @@ export function countMatchesQueryBlock(opts: TabularStorageContractOpts): void {
   const expectFails = new Set(opts.expectedFailures ?? []);
   const itImpl = expectFails.has("countMatchesQuery") ? itExpectFail : it;
 
-  describe("countMatchesQuery", () => {
+  describe.skipIf(!opts.capabilities.supportsQuery)("countMatchesQuery", () => {
     let storage: ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>;
 
     beforeEach(async () => {
@@ -48,7 +48,7 @@ export function countMatchesQueryBlock(opts: TabularStorageContractOpts): void {
         const expected: Record<string, number> = { x: 3, y: 2, z: 1, missing: 0 };
         for (const [option, expectedCount] of Object.entries(expected)) {
           const counted = await storage.count({ option });
-          const queried = await storage.query({ option });
+          const queried = (await storage.query({ option })) ?? [];
           expect(
             counted,
             `count({option:"${option}"}) disagrees with query({option:"${option}"}).length`
@@ -56,9 +56,9 @@ export function countMatchesQueryBlock(opts: TabularStorageContractOpts): void {
           expect(counted).toBe(expectedCount);
         }
 
-        const totalCount = await storage.count({});
-        const totalQuery = await storage.query({});
-        expect(totalCount).toBe(totalQuery.length);
+        const totalCount = await storage.count();
+        const allRows = (await storage.getAll()) ?? [];
+        expect(totalCount).toBe(allRows.length);
         expect(totalCount).toBe(rows.length);
       },
       opts.timeout

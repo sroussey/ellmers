@@ -5,10 +5,16 @@
  */
 
 import { SharedInMemoryTabularStorage } from "@workglow/storage";
-import { setLogger } from "@workglow/util";
+import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
+import { CompoundPrimaryKeyNames, CompoundSchema } from "./genericTabularStorageTests";
 
 const SearchSchema = {
   type: "object",
@@ -47,4 +53,26 @@ describe("SharedInMemoryTabularStorage.queryIndex", () => {
     expect(ids).toEqual(["1", "2"]);
     storage.destroy();
   });
+});
+
+runTabularStorageContract({
+  name: "SharedInMemoryTabularStorage",
+  createStorage: async () =>
+    new SharedInMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
+      `shared_contract_${uuid4().replace(/-/g, "_")}`,
+      CompoundSchema,
+      CompoundPrimaryKeyNames
+    ),
+  capabilities: {
+    supportsSubscriptions: true,
+    supportsVectorColumns: true,
+    supportsTransactions: false,
+    supportsQuery: true,
+  },
+  createVectorStorage: async () =>
+    new SharedInMemoryTabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>(
+      `shared_vec_${uuid4().replace(/-/g, "_")}`,
+      VectorItemSchema,
+      VectorItemPrimaryKeyNames
+    ),
 });

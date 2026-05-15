@@ -44,6 +44,8 @@ export interface TabularStorageContractOpts {
     readonly supportsSubscriptions: boolean;
     readonly supportsVectorColumns: boolean;
     readonly supportsTransactions: boolean;
+    /** Whether `query(criteria)` is supported. False for FsFolder etc. */
+    readonly supportsQuery: boolean;
   };
   /** Whether this storage uses polling (requires longer waits between steps). */
   readonly usesPolling?: boolean;

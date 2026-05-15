@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SqliteTabularStorage } from "@workglow/sqlite/storage";
-import { Sqlite } from "@workglow/sqlite/storage";
+import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 import { StorageValidationError } from "@workglow/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import { describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import {
+  runTabularStorageContract,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../../contract/tabular-storage/runTabularStorageContract";
 import {
   AllTypesPrimaryKeyNames,
   AllTypesSchema,
@@ -74,6 +78,42 @@ describe("SqliteTabularStorage", async () => {
         UuidPrimaryKeyNames
       )
   );
+
+  runTabularStorageContract({
+    name: "SqliteTabularStorage",
+    createStorage: async () => {
+      const storage = new SqliteTabularStorage<
+        typeof CompoundSchema,
+        typeof CompoundPrimaryKeyNames
+      >(
+        ":memory:",
+        `contract_test_${uuid4().replace(/-/g, "_")}`,
+        CompoundSchema,
+        CompoundPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
+    capabilities: {
+      supportsSubscriptions: false,
+      supportsVectorColumns: true,
+      supportsTransactions: true,
+      supportsQuery: true,
+    },
+    createVectorStorage: async () => {
+      const storage = new SqliteTabularStorage<
+        typeof VectorItemSchema,
+        typeof VectorItemPrimaryKeyNames
+      >(
+        ":memory:",
+        `contract_vec_${uuid4().replace(/-/g, "_")}`,
+        VectorItemSchema,
+        VectorItemPrimaryKeyNames
+      );
+      await storage.setupDatabase();
+      return storage;
+    },
+  });
 
   it("rejects adversarial page orderBy before executing SQL", async () => {
     const storage = new SqliteTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
