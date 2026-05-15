@@ -4,8 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createStandardKbStrategy, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
-import type { ModelRecord } from "@workglow/ai";
+import type { AiProviderRunFn, ModelRecord, TextEmbeddingTaskInput } from "@workglow/ai";
+import {
+  createStandardKbStrategy,
+  getAiProviderRegistry,
+  getGlobalModelRepository,
+} from "@workglow/ai";
 import { createKnowledgeBase } from "@workglow/knowledge-base";
 import { uuid4 } from "@workglow/util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -23,14 +27,22 @@ const TEST_EMBED_MODEL_ID = "test:firststage:embed";
 describe("createStandardKbStrategy first-stage sizing (rerank mode)", () => {
   beforeAll(async () => {
     const registry = getAiProviderRegistry();
-    registry.registerRunFn(TEST_PROVIDER, "TextEmbeddingTask", async (input) => {
-      const texts = Array.isArray((input as { text: unknown }).text)
-        ? ((input as { text: string[] }).text as string[])
-        : [((input as { text: string }).text as string) ?? ""];
+    const runFn: AiProviderRunFn = async (input, _model, _signal, emit) => {
+      const embeddingInput = input as TextEmbeddingTaskInput;
+      const texts = Array.isArray(embeddingInput.text)
+        ? embeddingInput.text
+        : [embeddingInput.text ?? ""];
       const vectors = texts.map(() => new Float32Array([1, 0, 0]));
-      return {
-        vector: vectors.length === 1 ? vectors[0] : vectors,
-      } as unknown as Record<string, unknown>;
+      emit({
+        type: "finish",
+        data: {
+          vector: vectors.length === 1 ? vectors[0] : vectors,
+        },
+      });
+    };
+    registry.registerRunFn(TEST_PROVIDER, {
+      serves: ["text.embedding"],
+      runFn,
     });
 
     const modelRepo = getGlobalModelRepository();
@@ -38,7 +50,7 @@ describe("createStandardKbStrategy first-stage sizing (rerank mode)", () => {
     if (!existing) {
       await modelRepo.addModel({
         model_id: TEST_EMBED_MODEL_ID,
-        tasks: ["TextEmbeddingTask"],
+        capabilities: ["text.embedding"],
         title: "First-stage sizing test embed model",
         description: "Stub embed model for first-stage sizing tests",
         provider: TEST_PROVIDER,
@@ -70,12 +82,8 @@ describe("createStandardKbStrategy first-stage sizing (rerank mode)", () => {
     // Spy on whichever first-stage method the strategy will pick. Both
     // are stubbed to return [] so the rerank path short-circuits and we
     // don't have to seed real chunks.
-    const hybridSpy = vi
-      .spyOn(kb, "hybridSearch" as never)
-      .mockResolvedValue([] as never);
-    const similaritySpy = vi
-      .spyOn(kb, "similaritySearch" as never)
-      .mockResolvedValue([] as never);
+    const hybridSpy = vi.spyOn(kb, "hybridSearch").mockResolvedValue([]);
+    const similaritySpy = vi.spyOn(kb, "similaritySearch").mockResolvedValue([]);
 
     await kb.search("hi", { topK: searchTopK });
 
