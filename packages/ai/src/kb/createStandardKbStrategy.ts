@@ -14,6 +14,7 @@ import type {
   SearchMode,
 } from "@workglow/knowledge-base";
 import { chunkText, toInsertChunkEntities } from "@workglow/knowledge-base";
+import type { IRunConfig } from "@workglow/task-graph";
 import type { TypedArray } from "@workglow/util/schema";
 
 import { HierarchicalChunkerTask } from "../task/HierarchicalChunkerTask";
@@ -120,15 +121,22 @@ export function createStandardKbStrategy(
     return m;
   };
 
-  const embedTexts = async (texts: readonly string[], modelId: string): Promise<TypedArray[]> => {
+  const embedTexts = async (
+    texts: readonly string[],
+    modelId: string,
+    runConfig?: Partial<IRunConfig>
+  ): Promise<TypedArray[]> => {
     if (texts.length === 0) return [];
-    const result = await new TextEmbeddingTask().run({ text: texts as string[], model: modelId });
+    const result = await new TextEmbeddingTask().run(
+      { text: texts as string[], model: modelId },
+      runConfig
+    );
     const vector = result.vector;
     return Array.isArray(vector) ? (vector as TypedArray[]) : [vector as TypedArray];
   };
 
   return {
-    async ingest(kb, doc): Promise<Document> {
+    async ingest(kb, doc, runConfig): Promise<Document> {
       // Order matters: delete old chunks BEFORE rewriting the document.
       // If upsertDocument or any later step fails partway through, the
       // worst the KB can be left in is "doc row preserved, chunks
@@ -153,18 +161,22 @@ export function createStandardKbStrategy(
       }
 
       const chunker = new HierarchicalChunkerTask();
-      const chunkResult = await chunker.run({
-        doc_id: docId,
-        documentTree: stored.root as never,
-        strategy: resolveChunkStrategy(kb),
-        ...chunkerDefaults,
-      });
+      const chunkResult = await chunker.run(
+        {
+          doc_id: docId,
+          documentTree: stored.root as never,
+          strategy: resolveChunkStrategy(kb),
+          ...chunkerDefaults,
+        },
+        runConfig
+      );
       const chunks = chunkResult.chunks ?? [];
       if (chunks.length === 0) return stored;
 
       const vectors = await embedTexts(
         chunks.map((c) => c.text),
-        requireDocEmbedModel(kb)
+        requireDocEmbedModel(kb),
+        runConfig
       );
       const inserts = toInsertChunkEntities(
         { chunks, vectors },
@@ -178,7 +190,12 @@ export function createStandardKbStrategy(
       await kb.deleteDocument(doc_id);
     },
 
-    async search(kb, query, options?: ISearchOptions): Promise<ChunkSearchResult[]> {
+    async search(
+      kb,
+      query,
+      options?: ISearchOptions,
+      runConfig?: Partial<IRunConfig>
+    ): Promise<ChunkSearchResult[]> {
       const mode = resolveSearchMode(kb);
       const topK = options?.topK ?? 5;
       const filter = options?.filter;
@@ -204,7 +221,7 @@ export function createStandardKbStrategy(
         });
       }
 
-      const queryVec = await embedTexts([query], requireQueryEmbedModel(kb));
+      const queryVec = await embedTexts([query], requireQueryEmbedModel(kb), runConfig);
       const vector = queryVec[0];
 
       if (mode === "similarity") {
@@ -258,12 +275,15 @@ export function createStandardKbStrategy(
       // Callers wanting a rerank-relative cutoff should clip on the
       // returned `score` themselves after inspecting `scoreType`.
       if (kb.rerankerModel) {
-        const result = await new TextRerankerTask().run({
-          query,
-          documents: docs,
-          model: kb.rerankerModel,
-          topK,
-        });
+        const result = await new TextRerankerTask().run(
+          {
+            query,
+            documents: docs,
+            model: kb.rerankerModel,
+            topK,
+          },
+          runConfig
+        );
         const indices = (result.indices as number[]) ?? [];
         const scores = (result.scores as number[]) ?? [];
         return indices.map((idx) => {
@@ -281,14 +301,17 @@ export function createStandardKbStrategy(
       // local heuristic so callers still get a usable ordering. We still
       // tag the result with scoreType: "rerank" because callers asked for
       // rerank semantics; the score scale isn't comparable to cosine/RRF.
-      const heuristic = await new RerankerTask().run({
-        query,
-        chunks: docs,
-        scores: firstStage.map((c) => c.score),
-        metadata: firstStage.map((c) => c.metadata as Record<string, unknown>),
-        topK,
-        method: "simple",
-      });
+      const heuristic = await new RerankerTask().run(
+        {
+          query,
+          chunks: docs,
+          scores: firstStage.map((c) => c.score),
+          metadata: firstStage.map((c) => c.metadata as Record<string, unknown>),
+          topK,
+          method: "simple",
+        },
+        runConfig
+      );
       const indices = (heuristic.originalIndices as number[]) ?? [];
       const newScores = (heuristic.scores as number[]) ?? [];
       return indices.map((idx, rank) => {
