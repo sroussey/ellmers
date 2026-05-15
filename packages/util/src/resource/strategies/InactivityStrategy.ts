@@ -20,9 +20,10 @@ const MAX_IDLE_MS = 2_147_483_647;
 
 export class InactivityStrategy implements IDisposeStrategy {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly idleMs: number;
 
   constructor(
-    private readonly idleMs: number,
+    idleMs: number,
     private readonly onError?: (key: string, err: unknown) => void
   ) {
     if (!Number.isFinite(idleMs) || idleMs <= 0 || idleMs > MAX_IDLE_MS) {
@@ -30,6 +31,7 @@ export class InactivityStrategy implements IDisposeStrategy {
         `InactivityStrategy: idleMs must be a positive finite number ≤ ${MAX_IDLE_MS} (got ${idleMs})`
       );
     }
+    this.idleMs = Math.min(idleMs, MAX_IDLE_MS);
   }
 
   onRegister(
@@ -53,19 +55,16 @@ export class InactivityStrategy implements IDisposeStrategy {
     for (const key of scope.keys()) {
       const existing = this.timers.get(key);
       if (existing !== undefined) clearTimeout(existing);
-      const t = setTimeout(
-        () => {
-          this.timers.delete(key);
-          void scope.dispose(key).catch((err) => {
-            if (this.onError) {
-              this.onError(key, err);
-            } else {
-              console.error(`InactivityStrategy: dispose("${key}") failed`, err);
-            }
-          });
-        },
-        Math.min(this.idleMs, MAX_IDLE_MS)
-      );
+      const t = setTimeout(() => {
+        this.timers.delete(key);
+        void scope.dispose(key).catch((err) => {
+          if (this.onError) {
+            this.onError(key, err);
+          } else {
+            console.error(`InactivityStrategy: dispose("${key}") failed`, err);
+          }
+        });
+      }, this.idleMs);
       // Allow Node to exit while timers are pending.
       if (typeof (t as { unref?: () => void }).unref === "function") {
         (t as { unref: () => void }).unref();
