@@ -44,10 +44,26 @@ export type RunWithIterableEmitFactory<Output extends TaskOutput> = (
  *      caller's iteration error (if any) is preserved by the surrounding
  *      try/finally semantics.
  *
- * When a consumer breaks out of the `for await` early (or throws),
- * step 5 fires `localAbort.abort()` which propagates through the strategy
- * to the provider, releasing the connection promptly rather than letting
- * the run keep streaming events into a closed queue.
+ * Abort bond is strictly one-way: parent → child.
+ *  • context.signal.abort() → localAbort aborts → strategy sees it.
+ *  • localAbort.abort() (from the finally) does NOT abort the parent;
+ *    the parent's signal is untouched and its other consumers keep running.
+ *
+ * @example
+ *   // Cancellation is driven through an AbortController — AbortSignal has
+ *   // no public .abort() method, so callers must keep the controller in
+ *   // scope and call abort() on it (not on the signal).
+ *   const parentController = new AbortController();
+ *   const ctx: IExecuteContext = { ...baseContext, signal: parentController.signal };
+ *
+ *   const iter = runWithIterable(strategy, jobInput, ctx, runnerId, emitFactory);
+ *
+ *   // Parent cancels: both ctx.signal and the strategy stop.
+ *   parentController.abort();
+ *
+ *   // Consumer break: only the strategy stops. parentController.signal
+ *   // remains un-aborted and sibling tasks continue.
+ *   for await (const e of iter) { if (done) break; }
  */
 export async function* runWithIterable<Output extends TaskOutput>(
   strategy: IAiExecutionStrategy,
@@ -69,6 +85,7 @@ export async function* runWithIterable<Output extends TaskOutput>(
       localAbort.abort(parentSignal.reason);
     } else {
       const onParentAbort = () => localAbort.abort(parentSignal.reason);
+      // One-way bond: parent → child only. We never call parentSignal-side abort().
       parentSignal.addEventListener("abort", onParentAbort, { once: true });
       parentCleanup = () => parentSignal.removeEventListener("abort", onParentAbort);
     }

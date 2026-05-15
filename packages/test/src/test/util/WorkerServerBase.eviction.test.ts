@@ -35,10 +35,8 @@ function installPostMessageStub(): {
 }
 
 /**
- * Verifies the H3 fix: snapshot-then-delete eviction in
- * `recordPendingAbort` and `scheduleCompletedRequestCleanup` evicts the
- * OLDEST entries (FIFO via Set insertion order) and never throws under
- * concurrent insert+evict workloads.
+ * Verifies pending-abort hard-cap eviction and safety under concurrent
+ * insert+evict workloads.
  *
  * The methods are private, but the eviction is observable through the
  * `pendingAborts` consume path: an abort with a never-arriving call
@@ -47,7 +45,7 @@ function installPostMessageStub(): {
  * should NOT be aborted on entry. Conversely, recently-recorded ids
  * survive the eviction.
  */
-describe("WorkerServerBase pending-abort FIFO eviction", () => {
+describe("WorkerServerBase pending-abort hard-cap eviction", () => {
   let stub: { captured: PostedMessage[]; restore(): void };
 
   beforeEach(() => {
@@ -59,12 +57,11 @@ describe("WorkerServerBase pending-abort FIFO eviction", () => {
   });
 
   it("evicts oldest pending-abort markers when the hard cap is exceeded", async () => {
-    const server = new WorkerServerBase();
+    const server = new WorkerServerBase({ pendingAbortHardCap: 1000 });
 
-    // Issue 1500 aborts with no matching call. The cap is 1000 and the
-    // batch size is 500; once size > 1000, the oldest 500 are evicted.
-    // Final state: ids 500..1499 should remain (1000 entries),
-    //               ids 0..499 should have been dropped.
+    // Issue 1500 aborts with no matching call. The cap is 1000; once
+    // size > 1000, the implementation evicts roughly half of the oldest
+    // entries by timestamp.
     for (let i = 0; i < 1500; i++) {
       await server.handleMessage({
         type: "message",
@@ -112,11 +109,9 @@ describe("WorkerServerBase pending-abort FIFO eviction", () => {
   });
 
   it("does not throw when concurrent insert + eviction happens", async () => {
-    const server = new WorkerServerBase();
+    const server = new WorkerServerBase({ pendingAbortHardCap: 100 });
 
     // Drive enough aborts in parallel to trigger several eviction passes.
-    // The snapshot-then-delete strategy guarantees the eviction loop never
-    // observes a mutating live iterator, so this must complete cleanly.
     const tasks: Promise<unknown>[] = [];
     for (let i = 0; i < 3000; i++) {
       tasks.push(
