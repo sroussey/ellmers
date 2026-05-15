@@ -1,0 +1,67 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { IDisposeStrategy } from "../DisposeStrategy";
+import type { ResourceScope } from "../ResourceScope";
+
+/**
+ * Dispose each resource after `idleMs` of inactivity. Timers are armed only
+ * after `onRunComplete` — never while a run is active — so an in-flight task
+ * can never have its resource pulled out from under it.
+ *
+ * `touch(key)` cancels any pending timer for that key. A fresh timer is then
+ * armed on the next `onRunComplete` if the key is still registered.
+ */
+export class InactivityStrategy implements IDisposeStrategy {
+  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly idleMs: number) {
+    if (!Number.isFinite(idleMs) || idleMs <= 0) {
+      throw new RangeError(
+        `InactivityStrategy: idleMs must be a positive finite number (got ${idleMs})`
+      );
+    }
+  }
+
+  onRegister(
+    _key: string,
+    disposer: () => Promise<void>,
+    _scope: ResourceScope
+  ): () => Promise<void> {
+    return disposer;
+  }
+
+  touch(key: string): void {
+    const t = this.timers.get(key);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this.timers.delete(key);
+    }
+  }
+
+  async onRunComplete(scope: ResourceScope): Promise<void> {
+    // Arm (or re-arm) a timer for every currently-registered key.
+    for (const key of scope.keys()) {
+      const existing = this.timers.get(key);
+      if (existing !== undefined) clearTimeout(existing);
+      const t = setTimeout(() => {
+        this.timers.delete(key);
+        void scope.dispose(key).catch(() => {});
+      }, this.idleMs);
+      // Allow Node to exit while timers are pending.
+      if (typeof (t as { unref?: () => void }).unref === "function") {
+        (t as { unref: () => void }).unref();
+      }
+      this.timers.set(key, t);
+    }
+  }
+
+  async onScopeDestroy(scope: ResourceScope): Promise<void> {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+    await scope.disposeAll();
+  }
+}
