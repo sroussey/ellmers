@@ -77,8 +77,9 @@ export class BrowserAttributeTask extends Task<
 
   override async execute(
     input: BrowserAttributeTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserAttributeTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const value = await ctx.attribute(input.ref, input.attribute);
     return { sessionId: input.sessionId, value };

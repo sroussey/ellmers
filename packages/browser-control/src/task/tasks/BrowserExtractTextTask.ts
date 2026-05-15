@@ -86,8 +86,9 @@ export class BrowserExtractTextTask extends Task<
 
   override async execute(
     input: BrowserExtractTextTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserExtractTextTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     let ref = this.config.ref;
     if (!ref) {

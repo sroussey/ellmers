@@ -99,8 +99,9 @@ export class BrowserClickTask extends Task<
 
   override async execute(
     input: BrowserClickTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserClickTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const opts = this.config.modifiers ? { modifiers: this.config.modifiers } : undefined;
     if (input.ref) {

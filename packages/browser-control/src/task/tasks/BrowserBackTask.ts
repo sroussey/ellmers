@@ -64,8 +64,9 @@ export class BrowserBackTask extends Task<BrowserBackTaskInput, BrowserBackTaskO
 
   override async execute(
     input: BrowserBackTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserBackTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.goBack();
     const url = await ctx.currentUrl();

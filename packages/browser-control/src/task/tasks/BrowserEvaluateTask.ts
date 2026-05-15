@@ -90,8 +90,9 @@ export class BrowserEvaluateTask extends Task<
 
   override async execute(
     input: BrowserEvaluateTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserEvaluateTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const result = await ctx.evaluate(input.expression);
     return { sessionId: input.sessionId, result };

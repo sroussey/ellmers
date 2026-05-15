@@ -82,8 +82,9 @@ export class BrowserNewTabTask extends Task<
 
   override async execute(
     input: BrowserNewTabTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserNewTabTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const tabInfo = await ctx.newTab(input.url);
     return { sessionId: input.sessionId, tabId: tabInfo.tabId };

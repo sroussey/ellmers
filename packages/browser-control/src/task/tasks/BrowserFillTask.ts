@@ -95,8 +95,9 @@ export class BrowserFillTask extends Task<
 
   override async execute(
     input: BrowserFillTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserFillTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     if (input.ref) {
       await ctx.fill(input.ref, input.value);

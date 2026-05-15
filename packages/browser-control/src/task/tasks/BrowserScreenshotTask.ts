@@ -94,8 +94,9 @@ export class BrowserScreenshotTask extends Task<
 
   override async execute(
     input: BrowserScreenshotTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserScreenshotTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const format = this.config.format ?? "png";
     const fullPage = this.config.fullPage ?? false;

@@ -74,8 +74,9 @@ export class BrowserQuerySelectorTask extends Task<
 
   override async execute(
     input: BrowserQuerySelectorTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserQuerySelectorTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const refs = await ctx.querySelectorAll(input.selector);
     return { sessionId: input.sessionId, refs: refs as string[] };

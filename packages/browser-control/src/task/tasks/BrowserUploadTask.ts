@@ -101,8 +101,9 @@ export class BrowserUploadTask extends Task<
 
   override async execute(
     input: BrowserUploadTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserUploadTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.uploadFile(input.ref, input.filePaths);
     return { sessionId: input.sessionId };

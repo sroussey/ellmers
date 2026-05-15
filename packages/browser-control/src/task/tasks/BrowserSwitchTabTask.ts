@@ -77,8 +77,9 @@ export class BrowserSwitchTabTask extends Task<
 
   override async execute(
     input: BrowserSwitchTabTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserSwitchTabTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.switchTab(input.tabId);
     return { sessionId: input.sessionId };

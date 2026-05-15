@@ -14,8 +14,8 @@ import {
   TaskEntitlements,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import { getBrowserDeps } from "../BrowserTaskDeps";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
+import { getBrowserDeps } from "../BrowserTaskDeps";
 
 const browserSessionTaskConfigSchema = {
   type: "object",
@@ -176,10 +176,12 @@ export class BrowserSessionTask extends Task<
 
     const sessionId = BrowserSessionRegistry.register(ctx);
 
-    executeContext.resourceScope?.register(`browser:${sessionId}`, async () => {
+    const resourceKey = `browser:${sessionId}`;
+    executeContext.resourceScope?.register(resourceKey, async () => {
       await ctx.disconnect();
       BrowserSessionRegistry.unregister(sessionId);
     });
+    executeContext.resourceScope?.touch(resourceKey);
 
     return { sessionId };
   }

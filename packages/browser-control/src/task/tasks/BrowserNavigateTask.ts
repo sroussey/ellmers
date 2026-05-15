@@ -113,8 +113,9 @@ export class BrowserNavigateTask extends Task<
 
   override async execute(
     input: BrowserNavigateTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserNavigateTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const parsed = new URL(input.url, "https://placeholder");
     if (parsed.protocol === "javascript:") {
       throw new Error("BrowserNavigateTask: javascript: URLs are not allowed");

@@ -79,8 +79,9 @@ export class BrowserCloseTabTask extends Task<
 
   override async execute(
     input: BrowserCloseTabTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserCloseTabTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     if (!this.config.tabId) {
       throw new Error("BrowserCloseTabTask requires config.tabId");
     }

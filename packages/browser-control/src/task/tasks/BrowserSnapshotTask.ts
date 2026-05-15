@@ -6,8 +6,8 @@
 
 import { IExecuteContext, Task, TaskConfig, TaskConfigSchema } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
-import type { AccessibilityTree } from "../IBrowserContext";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
+import type { AccessibilityTree } from "../IBrowserContext";
 
 const inputSchema = {
   type: "object",
@@ -69,8 +69,9 @@ export class BrowserSnapshotTask extends Task<
 
   override async execute(
     input: BrowserSnapshotTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserSnapshotTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const tree = await ctx.snapshot();
     return { sessionId: input.sessionId, tree };
