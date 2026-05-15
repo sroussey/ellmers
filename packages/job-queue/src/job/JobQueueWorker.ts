@@ -80,6 +80,13 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * executing. Extension interval is leaseMs * 0.5. Default: false.
    */
   readonly extendLeaseWhileRunning?: boolean;
+  /**
+   * How long (ms) the worker's lease on a claimed job lasts before another
+   * worker may re-claim it. Must be long enough to cover the maximum
+   * expected job duration if extendLeaseWhileRunning is false.
+   * Defaults to max(30_000, pollIntervalMs * 60).
+   */
+  readonly leaseMs?: number;
 }
 
 /**
@@ -99,6 +106,7 @@ export class JobQueueWorker<
   protected readonly pollIntervalMs: number;
   protected readonly stopTimeoutMs: number;
   protected readonly extendLeaseWhileRunning: boolean;
+  protected readonly leaseMs: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
 
   protected running = false;
@@ -157,6 +165,7 @@ export class JobQueueWorker<
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
     this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
+    this.leaseMs = options.leaseMs ?? Math.max(30_000, this.pollIntervalMs * 60);
   }
 
   /**
@@ -319,8 +328,7 @@ export class JobQueueWorker<
    * Get the next job from the queue
    */
   protected async next(): Promise<QueueJob | undefined> {
-    const leaseMs = this.pollIntervalMs * 60;
-    const job = await this.storage.next(this.workerId, { leaseMs });
+    const job = await this.storage.next(this.workerId, { leaseMs: this.leaseMs });
     if (!job) return undefined;
     return this.storageToClass(job) as QueueJob;
   }
@@ -535,17 +543,16 @@ export class JobQueueWorker<
       const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
 
-      const leaseMs = this.pollIntervalMs * 60;
       let leaseInterval: ReturnType<typeof setInterval> | undefined;
       if (this.extendLeaseWhileRunning) {
         leaseInterval = setInterval(() => {
-          this.storage.extendLease(job.id, this.workerId, leaseMs).catch((err) => {
+          this.storage.extendLease(job.id, this.workerId, this.leaseMs).catch((err) => {
             getLogger().error("extendLease failed during job execution:", {
               error: err,
               jobId: job.id,
             });
           });
-        }, leaseMs * 0.5);
+        }, this.leaseMs * 0.5);
       }
 
       let output: Output;
@@ -579,6 +586,10 @@ export class JobQueueWorker<
           await this.failJob(currentJob, new PermanentJobError(spanErrorMessage));
           span?.setStatus(SpanStatusCode.ERROR, spanErrorMessage);
         } else {
+          // Clean up the abort controller before rescheduling so the next
+          // invocation of processSingleJob gets a fresh controller and the
+          // inFlight-guard in createAbortController passes correctly.
+          this.cleanupJob(job.id);
           await this.rescheduleJob(currentJob, error.retryDate);
           span?.addEvent("workglow.job.retry", {
             "workglow.job.run_attempt": currentJob.runAttempts,
@@ -593,7 +604,13 @@ export class JobQueueWorker<
     } finally {
       await this.limiter.complete(limiterToken);
       span?.end();
-      this.inFlight.delete(job.id);
+      // Guard against a concurrent processSingleJob for the same jobId (which
+      // can start before this finally block runs, e.g. after a reschedule).
+      // Only delete our own inFlight entry; if another invocation already
+      // replaced it, leave that entry alone.
+      if (this.inFlight.get(job.id) === inFlightPromise) {
+        this.inFlight.delete(job.id);
+      }
       resolveInFlight();
     }
   }
