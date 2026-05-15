@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { toTextFlatMessages } from "@workglow/ai/worker";
 import type { AiProviderRunFnRegistration } from "@workglow/ai";
-import type { OllamaModelConfig } from "./Ollama_ModelSchema";
-import { getClient } from "./Ollama_Client";
+import { toTextFlatMessages } from "@workglow/ai/worker";
 import {
   OLLAMA_MODEL_INFO,
   OLLAMA_MODEL_SEARCH,
@@ -17,7 +15,9 @@ import {
   OLLAMA_TEXT_SUMMARY,
   OLLAMA_TOOL_USE,
 } from "./Ollama_CapabilitySets";
+import { getClient } from "./Ollama_Client";
 import { createOllamaModelInfoStream } from "./Ollama_ModelInfo";
+import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { createOllamaModelSearchStream } from "./Ollama_ModelSearch";
 import { createOllamaTextEmbeddingStream } from "./Ollama_TextEmbedding";
 import { createOllamaTextGenerationStream } from "./Ollama_TextGeneration";
@@ -29,7 +29,10 @@ export const Ollama_TextGeneration_Stream = createOllamaTextGenerationStream(get
 export const Ollama_TextRewriter_Stream = createOllamaTextRewriterStream(getClient);
 export const Ollama_TextSummary_Stream = createOllamaTextSummaryStream(getClient);
 export const Ollama_TextEmbedding_Stream = createOllamaTextEmbeddingStream(getClient);
-export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(getClient, toTextFlatMessages);
+export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(
+  getClient,
+  toTextFlatMessages
+);
 export const Ollama_ModelInfo_Stream = createOllamaModelInfoStream(getClient);
 export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient);
 

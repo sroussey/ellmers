@@ -95,8 +95,9 @@ export class BrowserWaitTask extends Task<
 
   override async execute(
     input: BrowserWaitTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserWaitTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     const waitFor = this.config.waitFor ?? "idle";
     const timeout = this.config.timeout ?? 30000;

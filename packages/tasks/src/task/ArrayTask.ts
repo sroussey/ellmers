@@ -8,6 +8,7 @@ import { uuid4 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { DataPortSchemaNonBoolean, TypedArray, VectorFromSchema } from "@workglow/util/schema";
 
+import type { TaskRunContext } from "@workglow/task-graph";
 import {
   GraphAsTask,
   GraphAsTaskConfig,
@@ -20,7 +21,6 @@ import {
   TaskInput,
   TaskOutput,
 } from "@workglow/task-graph";
-import type { TaskRunContext } from "@workglow/task-graph";
 
 export function TypeReplicateArray<const T extends DataPortSchemaNonBoolean>(
   type: T,

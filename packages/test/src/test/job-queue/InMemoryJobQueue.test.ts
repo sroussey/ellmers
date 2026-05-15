@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { RateLimiter } from "@workglow/job-queue";
-import { InMemoryQueueStorage, InMemoryRateLimiterStorage } from "@workglow/job-queue";
-import { describe } from "vitest";
-import { runGenericJobQueueTests } from "./genericJobQueueTests";
+import { InMemoryQueueStorage, InMemoryRateLimiterStorage, RateLimiter } from "@workglow/job-queue";
 import { setLogger } from "@workglow/util";
+import { describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericJobQueueTests } from "./genericJobQueueTests";
 
 describe("InMemoryJobQueue", () => {
   let logger = getTestingLogger();

@@ -15,26 +15,26 @@
  * useful for tests, multi-tenant servers, and embedded use.
  */
 
-import {
-  Container,
-  getLogger,
-  globalServiceRegistry,
-  registerInputCompactorDefaults,
-  registerInputResolverDefaults,
-  registerLoggerDefaults,
-  registerTelemetryDefaults,
-  setLogger,
-  ServiceRegistry,
-} from "@workglow/util";
-import type { ILogger } from "@workglow/util";
-import { registerImageDefaults } from "@workglow/util/media";
-import { registerWorkerManagerDefaults } from "@workglow/util/worker";
-import { registerCredentialDefaults } from "@workglow/util";
-import { registerModelDefaults, registerAiProviderDefaults } from "@workglow/ai";
+import { registerAiProviderDefaults, registerModelDefaults } from "@workglow/ai";
 import { registerKnowledgeBaseDefaults } from "@workglow/knowledge-base";
 import { registerMcpServerDefaults } from "@workglow/mcp/util";
 import { registerTabularStorageDefaults } from "@workglow/storage";
 import { registerTaskDefaults, registerTransformDefaults } from "@workglow/task-graph";
+import type { ILogger } from "@workglow/util";
+import {
+  Container,
+  getLogger,
+  globalServiceRegistry,
+  registerCredentialDefaults,
+  registerInputCompactorDefaults,
+  registerInputResolverDefaults,
+  registerLoggerDefaults,
+  registerTelemetryDefaults,
+  ServiceRegistry,
+  setLogger,
+} from "@workglow/util";
+import { registerImageDefaults } from "@workglow/util/media";
+import { registerWorkerManagerDefaults } from "@workglow/util/worker";
 
 /**
  * Options for `bootstrapWorkglow` and `createOrchestrationContext`.

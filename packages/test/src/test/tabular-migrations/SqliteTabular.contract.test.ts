@@ -5,7 +5,7 @@
  */
 
 import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
-import type { ITabularMigration, AnyTabularStorage } from "@workglow/storage";
+import type { AnyTabularStorage, ITabularMigration } from "@workglow/storage";
 import { runTabularMigrationContract } from "../../contract/tabular-migrations/runTabularMigrationContract";
 
 runTabularMigrationContract({

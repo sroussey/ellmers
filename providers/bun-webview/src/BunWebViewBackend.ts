@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { sleep } from "@workglow/util";
-import { CDPBrowserBackend } from "@workglow/browser-control/task";
 import type {
   BrowserConnectOptions,
   DialogAction,
@@ -19,6 +17,8 @@ import type {
   TabInfo,
   WaitOptions,
 } from "@workglow/browser-control/task";
+import { CDPBrowserBackend } from "@workglow/browser-control/task";
+import { sleep } from "@workglow/util";
 
 // ---------------------------------------------------------------------------
 // Bun.WebView type (not imported — accessed via globalThis at runtime)

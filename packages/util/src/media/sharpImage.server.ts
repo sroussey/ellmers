@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { ImageChannels } from "./imageTypes";
-import type { GpuImage as IGpuImage, GpuImageEncodeFormat } from "./gpuImage";
+import type { GpuImageEncodeFormat, GpuImage as IGpuImage } from "./gpuImage";
 import { registerGpuImageFactory } from "./gpuImage";
+import type { ImageChannels } from "./imageTypes";
 import type { ImageValue, NodeImageValue } from "./imageValue";
 import { isBrowserImageValue, isNodeImageValue } from "./imageValue";
 

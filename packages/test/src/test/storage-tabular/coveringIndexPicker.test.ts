@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import { CoveringIndexMissingError, pickCoveringIndex } from "@workglow/storage";
+import { describe, expect, it } from "vitest";
 
 const indexes = [
   // [user_id, project_id, created_at, status, source_type, source_id, ...]

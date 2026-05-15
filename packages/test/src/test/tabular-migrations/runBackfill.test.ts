@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { InMemoryTabularStorage, runBackfill } from "@workglow/storage";
 import { describe, expect, it } from "vitest";
-import { runBackfill } from "@workglow/storage";
-import { InMemoryTabularStorage } from "@workglow/storage";
 
 describe("runBackfill", () => {
   const schema = {

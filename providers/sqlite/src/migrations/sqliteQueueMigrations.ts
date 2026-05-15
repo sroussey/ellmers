@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Sqlite } from "@workglow/sqlite/storage";
 import type { PrefixColumn } from "@workglow/job-queue";
+import type { Sqlite } from "@workglow/sqlite/storage";
 import {
   buildPrefixColumnsSql,
   getPrefixIndexPrefix,

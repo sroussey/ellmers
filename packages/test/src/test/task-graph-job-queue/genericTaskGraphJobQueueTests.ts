@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Job } from "@workglow/job-queue";
 import type { IJobExecuteContext } from "@workglow/job-queue";
+import { Job } from "@workglow/job-queue";
+import type { IExecuteContext, TaskConfig, TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   getTaskQueueRegistry,
   JobTaskFailedError,
@@ -13,7 +14,6 @@ import {
   Task,
   TaskConfigSchema,
 } from "@workglow/task-graph";
-import type { IExecuteContext, TaskConfig, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, expect, it } from "vitest";
 

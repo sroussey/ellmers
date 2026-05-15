@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
 import { Text } from "ink";
+import React from "react";
 import { cliTaskShowsProgressBar, cliTaskStatusGlyph, cliTaskStatusGlyphColor } from "../cliTaskUi";
 import { useCliTheme } from "../CliThemeContext";
 import { CliSpinner } from "./CliSpinner";

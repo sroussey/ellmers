@@ -10,9 +10,5 @@ import { OLLAMA_RUN_FNS } from "./common/Ollama_JobRunFns";
 import { OllamaQueuedProvider } from "./OllamaQueuedProvider";
 
 export async function registerOllamaInline(options?: AiProviderRegisterOptions): Promise<void> {
-  await registerProviderInline(
-    new OllamaQueuedProvider(OLLAMA_RUN_FNS),
-    "Ollama",
-    options
-  );
+  await registerProviderInline(new OllamaQueuedProvider(OLLAMA_RUN_FNS), "Ollama", options);
 }

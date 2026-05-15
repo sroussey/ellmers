@@ -10,8 +10,8 @@ import type {
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import { getClient, getModelName } from "./HFI_Client";
+import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
 export const HFI_TextEmbedding: AiProviderRunFn<
   TextEmbeddingTaskInput,

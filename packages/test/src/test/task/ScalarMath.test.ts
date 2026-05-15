@@ -5,8 +5,8 @@
  */
 
 import { ScalarAddTask, ScalarSumTask } from "@workglow/tasks";
-import { describe, expect, test } from "vitest";
 import { setLogger } from "@workglow/util";
+import { describe, expect, test } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("ScalarMath", () => {

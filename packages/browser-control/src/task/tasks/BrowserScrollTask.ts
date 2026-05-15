@@ -94,8 +94,9 @@ export class BrowserScrollTask extends Task<
 
   override async execute(
     input: BrowserScrollTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserScrollTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.scroll(this.config.x ?? 0, this.config.y ?? 0, this.config.ref);
     return { sessionId: input.sessionId };

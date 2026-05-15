@@ -3,7 +3,6 @@
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   type ImageValue,
   imageValueFromBuffer,
@@ -11,6 +10,7 @@ import {
   registerPreviewResizeFn,
   setPreviewBudget,
 } from "@workglow/util/media";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 const ORIGINAL_BUDGET = 512;
 

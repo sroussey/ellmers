@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { AiProviderRegisterOptions } from "../provider/AiProvider";
 import type { WorkerServerBase } from "@workglow/util/worker";
 import { getLogger, globalServiceRegistry, WORKER_SERVER } from "@workglow/util/worker";
+import type { AiProviderRegisterOptions } from "../provider/AiProvider";
 
 /**
  * Shared helper for worker-side provider registration.

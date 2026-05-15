@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
   classifyProviderError,
   ImageGenerationContentPolicyError,
@@ -12,6 +11,7 @@ import {
   ProviderUnsupportedFeatureError,
 } from "@workglow/ai";
 import { PermanentJobError, RetryableJobError } from "@workglow/job-queue";
+import { describe, expect, it } from "vitest";
 
 describe("classifyProviderError mapping for image-generation errors", () => {
   it("maps ProviderUnsupportedFeatureError to PermanentJobError", () => {

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from "vitest";
 import { ResourceScope } from "@workglow/util";
+import { describe, expect, it, vi } from "vitest";
 
 describe("ResourceScope", () => {
   it("should register and dispose a single resource", async () => {

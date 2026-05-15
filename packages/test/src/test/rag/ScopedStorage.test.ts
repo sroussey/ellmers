@@ -22,7 +22,7 @@ import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage
 import { uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 let _snap = snap();
 beforeEach(() => {

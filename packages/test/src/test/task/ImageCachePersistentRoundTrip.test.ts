@@ -3,16 +3,16 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
-import "@workglow/util/media";
 import "@workglow/tasks";
 import { ImageBlurTask } from "@workglow/tasks";
+import "@workglow/util/media";
 import {
   CpuImage,
   imageValueFromBuffer,
   isNodeImageValue,
   type ImageValue,
 } from "@workglow/util/media";
+import { describe, expect, test } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 /**

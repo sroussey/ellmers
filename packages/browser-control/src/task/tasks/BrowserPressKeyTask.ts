@@ -94,8 +94,9 @@ export class BrowserPressKeyTask extends Task<
 
   override async execute(
     input: BrowserPressKeyTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserPressKeyTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.pressKey(this.buildKeyChord(input.key));
     return { sessionId: input.sessionId };

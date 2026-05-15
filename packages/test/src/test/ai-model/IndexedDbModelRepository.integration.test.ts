@@ -8,8 +8,8 @@ import { setLogger, uuid4 } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";
 import { IndexedDbModelRepository } from "../../binding/IndexedDbModelRepository";
-import { runGenericModelRepositoryTests } from "./genericModelRepositoryTests";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericModelRepositoryTests } from "./genericModelRepositoryTests";
 
 describe("IndexedDbModelRepository", () => {
   let logger = getTestingLogger();

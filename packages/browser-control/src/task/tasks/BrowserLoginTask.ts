@@ -129,6 +129,7 @@ export class BrowserLoginTask extends Task<
     input: BrowserLoginTaskInput,
     executeContext: IExecuteContext
   ): Promise<BrowserLoginTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const parsed = new URL(input.url, "https://placeholder");
     if (parsed.protocol === "javascript:") {
       throw new Error("BrowserLoginTask: javascript: URLs are not allowed");

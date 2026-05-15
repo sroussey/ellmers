@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ModelConfig } from "../model/ModelSchema";
 import type { AiProvider } from "../provider/AiProvider";
 import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
 } from "../provider/AiProviderRegistry";
-import type { ModelConfig } from "../model/ModelSchema";
 
 /**
  * Static metadata describing a cloud-backed AI provider.

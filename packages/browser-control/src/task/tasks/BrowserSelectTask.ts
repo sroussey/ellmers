@@ -77,8 +77,9 @@ export class BrowserSelectTask extends Task<
 
   override async execute(
     input: BrowserSelectTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserSelectTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     if (input.ref) {
       await ctx.selectOption(input.ref, input.value);

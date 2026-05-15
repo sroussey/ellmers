@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
 import { Box } from "ink";
+import React from "react";
 import { cliTaskShowsProgressBar } from "../cliTaskUi";
 import { ProgressBar } from "./ProgressBar";
 import { TaskStatusLine } from "./TaskStatusLine";

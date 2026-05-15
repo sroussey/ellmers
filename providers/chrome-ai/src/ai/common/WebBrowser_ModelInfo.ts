@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  ModelInfoTaskInput,
-  ModelInfoTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_ModelInfo: AiProviderRunFn<

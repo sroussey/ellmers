@@ -5,32 +5,32 @@
  */
 
 import { TaskRegistry } from "@workglow/task-graph";
-import { BrowserSessionTask } from "./tasks/BrowserSessionTask";
-import { BrowserCloseTask } from "./tasks/BrowserCloseTask";
-import { BrowserNavigateTask } from "./tasks/BrowserNavigateTask";
-import { BrowserBackTask } from "./tasks/BrowserBackTask";
-import { BrowserForwardTask } from "./tasks/BrowserForwardTask";
-import { BrowserReloadTask } from "./tasks/BrowserReloadTask";
-import { BrowserSnapshotTask } from "./tasks/BrowserSnapshotTask";
-import { BrowserScreenshotTask } from "./tasks/BrowserScreenshotTask";
-import { BrowserClickTask } from "./tasks/BrowserClickTask";
-import { BrowserFillTask } from "./tasks/BrowserFillTask";
-import { BrowserSelectTask } from "./tasks/BrowserSelectTask";
-import { BrowserHoverTask } from "./tasks/BrowserHoverTask";
-import { BrowserExtractTextTask } from "./tasks/BrowserExtractTextTask";
-import { BrowserExtractHtmlTask } from "./tasks/BrowserExtractHtmlTask";
 import { BrowserAttributeTask } from "./tasks/BrowserAttributeTask";
-import { BrowserQuerySelectorTask } from "./tasks/BrowserQuerySelectorTask";
+import { BrowserBackTask } from "./tasks/BrowserBackTask";
+import { BrowserClickTask } from "./tasks/BrowserClickTask";
+import { BrowserCloseTabTask } from "./tasks/BrowserCloseTabTask";
+import { BrowserCloseTask } from "./tasks/BrowserCloseTask";
 import { BrowserEvaluateTask } from "./tasks/BrowserEvaluateTask";
+import { BrowserExtractHtmlTask } from "./tasks/BrowserExtractHtmlTask";
+import { BrowserExtractTextTask } from "./tasks/BrowserExtractTextTask";
+import { BrowserFillTask } from "./tasks/BrowserFillTask";
+import { BrowserForwardTask } from "./tasks/BrowserForwardTask";
+import { BrowserHoverTask } from "./tasks/BrowserHoverTask";
+import { BrowserLoginTask } from "./tasks/BrowserLoginTask";
+import { BrowserNavigateTask } from "./tasks/BrowserNavigateTask";
+import { BrowserNewTabTask } from "./tasks/BrowserNewTabTask";
 import { BrowserPressKeyTask } from "./tasks/BrowserPressKeyTask";
-import { BrowserTypeTask } from "./tasks/BrowserTypeTask";
+import { BrowserQuerySelectorTask } from "./tasks/BrowserQuerySelectorTask";
+import { BrowserReloadTask } from "./tasks/BrowserReloadTask";
+import { BrowserScreenshotTask } from "./tasks/BrowserScreenshotTask";
 import { BrowserScrollTask } from "./tasks/BrowserScrollTask";
+import { BrowserSelectTask } from "./tasks/BrowserSelectTask";
+import { BrowserSessionTask } from "./tasks/BrowserSessionTask";
+import { BrowserSnapshotTask } from "./tasks/BrowserSnapshotTask";
+import { BrowserSwitchTabTask } from "./tasks/BrowserSwitchTabTask";
+import { BrowserTypeTask } from "./tasks/BrowserTypeTask";
 import { BrowserUploadTask } from "./tasks/BrowserUploadTask";
 import { BrowserWaitTask } from "./tasks/BrowserWaitTask";
-import { BrowserNewTabTask } from "./tasks/BrowserNewTabTask";
-import { BrowserSwitchTabTask } from "./tasks/BrowserSwitchTabTask";
-import { BrowserCloseTabTask } from "./tasks/BrowserCloseTabTask";
-import { BrowserLoginTask } from "./tasks/BrowserLoginTask";
 
 export const browserTasks = [
   BrowserSessionTask,

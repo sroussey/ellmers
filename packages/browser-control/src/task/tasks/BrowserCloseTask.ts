@@ -55,8 +55,9 @@ export class BrowserCloseTask extends Task<
 
   override async execute(
     input: BrowserCloseTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserCloseTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.disconnect();
     BrowserSessionRegistry.unregister(input.sessionId);

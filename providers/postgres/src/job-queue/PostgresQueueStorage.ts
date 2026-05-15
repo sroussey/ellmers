@@ -4,10 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createHash } from "node:crypto";
-import type { Pool } from "@workglow/postgres/storage";
-import { createServiceToken, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
-import { JobStatus } from "@workglow/job-queue";
 import type {
   IQueueStorage,
   JobStorageFormat,
@@ -16,6 +12,8 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
+import { JobStatus } from "@workglow/job-queue";
+import type { Pool } from "@workglow/postgres/storage";
 import {
   assertPrefixesSafe,
   buildPrefixInsertFragments,
@@ -24,6 +22,8 @@ import {
   getPrefixParamValues,
   PostgresDialect,
 } from "@workglow/storage";
+import { createServiceToken, getLogger, makeFingerprint, uuid4 } from "@workglow/util";
+import { createHash } from "node:crypto";
 import { PostgresMigrationRunner } from "../migrations/PostgresMigrationRunner";
 import { postgresQueueMigrations } from "../migrations/postgresQueueMigrations";
 

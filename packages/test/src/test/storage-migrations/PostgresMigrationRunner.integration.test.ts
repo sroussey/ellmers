@@ -5,14 +5,14 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
-import { PostgresMigrationRunner } from "@workglow/postgres/storage";
 import type { Pool } from "@workglow/postgres/storage";
+import { PostgresMigrationRunner } from "@workglow/postgres/storage";
 import { setLogger } from "@workglow/util";
 import { describe } from "vitest";
 
-import { runMigrationRunnerContract } from "../../contract/storage-migrations/runMigrationRunnerContract";
-import type { BuildMigrationFn } from "../../contract/storage-migrations/runMigrationRunnerContract";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import type { BuildMigrationFn } from "../../contract/storage-migrations/runMigrationRunnerContract";
+import { runMigrationRunnerContract } from "../../contract/storage-migrations/runMigrationRunnerContract";
 
 const buildMigration: BuildMigrationFn<Pool> = (component, version, recorder, options) => ({
   component,

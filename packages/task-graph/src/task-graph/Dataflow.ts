@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { areSemanticallyCompatible } from "@workglow/util/schema";
+import type { ServiceRegistry } from "@workglow/util";
 import { EventEmitter } from "@workglow/util";
+import { areSemanticallyCompatible } from "@workglow/util/schema";
 import type { StreamEvent } from "../task/StreamTypes";
+import { Task } from "../task/Task";
 import { TaskError } from "../task/TaskError";
 import { DataflowJson } from "../task/TaskJSON";
 import { TaskIdType, TaskOutput, TaskStatus } from "../task/TaskTypes";
-import { Task } from "../task/Task";
 import {
   DataflowEventListener,
   DataflowEventListeners,
@@ -20,7 +21,6 @@ import {
 import { TaskGraph } from "./TaskGraph";
 import { TRANSFORM_DEFS, TransformRegistry } from "./TransformRegistry";
 import type { ITransformStep } from "./TransformTypes";
-import type { ServiceRegistry } from "@workglow/util";
 
 export type DataflowIdType = `${string}[${string}] ==> ${string}[${string}]`;
 

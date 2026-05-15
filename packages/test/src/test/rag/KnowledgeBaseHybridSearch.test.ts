@@ -9,7 +9,7 @@ import { BM25Index } from "@workglow/storage";
 import { uuid4 } from "@workglow/util";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 const dimensions = 3;
 
@@ -43,9 +43,9 @@ describe("KnowledgeBase hybrid search (RRF over vector + BM25)", () => {
       register: false,
     });
     expect(kb.supportsHybridSearch()).toBe(false);
-    await expect(
-      kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 5 })
-    ).rejects.toThrow(/text index/i);
+    await expect(kb.hybridSearch(vec(1, 0, 0), { textQuery: "rabbit", topK: 5 })).rejects.toThrow(
+      /text index/i
+    );
     report("hybrid: throws-no-index", s);
   });
 

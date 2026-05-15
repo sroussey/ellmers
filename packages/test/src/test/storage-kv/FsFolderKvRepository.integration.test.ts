@@ -5,11 +5,11 @@
  */
 
 import { FsFolderKvStorage } from "@workglow/storage";
+import { setLogger } from "@workglow/util";
 import { mkdirSync, rmSync } from "fs";
 import { afterEach, beforeEach, describe } from "vitest";
-import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
-import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
 const testDir = ".cache/test/kv-fs-folder";
 

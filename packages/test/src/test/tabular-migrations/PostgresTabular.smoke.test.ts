@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
-import type { Pool } from "pg";
 import type { ITabularMigration } from "@workglow/storage";
+import type { Pool } from "pg";
+import { describe, expect, it } from "vitest";
 
 describe("PostgresTabular migration smoke", () => {
   it("applies addColumn through withTransaction and records bookkeeping", async () => {

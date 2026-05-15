@@ -27,9 +27,7 @@ import type {
  * to assign). Callers can override the mapping via
  * {@link PostgresFtsTextIndexOptions.fieldWeights}.
  */
-export const DEFAULT_POSTGRES_FTS_FIELD_WEIGHTS: Readonly<
-  Record<string, "A" | "B" | "C" | "D">
-> = {
+export const DEFAULT_POSTGRES_FTS_FIELD_WEIGHTS: Readonly<Record<string, "A" | "B" | "C" | "D">> = {
   text: "A",
   doc_title: "B",
   sectionTitles: "B",
@@ -171,9 +169,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
       if (typeof text !== "string" || text.trim().length === 0) continue;
       params.push(text);
       const pIdx = nextParam++;
-      tsvParts.push(
-        `setweight(to_tsvector($1::regconfig, coalesce($${pIdx}, '')), '${weight}')`
-      );
+      tsvParts.push(`setweight(to_tsvector($1::regconfig, coalesce($${pIdx}, '')), '${weight}')`);
     }
 
     const table = this.quotedTable;
@@ -233,7 +229,10 @@ export class PostgresFtsTextIndex implements ITextIndex {
        LIMIT $3
     `;
     const res = (await (
-      this.exec as (sql: string, params: unknown[]) => Promise<{
+      this.exec as (
+        sql: string,
+        params: unknown[]
+      ) => Promise<{
         rows: Array<{ chunk_id: string; score: number }>;
       }>
     )(sql, [this.tsvectorConfig, query, topK])) as {

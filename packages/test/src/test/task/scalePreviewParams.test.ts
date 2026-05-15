@@ -3,15 +3,15 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
 import "@workglow/tasks";
 import {
   ImageBlurTask,
-  ImagePixelateTask,
   ImageBorderTask,
   ImageCropTask,
+  ImagePixelateTask,
   ImageResizeTask,
 } from "@workglow/tasks";
+import { describe, expect, test } from "vitest";
 
 // Each test exercises the override directly via a casting trampoline. We avoid
 // running the full task pipeline — these are pure parameter-scaling unit tests.

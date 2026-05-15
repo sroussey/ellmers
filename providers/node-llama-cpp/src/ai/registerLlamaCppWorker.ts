@@ -5,10 +5,7 @@
  */
 
 import { registerProviderWorker } from "@workglow/ai/provider-utils";
-import {
-  LLAMACPP_PREVIEW_TASKS,
-  LLAMACPP_RUN_FNS,
-} from "./common/LlamaCpp_JobRunFns";
+import { LLAMACPP_PREVIEW_TASKS, LLAMACPP_RUN_FNS } from "./common/LlamaCpp_JobRunFns";
 import { LlamaCppProvider } from "./LlamaCppProvider";
 
 export async function registerLlamaCppWorker(): Promise<void> {

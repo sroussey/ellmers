@@ -5,7 +5,6 @@
  */
 
 import type { FunctionCallingMode } from "@google/generative-ai";
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type {
   AiProviderRunFn,
   ChatMessage,
@@ -13,8 +12,9 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 export function buildGeminiContents(

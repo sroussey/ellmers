@@ -10,8 +10,8 @@ import type {
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
 } from "@workglow/ai";
-import type { ImageValue } from "@workglow/util/media";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
+import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 

@@ -51,7 +51,9 @@ export const WebBrowser_TextTranslation: AiProviderRunFn<
     for await (const e of snapshotStreamToSnapshots<TextTranslationTaskOutput>(stream, (text) => ({
       text,
       target_lang: input.target_lang,
-    }))) { emit(e); }
+    }))) {
+      emit(e);
+    }
   } finally {
     translator.destroy();
   }

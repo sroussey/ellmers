@@ -19,6 +19,7 @@ import {
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   FailingTask,
   LongRunningTask,
@@ -27,7 +28,6 @@ import {
   TestIOTask,
   TestSquareTask,
 } from "../task/TestTasks";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 const spyOn = vi.spyOn;
 

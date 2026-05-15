@@ -1,9 +1,9 @@
 import { Task } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
-import { TaskCreatorTask } from "./TestTasks";
 import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { TaskCreatorTask } from "./TestTasks";
 
 describe("Task own functionality", () => {
   let logger = getTestingLogger();

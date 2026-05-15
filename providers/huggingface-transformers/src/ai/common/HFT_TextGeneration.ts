@@ -11,8 +11,8 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
-import { getPipeline, getHftSession, setHftSession, loadTransformersSDK } from "./HFT_Pipeline";
 import type { HftProgressiveSession } from "./HFT_Pipeline";
+import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "./HFT_Pipeline";
 import { createStreamingTextStreamer } from "./HFT_Streaming";
 
 export const HFT_TextGeneration: AiProviderRunFn<

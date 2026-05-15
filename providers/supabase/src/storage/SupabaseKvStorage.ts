@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken } from "@workglow/util";
-import { JsonSchema } from "@workglow/util/schema";
-import { SupabaseTabularStorage } from "./SupabaseTabularStorage";
 import {
   DefaultKeyValueKey,
   DefaultKeyValueSchema,
   IKvStorage,
   KvViaTabularStorage,
 } from "@workglow/storage";
+import { createServiceToken } from "@workglow/util";
+import { JsonSchema } from "@workglow/util/schema";
+import { SupabaseTabularStorage } from "./SupabaseTabularStorage";
 
 export const SUPABASE_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, any>>(
   "storage.kvRepository.supabase"

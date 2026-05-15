@@ -9,13 +9,13 @@
 
 import type { DataPortSchema, PropertySchema } from "@workglow/util/schema";
 
+import type { ExecutionMode, IterationInputMode, IterationPropertyConfig } from "./IteratorTask";
 import {
   createArraySchema,
   createFlexibleSchema,
   extractBaseSchema,
   ITERATOR_CONTEXT_SCHEMA,
 } from "./IteratorTask";
-import type { ExecutionMode, IterationInputMode, IterationPropertyConfig } from "./IteratorTask";
 import { WHILE_CONTEXT_SCHEMA } from "./WhileTask";
 
 export {

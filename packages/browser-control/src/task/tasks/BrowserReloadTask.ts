@@ -62,8 +62,9 @@ export class BrowserReloadTask extends Task<
 
   override async execute(
     input: BrowserReloadTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserReloadTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.reload();
     return { sessionId: input.sessionId };

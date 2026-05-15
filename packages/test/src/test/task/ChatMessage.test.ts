@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { compileSchema } from "@workglow/util/schema";
 import {
   ChatMessageSchema,
   ContentBlockSchema,
@@ -14,6 +12,8 @@ import {
   type ChatMessage,
   type ContentBlock,
 } from "@workglow/ai";
+import { compileSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 // Helper to validate against a schema
 function validate(schema: unknown, value: unknown) {

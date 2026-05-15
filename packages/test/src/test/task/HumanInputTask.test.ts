@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { McpElicitationConnector } from "@workglow/mcp/tasks";
 import {
   Dataflow,
   Task,
@@ -13,9 +14,8 @@ import {
   Workflow,
 } from "@workglow/task-graph";
 import { HumanApprovalTask, HumanInputTask } from "@workglow/tasks";
-import { McpElicitationConnector } from "@workglow/mcp/tasks";
-import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
+import { Container, HUMAN_CONNECTOR, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 

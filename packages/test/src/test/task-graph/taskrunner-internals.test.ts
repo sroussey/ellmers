@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
+import type { StreamEvent } from "@workglow/task-graph";
 import {
   CacheCoordinator,
   StreamProcessor,
   Task,
-  TaskRunContext,
   TaskRegistry,
+  TaskRunContext,
 } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 // ============================================================================
 // TaskRunContext

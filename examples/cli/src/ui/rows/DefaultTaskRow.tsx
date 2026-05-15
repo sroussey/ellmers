@@ -6,13 +6,13 @@
 
 import { Box } from "ink";
 import React from "react";
+import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import {
   iterationSlotToTaskStatus,
   sortIterationSlotsForDisplay,
   type CliTaskLine,
   type IterationSlotRow,
 } from "../taskGraphCliSubscriptions";
-import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
 import type { TaskRowProps } from "./pickRenderer";
 
 export function DefaultTaskRow({ line, iterationSlots }: TaskRowProps): React.ReactElement {

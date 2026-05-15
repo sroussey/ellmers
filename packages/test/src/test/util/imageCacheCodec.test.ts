@@ -3,10 +3,10 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test } from "vitest";
+import { getPortCodec } from "@workglow/task-graph";
 import "@workglow/util/media";
 import { imageValueFromBuffer, isNodeImageValue, type ImageValue } from "@workglow/util/media";
-import { getPortCodec } from "@workglow/task-graph";
+import { describe, expect, test } from "vitest";
 
 const codec = getPortCodec("image");
 

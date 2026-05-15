@@ -5,8 +5,8 @@
  */
 
 import { ITabularStorage } from "@workglow/storage";
-import { TypedArraySchemaOptions } from "@workglow/util/schema";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
+import { TypedArraySchemaOptions } from "@workglow/util/schema";
 
 /**
  * Schema for storing documents in tabular storage

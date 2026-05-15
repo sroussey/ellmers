@@ -7,14 +7,14 @@
 import { pipe, Workflow } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
+import { setLogger } from "@workglow/util";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
+import { getTestingLogger } from "../../binding/TestingLogger";
 import {
   AddFiveTask,
   PipelineDoubleTask as DoubleTask,
   PipelineSquareTask as SquareTask,
 } from "../task/TestTasks";
-import { setLogger } from "@workglow/util";
-import { getTestingLogger } from "../../binding/TestingLogger";
 
 /**
  * Example workflow test that demonstrates the use of pipe()

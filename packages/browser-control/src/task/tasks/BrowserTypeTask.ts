@@ -78,8 +78,9 @@ export class BrowserTypeTask extends Task<
 
   override async execute(
     input: BrowserTypeTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserTypeTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.type(input.text);
     return { sessionId: input.sessionId };

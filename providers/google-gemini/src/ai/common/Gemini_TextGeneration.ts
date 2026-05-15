@@ -10,8 +10,8 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { buildGeminiContents } from "./Gemini_ToolCalling";
 
 /**

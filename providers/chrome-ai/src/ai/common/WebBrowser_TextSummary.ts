@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  TextSummaryTaskInput,
-  TextSummaryTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 
 import {
   ensureAvailable,
@@ -34,7 +30,13 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   });
   try {
     const stream = summarizer.summarizeStreaming(input.text, { signal });
-    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(stream, "text", (text) => ({ text }))) { emit(e); }
+    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(
+      stream,
+      "text",
+      (text) => ({ text })
+    )) {
+      emit(e);
+    }
   } finally {
     summarizer.destroy();
   }

@@ -1,9 +1,9 @@
 const Worker = globalThis.Worker;
 const parentPort = self;
-export { Worker, parentPort };
+export { parentPort, Worker };
 
-import { WorkerServerBase, WORKER_SERVER } from "./WorkerServerBase";
 import { globalServiceRegistry } from "../di";
+import { WORKER_SERVER, WorkerServerBase } from "./WorkerServerBase";
 export { WORKER_SERVER };
 export class WorkerServer extends WorkerServerBase {
   constructor() {

@@ -5,6 +5,8 @@
  */
 
 import { Sqlite } from "@workglow/sqlite/storage";
+import type { IVectorStorage, VectorSearchOptions } from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -14,8 +16,6 @@ import type {
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
-import type { IVectorStorage, VectorSearchOptions } from "@workglow/storage";
 
 /**
  * Check if metadata matches filter

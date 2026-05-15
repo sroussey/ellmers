@@ -6,12 +6,12 @@
 
 import { afterAll, beforeAll, describe } from "vitest";
 
-import { browserOnlyStubBlock } from "./browserOnlyStub";
-import type { WorkerProxyBoundaryOpts } from "./types";
 import type { ConformanceHandle } from "../ai-provider/types";
+import { backlogOrderingBlock } from "./assertions/backlogOrdering";
 import { disposeTerminatesWorkerBlock } from "./assertions/disposeTerminatesWorker";
 import { errorPropagationBlock } from "./assertions/errorPropagation";
-import { backlogOrderingBlock } from "./assertions/backlogOrdering";
+import { browserOnlyStubBlock } from "./browserOnlyStub";
+import type { WorkerProxyBoundaryOpts } from "./types";
 
 export function runWorkerProxyBoundary(opts: WorkerProxyBoundaryOpts): void {
   if (opts.capabilities.browserOnly) {

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DataPortSchema } from "../json-schema/DataPortSchema";
 import { createServiceToken } from "../di/ServiceRegistry";
+import type { DataPortSchema } from "../json-schema/DataPortSchema";
 
 /**
  * The kind of interaction being requested.

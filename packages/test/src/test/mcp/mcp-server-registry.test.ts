@@ -4,25 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
+import { McpListTask, McpToolCallTask } from "@workglow/mcp/tasks";
+import type { McpServerRecord } from "@workglow/mcp/util";
 import {
-  InMemoryMcpServerRepository,
-  McpServerRepository,
-  registerMcpServer,
-  getMcpServer,
-  getGlobalMcpServers,
   getGlobalMcpServerRepository,
-  setGlobalMcpServerRepository,
+  getGlobalMcpServers,
+  getMcpServer,
   getMcpServerConfig,
+  InMemoryMcpServerRepository,
   MCP_SERVERS,
   mcpClientFactory,
+  McpServerRepository,
+  registerMcpServer,
+  setGlobalMcpServerRepository,
 } from "@workglow/mcp/util";
-import { McpToolCallTask, McpListTask } from "@workglow/mcp/tasks";
-import type { McpServerRecord } from "@workglow/mcp/util";
-import { resolveSchemaInputs, Task } from "@workglow/task-graph";
 import type { IExecuteContext, TaskConfig } from "@workglow/task-graph";
+import { resolveSchemaInputs, Task } from "@workglow/task-graph";
+import { Container, globalServiceRegistry, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
-import { globalServiceRegistry, ServiceRegistry, Container } from "@workglow/util";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 const serverA: McpServerRecord = {
   server_id: "server-a",

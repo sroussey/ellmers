@@ -4,20 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export { getMissingFields, promptMissingInput, type PromptFieldDescriptor } from "./prompt";
 export {
-  parseDynamicFlags,
-  parseConfigFlags,
-  generateSchemaHelpText,
-  generateConfigHelpText,
-} from "./schema-flags";
-export {
-  resolveInput,
-  resolveConfig,
-  validateInput,
-  readJsonInput,
   applySchemaDefaults,
   deepMerge,
+  readJsonInput,
+  resolveConfig,
+  resolveInput,
+  validateInput,
   type ResolveInputOptions,
   type ValidationResult,
 } from "./resolve-input";
-export { promptMissingInput, getMissingFields, type PromptFieldDescriptor } from "./prompt";
+export {
+  generateConfigHelpText,
+  generateSchemaHelpText,
+  parseConfigFlags,
+  parseDynamicFlags,
+} from "./schema-flags";

@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFnRegistration,
-  AiProviderPreviewRunFn,
-} from "@workglow/ai";
-import type { GeminiModelConfig } from "./Gemini_ModelSchema";
+import type { AiProviderPreviewRunFn, AiProviderRunFnRegistration } from "@workglow/ai";
 import {
   GEMINI_COUNT_TOKENS,
   GEMINI_IMAGE_EDITING,
@@ -22,8 +18,9 @@ import {
   GEMINI_TEXT_SUMMARY,
   GEMINI_TOOL_USE,
 } from "./Gemini_CapabilitySets";
+import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 
-export { loadGeminiSDK, getApiKey, getModelName } from "./Gemini_Client";
+export { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 export { sanitizeSchemaForGemini } from "./Gemini_Schema";
 
 import { Gemini_CountTokens_Preview, Gemini_CountTokens_Stream } from "./Gemini_CountTokens";

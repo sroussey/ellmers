@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import "fake-indexeddb/auto";
-import { describe, expect, it } from "vitest";
 import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import type { ITabularMigration } from "@workglow/storage";
+import "fake-indexeddb/auto";
+import { describe, expect, it } from "vitest";
 
 describe("IndexedDbTabular migration smoke", () => {
   it("runs a backfill migration over existing rows", async () => {

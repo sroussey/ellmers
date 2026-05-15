@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { RateLimiter } from "@workglow/job-queue";
 import type { IRateLimiterStorage } from "@workglow/job-queue";
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { RateLimiter } from "@workglow/job-queue";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockRateLimiterStorage extends IRateLimiterStorage {
   _setExecutionCount: (n: number) => void;

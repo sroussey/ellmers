@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ITask } from "@workglow/task-graph";
-import type { TaskGraph } from "@workglow/task-graph";
-import type { TaskIdType } from "@workglow/task-graph";
+import type { ITask, TaskGraph, TaskIdType } from "@workglow/task-graph";
 import type { Dispatch, SetStateAction } from "react";
 
 export interface CliTaskLine {

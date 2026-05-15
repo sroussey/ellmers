@@ -10,8 +10,8 @@
  */
 
 import { createServiceToken } from "@workglow/util";
-import { createPolicyEnforcer } from "./EntitlementEnforcer";
 import type { EntitlementDenial, IEntitlementEnforcer } from "./EntitlementEnforcer";
+import { createPolicyEnforcer } from "./EntitlementEnforcer";
 import type { EntitlementPolicy } from "./EntitlementPolicy";
 import type { IEntitlementResolver } from "./EntitlementResolver";
 import type { EntitlementGrant, TaskEntitlement } from "./TaskEntitlements";

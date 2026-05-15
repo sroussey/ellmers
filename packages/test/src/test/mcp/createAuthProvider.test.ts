@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { McpAuthConfig } from "@workglow/mcp/util";
 import {
   createAuthProvider,
   CredentialStoreOAuthProvider,
   resolveAuthSecrets,
 } from "@workglow/mcp/util";
-import type { McpAuthConfig } from "@workglow/mcp/util";
 import { InMemoryCredentialStore } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 

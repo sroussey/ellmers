@@ -6,17 +6,17 @@
 
 import { afterAll, beforeAll, beforeEach, describe } from "vitest";
 
+import { abortBlock } from "./assertions/abort";
+import { capabilityHonestyBlock } from "./assertions/capabilityHonesty";
+import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
+import { multiTurnFollowUpBlock } from "./assertions/multiTurnFollowUp";
+import { notifyDisplayFastResolveBlock } from "./assertions/notifyDisplayFastResolve";
+import { roundtripBlock } from "./assertions/roundtrip";
 import { resolveHumanConformanceFixture } from "./fixtures";
 import type { HumanConnectorConformanceHandle, HumanConnectorConformanceOpts } from "./types";
-import { roundtripBlock } from "./assertions/roundtrip";
-import { abortBlock } from "./assertions/abort";
-import { concurrentIsolationBlock } from "./assertions/concurrentIsolation";
-import { notifyDisplayFastResolveBlock } from "./assertions/notifyDisplayFastResolve";
-import { multiTurnFollowUpBlock } from "./assertions/multiTurnFollowUp";
-import { capabilityHonestyBlock } from "./assertions/capabilityHonesty";
 
-export type { HumanConnectorConformanceOpts } from "./types";
 export { MockHumanConnector } from "./MockHumanConnector";
+export type { HumanConnectorConformanceOpts } from "./types";
 
 export function runHumanConnectorConformance(opts: HumanConnectorConformanceOpts): void {
   describe.skipIf(opts.skip)(`IHumanConnector conformance: ${opts.name}`, () => {

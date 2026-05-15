@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai/worker";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import { OLLAMA } from "./common/Ollama_Constants";
+import type { Capability, ModelRecord } from "@workglow/ai/worker";
+import { AiProvider } from "@workglow/ai/worker";
 import { inferOllamaCapabilities, ollamaWorkerRunFnSpecs } from "./common/Ollama_Capabilities";
+import { OLLAMA } from "./common/Ollama_Constants";
 import type { OllamaModelConfig } from "./common/Ollama_ModelSchema";
 
 /**

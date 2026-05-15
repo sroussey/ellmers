@@ -6,6 +6,7 @@
 
 import type { RawPixelBuffer } from "@workglow/util/media";
 
+import type { ImageRasterCodec } from "@workglow/util/media";
 import {
   MAX_INPUT_BYTES_BROWSER,
   REJECTED_DECODE_MIME_TYPES,
@@ -15,7 +16,6 @@ import {
   extractDataUriMimeType,
   normalizeOutputMimeType,
 } from "./imageCodecLimits";
-import type { ImageRasterCodec } from "@workglow/util/media";
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

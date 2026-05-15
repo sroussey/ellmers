@@ -77,8 +77,9 @@ export class BrowserHoverTask extends Task<
 
   override async execute(
     input: BrowserHoverTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserHoverTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     if (input.ref) {
       await ctx.hover(input.ref);

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobStatus } from "../queue-storage/IQueueStorage";
-import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
 import {
   EventEmitter,
   getLogger,
@@ -16,6 +14,8 @@ import {
 } from "@workglow/util";
 import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
+import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
+import { JobStatus } from "../queue-storage/IQueueStorage";
 import { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,

@@ -5,10 +5,10 @@
  */
 
 import { execSync } from "node:child_process";
-import process from "node:process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 
 export type EditInEditorResult =
   | { readonly status: "saved"; readonly content: string }

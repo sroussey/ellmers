@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isChromeAvailable } from "./chromeAvailability";
 import { runIBrowserContextConformance } from "../../contract/browser-context/runIBrowserContextConformance";
+import { isChromeAvailable } from "./chromeAvailability";
 
 const bunWebViewAvailable =
   Boolean((globalThis as { Bun?: { WebView?: unknown } }).Bun?.WebView) && isChromeAvailable();

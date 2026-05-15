@@ -6,11 +6,11 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { PostgresQueueStorage } from "@workglow/postgres/job-queue";
+import { setLogger } from "@workglow/util";
 import { Pool } from "pg";
 import { afterAll, describe } from "vitest";
-import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";
-import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericPrefixedQueueStorageTests } from "./genericPrefixedQueueStorageTests";
 
 const db = new PGlite() as unknown as Pool;
 

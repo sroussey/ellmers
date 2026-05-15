@@ -3,8 +3,8 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import { describe, expect, test, vi } from "vitest";
 import { createTexturePool } from "@workglow/util/media";
+import { describe, expect, test, vi } from "vitest";
 
 interface FakeTexture {
   w: number;

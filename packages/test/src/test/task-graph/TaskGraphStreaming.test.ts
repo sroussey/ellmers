@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   getOutputStreamMode,
@@ -14,7 +15,6 @@ import {
   TaskGraphRunner,
   TaskStatus,
 } from "@workglow/task-graph";
-import type { StreamEvent } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";

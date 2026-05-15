@@ -27,14 +27,14 @@ import { TaskGraph } from "./TaskGraph";
 import type { PropertyArrayGraphResult } from "./TaskGraphRunner";
 import { CompoundMergeStrategy, PROPERTY_ARRAY } from "./TaskGraphRunner";
 import type { ITransformStep } from "./TransformTypes";
-import { WorkflowBuilder } from "./WorkflowBuilder";
 import type { IWorkflowBuilderHandle } from "./WorkflowBuilder";
+import { WorkflowBuilder } from "./WorkflowBuilder";
 import { WorkflowCacheAdapter } from "./WorkflowCacheAdapter";
 import { WorkflowEventBridge } from "./WorkflowEventBridge";
-import { WorkflowRunContext } from "./WorkflowRunContext";
 import type { CreateWorkflow } from "./WorkflowFactories";
 import { CreateEndLoopWorkflow, CreateLoopWorkflow } from "./WorkflowFactories";
 import { parallel, pipe } from "./WorkflowPipe";
+import { WorkflowRunContext } from "./WorkflowRunContext";
 import { WorkflowTask } from "./WorkflowTask";
 
 /** Options accepted by {@link Workflow.rename}. */

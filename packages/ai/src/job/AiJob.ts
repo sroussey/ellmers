@@ -17,13 +17,13 @@ import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { JsonSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
-import type { ModelConfig } from "../model/ModelSchema";
-import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import {
   ImageGenerationContentPolicyError,
   ImageGenerationProviderError,
   ProviderUnsupportedFeatureError,
 } from "../errors/ImageGenerationErrors";
+import type { ModelConfig } from "../model/ModelSchema";
+import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 
 /** Default timeout for provider API calls (2 minutes). */
 const DEFAULT_AI_TIMEOUT_MS = 120_000;

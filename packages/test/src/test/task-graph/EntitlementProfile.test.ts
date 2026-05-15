@@ -6,9 +6,9 @@
 
 import {
   STATIC_SIGNAL_SOURCE,
-  type EntitlementSignal,
   type EntitlementChangeEvent,
   type EntitlementRequestResult,
+  type EntitlementSignal,
   type IEntitlementProfile,
 } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";

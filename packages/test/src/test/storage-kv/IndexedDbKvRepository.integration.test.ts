@@ -8,8 +8,8 @@ import { IndexedDbKvStorage } from "@workglow/indexeddb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";
-import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
 describe("IndexedDbKvStorage", () => {
   let logger = getTestingLogger();

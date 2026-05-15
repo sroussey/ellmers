@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { IQueueStorage } from "@workglow/job-queue";
 import {
+  InMemoryQueueStorage,
   Job,
   JobConstructorParam,
   JobQueueClient,
   JobQueueServer,
   JobQueueServerOptions,
 } from "@workglow/job-queue";
-import { InMemoryQueueStorage } from "@workglow/job-queue";
-import type { IQueueStorage } from "@workglow/job-queue";
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
 import type { RegisteredQueue } from "./TaskQueueRegistry";
 import type { TaskConfig, TaskInput, TaskOutput } from "./TaskTypes";

@@ -5,7 +5,6 @@
  */
 
 import type { AiProviderRunFnRegistration } from "@workglow/ai";
-import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 import {
   WEB_BROWSER_MODEL_INFO,
   WEB_BROWSER_MODEL_SEARCH,
@@ -15,6 +14,7 @@ import {
   WEB_BROWSER_TEXT_SUMMARY,
   WEB_BROWSER_TEXT_TRANSLATION,
 } from "./WebBrowser_CapabilitySets";
+import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 import { WebBrowser_ModelInfo } from "./WebBrowser_ModelInfo";
 import { WebBrowser_ModelSearch } from "./WebBrowser_ModelSearch";

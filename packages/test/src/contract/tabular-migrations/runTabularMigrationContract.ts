@@ -6,14 +6,14 @@
 
 import { afterAll, beforeAll, describe } from "vitest";
 
-import { addColumnBlock } from "./assertions/addColumn";
-import { dropColumnBlock } from "./assertions/dropColumn";
-import { renameColumnBlock } from "./assertions/renameColumn";
 import { addAndDropIndexBlock } from "./assertions/addAndDropIndex";
+import { addColumnBlock } from "./assertions/addColumn";
 import { backfillBlock } from "./assertions/backfill";
+import { dropColumnBlock } from "./assertions/dropColumn";
+import { failedMigrationNotRecordedBlock } from "./assertions/failedMigrationNotRecorded";
 import { freshDbFastPathBlock } from "./assertions/freshDbFastPath";
 import { incrementalApplicationBlock } from "./assertions/incrementalApplication";
-import { failedMigrationNotRecordedBlock } from "./assertions/failedMigrationNotRecorded";
+import { renameColumnBlock } from "./assertions/renameColumn";
 import type { TabularMigrationContractHandle, TabularMigrationContractOpts } from "./types";
 
 export function runTabularMigrationContract(opts: TabularMigrationContractOpts): void {

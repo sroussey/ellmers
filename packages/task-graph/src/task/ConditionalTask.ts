@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { DataPortSchema } from "@workglow/util/schema";
 import { getLogger } from "@workglow/util";
-import { evaluateCondition, getNestedValue } from "./ConditionUtils";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { UIConditionConfig } from "./ConditionUtils";
+import { evaluateCondition, getNestedValue } from "./ConditionUtils";
 import type { IExecuteContext } from "./ITask";
 import { Task } from "./Task";
-import { TaskConfigSchema } from "./TaskTypes";
 import type { TaskConfig, TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
+import { TaskConfigSchema } from "./TaskTypes";
 
 // ============================================================================
 // Types and Interfaces

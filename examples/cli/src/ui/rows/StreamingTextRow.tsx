@@ -7,8 +7,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 import { TaskStatusProgressRow } from "../components/TaskStatusProgressRow";
-import { useTaskStreamText } from "./useTaskStreamText";
 import type { TaskRowProps } from "./pickRenderer";
+import { useTaskStreamText } from "./useTaskStreamText";
 
 const MAX_LINES = 8;
 

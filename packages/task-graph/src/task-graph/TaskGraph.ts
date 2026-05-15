@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ResourceScope } from "@workglow/util";
+import type { IDisposeStrategy, ResourceScope } from "@workglow/util";
 import { EventEmitter, ServiceRegistry, uuid4 } from "@workglow/util";
 import { DirectedAcyclicGraph } from "@workglow/util/graph";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
@@ -81,6 +81,9 @@ export interface TaskGraphRunConfig {
    * multiple runs, then dispose at app shutdown.
    */
   resourceScope?: ResourceScope;
+
+  /** Same semantics as on {@link IRunConfig}. */
+  disposeStrategy?: IDisposeStrategy;
 }
 
 export interface TaskGraphRunPreviewConfig extends Omit<
@@ -158,6 +161,7 @@ export class TaskGraph implements ITaskGraph {
       timeout: config?.timeout,
       maxTasks: config?.maxTasks,
       resourceScope: config?.resourceScope,
+      disposeStrategy: config?.disposeStrategy,
     });
   }
 

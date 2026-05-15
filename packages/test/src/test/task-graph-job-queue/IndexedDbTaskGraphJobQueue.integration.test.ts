@@ -4,15 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { JobQueueClient, JobQueueServer, RateLimiter } from "@workglow/job-queue";
-import { InMemoryRateLimiterStorage } from "@workglow/job-queue";
 import { IndexedDbQueueStorage } from "@workglow/indexeddb/job-queue";
+import {
+  InMemoryRateLimiterStorage,
+  JobQueueClient,
+  JobQueueServer,
+  RateLimiter,
+} from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
 import "fake-indexeddb/auto";
 import { describe } from "vitest";
-import { runGenericTaskGraphJobQueueTests, TestJob } from "./genericTaskGraphJobQueueTests";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericTaskGraphJobQueueTests, TestJob } from "./genericTaskGraphJobQueueTests";
 
 describe("IndexedDbTaskGraphJobQueue", () => {
   let logger = getTestingLogger();

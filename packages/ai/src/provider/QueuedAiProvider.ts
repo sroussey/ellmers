@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { QueuedExecutionStrategy } from "../execution/QueuedExecutionStrategy";
 import type { IAiExecutionStrategy } from "../execution/IAiExecutionStrategy";
+import { QueuedExecutionStrategy } from "../execution/QueuedExecutionStrategy";
 import type { ModelConfig } from "../model/ModelSchema";
-import { AiProvider, resolveAiProviderGpuQueueConcurrency } from "./AiProvider";
 import type { AiProviderRegisterOptions } from "./AiProvider";
+import { AiProvider, resolveAiProviderGpuQueueConcurrency } from "./AiProvider";
 import { getAiProviderRegistry } from "./AiProviderRegistry";
 
 /**

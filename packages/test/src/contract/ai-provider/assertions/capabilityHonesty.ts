@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAiProviderRegistry, getGlobalModelRepository, textEmbedding } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import { getAiProviderRegistry, getGlobalModelRepository, textEmbedding } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 import type { AiProviderConformanceOpts } from "../types";

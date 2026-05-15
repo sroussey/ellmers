@@ -21,7 +21,6 @@ import {
   Workflow,
   WorkflowError,
 } from "@workglow/task-graph";
-import { DataPortSchema } from "@workglow/util/schema";
 import {
   InputTask,
   OutputTask,
@@ -31,12 +30,13 @@ import {
 } from "@workglow/tasks";
 import {
   Container,
+  getLogger,
   NullLogger,
   ServiceRegistry,
-  getLogger,
   setLogger,
   sleep,
 } from "@workglow/util";
+import { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LongRunningTask,

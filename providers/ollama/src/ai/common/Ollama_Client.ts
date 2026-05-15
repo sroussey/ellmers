@@ -15,9 +15,11 @@ export async function loadOllamaSDK(): Promise<(new (config: { host: string }) =
   if (_OllamaClass) return _OllamaClass;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    _OllamaClass = ((await import(/* @vite-ignore */ "ollama")) as {
-      Ollama: new (config: { host: string }) => any;
-    }).Ollama;
+    _OllamaClass = (
+      (await import(/* @vite-ignore */ "ollama")) as {
+        Ollama: new (config: { host: string }) => any;
+      }
+    ).Ollama;
   } catch {
     throw new Error("ollama is required for Ollama tasks. Install it with: bun add ollama");
   }

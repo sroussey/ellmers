@@ -24,9 +24,9 @@ import {
   hasStructuredOutput,
   isTaskStreamable,
 } from "@workglow/task-graph";
+import { setLogger } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { setLogger } from "@workglow/util";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("StreamTypes", () => {

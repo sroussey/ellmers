@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  ModelInfoTaskInput,
-  ModelInfoTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 

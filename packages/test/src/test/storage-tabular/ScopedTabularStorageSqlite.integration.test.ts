@@ -85,10 +85,7 @@ describe("ScopedTabularStorage over SqliteTabularStorage", () => {
       const fn = vi.fn();
       scopeA.on("getBulk", fn);
       try {
-        const result = await scopeA.getBulk([
-          { doc_id: "x" },
-          { doc_id: "missing" },
-        ] as any);
+        const result = await scopeA.getBulk([{ doc_id: "x" }, { doc_id: "missing" }] as any);
 
         expect(fn).toHaveBeenCalledTimes(1);
         const [emittedKeys, emittedRows] = fn.mock.calls[0];

@@ -9,5 +9,5 @@
  * `imageRasterCodecNode.ts`) still live in this package.
  */
 
-export type { ImageRasterCodec } from "@workglow/util/media";
 export { getImageRasterCodec, registerImageRasterCodec } from "@workglow/util/media";
+export type { ImageRasterCodec } from "@workglow/util/media";

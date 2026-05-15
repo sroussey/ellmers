@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import "fake-indexeddb/auto";
 import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
-import type { ITabularMigration, AnyTabularStorage } from "@workglow/storage";
+import type { AnyTabularStorage, ITabularMigration } from "@workglow/storage";
+import "fake-indexeddb/auto";
 import { runTabularMigrationContract } from "../../contract/tabular-migrations/runTabularMigrationContract";
 
 let factoryCounter = 0;

@@ -14,10 +14,10 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { getGlobalCredentialStore, getLogger } from "@workglow/util";
 import { createAuthProvider, resolveAuthSecrets } from "./McpAuthProvider";
-import { buildAuthConfig, mcpAuthConfigSchema } from "./McpAuthTypes";
 import type { McpAuthConfig } from "./McpAuthTypes";
-import { getMcpTaskDeps } from "./McpTaskDeps";
+import { buildAuthConfig, mcpAuthConfigSchema } from "./McpAuthTypes";
 import type { McpServerConfig } from "./McpTaskDeps";
+import { getMcpTaskDeps } from "./McpTaskDeps";
 
 export const mcpTransportTypes = ["stdio", "sse", "streamable-http"] as const;
 

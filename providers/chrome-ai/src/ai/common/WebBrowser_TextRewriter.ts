@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  TextRewriterTaskInput,
-  TextRewriterTaskOutput,
-} from "@workglow/ai";
+import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 
 import {
   ensureAvailable,
@@ -36,7 +32,13 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
       signal,
       context: input.prompt,
     });
-    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(stream, "text", (text) => ({ text }))) { emit(e); }
+    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(
+      stream,
+      "text",
+      (text) => ({ text })
+    )) {
+      emit(e);
+    }
   } finally {
     rewriter.destroy();
   }

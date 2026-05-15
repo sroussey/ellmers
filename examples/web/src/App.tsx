@@ -5,10 +5,9 @@
  */
 
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
-import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
 import { getTaskQueueRegistry, JsonTaskItem, TaskGraph, Workflow } from "@workglow/task-graph";
 import { JsonTask } from "@workglow/tasks";
-import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";
+import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
@@ -20,6 +19,7 @@ import {
 import { GraphStoreStatus } from "./status/GraphStoreStatus";
 import { OutputRepositoryStatus } from "./status/OutputRepositoryStatus";
 import { QueuesStatus } from "./status/QueueStatus";
+import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";
 
 const JsonEditor = lazy(async () => {
   const { JsonEditor } = await import("./editor/JsonEditor");

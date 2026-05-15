@@ -12,23 +12,23 @@ import {
   StaticPrivateKeyJwtProvider,
   createPrivateKeyJwtAuth,
 } from "@modelcontextprotocol/sdk/client/auth-extensions.js";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   AddClientAuthentication,
   OAuthClientProvider,
   OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
-
-export { UnauthorizedError };
-export type { OAuthClientProvider };
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { getGlobalCredentialStore } from "@workglow/util";
 import type { ICredentialStore } from "@workglow/util";
+import { getGlobalCredentialStore } from "@workglow/util";
 import type { McpAuthConfig } from "./McpAuthTypes";
+
+export { UnauthorizedError };
+export type { OAuthClientProvider };
 
 // ── Key helpers ────────────────────────────────────────────────────────
 

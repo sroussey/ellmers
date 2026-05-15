@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
   buildAddColumnSql,
-  buildDropColumnSql,
-  buildRenameColumnSql,
   buildAddIndexSql,
+  buildDropColumnSql,
   buildDropIndexSql,
+  buildRenameColumnSql,
 } from "@workglow/storage";
+import { describe, expect, it } from "vitest";
 
 describe("sqlMigrationDdl", () => {
   it("addColumn for SQLite", () => {

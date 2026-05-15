@@ -26,7 +26,6 @@ export type AiProviderPreviewRunFn<
   Model extends ModelConfig = ModelConfig,
 > = (input: Input, model: Model | undefined) => Promise<Output | undefined>;
 
-
 /**
  * Promise+emit run-fn shape. Output flows through `emit`; the Promise carries
  * no data and signals completion only. For one-shot capabilities the run-fn
@@ -74,7 +73,6 @@ export interface AiProviderRunFnRegistration<
   readonly serves: readonly Capability[];
   readonly runFn: AiProviderRunFn<Input, Output, Model>;
 }
-
 
 /**
  * Build the deterministic key used to register a `serves` set on a worker server

@@ -6,9 +6,9 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
+import { registerOpenAiImageValidator } from "./common/OpenAI_ImageValidation";
 import { OPENAI_PREVIEW_TASKS, OPENAI_RUN_FNS } from "./common/OpenAI_JobRunFns";
 import { OpenAiQueuedProvider } from "./OpenAiQueuedProvider";
-import { registerOpenAiImageValidator } from "./common/OpenAI_ImageValidation";
 
 export async function registerOpenAiInline(options?: AiProviderRegisterOptions): Promise<void> {
   registerOpenAiImageValidator();

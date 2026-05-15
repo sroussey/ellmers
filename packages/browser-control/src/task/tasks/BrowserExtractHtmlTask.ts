@@ -91,8 +91,9 @@ export class BrowserExtractHtmlTask extends Task<
 
   override async execute(
     input: BrowserExtractHtmlTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserExtractHtmlTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     let ref = this.config.ref;
     if (!ref) {

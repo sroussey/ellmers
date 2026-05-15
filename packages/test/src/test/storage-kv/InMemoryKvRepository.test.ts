@@ -5,10 +5,10 @@
  */
 
 import { InMemoryKvStorage } from "@workglow/storage";
-import { describe } from "vitest";
-import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 import { setLogger } from "@workglow/util";
+import { describe } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+import { runGenericKvRepositoryTests } from "./genericKvRepositoryTests";
 
 describe("InMemoryKvStorage", () => {
   let logger = getTestingLogger();

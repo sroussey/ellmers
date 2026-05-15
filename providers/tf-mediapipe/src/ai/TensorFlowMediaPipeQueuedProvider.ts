@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiProvider } from "@workglow/ai";
 import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
   Capability,
   ModelRecord,
 } from "@workglow/ai";
-import { TENSORFLOW_MEDIAPIPE } from "./common/TFMP_Constants";
+import { AiProvider } from "@workglow/ai";
 import { inferTfmpCapabilities, tfmpWorkerRunFnSpecs } from "./common/TFMP_Capabilities";
+import { TENSORFLOW_MEDIAPIPE } from "./common/TFMP_Constants";
 import type { TFMPModelConfig } from "./common/TFMP_ModelSchema";
 
 /** Main-thread registration (inline or worker-backed). WASM-only — uses direct execution. */

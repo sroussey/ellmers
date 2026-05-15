@@ -10,8 +10,11 @@ import type {
   ModelSearchTaskInput,
   ModelSearchTaskOutput,
 } from "@workglow/ai";
-import { mapHfModelResult, searchHfModels } from "@workglow/ai/provider-utils";
-import { filterLabeledModelsByQuery } from "@workglow/ai/provider-utils";
+import {
+  filterLabeledModelsByQuery,
+  mapHfModelResult,
+  searchHfModels,
+} from "@workglow/ai/provider-utils";
 import { HF_INFERENCE } from "./HFI_Constants";
 
 /** Models with explicit capability overrides (HF pipeline tags don't cover image.generation/image.editing). */
@@ -38,10 +41,12 @@ function buildFallbackResults(): ModelSearchResultItem[] {
   }));
 }
 
-export const HFI_ModelSearch: AiProviderRunFn<
-  ModelSearchTaskInput,
-  ModelSearchTaskOutput
-> = async (input, _model, signal, emit) => {
+export const HFI_ModelSearch: AiProviderRunFn<ModelSearchTaskInput, ModelSearchTaskOutput> = async (
+  input,
+  _model,
+  signal,
+  emit
+) => {
   const query = input.query?.trim() ?? "";
   if (!input.credential_key) {
     const fallback = buildFallbackResults();

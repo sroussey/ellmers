@@ -10,9 +10,9 @@ import type {
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,
 } from "@workglow/ai";
+import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger, TypedArray } from "@workglow/util/worker";
-import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AiImageOutputTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
 import type { ModelConfig } from "@workglow/ai";
+import { AiImageOutputTask, ProviderUnsupportedFeatureError } from "@workglow/ai";
 
-import { HF_INFERENCE } from "./HFI_Constants";
 import { isHfInpaintingModel } from "./HFI_AspectRatio";
+import { HF_INFERENCE } from "./HFI_Constants";
 
 export function registerHfImageValidator(): void {
   AiImageOutputTask.registerProviderImageValidator(

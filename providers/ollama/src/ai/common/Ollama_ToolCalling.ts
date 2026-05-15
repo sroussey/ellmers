@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import type {
   AiProviderRunFn,
   ToolCallingTaskInput,
@@ -12,6 +11,7 @@ import type {
   ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
+import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";

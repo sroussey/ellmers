@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AbortSignalJobError, ConcurrencyLimiter } from "@workglow/job-queue";
 import type { ILimiter } from "@workglow/job-queue";
+import { AbortSignalJobError, ConcurrencyLimiter } from "@workglow/job-queue";
 import type { IExecuteContext, TaskInput, TaskOutput } from "@workglow/task-graph";
 import type { AiEmit } from "../capability/AiEmit";
-import { AiJob } from "../job/AiJob";
 import type { AiJobInput } from "../job/AiJob";
+import { AiJob } from "../job/AiJob";
 import type { IAiExecutionStrategy } from "./IAiExecutionStrategy";
 
 /**

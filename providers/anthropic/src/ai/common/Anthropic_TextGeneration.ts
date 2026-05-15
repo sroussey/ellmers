@@ -10,8 +10,8 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
-import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
+import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
 import { buildAnthropicMessages } from "./Anthropic_ToolCalling";
 
 /**

@@ -5,7 +5,6 @@
  */
 
 import type { AiProviderRunFnRegistration } from "@workglow/ai";
-import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 import {
   HFI_IMAGE_EDITING,
   HFI_IMAGE_GENERATION,
@@ -17,8 +16,9 @@ import {
   HFI_TEXT_SUMMARY,
   HFI_TOOL_USE,
 } from "./HFI_CapabilitySets";
+import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
 
-export { loadHfInferenceSDK, getClient, getModelName, getProvider } from "./HFI_Client";
+export { getClient, getModelName, getProvider, loadHfInferenceSDK } from "./HFI_Client";
 
 import { HFI_ImageEdit_Stream } from "./HFI_ImageEdit";
 import { HFI_ImageGenerate_Stream } from "./HFI_ImageGenerate";

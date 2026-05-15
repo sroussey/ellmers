@@ -4,20 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import type {
   AiProviderRunFn,
-  ToolCalls,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
+  ToolCalls,
 } from "@workglow/ai";
 import {
   accumulateOpenAIStream,
   buildOpenAITools,
   mapOpenAIToolChoice,
 } from "@workglow/ai/provider-utils";
-import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+import { filterValidToolCalls, toOpenAIMessages } from "@workglow/ai/worker";
 import { getClient, getModelName } from "./OpenAI_Client";
+import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.generation", "tool-use"]`. Calls the OpenAI

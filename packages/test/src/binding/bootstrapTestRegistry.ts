@@ -15,6 +15,11 @@
  * so it can resolve workspace `@workglow/*` packages without root-level deps.
  */
 
+import { registerAiProviderDefaults, registerModelDefaults } from "@workglow/ai";
+import { registerKnowledgeBaseDefaults } from "@workglow/knowledge-base";
+import { registerMcpServerDefaults } from "@workglow/mcp/util";
+import { registerTabularStorageDefaults } from "@workglow/storage";
+import { registerTaskDefaults, registerTransformDefaults } from "@workglow/task-graph";
 import {
   registerCredentialDefaults,
   registerInputCompactorDefaults,
@@ -22,13 +27,8 @@ import {
   registerLoggerDefaults,
   registerTelemetryDefaults,
 } from "@workglow/util";
-import { registerWorkerManagerDefaults } from "@workglow/util/worker";
 import { registerImageDefaults } from "@workglow/util/media";
-import { registerAiProviderDefaults, registerModelDefaults } from "@workglow/ai";
-import { registerKnowledgeBaseDefaults } from "@workglow/knowledge-base";
-import { registerMcpServerDefaults } from "@workglow/mcp/util";
-import { registerTabularStorageDefaults } from "@workglow/storage";
-import { registerTaskDefaults, registerTransformDefaults } from "@workglow/task-graph";
+import { registerWorkerManagerDefaults } from "@workglow/util/worker";
 
 /**
  * Idempotently registers all built-in defaults on the global registry.

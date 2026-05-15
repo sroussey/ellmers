@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ServiceRegistry, ResourceScope } from "@workglow/util";
+import type { ResourceScope, ServiceRegistry } from "@workglow/util";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskGraph } from "./TaskGraph";
 import { GraphResult, PROPERTY_ARRAY } from "./TaskGraphRunner";

@@ -9,8 +9,8 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
 import { Task } from "./Task";
-import type { TaskInput, TaskOutput } from "./TaskTypes";
 import type { TaskRunContext } from "./TaskRunContext";
+import type { TaskInput, TaskOutput } from "./TaskTypes";
 
 interface SchemaProperties {
   properties?: Record<string, { format?: string }>;

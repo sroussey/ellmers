@@ -5,7 +5,7 @@
  */
 
 import { WorkerManager, WorkerServerBase } from "@workglow/util/worker";
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("WorkerManager.callWorkerRunFunction round-trip", () => {
   it("WorkerManager + WorkerServerBase exports are available", () => {

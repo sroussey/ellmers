@@ -68,8 +68,9 @@ export class BrowserForwardTask extends Task<
 
   override async execute(
     input: BrowserForwardTaskInput,
-    _executeContext: IExecuteContext
+    executeContext: IExecuteContext
   ): Promise<BrowserForwardTaskOutput> {
+    executeContext.resourceScope?.touch(`browser:${input.sessionId}`);
     const ctx = BrowserSessionRegistry.get(input.sessionId);
     await ctx.goForward();
     const url = await ctx.currentUrl();

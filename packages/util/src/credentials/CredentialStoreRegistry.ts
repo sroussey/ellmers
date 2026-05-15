@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { globalServiceRegistry } from "../di/ServiceRegistry";
-import type { ServiceRegistry } from "../di/ServiceRegistry";
 import { registerInputCompactor } from "../di/InputCompactorRegistry";
 import { registerInputResolver } from "../di/InputResolverRegistry";
-import { CREDENTIAL_STORE } from "./ICredentialStore";
+import type { ServiceRegistry } from "../di/ServiceRegistry";
+import { globalServiceRegistry } from "../di/ServiceRegistry";
 import type { ICredentialStore } from "./ICredentialStore";
+import { CREDENTIAL_STORE } from "./ICredentialStore";
 import { InMemoryCredentialStore } from "./InMemoryCredentialStore";
 
 /**

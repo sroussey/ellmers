@@ -20,3 +20,5 @@ export * from "./credentials";
 export * from "./crypto/WebCrypto";
 export * from "./telemetry";
 export * from "./resource/ResourceScope";
+export * from "./resource/DisposeStrategy";
+export * from "./resource/DisposePresets";

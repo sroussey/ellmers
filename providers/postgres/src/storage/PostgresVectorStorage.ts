@@ -6,6 +6,18 @@
 
 import type { Pool } from "@workglow/postgres/storage";
 import type {
+  IVectorStorage,
+  VectorDistanceMetric,
+  VectorIndexOptions,
+  VectorSearchOptions,
+} from "@workglow/storage";
+import {
+  PostgresDialect,
+  StorageValidationError,
+  getMetadataProperty,
+  getVectorProperty,
+} from "@workglow/storage";
+import type {
   DataPortSchemaObject,
   FromSchema,
   TypedArray,
@@ -14,18 +26,6 @@ import type {
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
 import { PostgresTabularStorage } from "./PostgresTabularStorage";
-import {
-  PostgresDialect,
-  StorageValidationError,
-  getMetadataProperty,
-  getVectorProperty,
-} from "@workglow/storage";
-import type {
-  IVectorStorage,
-  VectorDistanceMetric,
-  VectorIndexOptions,
-  VectorSearchOptions,
-} from "@workglow/storage";
 
 /**
  * PostgreSQL vector repository implementation using pgvector extension.

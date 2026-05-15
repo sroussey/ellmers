@@ -11,7 +11,7 @@ import { uuid4 } from "@workglow/util";
 import type { Pool } from "pg";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { snap, report } from "../../binding/testTiming";
+import { report, snap } from "../../binding/testTiming";
 
 let _snap = snap();
 beforeEach(() => {

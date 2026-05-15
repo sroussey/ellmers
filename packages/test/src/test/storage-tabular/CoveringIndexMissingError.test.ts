@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import { CoveringIndexMissingError } from "@workglow/storage";
+import { describe, expect, it } from "vitest";
 
 describe("CoveringIndexMissingError", () => {
   it("includes the table name, required columns, and registered indexes in its message", () => {

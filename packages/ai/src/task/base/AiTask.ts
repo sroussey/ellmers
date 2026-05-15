@@ -227,6 +227,7 @@ export class AiTask<
           // AiEmit callback. We don't care about events here, so use noopEmit.
           await disposeFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
         });
+        executeContext.resourceScope.touch(resourceKey);
       }
     }
 

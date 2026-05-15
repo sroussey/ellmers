@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken } from "@workglow/util";
-import { openIdb } from "../storage/openIdb";
-import { runIndexedDbMigrationGroups } from "../migrations/IndexedDbMigrationRunner";
-import { indexedDbRateLimiterMigrationGroups } from "../migrations/indexedDbRateLimiterMigrations";
-import type { PrefixColumn } from "@workglow/job-queue";
 import type {
   IRateLimiterStorage,
+  PrefixColumn,
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import { createServiceToken } from "@workglow/util";
+import { runIndexedDbMigrationGroups } from "../migrations/IndexedDbMigrationRunner";
+import { indexedDbRateLimiterMigrationGroups } from "../migrations/indexedDbRateLimiterMigrations";
+import { openIdb } from "../storage/openIdb";
 
 export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.indexedDb"

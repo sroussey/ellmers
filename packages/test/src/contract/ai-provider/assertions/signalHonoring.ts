@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import type { Capability } from "@workglow/ai";
+import { accumulatingEmit, getAiProviderRegistry, getGlobalModelRepository } from "@workglow/ai";
 import type { StreamEvent, TaskOutput } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
-import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 import { itExpectFail } from "../../itExpectFail";
+import type { AiProviderConformanceOpts, ConformanceFixture } from "../types";
 
 const TEXT_GENERATION: readonly Capability[] = ["text.generation"];
 
