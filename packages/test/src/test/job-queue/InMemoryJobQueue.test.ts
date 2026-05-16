@@ -362,6 +362,7 @@ describe("InMemoryJobQueue — worker prefetch (PR 5)", () => {
       pollIntervalMs: 5,
       stopTimeoutMs: 200,
       limiter,
+      prefetch: 4,
     });
     const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
     client.attach(server);

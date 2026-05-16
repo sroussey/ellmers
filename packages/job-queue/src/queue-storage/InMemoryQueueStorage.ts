@@ -320,6 +320,16 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
+  /** Force-overwrite status without incrementing attempts (used to persist DISABLED after lease release). */
+  public async updateJobStatus(id: unknown, status: JobStatus): Promise<void> {
+    await sleep(0);
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    if (!job) return;
+    const oldJob = { ...job };
+    job.status = status;
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+  }
+
   /**
    * Retrieves all jobs by their job_run_id.
    * @param job_run_id - The job_run_id of the jobs to retrieve.

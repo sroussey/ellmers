@@ -622,15 +622,9 @@ export class JobQueueWorker<
       try {
         await this.validateJobState(job);
       } catch (validationErr) {
-        // Validation failed before we ran any actual work — release THIS
-        // limiter slot (by token, not by recency) so it doesn't count toward
-        // the rate limit and we don't accidentally release another worker's
-        // slot.
-        try {
-          await this.limiter.release(limiterToken);
-        } catch {
-          // best-effort
-        }
+        // Throw — the outer finally block's limiter.complete() will release
+        // the slot. Do NOT call limiter.release() here too; that would
+        // double-decrement the counter and admit one extra concurrent job.
         throw validationErr;
       }
 
@@ -680,7 +674,7 @@ export class JobQueueWorker<
         if (currentJob.attempts + 1 >= currentJob.maxAttempts) {
           spanErrorMessage = "Max attempts reached";
           // Forward to dead-letter queue before marking as failed
-          if (this.deadLetter && this.deadLetter !== "discard") {
+          if (this.deadLetter !== "discard") {
             try {
               await this.deadLetter.send({
                 original: currentJob.input,
@@ -756,7 +750,7 @@ export class JobQueueWorker<
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
-  private requireClaim(jobId: unknown): IClaim<JobStorageFormat<Input, Output>> | undefined {
+  private getClaim(jobId: unknown): IClaim<JobStorageFormat<Input, Output>> | undefined {
     return this.activeClaims.get(jobId);
   }
 
@@ -774,7 +768,7 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
-      const claim = this.requireClaim(job.id);
+      const claim = this.getClaim(job.id);
       await this.jobStore.saveResult(job.id, (output ?? null) as Output);
       if (claim) {
         await claim.ack();
@@ -800,7 +794,7 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = error?.constructor?.name ?? null;
 
-      const claim = this.requireClaim(job.id);
+      const claim = this.getClaim(job.id);
       await this.jobStore.saveError(job.id, error.message, error.constructor.name ?? null, false);
       if (claim) {
         await claim.fail();
@@ -824,21 +818,14 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      // DISABLED isn't first-class on IClaim. Use the legacy escape hatch on
-      // the underlying record by re-reading and writing through the jobStore
-      // helpers we have, then settle the claim via fail() so the lease/owner
-      // are released. Status is then re-flipped to DISABLED in a follow-up
-      // saveError-like write below.
-      const existing = await this.jobStore.get(job.id);
-      const claim = this.requireClaim(job.id);
+      // IClaim has no "disable" terminal. Release the lease via fail() (writes
+      // FAILED), then immediately overwrite status to DISABLED via saveStatus()
+      // so storage reflects the correct terminal state.
+      const claim = this.getClaim(job.id);
       if (claim) {
         await claim.fail();
       }
-      if (existing) {
-        // Direct write would be ideal; lacking an IJobStore.saveStatus we
-        // re-fetch and emit a logger note. JobQueueServer downstream tracks
-        // DISABLED via stats from the event.
-      }
+      await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       this.events.emit("job_disabled", job.id);
     } catch (err) {
       getLogger().error("disableJob errored:", { error: err });
@@ -888,8 +875,8 @@ export class JobQueueWorker<
       // The storage layer will read from DB and increment, so this keeps them aligned
       job.attempts = (job.attempts ?? 0) + 1;
 
-      const claim = this.requireClaim(job.id);
-      const delaySeconds = Math.max(0, Math.floor((job.visibleAt.getTime() - Date.now()) / 1000));
+      const claim = this.getClaim(job.id);
+      const delaySeconds = Math.max(0, (job.visibleAt.getTime() - Date.now()) / 1000);
       if (claim) {
         await claim.retry({ delaySeconds });
       }

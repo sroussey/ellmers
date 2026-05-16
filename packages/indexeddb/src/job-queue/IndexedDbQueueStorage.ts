@@ -525,6 +525,27 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     }
   }
 
+  /** Force-overwrite status without touching attempts (used to persist DISABLED after lease release). */
+  public async saveStatus(id: unknown, status: string): Promise<void> {
+    const db = await this.getDb();
+    const tx = db.transaction(this.tableName, "readwrite");
+    const store = tx.objectStore(this.tableName);
+    const getRequest = store.get(id as IDBValidKey);
+    return new Promise((resolve, reject) => {
+      getRequest.onsuccess = () => {
+        const record = getRequest.result;
+        if (!record) {
+          resolve();
+          return;
+        }
+        const putRequest = store.put({ ...record, status });
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
   /**
    * Gets jobs by their run ID.
    */

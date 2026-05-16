@@ -135,18 +135,23 @@ export class PostgresMessageQueue<Input, Output> implements IMessageQueue<
     leaseMs: number;
     max?: number;
   }): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
-    const job = await this.core.next(opts.workerId, { leaseMs: opts.leaseMs });
-    if (!job) return [];
-    return [
-      new PostgresClaim<Input, Output>(
-        this.core,
-        this.pending,
-        job.id,
-        job,
-        job.attempts ?? 0,
-        opts.workerId
-      ),
-    ];
+    const max = Math.max(1, opts.max ?? 1);
+    const claims: IClaim<JobStorageFormat<Input, Output>>[] = [];
+    while (claims.length < max) {
+      const job = await this.core.next(opts.workerId, { leaseMs: opts.leaseMs });
+      if (!job) break;
+      claims.push(
+        new PostgresClaim<Input, Output>(
+          this.core,
+          this.pending,
+          job.id,
+          job,
+          job.attempts ?? 0,
+          opts.workerId
+        )
+      );
+    }
+    return claims;
   }
 
   async releaseClaim(id: MessageId): Promise<void> {

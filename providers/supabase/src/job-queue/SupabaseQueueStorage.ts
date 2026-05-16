@@ -369,6 +369,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     opts?: { leaseMs?: number }
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const leaseMs = opts?.leaseMs ?? 30000;
+    if (!Number.isFinite(leaseMs) || leaseMs < 0) {
+      throw new Error(`Invalid leaseMs: ${leaseMs}`);
+    }
     const prefixConditions = this.buildPrefixWhereSql();
     const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
     const validatedWorkerId = this.validateSqlValue(workerId, "workerId");
@@ -420,6 +423,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     const numericId = Number(id);
     if (!Number.isFinite(numericId)) {
       throw new Error(`Invalid job id: ${id}`);
+    }
+    if (!Number.isFinite(ms) || ms < 0) {
+      throw new Error(`Invalid lease extension ms: ${ms}`);
     }
 
     const prefixConditions = this.buildPrefixWhereSql();
@@ -710,6 +716,18 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       const { error } = await query;
       if (error) throw error;
     }
+  }
+
+  /** Force-overwrite status without touching attempts (used to persist DISABLED after lease release). */
+  public async saveStatus(jobId: unknown, status: string): Promise<void> {
+    let query = this.client
+      .from(this.tableName)
+      .update({ status })
+      .eq("id", jobId)
+      .eq("queue", this.queueName);
+    query = this.applyPrefixFilters(query as any) as any;
+    const { error } = await (query as any);
+    if (error) throw error;
   }
 
   /**

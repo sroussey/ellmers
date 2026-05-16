@@ -477,6 +477,15 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     );
   }
 
+  /** Force-overwrite status without touching attempts (used to persist DISABLED after lease release). */
+  public async saveStatus(jobId: unknown, status: string): Promise<void> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    await this.db.query(
+      `UPDATE ${this.tableName} SET status = $1 WHERE id = $2 AND queue = $3${prefixConditions}`,
+      [status, jobId, this.queueName, ...prefixParams]
+    );
+  }
+
   /**
    * Retrieves all jobs for a given job run ID.
    * @param job_run_id - The ID of the job run to retrieve

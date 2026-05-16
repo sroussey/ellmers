@@ -88,6 +88,8 @@ export interface JobQueueServerOptions<Input, Output> {
    * Default: "discard".
    */
   readonly deadLetter?: IMessageQueue<DeadLetter<Input>> | "discard";
+  /** Number of jobs to pre-fetch per poll iteration. Defaults to 1. */
+  readonly prefetch?: number;
 }
 
 /**
@@ -114,6 +116,7 @@ export class JobQueueServer<
   protected readonly cleanupIntervalMs: number;
   protected readonly stopTimeoutMs?: number;
   protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
+  protected readonly prefetch: number;
 
   protected readonly events = new EventEmitter<JobQueueServerEventListeners<Input, Output>>();
   protected readonly workers: JobQueueWorker<Input, Output, QueueJob>[] = [];
@@ -159,6 +162,7 @@ export class JobQueueServer<
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10000;
     this.stopTimeoutMs = options.stopTimeoutMs;
     this.deadLetter = options.deadLetter ?? "discard";
+    this.prefetch = Math.max(1, options.prefetch ?? 1);
 
     this.initializeWorkers();
   }
@@ -442,6 +446,7 @@ export class JobQueueServer<
       pollIntervalMs: this.pollIntervalMs,
       stopTimeoutMs: this.stopTimeoutMs,
       deadLetter: this.deadLetter,
+      prefetch: this.prefetch,
     });
 
     // Forward worker events to server and clients

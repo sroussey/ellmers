@@ -32,11 +32,12 @@ export function storageToClass<Input, Output>(
   details: JobStorageFormat<Input, Output>,
   jobClass: JobClass<Input, Output>,
   options?: {
-    /** @deprecated renamed to includeLeaseOwner; both names accepted */
+    /** @deprecated use includeLeaseOwner instead */
     readonly includeWorkerId?: boolean;
+    readonly includeLeaseOwner?: boolean;
   }
 ): Job<Input, Output> {
-  const includeLeaseOwner = options?.includeWorkerId ?? true;
+  const includeLeaseOwner = options?.includeLeaseOwner ?? options?.includeWorkerId ?? true;
   return new jobClass({
     id: details.id,
     jobRunId: details.job_run_id,

@@ -130,18 +130,23 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     leaseMs: number;
     max?: number;
   }): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
-    const next = await this.storage.next(opts.workerId, { leaseMs: opts.leaseMs });
-    if (!next) return [];
-    return [
-      new WrappedClaim<Input, Output>(
-        this.storage,
-        this.pending,
-        next.id,
-        next,
-        next.attempts ?? 0,
-        opts.workerId
-      ),
-    ];
+    const max = Math.max(1, opts.max ?? 1);
+    const claims: IClaim<JobStorageFormat<Input, Output>>[] = [];
+    while (claims.length < max) {
+      const next = await this.storage.next(opts.workerId, { leaseMs: opts.leaseMs });
+      if (!next) break;
+      claims.push(
+        new WrappedClaim<Input, Output>(
+          this.storage,
+          this.pending,
+          next.id,
+          next,
+          next.attempts ?? 0,
+          opts.workerId
+        )
+      );
+    }
+    return claims;
   }
 
   async releaseClaim(id: MessageId): Promise<void> {
@@ -226,6 +231,14 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
   async abort(id: MessageId): Promise<void> {
     await this.storage.abort(id);
+  }
+
+  async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
+    const current = await this.storage.get(id);
+    if (!current) return;
+    // Re-use complete() but preserve attempts by subtracting 1 to offset the
+    // mandatory increment in legacy storage backends.
+    await this.storage.complete({ ...current, status, attempts: (current.attempts ?? 1) - 1 });
   }
 }
 
