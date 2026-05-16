@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobExecuteContext } from "@workglow/job-queue";
+import type { DeadLetter, IJobExecuteContext } from "@workglow/job-queue";
 import {
+  ConcurrencyLimiter,
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
   Job,
@@ -13,6 +14,7 @@ import {
   JobQueueServer,
   JobStatus,
   RateLimiter,
+  RetryableJobError,
 } from "@workglow/job-queue";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -198,5 +200,194 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
 
     await server.stop();
     expect(failed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minimal in-memory IMessageQueue for DLQ testing
+// ---------------------------------------------------------------------------
+
+import type { IClaim, IMessageQueue, MessageId } from "@workglow/job-queue";
+
+class CollectingQueue<Body> implements IMessageQueue<Body> {
+  public readonly scope = "process" as const;
+  public readonly messages: Body[] = [];
+
+  async send(body: Body): Promise<MessageId> {
+    this.messages.push(body);
+    return this.messages.length - 1;
+  }
+
+  async sendBatch(bodies: readonly Body[]): Promise<readonly MessageId[]> {
+    return Promise.all(bodies.map((b) => this.send(b)));
+  }
+
+  async receive(_opts: {
+    workerId: string;
+    leaseMs: number;
+    max?: number;
+  }): Promise<readonly IClaim<Body>[]> {
+    return [];
+  }
+
+  async releaseClaim(_id: MessageId): Promise<void> {}
+
+  async migrate(): Promise<void> {}
+
+  getMigrations(): ReadonlyArray<unknown> {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DLQ tests (PR 5)
+// ---------------------------------------------------------------------------
+
+class AlwaysFailJob extends Job<TI, TO> {
+  public override async execute(_input: TI, _context: IJobExecuteContext): Promise<TO> {
+    throw new RetryableJobError("always fails");
+  }
+}
+
+describe("InMemoryJobQueue — dead-letter queue (PR 5)", () => {
+  let storage: InMemoryQueueStorage<TI, TO>;
+  let queueName: string;
+
+  beforeEach(async () => {
+    queueName = `test-dlq-${uuid4()}`;
+    storage = new InMemoryQueueStorage(queueName);
+    await storage.migrate();
+  });
+
+  afterEach(async () => {
+    await storage.deleteAll();
+  });
+
+  it("exhausted job lands in DLQ with correct fields", async () => {
+    const dlq = new CollectingQueue<DeadLetter<TI>>();
+
+    const server = new JobQueueServer<TI, TO, AlwaysFailJob>(AlwaysFailJob, {
+      storage: storage as any,
+      queueName,
+      pollIntervalMs: 5,
+      stopTimeoutMs: 0,
+      deadLetter: dlq,
+    });
+    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    client.attach(server);
+
+    await server.start();
+
+    // maxAttempts=1 so the job exhausts on the first failure
+    const handle = await client.send({ data: "dlq-test" }, { maxAttempts: 1 });
+
+    // Wait for FAILED
+    for (let i = 0; i < 200; i++) {
+      const j = await client.getJob(handle.id);
+      if (j?.status === JobStatus.FAILED) break;
+      await sleep(5);
+    }
+    expect((await client.getJob(handle.id))?.status).toBe(JobStatus.FAILED);
+
+    await server.stop();
+
+    expect(dlq.messages).toHaveLength(1);
+    const letter = dlq.messages[0];
+    expect(letter.original).toEqual({ data: "dlq-test" });
+    expect(letter.error).toBeTruthy();
+    expect(letter.queueName).toBe(queueName);
+    expect(letter.attempts).toBeGreaterThanOrEqual(0);
+  });
+
+  it("deadLetter: 'discard' (default) — exhausted job reaches FAILED, DLQ stays empty", async () => {
+    const dlq = new CollectingQueue<DeadLetter<TI>>();
+
+    // Deliberately do NOT pass deadLetter — default is "discard"
+    const server = new JobQueueServer<TI, TO, AlwaysFailJob>(AlwaysFailJob, {
+      storage: storage as any,
+      queueName,
+      pollIntervalMs: 5,
+      stopTimeoutMs: 0,
+    });
+    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    client.attach(server);
+
+    await server.start();
+
+    const handle = await client.send({ data: "discard-test" }, { maxAttempts: 1 });
+
+    // Wait for FAILED
+    for (let i = 0; i < 200; i++) {
+      const j = await client.getJob(handle.id);
+      if (j?.status === JobStatus.FAILED) break;
+      await sleep(5);
+    }
+    expect((await client.getJob(handle.id))?.status).toBe(JobStatus.FAILED);
+
+    await server.stop();
+
+    // DLQ was never passed to the server, so nothing was forwarded
+    expect(dlq.messages).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prefetch tests (PR 5)
+// ---------------------------------------------------------------------------
+
+describe("InMemoryJobQueue — worker prefetch (PR 5)", () => {
+  it("prefetch: 4 with ConcurrencyLimiter(2) — at most 2 jobs run concurrently", async () => {
+    const queueName = `test-prefetch-${uuid4()}`;
+    const storage = new InMemoryQueueStorage<TI, TO>(queueName);
+    await storage.migrate();
+
+    let concurrent = 0;
+    let maxConcurrent = 0;
+
+    class TrackedSlowJob extends Job<TI, TO> {
+      public override async execute(_input: TI, _context: IJobExecuteContext): Promise<TO> {
+        concurrent++;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await sleep(30);
+        concurrent--;
+        return { result: "done" };
+      }
+    }
+
+    const limiter = new ConcurrencyLimiter(2);
+
+    const server = new JobQueueServer<TI, TO, TrackedSlowJob>(TrackedSlowJob, {
+      storage: storage as any,
+      queueName,
+      pollIntervalMs: 5,
+      stopTimeoutMs: 200,
+      limiter,
+    });
+    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    client.attach(server);
+
+    await server.start();
+
+    // Submit 6 jobs
+    const handles = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => client.send({ data: `job-${i}` }))
+    );
+
+    // Wait for all to complete
+    for (let i = 0; i < 500; i++) {
+      const statuses = await Promise.all(handles.map((h) => client.getJob(h.id)));
+      if (statuses.every((j) => j?.status === JobStatus.COMPLETED)) break;
+      await sleep(10);
+    }
+
+    const statuses = await Promise.all(handles.map((h) => client.getJob(h.id)));
+    expect(statuses.every((j) => j?.status === JobStatus.COMPLETED)).toBe(true);
+
+    // ConcurrencyLimiter(2) must have enforced a max of 2 concurrent jobs
+    expect(maxConcurrent).toBeLessThanOrEqual(2);
+    expect(maxConcurrent).toBeGreaterThanOrEqual(1);
+
+    await server.stop();
+    await storage.deleteAll();
   });
 });

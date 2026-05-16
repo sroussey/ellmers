@@ -20,6 +20,7 @@ import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
+import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,
@@ -98,6 +99,18 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * Defaults to max(30_000, pollIntervalMs * 60).
    */
   readonly leaseMs?: number;
+  /**
+   * Dead-letter queue to forward exhausted jobs to, or "discard" to drop them.
+   * Default: "discard".
+   */
+  readonly deadLetter?: IMessageQueue<DeadLetter<Input>> | "discard";
+  /**
+   * Number of claims to fetch per loop iteration. Default: 1.
+   * With prefetch > 1, claims that cannot immediately acquire a limiter slot
+   * are released back to PENDING via retry, so concurrency is still governed
+   * by the limiter.
+   */
+  readonly prefetch?: number;
 }
 
 /**
@@ -120,6 +133,8 @@ export class JobQueueWorker<
   protected readonly extendLeaseWhileRunning: boolean;
   protected readonly leaseMs: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
+  protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
+  protected readonly prefetch: number;
 
   protected running = false;
 
@@ -195,6 +210,8 @@ export class JobQueueWorker<
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
     this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
     this.leaseMs = options.leaseMs ?? Math.max(30_000, this.pollIntervalMs * 60);
+    this.deadLetter = options.deadLetter ?? "discard";
+    this.prefetch = Math.max(1, options.prefetch ?? 1);
   }
 
   /**
@@ -354,7 +371,8 @@ export class JobQueueWorker<
   // ========================================================================
 
   /**
-   * Get the next job from the queue
+   * Get the next job from the queue (always fetches a single claim).
+   * Used by {@link processNext} and the single-claim path of {@link processJobs}.
    */
   protected async next(): Promise<QueueJob | undefined> {
     const claims = await this.messageQueue.receive({
@@ -369,6 +387,27 @@ export class JobQueueWorker<
       this.activeClaims.set(job.id, claim);
     }
     return job;
+  }
+
+  /**
+   * Fetch up to `this.prefetch` claims from the queue and register them in
+   * {@link activeClaims}. Returns an array of jobs ready to be dispatched.
+   */
+  private async nextBatch(): Promise<QueueJob[]> {
+    const claims = await this.messageQueue.receive({
+      workerId: this.workerId,
+      leaseMs: this.leaseMs,
+      max: this.prefetch,
+    });
+    const jobs: QueueJob[] = [];
+    for (const claim of claims) {
+      const job = this.storageToClass(claim.body) as QueueJob;
+      if (job.id != null) {
+        this.activeClaims.set(job.id, claim);
+      }
+      jobs.push(job);
+    }
+    return jobs;
   }
 
   /**
@@ -396,8 +435,13 @@ export class JobQueueWorker<
         // overshooting the configured limit by exactly the worker concurrency.
         // The atomic tryAcquire guarantees only one of N concurrent acquirers
         // succeeds when there's one slot left.
-        const job = await this.next();
-        if (!job) {
+        //
+        // With prefetch > 1, we claim up to `prefetch` jobs at once and do a
+        // non-blocking tryAcquire for each. Jobs that can't immediately get a
+        // limiter slot are released back to PENDING so other workers can pick
+        // them up. With prefetch == 1 the behavior is identical to before.
+        const jobs = await this.nextBatch();
+        if (jobs.length === 0) {
           // Queue is empty — sleep until notified of new work or until the
           // next deferred job becomes ready.
           const delay = await this.getIdleDelay();
@@ -405,38 +449,50 @@ export class JobQueueWorker<
           continue;
         }
 
-        if (!this.running) {
-          // Stopped during the await. Release the job back to PENDING.
-          await this.releaseClaimedJob(job);
-          return;
-        }
+        let anyDispatched = false;
+        let limiterFull = false;
 
-        const limiterToken = await this.limiter.tryAcquire();
-        if (limiterToken === null || limiterToken === undefined) {
-          // Lost the race for the last slot, or hit the rate-limit window.
-          // Give the job back and wait for capacity.
-          await this.releaseClaimedJob(job);
-          await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
-          continue;
-        }
-
-        if (!this.running) {
-          // Stop fired while tryAcquire was in flight. Undo both the limiter
-          // reservation (release THIS token, not "the most recent") and the
-          // job claim so we don't start processing on a worker that's about
-          // to exit.
-          try {
-            await this.limiter.release(limiterToken);
-          } catch {
-            // best-effort
+        for (const job of jobs) {
+          if (!this.running) {
+            // Stopped during the batch. Release all remaining jobs back to PENDING.
+            await this.releaseClaimedJob(job);
+            continue;
           }
-          await this.releaseClaimedJob(job);
+
+          const limiterToken = await this.limiter.tryAcquire();
+          if (limiterToken === null || limiterToken === undefined) {
+            // No limiter slot available — release the claim back so another
+            // worker (or this one on a later iteration) can pick it up.
+            await this.releaseClaimedJob(job);
+            limiterFull = true;
+            continue;
+          }
+
+          if (!this.running) {
+            // Stop fired while tryAcquire was in flight.
+            try {
+              await this.limiter.release(limiterToken);
+            } catch {
+              // best-effort
+            }
+            await this.releaseClaimedJob(job);
+            continue;
+          }
+
+          // Don't await - process in background to allow concurrent jobs.
+          this.processSingleJob(job, limiterToken);
+          anyDispatched = true;
+        }
+
+        if (!this.running) {
           return;
         }
 
-        // Don't await - process in background to allow concurrent jobs.
-        // The loop will claim+acquire on the next iteration.
-        this.processSingleJob(job, limiterToken);
+        // If the limiter was full for every claim we fetched, back off before
+        // retrying so we don't busy-loop hammering the queue.
+        if (!anyDispatched && limiterFull) {
+          await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
+        }
       } catch {
         // Don't let transient errors kill the loop
         await sleep(this.pollIntervalMs);
@@ -623,13 +679,28 @@ export class JobQueueWorker<
 
         if (currentJob.attempts + 1 >= currentJob.maxAttempts) {
           spanErrorMessage = "Max attempts reached";
+          // Forward to dead-letter queue before marking as failed
+          if (this.deadLetter && this.deadLetter !== "discard") {
+            try {
+              await this.deadLetter.send({
+                original: currentJob.input,
+                error: error.message,
+                errorCode: error.constructor.name ?? null,
+                attempts: currentJob.attempts,
+                queueName: this.queueName,
+                jobRunId: currentJob.jobRunId,
+              });
+            } catch (dlqErr) {
+              getLogger().error("Dead-letter queue send failed:", { error: dlqErr });
+            }
+          }
           await this.failJob(currentJob, new PermanentJobError(spanErrorMessage));
           span?.setStatus(SpanStatusCode.ERROR, spanErrorMessage);
         } else {
-          // Clean up the abort controller before rescheduling so the next
-          // invocation of processSingleJob gets a fresh controller and the
-          // inFlight-guard in createAbortController passes correctly.
-          this.cleanupJob(job.id);
+          // Only delete the abort controller (not the claim) so rescheduleJob
+          // can still call claim.retry(). rescheduleJob's finally block drops
+          // the claim from activeClaims after it has been settled.
+          this.activeJobAbortControllers.delete(job.id);
           await this.rescheduleJob(currentJob, error.retryDate);
           span?.addEvent("workglow.job.retry", {
             "workglow.job.attempt": currentJob.attempts,

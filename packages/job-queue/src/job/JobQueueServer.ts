@@ -16,6 +16,7 @@ import type {
 } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
+import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import { JobQueueClient } from "./JobQueueClient";
 import { JobQueueWorker } from "./JobQueueWorker";
@@ -82,6 +83,11 @@ export interface JobQueueServerOptions<Input, Output> {
    * Defaults to 30s. Set to 0 to abort immediately.
    */
   readonly stopTimeoutMs?: number;
+  /**
+   * Dead-letter queue to forward exhausted jobs to, or "discard" to silently drop them.
+   * Default: "discard".
+   */
+  readonly deadLetter?: IMessageQueue<DeadLetter<Input>> | "discard";
 }
 
 /**
@@ -107,6 +113,7 @@ export class JobQueueServer<
   protected readonly deleteAfterDisabledMs?: number;
   protected readonly cleanupIntervalMs: number;
   protected readonly stopTimeoutMs?: number;
+  protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
 
   protected readonly events = new EventEmitter<JobQueueServerEventListeners<Input, Output>>();
   protected readonly workers: JobQueueWorker<Input, Output, QueueJob>[] = [];
@@ -151,6 +158,7 @@ export class JobQueueServer<
     this.deleteAfterDisabledMs = options.deleteAfterDisabledMs;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10000;
     this.stopTimeoutMs = options.stopTimeoutMs;
+    this.deadLetter = options.deadLetter ?? "discard";
 
     this.initializeWorkers();
   }
@@ -433,6 +441,7 @@ export class JobQueueServer<
       limiter: this.limiter,
       pollIntervalMs: this.pollIntervalMs,
       stopTimeoutMs: this.stopTimeoutMs,
+      deadLetter: this.deadLetter,
     });
 
     // Forward worker events to server and clients

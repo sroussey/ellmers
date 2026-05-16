@@ -6,6 +6,7 @@
 
 // organize-imports-ignore
 
+export type { DeadLetter } from "./job/DeadLetter";
 export * from "./job/Job";
 export * from "./job/JobError";
 export * from "./job/JobErrorDiagnostics";
