@@ -25,3 +25,4 @@ sec-db/
 models/
 .worktrees/
 scratch/
+.claude/worktrees/
