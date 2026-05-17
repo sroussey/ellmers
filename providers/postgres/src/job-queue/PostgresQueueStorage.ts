@@ -412,6 +412,58 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void> {
+    // Build a dynamic SET clause covering only the fields the caller supplied —
+    // a partial overwrite. Everything else (in particular `attempts`,
+    // `visible_at`, `lease_owner`, `lease_expires_at`) is untouched.
+    const sets: string[] = [];
+    const params: Array<unknown> = [];
+    let nextParam = 1;
+    const push = (col: string, value: unknown): void => {
+      sets.push(`${col} = $${nextParam}`);
+      params.push(value);
+      nextParam += 1;
+    };
+    if ("output" in fields) {
+      push("output", fields.output != null ? JSON.stringify(fields.output) : null);
+    }
+    if ("error" in fields) push("error", fields.error ?? null);
+    if ("error_code" in fields) push("error_code", fields.error_code ?? null);
+    if ("status" in fields) push("status", fields.status);
+    if ("completed_at" in fields) push("completed_at", fields.completed_at ?? null);
+    if ("abort_requested_at" in fields) {
+      push("abort_requested_at", fields.abort_requested_at ?? null);
+    }
+    if (sets.length === 0) return; // nothing to write
+    const idParam = nextParam;
+    nextParam += 1;
+    const queueParam = nextParam;
+    nextParam += 1;
+    const { conditions: prefixConditions, params: prefixParams } =
+      this.buildPrefixWhereClause(nextParam);
+    await this.db.query(
+      `UPDATE ${this.tableName}
+         SET ${sets.join(", ")}
+         WHERE id = $${idParam} AND queue = $${queueParam}${prefixConditions}`,
+      [...params, id, this.queueName, ...prefixParams]
+    );
+  }
+
+  /**
    * Clears all jobs from the queue.
    */
   public async deleteAll(): Promise<void> {

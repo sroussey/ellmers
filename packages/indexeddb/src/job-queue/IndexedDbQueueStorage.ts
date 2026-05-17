@@ -592,6 +592,35 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void> {
+    const existing = await this.get(id);
+    if (!existing) return;
+    const updated = existing as JobStorageFormat<Input, Output> & Record<string, unknown>;
+    if ("output" in fields) updated.output = fields.output ?? null;
+    if ("error" in fields) updated.error = fields.error ?? null;
+    if ("error_code" in fields) updated.error_code = fields.error_code ?? null;
+    if ("status" in fields) updated.status = fields.status;
+    if ("completed_at" in fields) updated.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields) {
+      updated.abort_requested_at = fields.abort_requested_at ?? null;
+    }
+    await this.put(updated);
+  }
+
+  /**
    * Deletes all jobs from the queue.
    */
   public async deleteAll(): Promise<void> {

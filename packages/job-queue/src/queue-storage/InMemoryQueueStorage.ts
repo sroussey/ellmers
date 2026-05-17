@@ -337,14 +337,43 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
-  /** Force-overwrite status without incrementing attempts (used to persist DISABLED after lease release). */
-  public async updateJobStatus(id: unknown, status: JobStatus): Promise<void> {
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale.
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
     if (!job) return;
     const oldJob = { ...job };
-    job.status = status;
+    const target = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
+    if ("output" in fields) target.output = (fields.output ?? null) as Output | null;
+    if ("error" in fields) target.error = fields.error ?? null;
+    if ("error_code" in fields) target.error_code = fields.error_code ?? null;
+    if ("status" in fields && fields.status !== undefined) target.status = fields.status;
+    if ("completed_at" in fields) target.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields)
+      target.abort_requested_at = fields.abort_requested_at ?? null;
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+  }
+
+  /**
+   * Force-overwrite status without incrementing attempts. Standardized name —
+   * the legacy `updateJobStatus` alias was removed in favour of this name
+   * which mirrors `IJobStore.saveStatus` (the caller).
+   */
+  public async saveStatus(id: unknown, status: JobStatus): Promise<void> {
+    await this.finalize(id, { status });
   }
 
   /**

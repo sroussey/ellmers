@@ -535,6 +535,48 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     stmt.run(...params);
   }
 
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void> {
+    const sets: string[] = [];
+    const params: Array<unknown> = [];
+    const push = (col: string, value: unknown): void => {
+      sets.push(`${col} = ?`);
+      params.push(value);
+    };
+    if ("output" in fields) {
+      push("output", fields.output != null ? JSON.stringify(fields.output) : null);
+    }
+    if ("error" in fields) push("error", fields.error ?? null);
+    if ("error_code" in fields) push("error_code", fields.error_code ?? null);
+    if ("status" in fields) push("status", fields.status);
+    if ("completed_at" in fields) push("completed_at", fields.completed_at ?? null);
+    if ("abort_requested_at" in fields)
+      push("abort_requested_at", fields.abort_requested_at ?? null);
+    if (sets.length === 0) return;
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName}
+         SET ${sets.join(", ")}
+         WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(...(params as never[]), String(id), this.queueName, ...prefixParams);
+  }
+
   public async deleteAll(): Promise<void> {
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();

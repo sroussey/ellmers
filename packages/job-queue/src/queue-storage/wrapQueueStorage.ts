@@ -44,16 +44,17 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    await this.storage.complete({
-      ...current,
+    // Use finalize() — writes terminal fields WITHOUT bumping attempts.
+    // The previous code path went through storage.complete(), which bumps
+    // attempts on every backend. The lease-expiry reclaim has already
+    // charged this attempt at next() time, so charging it again at ack()
+    // double-counts and can roll a successful job into MAX_ATTEMPTS_REACHED.
+    await this.storage.finalize(this.id, {
       output: buf?.output ?? current.output ?? null,
       error: null,
       error_code: null,
       status: "COMPLETED",
       completed_at: current.completed_at ?? new Date().toISOString(),
-      progress: 100,
-      progress_message: "",
-      progress_details: null,
     });
   }
 
@@ -85,8 +86,11 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    await this.storage.complete({
-      ...current,
+    // Use finalize() — writes terminal fields WITHOUT bumping attempts. The
+    // attempt has already been counted by the worker's retry-or-fail logic
+    // before this call (max_attempts cap is checked there); the previous
+    // complete()-based code path would double-count here.
+    await this.storage.finalize(this.id, {
       error: buf?.error ?? current.error ?? null,
       error_code: buf?.errorCode ?? current.error_code ?? null,
       abort_requested_at: buf?.abortRequested
@@ -94,9 +98,6 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
         : (current.abort_requested_at ?? null),
       status: "FAILED",
       completed_at: current.completed_at ?? new Date().toISOString(),
-      progress: 100,
-      progress_message: "",
-      progress_details: null,
     });
   }
 
@@ -240,11 +241,12 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
-    const current = await this.storage.get(id);
-    if (!current) return;
-    // Re-use complete() but preserve attempts by subtracting 1 to offset the
-    // mandatory increment in legacy storage backends.
-    await this.storage.complete({ ...current, status, attempts: (current.attempts ?? 1) - 1 });
+    // Use finalize() so the status write does not bump attempts. The previous
+    // implementation went through complete() and pre-decremented attempts by 1
+    // to offset the increment — a fragile compensation that broke if attempts
+    // was undefined or the storage didn't bump (the bug it was working around
+    // is fixed by finalize itself).
+    await this.storage.finalize(id, { status });
   }
 }
 

@@ -1030,7 +1030,12 @@ export function runGenericJobQueueTests(
       expect(failedJob?.status).toBe(JobStatus.FAILED);
       expect(failedJob?.error).toBe("Job failed as expected");
       expect(failedJob?.errorCode).toBe("JobError");
-      expect(failedJob?.attempts).toBe(1);
+      // Post-finalize semantics (C2 + M4): a single failed attempt that
+      // exhausts maxAttempts=1 ends the run via failJob → claim.fail() →
+      // storage.finalize(). finalize() does NOT bump `attempts`, so the
+      // counter remains 0. (The old code bumped via complete() which is
+      // exactly the double-counting bug being fixed.)
+      expect(failedJob?.attempts).toBe(0);
     });
 
     it("should retry a failed job up to maxAttempts", async () => {
@@ -1054,7 +1059,12 @@ export function runGenericJobQueueTests(
 
       const failedJob = await client.getJob(handle.id);
       expect(failedJob?.status).toBe(JobStatus.FAILED);
-      expect(failedJob?.attempts).toBe(3); // Should have attempted 3 times
+      // Post-finalize semantics: the PENDING-retry path bumps attempts in
+      // storage.complete() — so the first two retries bump from 0→1→2.
+      // The third (final) attempt fails permanently and goes through
+      // failJob → claim.fail() → finalize() which does NOT bump. Final
+      // value: 2. (The old behaviour bumped here too, yielding 3.)
+      expect(failedJob?.attempts).toBe(2);
       expect(failedJob?.error).toBe("Max attempts reached");
 
       await server.stop();
@@ -1104,7 +1114,10 @@ export function runGenericJobQueueTests(
       const failedJob = await client.getJob(handle.id);
       expect(failedJob?.status).toBe(JobStatus.FAILED);
       expect(failedJob?.error).toBe("Permanent failure - do not retry");
-      expect(failedJob?.attempts).toBe(1); // Should not retry permanent failures
+      // A permanent failure on the first attempt skips rescheduleJob and goes
+      // straight to failJob → claim.fail() → finalize(), which does NOT bump
+      // attempts (C2 + M4). Final counter: 0.
+      expect(failedJob?.attempts).toBe(0);
 
       await server.stop();
     });
@@ -1135,6 +1148,38 @@ export function runGenericJobQueueTests(
       expect(errorEventReceived).toBe(true);
       expect(errorEventJob).toBe(handle.id);
       expect(errorEventError).toContain("Job failed as expected");
+    });
+  });
+
+  describe("ack must not bump attempts (C2 + M4)", () => {
+    it("submit → claim → finalize(COMPLETED): attempts stays at 0", async () => {
+      // The contract: ack/fail go through storage.finalize(), which does NOT
+      // touch the `attempts` counter. A successful execution must not consume
+      // a retry attempt — the lease-expiry reclaim already charges the
+      // attempt at next() time, so charging it again here double-counts and
+      // can roll a healthy job into MAX_ATTEMPTS_REACHED.
+      const handle = await client.send({ taskType: "task1", data: "ack-no-bump" });
+      const id = handle.id;
+
+      const claimed = await storage.next("test-worker", { leaseMs: 30_000 });
+      expect(claimed?.id).toBe(id);
+      // Fresh PENDING claim does NOT bump attempts (the bump only happens
+      // for lease-expiry reclaim, and we just did a fresh claim).
+      expect(claimed?.attempts ?? 0).toBe(0);
+
+      // Simulate successful ack via finalize().
+      await storage.finalize(id, {
+        output: { result: "ok" },
+        error: null,
+        error_code: null,
+        status: JobStatus.COMPLETED,
+        completed_at: new Date().toISOString(),
+      });
+
+      const finalJob = await storage.get(id);
+      expect(finalJob?.status).toBe(JobStatus.COMPLETED);
+      // The bug under fix: previously this was 1 because complete() bumped attempts.
+      expect(finalJob?.attempts ?? 0).toBe(0);
     });
   });
 

@@ -208,10 +208,47 @@ export interface IQueueStorage<Input, Output> {
   size(status?: JobStatus): Promise<number>;
 
   /**
-   * Completes a job in the queue storage
+   * Completes a job in the queue storage. Bumps `attempts` (legacy contract,
+   * preserved for backward compatibility with code paths that rely on it,
+   * such as PENDING-retry rescheduling).
+   *
+   * NEW callers (worker ack/fail paths) should prefer {@link finalize}, which
+   * writes the terminal result fields WITHOUT touching `attempts` — a successful
+   * ack must not consume a retry attempt that was already accounted for by
+   * the lease-expiry reclaim or by the wrapper's retry path.
    * @param job - The job to complete
    */
   complete(job: JobStorageFormat<Input, Output>): Promise<void>;
+
+  /**
+   * Terminal write for a claim: persists `output` / `error` / `error_code` /
+   * `status` / `completed_at` / `abort_requested_at` WITHOUT bumping the
+   * `attempts` counter.
+   *
+   * Introduced to fix the bug where `WrappedClaim.ack`/`fail` going through
+   * `complete()` incremented `attempts` on a successful execution. The
+   * lease-expiry reclaim already charged this attempt at `next()` time;
+   * charging it again at `ack()` time double-counts and rolls a successful
+   * job into MAX_ATTEMPTS_REACHED prematurely.
+   *
+   * Implementations MUST treat `fields` as a partial overwrite — only the
+   * listed fields are written; everything else (in particular `attempts`,
+   * `visible_at`, `lease_owner`, `lease_expires_at`) is untouched.
+   *
+   * @param id - The ID of the job to finalize
+   * @param fields - Terminal fields to write
+   */
+  finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void>;
 
   /**
    * Deletes all jobs from the queue storage

@@ -655,6 +655,44 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+    }
+  ): Promise<void> {
+    // Partial update — Supabase's PostgREST `update()` only writes the
+    // properties present on the object passed in.
+    const patch: Record<string, unknown> = {};
+    if ("output" in fields) patch.output = fields.output ?? null;
+    if ("error" in fields) patch.error = fields.error ?? null;
+    if ("error_code" in fields) patch.error_code = fields.error_code ?? null;
+    if ("status" in fields) patch.status = fields.status;
+    if ("completed_at" in fields) patch.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields) {
+      patch.abort_requested_at = fields.abort_requested_at ?? null;
+    }
+    if (Object.keys(patch).length === 0) return;
+    let query = this.client
+      .from(this.tableName)
+      .update(patch)
+      .eq("id", id as never)
+      .eq("queue", this.queueName);
+    query = this.applyPrefixFilters(query);
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  /**
    * Clears all jobs from the queue.
    */
   public async deleteAll(): Promise<void> {
