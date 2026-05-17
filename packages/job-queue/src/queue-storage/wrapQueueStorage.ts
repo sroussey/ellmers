@@ -40,17 +40,27 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     private readonly workerId: string
   ) {}
 
-  async ack(): Promise<void> {
+  async ack(result?: unknown): Promise<void> {
+    // Atomic ack: persist result + terminal status in a single write so a
+    // crash between "save result" and "set COMPLETED" cannot leave a row
+    // PROCESSING with an output the worker thinks it saved. The caller may
+    // pass `result` explicitly (preferred — H2 atomicity guarantee) or rely
+    // on the legacy pending-buffer fallback for callers still going through
+    // jobStore.saveResult(...).
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    // Use finalize() — writes terminal fields WITHOUT bumping attempts.
-    // The previous code path went through storage.complete(), which bumps
-    // attempts on every backend. The lease-expiry reclaim has already
-    // charged this attempt at next() time, so charging it again at ack()
-    // double-counts and can roll a successful job into MAX_ATTEMPTS_REACHED.
+    const output =
+      result !== undefined
+        ? result
+        : buf?.output !== undefined
+          ? buf.output
+          : (current.output ?? null);
     await this.storage.finalize(this.id, {
-      output: buf?.output ?? current.output ?? null,
+      // `output` cast — finalize is typed against Output but receives the
+      // result the worker passed in; the queue body's Output and the claim's
+      // Output align by construction.
+      output: output as never,
       error: null,
       error_code: null,
       status: "COMPLETED",
@@ -81,19 +91,36 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     });
   }
 
-  async fail(opts?: { permanent?: boolean }): Promise<void> {
-    void opts;
+  async fail(opts?: {
+    error?: string | null;
+    errorCode?: string | null;
+    abortRequested?: boolean;
+    permanent?: boolean;
+  }): Promise<void> {
+    void opts?.permanent; // hint — worker owns retry-vs-fail decision
+    // Prefer explicitly-provided args (H2 atomicity). Fall back to the
+    // pending buffer for callers that still route through jobStore.saveError.
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    // Use finalize() — writes terminal fields WITHOUT bumping attempts. The
-    // attempt has already been counted by the worker's retry-or-fail logic
-    // before this call (max_attempts cap is checked there); the previous
-    // complete()-based code path would double-count here.
+    const error =
+      opts?.error !== undefined
+        ? opts.error
+        : buf?.error !== undefined
+          ? buf.error
+          : (current.error ?? null);
+    const errorCode =
+      opts?.errorCode !== undefined
+        ? opts.errorCode
+        : buf?.errorCode !== undefined
+          ? buf.errorCode
+          : (current.error_code ?? null);
+    const abortRequested =
+      opts?.abortRequested !== undefined ? opts.abortRequested : (buf?.abortRequested ?? false);
     await this.storage.finalize(this.id, {
-      error: buf?.error ?? current.error ?? null,
-      error_code: buf?.errorCode ?? current.error_code ?? null,
-      abort_requested_at: buf?.abortRequested
+      error,
+      error_code: errorCode,
+      abort_requested_at: abortRequested
         ? (current.abort_requested_at ?? new Date().toISOString())
         : (current.abort_requested_at ?? null),
       status: "FAILED",

@@ -1151,6 +1151,33 @@ export function runGenericJobQueueTests(
     });
   });
 
+  describe("atomic ack/fail (H2)", () => {
+    it("ack persists result+status in one write — no separate saveResult step", async () => {
+      // The H2 contract: claim.ack(result) writes output + COMPLETED in a
+      // single storage operation. Earlier the worker did
+      // `jobStore.saveResult(...)` THEN `claim.ack()` — two separate writes
+      // that could split a row into "result saved, status still PROCESSING".
+      // We exercise that contract directly through the storage API: there
+      // should be no path that observes a COMPLETED row with output=null
+      // when the caller passed a non-null result.
+      const handle = await client.send({ taskType: "task1", data: "atomic-ack" });
+      const id = handle.id;
+      const claimed = await storage.next("test-worker", { leaseMs: 30_000 });
+      expect(claimed?.id).toBe(id);
+      // Directly call finalize() — the same call path claim.ack() takes.
+      await storage.finalize(id, {
+        output: { result: "computed" } as unknown as TOutput,
+        error: null,
+        error_code: null,
+        status: JobStatus.COMPLETED,
+        completed_at: new Date().toISOString(),
+      });
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.COMPLETED);
+      expect(final?.output).toEqual({ result: "computed" });
+    });
+  });
+
   describe("ack must not bump attempts (C2 + M4)", () => {
     it("submit → claim → finalize(COMPLETED): attempts stays at 0", async () => {
       // The contract: ack/fail go through storage.finalize(), which does NOT

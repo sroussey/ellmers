@@ -768,10 +768,22 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
+      // H2 atomic ack: hand the result directly to claim.ack() so result +
+      // COMPLETED status land in a single storage write. If we crash here
+      // — anywhere between this call site and the storage layer's commit —
+      // the row stays PROCESSING, the lease expires, the next worker
+      // reclaims it, and no `job_complete` is ever emitted. Before this
+      // change we issued `saveResult` then `ack`: a crash between the two
+      // left a PROCESSING row with the output already written, no
+      // `job_complete`, and a redelivery that overwrote the previously-
+      // saved output.
       const claim = this.getClaim(job.id);
-      await this.jobStore.saveResult(job.id, (output ?? null) as Output);
       if (claim) {
-        await claim.ack();
+        await claim.ack(output ?? null);
+      } else {
+        // No active claim (rare path — e.g. abort beat us to it). Fall back
+        // to the legacy two-step so the result is still persisted.
+        await this.jobStore.saveResult(job.id, (output ?? null) as Output);
       }
       this.events.emit("job_complete", job.id, output as Output);
     } catch (err) {
@@ -794,10 +806,30 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = error?.constructor?.name ?? null;
 
+      // H2 atomic fail: hand error/errorCode/abortRequested directly to
+      // claim.fail() so they land in a single storage write together with
+      // status=FAILED. Eliminates the saveError-then-fail two-write window
+      // where a crash could leave the row PROCESSING with an `error`
+      // already written.
+      const abortRequested = error instanceof AbortSignalJobError;
       const claim = this.getClaim(job.id);
-      await this.jobStore.saveError(job.id, error.message, error.constructor.name ?? null, false);
       if (claim) {
-        await claim.fail();
+        await claim.fail({
+          error: error.message,
+          errorCode: error.constructor.name ?? null,
+          abortRequested,
+        });
+      } else {
+        // Fallback — no active claim (e.g. lease lost or abort path). The
+        // legacy two-step is still correct here because we're writing
+        // straight to the job store; the atomicity loss only matters when
+        // ack/fail and the result write are split across claim and store.
+        await this.jobStore.saveError(
+          job.id,
+          error.message,
+          error.constructor.name ?? null,
+          abortRequested
+        );
       }
       this.events.emit("job_error", job.id, error.message, error.constructor.name);
     } catch (err) {
