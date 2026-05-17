@@ -111,6 +111,20 @@ class PostgresClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Out
   async extendLease(ms: number): Promise<void> {
     await this.core.extendLease(this.id, this.workerId, ms);
   }
+
+  async disable(): Promise<void> {
+    this.pending.delete(this.id);
+    const current = await this.core.get(this.id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.core.finalize(this.id, {
+      status: "DISABLED",
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
 }
 
 export class PostgresMessageQueue<Input, Output> implements IMessageQueue<

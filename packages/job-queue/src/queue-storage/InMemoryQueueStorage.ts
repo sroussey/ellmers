@@ -350,6 +350,10 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void> {
     await sleep(0);
@@ -364,6 +368,10 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("completed_at" in fields) target.completed_at = fields.completed_at ?? null;
     if ("abort_requested_at" in fields)
       target.abort_requested_at = fields.abort_requested_at ?? null;
+    if ("lease_owner" in fields) target.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) target.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) target.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) target.progress_details = fields.progress_details ?? null;
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 

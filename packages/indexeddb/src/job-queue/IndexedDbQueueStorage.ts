@@ -604,6 +604,10 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void> {
     const existing = await this.get(id);
@@ -617,6 +621,10 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     if ("abort_requested_at" in fields) {
       updated.abort_requested_at = fields.abort_requested_at ?? null;
     }
+    if ("lease_owner" in fields) updated.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) updated.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) updated.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) updated.progress_details = fields.progress_details ?? null;
     await this.put(updated);
   }
 

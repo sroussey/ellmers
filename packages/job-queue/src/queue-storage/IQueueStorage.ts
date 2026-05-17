@@ -221,9 +221,9 @@ export interface IQueueStorage<Input, Output> {
   complete(job: JobStorageFormat<Input, Output>): Promise<void>;
 
   /**
-   * Terminal write for a claim: persists `output` / `error` / `error_code` /
-   * `status` / `completed_at` / `abort_requested_at` WITHOUT bumping the
-   * `attempts` counter.
+   * Terminal write for a claim: persists the listed fields WITHOUT bumping
+   * the `attempts` counter. A partial overwrite — fields not present in
+   * `fields` are untouched.
    *
    * Introduced to fix the bug where `WrappedClaim.ack`/`fail` going through
    * `complete()` incremented `attempts` on a successful execution. The
@@ -231,9 +231,9 @@ export interface IQueueStorage<Input, Output> {
    * charging it again at `ack()` time double-counts and rolls a successful
    * job into MAX_ATTEMPTS_REACHED prematurely.
    *
-   * Implementations MUST treat `fields` as a partial overwrite — only the
-   * listed fields are written; everything else (in particular `attempts`,
-   * `visible_at`, `lease_owner`, `lease_expires_at`) is untouched.
+   * The `lease_owner` / progress fields are also writable here so the
+   * atomic `disable` path can release the lease and clear progress in the
+   * same single write.
    *
    * @param id - The ID of the job to finalize
    * @param fields - Terminal fields to write
@@ -247,6 +247,10 @@ export interface IQueueStorage<Input, Output> {
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void>;
 

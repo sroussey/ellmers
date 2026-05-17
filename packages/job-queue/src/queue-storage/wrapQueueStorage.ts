@@ -131,6 +131,30 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
   async extendLease(ms: number): Promise<void> {
     await this.storage.extendLease(this.id, this.workerId, ms);
   }
+
+  /**
+   * Atomic disable (H5): one storage write that sets status=DISABLED,
+   * releases the lease, and clears progress fields. Does NOT write
+   * error/error_code — DISABLED is a normal terminal transition, not a
+   * failure. Replaces the legacy two-write `claim.fail()` then
+   * `jobStore.saveStatus(DISABLED)` path that briefly published FAILED
+   * to subscribers before overwriting with DISABLED, firing a spurious
+   * `job_error` event in between.
+   */
+  async disable(): Promise<void> {
+    this.pending.delete(this.id);
+    const current = await this.storage.get(this.id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.storage.finalize(this.id, {
+      status: "DISABLED",
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+      // No error / error_code writes — DISABLED is not an error state.
+    });
+  }
 }
 
 class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageFormat<Input, Output>> {

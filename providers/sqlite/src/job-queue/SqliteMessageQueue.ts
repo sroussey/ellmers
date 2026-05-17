@@ -112,6 +112,20 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
   async extendLease(ms: number): Promise<void> {
     await this.core.extendLease(this.id, this.workerId, ms);
   }
+
+  async disable(): Promise<void> {
+    this.pending.delete(this.id);
+    const current = await this.core.get(this.id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.core.finalize(this.id, {
+      status: JobStatus.DISABLED,
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
 }
 
 export class SqliteMessageQueue<Input, Output> implements IMessageQueue<

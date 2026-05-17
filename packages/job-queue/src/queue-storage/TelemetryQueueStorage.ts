@@ -69,6 +69,10 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void> {
     return traced("workglow.storage.queue.finalize", this.storageName, () =>

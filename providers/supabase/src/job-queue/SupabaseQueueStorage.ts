@@ -668,6 +668,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void> {
     // Partial update — Supabase's PostgREST `update()` only writes the
@@ -681,6 +685,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("abort_requested_at" in fields) {
       patch.abort_requested_at = fields.abort_requested_at ?? null;
     }
+    if ("lease_owner" in fields) patch.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) patch.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) patch.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) patch.progress_details = fields.progress_details ?? null;
     if (Object.keys(patch).length === 0) return;
     let query = this.client
       .from(this.tableName)

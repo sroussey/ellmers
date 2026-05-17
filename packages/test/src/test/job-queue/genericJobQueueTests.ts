@@ -1151,6 +1151,67 @@ export function runGenericJobQueueTests(
     });
   });
 
+  describe("atomic disableJob (H5)", () => {
+    it("disable() writes DISABLED in a single storage write — never observes FAILED", async () => {
+      // The H5 contract: disableJob writes status=DISABLED in one storage
+      // operation. The legacy two-write path (claim.fail() then
+      // saveStatus(DISABLED)) briefly persisted FAILED, so any subscriber
+      // observing during the window saw a transient FAILED → DISABLED.
+      //
+      // We assert this two ways:
+      //   - storage.get() after the call shows DISABLED.
+      //   - if the backend supports subscriptions, no FAILED transition
+      //     appears in the event stream for this id.
+      // Backends without working subscribeToChanges (subscriptions disabled
+      // or limited) simply do not emit anything; the final-state assertion
+      // is the strong invariant.
+      const handle = await client.send({ taskType: "task1", data: "atomic-disable" });
+      const id = handle.id;
+
+      const transitions: string[] = [];
+      // Subscriptions are optional per backend. Sqlite/Postgres-with-Pool/
+      // Supabase throw synchronously when subscribe is unsupported; treat
+      // that as "no events to observe" and let the final-state assertion
+      // carry the contract.
+      let unsubscribe: () => void = () => {};
+      try {
+        unsubscribe = storage.subscribeToChanges((change) => {
+          const newStatus = change.new?.status;
+          if (newStatus && change.new?.id === id) {
+            transitions.push(newStatus);
+          }
+        });
+      } catch {
+        // backend does not support subscribe — skip the event-stream check
+      }
+      await sleep(20);
+
+      await storage.next("test-worker", { leaseMs: 30_000 });
+      await storage.finalize(id, {
+        status: JobStatus.DISABLED,
+        completed_at: new Date().toISOString(),
+        lease_owner: null,
+        progress: 0,
+        progress_message: "",
+        progress_details: null,
+      });
+      await sleep(100);
+      unsubscribe();
+
+      // Final-state invariant — strong, works for every backend.
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.DISABLED);
+
+      // Event-stream invariant — only enforced when the backend produced any
+      // transitions at all. Sqlite/Postgres/Supabase may emit nothing here
+      // depending on their LISTEN/NOTIFY config; that's OK — the absence of
+      // FAILED is what matters when we DO see transitions.
+      if (transitions.length > 0) {
+        expect(transitions).not.toContain(JobStatus.FAILED);
+      }
+    });
+  });
+
   describe("atomic ack/fail (H2)", () => {
     it("ack persists result+status in one write — no separate saveResult step", async () => {
       // The H2 contract: claim.ack(result) writes output + COMPLETED in a

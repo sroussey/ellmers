@@ -850,14 +850,21 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      // IClaim has no "disable" terminal. Release the lease via fail() (writes
-      // FAILED), then immediately overwrite status to DISABLED via saveStatus()
-      // so storage reflects the correct terminal state.
+      // H5 atomic disable: a single storage write sets status=DISABLED,
+      // releases the lease, and clears progress fields. Replaces the legacy
+      // two-write `claim.fail()` then `jobStore.saveStatus(DISABLED)` path
+      // which briefly persisted FAILED before overwriting with DISABLED —
+      // any subscriber observing during the window saw a spurious
+      // FAILED transition and fired a `job_error` event.
       const claim = this.getClaim(job.id);
-      if (claim) {
-        await claim.fail();
+      if (claim?.disable) {
+        await claim.disable();
+      } else {
+        // Fallback for external IClaim impls that haven't adopted disable()
+        // yet. saveStatus uses finalize() under the hood (no attempts bump,
+        // no error write), so it's correct as a single-write fallback.
+        await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       }
-      await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       this.events.emit("job_disabled", job.id);
     } catch (err) {
       getLogger().error("disableJob errored:", { error: err });

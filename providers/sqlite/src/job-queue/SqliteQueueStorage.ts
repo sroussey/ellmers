@@ -549,6 +549,10 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       status?: JobStatus;
       completed_at?: string | null;
       abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
     }
   ): Promise<void> {
     const sets: string[] = [];
@@ -566,6 +570,15 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     if ("completed_at" in fields) push("completed_at", fields.completed_at ?? null);
     if ("abort_requested_at" in fields)
       push("abort_requested_at", fields.abort_requested_at ?? null);
+    if ("lease_owner" in fields) push("lease_owner", fields.lease_owner ?? null);
+    if ("progress" in fields) push("progress", fields.progress ?? 0);
+    if ("progress_message" in fields) push("progress_message", fields.progress_message ?? "");
+    if ("progress_details" in fields) {
+      push(
+        "progress_details",
+        fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
+      );
+    }
     if (sets.length === 0) return;
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
