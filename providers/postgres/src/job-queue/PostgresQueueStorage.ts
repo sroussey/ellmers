@@ -249,7 +249,18 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       SET status = $1,
           last_attempted_at = NOW() AT TIME ZONE 'UTC',
           lease_owner = $4,
-          lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond')
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond'),
+          -- A reclaimed PROCESSING row was claimed by a now-crashed worker;
+          -- that constitutes one used-up attempt against max_attempts.
+          -- PENDING claims must not be charged here — JobQueueWorker's
+          -- existing validateJobState() will FAIL the job in the next-step
+          -- branch when attempts >= max_attempts.
+          attempts = CASE WHEN status = $6 THEN attempts + 1 ELSE attempts END,
+          -- Always clear any stale abort_requested_at on (re)claim. A PROCESSING
+          -- row may have had abort_requested_at set before the worker crashed;
+          -- the new owner must start with a clean slate or the worker will see
+          -- the abort flag immediately and never run user code.
+          abort_requested_at = NULL
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
@@ -342,9 +353,13 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       );
     } else if (jobDetails.status === JobStatus.PENDING) {
       const { conditions: prefixConditions } = this.buildPrefixWhereClause(7);
+      // PENDING-retry branch: the worker hit a retryable error and the row is
+      // returning to PENDING for another attempt. Clear abort_requested_at so
+      // an abort that was requested DURING the previous attempt does not
+      // immediately cancel the retry.
       await this.db.query(
-        `UPDATE ${this.tableName} 
-          SET 
+        `UPDATE ${this.tableName}
+          SET
             error = $1,
             error_code = $2,
             status = $3,
@@ -353,7 +368,8 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
             progress_message = '',
             progress_details = NULL,
             attempts = attempts + 1,
-            last_attempted_at = NOW() AT TIME ZONE 'UTC'
+            last_attempted_at = NOW() AT TIME ZONE 'UTC',
+            abort_requested_at = NULL
           WHERE id = $5 AND queue = $6${prefixConditions}`,
         [
           jobDetails.error,
@@ -464,6 +480,9 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    // releaseClaim returns the row to PENDING without consuming an attempt.
+    // Clear abort_requested_at so an abort that was requested mid-claim does
+    // not survive the release and cancel the next worker that picks the row up.
     await this.db.query(
       `
       UPDATE ${this.tableName}
@@ -471,7 +490,8 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
             lease_owner = NULL,
             progress = 0,
             progress_message = '',
-            progress_details = NULL
+            progress_details = NULL,
+            abort_requested_at = NULL
         WHERE id = $1 AND queue = $2${prefixConditions}`,
       [jobId, this.queueName, ...prefixParams]
     );

@@ -167,10 +167,19 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     const job = pending[0] ?? expiredLease[0];
     if (job) {
       const oldJob = { ...job };
+      // Lease-expiry reclaim (job was PROCESSING with expired lease) consumes
+      // one attempt against max_attempts; a fresh PENDING claim does not.
+      const isLeaseExpiryReclaim = job.status === JobStatus.PROCESSING;
       job.status = JobStatus.PROCESSING;
       job.last_attempted_at = now;
       job.lease_owner = workerId;
       job.lease_expires_at = leaseExpiry;
+      if (isLeaseExpiryReclaim) {
+        job.attempts = (job.attempts ?? 0) + 1;
+      }
+      // Always clear stale abort_requested_at on (re)claim so a flag set by
+      // an earlier worker does not immediately abort the new lease.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
       return job;
     }
@@ -268,6 +277,11 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       const existing = this.jobQueue[index];
       const currentAttempts = existing?.attempts ?? 0;
       jobWithPrefixes.attempts = currentAttempts + 1;
+      // PENDING-retry / terminal completion: clear abort_requested_at so an
+      // abort that was requested during the previous attempt does not
+      // immediately cancel the retry. Terminal statuses get a harmless
+      // cleanup of the same field.
+      jobWithPrefixes.abort_requested_at = null;
       // Preserve prefix values from the existing job
       for (const [key, value] of Object.entries(this.prefixValues)) {
         jobWithPrefixes[key] = value;
@@ -291,6 +305,9 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       job.progress = 0;
       job.progress_message = "";
       job.progress_details = null;
+      // Clear stale abort_requested_at — an abort flag set during the previous
+      // claim must not survive the release and immediately cancel the next claim.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
     }
   }

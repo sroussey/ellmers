@@ -383,7 +383,14 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       SET status = '${JobStatus.PROCESSING}',
           last_attempted_at = NOW() AT TIME ZONE 'UTC',
           lease_owner = '${escapedWorkerId}',
-          lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond')
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond'),
+          -- Lease-expiry reclaim consumes one attempt against max_attempts;
+          -- PENDING claims do not (the worker's validateJobState will FAIL
+          -- the job when attempts >= max_attempts at next-step time).
+          attempts = CASE WHEN status = '${JobStatus.PROCESSING}' THEN attempts + 1 ELSE attempts END,
+          -- Always clear stale abort_requested_at on (re)claim so a flag set
+          -- by an earlier worker doesn't immediately abort the new lease.
+          abort_requested_at = NULL
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
@@ -555,7 +562,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         return;
       }
 
-      // Reschedule the job
+      // Reschedule the job. Clear abort_requested_at so an abort that was
+      // requested DURING the previous attempt does not immediately cancel
+      // the retry.
       let query = this.client
         .from(this.tableName)
         .update({
@@ -568,6 +577,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           progress_details: null,
           attempts: nextAttempts,
           last_attempted_at: now,
+          abort_requested_at: null,
         })
         .eq("id", jobDetails.id)
         .eq("queue", this.queueName);
@@ -623,6 +633,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Releases a claimed job without consuming a retry attempt.
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
+    // releaseClaim returns the row to PENDING without consuming an attempt.
+    // Clear abort_requested_at so an abort that was requested mid-claim does
+    // not survive the release and immediately cancel the next claim.
     let query = this.client
       .from(this.tableName)
       .update({
@@ -631,6 +644,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         progress: 0,
         progress_message: "",
         progress_details: null,
+        abort_requested_at: null,
       })
       .eq("id", jobId)
       .eq("queue", this.queueName);

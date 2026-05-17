@@ -71,6 +71,12 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
       progress: 0,
       progress_message: "",
       progress_details: null,
+      // Clear abort_requested_at on retry — an abort flag set during the
+      // failed attempt must not survive into the next retry. Mirrors what
+      // each storage backend does at the SQL level in `complete()` for
+      // PENDING-retry, but applying it here in the wrapper guarantees the
+      // behaviour for storages that route writes through the wrapper.
+      abort_requested_at: null,
     });
   }
 

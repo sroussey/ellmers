@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IQueueStorage, JobHandle } from "@workglow/job-queue";
+import type { IQueueStorage, JobHandle, JobStorageFormat } from "@workglow/job-queue";
 import {
   AbortSignalJobError,
   IJobExecuteContext,
@@ -1135,6 +1135,80 @@ export function runGenericJobQueueTests(
       expect(errorEventReceived).toBe(true);
       expect(errorEventJob).toBe(handle.id);
       expect(errorEventError).toContain("Job failed as expected");
+    });
+  });
+
+  describe("Abort/Retry/Lease invariants (H1 + H4)", () => {
+    it("abort → retry: reclaimed PENDING row has abort_requested_at cleared", async () => {
+      // Send a job, abort it while PENDING (sets abort_requested_at + FAILED
+      // in the storage layer immediately). Then re-submit with the same id
+      // routine by calling releaseClaim semantics: instead, we exercise the
+      // PENDING-retry branch of complete() directly via the storage API so we
+      // don't depend on the worker loop's retry orchestration.
+      const handle = await client.send({ taskType: "task1", data: "abort-retry-1" });
+      const id = handle.id;
+      // Simulate worker claim, then a retry-rescheduling complete() call.
+      const claimed = await storage.next("test-worker-1", { leaseMs: 30_000 });
+      expect(claimed).toBeDefined();
+      expect(claimed?.id).toBe(id);
+
+      // Set an abort_requested_at directly so we can prove complete() clears it.
+      await storage.abort(id);
+      const afterAbort = await storage.get(id);
+      // PROCESSING + abort_requested_at set.
+      expect(afterAbort?.abort_requested_at).toBeTruthy();
+
+      // Retry path: storage.complete() with PENDING + new visible_at clears it.
+      await storage.complete({
+        ...(afterAbort as JobStorageFormat<TInput, TOutput>),
+        status: JobStatus.PENDING,
+        visible_at: new Date(Date.now() + 10).toISOString(),
+        error: null,
+        error_code: null,
+        attempts: (afterAbort?.attempts ?? 0) + 1,
+      });
+
+      const afterRetry = await storage.get(id);
+      expect(afterRetry?.status).toBe(JobStatus.PENDING);
+      // The fix under test: abort_requested_at must be NULL on retry.
+      expect(afterRetry?.abort_requested_at ?? null).toBe(null);
+    });
+
+    it("releaseClaim clears abort_requested_at", async () => {
+      const handle = await client.send({ taskType: "task1", data: "release-claim" });
+      const id = handle.id;
+
+      await storage.next("test-worker-2", { leaseMs: 30_000 });
+      await storage.abort(id);
+      const afterAbort = await storage.get(id);
+      expect(afterAbort?.abort_requested_at).toBeTruthy();
+
+      await storage.releaseClaim(id);
+      const afterRelease = await storage.get(id);
+      expect(afterRelease?.status).toBe(JobStatus.PENDING);
+      expect(afterRelease?.abort_requested_at ?? null).toBe(null);
+    });
+
+    it("lease-expiry reclaim bumps attempts but clears abort_requested_at", async () => {
+      const handle = await client.send({ taskType: "task1", data: "lease-expiry" });
+      const id = handle.id;
+
+      // Claim with a 0ms lease so the next claim sees it as expired.
+      const first = await storage.next("crashed-worker", { leaseMs: 1 });
+      expect(first?.id).toBe(id);
+      const attemptsBeforeReclaim = first?.attempts ?? 0;
+
+      // Set abort_requested_at to simulate "abort raced with crash".
+      await storage.abort(id);
+
+      // Wait so the lease becomes expired.
+      await sleep(20);
+
+      // Reclaim by a different worker — must bump attempts and clear flag.
+      const second = await storage.next("rescue-worker", { leaseMs: 30_000 });
+      expect(second?.id).toBe(id);
+      expect(second?.attempts).toBe(attemptsBeforeReclaim + 1);
+      expect(second?.abort_requested_at ?? null).toBe(null);
     });
   });
 }
