@@ -33,24 +33,13 @@ export type TabularStorageContractAssertion =
   | "withTransactionRollback"
   | "countMatchesQuery";
 
-export interface TabularStorageContractOpts {
+interface TabularStorageContractBaseOpts {
   readonly name: string;
   readonly skip?: boolean;
   readonly timeout?: number;
   readonly createStorage: () => Promise<
     ITabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>
   >;
-  readonly capabilities: {
-    readonly supportsSubscriptions: boolean;
-    readonly supportsVectorColumns: boolean;
-    readonly supportsTransactions: boolean;
-    /** Whether `query(criteria)` is supported. False for FsFolder etc. */
-    readonly supportsQuery: boolean;
-  };
-  /** Whether this storage uses polling (requires longer waits between steps). */
-  readonly usesPolling?: boolean;
-  /** Polling interval forwarded to subscribeToChanges for polling-based implementations. */
-  readonly pollingIntervalMs?: number;
   /**
    * Required when capabilities.supportsVectorColumns is true. Creates a fresh
    * storage instance typed to VectorItemSchema for the round-trip assertion.
@@ -65,3 +54,44 @@ export interface TabularStorageContractOpts {
    */
   readonly expectedFailures?: ReadonlyArray<TabularStorageContractAssertion>;
 }
+
+interface SubscriptionCapableCapabilities {
+  readonly supportsSubscriptions: true;
+  readonly supportsVectorColumns: boolean;
+  readonly supportsTransactions: boolean;
+  /** Whether `query(criteria)` is supported. False for FsFolder etc. */
+  readonly supportsQuery: boolean;
+}
+
+interface SubscriptionCapableOpts extends TabularStorageContractBaseOpts {
+  readonly capabilities: SubscriptionCapableCapabilities;
+  /**
+   * Required when supportsSubscriptions is true. Selects between the two
+   * subscribeToChanges contract blocks:
+   *   - false → eventDriven (strict commit order)
+   *   - true  → polling (set equality + count)
+   */
+  readonly usesPolling: boolean;
+  /** Polling interval forwarded to subscribeToChanges for polling-based implementations. */
+  readonly pollingIntervalMs?: number;
+}
+
+interface SubscriptionIncapableCapabilities {
+  readonly supportsSubscriptions: false;
+  readonly supportsVectorColumns: boolean;
+  readonly supportsTransactions: boolean;
+  /** Whether `query(criteria)` is supported. False for FsFolder etc. */
+  readonly supportsQuery: boolean;
+}
+
+interface SubscriptionIncapableOpts extends TabularStorageContractBaseOpts {
+  readonly capabilities: SubscriptionIncapableCapabilities;
+  /**
+   * Only meaningful when supportsSubscriptions is true. Permitted (but
+   * ignored) on incapable backends to keep wiring ergonomic.
+   */
+  readonly usesPolling?: boolean;
+  readonly pollingIntervalMs?: number;
+}
+
+export type TabularStorageContractOpts = SubscriptionCapableOpts | SubscriptionIncapableOpts;

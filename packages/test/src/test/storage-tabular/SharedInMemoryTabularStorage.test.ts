@@ -69,6 +69,9 @@ runTabularStorageContract({
     supportsTransactions: false,
     supportsQuery: true,
   },
+  // SharedInMemoryTabularStorage broadcasts events via BroadcastChannel /
+  // the inner InMemoryTabularStorage event bus — strictly event-driven.
+  usesPolling: false,
   createVectorStorage: async () =>
     new SharedInMemoryTabularStorage<typeof VectorItemSchema, typeof VectorItemPrimaryKeyNames>(
       `shared_vec_${uuid4().replace(/-/g, "_")}`,
