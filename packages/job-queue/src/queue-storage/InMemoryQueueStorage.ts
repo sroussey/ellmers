@@ -72,19 +72,6 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Returns a filtered and sorted list of pending jobs that are ready to run
-   * Sorts by creation time to maintain FIFO order
-   */
-  private pendingQueue(): Array<JobStorageFormat<Input, Output> & Record<string, unknown>> {
-    const now = new Date().toISOString();
-    return this.jobQueue
-      .filter((job) => this.matchesPrefixes(job))
-      .filter((job) => job.status === JobStatus.PENDING)
-      .filter((job) => !job.run_after || job.run_after <= now)
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
-  }
-
-  /**
    * Adds a new job to the queue
    * Generates an ID and fingerprint if not provided
    */
@@ -147,24 +134,65 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Retrieves the next available job that is ready to be processed
-   * Updates the job status to PROCESSING before returning
+   * Retrieves the next available job that is ready to be processed.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    * @param workerId - Worker ID to associate with the job
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job or undefined if no job is available
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
     await sleep(0);
-    const top = this.pendingQueue();
+    const leaseMs = opts?.leaseMs ?? 30000;
+    const now = new Date().toISOString();
+    const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
 
-    const job = top[0];
+    // First look for a normal PENDING job ready to run
+    const pending = this.jobQueue
+      .filter((job) => this.matchesPrefixes(job))
+      .filter((job) => job.status === JobStatus.PENDING)
+      .filter((job) => !job.run_after || job.run_after <= now)
+      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
+
+    // Also look for PROCESSING jobs with expired leases
+    const expiredLease = this.jobQueue
+      .filter((job) => this.matchesPrefixes(job))
+      .filter((job) => job.status === JobStatus.PROCESSING)
+      .filter((job) => !job.lease_expires_at || job.lease_expires_at < now)
+      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
+
+    const job = pending[0] ?? expiredLease[0];
     if (job) {
       const oldJob = { ...job };
       job.status = JobStatus.PROCESSING;
-      job.last_ran_at = new Date().toISOString();
+      job.last_ran_at = now;
       job.worker_id = workerId;
+      job.lease_expires_at = leaseExpiry;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
       return job;
     }
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    await sleep(0);
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    if (!job || job.status !== JobStatus.PROCESSING || job.worker_id !== workerId) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
+    const oldJob = { ...job };
+    job.lease_expires_at = new Date(Date.now() + ms).toISOString();
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
   /**
@@ -268,17 +296,28 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Aborts a job
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    * @param id - The id of the job to abort.
    */
   public async abort(id: unknown): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
-    if (job) {
-      const oldJob = { ...job };
-      job.status = JobStatus.ABORTING;
-      this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+    if (!job) return;
+    const oldJob = { ...job };
+    const now = new Date().toISOString();
+    if (job.status === JobStatus.PENDING) {
+      job.status = JobStatus.FAILED;
+      job.abort_requested_at = now;
+      job.completed_at = now;
+    } else if (job.status === JobStatus.PROCESSING) {
+      job.abort_requested_at = now;
+    } else {
+      return;
     }
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
   /**

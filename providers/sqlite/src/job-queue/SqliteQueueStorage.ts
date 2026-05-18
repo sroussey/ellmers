@@ -242,21 +242,39 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
-   * Aborts a job by setting its status to "ABORTING".
-   * This method will signal the corresponding AbortController so that
-   * the job's execute() method (if it supports an AbortSignal parameter)
-   * can clean up and exit.
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    */
   public async abort(jobId: unknown): Promise<void> {
+    const now = new Date().toISOString();
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
 
-    const AbortQuery = `
+    // Abort PENDING → FAILED immediately
+    const AbortPendingQuery = `
       UPDATE ${this.tableName}
-        SET status = ?  
-        WHERE id = ? AND queue = ?${prefixConditions}`;
-    const stmt = this.db.prepare(AbortQuery);
-    stmt.run(JobStatus.ABORTING, String(jobId), this.queueName, ...prefixParams);
+        SET status = ?, abort_requested_at = ?, completed_at = ?
+        WHERE id = ? AND queue = ? AND status = ?${prefixConditions}`;
+    const stmtPending = this.db.prepare(AbortPendingQuery);
+    stmtPending.run(
+      JobStatus.FAILED,
+      now,
+      now,
+      String(jobId),
+      this.queueName,
+      JobStatus.PENDING,
+      ...prefixParams
+    );
+
+    // Abort PROCESSING → set abort_requested_at only
+    const AbortProcessingQuery = `
+      UPDATE ${this.tableName}
+        SET abort_requested_at = ?
+        WHERE id = ? AND queue = ? AND status = ?${prefixConditions}`;
+    const stmtProcessing = this.db.prepare(AbortProcessingQuery);
+    stmtProcessing.run(now, String(jobId), this.queueName, JobStatus.PROCESSING, ...prefixParams);
   }
 
   /**
@@ -312,18 +330,25 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
-   * Retrieves the next available job that is ready to be processed,
-   * and updates its status to PROCESSING.
+   * Retrieves the next available job that is ready to be processed.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    *
    * @param workerId - Worker ID to associate with the job
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job or undefined if no job is available
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const now = new Date().toISOString();
+    const leaseMs = opts?.leaseMs ?? 30000;
+    const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
 
-    // Then, get the next job to process
+    // Claim either a PENDING job ready to run, or a PROCESSING job with an expired lease
     const stmt = this.db.prepare<
       unknown[],
       JobStorageFormat<Input, Output> & {
@@ -333,15 +358,17 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       }
     >(
       `
-      UPDATE ${this.tableName} 
-      SET status = ?, last_ran_at = ?, worker_id = ?
+      UPDATE ${this.tableName}
+      SET status = ?, last_ran_at = ?, worker_id = ?, lease_expires_at = ?
       WHERE id = (
-        SELECT id 
-        FROM ${this.tableName} 
-        WHERE queue = ? 
-        AND status = ?${prefixConditions}
-        AND run_after <= ? 
-        ORDER BY run_after ASC 
+        SELECT id
+        FROM ${this.tableName}
+        WHERE queue = ?
+        AND (
+          (status = ? AND run_after <= ?)
+          OR (status = ? AND (lease_expires_at IS NULL OR lease_expires_at < ?))
+        )${prefixConditions}
+        ORDER BY run_after ASC
         LIMIT 1
       )
       RETURNING *`
@@ -350,10 +377,13 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       JobStatus.PROCESSING,
       now,
       workerId,
+      leaseExpiry,
       this.queueName,
       JobStatus.PENDING,
-      ...prefixParams,
-      now
+      now,
+      JobStatus.PROCESSING,
+      now,
+      ...prefixParams
     );
     if (!result) return undefined;
 
@@ -363,6 +393,37 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     if (result.progress_details) result.progress_details = JSON.parse(result.progress_details);
 
     return result;
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    const leaseExpiry = new Date(Date.now() + ms).toISOString();
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+
+    const stmt = this.db.prepare<unknown[], { changes: number }>(
+      `UPDATE ${this.tableName}
+         SET lease_expires_at = ?
+         WHERE id = ? AND queue = ? AND worker_id = ? AND status = ?${prefixConditions}`
+    );
+    const info = stmt.run(
+      leaseExpiry,
+      String(id),
+      this.queueName,
+      workerId,
+      JobStatus.PROCESSING,
+      ...prefixParams
+    ) as { changes: number };
+    if (info.changes === 0) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
   }
 
   /**

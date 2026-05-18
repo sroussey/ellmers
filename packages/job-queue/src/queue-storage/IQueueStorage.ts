@@ -33,12 +33,11 @@ export interface QueueStorageOptions {
   readonly prefixValues?: Readonly<Record<string, string | number>>;
 }
 
-export type JobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "ABORTING" | "FAILED" | "DISABLED";
+export type JobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "DISABLED";
 export const JobStatus = {
   PENDING: "PENDING",
   PROCESSING: "PROCESSING",
   COMPLETED: "COMPLETED",
-  ABORTING: "ABORTING",
   FAILED: "FAILED",
   DISABLED: "DISABLED",
 } as const satisfies Record<JobStatus, JobStatus>;
@@ -116,6 +115,8 @@ export type JobStorageFormat<Input, Output> = {
   progress_message?: string;
   progress_details?: Record<string, any> | null;
   worker_id?: string | null;
+  abort_requested_at?: string | null;
+  lease_expires_at?: string | null;
 };
 
 /**
@@ -156,11 +157,26 @@ export interface IQueueStorage<Input, Output> {
   get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined>;
 
   /**
-   * Gets the next job from the queue storage
+   * Gets the next job from the queue storage. Claims PENDING jobs that are
+   * ready, and also reclaims PROCESSING jobs whose lease has expired (crash
+   * recovery). Sets `lease_expires_at = now + leaseMs` on the claimed row.
    * @param workerId - Worker ID to associate with the job (required)
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job from the queue storage
    */
-  next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined>;
+  next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined>;
+
+  /**
+   * Extend the lease on a currently PROCESSING job. Guards: lease_owner must
+   * match workerId and status must be PROCESSING. Throws if lease was lost.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  extendLease(id: unknown, workerId: string, ms: number): Promise<void>;
 
   /**
    * Releases a job that was just claimed by {@link next} but won't be

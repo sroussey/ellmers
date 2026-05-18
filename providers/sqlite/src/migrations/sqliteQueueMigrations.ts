@@ -60,5 +60,16 @@ export function sqliteQueueMigrations(
         `);
       },
     },
+    {
+      component,
+      version: 2,
+      description: "Add abort_requested_at and lease_expires_at columns",
+      up(db: Sqlite.Database) {
+        db.exec(`
+          ALTER TABLE ${tableName} ADD COLUMN abort_requested_at TEXT;
+          ALTER TABLE ${tableName} ADD COLUMN lease_expires_at TEXT;
+        `);
+      },
+    },
   ];
 }

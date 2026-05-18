@@ -8,7 +8,6 @@ import {
   AbortSignalJobError,
   IJobExecuteContext,
   Job,
-  JobStatus,
   PermanentJobError,
   RetryableJobError,
   withJobErrorDiagnostics,
@@ -241,7 +240,7 @@ export class AiJob<
     context: IJobExecuteContext,
     emit: AiEmit<Output>
   ): Promise<void> {
-    if (context.signal.aborted || this.status === JobStatus.ABORTING) {
+    if (context.signal.aborted) {
       throw new AbortSignalJobError("Abort signal aborted before execution of job");
     }
 

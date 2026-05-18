@@ -75,6 +75,18 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * Defaults to 30s. Set to 0 to abort immediately.
    */
   readonly stopTimeoutMs?: number;
+  /**
+   * If true, the worker will call extendLease periodically while a job is
+   * executing. Extension interval is leaseMs * 0.5. Default: false.
+   */
+  readonly extendLeaseWhileRunning?: boolean;
+  /**
+   * How long (ms) the worker's lease on a claimed job lasts before another
+   * worker may re-claim it. Must be long enough to cover the maximum
+   * expected job duration if extendLeaseWhileRunning is false.
+   * Defaults to max(30_000, pollIntervalMs * 60).
+   */
+  readonly leaseMs?: number;
 }
 
 /**
@@ -93,6 +105,8 @@ export class JobQueueWorker<
   protected readonly limiter: ILimiter;
   protected readonly pollIntervalMs: number;
   protected readonly stopTimeoutMs: number;
+  protected readonly extendLeaseWhileRunning: boolean;
+  protected readonly leaseMs: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
 
   protected running = false;
@@ -150,6 +164,8 @@ export class JobQueueWorker<
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
+    this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
+    this.leaseMs = options.leaseMs ?? Math.max(30_000, this.pollIntervalMs * 60);
   }
 
   /**
@@ -312,7 +328,7 @@ export class JobQueueWorker<
    * Get the next job from the queue
    */
   protected async next(): Promise<QueueJob | undefined> {
-    const job = await this.storage.next(this.workerId);
+    const job = await this.storage.next(this.workerId, { leaseMs: this.leaseMs });
     if (!job) return undefined;
     return this.storageToClass(job) as QueueJob;
   }
@@ -457,19 +473,20 @@ export class JobQueueWorker<
   }
 
   /**
-   * Check for jobs that have been marked for abort and trigger their abort controllers.
-   *
-   * Only relevant for jobs running on THIS worker (we have an abort controller
-   * registered for them). When no jobs are active, the peek result is irrelevant
-   * — skip the storage round-trip entirely. Important for battery life on
-   * same-process deployments (browser/mobile) where workers spend most time idle.
+   * Check for in-process jobs that have abort_requested_at set and trigger
+   * their abort controllers. Only relevant for jobs running on THIS worker
+   * (we have an abort controller registered for them). When no jobs are active,
+   * the peek result is irrelevant — skip the storage round-trip entirely.
+   * Important for battery life on same-process deployments (browser/mobile)
+   * where workers spend most time idle.
    */
   protected async checkForAbortingJobs(): Promise<void> {
     if (this.activeJobAbortControllers.size === 0) {
       return;
     }
-    const abortingJobs = await this.storage.peek(JobStatus.ABORTING);
-    for (const jobData of abortingJobs) {
+    const processingJobs = await this.storage.peek(JobStatus.PROCESSING);
+    for (const jobData of processingJobs) {
+      if (!jobData.abort_requested_at) continue;
       const controller = this.activeJobAbortControllers.get(jobData.id);
       if (controller && !controller.signal.aborted) {
         controller.abort();
@@ -526,7 +543,26 @@ export class JobQueueWorker<
       const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
 
-      const output = await this.executeJob(job, abortController.signal);
+      let leaseInterval: ReturnType<typeof setInterval> | undefined;
+      if (this.extendLeaseWhileRunning) {
+        leaseInterval = setInterval(() => {
+          this.storage.extendLease(job.id, this.workerId, this.leaseMs).catch((err) => {
+            getLogger().error("extendLease failed during job execution:", {
+              error: err,
+              jobId: job.id,
+            });
+          });
+        }, this.leaseMs * 0.5);
+      }
+
+      let output: Output;
+      try {
+        output = await this.executeJob(job, abortController.signal);
+      } finally {
+        if (leaseInterval !== undefined) {
+          clearInterval(leaseInterval);
+        }
+      }
       await this.completeJob(job, output);
 
       const elapsed = Date.now() - startTime;
@@ -550,6 +586,10 @@ export class JobQueueWorker<
           await this.failJob(currentJob, new PermanentJobError(spanErrorMessage));
           span?.setStatus(SpanStatusCode.ERROR, spanErrorMessage);
         } else {
+          // Clean up the abort controller before rescheduling so the next
+          // invocation of processSingleJob gets a fresh controller and the
+          // inFlight-guard in createAbortController passes correctly.
+          this.cleanupJob(job.id);
           await this.rescheduleJob(currentJob, error.retryDate);
           span?.addEvent("workglow.job.retry", {
             "workglow.job.run_attempt": currentJob.runAttempts,
@@ -564,7 +604,13 @@ export class JobQueueWorker<
     } finally {
       await this.limiter.complete(limiterToken);
       span?.end();
-      this.inFlight.delete(job.id);
+      // Guard against a concurrent processSingleJob for the same jobId (which
+      // can start before this finally block runs, e.g. after a reschedule).
+      // Only delete our own inFlight entry; if another invocation already
+      // replaced it, leave that entry alone.
+      if (this.inFlight.get(job.id) === inFlightPromise) {
+        this.inFlight.delete(job.id);
+      }
       resolveInFlight();
     }
   }
@@ -666,8 +712,8 @@ export class JobQueueWorker<
   /**
    * Release a job that {@link next} just claimed but that we won't process
    * because the worker was stopped mid-claim. Resets the row to PENDING so
-   * the next started worker can pick it up. `fixupJobs()` would otherwise
-   * skip it (it ignores rows owned by current-server worker IDs).
+   * the next started worker can pick it up. Lease expiry in `next()` would
+   * otherwise reclaim it after the lease expires.
    *
    * Uses `storage.releaseClaim()` rather than `storage.complete()` so the retry
    * budget isn't burned: the worker never actually attempted execution.
@@ -746,7 +792,7 @@ export class JobQueueWorker<
    * `completeJob` that won the race (the COMPLETED→FAILED overwrite bug).
    *
    * If the job is no longer in flight here, it has already settled — recheck
-   * storage and only write FAILED for non-terminal states (i.e. an ABORTING
+   * storage and only write FAILED for non-terminal states (i.e. a PROCESSING
    * row left over from a cross-process abort that this worker never picked up).
    */
   protected async handleAbort(jobId: unknown): Promise<void> {
@@ -787,10 +833,7 @@ export class JobQueueWorker<
     if (job.status === JobStatus.FAILED) {
       throw new PermanentJobError(`Job ${job.id} has failed`);
     }
-    if (
-      job.status === JobStatus.ABORTING ||
-      this.activeJobAbortControllers.get(job.id)?.signal.aborted
-    ) {
+    if (this.activeJobAbortControllers.get(job.id)?.signal.aborted) {
       throw new AbortSignalJobError(`Job ${job.id} is being aborted`);
     }
     if (job.deadlineAt && job.deadlineAt < new Date()) {

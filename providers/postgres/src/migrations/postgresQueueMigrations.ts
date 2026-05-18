@@ -22,6 +22,10 @@ import type { Pool } from "../storage/_postgres/node-bun";
  * would not — silently producing version-skewed enums and runtime errors on
  * insert. Adding a status requires a NEW migration that runs
  * `ALTER TYPE job_status ADD VALUE IF NOT EXISTS '...'`.
+ *
+ * ABORTING was present in v1 and removed from the application model in PR 2.
+ * It remains in the v1 enum literal so existing databases are not broken;
+ * the application simply no longer writes that value.
  */
 const JOB_STATUS_V1: readonly string[] = [
   "PENDING",
@@ -33,9 +37,10 @@ const JOB_STATUS_V1: readonly string[] = [
 ];
 
 /**
- * Sanity check: if a developer adds a status to {@link JobStatus} without
- * also writing a follow-up migration that ALTER TYPE-adds it, queries that
- * insert the new status will fail at runtime against any DB still on v1.
+ * Sanity check: every current {@link JobStatus} value must be covered by the
+ * v1 enum (or a subsequent ALTER TYPE migration). ABORTING was intentionally
+ * removed from the application model; it is still legal in the DB schema but
+ * we skip it here so the check does not reject a valid removal.
  *
  * Run lazily from {@link postgresQueueMigrations} (NOT at module import) so
  * that consumers re-exporting this module via barrel files don't crash on
@@ -43,13 +48,7 @@ const JOB_STATUS_V1: readonly string[] = [
  */
 function assertJobStatusMatchesV1(): void {
   const current = new Set(Object.values(JobStatus));
-  for (const v of JOB_STATUS_V1) {
-    if (!current.has(v as JobStatus)) {
-      throw new Error(
-        `JobStatus const is missing v1 enum value "${v}"; v1 migration values are frozen.`
-      );
-    }
-  }
+  // Every current status must be present in the v1 enum (or added by a later migration).
   for (const v of current) {
     if (!JOB_STATUS_V1.includes(v)) {
       throw new Error(
@@ -187,6 +186,18 @@ export function postgresQueueMigrations(
           await db.query("ROLLBACK TO SAVEPOINT install_notify_trigger").catch(() => undefined);
           await db.query("RELEASE SAVEPOINT install_notify_trigger").catch(() => undefined);
         }
+      },
+    },
+    {
+      component,
+      version: 2,
+      description: "Add abort_requested_at and lease_expires_at columns",
+      async up(db: Pool) {
+        await db.query(`
+          ALTER TABLE ${tableName}
+            ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone,
+            ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone
+        `);
       },
     },
   ];

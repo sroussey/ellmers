@@ -47,6 +47,10 @@ export type JobConstructorParam<Input, Output> = {
   progressDetails?: Record<string, any> | null;
   /** The ID of the worker that claimed this job, null if unclaimed */
   workerId?: string | null;
+  /** ISO timestamp when an abort was requested for this job (storage-layer concern) */
+  abort_requested_at?: string | null;
+  /** ISO timestamp when the current lease expires (storage-layer concern) */
+  lease_expires_at?: string | null;
 };
 
 export type JobClass<Input, Output> = new (
@@ -81,6 +85,10 @@ export class Job<Input, Output> {
   public progressDetails: Record<string, any> | null = null;
   /** The ID of the worker that claimed this job */
   public workerId: string | null = null;
+  /** ISO timestamp when an abort was requested for this job (storage-layer concern) */
+  public abort_requested_at: string | null = null;
+  /** ISO timestamp when the current lease expires (storage-layer concern) */
+  public lease_expires_at: string | null = null;
 
   constructor({
     queueName,
@@ -103,6 +111,8 @@ export class Job<Input, Output> {
     progressMessage = "",
     progressDetails = null,
     workerId = null,
+    abort_requested_at = null,
+    lease_expires_at = null,
   }: JobConstructorParam<Input, Output>) {
     this.runAfter = runAfter ?? new Date();
     this.createdAt = createdAt ?? new Date();
@@ -125,6 +135,8 @@ export class Job<Input, Output> {
     this.progressMessage = progressMessage;
     this.progressDetails = progressDetails;
     this.workerId = workerId ?? null;
+    this.abort_requested_at = abort_requested_at ?? null;
+    this.lease_expires_at = lease_expires_at ?? null;
   }
 
   async execute(_input: Input, _context: IJobExecuteContext): Promise<Output> {

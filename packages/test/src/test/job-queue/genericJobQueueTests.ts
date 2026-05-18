@@ -425,7 +425,7 @@ export function runGenericJobQueueTests(
       });
       expect(abortEventTriggered).toBe(true);
       const finalJob = await client.getJob(handle.id);
-      expect(finalJob?.status).toBeOneOf([JobStatus.FAILED, JobStatus.ABORTING]);
+      expect(finalJob?.status).toBe(JobStatus.FAILED);
     });
 
     it("should abort all jobs in a job run while leaving other jobs unaffected", async () => {
@@ -463,28 +463,20 @@ export function runGenericJobQueueTests(
       }
 
       await client.abortJobRun(jobRunId1);
-      while (attempts < 50) {
-        const job3Status = (await client.getJob(handle3.id))?.status;
-        const job4Status = (await client.getJob(handle4.id))?.status;
-        if (
-          (job3Status === JobStatus.FAILED || job3Status === JobStatus.ABORTING) &&
-          (job4Status === JobStatus.FAILED || job4Status === JobStatus.ABORTING)
-        ) {
+      // Wait for handle1 and handle2 (jobRunId1) to be aborted/failed
+      while (attempts < 200) {
+        const job1Status = (await client.getJob(handle1.id))?.status;
+        const job2Status = (await client.getJob(handle2.id))?.status;
+        if (job1Status === JobStatus.FAILED && job2Status === JobStatus.FAILED) {
           break;
         }
-        await sleep(1);
+        await sleep(5);
         attempts++;
       }
 
       // Verify job statuses
-      expect((await client.getJob(handle1.id))?.status).toBeOneOf([
-        JobStatus.FAILED,
-        JobStatus.ABORTING,
-      ]);
-      expect((await client.getJob(handle2.id))?.status).toBeOneOf([
-        JobStatus.FAILED,
-        JobStatus.ABORTING,
-      ]);
+      expect((await client.getJob(handle1.id))?.status).toBe(JobStatus.FAILED);
+      expect((await client.getJob(handle2.id))?.status).toBe(JobStatus.FAILED);
 
       const job3Status = (await client.getJob(handle3.id))?.status;
       const job4Status = (await client.getJob(handle4.id))?.status;
@@ -674,7 +666,7 @@ export function runGenericJobQueueTests(
       expect(Date.now() - start).toBeLessThan(5_000);
     });
 
-    itFastWake("abort resolves quickly without waiting for an ABORTING poll", async () => {
+    itFastWake("abort resolves quickly via in-process requestAbort path", async () => {
       // Long poll interval so the only route to abort delivery is the
       // in-process requestAbort path (Change 3).
       await server.stop();

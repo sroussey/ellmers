@@ -57,6 +57,8 @@ export function storageToClass<Input, Output>(
     runAttempts: details.run_attempts ?? 0,
     maxRetries: details.max_retries ?? 10,
     ...(includeWorkerId ? { workerId: details.worker_id ?? null } : {}),
+    abort_requested_at: details.abort_requested_at ?? null,
+    lease_expires_at: details.lease_expires_at ?? null,
   });
 }
 
@@ -89,5 +91,7 @@ export function classToStorage<Input, Output>(
     progress_message: job.progressMessage ?? "",
     progress_details: job.progressDetails ?? null,
     worker_id: job.workerId ?? null,
+    abort_requested_at: job.abort_requested_at ?? null,
+    lease_expires_at: job.lease_expires_at ?? null,
   };
 }
