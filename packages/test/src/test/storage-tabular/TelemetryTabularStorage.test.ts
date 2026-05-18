@@ -123,6 +123,9 @@ runTabularStorageContract({
     supportsTransactions: false,
     supportsQuery: true,
   },
+  // TelemetryTabularStorage delegates subscribeToChanges to its inner storage
+  // (InMemoryTabularStorage here) which is strictly event-driven.
+  usesPolling: false,
   createVectorStorage: async () => {
     const inner = new InMemoryTabularStorage<
       typeof VectorItemSchema,
