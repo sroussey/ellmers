@@ -42,7 +42,7 @@ export type JobQueueServerEventListeners<Input, Output> = {
   job_complete: (queueName: string, jobId: unknown, output: Output) => void;
   job_error: (queueName: string, jobId: unknown, error: string) => void;
   job_disabled: (queueName: string, jobId: unknown) => void;
-  job_retry: (queueName: string, jobId: unknown, runAfter: Date) => void;
+  job_retry: (queueName: string, jobId: unknown, visibleAt: Date) => void;
   job_progress: (
     queueName: string,
     jobId: unknown,
@@ -451,10 +451,10 @@ export class JobQueueServer<
       this.notifyWorkers();
     });
 
-    worker.on("job_retry", (jobId, runAfter) => {
+    worker.on("job_retry", (jobId, visibleAt) => {
       this.stats = { ...this.stats, retriedJobs: this.stats.retriedJobs + 1 };
-      this.events.emit("job_retry", this.queueName, jobId, runAfter);
-      this.forwardToClients("handleJobRetry", jobId, runAfter);
+      this.events.emit("job_retry", this.queueName, jobId, visibleAt);
+      this.forwardToClients("handleJobRetry", jobId, visibleAt);
     });
 
     worker.on("job_progress", (jobId, progress, message, details) => {
@@ -477,7 +477,7 @@ export class JobQueueServer<
     errorCode?: string
   ): void;
   protected forwardToClients(method: "handleJobDisabled", jobId: unknown): void;
-  protected forwardToClients(method: "handleJobRetry", jobId: unknown, runAfter: Date): void;
+  protected forwardToClients(method: "handleJobRetry", jobId: unknown, visibleAt: Date): void;
   protected forwardToClients(
     method: "handleJobProgress",
     jobId: unknown,

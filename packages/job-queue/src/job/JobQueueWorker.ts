@@ -44,7 +44,7 @@ export type JobQueueWorkerEventListeners<Input, Output> = {
   job_complete: (jobId: unknown, output: Output) => void;
   job_error: (jobId: unknown, error: string, errorCode?: string) => void;
   job_disabled: (jobId: unknown) => void;
-  job_retry: (jobId: unknown, runAfter: Date) => void;
+  job_retry: (jobId: unknown, visibleAt: Date) => void;
   job_progress: (
     jobId: unknown,
     progress: number,
@@ -427,15 +427,15 @@ export class JobQueueWorker<
   /**
    * Determine how long to sleep when idle.
    *
-   * Peeks at the earliest PENDING job: if it has a future `run_after`,
+   * Peeks at the earliest PENDING job: if it has a future `visible_at`,
    * returns the time until it becomes ready (clamped to `pollIntervalMs`);
    * otherwise returns `pollIntervalMs`.
    */
   private async getIdleDelay(): Promise<number> {
     try {
       const pending = await this.storage.peek(JobStatus.PENDING, 1);
-      if (pending.length > 0 && pending[0].run_after) {
-        const delay = new Date(pending[0].run_after).getTime() - Date.now();
+      if (pending.length > 0 && pending[0].visible_at) {
+        const delay = new Date(pending[0].visible_at).getTime() - Date.now();
         if (delay > 0) {
           return Math.min(delay, this.pollIntervalMs);
         }
@@ -514,9 +514,9 @@ export class JobQueueWorker<
           attributes: {
             "workglow.job.id": String(job.id),
             "workglow.job.queue": this.queueName,
-            "workglow.job.worker_id": this.workerId,
-            "workglow.job.run_attempt": job.runAttempts,
-            "workglow.job.max_retries": job.maxRetries,
+            "workglow.job.lease_owner": this.workerId,
+            "workglow.job.attempt": job.attempts,
+            "workglow.job.max_attempts": job.maxAttempts,
           },
         })
       : undefined;
@@ -581,8 +581,8 @@ export class JobQueueWorker<
           throw new JobNotFoundError(`Job ${job.id} not found`);
         }
 
-        if (currentJob.runAttempts >= currentJob.maxRetries) {
-          spanErrorMessage = "Max retries reached";
+        if (currentJob.attempts + 1 >= currentJob.maxAttempts) {
+          spanErrorMessage = "Max attempts reached";
           await this.failJob(currentJob, new PermanentJobError(spanErrorMessage));
           span?.setStatus(SpanStatusCode.ERROR, spanErrorMessage);
         } else {
@@ -592,7 +592,7 @@ export class JobQueueWorker<
           this.cleanupJob(job.id);
           await this.rescheduleJob(currentJob, error.retryDate);
           span?.addEvent("workglow.job.retry", {
-            "workglow.job.run_attempt": currentJob.runAttempts,
+            "workglow.job.attempt": currentJob.attempts,
           });
           span?.setStatus(SpanStatusCode.UNSET);
         }
@@ -733,16 +733,16 @@ export class JobQueueWorker<
     try {
       job.status = JobStatus.PENDING;
       const nextAvailableTime = await this.limiter.getNextAvailableTime();
-      job.runAfter = retryDate instanceof Date ? retryDate : nextAvailableTime;
+      job.visibleAt = retryDate instanceof Date ? retryDate : nextAvailableTime;
       job.progress = 0;
       job.progressMessage = "";
       job.progressDetails = null;
-      // Increment runAttempts to keep in-memory object in sync with storage
+      // Increment attempts to keep in-memory object in sync with storage
       // The storage layer will read from DB and increment, so this keeps them aligned
-      job.runAttempts = (job.runAttempts ?? 0) + 1;
+      job.attempts = (job.attempts ?? 0) + 1;
 
       await this.storage.complete(this.classToStorage(job));
-      this.events.emit("job_retry", job.id, job.runAfter);
+      this.events.emit("job_retry", job.id, job.visibleAt);
     } catch (err) {
       getLogger().error("rescheduleJob errored:", { error: err });
     }

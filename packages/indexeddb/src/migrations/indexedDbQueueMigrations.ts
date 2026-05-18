@@ -15,7 +15,7 @@ import type { IndexedDbMigration, IndexedDbMigrationGroup } from "./IndexedDbMig
  * different table names get tracked independently in `_storage_migrations`.
  *
  * Schema: a single object store keyed by `id` plus four compound indexes
- * (queue/status, queue/status/run_after, queue/job_run_id,
+ * (queue/status, queue/status/visible_at, queue/job_run_id,
  * queue/fingerprint/status). When `prefixes` is non-empty the prefix columns
  * are prepended to every index key path so per-tenant queries can be served
  * directly by the index.
@@ -37,7 +37,7 @@ export function indexedDbQueueMigrations(
         if (!db.objectStoreNames.contains(tableName)) {
           const store = db.createObjectStore(tableName, { keyPath: "id" });
           store.createIndex("queue_status", k(["queue", "status"]), { unique: false });
-          store.createIndex("queue_status_run_after", k(["queue", "status", "run_after"]), {
+          store.createIndex("queue_status_visible_at", k(["queue", "status", "visible_at"]), {
             unique: false,
           });
           store.createIndex("queue_job_run_id", k(["queue", "job_run_id"]), { unique: false });

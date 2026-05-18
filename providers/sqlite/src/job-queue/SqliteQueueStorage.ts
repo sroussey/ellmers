@@ -126,7 +126,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     job.progress_message = "";
     job.progress_details = null;
     job.created_at = now;
-    job.run_after = now;
+    job.visible_at = now;
 
     const { columns: prefixColumnsInsert, placeholders: prefixPlaceholders } =
       buildPrefixInsertFragments(SqliteDialect, this.prefixes);
@@ -134,15 +134,15 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
 
     const AddQuery = `
       INSERT INTO ${this.tableName}(
-        ${prefixColumnsInsert}queue, 
-        fingerprint, 
-        input, 
-        run_after, 
-        deadline_at, 
-        max_retries, 
-        job_run_id, 
-        progress, 
-        progress_message, 
+        ${prefixColumnsInsert}queue,
+        fingerprint,
+        input,
+        visible_at,
+        deadline_at,
+        max_attempts,
+        job_run_id,
+        progress,
+        progress_message,
         progress_details,
         created_at
       )
@@ -156,9 +156,9 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       job.queue,
       job.fingerprint,
       JSON.stringify(job.input),
-      job.run_after,
+      job.visible_at,
       job.deadline_at ?? null,
-      job.max_retries!,
+      job.max_attempts!,
       job.job_run_id,
       job.progress,
       job.progress_message,
@@ -216,11 +216,11 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     const prefixParams = this.getPrefixParamValues();
 
     const FutureJobQuery = `
-      SELECT * 
+      SELECT *
         FROM ${this.tableName}
         WHERE queue = ?
         AND status = ?${prefixConditions}
-        ORDER BY run_after ASC
+        ORDER BY visible_at ASC
         LIMIT ${num}`;
     const stmt = this.db.prepare<
       unknown[],
@@ -278,7 +278,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
-   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * Releases a claimed job back to PENDING without incrementing attempts.
    * @param jobId - The id of the claimed job to release.
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
@@ -288,7 +288,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     const ReleaseQuery = `
       UPDATE ${this.tableName}
         SET status = ?,
-            worker_id = NULL,
+            lease_owner = NULL,
             progress = 0,
             progress_message = '',
             progress_details = NULL
@@ -359,16 +359,16 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     >(
       `
       UPDATE ${this.tableName}
-      SET status = ?, last_ran_at = ?, worker_id = ?, lease_expires_at = ?
+      SET status = ?, last_attempted_at = ?, lease_owner = ?, lease_expires_at = ?
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
         WHERE queue = ?
         AND (
-          (status = ? AND run_after <= ?)
+          (status = ? AND visible_at <= ?)
           OR (status = ? AND (lease_expires_at IS NULL OR lease_expires_at < ?))
         )${prefixConditions}
-        ORDER BY run_after ASC
+        ORDER BY visible_at ASC
         LIMIT 1
       )
       RETURNING *`
@@ -398,7 +398,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   /**
    * Extend the lease on a currently PROCESSING job.
    * @param id - The ID of the job to extend the lease for
-   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
@@ -409,7 +409,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     const stmt = this.db.prepare<unknown[], { changes: number }>(
       `UPDATE ${this.tableName}
          SET lease_expires_at = ?
-         WHERE id = ? AND queue = ? AND worker_id = ? AND status = ?${prefixConditions}`
+         WHERE id = ? AND queue = ? AND lease_owner = ? AND status = ?${prefixConditions}`
     );
     const info = stmt.run(
       leaseExpiry,
@@ -449,7 +449,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
    * Marks a job as complete with its output or error.
    * Enhanced error handling:
    * - Increments the retry count.
-   * - For a retryable error, updates run_after with the retry date.
+   * - For a retryable error, updates visible_at with the retry date.
    * - Marks the job as FAILED for permanent or generic errors.
    * - Marks the job as DISABLED for disabled jobs.
    */
@@ -473,18 +473,18 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       params = [job.status, now, job.id as string, this.queueName, ...prefixParams];
     } else {
       updateQuery = `
-          UPDATE ${this.tableName} 
-            SET 
-              output = ?, 
-              error = ?, 
-              error_code = ?, 
-              status = ?, 
-              progress = 100, 
-              progress_message = '', 
-              progress_details = NULL, 
-              last_ran_at = ?,
+          UPDATE ${this.tableName}
+            SET
+              output = ?,
+              error = ?,
+              error_code = ?,
+              status = ?,
+              progress = 100,
+              progress_message = '',
+              progress_details = NULL,
+              last_attempted_at = ?,
               completed_at = ?,
-              run_attempts = run_attempts + 1
+              attempts = attempts + 1
             WHERE id = ? AND queue = ?${prefixConditions}`;
       params = [
         job.output ? JSON.stringify(job.output) : null,

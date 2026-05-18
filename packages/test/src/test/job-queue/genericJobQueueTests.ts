@@ -215,7 +215,7 @@ export function runGenericJobQueueTests(
 
   describe("Basics", () => {
     it("should add a job to the queue", async () => {
-      const handle = await client.submit({ taskType: "task1", data: "input1" });
+      const handle = await client.send({ taskType: "task1", data: "input1" });
       expect(await client.size()).toBe(1);
       const retrievedJob = await client.getJob(handle.id);
       expect(retrievedJob?.status).toBe(JobStatus.PENDING);
@@ -243,7 +243,7 @@ export function runGenericJobQueueTests(
       await server.start();
 
       // Add and complete a job
-      const handle = await client.submit({ taskType: "other", data: "input1" });
+      const handle = await client.send({ taskType: "other", data: "input1" });
       await handle.waitFor();
 
       const jobExists = !!(await client.getJob(handle.id));
@@ -261,7 +261,7 @@ export function runGenericJobQueueTests(
       await server.start();
 
       // Add and complete a job
-      const handle = await client.submit({ taskType: "other", data: "input1" });
+      const handle = await client.send({ taskType: "other", data: "input1" });
       await handle.waitFor();
 
       // Give a small delay
@@ -291,7 +291,7 @@ export function runGenericJobQueueTests(
       await server.start();
 
       // Test completed job - immediate deletion happens in completeJob
-      const completedHandle = await client.submit({ taskType: "other", data: "input1" });
+      const completedHandle = await client.send({ taskType: "other", data: "input1" });
       await completedHandle.waitFor();
 
       // Small delay to allow cleanup
@@ -300,7 +300,7 @@ export function runGenericJobQueueTests(
       expect(completedJobExists).toBe(false);
 
       // Test failed job
-      const failedHandle = await client.submit({ taskType: "failing", data: "input2" });
+      const failedHandle = await client.send({ taskType: "failing", data: "input2" });
       try {
         await failedHandle.waitFor();
       } catch (error) {
@@ -316,8 +316,8 @@ export function runGenericJobQueueTests(
 
     it("should process jobs and get stats", async () => {
       await server.start();
-      const handle1 = await client.submit({ taskType: "other", data: "input1" });
-      const handle2 = await client.submit({ taskType: "other", data: "input2" });
+      const handle1 = await client.send({ taskType: "other", data: "input1" });
+      const handle2 = await client.send({ taskType: "other", data: "input2" });
       await handle1.waitFor();
       await handle2.waitFor();
 
@@ -329,15 +329,15 @@ export function runGenericJobQueueTests(
     });
 
     it("should clear all jobs in the queue", async () => {
-      await client.submit({ taskType: "task1", data: "input1" });
-      await client.submit({ taskType: "task1", data: "input1" });
+      await client.send({ taskType: "task1", data: "input1" });
+      await client.send({ taskType: "task1", data: "input1" });
       expect(await client.size()).toBe(2);
       await storage.deleteAll();
       expect(await client.size()).toBe(0);
     });
 
     it("should retrieve the output for a given task type and input", async () => {
-      const handle = await client.submit({ taskType: "task1", data: "input1" });
+      const handle = await client.send({ taskType: "task1", data: "input1" });
       await server.start();
       await handle.waitFor();
       const output = await client.outputForInput({ taskType: "task1", data: "input1" });
@@ -345,10 +345,10 @@ export function runGenericJobQueueTests(
     });
 
     it("should run the queue and execute all", async () => {
-      await client.submit({ taskType: "task1", data: "input1" });
-      await client.submit({ taskType: "task2", data: "input2" });
-      await client.submit({ taskType: "task1", data: "input1" });
-      const lastHandle = await client.submit({ taskType: "task2", data: "input2" });
+      await client.send({ taskType: "task1", data: "input1" });
+      await client.send({ taskType: "task2", data: "input2" });
+      await client.send({ taskType: "task1", data: "input1" });
+      const lastHandle = await client.send({ taskType: "task2", data: "input2" });
       await server.start();
       await lastHandle.waitFor();
       await server.stop();
@@ -361,9 +361,9 @@ export function runGenericJobQueueTests(
       const totalJobs = 16;
       const maxAllowed = 4; // limiter: 4 per 60s
       for (let i = 0; i < totalJobs - 1; i++) {
-        await client.submit({ taskType: "task1", data: `input${i}` });
+        await client.send({ taskType: "task1", data: `input${i}` });
       }
-      await client.submit({ taskType: "task2", data: "input_last" });
+      await client.send({ taskType: "task2", data: "input_last" });
 
       await server.start();
 
@@ -385,7 +385,7 @@ export function runGenericJobQueueTests(
     });
 
     it("should abort a long-running job and trigger the abort event", async () => {
-      const handle = await client.submit({ taskType: "long_running", data: "input101" });
+      const handle = await client.send({ taskType: "long_running", data: "input101" });
 
       let abortEventTriggered = false;
       client.on("job_aborting", (_qn: string, eventJobId: unknown) => {
@@ -431,19 +431,19 @@ export function runGenericJobQueueTests(
     it("should abort all jobs in a job run while leaving other jobs unaffected", async () => {
       const jobRunId1 = "test-run-1";
       const jobRunId2 = "test-run-2";
-      const handle1 = await client.submit(
+      const handle1 = await client.send(
         { taskType: "long_running", data: "input1" },
         { jobRunId: jobRunId1 }
       );
-      const handle2 = await client.submit(
+      const handle2 = await client.send(
         { taskType: "long_running", data: "input2" },
         { jobRunId: jobRunId1 }
       );
-      const handle3 = await client.submit(
+      const handle3 = await client.send(
         { taskType: "long_running", data: "input3" },
         { jobRunId: jobRunId2 }
       );
-      const handle4 = await client.submit(
+      const handle4 = await client.send(
         { taskType: "long_running", data: "input4" },
         { jobRunId: jobRunId2 }
       );
@@ -485,7 +485,7 @@ export function runGenericJobQueueTests(
     });
 
     it("should wait for a job to complete", async () => {
-      const handle = await client.submit({ taskType: "task1", data: "input1" });
+      const handle = await client.send({ taskType: "task1", data: "input1" });
       await server.start();
       const output = await handle.waitFor();
       expect(output).toEqual({ result: "output1" });
@@ -534,10 +534,10 @@ export function runGenericJobQueueTests(
 
       try {
         // Add jobs to both queues
-        const handle1 = await client1.submit({ taskType: "task1", data: "queue1-job1" });
-        const handle2 = await client1.submit({ taskType: "task1", data: "queue1-job2" });
-        const handle3 = await client2.submit({ taskType: "task1", data: "queue2-job1" });
-        const handle4 = await client2.submit({ taskType: "task1", data: "queue2-job2" });
+        const handle1 = await client1.send({ taskType: "task1", data: "queue1-job1" });
+        const handle2 = await client1.send({ taskType: "task1", data: "queue1-job2" });
+        const handle3 = await client2.send({ taskType: "task1", data: "queue2-job1" });
+        const handle4 = await client2.send({ taskType: "task1", data: "queue2-job2" });
 
         // Verify each queue only sees its own jobs
         expect(await client1.size()).toBe(2);
@@ -623,7 +623,7 @@ export function runGenericJobQueueTests(
       client.attach(server);
       await server.start();
 
-      const handle = await client.submit({ taskType: "other", data: "input-wake" });
+      const handle = await client.send({ taskType: "other", data: "input-wake" });
       const start = Date.now();
       const result = (await Promise.race([
         handle.waitFor(),
@@ -637,7 +637,7 @@ export function runGenericJobQueueTests(
 
     itFastWake("deferred submit wakes before the poll interval elapses", async () => {
       // pollIntervalMs is 60s — without notify() flipping hasDeferredJobs, the
-      // worker would sleep through the full 60s and miss the runAfter deadline.
+      // worker would sleep through the full 60s and miss the visible_at deadline.
       await server.stop();
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
@@ -649,10 +649,9 @@ export function runGenericJobQueueTests(
       client.attach(server);
       await server.start();
 
-      const runAfter = new Date(Date.now() + 200);
-      const handle = await client.submit(
+      const handle = await client.send(
         { taskType: "other", data: "deferred-wake" },
-        { runAfter }
+        { delaySeconds: 0.2 }
       );
 
       const start = Date.now();
@@ -680,7 +679,7 @@ export function runGenericJobQueueTests(
       client.attach(server);
       await server.start();
 
-      const handle = await client.submit({ taskType: "long_running", data: "to-abort" });
+      const handle = await client.send({ taskType: "long_running", data: "to-abort" });
 
       // Wait for the worker to pick it up (accommodate slower async storages).
       for (let i = 0; i < 300; i++) {
@@ -716,7 +715,7 @@ export function runGenericJobQueueTests(
       await server.start();
 
       // Submit a job that sleeps briefly, then completes.
-      const handle = await client.submit({ taskType: "other", data: "drain" });
+      const handle = await client.send({ taskType: "other", data: "drain" });
 
       // Wait until PROCESSING, then stop — the drain should wait for it to finish.
       for (let i = 0; i < 50; i++) {
@@ -743,7 +742,7 @@ export function runGenericJobQueueTests(
 
       try {
         await server.start();
-        const handle = await client.submit({ taskType: "progress", data: "track-progress" });
+        const handle = await client.send({ taskType: "progress", data: "track-progress" });
         await handle.waitFor();
         expect(saveProgressCalls).toBe(0);
       } finally {
@@ -761,7 +760,7 @@ export function runGenericJobQueueTests(
         details: Record<string, unknown> | null;
       }> = [];
 
-      const handle = await client.submit({ taskType: "progress", data: "input1" });
+      const handle = await client.send({ taskType: "progress", data: "input1" });
 
       // Listen for progress events
       client.on(
@@ -814,7 +813,7 @@ export function runGenericJobQueueTests(
         details: Record<string, unknown> | null;
       }> = [];
 
-      const handle = await client.submit({ taskType: "progress", data: "input1" });
+      const handle = await client.send({ taskType: "progress", data: "input1" });
 
       // Add job-specific listener
       const cleanup = handle.onProgress(
@@ -858,7 +857,7 @@ export function runGenericJobQueueTests(
       // Set up multiple jobs that take some time to complete
       const handles = [];
       for (let i = 0; i < 10; i++) {
-        const handle = await client.submit({ taskType: "progress", data: `input${i}` });
+        const handle = await client.send({ taskType: "progress", data: `input${i}` });
         handles.push(handle);
       }
 
@@ -882,7 +881,7 @@ export function runGenericJobQueueTests(
 
       // Add burst of jobs
       for (let i = 0; i < numJobs; i++) {
-        const handle = await client.submit({ taskType: "other", data: `input${i}` });
+        const handle = await client.send({ taskType: "other", data: `input${i}` });
         handles.push(handle);
       }
 
@@ -910,11 +909,11 @@ export function runGenericJobQueueTests(
       // between those reads, producing transient under/over-count snapshots on
       // faster Vitest/Node runs.
       async function getJobCounts(
-        runAttempts = 50,
+        attempts = 50,
         retryDelay = 5
       ): Promise<{ pending: number; processing: number; completed: number }> {
         let lastCounts = { pending: 0, processing: 0, completed: 0 };
-        for (let i = 0; i < runAttempts; i++) {
+        for (let i = 0; i < attempts; i++) {
           try {
             const jobs = await Promise.all(handles.map((handle) => client.getJob(handle.id)));
             const pending = jobs.filter((job) => job?.status === JobStatus.PENDING).length;
@@ -927,7 +926,7 @@ export function runGenericJobQueueTests(
               return lastCounts;
             }
           } catch (err) {
-            if (i === runAttempts - 1) throw err;
+            if (i === attempts - 1) throw err;
           }
           await sleep(retryDelay);
         }
@@ -956,7 +955,7 @@ export function runGenericJobQueueTests(
 
       // Try to add jobs faster than the rate limit
       for (let i = 0; i < 30; i++) {
-        const handle = await client.submit({ taskType: "progress", data: `input${i}` });
+        const handle = await client.send({ taskType: "progress", data: `input${i}` });
         handles.push(handle);
       }
 
@@ -979,7 +978,7 @@ export function runGenericJobQueueTests(
   describe("Job Queue Restart", () => {
     it("should recover rate limits after pause", async () => {
       // Add a single quick job to test rate limiting
-      const initialHandle = await client.submit({ taskType: "other", data: "test_job" });
+      const initialHandle = await client.send({ taskType: "other", data: "test_job" });
 
       // Start queue and wait for job to complete
       await server.start();
@@ -993,7 +992,7 @@ export function runGenericJobQueueTests(
       await server.stop();
 
       // Add another job after pause
-      const newHandle = await client.submit({ taskType: "other", data: "after_pause" });
+      const newHandle = await client.send({ taskType: "other", data: "after_pause" });
 
       const pendingJob = await client.getJob(newHandle.id);
       expect(pendingJob?.status).toBe(JobStatus.PENDING);
@@ -1011,9 +1010,9 @@ export function runGenericJobQueueTests(
 
   describe("Error Handling", () => {
     it("should handle job failures and mark job as failed", async () => {
-      const handle = await client.submit(
+      const handle = await client.send(
         { taskType: "failing", data: "will-fail" },
-        { maxRetries: 0 }
+        { maxAttempts: 1 }
       );
 
       let error: Error | null = null;
@@ -1031,13 +1030,13 @@ export function runGenericJobQueueTests(
       expect(failedJob?.status).toBe(JobStatus.FAILED);
       expect(failedJob?.error).toBe("Job failed as expected");
       expect(failedJob?.errorCode).toBe("JobError");
-      expect(failedJob?.runAttempts).toBe(1);
+      expect(failedJob?.attempts).toBe(1);
     });
 
-    it("should retry a failed job up to maxRetries", async () => {
-      const handle = await client.submit(
+    it("should retry a failed job up to maxAttempts", async () => {
+      const handle = await client.send(
         { taskType: "failing_retryable", data: "will-retry" },
-        { maxRetries: 2 }
+        { maxAttempts: 3 }
       );
 
       let error: Error | null = null;
@@ -1055,8 +1054,8 @@ export function runGenericJobQueueTests(
 
       const failedJob = await client.getJob(handle.id);
       expect(failedJob?.status).toBe(JobStatus.FAILED);
-      expect(failedJob?.runAttempts).toBe(3); // Should have attempted 3 times
-      expect(failedJob?.error).toBe("Max retries reached");
+      expect(failedJob?.attempts).toBe(3); // Should have attempted 3 times
+      expect(failedJob?.error).toBe("Max attempts reached");
 
       await server.stop();
     });
@@ -1065,9 +1064,9 @@ export function runGenericJobQueueTests(
       const telemetry = new RecordingTelemetryProvider();
       setTelemetryProvider(telemetry);
 
-      const handle = await client.submit(
+      const handle = await client.send(
         { taskType: "failing_retryable", data: "will-retry" },
-        { maxRetries: 2 }
+        { maxAttempts: 3 }
       );
 
       try {
@@ -1080,16 +1079,16 @@ export function runGenericJobQueueTests(
       const span = telemetry.spans.at(-1);
       expect(span?.status).toEqual({
         code: SpanStatusCode.ERROR,
-        message: "Max retries reached",
+        message: "Max attempts reached",
       });
-      expect(span?.attributes["workglow.job.error"]).toBe("Max retries reached");
+      expect(span?.attributes["workglow.job.error"]).toBe("Max attempts reached");
     });
 
     it("should handle permanent failures without retrying", async () => {
       await server.start();
-      const handle = await client.submit(
+      const handle = await client.send(
         { taskType: "permanent_fail", data: "no-retry" },
-        { maxRetries: 2 }
+        { maxAttempts: 3 }
       );
 
       let error: Error | null = null;
@@ -1105,7 +1104,7 @@ export function runGenericJobQueueTests(
       const failedJob = await client.getJob(handle.id);
       expect(failedJob?.status).toBe(JobStatus.FAILED);
       expect(failedJob?.error).toBe("Permanent failure - do not retry");
-      expect(failedJob?.runAttempts).toBe(1); // Should not retry permanent failures
+      expect(failedJob?.attempts).toBe(1); // Should not retry permanent failures
 
       await server.stop();
     });
@@ -1122,9 +1121,9 @@ export function runGenericJobQueueTests(
         errorEventError = error;
       });
 
-      const handle = await client.submit(
+      const handle = await client.send(
         { taskType: "failing", data: "will-fail" },
-        { maxRetries: 0 }
+        { maxAttempts: 1 }
       );
 
       try {

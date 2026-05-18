@@ -103,18 +103,22 @@ export type JobStorageFormat<Input, Output> = {
   error?: string | null;
   error_code?: string | null;
   fingerprint?: string;
-  max_retries?: number;
+  /**
+   * Total attempt cap. A job with `max_attempts: 3` gets at most 3 executions total
+   * (not 3 retries after the first attempt).
+   */
+  max_attempts?: number;
   status?: JobStatus;
   created_at?: string;
   deadline_at?: string | null;
-  last_ran_at?: string | null;
-  run_after: string | null;
+  last_attempted_at?: string | null;
+  visible_at: string | null;
   completed_at: string | null;
-  run_attempts?: number;
+  attempts?: number;
   progress?: number;
   progress_message?: string;
   progress_details?: Record<string, any> | null;
-  worker_id?: string | null;
+  lease_owner?: string | null;
   abort_requested_at?: string | null;
   lease_expires_at?: string | null;
 };
@@ -181,7 +185,7 @@ export interface IQueueStorage<Input, Output> {
   /**
    * Releases a job that was just claimed by {@link next} but won't be
    * processed (e.g. the worker was stopped mid-claim). Resets status to
-   * PENDING and clears worker_id WITHOUT incrementing run_attempts —
+   * PENDING and clears lease_owner WITHOUT incrementing attempts —
    * the worker never actually attempted execution, so the retry budget
    * must be preserved.
    * @param id - The id of the claimed job to release.

@@ -87,7 +87,7 @@ export function runGenericQueueStorageSubscriptionTests(
 
       const jobId = await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -105,7 +105,7 @@ export function runGenericQueueStorageSubscriptionTests(
     it("should notify on job update", async () => {
       const jobId = await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -139,7 +139,7 @@ export function runGenericQueueStorageSubscriptionTests(
     it("should notify on job completion", async () => {
       const jobId = await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -180,7 +180,7 @@ export function runGenericQueueStorageSubscriptionTests(
     it("should notify on job deletion", async () => {
       const jobId = await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -208,12 +208,12 @@ export function runGenericQueueStorageSubscriptionTests(
     it("should notify on deleteAll", async () => {
       await storage.add({
         input: { data: "test-job-1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
       await storage.add({
         input: { data: "test-job-2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -241,7 +241,7 @@ export function runGenericQueueStorageSubscriptionTests(
     it("should notify on progress updates", async () => {
       const jobId = await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -280,7 +280,7 @@ export function runGenericQueueStorageSubscriptionTests(
 
       await storage.add({
         input: { data: "test-job-1" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -293,7 +293,7 @@ export function runGenericQueueStorageSubscriptionTests(
 
       await storage.add({
         input: { data: "test-job-2" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -319,7 +319,7 @@ export function runGenericQueueStorageSubscriptionTests(
 
       await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -358,14 +358,14 @@ export function runGenericQueueStorageSubscriptionTests(
         // Add job to storage1 (user1)
         await storage.add({
           input: { data: "user1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
 
         // Add job to storage2 (user2)
         await storage2.add({
           input: { data: "user2-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
 
@@ -414,7 +414,7 @@ export function runGenericQueueStorageSubscriptionTests(
 
       await storage.add({
         input: { data: "test-job" },
-        run_after: null,
+        visible_at: null,
         completed_at: null,
       });
 
@@ -497,17 +497,17 @@ export function runGenericQueueStorageSubscriptionTests(
         // Add jobs to different user/project combinations
         await storage1.add({
           input: { data: "user1-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage2.add({
           input: { data: "user1-project2-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage3.add({
           input: { data: "user2-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
 
@@ -542,17 +542,17 @@ export function runGenericQueueStorageSubscriptionTests(
         // Add jobs to different user/project combinations
         await storage1.add({
           input: { data: "user1-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage2.add({
           input: { data: "user1-project2-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage3.add({
           input: { data: "user2-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
 
@@ -587,17 +587,17 @@ export function runGenericQueueStorageSubscriptionTests(
         // Add jobs to different user/project combinations
         await storage1.add({
           input: { data: "user1-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage2.add({
           input: { data: "user1-project2-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
         await storage3.add({
           input: { data: "user2-project1-job" },
-          run_after: null,
+          visible_at: null,
           completed_at: null,
         });
 

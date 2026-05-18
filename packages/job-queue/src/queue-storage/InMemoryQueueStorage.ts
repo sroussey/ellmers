@@ -88,7 +88,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.progress_message = "";
     jobWithPrefixes.progress_details = null;
     jobWithPrefixes.created_at = now;
-    jobWithPrefixes.run_after = now;
+    jobWithPrefixes.visible_at = now;
 
     // Add prefix values to the job
     for (const [key, value] of Object.entries(this.prefixValues)) {
@@ -128,7 +128,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     num = Number(num) || 100;
     return this.jobQueue
       .filter((j) => this.matchesPrefixes(j))
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""))
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""))
       .filter((j) => j.status === status)
       .slice(0, num);
   }
@@ -154,22 +154,22 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     const pending = this.jobQueue
       .filter((job) => this.matchesPrefixes(job))
       .filter((job) => job.status === JobStatus.PENDING)
-      .filter((job) => !job.run_after || job.run_after <= now)
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
+      .filter((job) => !job.visible_at || job.visible_at <= now)
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""));
 
     // Also look for PROCESSING jobs with expired leases
     const expiredLease = this.jobQueue
       .filter((job) => this.matchesPrefixes(job))
       .filter((job) => job.status === JobStatus.PROCESSING)
       .filter((job) => !job.lease_expires_at || job.lease_expires_at < now)
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""));
 
     const job = pending[0] ?? expiredLease[0];
     if (job) {
       const oldJob = { ...job };
       job.status = JobStatus.PROCESSING;
-      job.last_ran_at = now;
-      job.worker_id = workerId;
+      job.last_attempted_at = now;
+      job.lease_owner = workerId;
       job.lease_expires_at = leaseExpiry;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
       return job;
@@ -179,13 +179,13 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   /**
    * Extend the lease on a currently PROCESSING job.
    * @param id - The ID of the job to extend the lease for
-   * @param workerId - Worker ID that must match the current lease owner (worker_id)
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
-    if (!job || job.status !== JobStatus.PROCESSING || job.worker_id !== workerId) {
+    if (!job || job.status !== JobStatus.PROCESSING || job.lease_owner !== workerId) {
       throw new Error(
         `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
       );
@@ -255,7 +255,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /**
    * Marks a job as complete with its output or error
-   * Handles run_attempts for failed jobs and triggers completion callbacks
+   * Handles attempts for failed jobs and triggers completion callbacks
    * @param id - ID of the job to complete
    * @param output - Result of the job execution
    * @param error - Optional error message if job failed
@@ -266,8 +266,8 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     const index = this.jobQueue.findIndex((j) => j.id === job.id && this.matchesPrefixes(j));
     if (index !== -1) {
       const existing = this.jobQueue[index];
-      const currentAttempts = existing?.run_attempts ?? 0;
-      jobWithPrefixes.run_attempts = currentAttempts + 1;
+      const currentAttempts = existing?.attempts ?? 0;
+      jobWithPrefixes.attempts = currentAttempts + 1;
       // Preserve prefix values from the existing job
       for (const [key, value] of Object.entries(this.prefixValues)) {
         jobWithPrefixes[key] = value;
@@ -278,7 +278,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * Releases a claimed job back to PENDING without incrementing attempts.
    * @param id - The id of the claimed job to release.
    */
   public async releaseClaim(id: unknown): Promise<void> {
@@ -287,7 +287,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     if (job) {
       const oldJob = { ...job };
       job.status = JobStatus.PENDING;
-      job.worker_id = null;
+      job.lease_owner = null;
       job.progress = 0;
       job.progress_message = "";
       job.progress_details = null;
