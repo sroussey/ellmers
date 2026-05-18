@@ -39,20 +39,22 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
     private readonly workerId: string
   ) {}
 
-  async ack(): Promise<void> {
+  async ack(result?: unknown): Promise<void> {
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.core.get(this.id)) ?? this.body;
-    await this.core.complete({
-      ...current,
-      output: buf?.output ?? current.output ?? null,
+    const output =
+      result !== undefined
+        ? result
+        : buf?.output !== undefined
+          ? buf.output
+          : (current.output ?? null);
+    await this.core.finalize(this.id, {
+      output: output as Output | null,
       error: null,
       error_code: null,
       status: JobStatus.COMPLETED,
       completed_at: current.completed_at ?? new Date().toISOString(),
-      progress: 100,
-      progress_message: "",
-      progress_details: null,
     });
   }
 
@@ -72,27 +74,57 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
     });
   }
 
-  async fail(_opts?: { permanent?: boolean }): Promise<void> {
+  async fail(opts?: {
+    error?: string | null;
+    errorCode?: string | null;
+    abortRequested?: boolean;
+    permanent?: boolean;
+  }): Promise<void> {
+    void opts?.permanent;
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.core.get(this.id)) ?? this.body;
-    await this.core.complete({
-      ...current,
-      error: buf?.error ?? current.error ?? null,
-      error_code: buf?.errorCode ?? current.error_code ?? null,
-      abort_requested_at: buf?.abortRequested
+    const error =
+      opts?.error !== undefined
+        ? opts.error
+        : buf?.error !== undefined
+          ? buf.error
+          : (current.error ?? null);
+    const errorCode =
+      opts?.errorCode !== undefined
+        ? opts.errorCode
+        : buf?.errorCode !== undefined
+          ? buf.errorCode
+          : (current.error_code ?? null);
+    const abortRequested =
+      opts?.abortRequested !== undefined ? opts.abortRequested : (buf?.abortRequested ?? false);
+    await this.core.finalize(this.id, {
+      error,
+      error_code: errorCode,
+      abort_requested_at: abortRequested
         ? (current.abort_requested_at ?? new Date().toISOString())
         : (current.abort_requested_at ?? null),
       status: JobStatus.FAILED,
       completed_at: current.completed_at ?? new Date().toISOString(),
-      progress: 100,
-      progress_message: "",
-      progress_details: null,
     });
   }
 
   async extendLease(ms: number): Promise<void> {
     await this.core.extendLease(this.id, this.workerId, ms);
+  }
+
+  async disable(): Promise<void> {
+    this.pending.delete(this.id);
+    const current = await this.core.get(this.id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.core.finalize(this.id, {
+      status: JobStatus.DISABLED,
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
   }
 }
 

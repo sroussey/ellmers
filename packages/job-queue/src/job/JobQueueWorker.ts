@@ -615,8 +615,6 @@ export class JobQueueWorker<
         })
       : undefined;
 
-    // Flag to skip complete() in finally when release() was already called.
-    let limiterReleased = false;
     try {
       // The limiter slot was already atomically reserved by tryAcquire() in
       // the main loop (or processNext), so we no longer call recordJobStart
@@ -624,12 +622,9 @@ export class JobQueueWorker<
       try {
         await this.validateJobState(job);
       } catch (validationErr) {
-        // Validation failed before execution started — undo the reservation as
-        // if the job never ran. release() is correct here (not complete()): for
-        // RateLimiter, complete() is a no-op and the window slot would be
-        // permanently consumed even though no work was done.
-        await this.limiter.release(limiterToken);
-        limiterReleased = true;
+        // Throw — the outer finally block's limiter.complete() will release
+        // the slot. Do NOT call limiter.release() here too; that would
+        // double-decrement the counter and admit one extra concurrent job.
         throw validationErr;
       }
 
@@ -712,9 +707,7 @@ export class JobQueueWorker<
       }
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
-      if (!limiterReleased) {
-        await this.limiter.complete(limiterToken);
-      }
+      await this.limiter.complete(limiterToken);
       span?.end();
       // Guard against a concurrent processSingleJob for the same jobId (which
       // can start before this finally block runs, e.g. after a reschedule).
@@ -775,10 +768,22 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
+      // H2 atomic ack: hand the result directly to claim.ack() so result +
+      // COMPLETED status land in a single storage write. If we crash here
+      // — anywhere between this call site and the storage layer's commit —
+      // the row stays PROCESSING, the lease expires, the next worker
+      // reclaims it, and no `job_complete` is ever emitted. Before this
+      // change we issued `saveResult` then `ack`: a crash between the two
+      // left a PROCESSING row with the output already written, no
+      // `job_complete`, and a redelivery that overwrote the previously-
+      // saved output.
       const claim = this.getClaim(job.id);
-      await this.jobStore.saveResult(job.id, (output ?? null) as Output);
       if (claim) {
-        await claim.ack();
+        await claim.ack(output ?? null);
+      } else {
+        // No active claim (rare path — e.g. abort beat us to it). Fall back
+        // to the legacy two-step so the result is still persisted.
+        await this.jobStore.saveResult(job.id, (output ?? null) as Output);
       }
       this.events.emit("job_complete", job.id, output as Output);
     } catch (err) {
@@ -801,10 +806,30 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = error?.constructor?.name ?? null;
 
+      // H2 atomic fail: hand error/errorCode/abortRequested directly to
+      // claim.fail() so they land in a single storage write together with
+      // status=FAILED. Eliminates the saveError-then-fail two-write window
+      // where a crash could leave the row PROCESSING with an `error`
+      // already written.
+      const abortRequested = error instanceof AbortSignalJobError;
       const claim = this.getClaim(job.id);
-      await this.jobStore.saveError(job.id, error.message, error.constructor.name ?? null, false);
       if (claim) {
-        await claim.fail();
+        await claim.fail({
+          error: error.message,
+          errorCode: error.constructor.name ?? null,
+          abortRequested,
+        });
+      } else {
+        // Fallback — no active claim (e.g. lease lost or abort path). The
+        // legacy two-step is still correct here because we're writing
+        // straight to the job store; the atomicity loss only matters when
+        // ack/fail and the result write are split across claim and store.
+        await this.jobStore.saveError(
+          job.id,
+          error.message,
+          error.constructor.name ?? null,
+          abortRequested
+        );
       }
       this.events.emit("job_error", job.id, error.message, error.constructor.name);
     } catch (err) {
@@ -825,14 +850,21 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      // IClaim has no "disable" terminal. Release the lease via fail() (writes
-      // FAILED), then immediately overwrite status to DISABLED via saveStatus()
-      // so storage reflects the correct terminal state.
+      // H5 atomic disable: a single storage write sets status=DISABLED,
+      // releases the lease, and clears progress fields. Replaces the legacy
+      // two-write `claim.fail()` then `jobStore.saveStatus(DISABLED)` path
+      // which briefly persisted FAILED before overwriting with DISABLED —
+      // any subscriber observing during the window saw a spurious
+      // FAILED transition and fired a `job_error` event.
       const claim = this.getClaim(job.id);
-      if (claim) {
-        await claim.fail();
+      if (claim?.disable) {
+        await claim.disable();
+      } else {
+        // Fallback for external IClaim impls that haven't adopted disable()
+        // yet. saveStatus uses finalize() under the hood (no attempts bump,
+        // no error write), so it's correct as a single-write fallback.
+        await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       }
-      await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       this.events.emit("job_disabled", job.id);
     } catch (err) {
       getLogger().error("disableJob errored:", { error: err });
@@ -858,11 +890,6 @@ export class JobQueueWorker<
       if (claim) {
         await this.messageQueue.releaseClaim(claim.id);
       } else {
-        // Fallback when the claim was never registered (e.g. worker stopped
-        // between receive() and activeClaims.set). Passes the job id, not a
-        // receipt handle — adapters whose claim.id differs from job.id (e.g.
-        // SQS) should treat this as best-effort and no-op if no live handle
-        // is available.
         await this.messageQueue.releaseClaim(job.id);
       }
     } catch (err) {

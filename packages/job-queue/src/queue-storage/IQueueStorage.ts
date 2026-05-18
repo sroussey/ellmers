@@ -208,10 +208,51 @@ export interface IQueueStorage<Input, Output> {
   size(status?: JobStatus): Promise<number>;
 
   /**
-   * Completes a job in the queue storage
+   * Completes a job in the queue storage. Bumps `attempts` (legacy contract,
+   * preserved for backward compatibility with code paths that rely on it,
+   * such as PENDING-retry rescheduling).
+   *
+   * NEW callers (worker ack/fail paths) should prefer {@link finalize}, which
+   * writes the terminal result fields WITHOUT touching `attempts` — a successful
+   * ack must not consume a retry attempt that was already accounted for by
+   * the lease-expiry reclaim or by the wrapper's retry path.
    * @param job - The job to complete
    */
   complete(job: JobStorageFormat<Input, Output>): Promise<void>;
+
+  /**
+   * Terminal write for a claim: persists the listed fields WITHOUT bumping
+   * the `attempts` counter. A partial overwrite — fields not present in
+   * `fields` are untouched.
+   *
+   * Introduced to fix the bug where `WrappedClaim.ack`/`fail` going through
+   * `complete()` incremented `attempts` on a successful execution. The
+   * lease-expiry reclaim already charged this attempt at `next()` time;
+   * charging it again at `ack()` time double-counts and rolls a successful
+   * job into MAX_ATTEMPTS_REACHED prematurely.
+   *
+   * The `lease_owner` / progress fields are also writable here so the
+   * atomic `disable` path can release the lease and clear progress in the
+   * same single write.
+   *
+   * @param id - The ID of the job to finalize
+   * @param fields - Terminal fields to write
+   */
+  finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void>;
 
   /**
    * Deletes all jobs from the queue storage
@@ -287,15 +328,6 @@ export interface IQueueStorage<Input, Output> {
    * (in-memory).
    */
   getMigrations(): ReadonlyArray<unknown>;
-
-  /**
-   * Saves just the status of a job without incrementing attempts. Optional;
-   * when present it is used by the {@link wrapQueueStorage} adapter's
-   * `saveStatus` implementation to avoid going through `complete()` (which
-   * always bumps attempts). Backends that do not implement this method are
-   * unsupported in the wrapped adapter's `saveStatus` path.
-   */
-  saveStatus?(id: unknown, status: JobStatus): Promise<void>;
 
   /**
    * Subscribes to changes in the queue (including remote changes).

@@ -4,13 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  DeadLetter,
-  IClaim,
-  IJobExecuteContext,
-  IMessageQueue,
-  MessageId,
-} from "@workglow/job-queue";
+import type { DeadLetter, IJobExecuteContext } from "@workglow/job-queue";
 import {
   ConcurrencyLimiter,
   InMemoryQueueStorage,
@@ -212,6 +206,8 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
 // ---------------------------------------------------------------------------
 // Minimal in-memory IMessageQueue for DLQ testing
 // ---------------------------------------------------------------------------
+
+import type { IClaim, IMessageQueue, MessageId } from "@workglow/job-queue";
 
 class CollectingQueue<Body> implements IMessageQueue<Body> {
   public readonly scope = "process" as const;

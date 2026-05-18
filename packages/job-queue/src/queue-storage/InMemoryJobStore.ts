@@ -92,6 +92,6 @@ export class InMemoryJobStore<Input, Output> implements IJobStore<Input, Output>
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
-    await this.core.updateJobStatus(id, status);
+    await this.core.saveStatus(id, status);
   }
 }
