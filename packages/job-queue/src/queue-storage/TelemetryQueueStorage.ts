@@ -50,8 +50,10 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       this.inner.complete(job)
     );
   }
-  release(id: unknown): Promise<void> {
-    return traced("workglow.storage.queue.release", this.storageName, () => this.inner.release(id));
+  releaseClaim(id: unknown): Promise<void> {
+    return traced("workglow.storage.queue.releaseClaim", this.storageName, () =>
+      this.inner.releaseClaim(id)
+    );
   }
   deleteAll(): Promise<void> {
     return traced("workglow.storage.queue.deleteAll", this.storageName, () =>

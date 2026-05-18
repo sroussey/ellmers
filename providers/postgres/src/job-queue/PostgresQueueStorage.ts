@@ -407,7 +407,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Releases a claimed job back to PENDING without incrementing run_attempts.
    * @param jobId - The id of the claimed job to release.
    */
-  public async release(jobId: unknown): Promise<void> {
+  public async releaseClaim(jobId: unknown): Promise<void> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
     await this.db.query(
       `

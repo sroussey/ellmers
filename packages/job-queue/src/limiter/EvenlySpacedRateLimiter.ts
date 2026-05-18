@@ -23,7 +23,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   private readonly windowSizeMs: number;
   private readonly idealInterval: number;
   private nextAvailableTime: number = Date.now();
-  private lastStartTime: number = 0;
   private durations: number[] = [];
   /** Promise chain used to serialize concurrent {@link tryAcquire} callers. */
   private acquireChain: Promise<unknown> = Promise.resolve();
@@ -39,12 +38,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     this.windowSizeMs = windowSizeInSeconds * 1_000;
     // If you want exactly maxExecutions in windowSize, start one every this many ms:
     this.idealInterval = this.windowSizeMs / this.maxExecutions;
-  }
-
-  /** Can we start a new job right now? */
-  async canProceed(): Promise<boolean> {
-    const now = Date.now();
-    return now >= this.nextAvailableTime;
   }
 
   /**
@@ -69,7 +62,6 @@ export class EvenlySpacedRateLimiter implements ILimiter {
       const priorNextAvailable = this.nextAvailableTime;
       // Reserve the slot by advancing nextAvailableTime now (recordJobStart-style)
       // so a follow-up tryAcquire from another caller in the same tick blocks.
-      this.lastStartTime = now;
       if (this.durations.length === 0) {
         this.nextAvailableTime = now + this.idealInterval;
       } else {
@@ -103,36 +95,11 @@ export class EvenlySpacedRateLimiter implements ILimiter {
     }
   }
 
-  /** Record that a job is starting now. */
-  async recordJobStart(): Promise<void> {
-    const now = Date.now();
-    this.lastStartTime = now;
-
-    // If no timing data yet, assume zero run-time (ideal interval)
-    if (this.durations.length === 0) {
-      this.nextAvailableTime = now + this.idealInterval;
-    } else {
-      // Compute average run duration
-      const sum = this.durations.reduce((a, b) => a + b, 0);
-      const avgDuration = sum / this.durations.length;
-      // Schedule next start: ideal spacing minus average duration
-      const waitMs = Math.max(0, this.idealInterval - avgDuration);
-      this.nextAvailableTime = now + waitMs;
-    }
-  }
-
   /**
-   * Call this when a job finishes.
-   * We measure its duration, update our running-average,
-   * and then compute how long to wait before the next job start.
+   * No-op — rate window reservations must persist until the window expires.
    */
-  async recordJobCompletion(): Promise<void> {
-    const now = Date.now();
-    const duration = now - this.lastStartTime;
-    this.durations.push(duration);
-    if (this.durations.length > this.maxExecutions) {
-      this.durations.shift();
-    }
+  async complete(_token: unknown): Promise<void> {
+    return Promise.resolve();
   }
 
   async getNextAvailableTime(): Promise<Date> {
@@ -149,6 +116,5 @@ export class EvenlySpacedRateLimiter implements ILimiter {
   async clear(): Promise<void> {
     this.durations = [];
     this.nextAvailableTime = Date.now();
-    this.lastStartTime = 0;
   }
 }

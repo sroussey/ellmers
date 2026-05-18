@@ -170,7 +170,7 @@ export interface IQueueStorage<Input, Output> {
    * must be preserved.
    * @param id - The id of the claimed job to release.
    */
-  release(id: unknown): Promise<void>;
+  releaseClaim(id: unknown): Promise<void>;
 
   /**
    * Peeks at the next job(s) from the queue storage without removing them

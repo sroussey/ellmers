@@ -445,7 +445,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   /**
    * Releases a claimed job without consuming a retry attempt.
    */
-  public async release(id: unknown): Promise<void> {
+  public async releaseClaim(id: unknown): Promise<void> {
     const job = await this.get(id);
     if (!job) return;
 
