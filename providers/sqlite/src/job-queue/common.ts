@@ -7,6 +7,9 @@
 // organize-imports-ignore
 
 export * from "./SqliteQueueStorage";
+export * from "./SqliteMessageQueue";
+export * from "./SqliteJobStore";
+export * from "./createSqliteQueue";
 export * from "./SqliteRateLimiterStorage";
 
 // Versioned migration sets for the queue + rate-limiter tables, plus the

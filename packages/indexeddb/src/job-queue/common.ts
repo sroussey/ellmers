@@ -7,6 +7,9 @@
 // organize-imports-ignore
 
 export * from "./IndexedDbQueueStorage";
+export * from "./IndexedDbMessageQueue";
+export * from "./IndexedDbJobStore";
+export * from "./createIndexedDbQueue";
 export * from "./IndexedDbRateLimiterStorage";
 
 // Versioned migration sets for the queue + rate-limiter object stores, plus
