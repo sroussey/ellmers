@@ -67,6 +67,14 @@ function assertJobStatusMatchesV1(): void {
  * table names get tracked independently in `_storage_migrations`. The v1
  * payload covers schema + indexes + LISTEN/NOTIFY plumbing; the trigger is
  * idempotent (`CREATE OR REPLACE FUNCTION` + `DROP TRIGGER IF EXISTS`).
+ *
+ * v1 is FROZEN byte-for-byte against the pre-PR shape — it MUST keep
+ * creating the `run_after`/`run_attempts`/`max_retries`/`last_ran_at`/
+ * `worker_id` columns and the corresponding `run_after`-keyed indexes.
+ * Renames and index swaps live in v3 (with `IF EXISTS` guards so a fresh
+ * install — which still goes through v1 — can apply v3 without errors).
+ * Mutating v1 would silently produce divergent schemas between fresh and
+ * already-migrated DBs and break older deployments mid-rollout.
  */
 export function postgresQueueMigrations(
   tableName: string,
@@ -109,10 +117,10 @@ export function postgresQueueMigrations(
             status job_status NOT NULL default 'PENDING',
             input jsonb NOT NULL,
             output jsonb,
-            attempts integer default 0,
-            max_attempts integer default 10,
-            visible_at timestamp with time zone DEFAULT now(),
-            last_attempted_at timestamp with time zone,
+            run_attempts integer default 0,
+            max_retries integer default 20,
+            run_after timestamp with time zone DEFAULT now(),
+            last_ran_at timestamp with time zone,
             created_at timestamp with time zone DEFAULT now(),
             deadline_at timestamp with time zone,
             completed_at timestamp with time zone,
@@ -121,17 +129,17 @@ export function postgresQueueMigrations(
             progress real DEFAULT 0,
             progress_message text DEFAULT '',
             progress_details jsonb,
-            lease_owner text
+            worker_id text
           )
         `);
 
         await db.query(`
           CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx
-            ON ${tableName} (${prefixIndexPrefix}id, status, visible_at)
+            ON ${tableName} (${prefixIndexPrefix}id, status, run_after)
         `);
         await db.query(`
           CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx
-            ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at)
+            ON ${tableName} (${prefixIndexPrefix}queue, status, run_after)
         `);
         await db.query(`
           CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx
@@ -204,9 +212,11 @@ export function postgresQueueMigrations(
       component,
       version: 3,
       description:
-        "Rename columns: run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner",
+        "Rename run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner; drop run_after-keyed indexes and recreate visible_at-keyed",
       async up(db: Pool) {
-        // Rename each column individually so a partial prior run doesn't skip everything.
+        // Each rename is guarded by IF EXISTS — fresh installs (which still
+        // run v1 → v2 → v3) skip every branch and end up with the v1 schema
+        // exactly. Existing installs from before this PR get renamed in place.
         await db.query(`
           DO $$
           BEGIN
@@ -227,6 +237,25 @@ export function postgresQueueMigrations(
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN worker_id TO lease_owner';
             END IF;
           END $$
+        `);
+
+        // Drop the v1 run_after-keyed indexes and recreate them keyed on
+        // visible_at. CREATE INDEX cannot be wrapped in CONCURRENTLY here
+        // because the migration runs inside a transaction. The old indexes
+        // are useless after the rename — PostgreSQL automatically retargets
+        // them onto `visible_at` post-rename, but their NAMES still encode
+        // the old column, which is confusing for operators and slot-binds
+        // against the wrong stats; doing an explicit DROP + CREATE swap
+        // keeps names and schemas consistent.
+        await db.query(`DROP INDEX IF EXISTS job_fetcher${indexSuffix}_idx`);
+        await db.query(`DROP INDEX IF EXISTS job_queue_fetcher${indexSuffix}_idx`);
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx
+            ON ${tableName} (${prefixIndexPrefix}id, status, visible_at)
+        `);
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx
+            ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at)
         `);
       },
     },

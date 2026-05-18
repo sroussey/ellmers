@@ -249,7 +249,18 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       SET status = $1,
           last_attempted_at = NOW() AT TIME ZONE 'UTC',
           lease_owner = $4,
-          lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond')
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + ($2 * INTERVAL '1 millisecond'),
+          -- A reclaimed PROCESSING row was claimed by a now-crashed worker;
+          -- that constitutes one used-up attempt against max_attempts.
+          -- PENDING claims must not be charged here — JobQueueWorker's
+          -- existing validateJobState() will FAIL the job in the next-step
+          -- branch when attempts >= max_attempts.
+          attempts = CASE WHEN status = $6 THEN attempts + 1 ELSE attempts END,
+          -- Always clear any stale abort_requested_at on (re)claim. A PROCESSING
+          -- row may have had abort_requested_at set before the worker crashed;
+          -- the new owner must start with a clean slate or the worker will see
+          -- the abort flag immediately and never run user code.
+          abort_requested_at = NULL
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
@@ -342,9 +353,13 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       );
     } else if (jobDetails.status === JobStatus.PENDING) {
       const { conditions: prefixConditions } = this.buildPrefixWhereClause(7);
+      // PENDING-retry branch: the worker hit a retryable error and the row is
+      // returning to PENDING for another attempt. Clear abort_requested_at so
+      // an abort that was requested DURING the previous attempt does not
+      // immediately cancel the retry.
       await this.db.query(
-        `UPDATE ${this.tableName} 
-          SET 
+        `UPDATE ${this.tableName}
+          SET
             error = $1,
             error_code = $2,
             status = $3,
@@ -353,7 +368,8 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
             progress_message = '',
             progress_details = NULL,
             attempts = attempts + 1,
-            last_attempted_at = NOW() AT TIME ZONE 'UTC'
+            last_attempted_at = NOW() AT TIME ZONE 'UTC',
+            abort_requested_at = NULL
           WHERE id = $5 AND queue = $6${prefixConditions}`,
         [
           jobDetails.error,
@@ -393,6 +409,71 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
         ]
       );
     }
+  }
+
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    // Build a dynamic SET clause covering only the fields the caller supplied —
+    // a partial overwrite. Everything else (in particular `attempts`,
+    // `visible_at`, `lease_expires_at`) is untouched.
+    const sets: string[] = [];
+    const params: Array<unknown> = [];
+    let nextParam = 1;
+    const push = (col: string, value: unknown): void => {
+      sets.push(`${col} = $${nextParam}`);
+      params.push(value);
+      nextParam += 1;
+    };
+    if ("output" in fields) {
+      push("output", fields.output != null ? JSON.stringify(fields.output) : null);
+    }
+    if ("error" in fields) push("error", fields.error ?? null);
+    if ("error_code" in fields) push("error_code", fields.error_code ?? null);
+    if ("status" in fields) push("status", fields.status);
+    if ("completed_at" in fields) push("completed_at", fields.completed_at ?? null);
+    if ("abort_requested_at" in fields) {
+      push("abort_requested_at", fields.abort_requested_at ?? null);
+    }
+    if ("lease_owner" in fields) push("lease_owner", fields.lease_owner ?? null);
+    if ("progress" in fields) push("progress", fields.progress ?? 0);
+    if ("progress_message" in fields) push("progress_message", fields.progress_message ?? "");
+    if ("progress_details" in fields) {
+      push(
+        "progress_details",
+        fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
+      );
+    }
+    if (sets.length === 0) return; // nothing to write
+    const idParam = nextParam;
+    nextParam += 1;
+    const queueParam = nextParam;
+    nextParam += 1;
+    const { conditions: prefixConditions, params: prefixParams } =
+      this.buildPrefixWhereClause(nextParam);
+    await this.db.query(
+      `UPDATE ${this.tableName}
+         SET ${sets.join(", ")}
+         WHERE id = $${idParam} AND queue = $${queueParam}${prefixConditions}`,
+      [...params, id, this.queueName, ...prefixParams]
+    );
   }
 
   /**
@@ -464,6 +545,9 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    // releaseClaim returns the row to PENDING without consuming an attempt.
+    // Clear abort_requested_at so an abort that was requested mid-claim does
+    // not survive the release and cancel the next worker that picks the row up.
     await this.db.query(
       `
       UPDATE ${this.tableName}
@@ -471,7 +555,8 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
             lease_owner = NULL,
             progress = 0,
             progress_message = '',
-            progress_details = NULL
+            progress_details = NULL,
+            abort_requested_at = NULL
         WHERE id = $1 AND queue = $2${prefixConditions}`,
       [jobId, this.queueName, ...prefixParams]
     );

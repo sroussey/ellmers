@@ -14,7 +14,16 @@ import {
   SqliteDialect,
 } from "@workglow/storage";
 
-/** Initial migration set for the SQLite queue table identified by `tableName`. */
+/**
+ * Initial migration set for the SQLite queue table identified by `tableName`.
+ *
+ * v1 is FROZEN byte-for-byte against the pre-PR shape — it creates the
+ * `run_after`/`run_attempts`/`max_retries`/`last_ran_at`/`worker_id`
+ * columns and the `run_after`-keyed index. Renames and the index swap
+ * live in v3, guarded by `PRAGMA table_info` lookups so fresh installs
+ * (which still run v1 → v2 → v3) end up at the same final schema as
+ * already-migrated DBs.
+ */
 export function sqliteQueueMigrations(
   tableName: string,
   prefixes: readonly PrefixColumn[]
@@ -39,10 +48,10 @@ export function sqliteQueueMigrations(
             status TEXT NOT NULL default 'PENDING',
             input TEXT NOT NULL,
             output TEXT,
-            attempts INTEGER default 0,
-            max_attempts INTEGER default 10,
-            visible_at TEXT NOT NULL,
-            last_attempted_at TEXT,
+            run_attempts INTEGER default 0,
+            max_retries INTEGER default 23,
+            run_after TEXT NOT NULL,
+            last_ran_at TEXT,
             created_at TEXT NOT NULL,
             completed_at TEXT,
             deadline_at TEXT,
@@ -51,10 +60,10 @@ export function sqliteQueueMigrations(
             progress REAL DEFAULT 0,
             progress_message TEXT DEFAULT '',
             progress_details TEXT NULL,
-            lease_owner TEXT
+            worker_id TEXT
           );
 
-          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at);
+          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, run_after);
           CREATE INDEX IF NOT EXISTS job_queue_fingerprint${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, fingerprint, status);
           CREATE INDEX IF NOT EXISTS job_queue_job_run_id${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, job_run_id);
         `);
@@ -75,9 +84,11 @@ export function sqliteQueueMigrations(
       component,
       version: 3,
       description:
-        "Rename columns: run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner",
+        "Rename run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner; drop run_after-keyed index and recreate visible_at-keyed",
       up(db: Sqlite.Database) {
-        // Only rename if the old column names still exist (skip on fresh installs)
+        // PRAGMA table_info guards each rename so fresh installs (which
+        // arrive at v3 having just created the v1 schema in this same
+        // migration run) are no-ops here.
         const cols: string[] = db
           .prepare<[], { name: string }>(`PRAGMA table_info(${tableName})`)
           .all()
@@ -94,6 +105,15 @@ export function sqliteQueueMigrations(
             db.exec(`ALTER TABLE ${tableName} RENAME COLUMN ${oldName} TO ${newName};`);
           }
         }
+
+        // SQLite carries indexes across RENAME COLUMN transparently, but the
+        // index name still encodes the old column intent. Drop the v1
+        // run_after-keyed index and recreate it keyed on visible_at so the
+        // schema is self-describing. `IF EXISTS` covers fresh installs too.
+        db.exec(`
+          DROP INDEX IF EXISTS job_queue_fetcher${indexSuffix}_idx;
+          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at);
+        `);
       },
     },
   ];

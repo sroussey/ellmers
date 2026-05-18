@@ -282,10 +282,21 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         let claimedJob: JobStorageFormat<Input, Output> | undefined;
 
         const tryClaimJob = (job: JobStorageFormat<Input, Output> & Record<string, unknown>) => {
+          // Lease-expiry reclaim consumes one attempt against max_attempts;
+          // a fresh PENDING claim does not (the worker's validateJobState
+          // FAILs the job when attempts >= max_attempts on the next step).
+          const isLeaseExpiryReclaim = job.status === JobStatus.PROCESSING;
           job.status = JobStatus.PROCESSING;
           job.last_attempted_at = now;
           job.lease_owner = claimToken;
           job.lease_expires_at = leaseExpiry;
+          if (isLeaseExpiryReclaim) {
+            job.attempts = ((job.attempts as number | undefined) ?? 0) + 1;
+          }
+          // Always clear stale abort_requested_at on (re)claim. A PROCESSING
+          // row may have had abort_requested_at set before the previous
+          // worker crashed; the new owner must start with a clean slate.
+          job.abort_requested_at = null;
 
           try {
             const updateRequest = store.put(job);
@@ -463,11 +474,16 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         }
         const currentAttempts = existing.attempts ?? 0;
         job.attempts = currentAttempts + 1;
+        // PENDING-retry / terminal completion: always clear
+        // abort_requested_at so a flag set DURING the attempt does not
+        // survive into the next retry and immediately cancel it.
+        const jobAsRecord = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
+        jobAsRecord.abort_requested_at = null;
         // Ensure queue is set correctly
         job.queue = this.queueName;
 
         // Ensure prefix values are preserved
-        const jobWithPrefixes = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
+        const jobWithPrefixes = jobAsRecord;
         for (const [key, value] of Object.entries(this.prefixValues)) {
           jobWithPrefixes[key] = value;
         }
@@ -500,6 +516,9 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     job.progress = 0;
     job.progress_message = "";
     job.progress_details = null;
+    // Clear stale abort_requested_at — an abort flag set during the previous
+    // claim must not immediately cancel the next worker that picks up the row.
+    (job as unknown as Record<string, unknown>).abort_requested_at = null;
 
     await this.put(job);
   }
@@ -518,7 +537,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       job.status = JobStatus.FAILED;
       job.abort_requested_at = now;
       job.completed_at = now;
-      await this.put(job);
+      await this.complete(job);
     } else if (job.status === JobStatus.PROCESSING) {
       job.abort_requested_at = now;
       await this.put(job);
@@ -570,6 +589,43 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       request.onerror = () => reject(request.error);
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    const existing = await this.get(id);
+    if (!existing) return;
+    const updated = existing as JobStorageFormat<Input, Output> & Record<string, unknown>;
+    if ("output" in fields) updated.output = fields.output ?? null;
+    if ("error" in fields) updated.error = fields.error ?? null;
+    if ("error_code" in fields) updated.error_code = fields.error_code ?? null;
+    if ("status" in fields) updated.status = fields.status;
+    if ("completed_at" in fields) updated.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields) {
+      updated.abort_requested_at = fields.abort_requested_at ?? null;
+    }
+    if ("lease_owner" in fields) updated.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) updated.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) updated.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) updated.progress_details = fields.progress_details ?? null;
+    await this.put(updated);
   }
 
   /**

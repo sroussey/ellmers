@@ -231,7 +231,6 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       `ALTER TABLE ${this.tableName} RENAME COLUMN last_ran_at TO last_attempted_at`,
       `ALTER TABLE ${this.tableName} RENAME COLUMN run_attempts TO attempts`,
       `ALTER TABLE ${this.tableName} RENAME COLUMN max_retries TO max_attempts`,
-      `ALTER TABLE ${this.tableName} ALTER COLUMN max_attempts SET DEFAULT 10`,
       `ALTER TABLE ${this.tableName} RENAME COLUMN worker_id TO lease_owner`,
     ];
     for (const sql of alterSqls) {
@@ -384,7 +383,14 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       SET status = '${JobStatus.PROCESSING}',
           last_attempted_at = NOW() AT TIME ZONE 'UTC',
           lease_owner = '${escapedWorkerId}',
-          lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond')
+          lease_expires_at = NOW() AT TIME ZONE 'UTC' + (${Number(leaseMs)} * INTERVAL '1 millisecond'),
+          -- Lease-expiry reclaim consumes one attempt against max_attempts;
+          -- PENDING claims do not (the worker's validateJobState will FAIL
+          -- the job when attempts >= max_attempts at next-step time).
+          attempts = CASE WHEN status = '${JobStatus.PROCESSING}' THEN attempts + 1 ELSE attempts END,
+          -- Always clear stale abort_requested_at on (re)claim so a flag set
+          -- by an earlier worker doesn't immediately abort the new lease.
+          abort_requested_at = NULL
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
@@ -556,7 +562,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         return;
       }
 
-      // Reschedule the job
+      // Reschedule the job. Clear abort_requested_at so an abort that was
+      // requested DURING the previous attempt does not immediately cancel
+      // the retry.
       let query = this.client
         .from(this.tableName)
         .update({
@@ -569,6 +577,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
           progress_details: null,
           attempts: nextAttempts,
           last_attempted_at: now,
+          abort_requested_at: null,
         })
         .eq("id", jobDetails.id)
         .eq("queue", this.queueName);
@@ -624,6 +633,9 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    * Releases a claimed job without consuming a retry attempt.
    */
   public async releaseClaim(jobId: unknown): Promise<void> {
+    // releaseClaim returns the row to PENDING without consuming an attempt.
+    // Clear abort_requested_at so an abort that was requested mid-claim does
+    // not survive the release and immediately cancel the next claim.
     let query = this.client
       .from(this.tableName)
       .update({
@@ -632,10 +644,57 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
         progress: 0,
         progress_message: "",
         progress_details: null,
+        abort_requested_at: null,
       })
       .eq("id", jobId)
       .eq("queue", this.queueName);
 
+    query = this.applyPrefixFilters(query);
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    // Partial update — Supabase's PostgREST `update()` only writes the
+    // properties present on the object passed in.
+    const patch: Record<string, unknown> = {};
+    if ("output" in fields) patch.output = fields.output ?? null;
+    if ("error" in fields) patch.error = fields.error ?? null;
+    if ("error_code" in fields) patch.error_code = fields.error_code ?? null;
+    if ("status" in fields) patch.status = fields.status;
+    if ("completed_at" in fields) patch.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields) {
+      patch.abort_requested_at = fields.abort_requested_at ?? null;
+    }
+    if ("lease_owner" in fields) patch.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) patch.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) patch.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) patch.progress_details = fields.progress_details ?? null;
+    if (Object.keys(patch).length === 0) return;
+    let query = this.client
+      .from(this.tableName)
+      .update(patch)
+      .eq("id", id as never)
+      .eq("queue", this.queueName);
     query = this.applyPrefixFilters(query);
     const { error } = await query;
     if (error) throw error;

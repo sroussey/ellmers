@@ -285,20 +285,24 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
 
+    // releaseClaim returns the row to PENDING without consuming an attempt.
+    // Clear abort_requested_at so an abort that was requested mid-claim does
+    // not survive the release and cancel the next worker that picks it up.
     const ReleaseQuery = `
       UPDATE ${this.tableName}
         SET status = ?,
             lease_owner = NULL,
             progress = 0,
             progress_message = '',
-            progress_details = NULL
+            progress_details = NULL,
+            abort_requested_at = NULL
         WHERE id = ? AND queue = ?${prefixConditions}`;
     const stmt = this.db.prepare(ReleaseQuery);
     stmt.run(JobStatus.PENDING, String(jobId), this.queueName, ...prefixParams);
   }
 
   /** Force-overwrite status without touching attempts (used to persist DISABLED after lease release). */
-  public async saveStatus(jobId: unknown, status: string): Promise<void> {
+  public saveStatus(jobId: unknown, status: string): void {
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
     const stmt = this.db.prepare(
@@ -367,9 +371,21 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
         progress_details: string | null;
       }
     >(
+      // The `CASE WHEN status = 'PROCESSING'` clause bumps attempts only for
+      // lease-expiry reclaim (a crashed-worker scenario — one used-up attempt
+      // against max_attempts). PENDING claims do not bump here; the worker's
+      // existing validateJobState() FAILs the job in the next-step branch when
+      // attempts >= max_attempts. abort_requested_at is always cleared on
+      // (re)claim so a stale flag from a previous worker can't immediately
+      // abort the new lease.
       `
       UPDATE ${this.tableName}
-      SET status = ?, last_attempted_at = ?, lease_owner = ?, lease_expires_at = ?
+      SET status = ?,
+          last_attempted_at = ?,
+          lease_owner = ?,
+          lease_expires_at = ?,
+          attempts = CASE WHEN status = ? THEN attempts + 1 ELSE attempts END,
+          abort_requested_at = NULL
       WHERE id = (
         SELECT id
         FROM ${this.tableName}
@@ -384,15 +400,16 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       RETURNING *`
     );
     const result = stmt.get(
-      JobStatus.PROCESSING,
-      now,
-      workerId,
-      leaseExpiry,
-      this.queueName,
-      JobStatus.PENDING,
-      now,
-      JobStatus.PROCESSING,
-      now,
+      JobStatus.PROCESSING, // SET status = PROCESSING
+      now, // last_attempted_at
+      workerId, // lease_owner
+      leaseExpiry, // lease_expires_at
+      JobStatus.PROCESSING, // CASE WHEN status = PROCESSING (lease-expiry reclaim bumps attempts)
+      this.queueName, // WHERE queue = ?
+      JobStatus.PENDING, // status = PENDING
+      now, // visible_at <= now
+      JobStatus.PROCESSING, // status = PROCESSING (lease-expiry reclaim)
+      now, // lease_expires_at < now
       ...prefixParams
     );
     if (!result) return undefined;
@@ -482,6 +499,11 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
             WHERE id = ? AND queue = ?${prefixConditions}`;
       params = [job.status, now, job.id as string, this.queueName, ...prefixParams];
     } else {
+      // PENDING-retry / FAILED / COMPLETED — bump attempts and clear
+      // abort_requested_at. The retry branch in particular must clear it
+      // so an abort that was requested DURING the previous attempt does
+      // not immediately cancel the retry. For terminal statuses the
+      // clearing is a harmless cleanup.
       updateQuery = `
           UPDATE ${this.tableName}
             SET
@@ -494,7 +516,8 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
               progress_details = NULL,
               last_attempted_at = ?,
               completed_at = ?,
-              attempts = attempts + 1
+              attempts = attempts + 1,
+              abort_requested_at = NULL
             WHERE id = ? AND queue = ?${prefixConditions}`;
       params = [
         job.output ? JSON.stringify(job.output) : null,
@@ -510,6 +533,61 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     }
     const stmt = this.db.prepare(updateQuery);
     stmt.run(...params);
+  }
+
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale (avoids double-counting on ack/fail because the lease
+   * reclaim path already charged the attempt at next() time).
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    const sets: string[] = [];
+    const params: Array<unknown> = [];
+    const push = (col: string, value: unknown): void => {
+      sets.push(`${col} = ?`);
+      params.push(value);
+    };
+    if ("output" in fields) {
+      push("output", fields.output != null ? JSON.stringify(fields.output) : null);
+    }
+    if ("error" in fields) push("error", fields.error ?? null);
+    if ("error_code" in fields) push("error_code", fields.error_code ?? null);
+    if ("status" in fields) push("status", fields.status);
+    if ("completed_at" in fields) push("completed_at", fields.completed_at ?? null);
+    if ("abort_requested_at" in fields)
+      push("abort_requested_at", fields.abort_requested_at ?? null);
+    if ("lease_owner" in fields) push("lease_owner", fields.lease_owner ?? null);
+    if ("progress" in fields) push("progress", fields.progress ?? 0);
+    if ("progress_message" in fields) push("progress_message", fields.progress_message ?? "");
+    if ("progress_details" in fields) {
+      push(
+        "progress_details",
+        fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
+      );
+    }
+    if (sets.length === 0) return;
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName}
+         SET ${sets.join(", ")}
+         WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(...(params as never[]), String(id), this.queueName, ...prefixParams);
   }
 
   public async deleteAll(): Promise<void> {

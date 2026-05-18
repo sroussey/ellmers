@@ -167,10 +167,19 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     const job = pending[0] ?? expiredLease[0];
     if (job) {
       const oldJob = { ...job };
+      // Lease-expiry reclaim (job was PROCESSING with expired lease) consumes
+      // one attempt against max_attempts; a fresh PENDING claim does not.
+      const isLeaseExpiryReclaim = job.status === JobStatus.PROCESSING;
       job.status = JobStatus.PROCESSING;
       job.last_attempted_at = now;
       job.lease_owner = workerId;
       job.lease_expires_at = leaseExpiry;
+      if (isLeaseExpiryReclaim) {
+        job.attempts = (job.attempts ?? 0) + 1;
+      }
+      // Always clear stale abort_requested_at on (re)claim so a flag set by
+      // an earlier worker does not immediately abort the new lease.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
       return job;
     }
@@ -268,6 +277,11 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       const existing = this.jobQueue[index];
       const currentAttempts = existing?.attempts ?? 0;
       jobWithPrefixes.attempts = currentAttempts + 1;
+      // PENDING-retry / terminal completion: clear abort_requested_at so an
+      // abort that was requested during the previous attempt does not
+      // immediately cancel the retry. Terminal statuses get a harmless
+      // cleanup of the same field.
+      jobWithPrefixes.abort_requested_at = null;
       // Preserve prefix values from the existing job
       for (const [key, value] of Object.entries(this.prefixValues)) {
         jobWithPrefixes[key] = value;
@@ -291,6 +305,9 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       job.progress = 0;
       job.progress_message = "";
       job.progress_details = null;
+      // Clear stale abort_requested_at — an abort flag set during the previous
+      // claim must not survive the release and immediately cancel the next claim.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
     }
   }
@@ -320,14 +337,51 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
-  /** Force-overwrite status without incrementing attempts (used to persist DISABLED after lease release). */
-  public async updateJobStatus(id: unknown, status: JobStatus): Promise<void> {
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale.
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
     if (!job) return;
     const oldJob = { ...job };
-    job.status = status;
+    const target = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
+    if ("output" in fields) target.output = (fields.output ?? null) as Output | null;
+    if ("error" in fields) target.error = fields.error ?? null;
+    if ("error_code" in fields) target.error_code = fields.error_code ?? null;
+    if ("status" in fields && fields.status !== undefined) target.status = fields.status;
+    if ("completed_at" in fields) target.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields)
+      target.abort_requested_at = fields.abort_requested_at ?? null;
+    if ("lease_owner" in fields) target.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) target.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) target.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) target.progress_details = fields.progress_details ?? null;
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+  }
+
+  /**
+   * Force-overwrite status without incrementing attempts. Standardized name —
+   * the legacy `updateJobStatus` alias was removed in favour of this name
+   * which mirrors `IJobStore.saveStatus` (the caller).
+   */
+  public async saveStatus(id: unknown, status: JobStatus): Promise<void> {
+    await this.finalize(id, { status });
   }
 
   /**
