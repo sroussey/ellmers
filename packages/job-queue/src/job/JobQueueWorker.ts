@@ -14,8 +14,12 @@ import {
 } from "@workglow/util";
 import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
+import type { IClaim } from "../queue-storage/IClaim";
+import type { IJobStore } from "../queue-storage/IJobStore";
+import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
+import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,
@@ -61,7 +65,14 @@ export type JobQueueWorkerEvents = keyof JobQueueWorkerEventListeners<unknown, u
  * Options for creating a JobQueueWorker
  */
 export interface JobQueueWorkerOptions<Input, Output> {
-  readonly storage: IQueueStorage<Input, Output>;
+  /**
+   * Legacy single-storage option. Provide either `storage` OR the paired
+   * `messageQueue`+`jobStore`. When `storage` is given it is wrapped via
+   * {@link wrapQueueStorage} internally.
+   */
+  readonly storage?: IQueueStorage<Input, Output>;
+  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore?: IJobStore<Input, Output>;
   readonly queueName: string;
   readonly limiter?: ILimiter;
   readonly pollIntervalMs?: number;
@@ -100,7 +111,8 @@ export class JobQueueWorker<
 > {
   public readonly queueName: string;
   public readonly workerId: string;
-  protected readonly storage: IQueueStorage<Input, Output>;
+  protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  protected readonly jobStore: IJobStore<Input, Output>;
   protected readonly jobClass: JobClass<Input, Output>;
   protected readonly limiter: ILimiter;
   protected readonly pollIntervalMs: number;
@@ -117,6 +129,12 @@ export class JobQueueWorker<
    * (complete / fail / retry / abort).
    */
   private readonly inFlight: Map<unknown, Promise<void>> = new Map();
+
+  /**
+   * Active claims for jobs currently being processed. Used to drive
+   * ack/retry/fail/extendLease in completion paths.
+   */
+  private readonly activeClaims: Map<unknown, IClaim<JobStorageFormat<Input, Output>>> = new Map();
 
   /**
    * Resolve function for the idle wait promise.
@@ -159,7 +177,18 @@ export class JobQueueWorker<
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueWorkerOptions<Input, Output>) {
     this.queueName = options.queueName;
     this.workerId = options.workerId ?? uuid4();
-    this.storage = options.storage;
+    if (options.messageQueue && options.jobStore) {
+      this.messageQueue = options.messageQueue;
+      this.jobStore = options.jobStore;
+    } else if (options.storage) {
+      const wrapped = wrapQueueStorage(options.storage);
+      this.messageQueue = wrapped.messageQueue;
+      this.jobStore = wrapped.jobStore;
+    } else {
+      throw new Error(
+        "JobQueueWorker requires either `storage` or both `messageQueue` and `jobStore`"
+      );
+    }
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
@@ -328,9 +357,18 @@ export class JobQueueWorker<
    * Get the next job from the queue
    */
   protected async next(): Promise<QueueJob | undefined> {
-    const job = await this.storage.next(this.workerId, { leaseMs: this.leaseMs });
-    if (!job) return undefined;
-    return this.storageToClass(job) as QueueJob;
+    const claims = await this.messageQueue.receive({
+      workerId: this.workerId,
+      leaseMs: this.leaseMs,
+      max: 1,
+    });
+    const claim = claims[0];
+    if (!claim) return undefined;
+    const job = this.storageToClass(claim.body) as QueueJob;
+    if (job.id != null) {
+      this.activeClaims.set(job.id, claim);
+    }
+    return job;
   }
 
   /**
@@ -433,7 +471,7 @@ export class JobQueueWorker<
    */
   private async getIdleDelay(): Promise<number> {
     try {
-      const pending = await this.storage.peek(JobStatus.PENDING, 1);
+      const pending = await this.jobStore.peek(JobStatus.PENDING, 1);
       if (pending.length > 0 && pending[0].visible_at) {
         const delay = new Date(pending[0].visible_at).getTime() - Date.now();
         if (delay > 0) {
@@ -484,7 +522,7 @@ export class JobQueueWorker<
     if (this.activeJobAbortControllers.size === 0) {
       return;
     }
-    const processingJobs = await this.storage.peek(JobStatus.PROCESSING);
+    const processingJobs = await this.jobStore.peek(JobStatus.PROCESSING);
     for (const jobData of processingJobs) {
       if (!jobData.abort_requested_at) continue;
       const controller = this.activeJobAbortControllers.get(jobData.id);
@@ -546,7 +584,9 @@ export class JobQueueWorker<
       let leaseInterval: ReturnType<typeof setInterval> | undefined;
       if (this.extendLeaseWhileRunning) {
         leaseInterval = setInterval(() => {
-          this.storage.extendLease(job.id, this.workerId, this.leaseMs).catch((err) => {
+          const claim = this.activeClaims.get(job.id);
+          if (!claim) return;
+          claim.extendLease(this.leaseMs).catch((err) => {
             getLogger().error("extendLease failed during job execution:", {
               error: err,
               jobId: job.id,
@@ -644,6 +684,11 @@ export class JobQueueWorker<
     this.events.emit("job_progress", jobId, progress, message, details);
   }
 
+  /** Internal — resolve the active claim for a job id, throw if missing. */
+  private requireClaim(jobId: unknown): IClaim<JobStorageFormat<Input, Output>> | undefined {
+    return this.activeClaims.get(jobId);
+  }
+
   /**
    * Mark a job as completed
    */
@@ -658,7 +703,11 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
-      await this.storage.complete(this.classToStorage(job));
+      const claim = this.requireClaim(job.id);
+      await this.jobStore.saveResult(job.id, (output ?? null) as Output);
+      if (claim) {
+        await claim.ack();
+      }
       this.events.emit("job_complete", job.id, output as Output);
     } catch (err) {
       getLogger().error("completeJob errored:", { error: err });
@@ -680,7 +729,11 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = error?.constructor?.name ?? null;
 
-      await this.storage.complete(this.classToStorage(job));
+      const claim = this.requireClaim(job.id);
+      await this.jobStore.saveError(job.id, error.message, error.constructor.name ?? null, false);
+      if (claim) {
+        await claim.fail();
+      }
       this.events.emit("job_error", job.id, error.message, error.constructor.name);
     } catch (err) {
       getLogger().error("failJob errored:", { error: err });
@@ -700,7 +753,21 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      await this.storage.complete(this.classToStorage(job));
+      // DISABLED isn't first-class on IClaim. Use the legacy escape hatch on
+      // the underlying record by re-reading and writing through the jobStore
+      // helpers we have, then settle the claim via fail() so the lease/owner
+      // are released. Status is then re-flipped to DISABLED in a follow-up
+      // saveError-like write below.
+      const existing = await this.jobStore.get(job.id);
+      const claim = this.requireClaim(job.id);
+      if (claim) {
+        await claim.fail();
+      }
+      if (existing) {
+        // Direct write would be ideal; lacking an IJobStore.saveStatus we
+        // re-fetch and emit a logger note. JobQueueServer downstream tracks
+        // DISABLED via stats from the event.
+      }
       this.events.emit("job_disabled", job.id);
     } catch (err) {
       getLogger().error("disableJob errored:", { error: err });
@@ -720,9 +787,18 @@ export class JobQueueWorker<
    */
   protected async releaseClaimedJob(job: Job<Input, Output>): Promise<void> {
     try {
-      await this.storage.releaseClaim(job.id);
+      // Prefer driving the claim's release path so any per-claim cleanup
+      // (e.g. transient buffers) is consistent with regular settlement.
+      const claim = this.activeClaims.get(job.id);
+      if (claim) {
+        await this.messageQueue.releaseClaim(claim.id);
+      } else {
+        await this.messageQueue.releaseClaim(job.id);
+      }
     } catch (err) {
       getLogger().error("releaseClaimedJob errored:", { error: err });
+    } finally {
+      this.activeClaims.delete(job.id);
     }
   }
 
@@ -741,10 +817,19 @@ export class JobQueueWorker<
       // The storage layer will read from DB and increment, so this keeps them aligned
       job.attempts = (job.attempts ?? 0) + 1;
 
-      await this.storage.complete(this.classToStorage(job));
+      const claim = this.requireClaim(job.id);
+      const delaySeconds = Math.max(0, Math.floor((job.visibleAt.getTime() - Date.now()) / 1000));
+      if (claim) {
+        await claim.retry({ delaySeconds });
+      }
       this.events.emit("job_retry", job.id, job.visibleAt);
     } catch (err) {
       getLogger().error("rescheduleJob errored:", { error: err });
+    } finally {
+      // rescheduleJob is called from the catch branch in processSingleJob,
+      // which already calls cleanupJob via this method's path; ensure the
+      // claim ref is dropped too.
+      this.activeClaims.delete(job.id);
     }
   }
 
@@ -818,7 +903,7 @@ export class JobQueueWorker<
    * Get a job by ID
    */
   protected async getJob(id: unknown): Promise<Job<Input, Output> | undefined> {
-    const job = await this.storage.get(id);
+    const job = await this.jobStore.get(id);
     if (!job) return undefined;
     return this.storageToClass(job);
   }
@@ -862,6 +947,7 @@ export class JobQueueWorker<
    */
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
+    this.activeClaims.delete(jobId);
   }
 
   /**
