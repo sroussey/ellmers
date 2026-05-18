@@ -297,6 +297,16 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     stmt.run(JobStatus.PENDING, String(jobId), this.queueName, ...prefixParams);
   }
 
+  /** Force-overwrite status without touching attempts (used to persist DISABLED after lease release). */
+  public async saveStatus(jobId: unknown, status: string): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName} SET status = ? WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(status, String(jobId), this.queueName, ...prefixParams);
+  }
+
   /**
    * Retrieves all jobs for a given job run ID.
    * @param job_run_id - The ID of the job run to retrieve

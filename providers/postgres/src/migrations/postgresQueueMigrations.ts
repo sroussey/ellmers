@@ -206,20 +206,24 @@ export function postgresQueueMigrations(
       description:
         "Rename columns: run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner",
       async up(db: Pool) {
-        // Only rename if the old column names still exist (skip on fresh installs)
+        // Rename each column individually so a partial prior run doesn't skip everything.
         await db.query(`
           DO $$
-          DECLARE col_exists boolean;
           BEGIN
-            SELECT EXISTS (
-              SELECT 1 FROM information_schema.columns
-              WHERE table_name='${tableName}' AND column_name='run_after' AND table_schema = current_schema()
-            ) INTO col_exists;
-            IF col_exists THEN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='run_after' AND table_schema=current_schema()) THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_after TO visible_at';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='last_ran_at' AND table_schema=current_schema()) THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN last_ran_at TO last_attempted_at';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='run_attempts' AND table_schema=current_schema()) THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_attempts TO attempts';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='max_retries' AND table_schema=current_schema()) THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN max_retries TO max_attempts';
+              EXECUTE 'ALTER TABLE ${tableName} ALTER COLUMN max_attempts SET DEFAULT 10';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='worker_id' AND table_schema=current_schema()) THEN
               EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN worker_id TO lease_owner';
             END IF;
           END $$

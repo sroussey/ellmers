@@ -62,7 +62,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
         emit
       );
     } finally {
-      await limiter.release(token);
+      await limiter.complete(token);
     }
   }
 

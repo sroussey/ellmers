@@ -130,18 +130,23 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     leaseMs: number;
     max?: number;
   }): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
-    const next = await this.storage.next(opts.workerId, { leaseMs: opts.leaseMs });
-    if (!next) return [];
-    return [
-      new WrappedClaim<Input, Output>(
-        this.storage,
-        this.pending,
-        next.id,
-        next,
-        next.attempts ?? 0,
-        opts.workerId
-      ),
-    ];
+    const max = Math.max(1, opts.max ?? 1);
+    const claims: IClaim<JobStorageFormat<Input, Output>>[] = [];
+    while (claims.length < max) {
+      const next = await this.storage.next(opts.workerId, { leaseMs: opts.leaseMs });
+      if (!next) break;
+      claims.push(
+        new WrappedClaim<Input, Output>(
+          this.storage,
+          this.pending,
+          next.id,
+          next,
+          next.attempts ?? 0,
+          opts.workerId
+        )
+      );
+    }
+    return claims;
   }
 
   async releaseClaim(id: MessageId): Promise<void> {
@@ -226,6 +231,18 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
   async abort(id: MessageId): Promise<void> {
     await this.storage.abort(id);
+  }
+
+  async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
+    if (typeof this.storage.saveStatus === "function") {
+      await this.storage.saveStatus(id, status);
+      return;
+    }
+    // Legacy storage without saveStatus: no safe way to update status without
+    // bumping attempts. This path should not be reached with current backends.
+    throw new Error(
+      "saveStatus not supported by underlying storage; upgrade to a backend that implements IQueueStorage.saveStatus"
+    );
   }
 }
 

@@ -88,4 +88,8 @@ export class SqliteJobStore<Input, Output> implements IJobStore<Input, Output> {
   async abort(id: MessageId): Promise<void> {
     await this.core.abort(id);
   }
+
+  async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
+    await this.core.saveStatus(id, status);
+  }
 }

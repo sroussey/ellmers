@@ -43,4 +43,6 @@ export interface IJobStore<Input, Output> {
   /** Delete every job in this store. */
   deleteAll(): Promise<void>;
   abort(id: MessageId): Promise<void>;
+  /** Force-overwrite the status field without incrementing attempts. Used to persist DISABLED after lease release. */
+  saveStatus(id: MessageId, status: JobStatus): Promise<void>;
 }

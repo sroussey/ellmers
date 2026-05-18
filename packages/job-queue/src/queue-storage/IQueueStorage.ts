@@ -289,6 +289,15 @@ export interface IQueueStorage<Input, Output> {
   getMigrations(): ReadonlyArray<unknown>;
 
   /**
+   * Saves just the status of a job without incrementing attempts. Optional;
+   * when present it is used by the {@link wrapQueueStorage} adapter's
+   * `saveStatus` implementation to avoid going through `complete()` (which
+   * always bumps attempts). Backends that do not implement this method are
+   * unsupported in the wrapped adapter's `saveStatus` path.
+   */
+  saveStatus?(id: unknown, status: JobStatus): Promise<void>;
+
+  /**
    * Subscribes to changes in the queue (including remote changes).
    * @param callback - Function called when a change occurs
    * @param options - Optional subscription options (e.g., polling interval)
