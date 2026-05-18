@@ -34,8 +34,18 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
   get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined> {
     return traced("workglow.storage.queue.get", this.storageName, () => this.inner.get(id));
   }
-  next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
-    return traced("workglow.storage.queue.next", this.storageName, () => this.inner.next(workerId));
+  next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    return traced("workglow.storage.queue.next", this.storageName, () =>
+      this.inner.next(workerId, opts)
+    );
+  }
+  extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    return traced("workglow.storage.queue.extendLease", this.storageName, () =>
+      this.inner.extendLease(id, workerId, ms)
+    );
   }
   peek(status?: JobStatus, num?: number): Promise<Array<JobStorageFormat<Input, Output>>> {
     return traced("workglow.storage.queue.peek", this.storageName, () =>
@@ -50,8 +60,29 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       this.inner.complete(job)
     );
   }
-  release(id: unknown): Promise<void> {
-    return traced("workglow.storage.queue.release", this.storageName, () => this.inner.release(id));
+  finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    return traced("workglow.storage.queue.finalize", this.storageName, () =>
+      this.inner.finalize(id, fields)
+    );
+  }
+  releaseClaim(id: unknown): Promise<void> {
+    return traced("workglow.storage.queue.releaseClaim", this.storageName, () =>
+      this.inner.releaseClaim(id)
+    );
   }
   deleteAll(): Promise<void> {
     return traced("workglow.storage.queue.deleteAll", this.storageName, () =>

@@ -704,6 +704,9 @@ runTabularStorageContract({
     supportsTransactions: false,
     supportsQuery: true,
   },
+  // CachedTabularStorage forwards subscribeToChanges to the durable backing
+  // store (here InMemoryTabularStorage), which is strictly event-driven.
+  usesPolling: false,
   createVectorStorage: async () => {
     const durable = new InMemoryTabularStorage<
       typeof VectorItemSchema,

@@ -5,12 +5,15 @@
  */
 
 import { EventEmitter } from "@workglow/util";
+import type { IJobStore } from "../queue-storage/IJobStore";
+import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type {
   IQueueStorage,
   JobStorageFormat,
   QueueChangePayload,
 } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
+import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import { Job } from "./Job";
 import {
   AbortSignalJobError,
@@ -45,7 +48,13 @@ export interface JobHandle<Output> {
  * Options for creating a JobQueueClient
  */
 export interface JobQueueClientOptions<Input, Output> {
-  readonly storage: IQueueStorage<Input, Output>;
+  /**
+   * Legacy single-storage option. Provide either `storage` OR the paired
+   * `messageQueue`+`jobStore`.
+   */
+  readonly storage?: IQueueStorage<Input, Output>;
+  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore?: IJobStore<Input, Output>;
   readonly queueName: string;
 }
 
@@ -56,7 +65,9 @@ export interface JobQueueClientOptions<Input, Output> {
  */
 export class JobQueueClient<Input, Output> {
   public readonly queueName: string;
-  protected readonly storage: IQueueStorage<Input, Output>;
+  protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  protected readonly jobStore: IJobStore<Input, Output>;
+  protected readonly storage: IQueueStorage<Input, Output> | null;
   protected readonly events = new EventEmitter<JobQueueEventListeners<Input, Output>>();
   protected server: JobQueueServer<Input, Output> | null = null;
   protected storageUnsubscribe: (() => void) | null = null;
@@ -91,7 +102,20 @@ export class JobQueueClient<Input, Output> {
 
   constructor(options: JobQueueClientOptions<Input, Output>) {
     this.queueName = options.queueName;
-    this.storage = options.storage;
+    if (options.messageQueue && options.jobStore) {
+      this.messageQueue = options.messageQueue;
+      this.jobStore = options.jobStore;
+      this.storage = null;
+    } else if (options.storage) {
+      const wrapped = wrapQueueStorage(options.storage);
+      this.messageQueue = wrapped.messageQueue;
+      this.jobStore = wrapped.jobStore;
+      this.storage = options.storage;
+    } else {
+      throw new Error(
+        "JobQueueClient requires either `storage` or both `messageQueue` and `jobStore`"
+      );
+    }
   }
 
   /**
@@ -135,7 +159,10 @@ export class JobQueueClient<Input, Output> {
       return; // Already subscribed
     }
 
-    this.storageUnsubscribe = this.storage.subscribeToChanges(
+    const sub = this.messageQueue.subscribeToChanges;
+    if (!sub) return; // backend doesn't support subscriptions
+    this.storageUnsubscribe = sub.call(
+      this.messageQueue,
       (change: QueueChangePayload<Input, Output>) => {
         this.handleStorageChange(change);
       }
@@ -154,16 +181,18 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Submit a job to the queue
+   * Send a job to the queue
    */
-  public async submit(
+  public async send(
     input: Input,
     options?: {
       readonly jobRunId?: string;
       readonly fingerprint?: string;
-      readonly maxRetries?: number;
-      readonly runAfter?: Date;
-      readonly deadlineAt?: Date;
+      readonly maxAttempts?: number;
+      /** Delay in seconds before the job becomes visible for processing */
+      readonly delaySeconds?: number;
+      /** Timeout in seconds after which the job deadline is exceeded */
+      readonly timeoutSeconds?: number;
     }
   ): Promise<JobHandle<Output>> {
     const job: JobStorageFormat<Input, Output> = {
@@ -171,14 +200,20 @@ export class JobQueueClient<Input, Output> {
       input,
       job_run_id: options?.jobRunId,
       fingerprint: options?.fingerprint,
-      max_retries: options?.maxRetries ?? 10,
-      run_after: options?.runAfter?.toISOString() ?? new Date().toISOString(),
-      deadline_at: options?.deadlineAt?.toISOString() ?? null,
+      max_attempts: options?.maxAttempts ?? 10,
+      visible_at:
+        options?.delaySeconds != null
+          ? new Date(Date.now() + options.delaySeconds * 1000).toISOString()
+          : new Date().toISOString(),
+      deadline_at:
+        options?.timeoutSeconds != null
+          ? new Date(Date.now() + options.timeoutSeconds * 1000).toISOString()
+          : null,
       completed_at: null,
       status: JobStatus.PENDING,
     };
 
-    const id = await this.storage.add(job);
+    const id = await this.messageQueue.send(job);
 
     // Same-process fast path: poke the worker directly so it doesn't have to
     // wait for the poll interval (crucial for Sqlite/Postgres, whose
@@ -189,18 +224,18 @@ export class JobQueueClient<Input, Output> {
   }
 
   /**
-   * Submit multiple jobs to the queue
+   * Send multiple jobs to the queue
    */
-  public async submitBatch(
+  public async sendBatch(
     inputs: readonly Input[],
     options?: {
       readonly jobRunId?: string;
-      readonly maxRetries?: number;
+      readonly maxAttempts?: number;
     }
   ): Promise<readonly JobHandle<Output>[]> {
     const handles: JobHandle<Output>[] = [];
     for (const input of inputs) {
-      const handle = await this.submit(input, options);
+      const handle = await this.send(input, options);
       handles.push(handle);
     }
     return handles;
@@ -211,7 +246,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async getJob(id: unknown): Promise<Job<Input, Output> | undefined> {
     if (!id) throw new JobNotFoundError("Cannot get undefined job");
-    const job = await this.storage.get(id);
+    const job = await this.jobStore.get(id);
     if (!job) return undefined;
     return this.storageToClass(job);
   }
@@ -221,7 +256,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async getJobsByRunId(runId: string): Promise<readonly Job<Input, Output>[]> {
     if (!runId) throw new JobNotFoundError("Cannot get jobs by undefined runId");
-    const jobs = await this.storage.getByRunId(runId);
+    const jobs = await this.jobStore.getByRunId(runId);
     return jobs.map((job) => this.storageToClass(job));
   }
 
@@ -229,7 +264,7 @@ export class JobQueueClient<Input, Output> {
    * Peek at jobs in the queue
    */
   public async peek(status?: JobStatus, num?: number): Promise<readonly Job<Input, Output>[]> {
-    const jobs = await this.storage.peek(status, num);
+    const jobs = await this.jobStore.peek(status, num);
     return jobs.map((job) => this.storageToClass(job));
   }
 
@@ -237,7 +272,7 @@ export class JobQueueClient<Input, Output> {
    * Get the size of the queue
    */
   public async size(status?: JobStatus): Promise<number> {
-    return this.storage.size(status);
+    return this.jobStore.size(status);
   }
 
   /**
@@ -245,7 +280,7 @@ export class JobQueueClient<Input, Output> {
    */
   public async outputForInput(input: Input): Promise<Output | null> {
     if (!input) throw new JobNotFoundError("Cannot get output for undefined input");
-    return this.storage.outputForInput(input);
+    return this.jobStore.outputForInput(input);
   }
 
   /**
@@ -310,23 +345,24 @@ export class JobQueueClient<Input, Output> {
    *
    * Same-process path: fires the in-memory abort controller on the attached
    * server — `handleAbort` will write FAILED directly, so we skip the
-   * `storage.abort(…)` ABORTING write. Writing both would race (last-writer-
-   * wins) and can leave the row stuck at ABORTING on async storages.
+   * `storage.abort(…)` write. Writing both would race (last-writer-wins) and
+   * can leave the row in an inconsistent state on async storages.
    *
    * Cross-process path (or job not currently running on any local worker):
-   * write ABORTING to storage so the remote worker's poll picks it up.
+   * write abort_requested_at to storage so the remote worker's poll picks it
+   * up (or mark FAILED immediately if the job is still PENDING).
    *
    * Crash window: if the process dies after the in-memory abort fires but
-   * before `failJob` writes FAILED, the row stays PROCESSING. `fixupJobs()`
-   * resets it to PENDING on next start and the job will re-run. Make handlers
-   * idempotent (or use `uniquenessKey`) if that's not acceptable.
+   * before `failJob` writes FAILED, the row stays PROCESSING. Lease expiry
+   * in `next()` will re-claim it on the next start so the job will re-run.
+   * Make handlers idempotent if that's not acceptable.
    */
   public async abort(jobId: unknown): Promise<void> {
     if (!jobId) throw new JobNotFoundError("Cannot abort undefined job");
     const firedLocally = this.server?.abortJob(jobId) ?? false;
     if (!firedLocally) {
       try {
-        await this.storage.abort(jobId);
+        await this.jobStore.abort(jobId);
       } finally {
         this.events.emit("job_aborting", this.queueName, jobId);
       }
@@ -479,8 +515,8 @@ export class JobQueueClient<Input, Output> {
    * Called by server when a job is retried
    * @internal
    */
-  public handleJobRetry(jobId: unknown, runAfter: Date): void {
-    this.events.emit("job_retry", this.queueName, jobId, runAfter);
+  public handleJobRetry(jobId: unknown, visibleAt: Date): void {
+    this.events.emit("job_retry", this.queueName, jobId, visibleAt);
   }
 
   /**
@@ -551,8 +587,8 @@ export class JobQueueClient<Input, Output> {
         this.handleJobDisabled(jobId);
       } else if (newStatus === JobStatus.PENDING && oldStatus === JobStatus.PROCESSING) {
         // Retry
-        const runAfter = change.new.run_after ? new Date(change.new.run_after) : new Date();
-        this.handleJobRetry(jobId, runAfter);
+        const visibleAt = change.new.visible_at ? new Date(change.new.visible_at) : new Date();
+        this.handleJobRetry(jobId, visibleAt);
       }
 
       // Progress update

@@ -14,8 +14,13 @@ import {
 } from "@workglow/util";
 import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
+import type { IClaim } from "../queue-storage/IClaim";
+import type { IJobStore } from "../queue-storage/IJobStore";
+import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
+import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
+import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import {
   AbortSignalJobError,
@@ -44,7 +49,7 @@ export type JobQueueWorkerEventListeners<Input, Output> = {
   job_complete: (jobId: unknown, output: Output) => void;
   job_error: (jobId: unknown, error: string, errorCode?: string) => void;
   job_disabled: (jobId: unknown) => void;
-  job_retry: (jobId: unknown, runAfter: Date) => void;
+  job_retry: (jobId: unknown, visibleAt: Date) => void;
   job_progress: (
     jobId: unknown,
     progress: number,
@@ -61,7 +66,14 @@ export type JobQueueWorkerEvents = keyof JobQueueWorkerEventListeners<unknown, u
  * Options for creating a JobQueueWorker
  */
 export interface JobQueueWorkerOptions<Input, Output> {
-  readonly storage: IQueueStorage<Input, Output>;
+  /**
+   * Legacy single-storage option. Provide either `storage` OR the paired
+   * `messageQueue`+`jobStore`. When `storage` is given it is wrapped via
+   * {@link wrapQueueStorage} internally.
+   */
+  readonly storage?: IQueueStorage<Input, Output>;
+  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore?: IJobStore<Input, Output>;
   readonly queueName: string;
   readonly limiter?: ILimiter;
   readonly pollIntervalMs?: number;
@@ -75,6 +87,30 @@ export interface JobQueueWorkerOptions<Input, Output> {
    * Defaults to 30s. Set to 0 to abort immediately.
    */
   readonly stopTimeoutMs?: number;
+  /**
+   * If true, the worker will call extendLease periodically while a job is
+   * executing. Extension interval is leaseMs * 0.5. Default: false.
+   */
+  readonly extendLeaseWhileRunning?: boolean;
+  /**
+   * How long (ms) the worker's lease on a claimed job lasts before another
+   * worker may re-claim it. Must be long enough to cover the maximum
+   * expected job duration if extendLeaseWhileRunning is false.
+   * Defaults to max(30_000, pollIntervalMs * 60).
+   */
+  readonly leaseMs?: number;
+  /**
+   * Dead-letter queue to forward exhausted jobs to, or "discard" to drop them.
+   * Default: "discard".
+   */
+  readonly deadLetter?: IMessageQueue<DeadLetter<Input>> | "discard";
+  /**
+   * Number of claims to fetch per loop iteration. Default: 1.
+   * With prefetch > 1, claims that cannot immediately acquire a limiter slot
+   * are released back to PENDING via retry, so concurrency is still governed
+   * by the limiter.
+   */
+  readonly prefetch?: number;
 }
 
 /**
@@ -88,12 +124,17 @@ export class JobQueueWorker<
 > {
   public readonly queueName: string;
   public readonly workerId: string;
-  protected readonly storage: IQueueStorage<Input, Output>;
+  protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  protected readonly jobStore: IJobStore<Input, Output>;
   protected readonly jobClass: JobClass<Input, Output>;
   protected readonly limiter: ILimiter;
   protected readonly pollIntervalMs: number;
   protected readonly stopTimeoutMs: number;
+  protected readonly extendLeaseWhileRunning: boolean;
+  protected readonly leaseMs: number;
   protected readonly events = new EventEmitter<JobQueueWorkerEventListeners<Input, Output>>();
+  protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
+  protected readonly prefetch: number;
 
   protected running = false;
 
@@ -103,6 +144,12 @@ export class JobQueueWorker<
    * (complete / fail / retry / abort).
    */
   private readonly inFlight: Map<unknown, Promise<void>> = new Map();
+
+  /**
+   * Active claims for jobs currently being processed. Used to drive
+   * ack/retry/fail/extendLease in completion paths.
+   */
+  private readonly activeClaims: Map<unknown, IClaim<JobStorageFormat<Input, Output>>> = new Map();
 
   /**
    * Resolve function for the idle wait promise.
@@ -145,11 +192,26 @@ export class JobQueueWorker<
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueWorkerOptions<Input, Output>) {
     this.queueName = options.queueName;
     this.workerId = options.workerId ?? uuid4();
-    this.storage = options.storage;
+    if (options.messageQueue && options.jobStore) {
+      this.messageQueue = options.messageQueue;
+      this.jobStore = options.jobStore;
+    } else if (options.storage) {
+      const wrapped = wrapQueueStorage(options.storage);
+      this.messageQueue = wrapped.messageQueue;
+      this.jobStore = wrapped.jobStore;
+    } else {
+      throw new Error(
+        "JobQueueWorker requires either `storage` or both `messageQueue` and `jobStore`"
+      );
+    }
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
     this.stopTimeoutMs = options.stopTimeoutMs ?? 30_000;
+    this.extendLeaseWhileRunning = options.extendLeaseWhileRunning ?? false;
+    this.leaseMs = options.leaseMs ?? Math.max(30_000, this.pollIntervalMs * 60);
+    this.deadLetter = options.deadLetter ?? "discard";
+    this.prefetch = Math.max(1, options.prefetch ?? 1);
   }
 
   /**
@@ -309,12 +371,43 @@ export class JobQueueWorker<
   // ========================================================================
 
   /**
-   * Get the next job from the queue
+   * Get the next job from the queue (always fetches a single claim).
+   * Used by {@link processNext} and the single-claim path of {@link processJobs}.
    */
   protected async next(): Promise<QueueJob | undefined> {
-    const job = await this.storage.next(this.workerId);
-    if (!job) return undefined;
-    return this.storageToClass(job) as QueueJob;
+    const claims = await this.messageQueue.receive({
+      workerId: this.workerId,
+      leaseMs: this.leaseMs,
+      max: 1,
+    });
+    const claim = claims[0];
+    if (!claim) return undefined;
+    const job = this.storageToClass(claim.body) as QueueJob;
+    if (job.id != null) {
+      this.activeClaims.set(job.id, claim);
+    }
+    return job;
+  }
+
+  /**
+   * Fetch up to `this.prefetch` claims from the queue and register them in
+   * {@link activeClaims}. Returns an array of jobs ready to be dispatched.
+   */
+  private async nextBatch(): Promise<QueueJob[]> {
+    const claims = await this.messageQueue.receive({
+      workerId: this.workerId,
+      leaseMs: this.leaseMs,
+      max: this.prefetch,
+    });
+    const jobs: QueueJob[] = [];
+    for (const claim of claims) {
+      const job = this.storageToClass(claim.body) as QueueJob;
+      if (job.id != null) {
+        this.activeClaims.set(job.id, claim);
+      }
+      jobs.push(job);
+    }
+    return jobs;
   }
 
   /**
@@ -342,8 +435,13 @@ export class JobQueueWorker<
         // overshooting the configured limit by exactly the worker concurrency.
         // The atomic tryAcquire guarantees only one of N concurrent acquirers
         // succeeds when there's one slot left.
-        const job = await this.next();
-        if (!job) {
+        //
+        // With prefetch > 1, we claim up to `prefetch` jobs at once and do a
+        // non-blocking tryAcquire for each. Jobs that can't immediately get a
+        // limiter slot are released back to PENDING so other workers can pick
+        // them up. With prefetch == 1 the behavior is identical to before.
+        const jobs = await this.nextBatch();
+        if (jobs.length === 0) {
           // Queue is empty — sleep until notified of new work or until the
           // next deferred job becomes ready.
           const delay = await this.getIdleDelay();
@@ -351,38 +449,50 @@ export class JobQueueWorker<
           continue;
         }
 
-        if (!this.running) {
-          // Stopped during the await. Release the job back to PENDING.
-          await this.releaseClaimedJob(job);
-          return;
-        }
+        let anyDispatched = false;
+        let limiterFull = false;
 
-        const limiterToken = await this.limiter.tryAcquire();
-        if (limiterToken === null || limiterToken === undefined) {
-          // Lost the race for the last slot, or hit the rate-limit window.
-          // Give the job back and wait for capacity.
-          await this.releaseClaimedJob(job);
-          await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
-          continue;
-        }
-
-        if (!this.running) {
-          // Stop fired while tryAcquire was in flight. Undo both the limiter
-          // reservation (release THIS token, not "the most recent") and the
-          // job claim so we don't start processing on a worker that's about
-          // to exit.
-          try {
-            await this.limiter.release(limiterToken);
-          } catch {
-            // best-effort
+        for (const job of jobs) {
+          if (!this.running) {
+            // Stopped during the batch. Release all remaining jobs back to PENDING.
+            await this.releaseClaimedJob(job);
+            continue;
           }
-          await this.releaseClaimedJob(job);
+
+          const limiterToken = await this.limiter.tryAcquire();
+          if (limiterToken === null || limiterToken === undefined) {
+            // No limiter slot available — release the claim back so another
+            // worker (or this one on a later iteration) can pick it up.
+            await this.releaseClaimedJob(job);
+            limiterFull = true;
+            continue;
+          }
+
+          if (!this.running) {
+            // Stop fired while tryAcquire was in flight.
+            try {
+              await this.limiter.release(limiterToken);
+            } catch {
+              // best-effort
+            }
+            await this.releaseClaimedJob(job);
+            continue;
+          }
+
+          // Don't await - process in background to allow concurrent jobs.
+          this.processSingleJob(job, limiterToken);
+          anyDispatched = true;
+        }
+
+        if (!this.running) {
           return;
         }
 
-        // Don't await - process in background to allow concurrent jobs.
-        // The loop will claim+acquire on the next iteration.
-        this.processSingleJob(job, limiterToken);
+        // If the limiter was full for every claim we fetched, back off before
+        // retrying so we don't busy-loop hammering the queue.
+        if (!anyDispatched && limiterFull) {
+          await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
+        }
       } catch {
         // Don't let transient errors kill the loop
         await sleep(this.pollIntervalMs);
@@ -411,15 +521,15 @@ export class JobQueueWorker<
   /**
    * Determine how long to sleep when idle.
    *
-   * Peeks at the earliest PENDING job: if it has a future `run_after`,
+   * Peeks at the earliest PENDING job: if it has a future `visible_at`,
    * returns the time until it becomes ready (clamped to `pollIntervalMs`);
    * otherwise returns `pollIntervalMs`.
    */
   private async getIdleDelay(): Promise<number> {
     try {
-      const pending = await this.storage.peek(JobStatus.PENDING, 1);
-      if (pending.length > 0 && pending[0].run_after) {
-        const delay = new Date(pending[0].run_after).getTime() - Date.now();
+      const pending = await this.jobStore.peek(JobStatus.PENDING, 1);
+      if (pending.length > 0 && pending[0].visible_at) {
+        const delay = new Date(pending[0].visible_at).getTime() - Date.now();
         if (delay > 0) {
           return Math.min(delay, this.pollIntervalMs);
         }
@@ -457,19 +567,20 @@ export class JobQueueWorker<
   }
 
   /**
-   * Check for jobs that have been marked for abort and trigger their abort controllers.
-   *
-   * Only relevant for jobs running on THIS worker (we have an abort controller
-   * registered for them). When no jobs are active, the peek result is irrelevant
-   * — skip the storage round-trip entirely. Important for battery life on
-   * same-process deployments (browser/mobile) where workers spend most time idle.
+   * Check for in-process jobs that have abort_requested_at set and trigger
+   * their abort controllers. Only relevant for jobs running on THIS worker
+   * (we have an abort controller registered for them). When no jobs are active,
+   * the peek result is irrelevant — skip the storage round-trip entirely.
+   * Important for battery life on same-process deployments (browser/mobile)
+   * where workers spend most time idle.
    */
   protected async checkForAbortingJobs(): Promise<void> {
     if (this.activeJobAbortControllers.size === 0) {
       return;
     }
-    const abortingJobs = await this.storage.peek(JobStatus.ABORTING);
-    for (const jobData of abortingJobs) {
+    const processingJobs = await this.jobStore.peek(JobStatus.PROCESSING);
+    for (const jobData of processingJobs) {
+      if (!jobData.abort_requested_at) continue;
       const controller = this.activeJobAbortControllers.get(jobData.id);
       if (controller && !controller.signal.aborted) {
         controller.abort();
@@ -497,18 +608,13 @@ export class JobQueueWorker<
           attributes: {
             "workglow.job.id": String(job.id),
             "workglow.job.queue": this.queueName,
-            "workglow.job.worker_id": this.workerId,
-            "workglow.job.run_attempt": job.runAttempts,
-            "workglow.job.max_retries": job.maxRetries,
+            "workglow.job.lease_owner": this.workerId,
+            "workglow.job.attempt": job.attempts,
+            "workglow.job.max_attempts": job.maxAttempts,
           },
         })
       : undefined;
 
-    // Set when validateJobState fails and we release() the limiter slot
-    // ourselves — the finally block then skips recordJobCompletion to avoid
-    // double-decrementing limiters where release() and recordJobCompletion()
-    // both decrement (e.g. ConcurrencyLimiter).
-    let slotReleased = false;
     try {
       // The limiter slot was already atomically reserved by tryAcquire() in
       // the main loop (or processNext), so we no longer call recordJobStart
@@ -516,23 +622,37 @@ export class JobQueueWorker<
       try {
         await this.validateJobState(job);
       } catch (validationErr) {
-        // Validation failed before we ran any actual work — release THIS
-        // limiter slot (by token, not by recency) so it doesn't count toward
-        // the rate limit and we don't accidentally release another worker's
-        // slot.
-        try {
-          await this.limiter.release(limiterToken);
-          slotReleased = true;
-        } catch {
-          // best-effort
-        }
+        // Throw — the outer finally block's limiter.complete() will release
+        // the slot. Do NOT call limiter.release() here too; that would
+        // double-decrement the counter and admit one extra concurrent job.
         throw validationErr;
       }
 
       const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
 
-      const output = await this.executeJob(job, abortController.signal);
+      let leaseInterval: ReturnType<typeof setInterval> | undefined;
+      if (this.extendLeaseWhileRunning) {
+        leaseInterval = setInterval(() => {
+          const claim = this.activeClaims.get(job.id);
+          if (!claim) return;
+          claim.extendLease(this.leaseMs).catch((err) => {
+            getLogger().error("extendLease failed during job execution:", {
+              error: err,
+              jobId: job.id,
+            });
+          });
+        }, this.leaseMs * 0.5);
+      }
+
+      let output: Output;
+      try {
+        output = await this.executeJob(job, abortController.signal);
+      } finally {
+        if (leaseInterval !== undefined) {
+          clearInterval(leaseInterval);
+        }
+      }
       await this.completeJob(job, output);
 
       const elapsed = Date.now() - startTime;
@@ -551,14 +671,33 @@ export class JobQueueWorker<
           throw new JobNotFoundError(`Job ${job.id} not found`);
         }
 
-        if (currentJob.runAttempts >= currentJob.maxRetries) {
-          spanErrorMessage = "Max retries reached";
+        if (currentJob.attempts + 1 >= currentJob.maxAttempts) {
+          spanErrorMessage = "Max attempts reached";
+          // Forward to dead-letter queue before marking as failed
+          if (this.deadLetter !== "discard") {
+            try {
+              await this.deadLetter.send({
+                original: currentJob.input,
+                error: error.message,
+                errorCode: error.constructor.name ?? null,
+                attempts: currentJob.attempts,
+                queueName: this.queueName,
+                jobRunId: currentJob.jobRunId,
+              });
+            } catch (dlqErr) {
+              getLogger().error("Dead-letter queue send failed:", { error: dlqErr });
+            }
+          }
           await this.failJob(currentJob, new PermanentJobError(spanErrorMessage));
           span?.setStatus(SpanStatusCode.ERROR, spanErrorMessage);
         } else {
+          // Only delete the abort controller (not the claim) so rescheduleJob
+          // can still call claim.retry(). rescheduleJob's finally block drops
+          // the claim from activeClaims after it has been settled.
+          this.activeJobAbortControllers.delete(job.id);
           await this.rescheduleJob(currentJob, error.retryDate);
           span?.addEvent("workglow.job.retry", {
-            "workglow.job.run_attempt": currentJob.runAttempts,
+            "workglow.job.attempt": currentJob.attempts,
           });
           span?.setStatus(SpanStatusCode.UNSET);
         }
@@ -568,15 +707,16 @@ export class JobQueueWorker<
       }
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
+      await this.limiter.complete(limiterToken);
       span?.end();
-      try {
-        if (!slotReleased) {
-          await this.limiter.recordJobCompletion();
-        }
-      } finally {
+      // Guard against a concurrent processSingleJob for the same jobId (which
+      // can start before this finally block runs, e.g. after a reschedule).
+      // Only delete our own inFlight entry; if another invocation already
+      // replaced it, leave that entry alone.
+      if (this.inFlight.get(job.id) === inFlightPromise) {
         this.inFlight.delete(job.id);
-        resolveInFlight();
       }
+      resolveInFlight();
     }
   }
 
@@ -609,6 +749,11 @@ export class JobQueueWorker<
     this.events.emit("job_progress", jobId, progress, message, details);
   }
 
+  /** Internal — resolve the active claim for a job id, throw if missing. */
+  private getClaim(jobId: unknown): IClaim<JobStorageFormat<Input, Output>> | undefined {
+    return this.activeClaims.get(jobId);
+  }
+
   /**
    * Mark a job as completed
    */
@@ -623,7 +768,23 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
-      await this.storage.complete(this.classToStorage(job));
+      // H2 atomic ack: hand the result directly to claim.ack() so result +
+      // COMPLETED status land in a single storage write. If we crash here
+      // — anywhere between this call site and the storage layer's commit —
+      // the row stays PROCESSING, the lease expires, the next worker
+      // reclaims it, and no `job_complete` is ever emitted. Before this
+      // change we issued `saveResult` then `ack`: a crash between the two
+      // left a PROCESSING row with the output already written, no
+      // `job_complete`, and a redelivery that overwrote the previously-
+      // saved output.
+      const claim = this.getClaim(job.id);
+      if (claim) {
+        await claim.ack(output ?? null);
+      } else {
+        // No active claim (rare path — e.g. abort beat us to it). Fall back
+        // to the legacy two-step so the result is still persisted.
+        await this.jobStore.saveResult(job.id, (output ?? null) as Output);
+      }
       this.events.emit("job_complete", job.id, output as Output);
     } catch (err) {
       getLogger().error("completeJob errored:", { error: err });
@@ -645,7 +806,31 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = error?.constructor?.name ?? null;
 
-      await this.storage.complete(this.classToStorage(job));
+      // H2 atomic fail: hand error/errorCode/abortRequested directly to
+      // claim.fail() so they land in a single storage write together with
+      // status=FAILED. Eliminates the saveError-then-fail two-write window
+      // where a crash could leave the row PROCESSING with an `error`
+      // already written.
+      const abortRequested = error instanceof AbortSignalJobError;
+      const claim = this.getClaim(job.id);
+      if (claim) {
+        await claim.fail({
+          error: error.message,
+          errorCode: error.constructor.name ?? null,
+          abortRequested,
+        });
+      } else {
+        // Fallback — no active claim (e.g. lease lost or abort path). The
+        // legacy two-step is still correct here because we're writing
+        // straight to the job store; the atomicity loss only matters when
+        // ack/fail and the result write are split across claim and store.
+        await this.jobStore.saveError(
+          job.id,
+          error.message,
+          error.constructor.name ?? null,
+          abortRequested
+        );
+      }
       this.events.emit("job_error", job.id, error.message, error.constructor.name);
     } catch (err) {
       getLogger().error("failJob errored:", { error: err });
@@ -665,7 +850,21 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      await this.storage.complete(this.classToStorage(job));
+      // H5 atomic disable: a single storage write sets status=DISABLED,
+      // releases the lease, and clears progress fields. Replaces the legacy
+      // two-write `claim.fail()` then `jobStore.saveStatus(DISABLED)` path
+      // which briefly persisted FAILED before overwriting with DISABLED —
+      // any subscriber observing during the window saw a spurious
+      // FAILED transition and fired a `job_error` event.
+      const claim = this.getClaim(job.id);
+      if (claim?.disable) {
+        await claim.disable();
+      } else {
+        // Fallback for external IClaim impls that haven't adopted disable()
+        // yet. saveStatus uses finalize() under the hood (no attempts bump,
+        // no error write), so it's correct as a single-write fallback.
+        await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
+      }
       this.events.emit("job_disabled", job.id);
     } catch (err) {
       getLogger().error("disableJob errored:", { error: err });
@@ -677,17 +876,26 @@ export class JobQueueWorker<
   /**
    * Release a job that {@link next} just claimed but that we won't process
    * because the worker was stopped mid-claim. Resets the row to PENDING so
-   * the next started worker can pick it up. `fixupJobs()` would otherwise
-   * skip it (it ignores rows owned by current-server worker IDs).
+   * the next started worker can pick it up. Lease expiry in `next()` would
+   * otherwise reclaim it after the lease expires.
    *
-   * Uses `storage.release()` rather than `storage.complete()` so the retry
+   * Uses `storage.releaseClaim()` rather than `storage.complete()` so the retry
    * budget isn't burned: the worker never actually attempted execution.
    */
   protected async releaseClaimedJob(job: Job<Input, Output>): Promise<void> {
     try {
-      await this.storage.release(job.id);
+      // Prefer driving the claim's release path so any per-claim cleanup
+      // (e.g. transient buffers) is consistent with regular settlement.
+      const claim = this.activeClaims.get(job.id);
+      if (claim) {
+        await this.messageQueue.releaseClaim(claim.id);
+      } else {
+        await this.messageQueue.releaseClaim(job.id);
+      }
     } catch (err) {
       getLogger().error("releaseClaimedJob errored:", { error: err });
+    } finally {
+      this.activeClaims.delete(job.id);
     }
   }
 
@@ -698,18 +906,27 @@ export class JobQueueWorker<
     try {
       job.status = JobStatus.PENDING;
       const nextAvailableTime = await this.limiter.getNextAvailableTime();
-      job.runAfter = retryDate instanceof Date ? retryDate : nextAvailableTime;
+      job.visibleAt = retryDate instanceof Date ? retryDate : nextAvailableTime;
       job.progress = 0;
       job.progressMessage = "";
       job.progressDetails = null;
-      // Increment runAttempts to keep in-memory object in sync with storage
+      // Increment attempts to keep in-memory object in sync with storage
       // The storage layer will read from DB and increment, so this keeps them aligned
-      job.runAttempts = (job.runAttempts ?? 0) + 1;
+      job.attempts = (job.attempts ?? 0) + 1;
 
-      await this.storage.complete(this.classToStorage(job));
-      this.events.emit("job_retry", job.id, job.runAfter);
+      const claim = this.getClaim(job.id);
+      const delaySeconds = Math.max(0, (job.visibleAt.getTime() - Date.now()) / 1000);
+      if (claim) {
+        await claim.retry({ delaySeconds });
+      }
+      this.events.emit("job_retry", job.id, job.visibleAt);
     } catch (err) {
       getLogger().error("rescheduleJob errored:", { error: err });
+    } finally {
+      // rescheduleJob is called from the catch branch in processSingleJob,
+      // which already calls cleanupJob via this method's path; ensure the
+      // claim ref is dropped too.
+      this.activeClaims.delete(job.id);
     }
   }
 
@@ -757,7 +974,7 @@ export class JobQueueWorker<
    * `completeJob` that won the race (the COMPLETED→FAILED overwrite bug).
    *
    * If the job is no longer in flight here, it has already settled — recheck
-   * storage and only write FAILED for non-terminal states (i.e. an ABORTING
+   * storage and only write FAILED for non-terminal states (i.e. a PROCESSING
    * row left over from a cross-process abort that this worker never picked up).
    */
   protected async handleAbort(jobId: unknown): Promise<void> {
@@ -783,7 +1000,7 @@ export class JobQueueWorker<
    * Get a job by ID
    */
   protected async getJob(id: unknown): Promise<Job<Input, Output> | undefined> {
-    const job = await this.storage.get(id);
+    const job = await this.jobStore.get(id);
     if (!job) return undefined;
     return this.storageToClass(job);
   }
@@ -798,10 +1015,7 @@ export class JobQueueWorker<
     if (job.status === JobStatus.FAILED) {
       throw new PermanentJobError(`Job ${job.id} has failed`);
     }
-    if (
-      job.status === JobStatus.ABORTING ||
-      this.activeJobAbortControllers.get(job.id)?.signal.aborted
-    ) {
+    if (this.activeJobAbortControllers.get(job.id)?.signal.aborted) {
       throw new AbortSignalJobError(`Job ${job.id} is being aborted`);
     }
     if (job.deadlineAt && job.deadlineAt < new Date()) {
@@ -830,6 +1044,7 @@ export class JobQueueWorker<
    */
   protected cleanupJob(jobId: unknown): void {
     this.activeJobAbortControllers.delete(jobId);
+    this.activeClaims.delete(jobId);
   }
 
   /**

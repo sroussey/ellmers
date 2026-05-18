@@ -72,19 +72,6 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Returns a filtered and sorted list of pending jobs that are ready to run
-   * Sorts by creation time to maintain FIFO order
-   */
-  private pendingQueue(): Array<JobStorageFormat<Input, Output> & Record<string, unknown>> {
-    const now = new Date().toISOString();
-    return this.jobQueue
-      .filter((job) => this.matchesPrefixes(job))
-      .filter((job) => job.status === JobStatus.PENDING)
-      .filter((job) => !job.run_after || job.run_after <= now)
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""));
-  }
-
-  /**
    * Adds a new job to the queue
    * Generates an ID and fingerprint if not provided
    */
@@ -101,7 +88,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.progress_message = "";
     jobWithPrefixes.progress_details = null;
     jobWithPrefixes.created_at = now;
-    jobWithPrefixes.run_after = now;
+    jobWithPrefixes.visible_at = now;
 
     // Add prefix values to the job
     for (const [key, value] of Object.entries(this.prefixValues)) {
@@ -141,30 +128,80 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     num = Number(num) || 100;
     return this.jobQueue
       .filter((j) => this.matchesPrefixes(j))
-      .sort((a, b) => (a.run_after || "").localeCompare(b.run_after || ""))
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""))
       .filter((j) => j.status === status)
       .slice(0, num);
   }
 
   /**
-   * Retrieves the next available job that is ready to be processed
-   * Updates the job status to PROCESSING before returning
+   * Retrieves the next available job that is ready to be processed.
+   * Claims PENDING jobs ready to run, and also reclaims PROCESSING jobs whose
+   * lease has expired (crash recovery). Sets lease_expires_at on the claimed row.
    * @param workerId - Worker ID to associate with the job
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job or undefined if no job is available
    */
-  public async next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined> {
+  public async next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
     await sleep(0);
-    const top = this.pendingQueue();
+    const leaseMs = opts?.leaseMs ?? 30000;
+    const now = new Date().toISOString();
+    const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
 
-    const job = top[0];
+    // First look for a normal PENDING job ready to run
+    const pending = this.jobQueue
+      .filter((job) => this.matchesPrefixes(job))
+      .filter((job) => job.status === JobStatus.PENDING)
+      .filter((job) => !job.visible_at || job.visible_at <= now)
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""));
+
+    // Also look for PROCESSING jobs with expired leases
+    const expiredLease = this.jobQueue
+      .filter((job) => this.matchesPrefixes(job))
+      .filter((job) => job.status === JobStatus.PROCESSING)
+      .filter((job) => !job.lease_expires_at || job.lease_expires_at < now)
+      .sort((a, b) => (a.visible_at || "").localeCompare(b.visible_at || ""));
+
+    const job = pending[0] ?? expiredLease[0];
     if (job) {
       const oldJob = { ...job };
+      // Lease-expiry reclaim (job was PROCESSING with expired lease) consumes
+      // one attempt against max_attempts; a fresh PENDING claim does not.
+      const isLeaseExpiryReclaim = job.status === JobStatus.PROCESSING;
       job.status = JobStatus.PROCESSING;
-      job.last_ran_at = new Date().toISOString();
-      job.worker_id = workerId;
+      job.last_attempted_at = now;
+      job.lease_owner = workerId;
+      job.lease_expires_at = leaseExpiry;
+      if (isLeaseExpiryReclaim) {
+        job.attempts = (job.attempts ?? 0) + 1;
+      }
+      // Always clear stale abort_requested_at on (re)claim so a flag set by
+      // an earlier worker does not immediately abort the new lease.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
       return job;
     }
+  }
+
+  /**
+   * Extend the lease on a currently PROCESSING job.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner (lease_owner)
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    await sleep(0);
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    if (!job || job.status !== JobStatus.PROCESSING || job.lease_owner !== workerId) {
+      throw new Error(
+        `extendLease failed: job ${String(id)} is not PROCESSING or lease is not owned by worker ${workerId}`
+      );
+    }
+    const oldJob = { ...job };
+    job.lease_expires_at = new Date(Date.now() + ms).toISOString();
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
   /**
@@ -172,7 +209,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
    * @param status - The status of the jobs to retrieve.
    * @returns A promise that resolves to the number of jobs.
    */
-  public async size(status = JobStatus.PENDING): Promise<number> {
+  public async size(status: JobStatus = JobStatus.PENDING): Promise<number> {
     await sleep(0);
     return this.jobQueue.filter((j) => this.matchesPrefixes(j) && j.status === status).length;
   }
@@ -227,7 +264,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /**
    * Marks a job as complete with its output or error
-   * Handles run_attempts for failed jobs and triggers completion callbacks
+   * Handles attempts for failed jobs and triggers completion callbacks
    * @param id - ID of the job to complete
    * @param output - Result of the job execution
    * @param error - Optional error message if job failed
@@ -238,8 +275,13 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     const index = this.jobQueue.findIndex((j) => j.id === job.id && this.matchesPrefixes(j));
     if (index !== -1) {
       const existing = this.jobQueue[index];
-      const currentAttempts = existing?.run_attempts ?? 0;
-      jobWithPrefixes.run_attempts = currentAttempts + 1;
+      const currentAttempts = existing?.attempts ?? 0;
+      jobWithPrefixes.attempts = currentAttempts + 1;
+      // PENDING-retry / terminal completion: clear abort_requested_at so an
+      // abort that was requested during the previous attempt does not
+      // immediately cancel the retry. Terminal statuses get a harmless
+      // cleanup of the same field.
+      jobWithPrefixes.abort_requested_at = null;
       // Preserve prefix values from the existing job
       for (const [key, value] of Object.entries(this.prefixValues)) {
         jobWithPrefixes[key] = value;
@@ -250,35 +292,96 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Releases a claimed job back to PENDING without incrementing run_attempts.
+   * Releases a claimed job back to PENDING without incrementing attempts.
    * @param id - The id of the claimed job to release.
    */
-  public async release(id: unknown): Promise<void> {
+  public async releaseClaim(id: unknown): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
     if (job) {
       const oldJob = { ...job };
       job.status = JobStatus.PENDING;
-      job.worker_id = null;
+      job.lease_owner = null;
       job.progress = 0;
       job.progress_message = "";
       job.progress_details = null;
+      // Clear stale abort_requested_at — an abort flag set during the previous
+      // claim must not survive the release and immediately cancel the next claim.
+      (job as unknown as Record<string, unknown>).abort_requested_at = null;
       this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
     }
   }
 
   /**
-   * Aborts a job
+   * Aborts a job.
+   * - If PENDING: immediately mark as FAILED with abort_requested_at set.
+   * - If PROCESSING: set abort_requested_at only (leave status as PROCESSING).
+   * - Otherwise: no-op.
    * @param id - The id of the job to abort.
    */
   public async abort(id: unknown): Promise<void> {
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
-    if (job) {
-      const oldJob = { ...job };
-      job.status = JobStatus.ABORTING;
-      this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+    if (!job) return;
+    const oldJob = { ...job };
+    const now = new Date().toISOString();
+    if (job.status === JobStatus.PENDING) {
+      job.status = JobStatus.FAILED;
+      job.abort_requested_at = now;
+      job.completed_at = now;
+    } else if (job.status === JobStatus.PROCESSING) {
+      job.abort_requested_at = now;
+    } else {
+      return;
     }
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+  }
+
+  /**
+   * Terminal write that does NOT bump `attempts`. See IQueueStorage.finalize
+   * for the rationale.
+   */
+  public async finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void> {
+    await sleep(0);
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    if (!job) return;
+    const oldJob = { ...job };
+    const target = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
+    if ("output" in fields) target.output = (fields.output ?? null) as Output | null;
+    if ("error" in fields) target.error = fields.error ?? null;
+    if ("error_code" in fields) target.error_code = fields.error_code ?? null;
+    if ("status" in fields && fields.status !== undefined) target.status = fields.status;
+    if ("completed_at" in fields) target.completed_at = fields.completed_at ?? null;
+    if ("abort_requested_at" in fields)
+      target.abort_requested_at = fields.abort_requested_at ?? null;
+    if ("lease_owner" in fields) target.lease_owner = fields.lease_owner ?? null;
+    if ("progress" in fields) target.progress = fields.progress ?? 0;
+    if ("progress_message" in fields) target.progress_message = fields.progress_message ?? "";
+    if ("progress_details" in fields) target.progress_details = fields.progress_details ?? null;
+    this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
+  }
+
+  /**
+   * Force-overwrite status without incrementing attempts. Standardized name —
+   * the legacy `updateJobStatus` alias was removed in favour of this name
+   * which mirrors `IJobStore.saveStatus` (the caller).
+   */
+  public async saveStatus(id: unknown, status: JobStatus): Promise<void> {
+    await this.finalize(id, { status });
   }
 
   /**

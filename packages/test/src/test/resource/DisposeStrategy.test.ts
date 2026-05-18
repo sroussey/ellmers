@@ -181,6 +181,73 @@ describe("DisposeStrategy.inactivity", () => {
     }
     expect(d).toHaveBeenCalledOnce();
   });
+
+  it("runStart() clears pending timers — registered key survives runComplete→runStart→advance(idleMs)", async () => {
+    // Race scenario: previous run completes and arms a 1000ms idle timer
+    // for key "a"; the next run begins ~500ms later. Without runStart(),
+    // the timer fires mid-run and disposes the resource the new run is
+    // about to use. With runStart(), the timer is cleared.
+    const scope = new ResourceScope({ strategy: DisposeStrategy.inactivity(1000) });
+    const d = vi.fn(async () => {});
+    scope.register("a", d);
+
+    await scope.runComplete();
+    await vi.advanceTimersByTimeAsync(500);
+
+    // New run begins.
+    await scope.runStart();
+    expect(d).not.toHaveBeenCalled();
+
+    // Advance well past the original idleMs — the cleared timer must not fire.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(d).not.toHaveBeenCalled();
+    expect(scope.size).toBe(1);
+  });
+
+  it("re-register after dispose survives without firing a stale timer", async () => {
+    // Sequence:
+    //   1. register("a", d1); runComplete arms a 1000ms timer for "a".
+    //   2. dispose("a") fires d1 (escape hatch) — but the timer entry may
+    //      still be in the strategy's map.
+    //   3. register("a", d2); the new disposer must NOT be torn down by a
+    //      lingering timer from the previous registration.
+    const scope = new ResourceScope({ strategy: DisposeStrategy.inactivity(1000) });
+    const d1 = vi.fn(async () => {});
+    scope.register("a", d1);
+    await scope.runComplete();
+
+    // Escape-hatch dispose runs d1 immediately.
+    await scope.dispose("a");
+    expect(d1).toHaveBeenCalledOnce();
+
+    // Re-register a new disposer under the same key; onRegister must clear
+    // any pending timer left over from the previous registration.
+    const d2 = vi.fn(async () => {});
+    scope.register("a", d2);
+
+    // If a stale timer were still armed, advancing to idleMs would fire it.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(d2).not.toHaveBeenCalled();
+    expect(scope.size).toBe(1);
+  });
+
+  it("when runStart is omitted, the inactivity timer fires (control case)", async () => {
+    // Inverted scenario: the runner did NOT call runStart() before its
+    // next run. The previous timer is still armed; after idleMs it fires
+    // and disposes the resource. This documents the bug runStart() exists
+    // to fix.
+    const scope = new ResourceScope({ strategy: DisposeStrategy.inactivity(1000) });
+    const d = vi.fn(async () => {});
+    scope.register("a", d);
+
+    await scope.runComplete();
+
+    // Simulate "next run begins" — but the runner forgets runStart().
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(d).toHaveBeenCalledOnce();
+    expect(scope.size).toBe(0);
+  });
 });
 
 describe("DisposePresets", () => {

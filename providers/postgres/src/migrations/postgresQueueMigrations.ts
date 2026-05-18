@@ -22,6 +22,10 @@ import type { Pool } from "../storage/_postgres/node-bun";
  * would not — silently producing version-skewed enums and runtime errors on
  * insert. Adding a status requires a NEW migration that runs
  * `ALTER TYPE job_status ADD VALUE IF NOT EXISTS '...'`.
+ *
+ * ABORTING was present in v1 and removed from the application model in PR 2.
+ * It remains in the v1 enum literal so existing databases are not broken;
+ * the application simply no longer writes that value.
  */
 const JOB_STATUS_V1: readonly string[] = [
   "PENDING",
@@ -33,9 +37,10 @@ const JOB_STATUS_V1: readonly string[] = [
 ];
 
 /**
- * Sanity check: if a developer adds a status to {@link JobStatus} without
- * also writing a follow-up migration that ALTER TYPE-adds it, queries that
- * insert the new status will fail at runtime against any DB still on v1.
+ * Sanity check: every current {@link JobStatus} value must be covered by the
+ * v1 enum (or a subsequent ALTER TYPE migration). ABORTING was intentionally
+ * removed from the application model; it is still legal in the DB schema but
+ * we skip it here so the check does not reject a valid removal.
  *
  * Run lazily from {@link postgresQueueMigrations} (NOT at module import) so
  * that consumers re-exporting this module via barrel files don't crash on
@@ -43,13 +48,7 @@ const JOB_STATUS_V1: readonly string[] = [
  */
 function assertJobStatusMatchesV1(): void {
   const current = new Set(Object.values(JobStatus));
-  for (const v of JOB_STATUS_V1) {
-    if (!current.has(v as JobStatus)) {
-      throw new Error(
-        `JobStatus const is missing v1 enum value "${v}"; v1 migration values are frozen.`
-      );
-    }
-  }
+  // Every current status must be present in the v1 enum (or added by a later migration).
   for (const v of current) {
     if (!JOB_STATUS_V1.includes(v)) {
       throw new Error(
@@ -68,6 +67,14 @@ function assertJobStatusMatchesV1(): void {
  * table names get tracked independently in `_storage_migrations`. The v1
  * payload covers schema + indexes + LISTEN/NOTIFY plumbing; the trigger is
  * idempotent (`CREATE OR REPLACE FUNCTION` + `DROP TRIGGER IF EXISTS`).
+ *
+ * v1 is FROZEN byte-for-byte against the pre-PR shape — it MUST keep
+ * creating the `run_after`/`run_attempts`/`max_retries`/`last_ran_at`/
+ * `worker_id` columns and the corresponding `run_after`-keyed indexes.
+ * Renames and index swaps live in v3 (with `IF EXISTS` guards so a fresh
+ * install — which still goes through v1 — can apply v3 without errors).
+ * Mutating v1 would silently produce divergent schemas between fresh and
+ * already-migrated DBs and break older deployments mid-rollout.
  */
 export function postgresQueueMigrations(
   tableName: string,
@@ -187,6 +194,69 @@ export function postgresQueueMigrations(
           await db.query("ROLLBACK TO SAVEPOINT install_notify_trigger").catch(() => undefined);
           await db.query("RELEASE SAVEPOINT install_notify_trigger").catch(() => undefined);
         }
+      },
+    },
+    {
+      component,
+      version: 2,
+      description: "Add abort_requested_at and lease_expires_at columns",
+      async up(db: Pool) {
+        await db.query(`
+          ALTER TABLE ${tableName}
+            ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone,
+            ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone
+        `);
+      },
+    },
+    {
+      component,
+      version: 3,
+      description:
+        "Rename run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner; drop run_after-keyed indexes and recreate visible_at-keyed",
+      async up(db: Pool) {
+        // Each rename is guarded by IF EXISTS — fresh installs (which still
+        // run v1 → v2 → v3) skip every branch and end up with the v1 schema
+        // exactly. Existing installs from before this PR get renamed in place.
+        await db.query(`
+          DO $$
+          BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='run_after' AND table_schema=current_schema()) THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_after TO visible_at';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='last_ran_at' AND table_schema=current_schema()) THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN last_ran_at TO last_attempted_at';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='run_attempts' AND table_schema=current_schema()) THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN run_attempts TO attempts';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='max_retries' AND table_schema=current_schema()) THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN max_retries TO max_attempts';
+              EXECUTE 'ALTER TABLE ${tableName} ALTER COLUMN max_attempts SET DEFAULT 10';
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='worker_id' AND table_schema=current_schema()) THEN
+              EXECUTE 'ALTER TABLE ${tableName} RENAME COLUMN worker_id TO lease_owner';
+            END IF;
+          END $$
+        `);
+
+        // Drop the v1 run_after-keyed indexes and recreate them keyed on
+        // visible_at. CREATE INDEX cannot be wrapped in CONCURRENTLY here
+        // because the migration runs inside a transaction. The old indexes
+        // are useless after the rename — PostgreSQL automatically retargets
+        // them onto `visible_at` post-rename, but their NAMES still encode
+        // the old column, which is confusing for operators and slot-binds
+        // against the wrong stats; doing an explicit DROP + CREATE swap
+        // keeps names and schemas consistent.
+        await db.query(`DROP INDEX IF EXISTS job_fetcher${indexSuffix}_idx`);
+        await db.query(`DROP INDEX IF EXISTS job_queue_fetcher${indexSuffix}_idx`);
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx
+            ON ${tableName} (${prefixIndexPrefix}id, status, visible_at)
+        `);
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx
+            ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at)
+        `);
       },
     },
   ];

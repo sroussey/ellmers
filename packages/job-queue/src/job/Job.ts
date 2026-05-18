@@ -34,19 +34,23 @@ export type JobConstructorParam<Input, Output> = {
   error?: string | null;
   errorCode?: string | null;
   fingerprint?: string;
-  maxRetries?: number;
+  maxAttempts?: number;
   status?: JobStatus;
   createdAt?: Date;
   deadlineAt?: Date | null;
-  lastRanAt?: Date | null;
-  runAfter?: Date | null;
+  lastAttemptedAt?: Date | null;
+  visibleAt?: Date | null;
   completedAt?: Date | null;
-  runAttempts?: number;
+  attempts?: number;
   progress?: number;
   progressMessage?: string;
   progressDetails?: Record<string, any> | null;
-  /** The ID of the worker that claimed this job, null if unclaimed */
-  workerId?: string | null;
+  /** The ID of the worker that currently holds the lease on this job, null if unclaimed */
+  leaseOwner?: string | null;
+  /** ISO timestamp when an abort was requested for this job (storage-layer concern) */
+  abort_requested_at?: string | null;
+  /** ISO timestamp when the current lease expires (storage-layer concern) */
+  lease_expires_at?: string | null;
 };
 
 export type JobClass<Input, Output> = new (
@@ -64,14 +68,14 @@ export class Job<Input, Output> {
   public jobRunId: string | undefined;
   public queueName: string | undefined;
   public input: Input;
-  public maxRetries: number;
+  public maxAttempts: number;
   public createdAt: Date;
   public fingerprint: string | undefined;
   public status: JobStatus = JobStatus.PENDING;
-  public runAfter: Date;
+  public visibleAt: Date;
   public output: Output | null = null;
-  public runAttempts: number = 0;
-  public lastRanAt: Date | null = null;
+  public attempts: number = 0;
+  public lastAttemptedAt: Date | null = null;
   public completedAt: Date | null = null;
   public deadlineAt: Date | null = null;
   public error: string | null = null;
@@ -79,8 +83,12 @@ export class Job<Input, Output> {
   public progress: number = 0;
   public progressMessage: string = "";
   public progressDetails: Record<string, any> | null = null;
-  /** The ID of the worker that claimed this job */
-  public workerId: string | null = null;
+  /** The ID of the worker that currently holds the lease on this job */
+  public leaseOwner: string | null = null;
+  /** ISO timestamp when an abort was requested for this job (storage-layer concern) */
+  public abort_requested_at: string | null = null;
+  /** ISO timestamp when the current lease expires (storage-layer concern) */
+  public lease_expires_at: string | null = null;
 
   constructor({
     queueName,
@@ -91,22 +99,24 @@ export class Job<Input, Output> {
     errorCode = null,
     fingerprint = undefined,
     output = null,
-    maxRetries = 10,
+    maxAttempts = 10,
     createdAt = new Date(),
     completedAt = null,
     status = JobStatus.PENDING,
     deadlineAt = null,
-    runAttempts = 0,
-    lastRanAt = null,
-    runAfter = new Date(),
+    attempts = 0,
+    lastAttemptedAt = null,
+    visibleAt = new Date(),
     progress = 0,
     progressMessage = "",
     progressDetails = null,
-    workerId = null,
+    leaseOwner = null,
+    abort_requested_at = null,
+    lease_expires_at = null,
   }: JobConstructorParam<Input, Output>) {
-    this.runAfter = runAfter ?? new Date();
+    this.visibleAt = visibleAt ?? new Date();
     this.createdAt = createdAt ?? new Date();
-    this.lastRanAt = lastRanAt ?? null;
+    this.lastAttemptedAt = lastAttemptedAt ?? null;
     this.deadlineAt = deadlineAt ?? null;
     this.completedAt = completedAt ?? null;
 
@@ -116,15 +126,17 @@ export class Job<Input, Output> {
     this.status = status;
     this.fingerprint = fingerprint;
     this.input = input;
-    this.maxRetries = maxRetries;
-    this.runAttempts = runAttempts;
+    this.maxAttempts = maxAttempts;
+    this.attempts = attempts;
     this.output = output;
     this.error = error;
     this.errorCode = errorCode;
     this.progress = progress;
     this.progressMessage = progressMessage;
     this.progressDetails = progressDetails;
-    this.workerId = workerId ?? null;
+    this.leaseOwner = leaseOwner ?? null;
+    this.abort_requested_at = abort_requested_at ?? null;
+    this.lease_expires_at = lease_expires_at ?? null;
   }
 
   async execute(_input: Input, _context: IJobExecuteContext): Promise<Output> {

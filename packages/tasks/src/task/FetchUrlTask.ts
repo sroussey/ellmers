@@ -519,9 +519,9 @@ export class FetchUrlTask<
         throw executeContext.signal.reason ?? new AbortSignalJobError("The operation was aborted");
       }
 
-      const handle = await registeredQueue.client.submit(jobInput as Input, {
+      const handle = await registeredQueue.client.send(jobInput as Input, {
         jobRunId: this.runConfig.runnerId,
-        maxRetries: 10,
+        maxAttempts: 10,
       });
 
       // Wire abort signal to queued job

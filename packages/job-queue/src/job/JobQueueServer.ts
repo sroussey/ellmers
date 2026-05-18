@@ -7,12 +7,16 @@
 import { EventEmitter, getLogger } from "@workglow/util";
 import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
+import type { IJobStore } from "../queue-storage/IJobStore";
+import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type {
   IQueueStorage,
   JobStorageFormat,
   QueueChangePayload,
 } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
+import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
+import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import { JobQueueClient } from "./JobQueueClient";
 import { JobQueueWorker } from "./JobQueueWorker";
@@ -42,7 +46,7 @@ export type JobQueueServerEventListeners<Input, Output> = {
   job_complete: (queueName: string, jobId: unknown, output: Output) => void;
   job_error: (queueName: string, jobId: unknown, error: string) => void;
   job_disabled: (queueName: string, jobId: unknown) => void;
-  job_retry: (queueName: string, jobId: unknown, runAfter: Date) => void;
+  job_retry: (queueName: string, jobId: unknown, visibleAt: Date) => void;
   job_progress: (
     queueName: string,
     jobId: unknown,
@@ -58,7 +62,14 @@ export type JobQueueServerEvents = keyof JobQueueServerEventListeners<unknown, u
  * Options for creating a JobQueueServer
  */
 export interface JobQueueServerOptions<Input, Output> {
-  readonly storage: IQueueStorage<Input, Output>;
+  /**
+   * Legacy single-storage option. Provide either `storage` OR the paired
+   * `messageQueue`+`jobStore`. When `storage` is given it is wrapped via
+   * {@link wrapQueueStorage} internally.
+   */
+  readonly storage?: IQueueStorage<Input, Output>;
+  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore?: IJobStore<Input, Output>;
   readonly queueName: string;
   readonly limiter?: ILimiter;
   readonly workerCount?: number;
@@ -72,6 +83,13 @@ export interface JobQueueServerOptions<Input, Output> {
    * Defaults to 30s. Set to 0 to abort immediately.
    */
   readonly stopTimeoutMs?: number;
+  /**
+   * Dead-letter queue to forward exhausted jobs to, or "discard" to silently drop them.
+   * Default: "discard".
+   */
+  readonly deadLetter?: IMessageQueue<DeadLetter<Input>> | "discard";
+  /** Number of jobs to pre-fetch per poll iteration. Defaults to 1. */
+  readonly prefetch?: number;
 }
 
 /**
@@ -84,7 +102,10 @@ export class JobQueueServer<
   QueueJob extends Job<Input, Output> = Job<Input, Output>,
 > {
   public readonly queueName: string;
-  protected readonly storage: IQueueStorage<Input, Output>;
+  protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  protected readonly jobStore: IJobStore<Input, Output>;
+  /** Optional legacy storage handle, set when the user constructed via `storage`. */
+  protected readonly storage: IQueueStorage<Input, Output> | null;
   protected readonly jobClass: JobClass<Input, Output>;
   public readonly limiter: ILimiter;
   protected readonly workerCount: number;
@@ -94,6 +115,8 @@ export class JobQueueServer<
   protected readonly deleteAfterDisabledMs?: number;
   protected readonly cleanupIntervalMs: number;
   protected readonly stopTimeoutMs?: number;
+  protected readonly deadLetter: IMessageQueue<DeadLetter<Input>> | "discard";
+  protected readonly prefetch: number;
 
   protected readonly events = new EventEmitter<JobQueueServerEventListeners<Input, Output>>();
   protected readonly workers: JobQueueWorker<Input, Output, QueueJob>[] = [];
@@ -115,7 +138,20 @@ export class JobQueueServer<
 
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueServerOptions<Input, Output>) {
     this.queueName = options.queueName;
-    this.storage = options.storage;
+    if (options.messageQueue && options.jobStore) {
+      this.messageQueue = options.messageQueue;
+      this.jobStore = options.jobStore;
+      this.storage = null;
+    } else if (options.storage) {
+      const wrapped = wrapQueueStorage(options.storage);
+      this.messageQueue = wrapped.messageQueue;
+      this.jobStore = wrapped.jobStore;
+      this.storage = options.storage;
+    } else {
+      throw new Error(
+        "JobQueueServer requires either `storage` or both `messageQueue` and `jobStore`"
+      );
+    }
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.workerCount = options.workerCount ?? 1;
@@ -125,6 +161,8 @@ export class JobQueueServer<
     this.deleteAfterDisabledMs = options.deleteAfterDisabledMs;
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? 10000;
     this.stopTimeoutMs = options.stopTimeoutMs;
+    this.deadLetter = options.deadLetter ?? "discard";
+    this.prefetch = Math.max(1, options.prefetch ?? 1);
 
     this.initializeWorkers();
   }
@@ -146,7 +184,7 @@ export class JobQueueServer<
     // N× the limit (one bucket per process).
     if (
       this.limiter.scope === "process" &&
-      this.storage.scope === "cluster" &&
+      this.messageQueue.scope === "cluster" &&
       !(this.limiter instanceof NullLimiter)
     ) {
       getLogger().warn(
@@ -154,13 +192,10 @@ export class JobQueueServer<
         {
           queueName: this.queueName,
           limiterScope: this.limiter.scope,
-          storage: this.storage.constructor.name,
+          storage: this.storage?.constructor.name ?? this.messageQueue.constructor.name,
         }
       );
     }
-
-    // Fix stuck jobs from previous runs
-    await this.fixupJobs();
 
     // Subscribe to storage changes to wake workers when new work arrives.
     // - Cross-process deployments rely on this for wake-up.
@@ -173,7 +208,10 @@ export class JobQueueServer<
     // - Sqlite/Postgres throw here; the try/catch falls through and direct
     //   notify is the sole wake path on those backends.
     try {
-      this.storageUnsubscribe = this.storage.subscribeToChanges(
+      const sub = this.messageQueue.subscribeToChanges;
+      if (!sub) throw new Error("messageQueue does not support subscribeToChanges");
+      this.storageUnsubscribe = sub.call(
+        this.messageQueue,
         (change: QueueChangePayload<Input, Output>) => {
           if (
             change.type === "INSERT" ||
@@ -257,8 +295,18 @@ export class JobQueueServer<
   /**
    * Get the storage instance (for client connection)
    */
-  public getStorage(): IQueueStorage<Input, Output> {
+  public getStorage(): IQueueStorage<Input, Output> | null {
     return this.storage;
+  }
+
+  /** Get the message queue paired with this server. */
+  public getMessageQueue(): IMessageQueue<JobStorageFormat<Input, Output>> {
+    return this.messageQueue;
+  }
+
+  /** Get the job store paired with this server. */
+  public getJobStore(): IJobStore<Input, Output> {
+    return this.jobStore;
   }
 
   /**
@@ -391,11 +439,14 @@ export class JobQueueServer<
    */
   protected createWorker(): JobQueueWorker<Input, Output, QueueJob> {
     const worker = new JobQueueWorker<Input, Output, QueueJob>(this.jobClass, {
-      storage: this.storage,
+      messageQueue: this.messageQueue,
+      jobStore: this.jobStore,
       queueName: this.queueName,
       limiter: this.limiter,
       pollIntervalMs: this.pollIntervalMs,
       stopTimeoutMs: this.stopTimeoutMs,
+      deadLetter: this.deadLetter,
+      prefetch: this.prefetch,
     });
 
     // Forward worker events to server and clients
@@ -413,7 +464,7 @@ export class JobQueueServer<
 
       // Immediate deletion when configured
       if (this.deleteAfterCompletionMs === 0) {
-        this.storage.delete(jobId).catch((err) => {
+        this.jobStore.delete(jobId).catch((err) => {
           console.error("Error deleting job after completion:", err);
         });
       }
@@ -429,7 +480,7 @@ export class JobQueueServer<
 
       // Immediate deletion when configured
       if (this.deleteAfterFailureMs === 0) {
-        this.storage.delete(jobId).catch((err) => {
+        this.jobStore.delete(jobId).catch((err) => {
           console.error("Error deleting job after error:", err);
         });
       }
@@ -445,7 +496,7 @@ export class JobQueueServer<
 
       // Immediate deletion when configured
       if (this.deleteAfterDisabledMs === 0) {
-        this.storage.delete(jobId).catch((err) => {
+        this.jobStore.delete(jobId).catch((err) => {
           console.error("Error deleting job after disabling:", err);
         });
       }
@@ -454,10 +505,10 @@ export class JobQueueServer<
       this.notifyWorkers();
     });
 
-    worker.on("job_retry", (jobId, runAfter) => {
+    worker.on("job_retry", (jobId, visibleAt) => {
       this.stats = { ...this.stats, retriedJobs: this.stats.retriedJobs + 1 };
-      this.events.emit("job_retry", this.queueName, jobId, runAfter);
-      this.forwardToClients("handleJobRetry", jobId, runAfter);
+      this.events.emit("job_retry", this.queueName, jobId, visibleAt);
+      this.forwardToClients("handleJobRetry", jobId, visibleAt);
     });
 
     worker.on("job_progress", (jobId, progress, message, details) => {
@@ -480,7 +531,7 @@ export class JobQueueServer<
     errorCode?: string
   ): void;
   protected forwardToClients(method: "handleJobDisabled", jobId: unknown): void;
-  protected forwardToClients(method: "handleJobRetry", jobId: unknown, runAfter: Date): void;
+  protected forwardToClients(method: "handleJobRetry", jobId: unknown, visibleAt: Date): void;
   protected forwardToClients(
     method: "handleJobProgress",
     jobId: unknown,
@@ -541,68 +592,20 @@ export class JobQueueServer<
 
       // Delete completed jobs after TTL
       if (this.deleteAfterCompletionMs !== undefined && this.deleteAfterCompletionMs > 0) {
-        await this.storage.deleteJobsByStatusAndAge(
-          JobStatus.COMPLETED,
-          this.deleteAfterCompletionMs
-        );
+        await this.jobStore.deleteByStatusAndAge(JobStatus.COMPLETED, this.deleteAfterCompletionMs);
       }
 
       // Delete failed jobs after TTL
       if (this.deleteAfterFailureMs !== undefined && this.deleteAfterFailureMs > 0) {
-        await this.storage.deleteJobsByStatusAndAge(JobStatus.FAILED, this.deleteAfterFailureMs);
+        await this.jobStore.deleteByStatusAndAge(JobStatus.FAILED, this.deleteAfterFailureMs);
       }
 
       // Delete disabled jobs after TTL
       if (this.deleteAfterDisabledMs !== undefined && this.deleteAfterDisabledMs > 0) {
-        await this.storage.deleteJobsByStatusAndAge(JobStatus.DISABLED, this.deleteAfterDisabledMs);
+        await this.jobStore.deleteByStatusAndAge(JobStatus.DISABLED, this.deleteAfterDisabledMs);
       }
     } catch (error) {
       console.error("Error in cleanup:", error);
-    }
-  }
-
-  /**
-   * Fix stuck jobs from previous server runs.
-   * Jobs in PROCESSING or ABORTING state that are not owned by any of the current
-   * server's workers are considered orphaned and will be reset.
-   */
-  protected async fixupJobs(): Promise<void> {
-    try {
-      const stuckProcessingJobs = await this.storage.peek(JobStatus.PROCESSING);
-      const stuckAbortingJobs = await this.storage.peek(JobStatus.ABORTING);
-      const stuckJobs = [...stuckProcessingJobs, ...stuckAbortingJobs];
-
-      // Get the worker IDs of all workers managed by this server
-      const currentWorkerIds = new Set(this.getWorkerIds());
-
-      for (const jobData of stuckJobs) {
-        // Skip jobs that belong to workers in this server (they may still be processing)
-        if (jobData.worker_id && currentWorkerIds.has(jobData.worker_id)) {
-          continue;
-        }
-
-        const job = this.storageToClass(jobData);
-        if (job.runAttempts >= job.maxRetries) {
-          job.status = JobStatus.FAILED;
-          job.error = "Max retries reached";
-          job.errorCode = "MAX_RETRIES_REACHED";
-          // Clear worker_id since job is now failed
-          job.workerId = null;
-        } else {
-          job.status = JobStatus.PENDING;
-          job.runAfter = job.lastRanAt || new Date();
-          job.progress = 0;
-          job.progressMessage = "";
-          job.progressDetails = null;
-          job.error = "Server restarted";
-          // Clear worker_id so a new worker can claim this job
-          job.workerId = null;
-        }
-
-        await this.storage.complete(this.classToStorage(job));
-      }
-    } catch (error) {
-      console.error("Error in fixupJobs:", error);
     }
   }
 
@@ -618,12 +621,5 @@ export class JobQueueServer<
    */
   protected classToStorage(job: Job<Input, Output>): JobStorageFormat<Input, Output> {
     return classToStorage(job, this.queueName);
-  }
-
-  /**
-   * Get the worker IDs of all workers managed by this server
-   */
-  public getWorkerIds(): string[] {
-    return this.workers.map((worker) => worker.workerId);
   }
 }

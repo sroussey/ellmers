@@ -25,9 +25,8 @@ export type LimiterScope = "process" | "cluster";
  *
  * The atomic primitive is {@link tryAcquire}: it both checks whether a job may
  * proceed and reserves the slot in a single uninterruptible step. Callers
- * MUST use {@link tryAcquire}/{@link release} (not the legacy
- * {@link canProceed}/{@link recordJobStart} pair) when correctness matters
- * under concurrency.
+ * MUST use {@link tryAcquire}/{@link release} when correctness matters under
+ * concurrency.
  */
 export interface ILimiter {
   /**
@@ -63,20 +62,22 @@ export interface ILimiter {
   release(token: unknown): Promise<void>;
 
   /**
-   * Legacy non-binding "would tryAcquire succeed?" probe. SUBJECT TO RACES —
-   * do not use this followed by {@link recordJobStart} in production code; use
-   * {@link tryAcquire} instead. Retained for observability and tests.
+   * Signal that the job which acquired this token has finished executing.
+   * Called on the normal completion path (success, error, retry) to release
+   * resources held for the duration of the job.
+   *
+   * Semantics differ from {@link release}: `release` undoes a reservation as
+   * if the job never ran; `complete` finalises a reservation that was actually
+   * used.
+   *
+   * - `ConcurrencyLimiter`: decrements the running-job counter so the next
+   *   job can acquire a slot.
+   * - `RateLimiter`: no-op — the window reservation was consumed and must
+   *   persist until the window expires.
+   * - All others: no-op.
    */
-  canProceed(): Promise<boolean>;
+  complete(token: unknown): Promise<void>;
 
-  /**
-   * Legacy "force-record an execution" hook. SUBJECT TO RACES when paired with
-   * {@link canProceed} — use {@link tryAcquire} instead. Retained for tests
-   * and external bookkeeping.
-   */
-  recordJobStart(): Promise<void>;
-
-  recordJobCompletion(): Promise<void>;
   getNextAvailableTime(): Promise<Date>;
   setNextAvailableTime(date: Date): Promise<void>;
   clear(): Promise<void>;

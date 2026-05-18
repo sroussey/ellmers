@@ -605,6 +605,14 @@ export class TaskGraphRunner {
       this.runScheduler.armGraphTimeout(config.timeout, ctx);
     }
 
+    // Notify the disposal strategy that a new run is starting. Inactivity
+    // strategies clear any pending idle timers here, closing the race
+    // window where a stale timer armed at the previous runComplete could
+    // dispose a resource the new run is about to touch.
+    if (this.resourceScope) {
+      await this.resourceScope.runStart();
+    }
+
     // Early-out if parent signal was already aborted (RunContext constructor
     // already aborted ctx.abortController in that case)
     if (ctx.abortController.signal.aborted) return;

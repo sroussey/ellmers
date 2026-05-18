@@ -573,6 +573,14 @@ export class TaskRunner<
       this.resourceScope = config.resourceScope;
     }
 
+    // Notify the disposal strategy that a new run is starting. Inactivity
+    // strategies use this hook to clear any pending idle timers that were
+    // armed at the previous `runComplete`, closing the race window where a
+    // timer could fire mid-run and dispose a resource we are about to use.
+    if (this.resourceScope) {
+      await this.resourceScope.runStart();
+    }
+
     // Early-out if parent signal was already aborted (TaskRunContext constructor
     // already aborted ctx.abortController in that case)
     if (ctx.abortController.signal.aborted) return;

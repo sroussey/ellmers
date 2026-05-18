@@ -48,7 +48,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
       this.limiter = new ConcurrencyLimiter(this.concurrency);
     }
     const limiter = this.limiter;
-    await this.acquireLimiterSlot(limiter, context.signal);
+    const token = await this.acquireLimiterSlot(limiter, context.signal);
 
     try {
       const job = new AiJob({
@@ -62,7 +62,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
         emit
       );
     } finally {
-      await limiter.recordJobCompletion();
+      await limiter.complete(token);
     }
   }
 
@@ -75,7 +75,7 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
    * abort. Uses {@link ILimiter.tryAcquire} so concurrent callers cannot both
    * pass a check-then-record sequence and overshoot the configured limit.
    */
-  private async acquireLimiterSlot(limiter: ILimiter, signal: AbortSignal): Promise<void> {
+  private async acquireLimiterSlot(limiter: ILimiter, signal: AbortSignal): Promise<unknown> {
     let token = await limiter.tryAcquire();
     while (token === null || token === undefined) {
       if (signal.aborted) {
@@ -86,6 +86,6 @@ export class QueuedExecutionStrategy implements IAiExecutionStrategy {
       await new Promise<void>((resolve) => setTimeout(resolve, Math.max(20, Math.min(delay, 200))));
       token = await limiter.tryAcquire();
     }
-    void token;
+    return token;
   }
 }

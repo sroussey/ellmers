@@ -35,11 +35,31 @@ export class InactivityStrategy implements IDisposeStrategy {
   }
 
   onRegister(
-    _key: string,
+    key: string,
     disposer: () => Promise<void>,
     _scope: ResourceScope
   ): () => Promise<void> {
+    // Defensive: if a key is registered while an inactivity timer is still
+    // pending for it (e.g. the disposer ran, but a re-register raced with
+    // the timer body before the timer woke up), clear the pending timer so
+    // the new disposer cannot be torn down between runs.
+    const pending = this.timers.get(key);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      this.timers.delete(key);
+    }
     return disposer;
+  }
+
+  /**
+   * Called by `ResourceScope.runStart()` before each run. Clears every
+   * pending inactivity timer — any resource still registered is part of
+   * the new run, and we never want a stale timer to dispose mid-run.
+   * The next `onRunComplete` re-arms the timers from scratch.
+   */
+  onRunStart(_scope: ResourceScope): void {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
   }
 
   touch(key: string): void {

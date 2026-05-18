@@ -33,12 +33,11 @@ export interface QueueStorageOptions {
   readonly prefixValues?: Readonly<Record<string, string | number>>;
 }
 
-export type JobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "ABORTING" | "FAILED" | "DISABLED";
+export type JobStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "DISABLED";
 export const JobStatus = {
   PENDING: "PENDING",
   PROCESSING: "PROCESSING",
   COMPLETED: "COMPLETED",
-  ABORTING: "ABORTING",
   FAILED: "FAILED",
   DISABLED: "DISABLED",
 } as const satisfies Record<JobStatus, JobStatus>;
@@ -104,18 +103,24 @@ export type JobStorageFormat<Input, Output> = {
   error?: string | null;
   error_code?: string | null;
   fingerprint?: string;
-  max_retries?: number;
+  /**
+   * Total attempt cap. A job with `max_attempts: 3` gets at most 3 executions total
+   * (not 3 retries after the first attempt).
+   */
+  max_attempts?: number;
   status?: JobStatus;
   created_at?: string;
   deadline_at?: string | null;
-  last_ran_at?: string | null;
-  run_after: string | null;
+  last_attempted_at?: string | null;
+  visible_at: string | null;
   completed_at: string | null;
-  run_attempts?: number;
+  attempts?: number;
   progress?: number;
   progress_message?: string;
   progress_details?: Record<string, any> | null;
-  worker_id?: string | null;
+  lease_owner?: string | null;
+  abort_requested_at?: string | null;
+  lease_expires_at?: string | null;
 };
 
 /**
@@ -156,21 +161,36 @@ export interface IQueueStorage<Input, Output> {
   get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined>;
 
   /**
-   * Gets the next job from the queue storage
+   * Gets the next job from the queue storage. Claims PENDING jobs that are
+   * ready, and also reclaims PROCESSING jobs whose lease has expired (crash
+   * recovery). Sets `lease_expires_at = now + leaseMs` on the claimed row.
    * @param workerId - Worker ID to associate with the job (required)
+   * @param opts - Optional options including leaseMs (default 30000)
    * @returns The next job from the queue storage
    */
-  next(workerId: string): Promise<JobStorageFormat<Input, Output> | undefined>;
+  next(
+    workerId: string,
+    opts?: { leaseMs?: number }
+  ): Promise<JobStorageFormat<Input, Output> | undefined>;
+
+  /**
+   * Extend the lease on a currently PROCESSING job. Guards: lease_owner must
+   * match workerId and status must be PROCESSING. Throws if lease was lost.
+   * @param id - The ID of the job to extend the lease for
+   * @param workerId - Worker ID that must match the current lease owner
+   * @param ms - Number of milliseconds to extend the lease by
+   */
+  extendLease(id: unknown, workerId: string, ms: number): Promise<void>;
 
   /**
    * Releases a job that was just claimed by {@link next} but won't be
    * processed (e.g. the worker was stopped mid-claim). Resets status to
-   * PENDING and clears worker_id WITHOUT incrementing run_attempts —
+   * PENDING and clears lease_owner WITHOUT incrementing attempts —
    * the worker never actually attempted execution, so the retry budget
    * must be preserved.
    * @param id - The id of the claimed job to release.
    */
-  release(id: unknown): Promise<void>;
+  releaseClaim(id: unknown): Promise<void>;
 
   /**
    * Peeks at the next job(s) from the queue storage without removing them
@@ -188,10 +208,51 @@ export interface IQueueStorage<Input, Output> {
   size(status?: JobStatus): Promise<number>;
 
   /**
-   * Completes a job in the queue storage
+   * Completes a job in the queue storage. Bumps `attempts` (legacy contract,
+   * preserved for backward compatibility with code paths that rely on it,
+   * such as PENDING-retry rescheduling).
+   *
+   * NEW callers (worker ack/fail paths) should prefer {@link finalize}, which
+   * writes the terminal result fields WITHOUT touching `attempts` — a successful
+   * ack must not consume a retry attempt that was already accounted for by
+   * the lease-expiry reclaim or by the wrapper's retry path.
    * @param job - The job to complete
    */
   complete(job: JobStorageFormat<Input, Output>): Promise<void>;
+
+  /**
+   * Terminal write for a claim: persists the listed fields WITHOUT bumping
+   * the `attempts` counter. A partial overwrite — fields not present in
+   * `fields` are untouched.
+   *
+   * Introduced to fix the bug where `WrappedClaim.ack`/`fail` going through
+   * `complete()` incremented `attempts` on a successful execution. The
+   * lease-expiry reclaim already charged this attempt at `next()` time;
+   * charging it again at `ack()` time double-counts and rolls a successful
+   * job into MAX_ATTEMPTS_REACHED prematurely.
+   *
+   * The `lease_owner` / progress fields are also writable here so the
+   * atomic `disable` path can release the lease and clear progress in the
+   * same single write.
+   *
+   * @param id - The ID of the job to finalize
+   * @param fields - Terminal fields to write
+   */
+  finalize(
+    id: unknown,
+    fields: {
+      output?: Output | null;
+      error?: string | null;
+      error_code?: string | null;
+      status?: JobStatus;
+      completed_at?: string | null;
+      abort_requested_at?: string | null;
+      lease_owner?: string | null;
+      progress?: number;
+      progress_message?: string;
+      progress_details?: Record<string, any> | null;
+    }
+  ): Promise<void>;
 
   /**
    * Deletes all jobs from the queue storage

@@ -17,7 +17,7 @@ export type JobQueueEventListeners<Input, Output> = {
   job_complete: (queueName: string, jobId: unknown, output: Output) => void;
   job_error: (queueName: string, jobId: unknown, error: string) => void;
   job_disabled: (queueName: string, jobId: unknown) => void;
-  job_retry: (queueName: string, jobId: unknown, runAfter: Date) => void;
+  job_retry: (queueName: string, jobId: unknown, visibleAt: Date) => void;
   job_progress: (
     queueName: string,
     jobId: unknown,

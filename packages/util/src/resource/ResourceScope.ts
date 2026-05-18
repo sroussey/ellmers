@@ -74,6 +74,19 @@ export class ResourceScope {
   }
 
   /**
+   * Called by runners just before a new run begins. Delegates to the
+   * strategy's optional `onRunStart` hook (no-op when the strategy does
+   * not implement it). Closes the race where an inactivity timer armed
+   * by the previous `runComplete` could fire and dispose a resource the
+   * next run is about to use.
+   */
+  async runStart(): Promise<void> {
+    if (this.strategy.onRunStart) {
+      await this.strategy.onRunStart(this);
+    }
+  }
+
+  /**
    * Called by runners' `finally` blocks. Delegates to the strategy's
    * `onRunComplete` hook.
    */

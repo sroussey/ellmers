@@ -38,7 +38,7 @@ describe("TelemetryQueueStorage", () => {
   it("should forward add and create a span", async () => {
     const id = await wrapped.add({
       input: { data: "test" },
-      run_after: null,
+      visible_at: null,
       completed_at: null,
     });
     expect(id).toBeDefined();
@@ -53,7 +53,7 @@ describe("TelemetryQueueStorage", () => {
   it("should forward next and create a span", async () => {
     await inner.add({
       input: { data: "test" },
-      run_after: null,
+      visible_at: null,
       completed_at: null,
     });
     const job = await wrapped.next("worker-1");
@@ -70,7 +70,7 @@ describe("TelemetryQueueStorage", () => {
   it("should forward deleteAll and create a span", async () => {
     await inner.add({
       input: { data: "test" },
-      run_after: null,
+      visible_at: null,
       completed_at: null,
     });
     await wrapped.deleteAll();
@@ -80,7 +80,7 @@ describe("TelemetryQueueStorage", () => {
   it("should forward get and create a span", async () => {
     const id = await inner.add({
       input: { data: "test" },
-      run_after: null,
+      visible_at: null,
       completed_at: null,
     });
     const job = await wrapped.get(id);
