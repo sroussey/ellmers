@@ -27,6 +27,7 @@ import type {
 } from "./TaskEvents";
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
 import { TaskRunner } from "./TaskRunner";
+import type { CachePolicy } from "../cache/CachePolicy";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 /**
@@ -245,6 +246,7 @@ export interface ITaskIO<Input extends TaskInput> {
   validateInput(input: Input): Promise<boolean>;
   get cacheable(): boolean;
   getCacheVersion(): string;
+  getCachePolicy(inputs: Input): CachePolicy;
   narrowInput(input: Partial<Input>, registry: ServiceRegistry): Promise<Partial<Input>>;
   entitlements(): TaskEntitlements;
 }
