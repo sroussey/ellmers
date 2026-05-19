@@ -15,6 +15,9 @@ import {
 } from "@workglow/storage";
 
 export function buildSqliteQueuePostV3ColumnSql(prefixColumnsSql: string): string {
+  // buildPrefixColumnsSql(...) returns either "" or an already-indented,
+  // comma-terminated prefix block, so it is safe to splice directly into
+  // the canonical column list here.
   return `${prefixColumnsSql}fingerprint TEXT NOT NULL,
             queue TEXT NOT NULL,
             job_run_id TEXT NOT NULL,
@@ -164,7 +167,7 @@ export function sqliteQueueMigrations(
         // the correct default using SQLite's documented 12-step procedure
         // (https://www.sqlite.org/lang_altertable.html#otheralter).
         const tableSqlRow = db
-          .prepare<[{ readonly name: string }], { readonly sql: string | null }>(
+          .prepare<[string], { readonly sql: string | null }>(
             "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?"
           )
           .get(tableName);

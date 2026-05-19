@@ -205,7 +205,7 @@ describe("sqlite queue migrations: canonical v3 schema", () => {
       await new SqliteMigrationRunner(sqlite).run(sqliteQueueMigrations("jobs", []));
 
       const row = sqlite
-        .prepare<[{ readonly name: string }], { readonly sql: string | null }>(
+        .prepare<[string], { readonly sql: string | null }>(
           "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?"
         )
         .get("jobs");
