@@ -35,14 +35,21 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * resulting object is a stable, serialization-equivalent representation
    * suitable for use as a cache key. Properties without a format annotation are
    * passed through unchanged. No-op when no cache is configured.
+   *
+   * The reserved sentinel field `__cv` (cache version) is injected into the
+   * normalized object before fingerprinting so that bumping a task's `static
+   * version` automatically invalidates its cached outputs. Tasks must never
+   * declare an input port named `__cv`.
    */
   async buildKey(inputs: Input, outputCache: TaskOutputRepository | undefined): Promise<Input> {
     if (!outputCache) return inputs;
     const inputSchema = (this.task.constructor as typeof Task).inputSchema();
-    return (await CacheCoordinator.normalizeInputsForCacheKey(
+    const normalized = await CacheCoordinator.normalizeInputsForCacheKey(
       inputs as Record<string, unknown>,
       inputSchema as unknown as SchemaProperties
-    )) as Input;
+    );
+    (normalized as Record<string, unknown>).__cv = this.task.getCacheVersion();
+    return normalized as Input;
   }
 
   /**
