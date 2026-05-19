@@ -14,25 +14,8 @@ import {
   SqliteDialect,
 } from "@workglow/storage";
 
-/**
- * Initial migration set for the SQLite queue table identified by `tableName`.
- *
- * v1 is FROZEN byte-for-byte against the pre-PR shape — it creates the
- * `run_after`/`run_attempts`/`max_retries`/`last_ran_at`/`worker_id`
- * columns and the `run_after`-keyed index. Renames and the index swap
- * live in v3, guarded by `PRAGMA table_info` lookups so fresh installs
- * (which still run v1 → v2 → v3) end up at the same final schema as
- * already-migrated DBs.
- */
-export function sqliteQueueMigrations(
-  tableName: string,
-  prefixes: readonly PrefixColumn[]
-): IMigration<Sqlite.Database>[] {
-  const component = `queue:sqlite:${tableName}`;
-  const prefixColumnsSql = buildPrefixColumnsSql(SqliteDialect, prefixes);
-  const prefixIndexPrefix = getPrefixIndexPrefix(prefixes);
-  const indexSuffix = getPrefixIndexSuffix(prefixes);
-  const postV3ColumnSql = `${prefixColumnsSql}fingerprint TEXT NOT NULL,
+export function buildSqliteQueuePostV3ColumnSql(prefixColumnsSql: string): string {
+  return `${prefixColumnsSql}fingerprint TEXT NOT NULL,
             queue TEXT NOT NULL,
             job_run_id TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'PENDING',
@@ -53,9 +36,43 @@ export function sqliteQueueMigrations(
             lease_owner TEXT,
             abort_requested_at TEXT,
             lease_expires_at TEXT`;
-  const postV3ColumnList = `${prefixes.map((p) => p.name).join(", ")}${
+}
+
+export function buildSqliteQueuePostV3ColumnList(prefixes: readonly PrefixColumn[]): string {
+  return `${prefixes.map((p) => p.name).join(", ")}${
     prefixes.length > 0 ? ", " : ""
   }fingerprint, queue, job_run_id, status, input, output, attempts, max_attempts, visible_at, last_attempted_at, created_at, completed_at, deadline_at, error, error_code, progress, progress_message, progress_details, lease_owner, abort_requested_at, lease_expires_at`;
+}
+
+export function buildSqliteQueuePostV3TableSql(
+  tableName: string,
+  prefixColumnsSql: string
+): string {
+  return `CREATE TABLE "${tableName}" (
+        id INTEGER PRIMARY KEY,
+        ${buildSqliteQueuePostV3ColumnSql(prefixColumnsSql)}
+      )`;
+}
+
+/**
+ * Initial migration set for the SQLite queue table identified by `tableName`.
+ *
+ * v1 is FROZEN byte-for-byte against the pre-PR shape — it creates the
+ * `run_after`/`run_attempts`/`max_retries`/`last_ran_at`/`worker_id`
+ * columns and the `run_after`-keyed index. Renames and the index swap
+ * live in v3, guarded by `PRAGMA table_info` lookups so fresh installs
+ * (which still run v1 → v2 → v3) end up at the same final schema as
+ * already-migrated DBs.
+ */
+export function sqliteQueueMigrations(
+  tableName: string,
+  prefixes: readonly PrefixColumn[]
+): IMigration<Sqlite.Database>[] {
+  const component = `queue:sqlite:${tableName}`;
+  const prefixColumnsSql = buildPrefixColumnsSql(SqliteDialect, prefixes);
+  const prefixIndexPrefix = getPrefixIndexPrefix(prefixes);
+  const indexSuffix = getPrefixIndexSuffix(prefixes);
+  const postV3ColumnList = buildSqliteQueuePostV3ColumnList(prefixes);
 
   return [
     {
@@ -157,12 +174,9 @@ export function sqliteQueueMigrations(
           // metadata such as explicit NULL/COLLATE/CHECK clauses, so deriving
           // DDL from it would silently erase future schema details during this
           // rebuild step.
-          const newTable = `"${tableName}__new_v3"`;
+          const newTable = `${tableName}__new_v3`;
           db.exec(`
-            CREATE TABLE ${newTable} (
-              id INTEGER PRIMARY KEY,
-              ${postV3ColumnSql}
-            );
+            ${buildSqliteQueuePostV3TableSql(`${tableName}__new_v3`, prefixColumnsSql)};
             INSERT INTO ${newTable} (${postV3ColumnList}) SELECT ${postV3ColumnList} FROM ${tableName};
             DROP TABLE ${tableName};
             ALTER TABLE ${newTable} RENAME TO ${tableName};

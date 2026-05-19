@@ -8,7 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { postgresQueueMigrations } from "@workglow/postgres/job-queue";
 import type { Pool } from "@workglow/postgres/storage";
 import { PostgresMigrationRunner } from "@workglow/postgres/storage";
-import { sqliteQueueMigrations } from "@workglow/sqlite/job-queue";
+import { buildSqliteQueuePostV3TableSql, sqliteQueueMigrations } from "@workglow/sqlite/job-queue";
 import { Sqlite, SqliteMigrationRunner } from "@workglow/sqlite/storage";
 import { describe, expect, it } from "vitest";
 
@@ -212,32 +212,7 @@ describe("sqlite queue migrations: canonical v3 schema", () => {
       expect(row?.sql).toBeDefined();
 
       const normalizeSql = (sql: string): string => sql.replace(/\s+/g, " ").trim();
-      const expectedSql = `CREATE TABLE "jobs" (
-        id INTEGER PRIMARY KEY,
-        fingerprint TEXT NOT NULL,
-        queue TEXT NOT NULL,
-        job_run_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        input TEXT NOT NULL,
-        output TEXT,
-        attempts INTEGER DEFAULT 0,
-        max_attempts INTEGER DEFAULT 10,
-        visible_at TEXT NOT NULL,
-        last_attempted_at TEXT,
-        created_at TEXT NOT NULL,
-        completed_at TEXT,
-        deadline_at TEXT,
-        error TEXT,
-        error_code TEXT,
-        progress REAL DEFAULT 0,
-        progress_message TEXT DEFAULT '',
-        progress_details TEXT NULL,
-        lease_owner TEXT,
-        abort_requested_at TEXT,
-        lease_expires_at TEXT
-      )`;
-
-      expect(normalizeSql(row!.sql!)).toBe(normalizeSql(expectedSql));
+      expect(normalizeSql(row!.sql!)).toBe(normalizeSql(buildSqliteQueuePostV3TableSql("jobs", "")));
     } finally {
       sqlite.close();
     }
