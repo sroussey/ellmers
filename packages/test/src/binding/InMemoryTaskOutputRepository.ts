@@ -28,4 +28,8 @@ export class InMemoryTaskOutputRepository extends TaskOutputTabularRepository {
       ]),
     });
   }
+
+  public override isDurable(): boolean {
+    return false;
+  }
 }
