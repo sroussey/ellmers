@@ -84,15 +84,22 @@ export function sqliteQueueMigrations(
       component,
       version: 3,
       description:
-        "Rename run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner; drop run_after-keyed index and recreate visible_at-keyed",
+        "Rename run_after→visible_at, last_ran_at→last_attempted_at, run_attempts→attempts, max_retries→max_attempts, worker_id→lease_owner; drop run_after-keyed index and recreate visible_at-keyed; lower max_attempts DEFAULT 23→10 to match Postgres parity",
       up(db: Sqlite.Database) {
         // PRAGMA table_info guards each rename so fresh installs (which
         // arrive at v3 having just created the v1 schema in this same
         // migration run) are no-ops here.
-        const cols: string[] = db
-          .prepare<[], { name: string }>(`PRAGMA table_info(${tableName})`)
-          .all()
-          .map((r) => r.name);
+        type ColInfo = {
+          readonly name: string;
+          readonly type: string;
+          readonly notnull: number;
+          readonly dflt_value: string | null;
+          readonly pk: number;
+        };
+        const colInfos: ColInfo[] = db
+          .prepare<[], ColInfo>(`PRAGMA table_info(${tableName})`)
+          .all();
+        const cols: string[] = colInfos.map((r) => r.name);
         const renames: [string, string][] = [
           ["run_after", "visible_at"],
           ["last_ran_at", "last_attempted_at"],
@@ -114,6 +121,56 @@ export function sqliteQueueMigrations(
           DROP INDEX IF EXISTS job_queue_fetcher${indexSuffix}_idx;
           CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at);
         `);
+
+        // Postgres v3 explicitly applied `ALTER COLUMN max_attempts SET
+        // DEFAULT 10`; SQLite has no `ALTER COLUMN ... SET DEFAULT` syntax,
+        // so the original v3 migration left the SQLite default at 23 from
+        // v1's CREATE TABLE. Fresh SQLite installs ended up at default 23
+        // while Postgres was 10 — callers omitting `maxAttempts` got
+        // divergent retry behavior across backends. Rebuild the table with
+        // the correct default using SQLite's documented 12-step procedure
+        // (https://www.sqlite.org/lang_altertable.html#otheralter).
+        const postRenameInfos: ColInfo[] = db
+          .prepare<[], ColInfo>(`PRAGMA table_info(${tableName})`)
+          .all();
+        const maxAttemptsCol = postRenameInfos.find((c) => c.name === "max_attempts");
+        if (maxAttemptsCol && maxAttemptsCol.dflt_value !== "10") {
+          // Build a new CREATE TABLE statement from the post-rename
+          // table_info, swapping max_attempts's default. Preserving the
+          // existing types / NOT NULL / PK / other defaults keeps the
+          // rebuild a true no-op for every other column.
+          const columnDefs = postRenameInfos
+            .map((c) => {
+              const parts: string[] = [c.name, c.type || ""];
+              if (c.pk) {
+                parts.push("PRIMARY KEY");
+              }
+              if (c.notnull) {
+                parts.push("NOT NULL");
+              }
+              const dflt =
+                c.name === "max_attempts" ? "10" : c.dflt_value !== null ? c.dflt_value : null;
+              if (dflt !== null) {
+                parts.push(`DEFAULT ${dflt}`);
+              }
+              return parts.filter((p) => p.length > 0).join(" ");
+            })
+            .join(",\n            ");
+          const colList = postRenameInfos.map((c) => c.name).join(", ");
+          const newTable = `${tableName}__new_v3`;
+          db.exec(`
+            CREATE TABLE ${newTable} (
+              ${columnDefs}
+            );
+            INSERT INTO ${newTable} (${colList}) SELECT ${colList} FROM ${tableName};
+            DROP TABLE ${tableName};
+            ALTER TABLE ${newTable} RENAME TO ${tableName};
+
+            CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, status, visible_at);
+            CREATE INDEX IF NOT EXISTS job_queue_fingerprint${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, fingerprint, status);
+            CREATE INDEX IF NOT EXISTS job_queue_job_run_id${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, job_run_id);
+          `);
+        }
       },
     },
   ];
