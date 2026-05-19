@@ -10,6 +10,7 @@ import {
   TaskGraph,
   CACHE_REGISTRY,
   DefaultCacheRegistry,
+  RunPrivateCacheRepo,
   type CachePolicy,
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry } from "@workglow/util";
@@ -64,22 +65,33 @@ async function freshRepo(): Promise<InMemoryTaskOutputRepository> {
 }
 
 describe("TaskGraphRunner with run-private cache", () => {
-  it("two runs with the same runId reuse run-private entries (restart survival)", async () => {
+  it("restart with the same runId reuses run-private entries left by a failed run", async () => {
+    // Restart-survival scenario: a FAILED (or aborted) run leaves private cache
+    // entries in place (Task 10 only clears on SUCCESS). A subsequent run with the
+    // same runId should reuse those entries rather than re-executing the task.
     (FlakyTask as any).runs = [];
     const backing = await freshRepo();
+    const runId = "shared-run";
+
+    // Simulate the state left by a previous partial/failed run: write FlakyTask's
+    // output directly into the private-namespaced backing store, exactly as the
+    // RunPrivateCacheRepo would have done during a real (partial) run.
+    // The cache key includes `__cv` (cache version = "1" for FlakyTask which
+    // inherits Task.version = 1 and declares no override).
+    const wrappedForSeeding = new RunPrivateCacheRepo({ backing, runId });
+    await wrappedForSeeding.saveOutput(FlakyTask.type, { q: "hello", __cv: "1" }, { r: "done:hello" });
+
     const services = freshServices(backing);
 
-    const graph1 = new TaskGraph();
-    graph1.addTask(new FlakyTask({ defaults: { q: "hello" } } as any));
-
+    // Now run graph2 with the same runId — it should hit the pre-seeded cache entry
+    // and NOT invoke FlakyTask.execute() again.
     const graph2 = new TaskGraph();
     graph2.addTask(new FlakyTask({ defaults: { q: "hello" } } as any));
 
-    const runId = "shared-run";
-    await graph1.run({}, { runId, registry: services });
     await graph2.run({}, { runId, registry: services });
 
-    expect((FlakyTask as any).runs.length).toBe(1);
+    // FlakyTask should have been skipped (cache hit) — runs array stays empty.
+    expect((FlakyTask as any).runs.length).toBe(0);
   });
 
   it("two runs with different runIds do not share private entries", async () => {
