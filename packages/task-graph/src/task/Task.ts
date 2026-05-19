@@ -74,6 +74,15 @@ export class Task<
   public static cacheable: boolean = true;
 
   /**
+   * Version number for this task class, used to bust the output cache when the task's
+   * implementation changes. Increment when a change would produce different outputs for
+   * the same inputs. Combined with ancestor versions via getCacheVersion().
+   * Subclasses should override this when their execute() logic changes in a
+   * backwards-incompatible way (different output for same input).
+   */
+  public static version: number = 1;
+
+  /**
    * Whether this task has dynamic input/output schemas that can change at runtime.
    * Tasks with dynamic schemas should override instance methods for inputSchema() and/or outputSchema()
    * and emit 'schemaChange' events when their schemas change.
@@ -318,6 +327,37 @@ export class Task<
       this.config?.cacheable ??
       (this.constructor as typeof Task).cacheable
     );
+  }
+
+  /**
+   * Returns a dot-separated string of version numbers collected from each class in the
+   * prototype chain (leaf first, stopping before Task itself) that declares its own
+   * `version` static property. When two or more user-defined subclass levels are found,
+   * Task's own base version (1) is appended so that changes at any ancestor level bust
+   * the cache. Returns "1" when called directly on a Task instance with no subclassing.
+   *
+   * Use this as the cache-key version component: when any ancestor's version changes,
+   * the combined string changes and the cached output is invalidated.
+   */
+  public getCacheVersion(): string {
+    const versions: number[] = [];
+    let ctor: any = this.constructor;
+    while (ctor && ctor !== Task && ctor !== Function.prototype) {
+      if (
+        Object.prototype.hasOwnProperty.call(ctor, "version") &&
+        typeof ctor.version === "number"
+      ) {
+        versions.push(ctor.version);
+      }
+      ctor = Object.getPrototypeOf(ctor);
+    }
+    if (versions.length === 0) {
+      return String(Task.version);
+    }
+    if (versions.length >= 2) {
+      versions.push(Task.version);
+    }
+    return versions.join(".");
   }
 
   // ========================================================================
