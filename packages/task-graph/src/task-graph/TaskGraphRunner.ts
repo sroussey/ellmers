@@ -158,6 +158,13 @@ export class TaskGraphRunner {
   protected runId?: string;
 
   /**
+   * Run-private cache wrapper for the current run. Set by handleStart when a
+   * runId and private cache slot are both present; cleared at the end of each
+   * run. Used to fire-and-forget clearRun() after a successful run.
+   */
+  protected currentRunPrivate?: RunPrivateCacheRepo;
+
+  /**
    * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
    */
   protected readonly edgeMaterializer: EdgeMaterializer;
@@ -253,6 +260,16 @@ export class TaskGraphRunner {
       }
 
       await this.handleComplete();
+
+      // Fire-and-forget: clear run-private cache entries so disk doesn't
+      // accumulate rows for completed runs. Must not block the caller.
+      const runPrivateToClean = this.currentRunPrivate;
+      this.currentRunPrivate = undefined;
+      if (runPrivateToClean) {
+        void runPrivateToClean.clearRun().catch((e) => {
+          getLogger().warn("RunPrivateCacheRepo.clearRun failed", e);
+        });
+      }
 
       return this.filterLeafResults(results);
     } finally {
@@ -610,6 +627,8 @@ export class TaskGraphRunner {
           backing: baseRegistry.private,
           runId: this.runId,
         });
+        // Retain a reference so runGraph can fire-and-forget clearRun() after success.
+        this.currentRunPrivate = wrappedPrivate;
         const wrappedRegistry = new DefaultCacheRegistry({
           deterministic: baseRegistry.deterministic,
           private: wrappedPrivate,
@@ -804,6 +823,8 @@ export class TaskGraphRunner {
         }
       })
     );
+    // Do NOT clear run-private entries on failure — left for restart / janitor TTL sweep.
+    this.currentRunPrivate = undefined;
     const ctx = this.currentCtx;
     this.running = false;
 
@@ -841,6 +862,8 @@ export class TaskGraphRunner {
         }
       })
     );
+    // Do NOT clear run-private entries on abort — left for restart / janitor TTL sweep.
+    this.currentRunPrivate = undefined;
     const ctx = this.currentCtx;
 
     if (ctx?.telemetrySpan) {
