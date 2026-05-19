@@ -5,3 +5,4 @@
  */
 
 export * from "./CachePolicy";
+export * from "./CacheRegistry";
