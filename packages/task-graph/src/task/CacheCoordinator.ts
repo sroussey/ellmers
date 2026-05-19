@@ -5,6 +5,8 @@
  */
 
 import { getPortCodec } from "@workglow/util";
+import type { CacheRegistry } from "../cache/CacheRegistry";
+import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
@@ -106,6 +108,51 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       outputSchema as unknown as SchemaProperties
     );
     await outputCache.saveOutput(this.task.type, keyInputs, wireOutputs as Output);
+  }
+
+  // ========================================================================
+  // Policy-aware routing methods
+  // ========================================================================
+
+  /**
+   * Resolve the repository slot to use given a registry and policy. Returns
+   * `undefined` if the registry is missing, the policy is `kind: "none"`, or
+   * the relevant slot is unregistered. All callers treat `undefined` as "skip
+   * caching" — no errors, no warnings.
+   */
+  private repoFor(
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): TaskOutputRepository | undefined {
+    if (!registry || !isPolicyCached(policy)) return undefined;
+    return isPolicyPrivate(policy) ? registry.private : registry.deterministic;
+  }
+
+  public async buildKeyForPolicy(
+    inputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): Promise<Input> {
+    return this.buildKey(inputs, this.repoFor(registry, policy));
+  }
+
+  public async lookupByPolicy(
+    keyInputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    isStreamable: boolean,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
+    return this.lookup(keyInputs, this.repoFor(registry, policy), isStreamable, ctx);
+  }
+
+  public async saveByPolicy(
+    keyInputs: Input,
+    output: Output,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): Promise<void> {
+    return this.save(keyInputs, output, this.repoFor(registry, policy));
   }
 
   // ========================================================================
