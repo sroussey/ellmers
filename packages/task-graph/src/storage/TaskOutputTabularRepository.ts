@@ -192,4 +192,26 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
       }
     }
   }
+
+  /**
+   * Deletes entries whose `taskType` starts with the given prefix AND whose
+   * `createdAt` is older than `olderThanInMs` milliseconds ago.
+   *
+   * Used by {@link CacheJanitor} to prune stale run-private entries left behind
+   * by runs that crashed and were never restarted.
+   *
+   * @param prefix - The taskType prefix to match (e.g. `__run:`)
+   * @param olderThanInMs - Age threshold in milliseconds; rows older than this are deleted
+   */
+  async clearOlderThanWithTaskTypePrefix(prefix: string, olderThanInMs: number): Promise<void> {
+    const cutoff = Date.now() - olderThanInMs;
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
+        if (!isNaN(ts) && ts < cutoff) {
+          await this.tabularRepository.delete({ key: row.key, taskType: row.taskType });
+        }
+      }
+    }
+  }
 }
