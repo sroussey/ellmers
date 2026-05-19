@@ -616,6 +616,26 @@ export class TaskGraphRunner {
     // Store run identifier for per-task propagation.
     this.runId = config?.runId;
 
+    // Warn once per run when a non-durable private cache slot is registered and
+    // at least one task in the graph routes to the private slot. This catches the
+    // dev-mode-in-production misconfiguration where an in-memory store is wired
+    // for convenience but restart-survival is expected.
+    if (this.registry.has(CACHE_REGISTRY)) {
+      const checkRegistry = this.registry.get(CACHE_REGISTRY);
+      if (checkRegistry.private && !checkRegistry.private.isDurable()) {
+        const usesPrivate = this.graph.getTasks().some((t) => {
+          const ctor = t.constructor as typeof Task;
+          return (ctor.cachePolicy ?? { kind: "deterministic" }).kind === "private";
+        });
+        if (usesPrivate) {
+          getLogger().warn(
+            "TaskGraphRunner: private cache is non-durable — restart-survival will not work. " +
+              "Configure a durable storage backend for the CacheRegistry 'private' slot."
+          );
+        }
+      }
+    }
+
     // If there is a private cache slot and a runId, wrap the private slot in a
     // RunPrivateCacheRepo so all tasks in this run see a namespaced view of the
     // backing store. Build a child ServiceRegistry that overrides CACHE_REGISTRY
