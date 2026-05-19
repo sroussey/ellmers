@@ -244,6 +244,7 @@ export interface ITaskIO<Input extends TaskInput> {
   addInput(overrides: Partial<Input> | undefined): boolean;
   validateInput(input: Input): Promise<boolean>;
   get cacheable(): boolean;
+  getCacheVersion(): string;
   narrowInput(input: Partial<Input>, registry: ServiceRegistry): Promise<Partial<Input>>;
   entitlements(): TaskEntitlements;
 }
