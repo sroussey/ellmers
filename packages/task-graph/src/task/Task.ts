@@ -5,6 +5,7 @@
  */
 
 import type { ServiceRegistry } from "@workglow/util";
+import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
 import { deepEqual, EventEmitter, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
@@ -81,6 +82,14 @@ export class Task<
    * backwards-incompatible way (different output for same input).
    */
   public static version: number = 1;
+
+  /**
+   * Default cache policy for this task class. Used by `getCachePolicy()` when the
+   * task does not override the method. Subclasses with side effects should set
+   * `{ kind: "none" }`; tasks producing non-deterministic-but-expensive outputs
+   * (e.g., image generation without a seed) should set `{ kind: "private" }`.
+   */
+  public static cachePolicy: CachePolicy = { kind: "deterministic" };
 
   /**
    * Whether this task has dynamic input/output schemas that can change at runtime.
@@ -353,6 +362,19 @@ export class Task<
     }
     if (versions.length === 0) versions.push(1);
     return versions.join(".");
+  }
+
+  /**
+   * Returns the effective cache policy for this task given its inputs. Default
+   * implementation honors the legacy `cacheable=false` static (maps to
+   * `{ kind: "none" }`) for back-compat, otherwise returns the class's static
+   * `cachePolicy`. Override for dynamic decisions (e.g., AiImageOutputTask
+   * returns `private` when seed is absent).
+   */
+  public getCachePolicy(_inputs: Input): CachePolicy {
+    if (this.cacheable === false) return { kind: "none" };
+    const ctor = this.constructor as typeof Task;
+    return ctor.cachePolicy ?? DEFAULT_CACHE_POLICY;
   }
 
   // ========================================================================
