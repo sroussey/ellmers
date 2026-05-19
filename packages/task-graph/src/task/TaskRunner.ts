@@ -13,6 +13,11 @@ import {
   SpanStatusCode,
 } from "@workglow/util";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  type CacheRegistry,
+} from "../cache";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
@@ -71,8 +76,18 @@ export class TaskRunner<
 
   /**
    * The output cache for the task
+   * @deprecated Use `cacheRegistry` instead. Kept for back-compat with callers
+   * that pass `outputCache: repo` through IRunConfig.
    */
   protected outputCache?: TaskOutputRepository;
+
+  /**
+   * Per-run cache registry resolved in handleStart. Replaces the legacy
+   * single-repo `outputCache` field as the primary cache routing mechanism.
+   * Set from CACHE_REGISTRY in the ServiceRegistry, or synthesised from the
+   * legacy `config.outputCache` repo shim.
+   */
+  protected cacheRegistry?: CacheRegistry;
 
   /**
    * Cache coordinator for the task (key normalization, lookup, save).
@@ -194,10 +209,16 @@ export class TaskRunner<
           }
         }
 
-        const keyInputs = await this.cacheCoordinator.buildKey(inputs, this.outputCache);
-        let outputs = await this.cacheCoordinator.lookup(
+        const policy = this.task.getCachePolicy(inputs);
+        const keyInputs = await this.cacheCoordinator.buildKeyForPolicy(
+          inputs,
+          this.cacheRegistry,
+          policy
+        );
+        let outputs = await this.cacheCoordinator.lookupByPolicy(
           keyInputs,
-          this.outputCache,
+          this.cacheRegistry,
+          policy,
           isStreamable,
           ctx
         );
@@ -213,7 +234,12 @@ export class TaskRunner<
               })
             : await this.executeTask(inputs, ctx);
 
-          await this.cacheCoordinator.save(keyInputs, outputs as Output, this.outputCache);
+          await this.cacheCoordinator.saveByPolicy(
+            keyInputs,
+            outputs as Output,
+            this.cacheRegistry,
+            policy
+          );
           this.task.runOutputData = outputs ?? ({} as Output);
         }
 
@@ -548,14 +574,37 @@ export class TaskRunner<
       this.handleAbort();
     });
 
-    const cache = config.outputCache ?? this.task.runConfig?.outputCache;
-    if (cache === true) {
-      let instance = globalServiceRegistry.get(TASK_OUTPUT_REPOSITORY);
-      this.outputCache = instance;
-    } else if (cache === false) {
+    // Apply registry override first so that cache resolution below uses the
+    // correct per-run ServiceRegistry rather than the stale instance field.
+    if (config.registry) {
+      this.registry = config.registry;
+    }
+
+    // Cache resolution: prefer CacheRegistry (via ServiceRegistry); honour legacy
+    // config.outputCache as a back-compat shim that maps to the deterministic slot.
+    const legacy = config.outputCache ?? this.task.runConfig?.outputCache;
+    if (legacy === false) {
+      this.cacheRegistry = undefined;
       this.outputCache = undefined;
-    } else if (cache instanceof TaskOutputRepository) {
-      this.outputCache = cache;
+    } else if (legacy instanceof TaskOutputRepository) {
+      // Legacy repo passed directly → treat as the deterministic slot.
+      this.cacheRegistry = new DefaultCacheRegistry({ deterministic: legacy });
+      this.outputCache = legacy;
+    } else if (legacy === true) {
+      // Legacy boolean true → pull from TASK_OUTPUT_REPOSITORY in the global registry.
+      const instance = globalServiceRegistry.has(TASK_OUTPUT_REPOSITORY)
+        ? globalServiceRegistry.get(TASK_OUTPUT_REPOSITORY)
+        : undefined;
+      this.outputCache = instance;
+      this.cacheRegistry = instance
+        ? new DefaultCacheRegistry({ deterministic: instance })
+        : undefined;
+    } else {
+      // No legacy override → look up CACHE_REGISTRY from the per-run ServiceRegistry.
+      this.outputCache = undefined;
+      this.cacheRegistry = this.registry.has(CACHE_REGISTRY)
+        ? this.registry.get(CACHE_REGISTRY)
+        : undefined;
     }
 
     // shouldAccumulate defaults to true (backward-compatible for standalone runs)
@@ -563,10 +612,6 @@ export class TaskRunner<
 
     if (config.updateProgress) {
       this.updateProgress = config.updateProgress;
-    }
-
-    if (config.registry) {
-      this.registry = config.registry;
     }
 
     if (config.resourceScope) {
