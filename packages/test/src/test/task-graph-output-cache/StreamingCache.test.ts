@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
 import { IExecuteContext, Task, TaskStatus } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
@@ -109,7 +109,7 @@ class CacheReplaceStreamTask extends Task<CacheTestInput, CacheTestOutput> {
  */
 class NoCacheAppendStreamTask extends Task<CacheTestInput, CacheTestOutput> {
   public static override type = "NoCacheAppendStreamTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {

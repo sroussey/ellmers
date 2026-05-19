@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { Task, TaskAbortedError, TaskStatus } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -14,7 +14,7 @@ type Out = { text: string };
 
 class CompletingTask extends Task<{}, Out> {
   public static override type = "ProgressEvents_Completing";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -36,7 +36,7 @@ class CompletingTask extends Task<{}, Out> {
 
 class FailingTask extends Task<{}, Out> {
   public static override type = "ProgressEvents_Failing";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -58,7 +58,7 @@ class FailingTask extends Task<{}, Out> {
 
 class HangingTask extends Task<{}, Out> {
   public static override type = "ProgressEvents_Hanging";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -131,7 +131,7 @@ describe("Progress events: terminal-100 tick", () => {
 
 class PhaseStreamTask extends Task<{}, { text: string }> {
   public static override type = "ProgressEvents_PhaseStream";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -208,7 +208,7 @@ describe("Progress events: streaming", () => {
   it("phase events do not flip status to STREAMING", async () => {
     class PhaseOnlyTask extends Task<{}, { text: string }> {
       public static override type = "ProgressEvents_PhaseOnly";
-      public static override cacheable = false;
+      public static override cachePolicy: CachePolicy = { kind: "none" };
       public static override inputSchema(): DataPortSchema {
         return {
           type: "object",

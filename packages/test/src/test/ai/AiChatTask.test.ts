@@ -24,7 +24,7 @@ describe("AiChatTask — schema and registration", () => {
   it("has required static properties", () => {
     expect(AiChatTask.type).toBe("AiChatTask");
     expect(AiChatTask.category).toBe("AI Chat");
-    expect(AiChatTask.cacheable).toBe(false);
+    expect(AiChatTask.cachePolicy).toEqual({ kind: "none" });
   });
 
   it("declares input schema with required model and prompt", () => {

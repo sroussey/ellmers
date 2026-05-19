@@ -6,7 +6,7 @@
 
 import type { ServiceRegistry } from "@workglow/util";
 import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
-import { deepEqual, EventEmitter, uuid4 } from "@workglow/util";
+import { deepEqual, EventEmitter, getLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
@@ -131,6 +131,12 @@ export class Task<
    * and emit 'entitlementChange' events when their entitlements change.
    */
   public static hasDynamicEntitlements: boolean = false;
+
+  /**
+   * Tracks task types that have already received the legacy `cacheable = false` deprecation
+   * warning, so the warning fires only once per task type across the process lifetime.
+   */
+  private static __cacheableDeprecationWarned = new Set<string>();
 
   /**
    * Entitlements required by this task class.
@@ -331,11 +337,9 @@ export class Task<
   }
 
   public get cacheable(): boolean {
-    return (
-      this.runConfig?.cacheable ??
-      this.config?.cacheable ??
-      (this.constructor as typeof Task).cacheable
-    );
+    if (this.runConfig?.cacheable !== undefined) return this.runConfig.cacheable;
+    if (this.config?.cacheable !== undefined) return this.config.cacheable;
+    return this.getCachePolicy(this.runInputData as any ?? ({} as any)).kind !== "none";
   }
 
   /**
@@ -367,13 +371,29 @@ export class Task<
   /**
    * Returns the effective cache policy for this task given its inputs. Default
    * implementation honors the legacy `cacheable=false` static (maps to
-   * `{ kind: "none" }`) for back-compat, otherwise returns the class's static
-   * `cachePolicy`. Override for dynamic decisions (e.g., AiImageOutputTask
-   * returns `private` when seed is absent).
+   * `{ kind: "none" }`) for back-compat with a one-time deprecation warning,
+   * otherwise returns the class's static `cachePolicy`. Override for dynamic
+   * decisions (e.g., AiImageOutputTask returns `private` when seed is absent).
    */
   public getCachePolicy(_inputs: Input): CachePolicy {
-    if (this.cacheable === false) return { kind: "none" };
     const ctor = this.constructor as typeof Task;
+    const hasLegacyOverride =
+      Object.prototype.hasOwnProperty.call(ctor, "cacheable") &&
+      (ctor as any).cacheable === false;
+    const hasPolicyOverride = Object.prototype.hasOwnProperty.call(ctor, "cachePolicy");
+
+    if (hasLegacyOverride && !hasPolicyOverride) {
+      if (!Task.__cacheableDeprecationWarned.has(ctor.type)) {
+        Task.__cacheableDeprecationWarned.add(ctor.type);
+        getLogger().warn(
+          `Task "${ctor.type}": static \`cacheable = false\` is deprecated. ` +
+            `Use \`static cachePolicy: CachePolicy = { kind: "none" }\` instead.`
+        );
+      }
+      return { kind: "none" };
+    }
+    if (this.runConfig?.cacheable === false || this.config?.cacheable === false)
+      return { kind: "none" }; // per-instance shim, no warning
     return ctor.cachePolicy ?? DEFAULT_CACHE_POLICY;
   }
 

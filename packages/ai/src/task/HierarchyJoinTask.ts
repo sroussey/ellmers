@@ -7,7 +7,7 @@
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -110,7 +110,7 @@ export class HierarchyJoinTask extends Task<
   public static override category = "RAG";
   public static override title = "Hierarchy Join";
   public static override description = "Enrich retrieval metadata with document hierarchy context";
-  public static override cacheable = false; // Has external dependency
+  public static override cachePolicy: CachePolicy = { kind: "none" }; // Has external dependency
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;
