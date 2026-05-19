@@ -196,3 +196,50 @@ describe("queue migrations: cross-backend default parity", () => {
     }
   });
 });
+
+describe("sqlite queue migrations: canonical v3 schema", () => {
+  it("rebuilds the table from the explicit post-v3 CREATE TABLE statement", async () => {
+    await Sqlite.init();
+    const sqlite = new Sqlite.Database(":memory:");
+    try {
+      await new SqliteMigrationRunner(sqlite).run(sqliteQueueMigrations("jobs", []));
+
+      const row = sqlite
+        .prepare<[{ readonly name: string }], { readonly sql: string | null }>(
+          "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?"
+        )
+        .get("jobs");
+      expect(row?.sql).toBeDefined();
+
+      const normalizeSql = (sql: string): string => sql.replace(/\s+/g, " ").trim();
+      const expectedSql = `CREATE TABLE "jobs" (
+        id INTEGER PRIMARY KEY,
+        fingerprint TEXT NOT NULL,
+        queue TEXT NOT NULL,
+        job_run_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        input TEXT NOT NULL,
+        output TEXT,
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 10,
+        visible_at TEXT NOT NULL,
+        last_attempted_at TEXT,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        deadline_at TEXT,
+        error TEXT,
+        error_code TEXT,
+        progress REAL DEFAULT 0,
+        progress_message TEXT DEFAULT '',
+        progress_details TEXT NULL,
+        lease_owner TEXT,
+        abort_requested_at TEXT,
+        lease_expires_at TEXT
+      )`;
+
+      expect(normalizeSql(row!.sql!)).toBe(normalizeSql(expectedSql));
+    } finally {
+      sqlite.close();
+    }
+  });
+});

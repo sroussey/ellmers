@@ -32,6 +32,30 @@ export function sqliteQueueMigrations(
   const prefixColumnsSql = buildPrefixColumnsSql(SqliteDialect, prefixes);
   const prefixIndexPrefix = getPrefixIndexPrefix(prefixes);
   const indexSuffix = getPrefixIndexSuffix(prefixes);
+  const postV3ColumnSql = `${prefixColumnsSql}fingerprint TEXT NOT NULL,
+            queue TEXT NOT NULL,
+            job_run_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            input TEXT NOT NULL,
+            output TEXT,
+            attempts INTEGER DEFAULT 0,
+            max_attempts INTEGER DEFAULT 10,
+            visible_at TEXT NOT NULL,
+            last_attempted_at TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            deadline_at TEXT,
+            error TEXT,
+            error_code TEXT,
+            progress REAL DEFAULT 0,
+            progress_message TEXT DEFAULT '',
+            progress_details TEXT NULL,
+            lease_owner TEXT,
+            abort_requested_at TEXT,
+            lease_expires_at TEXT`;
+  const postV3ColumnList = `${prefixes.map((p) => p.name).join(", ")}${
+    prefixes.length > 0 ? ", " : ""
+  }fingerprint, queue, job_run_id, status, input, output, attempts, max_attempts, visible_at, last_attempted_at, created_at, completed_at, deadline_at, error, error_code, progress, progress_message, progress_details, lease_owner, abort_requested_at, lease_expires_at`;
 
   return [
     {
@@ -89,16 +113,8 @@ export function sqliteQueueMigrations(
         // PRAGMA table_info guards each rename so fresh installs (which
         // arrive at v3 having just created the v1 schema in this same
         // migration run) are no-ops here.
-        type ColInfo = {
-          readonly name: string;
-          readonly type: string;
-          readonly notnull: number;
-          readonly dflt_value: string | null;
-          readonly pk: number;
-        };
-        const colInfos: ColInfo[] = db
-          .prepare<[], ColInfo>(`PRAGMA table_info(${tableName})`)
-          .all();
+        type ColInfo = { readonly name: string };
+        const colInfos: ColInfo[] = db.prepare<[], ColInfo>(`PRAGMA table_info(${tableName})`).all();
         const cols: string[] = colInfos.map((r) => r.name);
         const renames: [string, string][] = [
           ["run_after", "visible_at"],
@@ -130,39 +146,24 @@ export function sqliteQueueMigrations(
         // divergent retry behavior across backends. Rebuild the table with
         // the correct default using SQLite's documented 12-step procedure
         // (https://www.sqlite.org/lang_altertable.html#otheralter).
-        const postRenameInfos: ColInfo[] = db
-          .prepare<[], ColInfo>(`PRAGMA table_info(${tableName})`)
-          .all();
-        const maxAttemptsCol = postRenameInfos.find((c) => c.name === "max_attempts");
-        if (maxAttemptsCol && maxAttemptsCol.dflt_value !== "10") {
-          // Build a new CREATE TABLE statement from the post-rename
-          // table_info, swapping max_attempts's default. Preserving the
-          // existing types / NOT NULL / PK / other defaults keeps the
-          // rebuild a true no-op for every other column.
-          const columnDefs = postRenameInfos
-            .map((c) => {
-              const parts: string[] = [c.name, c.type || ""];
-              if (c.pk) {
-                parts.push("PRIMARY KEY");
-              }
-              if (c.notnull) {
-                parts.push("NOT NULL");
-              }
-              const dflt =
-                c.name === "max_attempts" ? "10" : c.dflt_value !== null ? c.dflt_value : null;
-              if (dflt !== null) {
-                parts.push(`DEFAULT ${dflt}`);
-              }
-              return parts.filter((p) => p.length > 0).join(" ");
-            })
-            .join(",\n            ");
-          const colList = postRenameInfos.map((c) => c.name).join(", ");
-          const newTable = `${tableName}__new_v3`;
+        const tableSqlRow = db
+          .prepare<[{ readonly name: string }], { readonly sql: string | null }>(
+            "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?"
+          )
+          .get(tableName);
+        if (tableSqlRow?.sql && !tableSqlRow.sql.includes("max_attempts INTEGER DEFAULT 10")) {
+          // Rebuild from the canonical post-v3 CREATE TABLE statement instead
+          // of reconstructing from PRAGMA table_info. table_info drops
+          // metadata such as explicit NULL/COLLATE/CHECK clauses, so deriving
+          // DDL from it would silently erase future schema details during this
+          // rebuild step.
+          const newTable = `"${tableName}__new_v3"`;
           db.exec(`
             CREATE TABLE ${newTable} (
-              ${columnDefs}
+              id INTEGER PRIMARY KEY,
+              ${postV3ColumnSql}
             );
-            INSERT INTO ${newTable} (${colList}) SELECT ${colList} FROM ${tableName};
+            INSERT INTO ${newTable} (${postV3ColumnList}) SELECT ${postV3ColumnList} FROM ${tableName};
             DROP TABLE ${tableName};
             ALTER TABLE ${newTable} RENAME TO ${tableName};
 

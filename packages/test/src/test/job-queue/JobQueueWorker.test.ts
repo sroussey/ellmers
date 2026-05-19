@@ -12,6 +12,7 @@ import {
   JobDisabledError,
   JobQueueClient,
   JobQueueServer,
+  JobQueueWorker,
   JobStatus,
   RateLimiter,
 } from "@workglow/job-queue";
@@ -37,7 +38,10 @@ interface TO {
  * - anything else — resolves immediately.
  */
 class TJob extends Job<TI, TO> {
+  public static executeCalls = 0;
+
   public override async execute(input: TI, context: IJobExecuteContext): Promise<TO> {
+    TJob.executeCalls += 1;
     if (input.taskType === "disable_on_abort") {
       return new Promise<TO>((_, reject) => {
         context.signal.addEventListener(
@@ -77,6 +81,7 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
   let queueName: string;
 
   beforeEach(async () => {
+    TJob.executeCalls = 0;
     queueName = `worker-followup-${uuid4()}`;
     storage = new InMemoryQueueStorage<TI, TO>(queueName);
     await storage.migrate();
@@ -193,13 +198,34 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
   });
 
   it("pre-execute abort flag is observed during validateJobState", async () => {
-    // Before the fix, createAbortController() ran AFTER validateJobState,
-    // so the activeJobAbortControllers.get(...).signal.aborted branch in
-    // validateJobState was dead code. With the controller registered
-    // first, an abort fired before start() / right at start time is
-    // observable and the job fails with AbortSignalJobError +
-    // abort_requested_at set.
-    const server = new JobQueueServer<TI, TO, TJob>(TJob, {
+    class PreAbortedWorker extends JobQueueWorker<TI, TO, TJob> {
+      protected override createAbortController(jobId: unknown): AbortController {
+        const controller = super.createAbortController(jobId);
+        controller.abort();
+        return controller;
+      }
+    }
+
+    class PreAbortedServer extends JobQueueServer<TI, TO, TJob> {
+      protected override createWorker(): JobQueueWorker<TI, TO, TJob> {
+        return new PreAbortedWorker(this.jobClass, {
+          messageQueue: this.messageQueue,
+          jobStore: this.jobStore,
+          queueName: this.queueName,
+          limiter: this.limiter,
+          pollIntervalMs: this.pollIntervalMs,
+          stopTimeoutMs: this.stopTimeoutMs,
+          deadLetter: this.deadLetter,
+          prefetch: this.prefetch,
+        });
+      }
+    }
+
+    // Before the fix, createAbortController() ran AFTER validateJobState, so
+    // aborting the controller here would have been too late to trip the
+    // activeJobAbortControllers.get(...).signal.aborted branch. The worker
+    // would enter execute() instead of failing during validation.
+    const server = new PreAbortedServer(TJob, {
       storage: storage as any,
       queueName,
       pollIntervalMs: 5,
@@ -209,9 +235,6 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     client.attach(server);
 
     const handle = await client.send({ taskType: "long_running", data: "pre-abort" });
-    // Abort before any worker has claimed the row — this PENDING-abort
-    // path sets the row to FAILED with abort_requested_at set immediately.
-    await storage.abort(handle.id);
 
     await server.start();
 
@@ -230,5 +253,6 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     const final = await storage.get(handle.id);
     expect(final?.status).toBe(JobStatus.FAILED);
     expect(final?.abort_requested_at).toBeTruthy();
+    expect(TJob.executeCalls).toBe(0);
   });
 });
