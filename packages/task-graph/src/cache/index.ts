@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export * from "./CacheJanitor";
 export * from "./CachePolicy";
 export * from "./CacheRegistry";
 export * from "./RunPrivateCacheRepo";
