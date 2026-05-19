@@ -175,8 +175,8 @@ describe("Streaming Cache Integration", () => {
       expect(result.text).toBe("cached result");
       expect(task.runOutputData.text).toBe("cached result");
 
-      // Verify the result was cached
-      const cached = await cache.getOutput("CacheAppendStreamTask", { prompt: "hello" });
+      // Verify the result was cached; __cv is the cacheVersion sentinel injected by buildKey
+      const cached = await cache.getOutput("CacheAppendStreamTask", { prompt: "hello", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any).text).toBe("cached result");
     });
@@ -276,7 +276,8 @@ describe("Streaming Cache Integration", () => {
       expect(replaceStreamCallCount).toBe(1);
       expect(result.text).toBe("complete result");
 
-      const cached = await cache.getOutput("CacheReplaceStreamTask", { prompt: "hello" });
+      // __cv is the cacheVersion sentinel injected by buildKey
+      const cached = await cache.getOutput("CacheReplaceStreamTask", { prompt: "hello", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any).text).toBe("complete result");
     });
@@ -351,9 +352,9 @@ describe("Streaming Cache Integration", () => {
       // Both should have been executed
       expect(appendStreamCallCount).toBe(2);
 
-      // Both should be cached
-      const cached1 = await cache.getOutput("CacheAppendStreamTask", { prompt: "hello" });
-      const cached2 = await cache.getOutput("CacheAppendStreamTask", { prompt: "world" });
+      // Both should be cached; __cv is the cacheVersion sentinel injected by buildKey
+      const cached1 = await cache.getOutput("CacheAppendStreamTask", { prompt: "hello", __cv: "1" });
+      const cached2 = await cache.getOutput("CacheAppendStreamTask", { prompt: "world", __cv: "1" });
       expect(cached1).toBeDefined();
       expect(cached2).toBeDefined();
     });
