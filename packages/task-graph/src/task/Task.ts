@@ -331,10 +331,10 @@ export class Task<
 
   /**
    * Returns a dot-separated string of version numbers collected from each class in the
-   * prototype chain (leaf first, stopping before Task itself) that declares its own
-   * `version` static property. When two or more user-defined subclass levels are found,
-   * Task's own base version (1) is appended so that changes at any ancestor level bust
-   * the cache. Returns "1" when called directly on a Task instance with no subclassing.
+   * prototype chain (leaf first) that declares its own `version` static property.
+   * Every class that owns a `version` contributes one segment, including the base Task
+   * class. Returns "1" when called directly on a Task instance with no subclassing
+   * (Task.version === 1 is the sole contributor).
    *
    * Use this as the cache-key version component: when any ancestor's version changes,
    * the combined string changes and the cached output is invalidated.
@@ -342,21 +342,16 @@ export class Task<
   public getCacheVersion(): string {
     const versions: number[] = [];
     let ctor: any = this.constructor;
-    while (ctor && ctor !== Task && ctor !== Function.prototype) {
+    while (ctor && ctor !== Function.prototype) {
       if (
         Object.prototype.hasOwnProperty.call(ctor, "version") &&
-        typeof ctor.version === "number"
+        typeof (ctor as any).version === "number"
       ) {
-        versions.push(ctor.version);
+        versions.push((ctor as any).version);
       }
       ctor = Object.getPrototypeOf(ctor);
     }
-    if (versions.length === 0) {
-      return String(Task.version);
-    }
-    if (versions.length >= 2) {
-      versions.push(Task.version);
-    }
+    if (versions.length === 0) versions.push(1);
     return versions.join(".");
   }
 

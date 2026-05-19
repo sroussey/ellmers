@@ -14,7 +14,7 @@ describe("Task.getCacheVersion", () => {
       public static override version = 3;
     }
     const t = new TaskA();
-    expect(t.getCacheVersion()).toBe("3");
+    expect(t.getCacheVersion()).toBe("3.1"); // 1 is the base Task.version default
   });
 
   it("includes ancestor versions when subclasses set version", () => {
