@@ -5,9 +5,17 @@
  */
 
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
-import { getTaskQueueRegistry, JsonTaskItem, TaskGraph, Workflow } from "@workglow/task-graph";
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  getTaskQueueRegistry,
+  JsonTaskItem,
+  TaskGraph,
+  Workflow,
+} from "@workglow/task-graph";
 import { JsonTask } from "@workglow/tasks";
 import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
+import { Container, ServiceRegistry } from "@workglow/util";
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./Resize";
@@ -43,6 +51,11 @@ await queueRegistry.clearQueues();
 await queueRegistry.startQueues();
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const taskGraphRepo = new IndexedDbTaskGraphRepository();
+const cacheServices = new ServiceRegistry(new Container());
+cacheServices.registerInstance(
+  CACHE_REGISTRY,
+  new DefaultCacheRegistry({ deterministic: taskOutputCache })
+);
 const resetGraph = () => {
   const workflow = (window as any)["workflow"] as Workflow;
   workflow
@@ -84,7 +97,7 @@ const resetGraph = () => {
   taskGraphRepo.saveTaskGraph("default", workflow.graph);
 };
 
-(window as any)["workflow"] = new Workflow(taskOutputCache);
+(window as any)["workflow"] = new Workflow();
 let graph: TaskGraph | undefined;
 try {
   graph = await taskGraphRepo.getTaskGraph("default");
@@ -115,7 +128,7 @@ const setupWorkflow = async () => {
   workflow.run = async () => {
     console.log("Running task graph...");
     try {
-      const result = await run();
+      const result = await run({}, { registry: cacheServices });
       console.log("Task graph complete.", workflow);
       return result;
     } catch (error: any) {
@@ -151,17 +164,12 @@ export const App = () => {
   const handleCacheToggle = useCallback(
     (enabled: boolean) => {
       setCacheEnabled(enabled);
-      const cache = enabled ? taskOutputCache : undefined;
-      // Update the graph property and the workflow's internal cache field.
-      workflow.graph.outputCache = cache;
-      (workflow as any)._outputCache = cache;
-      // Reset the graph runner so the next run constructs a fresh TaskGraphRunner
-      // with the correct outputCache. Without this, the runner's stale reference
-      // persists because TaskGraphRunner.handleStart only updates when the config
-      // value is !== undefined, so passing undefined never clears it.
-      (workflow.graph as any)._runner = undefined;
+      cacheServices.registerInstance(
+        CACHE_REGISTRY,
+        new DefaultCacheRegistry({ deterministic: enabled ? taskOutputCache : undefined })
+      );
     },
-    [workflow]
+    []
   );
 
   useEffect(() => {
@@ -172,9 +180,6 @@ export const App = () => {
       ) {
         workflow = (window as any)["workflow"] as Workflow;
         setWorkflow(workflow);
-        const cache = cacheEnabled ? taskOutputCache : undefined;
-        workflow.graph.outputCache = cache;
-        (workflow as any)._outputCache = cache;
         setupWorkflow();
       }
     }, 10);
