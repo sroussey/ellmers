@@ -6,3 +6,4 @@
 
 export * from "./CachePolicy";
 export * from "./CacheRegistry";
+export * from "./RunPrivateCacheRepo";

@@ -178,4 +178,18 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     await this.tabularRepository.deleteSearch({ createdAt: { value: date, operator: "<" } });
     this.emit("output_pruned");
   }
+
+  /**
+   * Deletes all entries whose `taskType` starts with the given prefix.
+   * Used by {@link RunPrivateCacheRepo.clearRun} to remove all entries for a specific runId.
+   *
+   * @param prefix - The prefix to match against `taskType` (e.g. `__run:my-run::`)
+   */
+  async deleteByTaskTypePrefix(prefix: string): Promise<void> {
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        await this.tabularRepository.delete({ key: row.key, taskType: row.taskType });
+      }
+    }
+  }
 }
