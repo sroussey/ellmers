@@ -615,20 +615,31 @@ export class JobQueueWorker<
         })
       : undefined;
 
+    let limiterReleased = false;
     try {
       // The limiter slot was already atomically reserved by tryAcquire() in
-      // the main loop (or processNext), so we no longer call recordJobStart
-      // here — doing so would double-count.
+      // the main loop (or processNext). We register the abort controller
+      // BEFORE validateJobState so the controller is observable from inside
+      // validateJobState (which checks activeJobAbortControllers for a
+      // pre-execute abort flag). Previously the controller was created
+      // AFTER validation, making that abort-before-execute branch dead code.
+      const abortController = this.createAbortController(job.id);
+
       try {
         await this.validateJobState(job);
       } catch (validationErr) {
-        // Throw — the outer finally block's limiter.complete() will release
-        // the slot. Do NOT call limiter.release() here too; that would
-        // double-decrement the counter and admit one extra concurrent job.
+        // RateLimiter.complete() is a no-op on the success/error paths
+        // (the slot only ages out of the window naturally) — so on a
+        // validation failure here we MUST call release() to actually free
+        // the slot. Without this, a DEADLINE-EXCEEDED or pre-aborted job
+        // permanently consumed a RateLimiter window slot. The
+        // limiterReleased flag gates the outer finally's complete() call so
+        // we don't double-handle the slot.
+        await this.limiter.release(limiterToken);
+        limiterReleased = true;
         throw validationErr;
       }
 
-      const abortController = this.createAbortController(job.id);
       this.events.emit("job_start", job.id);
 
       let leaseInterval: ReturnType<typeof setInterval> | undefined;
@@ -701,13 +712,22 @@ export class JobQueueWorker<
           });
           span?.setStatus(SpanStatusCode.UNSET);
         }
+      } else if (error instanceof JobDisabledError) {
+        // Route through disableJob so the row transitions to DISABLED
+        // (not FAILED). Without this branch, attempting to disable a job
+        // mid-flight clobbered the DISABLED status with FAILED and the
+        // H5 atomic-disable code path was unreachable.
+        await this.disableJob(job);
+        span?.setStatus(SpanStatusCode.UNSET);
       } else {
         await this.failJob(job, error);
         span?.setStatus(SpanStatusCode.ERROR, error.message);
       }
       span?.setAttributes({ "workglow.job.error": spanErrorMessage });
     } finally {
-      await this.limiter.complete(limiterToken);
+      if (!limiterReleased) {
+        await this.limiter.complete(limiterToken);
+      }
       span?.end();
       // Guard against a concurrent processSingleJob for the same jobId (which
       // can start before this finally block runs, e.g. after a reschedule).

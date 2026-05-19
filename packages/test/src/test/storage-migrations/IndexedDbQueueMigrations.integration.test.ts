@@ -152,4 +152,153 @@ describe("indexedDB queue migrations: v1 → v2 rename + backfill", () => {
       };
     });
   });
+
+  it("v2 migrates all five legacy field renames", async () => {
+    // Regression for PR #511 follow-up: v2 previously only backfilled
+    // run_after → visible_at. The other four renames (run_attempts → attempts,
+    // last_ran_at → last_attempted_at, max_retries → max_attempts,
+    // worker_id → lease_owner) were silently dropped, so existing
+    // browser-deployed queues lost retry budgets, last-attempt timestamps,
+    // and lease ownership on first migration.
+    const dbName = `wglw_idb_qm5_${Math.random().toString(36).slice(2)}`;
+    const tableName = "jobs";
+
+    // ── (1) Hand-build a v1 DB with a row that uses all five legacy names.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(dbName, 2);
+      req.onerror = () => reject(req.error);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("_storage_migrations")) {
+          db.createObjectStore("_storage_migrations", { keyPath: ["component", "version"] });
+        }
+        if (!db.objectStoreNames.contains(tableName)) {
+          const store = db.createObjectStore(tableName, { keyPath: "id" });
+          store.createIndex("queue_status", ["queue", "status"], { unique: false });
+          store.createIndex("queue_status_run_after", ["queue", "status", "run_after"], {
+            unique: false,
+          });
+          store.createIndex("queue_job_run_id", ["queue", "job_run_id"], { unique: false });
+          store.createIndex("queue_fingerprint_status", ["queue", "fingerprint", "status"], {
+            unique: false,
+          });
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(["_storage_migrations", tableName], "readwrite");
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
+        tx.objectStore("_storage_migrations").put({
+          component: `queue:indexeddb:${tableName}`,
+          version: 1,
+          description: "Create queue object store + indexes",
+          appliedAt: new Date().toISOString(),
+        });
+        // Seed a row with ALL five legacy field names populated, NO post-rename
+        // names. The migration must move every value and delete every old key.
+        tx.objectStore(tableName).put({
+          id: 42,
+          queue: "test",
+          fingerprint: "fp42",
+          job_run_id: "jr42",
+          status: "PENDING",
+          input: "{}",
+          run_after: "2026-02-01T00:00:00.000Z",
+          run_attempts: 3,
+          last_ran_at: "2026-01-31T12:00:00.000Z",
+          max_retries: 7,
+          worker_id: "worker-legacy-1",
+        });
+      };
+    });
+
+    // ── (2) Run the migration chain.
+    const runner = new IndexedDbMigrationRunner(dbName);
+    await runner.run(indexedDbQueueMigrations(tableName, []));
+
+    // ── (3) Verify all five renames landed: new keys carry the values,
+    //         legacy keys are deleted, and the queue_status_visible_at
+    //         index can serve a range query keyed on the migrated
+    //         [queue, status, visible_at] tuple.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(dbName);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction([tableName], "readonly");
+          const store = tx.objectStore(tableName);
+
+          const getReq = store.get(42);
+          getReq.onsuccess = () => {
+            try {
+              const row = getReq.result as Record<string, unknown> | undefined;
+              expect(row).toBeDefined();
+
+              // All five new keys carry the migrated values.
+              expect(row!.visible_at).toBe("2026-02-01T00:00:00.000Z");
+              expect(row!.attempts).toBe(3);
+              expect(row!.last_attempted_at).toBe("2026-01-31T12:00:00.000Z");
+              expect(row!.max_attempts).toBe(7);
+              expect(row!.lease_owner).toBe("worker-legacy-1");
+
+              // All five legacy keys are gone.
+              expect(row!.run_after).toBeUndefined();
+              expect(row!.run_attempts).toBeUndefined();
+              expect(row!.last_ran_at).toBeUndefined();
+              expect(row!.max_retries).toBeUndefined();
+              expect(row!.worker_id).toBeUndefined();
+            } catch (e) {
+              reject(e);
+              return;
+            }
+
+            // Index range query on the migrated tuple returns the row.
+            try {
+              const idx = store.index("queue_status_visible_at");
+              const range = IDBKeyRange.bound(
+                ["test", "PENDING", "2026-01-01T00:00:00.000Z"],
+                ["test", "PENDING", "2026-12-31T00:00:00.000Z"]
+              );
+              const cReq = idx.openCursor(range);
+              cReq.onsuccess = () => {
+                const cursor = cReq.result;
+                try {
+                  expect(cursor).not.toBeNull();
+                  expect((cursor!.value as { id: number }).id).toBe(42);
+                } catch (e) {
+                  reject(e);
+                }
+              };
+              tx.oncomplete = () => {
+                db.close();
+                resolve();
+              };
+              tx.onerror = () => {
+                db.close();
+                reject(tx.error);
+              };
+            } catch (e) {
+              db.close();
+              reject(e);
+            }
+          };
+          getReq.onerror = () => {
+            db.close();
+            reject(getReq.error);
+          };
+        } catch (e) {
+          db.close();
+          reject(e);
+        }
+      };
+    });
+  });
 });

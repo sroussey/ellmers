@@ -12,7 +12,7 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
-import { JobStatus } from "@workglow/job-queue";
+import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
 import { HybridSubscriptionManager } from "@workglow/storage";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 import { IndexedDbMigrationRunner } from "../migrations/IndexedDbMigrationRunner";
@@ -266,11 +266,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     workerId: string,
     opts?: { leaseMs?: number }
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const leaseMs = opts?.leaseMs ?? 30000;
+    validateLeaseMs(leaseMs, "leaseMs");
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readwrite");
     const store = tx.objectStore(this.tableName);
     const now = new Date().toISOString();
-    const leaseMs = opts?.leaseMs ?? 30000;
     const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
     const prefixKeyValues = this.getPrefixKeyValues();
 
@@ -421,6 +422,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    validateLeaseMs(ms, "ms");
     const job = await this.get(id);
     if (!job || job.status !== JobStatus.PROCESSING || job.lease_owner !== workerId) {
       throw new Error(
@@ -537,7 +539,10 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       job.status = JobStatus.FAILED;
       job.abort_requested_at = now;
       job.completed_at = now;
-      await this.complete(job);
+      // Use put() (not complete()) so attempts is NOT bumped — the worker
+      // never actually attempted this job. Matches the cross-backend
+      // contract verified in InMemory/Postgres.
+      await this.put(job);
     } else if (job.status === JobStatus.PROCESSING) {
       job.abort_requested_at = now;
       await this.put(job);

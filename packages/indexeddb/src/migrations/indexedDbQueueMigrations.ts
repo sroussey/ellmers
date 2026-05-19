@@ -57,7 +57,7 @@ export function indexedDbQueueMigrations(
       component,
       version: 2,
       description:
-        "Rename queue_status_run_after → queue_status_visible_at; backfill run_after → visible_at",
+        "Rename queue_status_run_after → queue_status_visible_at; backfill five legacy field renames (run_after → visible_at, run_attempts → attempts, last_ran_at → last_attempted_at, max_retries → max_attempts, worker_id → lease_owner)",
       up({ tx }) {
         // IDB upgrade transactions auto-commit as soon as `up()` returns —
         // we MUST NOT `await` anything between IDB operations. All cursor
@@ -73,30 +73,62 @@ export function indexedDbQueueMigrations(
           store.deleteIndex("queue_status_run_after");
         }
 
-        // Walk every row and copy `run_after` → `visible_at`. `openCursor()`
-        // returns a request whose `onsuccess` fires once per row plus a
-        // final time with `cursor === null`; the upgrade tx stays open as
-        // long as new requests are issued from the current callback.
+        // Walk every row and migrate all five legacy field renames in a
+        // single cursor pass. The storage layer reads the post-rename names
+        // (visible_at, attempts, last_attempted_at, max_attempts,
+        // lease_owner); without backfilling each one, existing
+        // browser-deployed queues silently lose retry budgets, last-attempt
+        // timestamps, and lease ownership on first migration.
+        //
+        // The createIndex call for queue_status_visible_at is deferred into
+        // the terminal `cursor === null` branch so the index is built off
+        // the post-migration rows rather than racing the cursor walk.
         const cursorReq = store.openCursor();
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
-          if (!cursor) return;
+          if (!cursor) {
+            // Recreate the renamed index under the new key path. Skip if a
+            // previous partial run already created it — IDB forbids two
+            // indexes sharing a name and would throw mid-upgrade.
+            if (!Array.from(store.indexNames).includes("queue_status_visible_at")) {
+              store.createIndex("queue_status_visible_at", k(["queue", "status", "visible_at"]), {
+                unique: false,
+              });
+            }
+            return;
+          }
           const row = cursor.value as Record<string, unknown> | null;
-          if (row && row.visible_at === undefined && row.run_after !== undefined) {
-            row.visible_at = row.run_after;
-            cursor.update(row);
+          if (row) {
+            let dirty = false;
+            if (row.run_after !== undefined && row.visible_at === undefined) {
+              row.visible_at = row.run_after;
+              delete row.run_after;
+              dirty = true;
+            }
+            if (row.run_attempts !== undefined && row.attempts === undefined) {
+              row.attempts = row.run_attempts;
+              delete row.run_attempts;
+              dirty = true;
+            }
+            if (row.last_ran_at !== undefined && row.last_attempted_at === undefined) {
+              row.last_attempted_at = row.last_ran_at;
+              delete row.last_ran_at;
+              dirty = true;
+            }
+            if (row.max_retries !== undefined && row.max_attempts === undefined) {
+              row.max_attempts = row.max_retries;
+              delete row.max_retries;
+              dirty = true;
+            }
+            if (row.worker_id !== undefined && row.lease_owner === undefined) {
+              row.lease_owner = row.worker_id;
+              delete row.worker_id;
+              dirty = true;
+            }
+            if (dirty) cursor.update(row);
           }
           cursor.continue();
         };
-
-        // Recreate the index under the new name keyed on `visible_at`.
-        // Skip if a previous partial run already created it (defensive — IDB
-        // forbids two indexes sharing a name and would throw mid-upgrade).
-        if (!Array.from(store.indexNames).includes("queue_status_visible_at")) {
-          store.createIndex("queue_status_visible_at", k(["queue", "status", "visible_at"]), {
-            unique: false,
-          });
-        }
       },
     },
   ];

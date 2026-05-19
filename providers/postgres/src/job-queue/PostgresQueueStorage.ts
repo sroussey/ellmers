@@ -12,7 +12,7 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
-import { JobStatus } from "@workglow/job-queue";
+import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
 import type { Pool } from "@workglow/postgres/storage";
 import {
   assertPrefixesSafe,
@@ -238,6 +238,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     opts?: { leaseMs?: number }
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const leaseMs = opts?.leaseMs ?? 30000;
+    validateLeaseMs(leaseMs, "leaseMs");
     // Parameters: $1=PROCESSING, $2=now+leaseMs interval, $3=queue, $4=workerId, $5=PENDING, $6=PROCESSING, $7+=prefix params
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(7);
     const result = await this.db.query<
@@ -296,6 +297,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    validateLeaseMs(ms, "ms");
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(5);
     const result = await this.db.query(
       `UPDATE ${this.tableName}

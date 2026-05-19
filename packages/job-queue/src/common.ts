@@ -33,6 +33,7 @@ export * from "./queue-storage/InMemoryMessageQueue";
 export * from "./queue-storage/InMemoryQueueStorage";
 export * from "./queue-storage/TelemetryQueueStorage";
 export * from "./queue-storage/createInMemoryQueue";
+export * from "./queue-storage/validateLeaseMs";
 export * from "./queue-storage/wrapQueueStorage";
 
 export * from "./rate-limiter-storage/IRateLimiterStorage";

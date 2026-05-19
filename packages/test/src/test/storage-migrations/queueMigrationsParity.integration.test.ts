@@ -8,7 +8,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { postgresQueueMigrations } from "@workglow/postgres/job-queue";
 import type { Pool } from "@workglow/postgres/storage";
 import { PostgresMigrationRunner } from "@workglow/postgres/storage";
-import { sqliteQueueMigrations } from "@workglow/sqlite/job-queue";
+import { buildSqliteQueuePostV3TableSql, sqliteQueueMigrations } from "@workglow/sqlite/job-queue";
 import { Sqlite, SqliteMigrationRunner } from "@workglow/sqlite/storage";
 import { describe, expect, it } from "vitest";
 
@@ -128,6 +128,93 @@ describe("sqlite queue migrations: v1→v2→v3 schema parity", () => {
     } finally {
       dbA.close();
       dbB.close();
+    }
+  });
+});
+
+/**
+ * PR #511 follow-up: SQLite v3 originally renamed `max_retries → max_attempts`
+ * but did not adjust the column default, leaving SQLite fresh installs at
+ * `DEFAULT 23` while Postgres landed on `DEFAULT 10`. Callers omitting
+ * `maxAttempts` got divergent retry behavior across backends. This block
+ * compares the post-migration column DEFAULTS (not just the column names)
+ * so future drift is caught.
+ */
+describe("queue migrations: cross-backend default parity", () => {
+  it("max_attempts default is 10 on both Postgres and SQLite after v3", async () => {
+    // ── (1) Fresh PGlite + run all Postgres queue migrations.
+    const pg = new PGlite();
+    // ── (2) Fresh SQLite :memory: + run all SQLite queue migrations.
+    await Sqlite.init();
+    const sqlite = new Sqlite.Database(":memory:");
+    try {
+      await new PostgresMigrationRunner(pg as unknown as Pool).run(
+        postgresQueueMigrations("jobs", [])
+      );
+      await new SqliteMigrationRunner(sqlite).run(sqliteQueueMigrations("jobs", []));
+
+      // ── (3) Read Postgres defaults via information_schema.columns.
+      const pgRows = (
+        await (pg as unknown as Pool).query<{
+          column_name: string;
+          column_default: string | null;
+        }>(
+          `SELECT column_name, column_default FROM information_schema.columns
+             WHERE table_name = $1 AND table_schema = current_schema()
+               AND column_name IN ('max_attempts', 'attempts')`,
+          ["jobs"]
+        )
+      ).rows;
+      const pgMaxAttempts = pgRows.find((r) => r.column_name === "max_attempts");
+      const pgAttempts = pgRows.find((r) => r.column_name === "attempts");
+      expect(pgMaxAttempts).toBeDefined();
+      expect(pgAttempts).toBeDefined();
+
+      // ── (4) Read SQLite defaults via PRAGMA table_info(jobs).
+      type SqliteCol = { name: string; dflt_value: string | null };
+      const sqliteRows = sqlite
+        .prepare<[], SqliteCol>(`PRAGMA table_info(jobs)`)
+        .all()
+        .filter((r: SqliteCol) => r.name === "max_attempts" || r.name === "attempts");
+      const sqliteMaxAttempts = sqliteRows.find((r) => r.name === "max_attempts");
+      const sqliteAttempts = sqliteRows.find((r) => r.name === "attempts");
+      expect(sqliteMaxAttempts).toBeDefined();
+      expect(sqliteAttempts).toBeDefined();
+
+      // ── (5) Both backends MUST agree on the integer values of the
+      // defaults. Number(...) coerces the SQL-literal string forms
+      // ("10", "0") into JS numbers so the comparison is back-end-agnostic.
+      expect(Number(pgMaxAttempts!.column_default)).toBe(10);
+      expect(Number(sqliteMaxAttempts!.dflt_value)).toBe(10);
+
+      // Sanity check: `attempts` defaults to 0 on both backends.
+      expect(Number(pgAttempts!.column_default)).toBe(0);
+      expect(Number(sqliteAttempts!.dflt_value)).toBe(0);
+    } finally {
+      await pg.close();
+      sqlite.close();
+    }
+  });
+});
+
+describe("sqlite queue migrations: canonical v3 schema", () => {
+  it("rebuilds the table from the explicit post-v3 CREATE TABLE statement", async () => {
+    await Sqlite.init();
+    const sqlite = new Sqlite.Database(":memory:");
+    try {
+      await new SqliteMigrationRunner(sqlite).run(sqliteQueueMigrations("jobs", []));
+
+      const row = sqlite
+        .prepare<[string], { readonly sql: string | null }>(
+          "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?"
+        )
+        .get("jobs");
+      expect(row?.sql).toBeDefined();
+
+      const normalizeSql = (sql: string): string => sql.replace(/\s+/g, " ").trim();
+      expect(normalizeSql(row!.sql!)).toBe(normalizeSql(buildSqliteQueuePostV3TableSql("jobs", "")));
+    } finally {
+      sqlite.close();
     }
   });
 });
