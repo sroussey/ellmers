@@ -11,7 +11,7 @@ import {
   KnowledgeBase,
   TypeKnowledgeBase,
 } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -95,7 +95,7 @@ export class DocumentUpsertTask extends Task<
   public static override category = "Document";
   public static override title = "Add Document";
   public static override description = "Persist a parsed document tree to a knowledge base";
-  public static override cacheable = false; // Has side effects
+  public static override cachePolicy: CachePolicy = { kind: "none" }; // Has side effects
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

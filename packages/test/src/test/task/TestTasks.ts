@@ -10,6 +10,7 @@
  * of different task behaviors like error handling and progress reporting.
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   GraphAsTask,
@@ -1825,7 +1826,7 @@ export class GraphAsTask_InputTask extends Task<Record<string, unknown>, Record<
   static override type = "GraphAsTask_InputTask";
   static override category = "Test";
   static override hasDynamicSchemas = true;
-  static override cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -1858,7 +1859,7 @@ export class GraphAsTask_InputTask extends Task<Record<string, unknown>, Record<
 export class GraphAsTask_ComputeTask extends Task<{ a: number; b: number }, { result: number }> {
   static override type = "GraphAsTask_ComputeTask";
   static override category = "Test";
-  static override cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -2100,7 +2101,7 @@ export class GraphAsTask_TaskC extends Task {
 export class GraphAsTask_OutputTask extends Task<Record<string, unknown>, Record<string, unknown>> {
   static override type = "GraphAsTask_OutputTask";
   static override category = "Test";
-  static override cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {

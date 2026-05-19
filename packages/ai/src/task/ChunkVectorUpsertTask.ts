@@ -6,7 +6,7 @@
 
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
@@ -87,7 +87,7 @@ export class ChunkVectorUpsertTask extends Task<
   public static override title = "Add to Vector Store";
   public static override description =
     "Store chunks + their embeddings in a knowledge base (1:1 aligned)";
-  public static override cacheable = false; // Has side effects
+  public static override cachePolicy: CachePolicy = { kind: "none" }; // Has side effects
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

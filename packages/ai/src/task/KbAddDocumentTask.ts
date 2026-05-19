@@ -6,7 +6,7 @@
 
 import type { KnowledgeBase } from "@workglow/knowledge-base";
 import { Document, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -64,7 +64,7 @@ export class KbAddDocumentTask extends Task<
   public static override title = "KB Add Document";
   public static override description =
     "Ingest a document into a knowledge base: chunk, embed, and store via the KB's installed strategy.";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

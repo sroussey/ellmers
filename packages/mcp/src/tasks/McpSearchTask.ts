@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskEntitlements } from "@workglow/task-graph";
+import type { CachePolicy, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
@@ -258,7 +258,7 @@ export class McpSearchTask extends Task<McpSearchTaskInput, McpSearchTaskOutput,
   public static override title = "MCP Search";
   public static override description =
     "Search the MCP server registry for servers matching a query";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override entitlements(): TaskEntitlements {
     return {

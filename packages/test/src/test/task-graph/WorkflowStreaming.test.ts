@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent, TaskIdType } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent, TaskIdType } from "@workglow/task-graph";
 import { Dataflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
@@ -20,7 +20,7 @@ type TextOutput = { text: string };
 
 class WFStreamSource extends Task<TextInput, TextOutput> {
   public static override type = "WFStreamSource";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -55,7 +55,7 @@ class WFStreamSource extends Task<TextInput, TextOutput> {
 
 class WFNonStreamSink extends Task<{ text: string }, TextOutput> {
   public static override type = "WFNonStreamSink";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -176,7 +176,7 @@ describe("Workflow Streaming Events", () => {
 
     class FailingStreamTask extends Task<TextInput, TextOutput> {
       public static override type = "FailingStreamTask";
-      public static override cacheable = false;
+      public static override cachePolicy: CachePolicy = { kind: "none" };
 
       public static override inputSchema(): DataPortSchema {
         return {
