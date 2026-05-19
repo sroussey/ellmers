@@ -36,6 +36,11 @@ import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes"
 export interface IExecuteContext {
   signal: AbortSignal;
   /**
+   * Stable identifier for the current graph run. Set when the caller passes
+   * `runId` in the run config; `undefined` for ad-hoc task runs.
+   */
+  runId?: string;
+  /**
    * Update the task's progress.
    * @param progress - 0..100 for measured progress, or `undefined` for
    *   indeterminate (in progress, percentage unknown). UIs render
@@ -123,6 +128,13 @@ export interface IRunConfig {
   ) => Promise<void>;
 
   registry?: ServiceRegistry;
+
+  /**
+   * Stable identifier for the current graph run, threaded through from
+   * {@link TaskGraphRunConfig.runId}. Exposed on {@link IExecuteContext} so
+   * tasks can correlate their work to the enclosing run.
+   */
+  runId?: string;
 
   /**
    * Parent abort signal to link to this task's abort controller.

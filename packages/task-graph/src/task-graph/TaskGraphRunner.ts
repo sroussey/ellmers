@@ -17,6 +17,11 @@ import {
   uuid4,
 } from "@workglow/util";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  RunPrivateCacheRepo,
+} from "../cache";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
 import { isTaskStreamable } from "../task/StreamTypes";
@@ -114,6 +119,15 @@ export class TaskGraphRunner {
    * Output cache repository
    */
   protected outputCache?: TaskOutputRepository;
+
+  /**
+   * True when the caller explicitly passed `outputCache: false` in the run
+   * config, meaning all caching (including CACHE_REGISTRY-based routing) should
+   * be suppressed. Distinct from `this.outputCache === undefined`, which just
+   * means no legacy repo was configured (CACHE_REGISTRY may still apply).
+   */
+  protected legacyCacheExplicitlyDisabled: boolean = false;
+
   /**
    * Whether leaf tasks (no outgoing edges) should accumulate their streaming
    * output. True by default so workflow return values are complete.
@@ -135,6 +149,13 @@ export class TaskGraphRunner {
    * and disable() methods (which take no arguments) have something to act on.
    */
   protected currentCtx?: RunContext;
+
+  /**
+   * Stable identifier for the current graph run. Threaded from
+   * {@link TaskGraphRunConfig.runId} through handleStart so that each
+   * per-task run call carries the same identifier.
+   */
+  protected runId?: string;
 
   /**
    * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
@@ -511,13 +532,17 @@ export class TaskGraphRunner {
         accumulateLeafOutputs: this.accumulateLeafOutputs,
         updateProgress: (t, p, m, ...a) =>
           this.runScheduler.handleProgress(this.currentCtx!, t, p, m, ...a),
+        runId: this.runId,
+        legacyCacheExplicitlyDisabled: this.legacyCacheExplicitlyDisabled,
       });
     }
 
     const results = await task.runner.run(input, {
-      // Pass `false` when no cache so TaskRunner.handleStart explicitly clears
-      // its own cached reference (undefined would leave the old value intact).
-      outputCache: this.outputCache ?? false,
+      // When caching was explicitly disabled (outputCache: false in run config),
+      // pass `false` so TaskRunner clears any stale cacheRegistry. Otherwise pass
+      // `this.outputCache` (which may be undefined, letting TaskRunner use
+      // CACHE_REGISTRY from the per-run ServiceRegistry).
+      outputCache: this.legacyCacheExplicitlyDisabled ? false : this.outputCache,
       updateProgress: async (
         task: ITask,
         progress: number | undefined,
@@ -527,6 +552,7 @@ export class TaskGraphRunner {
         await this.runScheduler.handleProgress(this.currentCtx!, task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
+      runId: this.runId,
     });
 
     await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
@@ -570,19 +596,59 @@ export class TaskGraphRunner {
       this.resourceScope = config.resourceScope;
     }
 
+    // Store run identifier for per-task propagation.
+    this.runId = config?.runId;
+
+    // If there is a private cache slot and a runId, wrap the private slot in a
+    // RunPrivateCacheRepo so all tasks in this run see a namespaced view of the
+    // backing store. Build a child ServiceRegistry that overrides CACHE_REGISTRY
+    // for this run only; the parent registry is unchanged.
+    if (this.runId && this.registry.has(CACHE_REGISTRY)) {
+      const baseRegistry = this.registry.get(CACHE_REGISTRY);
+      if (baseRegistry.private) {
+        const wrappedPrivate = new RunPrivateCacheRepo({
+          backing: baseRegistry.private,
+          runId: this.runId,
+        });
+        const wrappedRegistry = new DefaultCacheRegistry({
+          deterministic: baseRegistry.deterministic,
+          private: wrappedPrivate,
+        });
+        const childContainer = this.registry.container.createChildContainer();
+        const runtimeServices = new ServiceRegistry(childContainer);
+        // Copy all registrations from parent into child, then override CACHE_REGISTRY.
+        runtimeServices.registerInstance(CACHE_REGISTRY, wrappedRegistry);
+        this.registry = runtimeServices;
+
+        // Register a disposal marker in the resource scope so the run boundary is
+        // documented and callers can attach connection-bearing disposers on the same key.
+        this.resourceScope?.register(`cache:private:${this.runId}`, async () => {
+          // intentionally empty — RunPrivateCacheRepo has no resources of its own
+        });
+      }
+    }
+
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
 
     if (config?.outputCache !== undefined) {
       if (typeof config.outputCache === "boolean") {
         if (config.outputCache === true) {
           this.outputCache = this.registry.get(TASK_OUTPUT_REPOSITORY);
+          this.legacyCacheExplicitlyDisabled = false;
         } else {
+          // outputCache: false — suppress all caching, including CACHE_REGISTRY.
           this.outputCache = undefined;
+          this.legacyCacheExplicitlyDisabled = true;
         }
       } else {
         this.outputCache = config.outputCache;
+        this.legacyCacheExplicitlyDisabled = false;
       }
       this.graph.outputCache = this.outputCache;
+    } else {
+      // No explicit outputCache in this run's config — preserve existing legacy
+      // repo (if any) but do not disable CACHE_REGISTRY routing.
+      this.legacyCacheExplicitlyDisabled = false;
     }
 
     // Prevent reentrancy
