@@ -537,7 +537,10 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       job.status = JobStatus.FAILED;
       job.abort_requested_at = now;
       job.completed_at = now;
-      await this.complete(job);
+      // Use put() (not complete()) so attempts is NOT bumped — the worker
+      // never actually attempted this job. Matches the cross-backend
+      // contract verified in InMemory/Postgres.
+      await this.put(job);
     } else if (job.status === JobStatus.PROCESSING) {
       job.abort_requested_at = now;
       await this.put(job);

@@ -1343,5 +1343,26 @@ export function runGenericJobQueueTests(
       expect(second?.attempts).toBe(attemptsBeforeReclaim + 1);
       expect(second?.abort_requested_at ?? null).toBe(null);
     });
+
+    it("abort(PENDING) does not bump attempts (cross-backend contract)", async () => {
+      // Regression for PR #511 follow-up: IndexedDbQueueStorage.abort(PENDING)
+      // previously routed through complete() which bumps attempts. The
+      // cross-backend contract (InMemory/Postgres) is that aborting a row
+      // the worker never claimed must NOT consume retry budget — the worker
+      // never actually attempted execution.
+      const handle = await client.send({ taskType: "task1", data: "abort-pending-no-bump" });
+      const id = handle.id;
+      const before = await storage.get(id);
+      expect(before?.status).toBe(JobStatus.PENDING);
+      expect(before?.attempts ?? 0).toBe(0);
+
+      await storage.abort(id);
+
+      const after = await storage.get(id);
+      expect(after?.status).toBe(JobStatus.FAILED);
+      expect(after?.abort_requested_at).toBeTruthy();
+      expect(after?.completed_at).toBeTruthy();
+      expect(after?.attempts ?? 0).toBe(0);
+    });
   });
 }
