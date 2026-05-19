@@ -94,10 +94,11 @@ export abstract class TaskOutputRepository {
   }
 
   /**
-   * Saves a task output to the repository
-   * @param taskType The type of task to save the output for
-   * @param inputs The input parameters for the task
-   * @param output The task output to save
+   * Persist a task output keyed by `(taskType, fingerprint(inputs))`.
+   *
+   * Contract: MUST be idempotent for identical (key, value) pairs and MAY drop
+   * the write if the key already exists. This supports concurrent writers
+   * producing the same deterministic output without coordination.
    */
   abstract saveOutput(
     taskType: string,
@@ -131,4 +132,13 @@ export abstract class TaskOutputRepository {
    * @param olderThanInMs The time in milliseconds to clear task outputs older than
    */
   abstract clearOlderThan(olderThanInMs: number): Promise<void>;
+
+  /**
+   * Whether entries written to this repository will survive a process crash / restart.
+   *
+   * Used by the task runner to warn when `kind: "private"` tasks are configured with a
+   * non-durable backing store (e.g., in-memory) — restart-survival, which is the whole
+   * point of the private cache tier, will not actually work in that case.
+   */
+  abstract isDurable(): boolean;
 }

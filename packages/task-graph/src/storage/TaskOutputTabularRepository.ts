@@ -59,6 +59,11 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     this.outputCompression = outputCompression;
   }
 
+  public isDurable(): boolean {
+    const backing = this.tabularRepository as unknown as { isDurable?: () => boolean };
+    return backing.isDurable?.() ?? true;
+  }
+
   /**
    * Sets up the database for the repository.
    * Must be called before using any other methods.
