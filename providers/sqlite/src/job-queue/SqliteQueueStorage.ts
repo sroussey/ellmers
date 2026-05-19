@@ -12,7 +12,7 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
-import { JobStatus } from "@workglow/job-queue";
+import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
 import type { Sqlite } from "@workglow/sqlite/storage";
 import {
   assertPrefixesSafe,
@@ -358,6 +358,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const now = new Date().toISOString();
     const leaseMs = opts?.leaseMs ?? 30000;
+    validateLeaseMs(leaseMs, "leaseMs");
     const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
@@ -429,6 +430,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    validateLeaseMs(ms, "ms");
     const leaseExpiry = new Date(Date.now() + ms).toISOString();
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();

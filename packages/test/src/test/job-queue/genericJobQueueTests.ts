@@ -606,6 +606,59 @@ export function runGenericJobQueueTests(
     });
   });
 
+  describe("leaseMs / extendLease input validation (PR #511 follow-up)", () => {
+    // PR #511 added Number.isFinite guards to Supabase only; the other
+    // backends silently produced "Invalid Date" ISO strings (poisoning
+    // lease_expires_at) or runtime SQL errors. These tests assert the
+    // unified RangeError contract across every backend exercised by this
+    // generic suite.
+    it("next(): negative leaseMs rejects with RangeError", async () => {
+      await expect(storage.next("rangeerr-worker", { leaseMs: -1 })).rejects.toThrow(RangeError);
+    });
+
+    it("next(): NaN leaseMs rejects with RangeError", async () => {
+      await expect(storage.next("rangeerr-worker", { leaseMs: Number.NaN })).rejects.toThrow(
+        RangeError
+      );
+    });
+
+    it("next(): Infinity leaseMs rejects with RangeError", async () => {
+      await expect(
+        storage.next("rangeerr-worker", { leaseMs: Number.POSITIVE_INFINITY })
+      ).rejects.toThrow(RangeError);
+    });
+
+    it("next(): leaseMs === 0 is accepted (instant expiry)", async () => {
+      // 0 is permitted — it means "lease expires immediately", which is a
+      // valid (if unusual) configuration. The call must not throw a
+      // RangeError; it may legitimately return a job or undefined depending
+      // on what's enqueued.
+      let threw: unknown = null;
+      try {
+        await storage.next("zerolease-worker", { leaseMs: 0 });
+      } catch (e) {
+        threw = e;
+      }
+      expect(threw).toBeNull();
+    });
+
+    it("extendLease(): negative ms rejects with RangeError", async () => {
+      await expect(storage.extendLease("any-id", "any-worker", -1)).rejects.toThrow(RangeError);
+    });
+
+    it("extendLease(): NaN ms rejects with RangeError", async () => {
+      await expect(storage.extendLease("any-id", "any-worker", Number.NaN)).rejects.toThrow(
+        RangeError
+      );
+    });
+
+    it("extendLease(): Infinity ms rejects with RangeError", async () => {
+      await expect(
+        storage.extendLease("any-id", "any-worker", Number.POSITIVE_INFINITY)
+      ).rejects.toThrow(RangeError);
+    });
+  });
+
   describe("Same-process optimizations", () => {
     const itFastWake = skipFastWakeTests ? it.skip : it;
 

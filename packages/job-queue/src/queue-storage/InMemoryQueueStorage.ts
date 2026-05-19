@@ -20,6 +20,7 @@ import {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
+import { validateLeaseMs } from "./validateLeaseMs";
 
 /**
  * Event listeners for queue storage events
@@ -147,6 +148,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
     await sleep(0);
     const leaseMs = opts?.leaseMs ?? 30000;
+    validateLeaseMs(leaseMs, "leaseMs");
     const now = new Date().toISOString();
     const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
 
@@ -192,6 +194,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    validateLeaseMs(ms, "ms");
     await sleep(0);
     const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
     if (!job || job.status !== JobStatus.PROCESSING || job.lease_owner !== workerId) {

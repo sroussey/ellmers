@@ -14,7 +14,7 @@ import type {
   QueueStorageOptions,
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
-import { JobStatus } from "@workglow/job-queue";
+import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
 import { PollingSubscriptionManager } from "@workglow/storage";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
 
@@ -369,9 +369,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     opts?: { leaseMs?: number }
   ): Promise<JobStorageFormat<Input, Output> | undefined> {
     const leaseMs = opts?.leaseMs ?? 30000;
-    if (!Number.isFinite(leaseMs) || leaseMs < 0) {
-      throw new Error(`Invalid leaseMs: ${leaseMs}`);
-    }
+    validateLeaseMs(leaseMs, "leaseMs");
     const prefixConditions = this.buildPrefixWhereSql();
     const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
     const validatedWorkerId = this.validateSqlValue(workerId, "workerId");
@@ -425,14 +423,14 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    * @param ms - Number of milliseconds to extend the lease by
    */
   public async extendLease(id: unknown, workerId: string, ms: number): Promise<void> {
+    // Validate lease arg FIRST so callers get a consistent RangeError across
+    // backends regardless of whether the id happens to be invalid too.
+    validateLeaseMs(ms, "ms");
     const validatedWorkerId = this.validateSqlValue(workerId, "workerId");
     const escapedWorkerId = this.escapeSqlString(validatedWorkerId);
     const numericId = Number(id);
     if (!Number.isFinite(numericId)) {
       throw new Error(`Invalid job id: ${id}`);
-    }
-    if (!Number.isFinite(ms) || ms < 0) {
-      throw new Error(`Invalid lease extension ms: ${ms}`);
     }
 
     const prefixConditions = this.buildPrefixWhereSql();
