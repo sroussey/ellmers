@@ -39,6 +39,14 @@ export interface StreamingRunOptions {
     message?: string,
     ...args: any[]
   ) => Promise<void>;
+  /** Stable identifier for the current graph run; threaded into each task's IRunConfig. */
+  readonly runId?: string;
+  /**
+   * True when the caller explicitly disabled caching (outputCache: false). When
+   * set, `false` is passed to task.runner.run() so TaskRunner clears any stale
+   * cacheRegistry rather than falling through to CACHE_REGISTRY resolution.
+   */
+  readonly legacyCacheExplicitlyDisabled?: boolean;
 }
 
 /**
@@ -177,11 +185,14 @@ export class StreamPump {
 
     try {
       const results = await task.runner.run(input, {
-        outputCache: options.outputCache ?? false,
+        // Pass false when explicitly disabled so TaskRunner clears stale state;
+        // otherwise pass the legacy repo (or undefined to use CACHE_REGISTRY).
+        outputCache: options.legacyCacheExplicitlyDisabled ? false : options.outputCache,
         shouldAccumulate,
         updateProgress: options.updateProgress,
         registry: options.registry,
         resourceScope: options.resourceScope,
+        runId: options.runId,
       });
 
       await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);

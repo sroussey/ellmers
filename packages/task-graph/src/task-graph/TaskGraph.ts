@@ -84,6 +84,14 @@ export interface TaskGraphRunConfig {
 
   /** Same semantics as on {@link IRunConfig}. */
   disposeStrategy?: IDisposeStrategy;
+
+  /**
+   * Stable identifier for this logical run. When provided, the graph runner
+   * wraps the `private` cache slot in a {@link RunPrivateCacheRepo} keyed by
+   * this value, so that a restarted run (same `runId`) can resume from cached
+   * private outputs rather than re-executing every task.
+   */
+  runId?: string;
 }
 
 export interface TaskGraphRunPreviewConfig extends Omit<
@@ -162,6 +170,7 @@ export class TaskGraph implements ITaskGraph {
       maxTasks: config?.maxTasks,
       resourceScope: config?.resourceScope,
       disposeStrategy: config?.disposeStrategy,
+      runId: config?.runId,
     });
   }
 

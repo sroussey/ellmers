@@ -126,6 +126,13 @@ export class TaskRunner<
   public inputStreams?: Map<string, ReadableStream<StreamEvent>>;
 
   /**
+   * Stable identifier for the current graph run. Set from IRunConfig.runId by
+   * handleStart; threaded into IExecuteContext so tasks can correlate their
+   * work to the enclosing run.
+   */
+  protected runId?: string;
+
+  /**
    * Constructor for TaskRunner
    * @param task The task to run
    */
@@ -509,6 +516,7 @@ export class TaskRunner<
       own: this.own,
       registry: this.registry,
       resourceScope: this.resourceScope,
+      runId: this.runId,
     });
     return result;
   }
@@ -582,6 +590,9 @@ export class TaskRunner<
     if (config.registry) {
       this.registry = config.registry;
     }
+
+    // Propagate run identifier for use in IExecuteContext.
+    this.runId = config.runId;
 
     // Cache resolution: prefer CacheRegistry (via ServiceRegistry); honour legacy
     // config.outputCache as a back-compat shim that maps to the deterministic slot.
