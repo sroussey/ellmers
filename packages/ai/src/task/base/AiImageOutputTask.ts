@@ -24,6 +24,7 @@
  */
 
 import type {
+  CachePolicy,
   IExecuteContext,
   IExecutePreviewContext,
   StreamEvent,
@@ -58,13 +59,13 @@ export class AiImageOutputTask<
   protected _latestPartial: ImageValue | undefined = undefined;
 
   // --------------------------------------------------------------------
-  // Cacheable: seed-aware
+  // Cache policy: seed-aware
   // --------------------------------------------------------------------
 
-  public override get cacheable(): boolean {
-    const seed = (this.runInputData as { seed?: number } | undefined)?.seed;
-    if (seed === undefined || seed === null) return false;
-    return super.cacheable;
+  public override getCachePolicy(inputs: Input): CachePolicy {
+    const seed = (inputs as { seed?: number | null } | undefined)?.seed;
+    if (seed === undefined || seed === null) return { kind: "private" };
+    return { kind: "deterministic" };
   }
 
   // --------------------------------------------------------------------
