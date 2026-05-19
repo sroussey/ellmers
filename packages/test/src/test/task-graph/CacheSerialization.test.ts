@@ -28,6 +28,10 @@ class SpyRepo extends TaskOutputRepository {
     return this.map.size;
   }
   async clearOlderThan(_ms: number): Promise<void> {}
+
+  isDurable(): boolean {
+    return false;
+  }
 }
 
 describe("TaskRunner cache port serialization", () => {

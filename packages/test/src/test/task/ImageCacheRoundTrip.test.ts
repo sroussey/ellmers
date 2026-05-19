@@ -34,6 +34,10 @@ class MapRepo extends TaskOutputRepository {
   }
 
   async clearOlderThan(_olderThanInMs: number): Promise<void> {}
+
+  isDurable(): boolean {
+    return false;
+  }
 }
 
 function makeImageValue(bytes: number[]): ImageValue {
