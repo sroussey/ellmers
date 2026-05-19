@@ -88,8 +88,8 @@ describe("TaskRunner cache port serialization", () => {
     }
 
     const repo = new SpyRepo();
-    // Seed cache with wire-format data directly
-    await repo.saveOutput("MyTask2", {}, { thing: { wire: { live: 99 } } });
+    // Seed cache with wire-format data directly; __cv is the cacheVersion sentinel injected by buildKey
+    await repo.saveOutput("MyTask2", { __cv: "1" }, { thing: { wire: { live: 99 } } });
 
     const t = new MyTask2();
     const result = await t.run({}, { outputCache: repo });

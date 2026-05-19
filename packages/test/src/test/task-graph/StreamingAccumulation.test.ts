@@ -520,8 +520,11 @@ describe("Source-task streaming accumulation", () => {
       const emittedFinishEvent = emittedFinish[0] as StreamFinish<{ text: string }>;
       expect(emittedFinishEvent.data.text).toBe("cached value");
 
-      // Cached output should contain the accumulated text
-      const cached = await cache.getOutput("AccumTest_CacheableAppendTask", { prompt: "test" });
+      // Cached output should contain the accumulated text; __cv is the cacheVersion sentinel
+      const cached = await cache.getOutput("AccumTest_CacheableAppendTask", {
+        prompt: "test",
+        __cv: "1",
+      });
       expect(cached).toBeDefined();
       expect(cached!.text).toBe("cached value");
     });
