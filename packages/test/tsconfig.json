@@ -6,7 +6,8 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "types": ["@types/bun", "@cloudflare/workers-types"]
   },
   "references": [
     { "path": "../util" },
@@ -30,6 +31,8 @@
     { "path": "../../providers/ollama" },
     { "path": "../../providers/openai" },
     { "path": "../../providers/playwright" },
+    { "path": "../../providers/aws" },
+    { "path": "../../providers/cloudflare" },
     { "path": "../../providers/postgres" },
     { "path": "../../providers/sqlite" },
     { "path": "../../providers/supabase" },
