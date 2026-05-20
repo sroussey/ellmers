@@ -1,5 +1,19 @@
 # @workglow/ai
 
+## 0.3.0
+
+### Features
+
+- migrate tasks and example to cachePolicy + deprecate legacy cacheable
+
+#### task-graph
+
+- policy-driven cache layer with durable execution
+
+### Bug Fixes
+
+- update web example
+
 ## 0.2.37
 
 ### Features

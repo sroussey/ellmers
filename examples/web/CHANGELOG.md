@@ -1,5 +1,23 @@
 # @workglow/web
 
+## 0.3.0
+
+### Features
+
+- migrate tasks and example to cachePolicy + deprecate legacy cacheable
+
+### Bug Fixes
+
+- update web example
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/react`: ^19.2.15
+
 ## 0.2.37
 
 ### Features

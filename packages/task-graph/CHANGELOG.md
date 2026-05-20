@@ -1,5 +1,31 @@
 # @workglow/task-graph
 
+## 0.3.0
+
+### Features
+
+- migrate tasks and example to cachePolicy + deprecate legacy cacheable
+
+#### task-graph
+
+- policy-driven cache layer with durable execution
+
+### Refactors
+
+#### task-graph
+
+- remove entitlements from Task serialization
+
+### Documentation
+
+#### task-graph
+
+- document cache layer, runId, and durable execution
+
+### Chores
+
+- format
+
 ## [Unreleased]
 
 ### Added

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+### Features
+
+#### job-queue
+
+- IJobStore decomposition + processClaims for cloud transports
+
 ## 0.2.37
 
 ### Features

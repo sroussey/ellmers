@@ -1,5 +1,15 @@
 # @workglow/tasks
 
+## 0.3.0
+
+### Features
+
+- migrate tasks and example to cachePolicy + deprecate legacy cacheable
+
+### Chores
+
+- format
+
 ## 0.2.37
 
 ### Features

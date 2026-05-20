@@ -1,5 +1,36 @@
 # @workglow/test
 
+## 0.3.0
+
+### Features
+
+- migrate tasks and example to cachePolicy + deprecate legacy cacheable
+
+#### task-graph
+
+- policy-driven cache layer with durable execution
+
+#### cloudflare
+
+- Cloudflare Queues message-queue adapter (@workglow/cloudflare)
+
+#### aws
+
+- SQS message-queue adapter (@workglow/aws)
+
+#### job-queue
+
+- IJobStore decomposition + processClaims for cloud transports
+
+### Chores
+
+- format
+- update deps
+
+### Updated Dependencies
+
+- `vitest`: ^4.1.7
+
 ## 0.2.37
 
 ### Features
