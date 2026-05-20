@@ -60,6 +60,7 @@
     "@workglow/tf-mediapipe": "workspace:*",
     "@workglow/util": "workspace:*",
     "fake-indexeddb": "^6.2.4",
+    "miniflare": "^3.20240909.0",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
