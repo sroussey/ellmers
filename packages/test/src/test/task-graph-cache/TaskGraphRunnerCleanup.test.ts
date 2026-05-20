@@ -103,8 +103,6 @@ describe("TaskGraphRunner cleanup on success", () => {
       }
     );
 
-    // Allow best-effort post-run cleanup to flush.
-    await new Promise((r) => setTimeout(r, 50));
     expect(await backing.size()).toBe(0);
   });
 
