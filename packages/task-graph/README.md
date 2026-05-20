@@ -232,7 +232,7 @@ class TextProcessorTask extends Task<MyInput, MyOutput> {
   static readonly title = "Text Processor";
   static readonly description = "Processes text";
   static readonly category = "Text Processing";
-  static readonly cacheable = true;
+  static readonly cachePolicy: CachePolicy = { kind: "deterministic" };
 
   static inputSchema() {
     return MyInputSchema;
@@ -291,7 +291,7 @@ class TextProcessorTask extends Task<MyInput, MyOutput> {
   static readonly title = "Text Processor";
   static readonly description = "Processes text";
   static readonly category = "Text Processing";
-  static readonly cacheable = true;
+  static readonly cachePolicy: CachePolicy = { kind: "deterministic" };
 
   static inputSchema() {
     return MyInputSchema;
@@ -371,7 +371,7 @@ class TextProcessorTask extends Task<MyInput, MyOutput> {
   static readonly title = "Text Processor";
   static readonly description = "Processes text";
   static readonly category = "Text Processing";
-  static readonly cacheable = true;
+  static readonly cachePolicy: CachePolicy = { kind: "deterministic" };
 
   static inputSchema() {
     return MyInputSchema;
@@ -711,26 +711,169 @@ const result = await workflow.run();
 
 ## Storage and Caching
 
-### Task Output Caching
+### Cache Policy
 
-Output caching lets repeat executions with identical inputs return instantly without redoing work.
+Every task declares how its outputs may be cached through a `CachePolicy`:
+
+```typescript
+type CachePolicy =
+  | { kind: "deterministic" }  // same inputs → same outputs; safe to share across runs
+  | { kind: "private" }        // non-deterministic but worth caching; scoped to one run
+  | { kind: "none" };          // do not cache (side-effecting tasks)
+```
+
+The default is `{ kind: "deterministic" }`. Side-effecting tasks (writes to external systems, sends messages) declare `{ kind: "none" }`. Non-deterministic tasks worth caching for the lifetime of a single run (image generation without a seed, model calls without a temperature lock) declare `{ kind: "private" }` — their outputs are namespaced by `runId` and visible only to that run and its restarts.
+
+For tasks whose policy depends on inputs (a seed turns "private" into "deterministic"), override `getCachePolicy(inputs)`:
+
+```typescript
+class AiImageOutputTask extends Task<ImageInput, ImageOutput> {
+  static readonly type = "AiImageOutputTask";
+  // Static default used when the instance method is not overridden.
+  static readonly cachePolicy: CachePolicy = { kind: "private" };
+
+  override getCachePolicy(inputs: ImageInput): CachePolicy {
+    return inputs.seed !== undefined
+      ? { kind: "deterministic" }
+      : { kind: "private" };
+  }
+}
+```
+
+### CacheRegistry: two slots
+
+The runner picks a repository per task by reading `CACHE_REGISTRY` from the `ServiceRegistry`. The registry has exactly two slots:
+
+```typescript
+interface CacheRegistry {
+  deterministic?: TaskOutputRepository;
+  private?: TaskOutputRepository;
+}
+```
+
+Both slots are optional. A missing slot is a silent no-op — the task still runs, it just runs uncached. Apps wire the slots they care about:
+
+```typescript
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  TaskOutputPrimaryKeyNames,
+  TaskOutputSchema,
+  TaskOutputTabularRepository,
+} from "@workglow/task-graph";
+import { ServiceRegistry } from "@workglow/util";
+import { InMemoryTabularStorage, SqliteTabularStorage } from "@workglow/storage";
+
+const deterministic = new TaskOutputTabularRepository({
+  tabularRepository: new SqliteTabularStorage(
+    "./cache.sqlite",
+    "task_outputs_deterministic",
+    TaskOutputSchema,
+    TaskOutputPrimaryKeyNames,
+    ["createdAt"]
+  ),
+});
+
+const privateBacking = new TaskOutputTabularRepository({
+  tabularRepository: new SqliteTabularStorage(
+    "./cache.sqlite",
+    "task_outputs_private",
+    TaskOutputSchema,
+    TaskOutputPrimaryKeyNames,
+    ["createdAt"]
+  ),
+});
+
+const registry = new ServiceRegistry();
+registry.set(CACHE_REGISTRY, new DefaultCacheRegistry({
+  deterministic,
+  private: privateBacking,
+}));
+
+await graph.run({ registry, runId: "run-" + crypto.randomUUID() });
+```
+
+The runner constructs a per-run `RunPrivateCacheRepo` wrapper over the `private` slot, namespaced by `runId`. The wrapper exists only for the duration of the run; the rows it writes survive in the backing store until either explicit cleanup (on successful completion) or the TTL janitor sweeps them (after a crashed run is abandoned).
+
+### Run identity and durable execution
+
+A run is identified by an opaque `runId` string supplied by the caller of `.run()`:
+
+```typescript
+await graph.run({ runId, registry });
+```
+
+- **First start** of a user-triggered run: generate a fresh `runId` (UUID is typical) and persist it alongside the rest of the run metadata.
+- **Restart** after a crash: re-dispatch with the **same** `runId`. The new process constructs a fresh in-memory scheduler but the durable `private` repo still holds the outputs of every task that completed before the crash. Cache hits skip that work; the run finishes from where it effectively left off.
+- **Concurrent runs** of the same workflow get different `runId`s, so they never see each other's private-tier outputs.
+
+The runner does not generate `runId` for you. That is the caller's job — only the caller knows whether this `.run()` call is a fresh start or a restart.
+
+#### Cleanup
+
+- On `succeeded`, the runner awaits `privateRepo.clearRun(runId)` before resolving so that a restart with the same `runId` cannot accidentally hit stale entries from the previous attempt.
+- On crash (no terminal status reached), nothing happens at the cache layer — the entries stay on disk so the restart can find them.
+- For abandoned runs (crashed and never restarted), schedule the `CacheJanitor`:
+
+```typescript
+import { CacheJanitor } from "@workglow/task-graph";
+
+const janitor = new CacheJanitor({ privateBacking });
+// Sweep run-private rows older than 24 hours.
+await janitor.sweepStaleRunPrivate(24 * 60 * 60 * 1000);
+```
+
+The janitor only touches rows with the `__run:` prefix that `RunPrivateCacheRepo` writes; deterministic-tier rows are never affected.
+
+#### Durability warning
+
+At run start the runner checks whether the registered `private` repo reports `isDurable() === true`. If a graph contains a `private`-policy task but the repo is backed by, say, in-memory storage, a one-time warning is logged: restart survival cannot work against a non-durable backend. For production, point the `private` slot at SQLite, Postgres, or another durable store.
+
+### Cache key and `cacheVersion`
+
+The cache key is:
+
+```
+sha256(taskType + getCacheVersion() + fingerprint(inputs))
+```
+
+`fingerprint(inputs)` normalizes inputs using the existing `PortCodec` so that ports with `format` annotations hash by their stable wire representation.
+
+`Task.version` (a static number, default `1`) feeds `getCacheVersion()`, which walks the prototype chain and combines each ancestor's version. Bump `version` when the task's semantics change (new prompt template, new defaults, fixed-bug-in-implementation) to force misses for all prior keys:
+
+```typescript
+class SummarizeTask extends Task<...> {
+  static readonly type = "SummarizeTask";
+  static readonly version = 3; // bump → all old cache entries become stale
+  static readonly cachePolicy: CachePolicy = { kind: "deterministic" };
+  // ...
+}
+```
+
+Override `getCacheVersion()` only if you need a different versioning story (e.g., include the runtime model hash).
+
+### End-to-end example
 
 ```typescript
 import {
   Task,
   TaskGraph,
   Workflow,
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
+  type CachePolicy,
 } from "@workglow/task-graph";
+import { ServiceRegistry } from "@workglow/util";
 import { InMemoryTabularStorage } from "@workglow/storage";
 import { DataPortSchema } from "@workglow/util";
 
-// A cacheable task that simulates expensive work
+// A task with deterministic cache policy that simulates expensive work
 class ExpensiveTask extends Task<{ n: number }, { result: number }> {
   static readonly type = "ExpensiveTask";
-  static readonly cacheable = true;
+  static readonly cachePolicy: CachePolicy = { kind: "deterministic" };
 
   static inputSchema() {
     return {
@@ -761,56 +904,33 @@ class ExpensiveTask extends Task<{ n: number }, { result: number }> {
   }
 }
 
-// Create an output cache
-const outputCache = new TaskOutputTabularRepository({
+// Build a CacheRegistry with a deterministic slot. (Private slot omitted here —
+// ExpensiveTask is deterministic, so it never needs the private tier.)
+const deterministic = new TaskOutputTabularRepository({
   tabularRepository: new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, [
     "createdAt",
   ]),
 });
 
-// Example 1: TaskGraph caching (second run is near-instant)
-const graph = new TaskGraph({ outputCache });
+const registry = new ServiceRegistry();
+registry.set(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic }));
+
+const graph = new TaskGraph();
 graph.addTask(new ExpensiveTask({ n: 42 }, { id: "exp" }));
 
 let t = Date.now();
-await graph.run();
+await graph.run({ registry, runId: "run-1" });
 const firstRunMs = Date.now() - t;
 
 t = Date.now();
-await graph.run(); // identical inputs -> served from cache
+await graph.run({ registry, runId: "run-2" }); // different run, same inputs → cache hit
 const secondRunMs = Date.now() - t;
 
 console.log({ firstRunMs, secondRunMs });
 // e.g. { firstRunMs: ~500, secondRunMs: ~1-5 }
-
-// Example 2: Direct Task caching across instances
-const missTask = new ExpensiveTask({ n: 43 }, { outputCache });
-t = Date.now();
-await missTask.run(); // cache miss -> compute and store
-const missMs = Date.now() - t;
-
-const hitTask = new ExpensiveTask({ n: 43 }, { outputCache });
-t = Date.now();
-await hitTask.run(); // cache hit -> instant
-const hitMs = Date.now() - t;
-
-console.log({ missMs, hitMs });
-// e.g. { missMs: ~500, hitMs: ~1-5 }
-
-// Example 3: Workflow with the same cache
-const workflow = new Workflow(outputCache);
-workflow.addTask(new ExpensiveTask({ n: 10 }));
-
-t = Date.now();
-await workflow.run(); // compute
-const wfFirstMs = Date.now() - t;
-
-t = Date.now();
-await workflow.run(); // cached
-const wfSecondMs = Date.now() - t;
-
-console.log({ wfFirstMs, wfSecondMs });
 ```
+
+The deterministic slot is shared across runs — that is the whole point. The private slot is per-run on read and per-run on cleanup, but the underlying storage handle is long-lived (one connection, many runs). Set up the registry once at app startup; bind it to every `.run()` call.
 
 ### Task Graph Persistence
 
