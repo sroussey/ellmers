@@ -144,7 +144,7 @@ async function fetchWithProgress(
   try {
     response = await safeFetch(url, options);
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortSignalJobError") {
+    if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
       throw err;
     }
     throw wrapFetchUrlNetworkError(url, err);
@@ -256,7 +256,7 @@ export class FetchUrlJob<
         async (progress: number) => await context.updateProgress(progress)
       );
     } catch (err) {
-      if (err instanceof AbortSignalJobError) {
+      if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
         throw err;
       }
       throw wrapFetchUrlNetworkError(input.url!, err);
