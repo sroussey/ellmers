@@ -60,20 +60,13 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
       this.inner.complete(job)
     );
   }
+  // Derive `fields` directly from IQueueStorage so future additions to
+  // finalize (e.g. visible_at for H4 markEnqueueDeferred) don't require
+  // re-listing every field here — callers using the concrete wrapper type
+  // would otherwise get excess-property errors any time the interface grew.
   finalize(
     id: unknown,
-    fields: {
-      output?: Output | null;
-      error?: string | null;
-      error_code?: string | null;
-      status?: JobStatus;
-      completed_at?: string | null;
-      abort_requested_at?: string | null;
-      lease_owner?: string | null;
-      progress?: number;
-      progress_message?: string;
-      progress_details?: Record<string, any> | null;
-    }
+    fields: Parameters<IQueueStorage<Input, Output>["finalize"]>[1]
   ): Promise<void> {
     return traced("workglow.storage.queue.finalize", this.storageName, () =>
       this.inner.finalize(id, fields)
