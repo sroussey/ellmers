@@ -76,7 +76,7 @@ describe("ImageValueSchema", () => {
     const schema = ImageValueSchema() as Record<string, unknown>;
     expect(schema.format).toBe("image");
     expect(schema.title).toBe("Image");
-    expect(schema.description).toBe("Image (hydrated to ImageValue at task entry)");
+    expect(schema.description).toBe("Image");
   });
 });
 
