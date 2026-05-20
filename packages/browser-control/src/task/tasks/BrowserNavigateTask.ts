@@ -89,7 +89,7 @@ export class BrowserNavigateTask extends Task<
   public static override title = "Browser Navigate";
   public static override description =
     "Navigates the browser to a URL and returns the page title and URL";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return browserNavigateTaskConfigSchema;

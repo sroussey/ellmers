@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import type { IExecuteContext } from "@workglow/task-graph";
 import {
   CreateWorkflow,
@@ -146,7 +147,7 @@ export class HumanApprovalTask extends Task<
   public static override title = "Human Approval";
   public static override description =
     "Pauses execution to request approval from a human (approve/deny) via MCP elicitation";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return humanApprovalConfigSchema;

@@ -86,7 +86,7 @@ export class BrowserLoginTask extends Task<
   public static override title = "Browser Login";
   public static override description =
     "Logs into a website using manual, credential, or AI-driven login strategies";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override hasDynamicEntitlements = true;
 

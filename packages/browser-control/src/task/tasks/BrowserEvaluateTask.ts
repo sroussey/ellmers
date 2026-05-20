@@ -63,7 +63,7 @@ export class BrowserEvaluateTask extends Task<
   public static override title = "Browser Evaluate";
   public static override description =
     "Evaluates a JavaScript expression in the browser page context";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return TaskConfigSchema;

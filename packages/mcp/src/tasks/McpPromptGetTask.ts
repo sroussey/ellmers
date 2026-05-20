@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import type { McpServerConfig } from "@workglow/mcp/util";
 import {
   getMcpServerConfig,
@@ -175,7 +176,7 @@ export class McpPromptGetTask extends Task<
   public static override category = "MCP";
   public static override title = "MCP Get Prompt";
   public static override description = "Gets a prompt from an MCP server";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override customizable = true;
   public static override hasDynamicSchemas = true;
   public static override hasDynamicEntitlements: boolean = true;

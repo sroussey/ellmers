@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import { IExecuteContext, Task, TaskConfig, TaskConfigSchema } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
@@ -66,7 +67,7 @@ export class BrowserNewTabTask extends Task<
   static override readonly category = "Browser";
   public static override title = "Browser New Tab";
   public static override description = "Opens a new browser tab and returns its tab ID";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return browserNewTabTaskConfigSchema;

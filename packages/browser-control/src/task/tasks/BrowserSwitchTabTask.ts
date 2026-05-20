@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import { IExecuteContext, Task, TaskConfig, TaskConfigSchema } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
@@ -61,7 +62,7 @@ export class BrowserSwitchTabTask extends Task<
   static override readonly category = "Browser";
   public static override title = "Browser Switch Tab";
   public static override description = "Switches the active browser tab to the specified tab ID";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return browserSwitchTabTaskConfigSchema;

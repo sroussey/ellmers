@@ -196,7 +196,7 @@ describe("MCP", () => {
     test("has correct static properties", () => {
       expect(McpResourceReadTask.type).toBe("McpResourceReadTask");
       expect(McpResourceReadTask.category).toBe("MCP");
-      expect(McpResourceReadTask.cacheable).toBe(false);
+      expect(McpResourceReadTask.cachePolicy.kind).toBe("none");
     });
   });
 
@@ -232,7 +232,7 @@ describe("MCP", () => {
     test("has correct static properties", () => {
       expect(McpPromptGetTask.type).toBe("McpPromptGetTask");
       expect(McpPromptGetTask.category).toBe("MCP");
-      expect(McpPromptGetTask.cacheable).toBe(false);
+      expect(McpPromptGetTask.cachePolicy.kind).toBe("none");
     });
   });
 
@@ -281,7 +281,7 @@ describe("MCP", () => {
     test("has correct static properties", () => {
       expect(McpListTask.type).toBe("McpListTask");
       expect(McpListTask.category).toBe("MCP");
-      expect(McpListTask.cacheable).toBe(false);
+      expect(McpListTask.cachePolicy.kind).toBe("none");
       expect(McpListTask.hasDynamicSchemas).toBe(true);
     });
 

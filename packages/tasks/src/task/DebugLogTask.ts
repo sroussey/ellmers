@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import { CreateWorkflow, Task, TaskConfig, TaskConfigSchema, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -86,7 +87,7 @@ export class DebugLogTask<
   public static override title = "Debug Log";
   public static override description =
     "Logs messages to the console with configurable log levels for debugging task graphs";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override passthroughInputsToOutputs = true;
   public static override customizable = true;
   public static override isPassthrough = true;
