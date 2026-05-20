@@ -15,6 +15,7 @@ const {
   WebBrowser_TextGeneration_Unified,
   sessions,
   chatHistory,
+  probe,
 } = _testOnly;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
@@ -33,15 +34,47 @@ function model(model_id: string, capabilities: readonly string[] = []): ModelRec
 // Capability inference + parity
 // --------------------------------------------------------------------------
 
-describe("WebBrowserProvider.inferCapabilities", () => {
-  const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
+/**
+ * Probe factory whose `create()` always resolves to a destroyable handle.
+ * Used to drive `WebBrowserProvider` past the conservative-pre-probe state
+ * so we can assert the post-probe inference shape.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeAcceptingProbeFactory(): any {
+  const destroy = vi.fn();
+  return {
+    create: vi.fn().mockResolvedValue({ destroy }),
+    params: vi.fn().mockResolvedValue({}),
+  };
+}
 
-  it("trusts declared capabilities", () => {
+describe("WebBrowserProvider.inferCapabilities", () => {
+  // Reset the module-level probe cache so each `new WebBrowserProvider`
+  // can drive a fresh probe with its injected factory.
+  afterEach(() => {
+    probe._resetProbeCache();
+  });
+
+  it("trusts declared capabilities (probe-independent)", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("anything", ["text.translation"]));
     expect(caps).toEqual(["text.translation"]);
   });
 
-  it("infers text-gen + json-mode + tool-use for chrome-prompt / gemini-nano", () => {
+  it("conservative pre-probe: drops json-mode and tool-use for chrome-prompt", () => {
+    // Probe is async — until it resolves, the provider must NOT advertise
+    // json-mode or tool-use, since the underlying API might not support them.
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
+    const caps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(caps).toContain("text.generation");
+    expect(caps).not.toContain("json-mode");
+    expect(caps).not.toContain("tool-use");
+  });
+
+  it("post-probe: adds json-mode + tool-use when supported", async () => {
+    const factory = makeAcceptingProbeFactory();
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS, undefined, factory);
+    await provider.ready();
     const caps = provider.inferCapabilities(model("chrome-prompt"));
     expect(caps).toContain("text.generation");
     expect(caps).toContain("json-mode");
@@ -50,27 +83,32 @@ describe("WebBrowserProvider.inferCapabilities", () => {
   });
 
   it("infers text.summary for summarizer model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-summarizer"));
     expect(caps).toContain("text.summary");
     expect(caps).not.toContain("text.generation");
   });
 
   it("infers text.rewriter for rewriter model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-rewriter"));
     expect(caps).toContain("text.rewriter");
   });
 
   it("infers text.translation for translator model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-translator"));
     expect(caps).toContain("text.translation");
   });
 
   it("infers text.language-detection for language-detector model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-language-detector"));
     expect(caps).toContain("text.language-detection");
   });
 
   it("returns baseline meta-ops for unknown ids", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("unknown-id"));
     expect(caps).toEqual(["model.search", "model.info"]);
   });
@@ -349,5 +387,94 @@ describe("WebBrowser_ChatHistory helpers", () => {
 
   it("buildInitialPromptsFromHistory returns [] for empty history", () => {
     expect(chatHistory.buildInitialPromptsFromHistory([])).toEqual([]);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Capability probe
+// --------------------------------------------------------------------------
+
+/**
+ * Fake factory whose two `create()` codepaths can be independently controlled
+ * — pass `jsonModeOk: false` to reject when `responseConstraint` is passed,
+ * `toolUseOk: false` to reject when `tools` is passed. Records the total
+ * number of `create()` invocations so we can assert coalescing behavior.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeProbeFactory(opts: { jsonModeOk: boolean; toolUseOk: boolean }): any {
+  let destroys = 0;
+  const create = vi.fn(async (options?: Record<string, unknown>) => {
+    if (options && "responseConstraint" in options && !opts.jsonModeOk) {
+      throw new Error("responseConstraint not supported");
+    }
+    if (options && "tools" in options && !opts.toolUseOk) {
+      throw new Error("tools not supported");
+    }
+    return {
+      destroy: (): void => {
+        destroys += 1;
+      },
+    };
+  });
+  return { create, params: vi.fn(), destroyCount: () => destroys };
+}
+
+describe("probeWebBrowserCapabilities", () => {
+  // Each test injects its own factory; clear the cached coalesced promise
+  // so they don't share results.
+  afterEach(() => {
+    probe._resetProbeCache();
+  });
+
+  it("both true when factory accepts both responseConstraint and tools", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: true });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: true, toolUse: true });
+  });
+
+  it("jsonMode false when factory rejects responseConstraint", async () => {
+    const f = makeProbeFactory({ jsonModeOk: false, toolUseOk: true });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: false, toolUse: true });
+  });
+
+  it("toolUse false when factory rejects tools", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: false });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: true, toolUse: false });
+  });
+
+  it("both false when factory rejects both", async () => {
+    const f = makeProbeFactory({ jsonModeOk: false, toolUseOk: false });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: false, toolUse: false });
+  });
+
+  it("coalesces concurrent calls into a single probe", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: true });
+    // Fire N concurrent probes through the public surface. They should all
+    // share the same in-flight promise and trigger at most the same set of
+    // create() calls a single probe would (one per feature, not N).
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => probe.probeWebBrowserCapabilities(f))
+    );
+    expect(results.every((r) => r.jsonMode && r.toolUse)).toBe(true);
+    // The probe issues exactly two create() calls — one for json-mode, one
+    // for tool-use. Concurrent callers must coalesce, not multiply.
+    expect(f.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("provider.ready() reflects the probe result", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: false });
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS, undefined, f);
+    // Pre-ready: conservative subset for chrome-prompt.
+    const preCaps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(preCaps).not.toContain("json-mode");
+    expect(preCaps).not.toContain("tool-use");
+    await provider.ready();
+    // Post-ready: json-mode appears, tool-use stays gated.
+    const postCaps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(postCaps).toContain("json-mode");
+    expect(postCaps).not.toContain("tool-use");
   });
 });

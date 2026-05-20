@@ -10,7 +10,13 @@ export * from "./common/WebBrowser_Constants";
 export * from "./common/WebBrowser_ModelSchema";
 export * from "./registerWebBrowser";
 
-import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
+import {
+  CONSERVATIVE_PROBED_CAPABILITIES,
+  inferWebBrowserCapabilities,
+  inferWebBrowserCapabilitiesAsync,
+  WEB_BROWSER_RUN_FN_SPECS,
+} from "./common/WebBrowser_Capabilities";
+import { _resetProbeCache, probeWebBrowserCapabilities } from "./common/WebBrowser_CapabilityProbe";
 import {
   buildInitialPromptsFromHistory,
   findLastUserIndex,
@@ -26,6 +32,8 @@ import {
   getChromeSession,
   setChromeSession,
 } from "./common/WebBrowser_Sessions";
+import { WebBrowser_StructuredGeneration } from "./common/WebBrowser_StructuredGeneration";
+import { WebBrowser_ToolCalling } from "./common/WebBrowser_ToolCalling";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 
 /**
@@ -36,6 +44,8 @@ export const _testOnly = {
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
   WebBrowser_TextGeneration_Unified,
+  WebBrowser_StructuredGeneration,
+  WebBrowser_ToolCalling,
   sessions: {
     getChromeSession,
     setChromeSession,
@@ -46,5 +56,12 @@ export const _testOnly = {
     messageText,
     findLastUserIndex,
     buildInitialPromptsFromHistory,
+  },
+  probe: {
+    probeWebBrowserCapabilities,
+    inferWebBrowserCapabilities,
+    inferWebBrowserCapabilitiesAsync,
+    CONSERVATIVE_PROBED_CAPABILITIES,
+    _resetProbeCache,
   },
 } as const;

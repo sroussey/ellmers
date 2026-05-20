@@ -12,9 +12,15 @@ import type {
 } from "@workglow/ai/worker";
 import { AiProvider } from "@workglow/ai/worker";
 import {
+  CONSERVATIVE_PROBED_CAPABILITIES,
   inferWebBrowserCapabilities,
   webBrowserWorkerRunFnSpecs,
 } from "./common/WebBrowser_Capabilities";
+import {
+  probeWebBrowserCapabilities,
+  type WebBrowserProbeFactory,
+  type WebBrowserProbedCapabilities,
+} from "./common/WebBrowser_CapabilityProbe";
 import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
 import { deleteChromeSession } from "./common/WebBrowser_Sessions";
@@ -32,6 +38,15 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly isLocal = true;
   readonly supportsBrowser = true;
 
+  /**
+   * Result of {@link probeWebBrowserCapabilities}. Until the probe resolves
+   * we report the conservative subset (no `json-mode`, no `tool-use`) so we
+   * never advertise a capability a downstream task can't fulfil. Callers
+   * that need the final answer should await {@link ready}.
+   */
+  private probedCaps: WebBrowserProbedCapabilities = CONSERVATIVE_PROBED_CAPABILITIES;
+  private readonly probeReady: Promise<void>;
+
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,13 +59,31 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
       string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>
-    >
+    >,
+    /**
+     * Test seam: injectable probe factory. Production callers leave this
+     * undefined so the probe resolves against the real `LanguageModel`
+     * global.
+     */
+    probeFactory?: WebBrowserProbeFactory
   ) {
     super(promiseRunFns, previewTasks);
+    this.probeReady = probeWebBrowserCapabilities(probeFactory).then((result) => {
+      this.probedCaps = result;
+    });
+  }
+
+  /**
+   * Resolves once the capability probe has completed. After this point
+   * {@link inferCapabilities} reflects what the browser actually supports.
+   * Before this point it returns the conservative subset.
+   */
+  ready(): Promise<void> {
+    return this.probeReady;
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
-    return inferWebBrowserCapabilities(model);
+    return inferWebBrowserCapabilities(model, this.probedCaps);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
