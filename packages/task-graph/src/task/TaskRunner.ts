@@ -12,7 +12,7 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache";
+import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import type { CacheRegistry } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
@@ -228,7 +228,12 @@ export class TaskRunner<
         // task does not write directly into the shared private repo (which
         // would collide across callers). Warn once per task type so the
         // configuration mistake surfaces without flooding the log.
-        if (policy.kind === "private" && !this.runId && this.cacheRegistry?.private !== undefined) {
+        if (
+          policy.kind === "private" &&
+          !this.runId &&
+          this.cacheRegistry?.private !== undefined &&
+          !(this.cacheRegistry.private instanceof RunPrivateCacheRepo)
+        ) {
           const taskType = this.task.type;
           if (!TaskRunner.__privateWithoutRunIdWarned.has(taskType)) {
             TaskRunner.__privateWithoutRunIdWarned.add(taskType);

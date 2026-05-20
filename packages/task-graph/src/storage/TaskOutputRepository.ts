@@ -169,4 +169,18 @@ export abstract class TaskOutputRepository {
       `${this.constructor.name}: clearOlderThanWithTaskTypePrefix is not supported by this repository.`
     );
   }
+
+  /**
+   * Count entries whose `taskType` starts with `prefix`. Used by
+   * `RunPrivateCacheRepo.size()` so the wrapper's count reflects only its own
+   * namespaced view rather than the entire backing store.
+   *
+   * Default implementation throws — backing repositories that support run-private
+   * caching MUST override this.
+   */
+  async sizeByTaskTypePrefix(_prefix: string): Promise<number> {
+    throw new Error(
+      `${this.constructor.name}: sizeByTaskTypePrefix is not supported by this repository.`
+    );
+  }
 }

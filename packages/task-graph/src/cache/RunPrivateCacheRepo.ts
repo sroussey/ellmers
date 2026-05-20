@@ -68,12 +68,25 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     await this.backing.deleteByTaskTypePrefix(`__run:${this.runId}::`);
   }
 
+  /**
+   * Returns the count of entries namespaced under THIS wrapper's `runId`.
+   * Consistent with `saveOutput`/`getOutput`/`clear()` being run-scoped.
+   */
   public async size(): Promise<number> {
-    return this.backing.size();
+    return this.backing.sizeByTaskTypePrefix(`__run:${this.runId}::`);
   }
 
+  /**
+   * Override of `TaskOutputRepository.clearOlderThan()` scoped to THIS
+   * wrapper's `runId`. Without the scope override, the wrapper would
+   * accidentally prune the entire backing store (including deterministic
+   * cache entries and other runs' private rows).
+   */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.clearOlderThan(olderThanInMs);
+    await this.backing.clearOlderThanWithTaskTypePrefix(
+      `__run:${this.runId}::`,
+      olderThanInMs
+    );
   }
 
   public isDurable(): boolean {

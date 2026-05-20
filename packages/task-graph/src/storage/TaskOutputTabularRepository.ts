@@ -214,4 +214,21 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
       }
     }
   }
+
+  /**
+   * Counts entries whose `taskType` starts with the given prefix.
+   * Used by {@link RunPrivateCacheRepo.size} so the wrapper's count reflects
+   * only its own namespaced view.
+   *
+   * @param prefix - The taskType prefix to match (e.g. `__run:my-run::`)
+   */
+  override async sizeByTaskTypePrefix(prefix: string): Promise<number> {
+    let count = 0;
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        count++;
+      }
+    }
+    return count;
+  }
 }
