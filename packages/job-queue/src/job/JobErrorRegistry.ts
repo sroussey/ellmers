@@ -95,10 +95,35 @@ export function unregisterErrorCodeReconstructor(prefix: string): boolean {
 }
 
 /**
- * Clear all registered reconstructors. Intended for test hygiene — call in
- * `afterEach` so one test's registrations cannot leak into another.
- * Production code should not call this.
+ * Clear all registered reconstructors. TEST-ONLY: this permanently wipes the
+ * global table for the current worker, including registrations made by
+ * sibling test files via ESM module-load side effects (those can't re-run
+ * because ESM caches modules). For tests that share a worker with code that
+ * relies on side-effect registrations, prefer
+ * {@link snapshotErrorCodeReconstructors} +
+ * {@link restoreErrorCodeReconstructors}. Production code should not call this.
  */
 export function clearErrorCodeReconstructors(): void {
   reconstructors.length = 0;
+}
+
+/**
+ * Snapshot the current registry as a defensive copy. Pair with
+ * {@link restoreErrorCodeReconstructors} in `beforeEach`/`afterEach` so test
+ * mutations don't bleed across files in the same Vitest worker.
+ */
+export function snapshotErrorCodeReconstructors(): RegistryEntry[] {
+  return reconstructors.map((e) => ({ prefix: e.prefix, reconstructor: e.reconstructor }));
+}
+
+/**
+ * Replace the registry contents with the given snapshot (in order). Intended
+ * to be used with the value returned from {@link snapshotErrorCodeReconstructors}.
+ * Mutating the snapshot after passing it in does not affect the registry.
+ */
+export function restoreErrorCodeReconstructors(snapshot: readonly RegistryEntry[]): void {
+  reconstructors.length = 0;
+  for (const entry of snapshot) {
+    reconstructors.push({ prefix: entry.prefix, reconstructor: entry.reconstructor });
+  }
 }

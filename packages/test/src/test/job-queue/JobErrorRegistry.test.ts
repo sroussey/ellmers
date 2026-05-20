@@ -16,7 +16,9 @@ import {
   lookupErrorCodeReconstructor,
   PermanentJobError,
   registerErrorCodeReconstructor,
+  restoreErrorCodeReconstructors,
   RetryableJobError,
+  snapshotErrorCodeReconstructors,
   unregisterErrorCodeReconstructor,
   type IJobExecuteContext,
 } from "@workglow/job-queue";
@@ -46,13 +48,19 @@ class BarError extends RetryableJobError {
 // ---------------------------------------------------------------------------
 
 describe("JobErrorRegistry", () => {
-  // Capture and restore the registry around each test so we never leak global
-  // state between tests in this file or to neighboring test files.
+  // Snapshot the registry before each test and restore after, so registrations
+  // made by neighboring test files (e.g. `FetchTask.test.ts` registering
+  // FETCH_* via ESM import side-effects) survive this file's mutations. A
+  // plain `clear()` would permanently wipe those for the rest of the worker,
+  // because ESM module caches mean the registration code only runs once.
+  let registrySnapshot: ReturnType<typeof snapshotErrorCodeReconstructors>;
   beforeEach(() => {
+    registrySnapshot = snapshotErrorCodeReconstructors();
+    // Start each test from a clean slate so prefix assertions are unambiguous.
     clearErrorCodeReconstructors();
   });
   afterEach(() => {
-    clearErrorCodeReconstructors();
+    restoreErrorCodeReconstructors(registrySnapshot);
   });
 
   test("client reconstructs registered prefix as the registered error class", () => {
