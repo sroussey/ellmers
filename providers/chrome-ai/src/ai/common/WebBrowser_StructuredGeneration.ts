@@ -9,6 +9,9 @@ import type {
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
+import { PermanentJobError } from "@workglow/job-queue";
+import type { JsonSchema, SchemaNode } from "@workglow/util/schema";
+import { compileSchema } from "@workglow/util/schema";
 import { parsePartialJson } from "@workglow/util/worker";
 
 import { createDownloadMonitor, ensureAvailable, getApi } from "./WebBrowser_ChromeHelpers";
@@ -72,10 +75,22 @@ function canonicalStringify(value: unknown): string {
  * ## Session reuse
  *
  * When `sessionId` is provided we cache the underlying `LanguageModel`
- * keyed by it, mirroring `WebBrowser_Chat`. Reuse is gated on schema
- * fingerprint: Chrome's `responseConstraint` state is bound to whatever
- * schema was first prompted, so mixing schemas on a reused session is
- * undefined behavior and forces a rebuild.
+ * keyed by it, mirroring `WebBrowser_Chat`. Reuse is gated on:
+ *  - watermark match: `messageCount` of the cached entry equals the
+ *    pre-turn message count (0 for the first turn).
+ *  - schema match: same `schemaFingerprint` (Chrome's `responseConstraint`
+ *    state is bound to whatever schema was first prompted; mixing schemas
+ *    on a reused session is undefined behavior, so we rebuild).
+ *
+ * ## Validation
+ *
+ * Chrome's `responseConstraint` is best-effort, not a hard guarantee.
+ * After streaming we validate both that the final accumulated text parses
+ * as JSON *and* that the parsed object satisfies `outputSchema`. Failures
+ * raise {@link PermanentJobError} — `StructuredGenerationTask` runs us
+ * inside a retry loop that catches per-attempt errors, so throwing here
+ * is the correct way to mark this attempt failed without misleading
+ * downstream consumers with a `finish` carrying garbage.
  */
 export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
@@ -90,7 +105,18 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
 
   const schema = (input.outputSchema ?? outputSchema) as object | undefined;
   if (!schema) {
-    throw new Error("WebBrowser_StructuredGeneration: outputSchema is required");
+    throw new PermanentJobError("WebBrowser_StructuredGeneration: outputSchema is required");
+  }
+
+  // Compile validator up-front so a bad schema fails fast (cheap, ahead of
+  // any provider work). Re-thrown as PermanentJobError so the surrounding
+  // retry loop doesn't waste attempts on a malformed schema.
+  let validator: SchemaNode;
+  try {
+    validator = compileSchema(schema as JsonSchema);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new PermanentJobError(`WebBrowser_StructuredGeneration: invalid outputSchema — ${msg}`);
   }
 
   const fingerprint = schemaFingerprint(schema);
@@ -154,11 +180,27 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
       reader.releaseLock();
     }
 
+    // Validate the *final* output. `responseConstraint` is best-effort on
+    // Chrome — if the model produces an unparseable continuation or a
+    // shape mismatch, we surface a permanent (per-attempt) error rather
+    // than fabricate a `{}` result that downstream code can't distinguish
+    // from a legitimate empty object.
     let finalObject: Record<string, unknown>;
     try {
       finalObject = JSON.parse(accumulatedJson) as Record<string, unknown>;
     } catch {
-      finalObject = (parsePartialJson(accumulatedJson) ?? {}) as Record<string, unknown>;
+      const partial = parsePartialJson(accumulatedJson);
+      if (partial === undefined) {
+        throw new PermanentJobError("Chrome AI returned unparseable JSON");
+      }
+      finalObject = partial as Record<string, unknown>;
+    }
+
+    const validation = validator.validate(finalObject);
+    if (!validation.valid) {
+      const firstError = validation.errors[0];
+      const detail = firstError?.message ?? "unknown validation error";
+      throw new PermanentJobError(`Chrome AI output failed schema validation: ${detail}`);
     }
 
     if (sessionId !== undefined) {

@@ -642,6 +642,144 @@ describe("WebBrowser_StructuredGeneration session cache", () => {
   });
 });
 
+describe("WebBrowser_StructuredGeneration cache poisoning", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+  const sid = "sg-poison-1";
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("drops the cache entry when a follow-up turn throws on parse failure", async () => {
+    // First call seeds a cache with parseable output; second call streams
+    // garbage so JSON.parse and parsePartialJson both fail. The run-fn
+    // must throw and clear the cache entry so the next attempt rebuilds.
+    let seq = 0;
+    const seqText = (): string => {
+      seq += 1;
+      return seq === 1 ? '{"x":1}' : "not json {";
+    };
+    const { factory } = makeFakeLanguageModel(seqText);
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p2", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema,
+          sid
+        )
+      ).rejects.toThrow(/unparseable|validation/i);
+      // Entry is dropped after the failed turn.
+      expect(sessions.getChromeSession(sid)).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// StructuredGeneration final-JSON validation (H4)
+// --------------------------------------------------------------------------
+
+describe("WebBrowser_StructuredGeneration validation", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+
+  it("emits finish on valid JSON that satisfies the schema", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema
+      );
+      const finish = events.find((e) => (e as { type?: string }).type === "finish") as
+        | { data: { object: { x: number } } }
+        | undefined;
+      expect(finish).toBeDefined();
+      expect(finish?.data.object).toEqual({ x: 1 });
+    } finally {
+      restore();
+    }
+  });
+
+  it("throws PermanentJobError on unparseable JSON, no finish emitted", async () => {
+    const { factory } = makeFakeLanguageModel("definitely not json");
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema
+        )
+      ).rejects.toThrow(/unparseable/i);
+      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("throws PermanentJobError when parsed object fails schema validation", async () => {
+    // Parses fine but `x` is a string, not a number — fails the schema.
+    const { factory } = makeFakeLanguageModel('{"x":"oops"}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema
+        )
+      ).rejects.toThrow(/schema validation/i);
+      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});
+
 // --------------------------------------------------------------------------
 // ToolCalling session cache (H2)
 // --------------------------------------------------------------------------
