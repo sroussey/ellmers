@@ -11,6 +11,7 @@ import type {
   ServiceRegistry,
 } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import type { CachePolicy } from "../cache/CachePolicy";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ITaskGraph } from "../task-graph/ITaskGraph";
 import { IWorkflow } from "../task-graph/IWorkflow";
@@ -27,7 +28,6 @@ import type {
 } from "./TaskEvents";
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
 import { TaskRunner } from "./TaskRunner";
-import type { CachePolicy } from "../cache/CachePolicy";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 /**

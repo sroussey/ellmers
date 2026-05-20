@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import {
   Entitlements,
   IExecuteContext,
@@ -15,7 +16,6 @@ import {
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
-import type { CachePolicy } from "@workglow/task-graph";
 
 const browserLoginTaskConfigSchema = {
   type: "object",

@@ -25,9 +25,7 @@ export interface CacheRegistry {
   private?: TaskOutputRepository;
 }
 
-export const CACHE_REGISTRY = createServiceToken<CacheRegistry>(
-  "taskgraph.cacheRegistry"
-);
+export const CACHE_REGISTRY = createServiceToken<CacheRegistry>("taskgraph.cacheRegistry");
 
 export class DefaultCacheRegistry implements CacheRegistry {
   public deterministic?: TaskOutputRepository;

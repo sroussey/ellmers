@@ -4,15 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import {
-  Task,
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
-  type CachePolicy,
-} from "@workglow/task-graph";
+import { CACHE_REGISTRY, DefaultCacheRegistry, Task, type CachePolicy } from "@workglow/task-graph";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class CountingTask extends Task<{ q: string }, { r: string }> {

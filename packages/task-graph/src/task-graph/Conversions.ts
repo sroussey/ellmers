@@ -5,10 +5,10 @@
  */
 
 import type { DataPortSchema } from "@workglow/util/schema";
+import type { CachePolicy } from "../cache/CachePolicy";
 import { GraphAsTask } from "../task/GraphAsTask";
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
-import type { CachePolicy } from "../cache/CachePolicy";
 import type { DataPorts } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { ITaskGraph } from "./ITaskGraph";

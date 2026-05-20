@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { Task } from "@workglow/task-graph";
 import { getLogger, setLogger } from "@workglow/util";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("legacy static cacheable deprecation", () => {
   let originalLogger: ReturnType<typeof getLogger>;

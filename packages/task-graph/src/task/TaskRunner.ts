@@ -12,8 +12,8 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import type { CacheRegistry } from "../cache";
+import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
@@ -247,7 +247,9 @@ export class TaskRunner<
           policy = { kind: "none" };
         }
 
-        this.currentCtx?.telemetrySpan?.setAttributes({ "workglow.task.cache_policy": policy.kind });
+        this.currentCtx?.telemetrySpan?.setAttributes({
+          "workglow.task.cache_policy": policy.kind,
+        });
 
         const keyInputs = await this.cacheCoordinator.buildKeyForPolicy(
           inputs,

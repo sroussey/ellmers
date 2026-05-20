@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { type IExecuteContext, type IExecutePreviewContext, type CachePolicy } from "@workglow/task-graph";
+import {
+  type CachePolicy,
+  type IExecuteContext,
+  type IExecutePreviewContext,
+} from "@workglow/task-graph";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "@workglow/tasks";
 import {
   CpuImage,

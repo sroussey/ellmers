@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -83,10 +83,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * cache entries and other runs' private rows).
    */
   public async clearOlderThan(olderThanInMs: number): Promise<void> {
-    await this.backing.clearOlderThanWithTaskTypePrefix(
-      `__run:${this.runId}::`,
-      olderThanInMs
-    );
+    await this.backing.clearOlderThanWithTaskTypePrefix(`__run:${this.runId}::`, olderThanInMs);
   }
 
   public isDurable(): boolean {

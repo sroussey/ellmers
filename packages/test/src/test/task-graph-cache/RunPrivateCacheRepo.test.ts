@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, beforeEach } from "vitest";
 import { RunPrivateCacheRepo } from "@workglow/task-graph";
+import { beforeEach, describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("RunPrivateCacheRepo", () => {

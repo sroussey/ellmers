@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { CacheCoordinator, Task } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-import { Task, CacheCoordinator } from "@workglow/task-graph";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("CacheCoordinator key with version", () => {

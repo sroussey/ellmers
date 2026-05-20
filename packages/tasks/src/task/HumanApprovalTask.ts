@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
-import type { IExecuteContext } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Task,

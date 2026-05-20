@@ -4,13 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import {
-  CACHE_REGISTRY,
-  type CacheRegistry,
-  DefaultCacheRegistry,
-} from "@workglow/task-graph";
+import { CACHE_REGISTRY, type CacheRegistry, DefaultCacheRegistry } from "@workglow/task-graph";
 import { ServiceRegistry } from "@workglow/util";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("CacheRegistry", () => {

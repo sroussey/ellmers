@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { AiImageOutputTask } from "@workglow/ai";
 import type { ModelConfig } from "@workglow/ai";
+import { AiImageOutputTask } from "@workglow/ai";
+import { describe, expect, it } from "vitest";
 
 // Minimal concrete subclass — AiImageOutputTask needs inputSchema/outputSchema
 // to be fully constructable, same pattern as AiImageOutputTask.test.ts.

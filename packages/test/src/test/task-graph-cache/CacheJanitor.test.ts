@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import { CacheJanitor } from "@workglow/task-graph";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 describe("CacheJanitor", () => {
@@ -31,9 +31,19 @@ describe("CacheJanitor", () => {
 
     const now = Date.now();
     // Shared (deterministic) entry with no run prefix — old but should not be swept.
-    await backing.saveOutput("SharedTaskType", { x: 1 }, { ok: "shared" }, new Date(now - 30 * 24 * 3600_000));
+    await backing.saveOutput(
+      "SharedTaskType",
+      { x: 1 },
+      { ok: "shared" },
+      new Date(now - 30 * 24 * 3600_000)
+    );
     // Run-private entry — old, should be swept.
-    await backing.saveOutput("__run:rX::T", { x: 1 }, { ok: "private" }, new Date(now - 30 * 24 * 3600_000));
+    await backing.saveOutput(
+      "__run:rX::T",
+      { x: 1 },
+      { ok: "private" },
+      new Date(now - 30 * 24 * 3600_000)
+    );
 
     const janitor = new CacheJanitor({ privateBacking: backing });
     await janitor.sweepStaleRunPrivate(7 * 24 * 3600_000);

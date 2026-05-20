@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Task, type CachePolicy, isPolicyCached, isPolicyPrivate } from "@workglow/task-graph";
+import { isPolicyCached, isPolicyPrivate, Task, type CachePolicy } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
 
 describe("CachePolicy", () => {

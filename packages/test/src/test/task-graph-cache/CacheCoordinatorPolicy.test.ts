@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
-  Task,
   CacheCoordinator,
   DefaultCacheRegistry,
+  Task,
   type CachePolicy,
 } from "@workglow/task-graph";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class T extends Task {

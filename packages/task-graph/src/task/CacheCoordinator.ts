@@ -5,8 +5,8 @@
  */
 
 import { getPortCodec } from "@workglow/util";
-import type { CacheRegistry } from "../cache/CacheRegistry";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
+import type { CacheRegistry } from "../cache/CacheRegistry";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";

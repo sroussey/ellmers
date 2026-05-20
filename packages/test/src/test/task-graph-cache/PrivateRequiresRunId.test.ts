@@ -164,10 +164,7 @@ describe("private cache policy requires a runId", () => {
     const preNamespaced = new RunPrivateCacheRepo({ backing: rawBacking, runId });
 
     const services = new ServiceRegistry(new Container());
-    services.registerInstance(
-      CACHE_REGISTRY,
-      new DefaultCacheRegistry({ private: preNamespaced })
-    );
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: preNamespaced }));
 
     // Run with no runId in config — bypass should engage because private slot
     // IS already a RunPrivateCacheRepo, so no downgrade + no warning.

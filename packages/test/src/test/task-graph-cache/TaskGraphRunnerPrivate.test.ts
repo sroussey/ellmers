@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
-  Task,
-  TaskGraph,
   CACHE_REGISTRY,
   DefaultCacheRegistry,
   RunPrivateCacheRepo,
+  Task,
+  TaskGraph,
   type CachePolicy,
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class FlakyTask extends Task<{ q: string }, { r: string }> {
@@ -79,7 +79,11 @@ describe("TaskGraphRunner with run-private cache", () => {
     // The cache key includes `__cv` (cache version = "1" for FlakyTask which
     // inherits Task.version = 1 and declares no override).
     const wrappedForSeeding = new RunPrivateCacheRepo({ backing, runId });
-    await wrappedForSeeding.saveOutput(FlakyTask.type, { q: "hello", __cv: "1" }, { r: "done:hello" });
+    await wrappedForSeeding.saveOutput(
+      FlakyTask.type,
+      { q: "hello", __cv: "1" },
+      { r: "done:hello" }
+    );
 
     const services = freshServices(backing);
 

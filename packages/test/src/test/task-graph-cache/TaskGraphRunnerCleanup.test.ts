@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
 import {
+  CACHE_REGISTRY,
+  Dataflow,
+  DefaultCacheRegistry,
   Task,
   TaskGraph,
-  Dataflow,
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
   type CachePolicy,
 } from "@workglow/task-graph";
 import { Container, ResourceScope, ServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 
 class PrivTask extends Task<{ q: string }, { r: string }> {

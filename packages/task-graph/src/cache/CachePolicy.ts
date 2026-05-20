@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type CachePolicy =
-  | { kind: "deterministic" }
-  | { kind: "private" }
-  | { kind: "none" };
+export type CachePolicy = { kind: "deterministic" } | { kind: "private" } | { kind: "none" };
 
 export const DEFAULT_CACHE_POLICY: CachePolicy = { kind: "deterministic" };
 

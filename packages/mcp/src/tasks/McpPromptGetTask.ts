@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CachePolicy } from "@workglow/task-graph";
 import type { McpServerConfig } from "@workglow/mcp/util";
 import {
   getMcpServerConfig,
@@ -12,7 +11,7 @@ import {
   getMcpTaskDeps,
   TypeMcpServer,
 } from "@workglow/mcp/util";
-import type { TaskEntitlements } from "@workglow/task-graph";
+import type { CachePolicy, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,

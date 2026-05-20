@@ -203,7 +203,10 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
    * @param prefix - The taskType prefix to match (e.g. `__run:`)
    * @param olderThanInMs - Age threshold in milliseconds; rows older than this are deleted
    */
-  override async clearOlderThanWithTaskTypePrefix(prefix: string, olderThanInMs: number): Promise<void> {
+  override async clearOlderThanWithTaskTypePrefix(
+    prefix: string,
+    olderThanInMs: number
+  ): Promise<void> {
     const cutoff = Date.now() - olderThanInMs;
     for await (const row of this.tabularRepository.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
