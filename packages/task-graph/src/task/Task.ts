@@ -1151,12 +1151,6 @@ export class Task<
       base.config = config;
     }
 
-    // Include entitlements if present
-    const taskEntitlements = this.entitlements();
-    if (taskEntitlements.entitlements.length > 0) {
-      base.entitlements = taskEntitlements;
-    }
-
     return this.stripSymbols(base) as TaskGraphItemJson;
   }
 
