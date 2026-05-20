@@ -261,14 +261,16 @@ export class TaskGraphRunner {
 
       await this.handleComplete();
 
-      // Fire-and-forget: clear run-private cache entries so disk doesn't
-      // accumulate rows for completed runs. Must not block the caller.
+      // Await cleanup of run-private cache entries so that a same-runId restart
+      // immediately after this call cannot race against deletions.
       const runPrivateToClean = this.currentRunPrivate;
       this.currentRunPrivate = undefined;
       if (runPrivateToClean) {
-        void runPrivateToClean.clearRun().catch((e) => {
+        try {
+          await runPrivateToClean.clearRun();
+        } catch (e) {
           getLogger().warn("RunPrivateCacheRepo.clearRun failed", e);
-        });
+        }
       }
 
       return this.filterLeafResults(results);
