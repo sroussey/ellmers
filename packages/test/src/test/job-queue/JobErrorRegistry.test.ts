@@ -166,6 +166,69 @@ describe("JobErrorRegistry", () => {
     expect(client.buildErrorFromCodePublic("m", "ABC_DEF_GHI")).toBeInstanceOf(FooError);
   });
 
+  test("registered 'P' prefix does not intercept PermanentJobError built-in", () => {
+    // A short prefix that would naively `startsWith`-match the built-in
+    // `PermanentJobError` code. The client must dispatch built-ins first so
+    // the registered reconstructor is never consulted for them.
+    let reconstructorCalls = 0;
+    registerErrorCodeReconstructor("P", (errorCode, message) => {
+      reconstructorCalls += 1;
+      const err = new FooError(message);
+      err.code = errorCode;
+      return err;
+    });
+
+    const client = new TestableClient<unknown, unknown>({
+      storage: new InMemoryQueueStorage("q"),
+      queueName: "q",
+    });
+
+    const err = client.buildErrorFromCodePublic("boom", "PermanentJobError");
+    expect(err).toBeInstanceOf(PermanentJobError);
+    expect(err).not.toBeInstanceOf(FooError);
+    expect(reconstructorCalls).toBe(0);
+  });
+
+  test("reconstructor that throws falls through to JobError with code preserved", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      registerErrorCodeReconstructor("BOOM_", () => {
+        throw new Error("reconstructor exploded");
+      });
+
+      const client = new TestableClient<unknown, unknown>({
+        storage: new InMemoryQueueStorage("q"),
+        queueName: "q",
+      });
+
+      const err = client.buildErrorFromCodePublic("boom-msg", "BOOM_OOPS");
+      // Generic JobError (not any subclass) with code preserved.
+      expect(err).toBeInstanceOf(JobError);
+      expect(err).not.toBeInstanceOf(PermanentJobError);
+      expect(err).not.toBeInstanceOf(RetryableJobError);
+      expect(err.code).toBe("BOOM_OOPS");
+      expect(err.message).toBe("boom-msg");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("reconstructor that returns error without code has code injected", () => {
+    registerErrorCodeReconstructor("NOCODE_", (_errorCode, message) => {
+      // Buggy implementation — forgets to set err.code.
+      return new FooError(message);
+    });
+
+    const client = new TestableClient<unknown, unknown>({
+      storage: new InMemoryQueueStorage("q"),
+      queueName: "q",
+    });
+
+    const err = client.buildErrorFromCodePublic("oops", "NOCODE_BAD");
+    expect(err).toBeInstanceOf(FooError);
+    expect(err.code).toBe("NOCODE_BAD");
+  });
+
   test("end-to-end: queued job rejection propagates the reconstructed error class", async () => {
     const queueName = "registry-roundtrip-q";
     registerErrorCodeReconstructor("CUSTOM_", (errorCode, message) => {

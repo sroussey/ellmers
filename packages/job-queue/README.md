@@ -414,12 +414,23 @@ Contract:
   if a second registration overwrites the first).
 - **Reconstructors MUST NOT throw.** Return a fallback `PermanentJobError`
   with `code` set when you receive an unknown future code sharing your prefix —
-  this keeps older clients forward-compatible with newer workers.
-- Built-in codes (`PermanentJobError`, `RetryableJobError`, `AbortSignalJobError`,
-  `JobDisabledError`) are handled by the client directly and do not need to be
-  registered.
-- Use `clearErrorCodeReconstructors()` / `unregisterErrorCodeReconstructor()`
-  in tests to keep the global table clean between cases.
+  this keeps older clients forward-compatible with newer workers. If a
+  reconstructor does throw, the client logs a warning and falls through to a
+  generic `JobError` with `code` set to the persisted code.
+- **Built-in codes take precedence over registered reconstructors.**
+  `PermanentJobError`, `RetryableJobError`, `AbortSignalJobError`, and
+  `JobDisabledError` are handled by the client directly — a registered prefix
+  that happens to match (e.g. `"P"` against `PermanentJobError`) will *not*
+  intercept them. Do not register reconstructors for these names.
+- **Reconstructors MUST set `code` to the passed `errorCode`.** The client
+  defensively overrides any mismatch (and warns) so downstream branching on
+  `err.code` is reliable.
+- For test hygiene, prefer `snapshotErrorCodeReconstructors()` +
+  `restoreErrorCodeReconstructors(snapshot)` in `beforeEach`/`afterEach` so
+  registrations made by neighboring test files (via ESM import side-effects)
+  are not destroyed for the rest of the worker. `clearErrorCodeReconstructors()`
+  and `unregisterErrorCodeReconstructor()` remain available but permanently
+  clear the table for the current worker.
 
 ### Event Listeners
 
