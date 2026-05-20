@@ -137,5 +137,38 @@ export function sqliteQueueMigrations(
         `);
       },
     },
+    {
+      component,
+      version: 5,
+      description:
+        "Converge idx_<table>_fingerprint_active to UNIQUE for DBs that applied the pre-edit v4 (non-unique) variant",
+      up(db: Sqlite.Database) {
+        // Mirror of the Postgres v5: the migration runner keys on
+        // (component, version), so a DB that already recorded the pre-edit
+        // (non-unique) v4 will never re-run v4. v5 inspects the existing
+        // index DDL via sqlite_master and rewrites it as UNIQUE if needed.
+        const indexName = `idx_${tableName}_fingerprint_active`;
+        const row = db
+          .prepare<
+            [string],
+            { sql: string | null }
+          >(`SELECT sql FROM sqlite_master WHERE type='index' AND name=?`)
+          .get(indexName);
+        // Already UNIQUE — DB applied the post-edit v4 (or this v5 ran
+        // previously). No-op.
+        if (row && row.sql != null && /CREATE\s+UNIQUE\s+INDEX/i.test(row.sql)) {
+          return;
+        }
+        // Either missing entirely or the pre-edit non-unique variant. Drop
+        // and recreate as UNIQUE under the same canonical name (consumers
+        // grep for it).
+        db.exec(`
+          DROP INDEX IF EXISTS ${indexName};
+          CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING');
+        `);
+      },
+    },
   ];
 }
