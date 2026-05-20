@@ -420,7 +420,11 @@ export class JobQueueWorker<
   public async processClaims(
     claims: readonly IClaim<JobStorageFormat<Input, Output>>[]
   ): Promise<void> {
-    await this.processClaimsInternal(claims);
+    // Public callers (push-only transports like Cloudflare Queues' queue()
+    // handler) MUST observe full settlement before returning so the runtime
+    // doesn't redeliver still-in-flight claims. Pass awaitAll=true to block
+    // until every dispatched job's processSingleJob promise settles.
+    await this.processClaimsInternal(claims, true);
   }
 
   /**
@@ -429,12 +433,21 @@ export class JobQueueWorker<
    * {@link processClaims}; the loop calls this directly so it can detect
    * the "limiter full for every claim" case without racing the async
    * lifetime of {@link processSingleJob}.
+   *
+   * @param awaitAll - When true, wait for every dispatched processSingleJob
+   *   to settle before resolving. The polling-loop caller passes false because
+   *   it intentionally fires jobs in the background and reschedules on the
+   *   next loop iteration; the public {@link processClaims} caller passes
+   *   true to satisfy the "settle every claim before resolving" contract
+   *   that push-only transports depend on.
    */
   private async processClaimsInternal(
-    claims: readonly IClaim<JobStorageFormat<Input, Output>>[]
+    claims: readonly IClaim<JobStorageFormat<Input, Output>>[],
+    awaitAll: boolean = false
   ): Promise<{ dispatched: number; limiterFull: boolean }> {
     let dispatched = 0;
     let limiterFull = false;
+    const inflight: Promise<void>[] = [];
 
     for (const claim of claims) {
       const job = this.storageToClass(claim.body) as QueueJob;
@@ -468,11 +481,19 @@ export class JobQueueWorker<
         continue;
       }
 
-      // Don't await - process in background to allow concurrent jobs.
-      // processSingleJob owns the terminal ack/fail/retry for this claim and
-      // its own error handling, so a throw here does not abort siblings.
-      this.processSingleJob(job, limiterToken);
+      // Dispatch in background to allow concurrent jobs. processSingleJob owns
+      // the terminal ack/fail/retry for this claim and its own error handling,
+      // so a throw here does not abort siblings. We capture every dispatched
+      // promise (with a swallowing .catch so Promise.allSettled is purely
+      // formalism) so the awaitAll branch can block on settlement.
+      inflight.push(this.processSingleJob(job, limiterToken).catch(() => {}));
       dispatched++;
+    }
+
+    if (awaitAll && inflight.length > 0) {
+      // Wait for every dispatched job to settle before returning. Required by
+      // public callers driving push-only transports — see processClaims doc.
+      await Promise.allSettled(inflight);
     }
 
     return { dispatched, limiterFull };

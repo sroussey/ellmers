@@ -83,7 +83,7 @@ describe("JobQueueWorker.processClaims", () => {
     await storage.deleteAll();
   });
 
-  it("settles every claim on the ack path (3 jobs -> all COMPLETED)", async () => {
+  it("settles every claim on the ack path (3 jobs -> all COMPLETED, synchronously after await)", async () => {
     const { worker, messageQueue } = buildWorker(queueName, storage);
 
     const ids: unknown[] = [];
@@ -103,20 +103,59 @@ describe("JobQueueWorker.processClaims", () => {
     });
     expect(claims).toHaveLength(3);
 
+    // C1: processClaims must block until every dispatched job has settled. No
+    // waitFor() polling needed — the await resolves only after all three
+    // processSingleJob promises have terminated.
     await worker.processClaims(claims as readonly IClaim<any>[]);
-
-    await waitFor(async () => {
-      for (const id of ids) {
-        const j = await storage.get(id);
-        if (j?.status !== JobStatus.COMPLETED) return false;
-      }
-      return true;
-    });
 
     for (const id of ids) {
       const j = await storage.get(id);
       expect(j?.status).toBe(JobStatus.COMPLETED);
     }
+  });
+
+  it("blocks for the full handler duration (await sleep(200) inside execute)", async () => {
+    class SlowJob extends Job<TI, TO> {
+      public override async execute(input: TI, _ctx: IJobExecuteContext): Promise<TO> {
+        await sleep(200);
+        return { result: `slow:${input.data ?? ""}` };
+      }
+    }
+    const wrapped = wrapQueueStorage<TI, TO>(storage as any);
+    const worker = new JobQueueWorker<TI, TO, SlowJob>(SlowJob, {
+      messageQueue: wrapped.messageQueue,
+      jobStore: wrapped.jobStore,
+      queueName,
+      pollIntervalMs: 50,
+      stopTimeoutMs: 0,
+      leaseMs: 30_000,
+      prefetch: 1,
+    });
+    (worker as unknown as { running: boolean }).running = true;
+
+    const id = await storage.add({
+      input: { data: "slow" },
+      visible_at: null,
+      completed_at: null,
+    });
+
+    const claims = await wrapped.messageQueue.receive({
+      workerId: worker.workerId,
+      leaseMs: 30_000,
+      max: 5,
+    });
+    expect(claims).toHaveLength(1);
+
+    const t0 = Date.now();
+    await worker.processClaims(claims as readonly IClaim<any>[]);
+    const elapsed = Date.now() - t0;
+
+    // Must have waited for the 200ms handler. Allow some slack on slow CI but
+    // require enough that the test fails if processClaims fire-and-forgets.
+    expect(elapsed).toBeGreaterThanOrEqual(180);
+    const j = await storage.get(id);
+    expect(j?.status).toBe(JobStatus.COMPLETED);
+    expect(j?.output).toMatchObject({ result: "slow:slow" });
   });
 
   it("settles via fail when the handler throws (job ends FAILED with maxAttempts=1)", async () => {
