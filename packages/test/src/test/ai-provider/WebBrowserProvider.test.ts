@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChatMessage, ModelRecord } from "@workglow/ai";
+import type {
+  ChatMessage,
+  ModelRecord,
+  StructuredGenerationTaskInput,
+  ToolCallingTaskInput,
+  ToolDefinition,
+} from "@workglow/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,9 +19,20 @@ const {
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
   WebBrowser_TextGeneration_Unified,
+  WebBrowser_StructuredGeneration,
+  WebBrowser_ToolCalling,
   sessions,
   chatHistory,
+  probe,
 } = _testOnly;
+
+/**
+ * Test-time helpers: the chrome-ai run-fns we test take strongly-typed task
+ * inputs requiring a `model` field that's irrelevant to provider-level
+ * tests (the dispatcher fills it in upstream). We coerce that away here.
+ */
+const asSGI = (v: unknown): StructuredGenerationTaskInput => v as StructuredGenerationTaskInput;
+const asTCI = (v: unknown): ToolCallingTaskInput => v as ToolCallingTaskInput;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -33,15 +50,47 @@ function model(model_id: string, capabilities: readonly string[] = []): ModelRec
 // Capability inference + parity
 // --------------------------------------------------------------------------
 
-describe("WebBrowserProvider.inferCapabilities", () => {
-  const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
+/**
+ * Probe factory whose `create()` always resolves to a destroyable handle.
+ * Used to drive `WebBrowserProvider` past the conservative-pre-probe state
+ * so we can assert the post-probe inference shape.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeAcceptingProbeFactory(): any {
+  const destroy = vi.fn();
+  return {
+    create: vi.fn().mockResolvedValue({ destroy }),
+    params: vi.fn().mockResolvedValue({}),
+  };
+}
 
-  it("trusts declared capabilities", () => {
+describe("WebBrowserProvider.inferCapabilities", () => {
+  // Reset the module-level probe cache so each `new WebBrowserProvider`
+  // can drive a fresh probe with its injected factory.
+  afterEach(() => {
+    probe._resetProbeCache();
+  });
+
+  it("trusts declared capabilities (probe-independent)", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("anything", ["text.translation"]));
     expect(caps).toEqual(["text.translation"]);
   });
 
-  it("infers text-gen + json-mode + tool-use for chrome-prompt / gemini-nano", () => {
+  it("conservative pre-probe: drops json-mode and tool-use for chrome-prompt", () => {
+    // Probe is async — until it resolves, the provider must NOT advertise
+    // json-mode or tool-use, since the underlying API might not support them.
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
+    const caps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(caps).toContain("text.generation");
+    expect(caps).not.toContain("json-mode");
+    expect(caps).not.toContain("tool-use");
+  });
+
+  it("post-probe: adds json-mode + tool-use when supported", async () => {
+    const factory = makeAcceptingProbeFactory();
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS, undefined, factory);
+    await provider.ready();
     const caps = provider.inferCapabilities(model("chrome-prompt"));
     expect(caps).toContain("text.generation");
     expect(caps).toContain("json-mode");
@@ -50,27 +99,32 @@ describe("WebBrowserProvider.inferCapabilities", () => {
   });
 
   it("infers text.summary for summarizer model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-summarizer"));
     expect(caps).toContain("text.summary");
     expect(caps).not.toContain("text.generation");
   });
 
   it("infers text.rewriter for rewriter model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-rewriter"));
     expect(caps).toContain("text.rewriter");
   });
 
   it("infers text.translation for translator model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-translator"));
     expect(caps).toContain("text.translation");
   });
 
   it("infers text.language-detection for language-detector model", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("chrome-language-detector"));
     expect(caps).toContain("text.language-detection");
   });
 
   it("returns baseline meta-ops for unknown ids", () => {
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS);
     const caps = provider.inferCapabilities(model("unknown-id"));
     expect(caps).toEqual(["model.search", "model.info"]);
   });
@@ -349,5 +403,692 @@ describe("WebBrowser_ChatHistory helpers", () => {
 
   it("buildInitialPromptsFromHistory returns [] for empty history", () => {
     expect(chatHistory.buildInitialPromptsFromHistory([])).toEqual([]);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Capability probe
+// --------------------------------------------------------------------------
+
+/**
+ * Fake factory whose two `create()` codepaths can be independently controlled
+ * — pass `jsonModeOk: false` to reject when `responseConstraint` is passed,
+ * `toolUseOk: false` to reject when `tools` is passed. Records the total
+ * number of `create()` invocations so we can assert coalescing behavior.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeProbeFactory(opts: { jsonModeOk: boolean; toolUseOk: boolean }): any {
+  let destroys = 0;
+  const create = vi.fn(async (options?: Record<string, unknown>) => {
+    if (options && "responseConstraint" in options && !opts.jsonModeOk) {
+      throw new Error("responseConstraint not supported");
+    }
+    if (options && "tools" in options && !opts.toolUseOk) {
+      throw new Error("tools not supported");
+    }
+    return {
+      destroy: (): void => {
+        destroys += 1;
+      },
+    };
+  });
+  return { create, params: vi.fn(), destroyCount: () => destroys };
+}
+
+describe("probeWebBrowserCapabilities", () => {
+  // Each test injects its own factory; clear the cached coalesced promise
+  // so they don't share results.
+  afterEach(() => {
+    probe._resetProbeCache();
+  });
+
+  it("both true when factory accepts both responseConstraint and tools", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: true });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: true, toolUse: true });
+  });
+
+  it("jsonMode false when factory rejects responseConstraint", async () => {
+    const f = makeProbeFactory({ jsonModeOk: false, toolUseOk: true });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: false, toolUse: true });
+  });
+
+  it("toolUse false when factory rejects tools", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: false });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: true, toolUse: false });
+  });
+
+  it("both false when factory rejects both", async () => {
+    const f = makeProbeFactory({ jsonModeOk: false, toolUseOk: false });
+    const result = await probe.probeWebBrowserCapabilities(f);
+    expect(result).toEqual({ jsonMode: false, toolUse: false });
+  });
+
+  it("coalesces concurrent calls into a single probe", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: true });
+    // Fire N concurrent probes through the public surface. They should all
+    // share the same in-flight promise and trigger at most the same set of
+    // create() calls a single probe would (one per feature, not N).
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => probe.probeWebBrowserCapabilities(f))
+    );
+    expect(results.every((r) => r.jsonMode && r.toolUse)).toBe(true);
+    // The probe issues exactly two create() calls — one for json-mode, one
+    // for tool-use. Concurrent callers must coalesce, not multiply.
+    expect(f.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("provider.ready() reflects the probe result", async () => {
+    const f = makeProbeFactory({ jsonModeOk: true, toolUseOk: false });
+    const provider = new WebBrowserProvider(WEB_BROWSER_RUN_FNS, undefined, f);
+    // Pre-ready: conservative subset for chrome-prompt.
+    const preCaps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(preCaps).not.toContain("json-mode");
+    expect(preCaps).not.toContain("tool-use");
+    await provider.ready();
+    // Post-ready: json-mode appears, tool-use stays gated.
+    const postCaps = provider.inferCapabilities(model("chrome-prompt"));
+    expect(postCaps).toContain("json-mode");
+    expect(postCaps).not.toContain("tool-use");
+  });
+});
+
+// --------------------------------------------------------------------------
+// StructuredGeneration session cache (H1)
+// --------------------------------------------------------------------------
+
+/**
+ * Install a fake `LanguageModel` global so the run-fn's `getApi` /
+ * `ensureAvailable` checks pass. Returns a teardown.
+ */
+function installLanguageModelGlobal(impl: unknown): () => void {
+  const prior = (globalThis as Record<string, unknown>).LanguageModel;
+  (globalThis as Record<string, unknown>).LanguageModel = impl;
+  return () => {
+    if (prior === undefined) {
+      delete (globalThis as Record<string, unknown>).LanguageModel;
+    } else {
+      (globalThis as Record<string, unknown>).LanguageModel = prior;
+    }
+  };
+}
+
+/**
+ * Fake `LanguageModel` factory + session that streams a single chunk of
+ * pre-canned text. `text` is the full JSON payload returned by the
+ * model's "response" in one snapshot — sufficient for our parse pipeline
+ * because Chrome's stream surface emits progressive snapshots.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeFakeLanguageModel(text: string | (() => string)): any {
+  let destroyed = 0;
+  const factory = {
+    availability: vi.fn().mockResolvedValue("available"),
+    create: vi.fn(async () => ({
+      promptStreaming: (_p: string, _o?: unknown) => {
+        const value = typeof text === "function" ? text() : text;
+        return new ReadableStream<string>({
+          start(controller) {
+            controller.enqueue(value);
+            controller.close();
+          },
+        });
+      },
+      destroy: () => {
+        destroyed += 1;
+      },
+    })),
+  };
+  return { factory, destroyed: () => destroyed };
+}
+
+describe("WebBrowser_StructuredGeneration session cache", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+  const sid = "sg-test-1";
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("first call with sessionId seeds the cache", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      expect(sessions.getChromeSession(sid)?.schemaFingerprint).toBeDefined();
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("second call with the same schema reuses the cached session", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p2", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      // Only ONE create() — the second call reused the cached session.
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("mismatched schema fingerprint forces rebuild", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      const otherSchema = {
+        type: "object",
+        properties: { x: { type: "number" }, y: { type: "string" } },
+        required: ["x"],
+        additionalProperties: false,
+      } as const;
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p2", outputSchema: otherSchema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        // streaming text is a valid `{x:1}` which satisfies otherSchema too
+        otherSchema,
+        sid
+      );
+      // Two creates — schema fingerprint mismatch invalidated the cache.
+      expect(factory.create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("WebBrowser_StructuredGeneration cache poisoning", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+  const sid = "sg-poison-1";
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("drops the cache entry when a follow-up turn throws on parse failure", async () => {
+    // First call seeds a cache with parseable output; second call streams
+    // garbage so JSON.parse and parsePartialJson both fail. The run-fn
+    // must throw and clear the cache entry so the next attempt rebuilds.
+    let seq = 0;
+    const seqText = (): string => {
+      seq += 1;
+      return seq === 1 ? '{"x":1}' : "not json {";
+    };
+    const { factory } = makeFakeLanguageModel(seqText);
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p2", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema,
+          sid
+        )
+      ).rejects.toThrow(/unparseable|validation/i);
+      // Entry is dropped after the failed turn.
+      expect(sessions.getChromeSession(sid)).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// StructuredGeneration final-JSON validation (H4)
+// --------------------------------------------------------------------------
+
+describe("WebBrowser_StructuredGeneration validation", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+
+  it("emits finish on valid JSON that satisfies the schema", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema
+      );
+      const finish = events.find((e) => (e as { type?: string }).type === "finish") as
+        | { data: { object: { x: number } } }
+        | undefined;
+      expect(finish).toBeDefined();
+      expect(finish?.data.object).toEqual({ x: 1 });
+    } finally {
+      restore();
+    }
+  });
+
+  it("throws PermanentJobError on unparseable JSON, no finish emitted", async () => {
+    const { factory } = makeFakeLanguageModel("definitely not json");
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema
+        )
+      ).rejects.toThrow(/unparseable/i);
+      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("throws PermanentJobError when parsed object fails schema validation", async () => {
+    // Parses fine but `x` is a string, not a number — fails the schema.
+    const { factory } = makeFakeLanguageModel('{"x":"oops"}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: unknown[] = [];
+      const emit = (e: unknown): void => {
+        events.push(e);
+      };
+      await expect(
+        WebBrowser_StructuredGeneration(
+          asSGI({ prompt: "p", outputSchema: schema }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          schema
+        )
+      ).rejects.toThrow(/schema validation/i);
+      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// ToolCalling session cache (H2)
+// --------------------------------------------------------------------------
+
+/**
+ * Fake `LanguageModel` for tool-calling tests. The session's
+ * `promptStreaming` immediately invokes each declared tool's `execute`
+ * callback so the run-fn captures the tool calls, then closes the stream.
+ *
+ * `callsBy[toolName]` supplies args for each capture; if omitted defaults
+ * to `{}`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeFakeToolCallingModel(callsBy: Record<string, unknown> = {}): any {
+  const factory = {
+    availability: vi.fn().mockResolvedValue("available"),
+    create: vi.fn(
+      async (options?: {
+        tools?: Array<{ name: string; execute: (...args: unknown[]) => Promise<string> }>;
+      }) => {
+        const tools = options?.tools ?? [];
+        return {
+          promptStreaming: () =>
+            new ReadableStream<string>({
+              async start(controller) {
+                for (const t of tools) {
+                  if (t.name === "_probe") continue; // probe tool ignored here
+                  const args = callsBy[t.name] ?? {};
+                  await t.execute(args);
+                }
+                controller.close();
+              },
+            }),
+          destroy: vi.fn(),
+        };
+      }
+    ),
+  };
+  return { factory };
+}
+
+describe("WebBrowser_ToolCalling session cache", () => {
+  const sid = "tc-test-1";
+  const toolA: ToolDefinition = {
+    name: "tool_a",
+    description: "tool a",
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+  };
+  const toolB: ToolDefinition = {
+    name: "tool_b",
+    description: "tool b",
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+  };
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("reuses cache when sessionId + messages + tool set match", async () => {
+    const { factory } = makeFakeToolCallingModel();
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages: messages2 }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      // Same tool set, same conversation thread → cache reuse, one create().
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("rebuilds when the tool set changes", async () => {
+    const { factory } = makeFakeToolCallingModel();
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages: messages2 }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      // Different fingerprint → cache invalidated, two creates.
+      expect(factory.create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops + destroys the cache entry on prompt failure", async () => {
+    // Sequenced session: first promptStreaming() returns a clean close,
+    // second errors. Same session handle returned from both create() calls
+    // (cache reuse exercises the same `session` object).
+    let promptCount = 0;
+    const sessionImpl = {
+      promptStreaming: (): ReadableStream<string> =>
+        new ReadableStream<string>({
+          start(controller) {
+            promptCount += 1;
+            if (promptCount === 1) {
+              controller.close();
+            } else {
+              controller.error(new Error("boom"));
+            }
+          },
+        }),
+      destroy: vi.fn(),
+    };
+    const factory = {
+      availability: vi.fn().mockResolvedValue("available"),
+      create: vi.fn(async () => sessionImpl),
+    };
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      const emit = vi.fn();
+      // First turn seeds the cache successfully.
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      // Second turn reuses the cached session whose stream now errors.
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await expect(
+        WebBrowser_ToolCalling(
+          asTCI({ prompt: "", tools: [toolA], messages: messages2 }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          undefined,
+          sid
+        )
+      ).rejects.toThrow(/boom/);
+      // Cache cleaned up.
+      expect(sessions.getChromeSession(sid)).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// ToolCalling argument validation (H3)
+// --------------------------------------------------------------------------
+
+describe("WebBrowser_ToolCalling argument validation", () => {
+  const strictTool: ToolDefinition = {
+    name: "echo",
+    description: "echo",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  };
+
+  it("passes through calls whose args satisfy the inputSchema", async () => {
+    const { factory } = makeFakeToolCallingModel({ echo: { text: "hello" } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string; objectDelta?: unknown }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string; objectDelta?: unknown });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      const tcEvent = events.find((e) => e.type === "object-delta" && e.port === "toolCalls");
+      expect(tcEvent).toBeDefined();
+      const calls = (tcEvent?.objectDelta as Array<{ name: string; input: unknown }>) ?? [];
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.input).toEqual({ text: "hello" });
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops calls missing a required field", async () => {
+    // `text` is required but omitted.
+    const { factory } = makeFakeToolCallingModel({ echo: {} });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      // No toolCalls event since the only call was dropped.
+      expect(events.some((e) => e.type === "object-delta" && e.port === "toolCalls")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops calls with a wrong-typed field", async () => {
+    // `text` must be string; passing a number fails validation.
+    const { factory } = makeFakeToolCallingModel({ echo: { text: 42 } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      expect(events.some((e) => e.type === "object-delta" && e.port === "toolCalls")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("falls through to name-check when inputSchema fails to compile", async () => {
+    // A schema that compileSchema can't handle. The malformed-schema tool
+    // should still see its call pass through (no crash, no validation), and
+    // hallucinated names still get filtered.
+    const malformedTool = {
+      name: "loose",
+      description: "loose",
+      // Garbage schema — type is invalid.
+      inputSchema: { type: "not_a_real_type" } as unknown,
+    } as { name: string; description: string; inputSchema: unknown };
+    const { factory } = makeFakeToolCallingModel({ loose: { anything: 1 } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string; objectDelta?: unknown }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string; objectDelta?: unknown });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({
+          prompt: "go",
+          tools: [malformedTool as unknown as typeof strictTool],
+        }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      // Either the schema compiled and validation passed (loose schema),
+      // or it failed to compile and the call fell through unchanged.
+      // Either way, no crash, and we see the tool call event.
+      const tcEvent = events.find((e) => e.type === "object-delta" && e.port === "toolCalls");
+      expect(tcEvent).toBeDefined();
+    } finally {
+      restore();
+    }
   });
 });

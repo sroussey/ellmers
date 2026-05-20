@@ -10,9 +10,13 @@ import type {
   ToolCall,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
+  ToolDefinition,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai";
 import { uuid4 } from "@workglow/util";
+import type { JsonSchema, SchemaNode } from "@workglow/util/schema";
+import { compileSchema } from "@workglow/util/schema";
+import { getLogger } from "@workglow/util/worker";
 
 import {
   buildInitialPromptsFromHistory,
@@ -26,6 +30,12 @@ import {
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
+import {
+  deleteChromeSession,
+  dropChromeSessionEntry,
+  getChromeSession,
+  setChromeSession,
+} from "./WebBrowser_Sessions";
 
 function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
   if (typeof prompt === "string") return prompt;
@@ -54,24 +64,47 @@ function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
 function buildToolCallPrompt(input: ToolCallingTaskInput): {
   initialPrompts: LanguageModelCreateOptions["initialPrompts"];
   promptText: string;
+  priorMessageCount: number;
 } {
   const hasMessages = Array.isArray(input.messages) && input.messages.length > 0;
   if (hasMessages) {
     const messages = input.messages as readonly ChatMessage[];
     const lastUserIdx = findLastUserIndex(messages);
     if (lastUserIdx < 0) {
-      return { initialPrompts: [], promptText: flattenPrompt(input.prompt) };
+      return {
+        initialPrompts: [],
+        promptText: flattenPrompt(input.prompt),
+        priorMessageCount: messages.length,
+      };
     }
     return {
       initialPrompts: buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx)),
       promptText: messageText(messages[lastUserIdx]),
+      priorMessageCount: lastUserIdx,
     };
   }
 
   const initialPrompts: LanguageModelCreateOptions["initialPrompts"] = input.systemPrompt
     ? [{ role: "system", content: input.systemPrompt }]
     : [];
-  return { initialPrompts, promptText: flattenPrompt(input.prompt) };
+  return { initialPrompts, promptText: flattenPrompt(input.prompt), priorMessageCount: 0 };
+}
+
+/**
+ * Stable fingerprint of the tool set bound at `create()` time. Tool sets
+ * are compared by sorted name list — Chrome can't hot-swap tools per turn,
+ * so any change to the set invalidates a cached session. We intentionally
+ * don't include each tool's `inputSchema` here: if the *names* match,
+ * reuse; a schema-only edit on a same-named tool is unusual enough that
+ * the modest correctness risk is preferable to the cache thrash of hashing
+ * full schemas every turn.
+ */
+function toolsFingerprint(tools: readonly ToolDefinition[]): string {
+  return tools
+    .map((t) => t.name)
+    .filter((n): n is string => typeof n === "string" && n.length > 0)
+    .sort()
+    .join(",");
 }
 
 /**
@@ -96,12 +129,35 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
  * `temperature` is `@deprecated` for non-extension contexts in the current
  * Chrome spec and silently ignored on the open web. Passed through anyway
  * so extension callers still get the knob.
+ *
+ * ## Session reuse
+ *
+ * When `sessionId` is provided and `input.messages` is present we *may*
+ * cache the underlying `LanguageModel`. There's a real correctness risk
+ * here: Chrome's tool-calling loop appends tool-result turns to the
+ * session's internal state opaquely. Reusing the cached session across
+ * orchestrator turns would double-feed those results once the orchestrator
+ * also re-supplies them via `messages`. To stay safe:
+ *  - We only cache when the orchestrator is driving via `input.messages`.
+ *  - Cache reuse requires that the tool set hasn't changed.
+ *  - On any error we drop and destroy the cache entry — Chrome's internal
+ *    state may be in the middle of a tool-call cycle.
+ *
+ * ## Argument validation (H3)
+ *
+ * Chrome calls `execute` with `(args)` where `args[0]` is whatever the
+ * model produced. The model can hallucinate fields that don't match the
+ * tool's `inputSchema`. We compile each tool's schema once, validate the
+ * captured arguments before passing them to `filterValidToolCalls`, and
+ * drop+log calls that fail. Tools whose `inputSchema` fails to compile
+ * fall through to name-only validation (same as today's behavior) with
+ * a single warning so a malformed schema doesn't crash the run.
  */
 export const WebBrowser_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit) => {
+> = async (input, _model, signal, emit, _outputSchema, sessionId) => {
   const factory = getApi(
     "LanguageModel",
     typeof LanguageModel !== "undefined" ? LanguageModel : undefined
@@ -109,6 +165,24 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
   await ensureAvailable("LanguageModel", factory);
 
   const capturedCalls: ToolCall[] = [];
+
+  // Compile validators once per tool. A bad schema downgrades that tool
+  // to name-only validation rather than failing the whole run — the
+  // existing `filterValidToolCalls` name check is still applied below.
+  const validators = new Map<string, SchemaNode | null>();
+  for (const td of input.tools) {
+    try {
+      validators.set(td.name, compileSchema(td.inputSchema as JsonSchema));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      getLogger().warn(
+        `WebBrowser_ToolCalling: tool "${td.name}" has invalid inputSchema, ` +
+          `falling back to name-only validation — ${msg}`,
+        { toolName: td.name }
+      );
+      validators.set(td.name, null);
+    }
+  }
 
   // `toolChoice: "none"` → omit tools entirely so the model can't call any.
   // Specific tool-name choices aren't expressible in Chrome's surface; we
@@ -131,16 +205,40 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
           },
         }));
 
-  const { initialPrompts, promptText } = buildToolCallPrompt(input);
+  const { initialPrompts, promptText, priorMessageCount } = buildToolCallPrompt(input);
+  const fingerprint = toolsFingerprint(input.tools);
 
-  const session = await factory.create({
-    signal,
-    temperature: input.temperature ?? undefined,
-    tools: chromeTools.length > 0 ? chromeTools : undefined,
-    initialPrompts,
-    monitor: createDownloadMonitor(emit),
-  });
+  // Safety guard: only allow cache reuse when the orchestrator drives via
+  // `input.messages`. In the bare-prompt path Chrome's session may carry
+  // opaque tool-call state from a prior turn that we can't reason about.
+  const cacheable = sessionId !== undefined && Array.isArray(input.messages);
 
+  let cached = cacheable && sessionId ? getChromeSession(sessionId) : undefined;
+  if (
+    cacheable &&
+    sessionId &&
+    cached &&
+    (cached.messageCount !== priorMessageCount || cached.toolsFingerprint !== fingerprint)
+  ) {
+    deleteChromeSession(sessionId);
+    cached = undefined;
+  }
+
+  const usedCachedSession = cached !== undefined;
+  let session: LanguageModel;
+  if (cached) {
+    session = cached.session;
+  } else {
+    session = await factory.create({
+      signal,
+      temperature: input.temperature ?? undefined,
+      tools: chromeTools.length > 0 ? chromeTools : undefined,
+      initialPrompts,
+      monitor: createDownloadMonitor(emit),
+    });
+  }
+
+  let cacheWritten = false;
   try {
     const stream = session.promptStreaming(promptText, { signal });
     // Forward text-delta and snapshot events; swallow the inner `finish`
@@ -154,14 +252,50 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
       emit(e);
     }
 
+    // Validate each captured call's `input` against its tool's compiled
+    // schema. Calls with no compiled validator (schema compile failed)
+    // skip this step and rely on the name-only check below.
+    const argValidated = capturedCalls.filter((tc) => {
+      const v = validators.get(tc.name);
+      if (!v) return true;
+      const result = v.validate(tc.input);
+      if (result.valid) return true;
+      const firstError = result.errors[0];
+      const detail = firstError?.message ?? "unknown validation error";
+      getLogger().warn(
+        `WebBrowser_ToolCalling: dropping call to "${tc.name}" — args fail inputSchema (${detail})`,
+        { callId: tc.id, toolName: tc.name }
+      );
+      return false;
+    });
+
     // Defence in depth against hallucinated tool names — same shape as
     // OpenAI/Anthropic tool-calling run-fns.
-    const validated = filterValidToolCalls(capturedCalls, input.tools);
+    const validated = filterValidToolCalls(argValidated, input.tools);
     if (validated.length > 0) {
       emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
     }
+    if (cacheable && sessionId !== undefined) {
+      // Watermark post-turn count: prior history + 1 trailing user turn +
+      // 1 assistant turn. Matches WebBrowser_Chat's convention.
+      setChromeSession(sessionId, {
+        session,
+        messageCount: priorMessageCount + 2,
+        toolsFingerprint: fingerprint,
+      });
+      cacheWritten = true;
+    }
     emit({ type: "finish", data: {} as ToolCallingTaskOutput });
   } finally {
-    session.destroy();
+    if (!cacheWritten) {
+      if (cacheable && sessionId !== undefined && usedCachedSession) {
+        dropChromeSessionEntry(sessionId, session);
+      }
+      try {
+        session.destroy();
+      } catch {
+        // best-effort
+      }
+    }
   }
 };

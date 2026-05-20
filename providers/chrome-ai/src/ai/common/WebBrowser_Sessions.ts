@@ -21,6 +21,20 @@
 export interface ChromeChatSessionState {
   readonly session: LanguageModel;
   readonly messageCount: number;
+  /**
+   * Stable fingerprint of the `outputSchema` the session was created for
+   * (StructuredGeneration runs). Reuse requires an exact match — a schema
+   * change forces a session rebuild because Chrome bakes the constraint
+   * into the session's response handling state.
+   */
+  readonly schemaFingerprint?: string;
+  /**
+   * Stable fingerprint of the *sorted* tool name list the session was
+   * created with (ToolCalling runs). Tool-set changes invalidate the
+   * cached session because Chrome's tools are bound at `create()` time
+   * and can't be hot-swapped per turn.
+   */
+  readonly toolsFingerprint?: string;
 }
 
 const chromeSessions = new Map<string, ChromeChatSessionState>();
