@@ -5,9 +5,10 @@
  */
 
 import type { ServiceRegistry } from "@workglow/util";
-import { deepEqual, EventEmitter, uuid4 } from "@workglow/util";
+import { deepEqual, EventEmitter, getLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
+import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
 import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import type { IExecuteContext, IExecutePreviewContext, IRunConfig, ITask } from "./ITask";
@@ -74,6 +75,23 @@ export class Task<
   public static cacheable: boolean = true;
 
   /**
+   * Version number for this task class, used to bust the output cache when the task's
+   * implementation changes. Increment when a change would produce different outputs for
+   * the same inputs. Combined with ancestor versions via getCacheVersion().
+   * Subclasses should override this when their execute() logic changes in a
+   * backwards-incompatible way (different output for same input).
+   */
+  public static version: number = 1;
+
+  /**
+   * Default cache policy for this task class. Used by `getCachePolicy()` when the
+   * task does not override the method. Subclasses with side effects should set
+   * `{ kind: "none" }`; tasks producing non-deterministic-but-expensive outputs
+   * (e.g., image generation without a seed) should set `{ kind: "private" }`.
+   */
+  public static cachePolicy: CachePolicy = { kind: "deterministic" };
+
+  /**
    * Whether this task has dynamic input/output schemas that can change at runtime.
    * Tasks with dynamic schemas should override instance methods for inputSchema() and/or outputSchema()
    * and emit 'schemaChange' events when their schemas change.
@@ -113,6 +131,12 @@ export class Task<
    * and emit 'entitlementChange' events when their entitlements change.
    */
   public static hasDynamicEntitlements: boolean = false;
+
+  /**
+   * Tracks task types that have already received the legacy `cacheable = false` deprecation
+   * warning, so the warning fires only once per task type across the process lifetime.
+   */
+  private static __cacheableDeprecationWarned = new Set<string>();
 
   /**
    * Entitlements required by this task class.
@@ -312,12 +336,74 @@ export class Task<
     return this.config?.description ?? (this.constructor as typeof Task).description;
   }
 
+  /**
+   * Whether this task instance is currently cacheable. Reads `runConfig.cacheable`
+   * and `config.cacheable` first (per-instance overrides for back-compat), then
+   * derives from `getCachePolicy(runInputData)`.
+   *
+   * Note: for tasks that override `getCachePolicy(inputs)` with input-dependent
+   * logic (e.g., `AiImageOutputTask` returns `private` when seed is absent), the
+   * value of `task.cacheable` can change as `runInputData` changes. Prefer calling
+   * `getCachePolicy(inputs)` directly when you have explicit inputs.
+   */
   public get cacheable(): boolean {
-    return (
-      this.runConfig?.cacheable ??
-      this.config?.cacheable ??
-      (this.constructor as typeof Task).cacheable
-    );
+    if (this.runConfig?.cacheable !== undefined) return this.runConfig.cacheable;
+    if (this.config?.cacheable !== undefined) return this.config.cacheable;
+    return this.getCachePolicy((this.runInputData ?? {}) as unknown as Input).kind !== "none";
+  }
+
+  /**
+   * Returns a dot-separated string of version numbers collected from each class in the
+   * prototype chain (leaf first) that declares its own `version` static property.
+   * Every class that owns a `version` contributes one segment, including the base Task
+   * class. Returns "1" when called directly on a Task instance with no subclassing
+   * (Task.version === 1 is the sole contributor).
+   *
+   * Use this as the cache-key version component: when any ancestor's version changes,
+   * the combined string changes and the cached output is invalidated.
+   */
+  public getCacheVersion(): string {
+    const versions: number[] = [];
+    let ctor: unknown = this.constructor;
+    while (ctor && ctor !== Function.prototype) {
+      if (
+        Object.prototype.hasOwnProperty.call(ctor, "version") &&
+        typeof (ctor as { version?: unknown }).version === "number"
+      ) {
+        versions.push((ctor as { version: number }).version);
+      }
+      ctor = Object.getPrototypeOf(ctor as object);
+    }
+    if (versions.length === 0) versions.push(1);
+    return versions.join(".");
+  }
+
+  /**
+   * Returns the effective cache policy for this task given its inputs. Default
+   * implementation honors the legacy `cacheable=false` static (maps to
+   * `{ kind: "none" }`) for back-compat with a one-time deprecation warning,
+   * otherwise returns the class's static `cachePolicy`. Override for dynamic
+   * decisions (e.g., AiImageOutputTask returns `private` when seed is absent).
+   */
+  public getCachePolicy(_inputs: Input): CachePolicy {
+    const ctor = this.constructor as typeof Task;
+    const hasLegacyOverride =
+      Object.prototype.hasOwnProperty.call(ctor, "cacheable") && (ctor as any).cacheable === false;
+    const hasPolicyOverride = Object.prototype.hasOwnProperty.call(ctor, "cachePolicy");
+
+    if (hasLegacyOverride && !hasPolicyOverride) {
+      if (!Task.__cacheableDeprecationWarned.has(ctor.type)) {
+        Task.__cacheableDeprecationWarned.add(ctor.type);
+        getLogger().warn(
+          `Task "${ctor.type}": static \`cacheable = false\` is deprecated. ` +
+            `Use \`static cachePolicy: CachePolicy = { kind: "none" }\` instead.`
+        );
+      }
+      return { kind: "none" };
+    }
+    if (this.runConfig?.cacheable === false || this.config?.cacheable === false)
+      return { kind: "none" }; // per-instance shim, no warning
+    return ctor.cachePolicy ?? DEFAULT_CACHE_POLICY;
   }
 
   // ========================================================================
@@ -455,6 +541,24 @@ export class Task<
 
     // Store runtime configuration
     this.runConfig = runConfig;
+
+    // Reject input schemas that declare a `__cv` port: this name is reserved by
+    // CacheCoordinator.buildKey for the cache version sentinel. Allowing a task
+    // to declare it would silently shadow cache versioning and cause cache
+    // collisions across versions. `inputSchema()` can legally return a boolean
+    // (see addInput/setInput handling); skip the check in that case.
+    const inputSchema = (this.constructor as typeof Task).inputSchema();
+    if (
+      inputSchema &&
+      typeof inputSchema !== "boolean" &&
+      inputSchema.properties &&
+      Object.prototype.hasOwnProperty.call(inputSchema.properties, "__cv")
+    ) {
+      throw new TaskConfigurationError(
+        `Task "${(this.constructor as typeof Task).type}": input port name '__cv' is reserved ` +
+          `for cache versioning. Rename the port to avoid collision with the cache key sentinel.`
+      );
+    }
   }
 
   // ========================================================================

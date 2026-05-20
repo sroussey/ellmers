@@ -108,4 +108,10 @@ export function runGenericTaskOutputRepositoryTests(
       expect(clearListener).toHaveBeenCalled();
     });
   });
+
+  describe("durability capability", () => {
+    it("reports isDurable() as a boolean", () => {
+      expect(typeof repository.isDurable()).toBe("boolean");
+    });
+  });
 }

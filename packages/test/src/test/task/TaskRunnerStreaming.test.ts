@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
 import {
   IExecuteContext,
   IRunConfig,
@@ -113,7 +113,7 @@ class TestStreamingReplaceTask extends Task<StreamTestInput, StreamTestOutput> {
  */
 class TestStreamingErrorTask extends Task<StreamTestInput, StreamTestOutput> {
   public static override type = "TestStreamingErrorTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -152,7 +152,7 @@ class TestStreamingErrorTask extends Task<StreamTestInput, StreamTestOutput> {
  */
 class TestStreamingAbortableTask extends Task<StreamTestInput, StreamTestOutput> {
   public static override type = "TestStreamingAbortableTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -199,7 +199,7 @@ type CodeTestOutput = { code: string };
 
 class TestStreamingCodeAppendTask extends Task<CodeTestInput, CodeTestOutput> {
   public static override type = "TestStreamingCodeAppendTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -255,7 +255,7 @@ type ToolCallOutput = { toolCalls: ToolCallItem[] };
  */
 class TestStreamingToolCallTask extends Task<ToolCallInput, ToolCallOutput> {
   public static override type = "TestStreamingToolCallTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -314,7 +314,7 @@ type StructuredOutput = { result: Record<string, unknown> };
 
 class TestStreamingStructuredTask extends Task<StructuredInput, StructuredOutput> {
   public static override type = "TestStreamingStructuredTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -435,7 +435,7 @@ describe("TaskRunner Streaming", () => {
       expect(result.text).toBe("Hello world");
 
       // Verify it was actually cached
-      const cached = await cache.getOutput("TestStreamingAppendTask", { prompt: "test" });
+      const cached = await cache.getOutput("TestStreamingAppendTask", { prompt: "test", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any)?.text).toBe("Hello world");
     });
@@ -559,7 +559,7 @@ describe("TaskRunner Streaming", () => {
 
       await task.run({ prompt: "test" });
 
-      const cached = await cache.getOutput("TestStreamingReplaceTask", { prompt: "test" });
+      const cached = await cache.getOutput("TestStreamingReplaceTask", { prompt: "test", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any)?.text).toBe("Bonjour le monde");
     });

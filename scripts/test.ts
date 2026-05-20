@@ -58,6 +58,7 @@ function shouldLimitParallelismForHeavyIntegration(files: string[]): boolean {
 const SECTION_DIRS: Record<Section, string[]> = {
   graph: [
     join(TEST_BASE, "task-graph"),
+    join(TEST_BASE, "task-graph-cache"),
     join(TEST_BASE, "task-graph-job-queue"),
     join(TEST_BASE, "task-graph-output-cache"),
     join(TEST_BASE, "task-graph-storage"),
