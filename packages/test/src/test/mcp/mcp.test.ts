@@ -169,7 +169,7 @@ describe("MCP", () => {
     test("has correct static properties", () => {
       expect(McpToolCallTask.type).toBe("McpToolCallTask");
       expect(McpToolCallTask.category).toBe("MCP");
-      expect(McpToolCallTask.cacheable).toBe(false);
+      expect(McpToolCallTask.cachePolicy.kind).toBe("none");
     });
   });
 

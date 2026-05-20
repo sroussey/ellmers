@@ -18,7 +18,7 @@ describe("InputTask", () => {
     expect(InputTask.type).toBe("InputTask");
     expect(InputTask.category).toBe("Flow Control");
     expect(InputTask.hasDynamicSchemas).toBe(true);
-    expect(InputTask.cacheable).toBe(false);
+    expect(InputTask.cachePolicy.kind).toBe("none");
     // Must be marked passthrough so it is excluded from graph-level progress averaging.
     expect(InputTask.isPassthrough).toBe(true);
   });
@@ -52,7 +52,7 @@ describe("OutputTask", () => {
     expect(OutputTask.type).toBe("OutputTask");
     expect(OutputTask.category).toBe("Flow Control");
     expect(OutputTask.hasDynamicSchemas).toBe(true);
-    expect(OutputTask.cacheable).toBe(false);
+    expect(OutputTask.cachePolicy.kind).toBe("none");
     // Must be marked passthrough so it is excluded from graph-level progress averaging.
     expect(OutputTask.isPassthrough).toBe(true);
   });
