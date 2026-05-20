@@ -834,3 +834,123 @@ describe("WebBrowser_ToolCalling session cache", () => {
     }
   });
 });
+
+// --------------------------------------------------------------------------
+// ToolCalling argument validation (H3)
+// --------------------------------------------------------------------------
+
+describe("WebBrowser_ToolCalling argument validation", () => {
+  const strictTool: ToolDefinition = {
+    name: "echo",
+    description: "echo",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  };
+
+  it("passes through calls whose args satisfy the inputSchema", async () => {
+    const { factory } = makeFakeToolCallingModel({ echo: { text: "hello" } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string; objectDelta?: unknown }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string; objectDelta?: unknown });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      const tcEvent = events.find((e) => e.type === "object-delta" && e.port === "toolCalls");
+      expect(tcEvent).toBeDefined();
+      const calls = (tcEvent?.objectDelta as Array<{ name: string; input: unknown }>) ?? [];
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.input).toEqual({ text: "hello" });
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops calls missing a required field", async () => {
+    // `text` is required but omitted.
+    const { factory } = makeFakeToolCallingModel({ echo: {} });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      // No toolCalls event since the only call was dropped.
+      expect(events.some((e) => e.type === "object-delta" && e.port === "toolCalls")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops calls with a wrong-typed field", async () => {
+    // `text` must be string; passing a number fails validation.
+    const { factory } = makeFakeToolCallingModel({ echo: { text: 42 } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "go", tools: [strictTool] }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      expect(events.some((e) => e.type === "object-delta" && e.port === "toolCalls")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it("falls through to name-check when inputSchema fails to compile", async () => {
+    // A schema that compileSchema can't handle. The malformed-schema tool
+    // should still see its call pass through (no crash, no validation), and
+    // hallucinated names still get filtered.
+    const malformedTool = {
+      name: "loose",
+      description: "loose",
+      // Garbage schema — type is invalid.
+      inputSchema: { type: "not_a_real_type" } as unknown,
+    } as { name: string; description: string; inputSchema: unknown };
+    const { factory } = makeFakeToolCallingModel({ loose: { anything: 1 } });
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; port?: string; objectDelta?: unknown }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; port?: string; objectDelta?: unknown });
+      };
+      await WebBrowser_ToolCalling(
+        asTCI({
+          prompt: "go",
+          tools: [malformedTool as unknown as typeof strictTool],
+        }),
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      // Either the schema compiled and validation passed (loose schema),
+      // or it failed to compile and the call fell through unchanged.
+      // Either way, no crash, and we see the tool call event.
+      const tcEvent = events.find((e) => e.type === "object-delta" && e.port === "toolCalls");
+      expect(tcEvent).toBeDefined();
+    } finally {
+      restore();
+    }
+  });
+});
