@@ -6,7 +6,7 @@
 
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
@@ -128,7 +128,7 @@ export class ModelSearchTask extends Task<
   public static override category = "AI Model";
   public static override title = "Model Search";
   public static override description = "Search for models using provider-specific search functions";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override hasDynamicSchemas = true;
 
   public static override inputSchema(): DataPortSchema {

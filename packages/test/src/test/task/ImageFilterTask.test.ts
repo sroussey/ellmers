@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { type IExecuteContext, type IExecutePreviewContext } from "@workglow/task-graph";
+import { type IExecuteContext, type IExecutePreviewContext, type CachePolicy } from "@workglow/task-graph";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "@workglow/tasks";
 import {
   CpuImage,
@@ -69,7 +69,7 @@ interface BumpInput extends ImageFilterInput, Record<string, unknown> {
 class BumpTask extends ImageFilterTask<BumpParams, BumpInput> {
   static override readonly type = "BumpTask";
   static override readonly category = "Image";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
   static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -125,7 +125,7 @@ describe("ImageFilterTask", () => {
     class Capture extends ImageFilterTask<BumpParams, BumpInput> {
       static override readonly type = "CaptureTask";
       static override readonly category = "Image";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -172,7 +172,7 @@ describe("ImageFilterTask scalePreviewParams hook", () => {
     class ScaleAwareTask extends ImageFilterTask<{ radius: number }, ScaleInput> {
       static override readonly type = "ScaleAwareTask";
       static override readonly category = "Image";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -216,7 +216,7 @@ describe("ImageFilterTask scalePreviewParams hook", () => {
     class ScaleTask extends ImageFilterTask<{ radius: number }, ScaleInput> {
       static override readonly type = "ScalePassthroughTask";
       static override readonly category = "Image";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",

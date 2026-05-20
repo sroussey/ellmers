@@ -59,6 +59,11 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     this.outputCompression = outputCompression;
   }
 
+  public isDurable(): boolean {
+    const backing = this.tabularRepository as unknown as { isDurable?: () => boolean };
+    return backing.isDurable?.() ?? true;
+  }
+
   /**
    * Sets up the database for the repository.
    * Must be called before using any other methods.
@@ -172,5 +177,58 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
     const date = new Date(Date.now() - olderThanInMs).toISOString();
     await this.tabularRepository.deleteSearch({ createdAt: { value: date, operator: "<" } });
     this.emit("output_pruned");
+  }
+
+  /**
+   * Deletes all entries whose `taskType` starts with the given prefix.
+   * Used by {@link RunPrivateCacheRepo.clearRun} to remove all entries for a specific runId.
+   *
+   * @param prefix - The prefix to match against `taskType` (e.g. `__run:my-run::`)
+   */
+  override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        await this.tabularRepository.delete({ key: row.key, taskType: row.taskType });
+      }
+    }
+  }
+
+  /**
+   * Deletes entries whose `taskType` starts with the given prefix AND whose
+   * `createdAt` is older than `olderThanInMs` milliseconds ago.
+   *
+   * Used by {@link CacheJanitor} to prune stale run-private entries left behind
+   * by runs that crashed and were never restarted.
+   *
+   * @param prefix - The taskType prefix to match (e.g. `__run:`)
+   * @param olderThanInMs - Age threshold in milliseconds; rows older than this are deleted
+   */
+  override async clearOlderThanWithTaskTypePrefix(prefix: string, olderThanInMs: number): Promise<void> {
+    const cutoff = Date.now() - olderThanInMs;
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        const ts = typeof row.createdAt === "string" ? new Date(row.createdAt).getTime() : NaN;
+        if (!isNaN(ts) && ts < cutoff) {
+          await this.tabularRepository.delete({ key: row.key, taskType: row.taskType });
+        }
+      }
+    }
+  }
+
+  /**
+   * Counts entries whose `taskType` starts with the given prefix.
+   * Used by {@link RunPrivateCacheRepo.size} so the wrapper's count reflects
+   * only its own namespaced view.
+   *
+   * @param prefix - The taskType prefix to match (e.g. `__run:my-run::`)
+   */
+  override async sizeByTaskTypePrefix(prefix: string): Promise<number> {
+    let count = 0;
+    for await (const row of this.tabularRepository.records()) {
+      if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
+        count++;
+      }
+    }
+    return count;
   }
 }

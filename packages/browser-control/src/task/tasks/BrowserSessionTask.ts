@@ -16,6 +16,7 @@ import {
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
 import { getBrowserDeps } from "../BrowserTaskDeps";
+import type { CachePolicy } from "@workglow/task-graph";
 
 const browserSessionTaskConfigSchema = {
   type: "object",
@@ -85,7 +86,7 @@ export class BrowserSessionTask extends Task<
   static override readonly category = "Browser";
   public static override title = "Browser Session";
   public static override description = "Creates a new browser session and returns its session ID";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override hasDynamicEntitlements = true;
 

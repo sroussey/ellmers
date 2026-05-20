@@ -24,7 +24,7 @@
  *  - Cache: auto-enables accumulation
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
@@ -54,7 +54,7 @@ type SimpleOutput = { text: string };
  */
 class AppendTask extends Task<SimpleInput, SimpleOutput> {
   public static override type = "AccumTest_AppendTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -94,7 +94,7 @@ class AppendTask extends Task<SimpleInput, SimpleOutput> {
  */
 class ReplaceWithTextDeltasTask extends Task<SimpleInput, SimpleOutput> {
   public static override type = "AccumTest_ReplaceWithTextDeltasTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -134,7 +134,7 @@ class ReplaceWithTextDeltasTask extends Task<SimpleInput, SimpleOutput> {
  */
 class StreamPassThroughTask extends Task<SimpleInput, SimpleOutput> {
   public static override type = "AccumTest_StreamPassThroughTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -170,7 +170,7 @@ class StreamPassThroughTask extends Task<SimpleInput, SimpleOutput> {
  */
 class SinkTask extends Task<SimpleInput, SimpleOutput> {
   public static override type = "AccumTest_SinkTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -307,7 +307,7 @@ describe("Source-task streaming accumulation", () => {
       // Task that produces both a text-delta field and other fields in finish
       class MixedFinishTask extends Task<SimpleInput, { text: string; lang: string }> {
         public static override type = "AccumTest_MixedFinishTask";
-        public static override cacheable = false;
+        public static override cachePolicy: CachePolicy = { kind: "none" };
 
         public static override inputSchema(): DataPortSchema {
           return {
@@ -520,8 +520,11 @@ describe("Source-task streaming accumulation", () => {
       const emittedFinishEvent = emittedFinish[0] as StreamFinish<{ text: string }>;
       expect(emittedFinishEvent.data.text).toBe("cached value");
 
-      // Cached output should contain the accumulated text
-      const cached = await cache.getOutput("AccumTest_CacheableAppendTask", { prompt: "test" });
+      // Cached output should contain the accumulated text; __cv is the cacheVersion sentinel
+      const cached = await cache.getOutput("AccumTest_CacheableAppendTask", {
+        prompt: "test",
+        __cv: "1",
+      });
       expect(cached).toBeDefined();
       expect(cached!.text).toBe("cached value");
     });

@@ -17,6 +17,7 @@ import {
   TaskStatus,
   TaskTimeoutError,
   Workflow,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
@@ -33,7 +34,7 @@ import { getTestingLogger } from "../../binding/TestingLogger";
  */
 class SlowTask extends Task<{ input: number }, { output: number }> {
   static override readonly type = "SlowTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -77,7 +78,7 @@ class SlowTask extends Task<{ input: number }, { output: number }> {
  */
 class AlwaysFailTask extends Task<{ input: number }, { output: number }> {
   static override readonly type = "AlwaysFailTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -110,7 +111,7 @@ class AlwaysFailTask extends Task<{ input: number }, { output: number }> {
  */
 class ErrorRecoveryTask extends Task<Record<string, unknown>, { output: number }> {
   static override readonly type = "ErrorRecoveryTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -140,7 +141,7 @@ class ErrorRecoveryTask extends Task<Record<string, unknown>, { output: number }
  */
 class FailingRecoveryTask extends Task<Record<string, unknown>, { output: number }> {
   static override readonly type = "FailingRecoveryTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -170,7 +171,7 @@ class FailingRecoveryTask extends Task<Record<string, unknown>, { output: number
  */
 class DoubleTask extends Task<{ input: number }, { output: number }> {
   static override readonly type = "DoubleTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
 
   static override inputSchema(): DataPortSchema {
     return {
@@ -202,7 +203,7 @@ class DoubleTask extends Task<{ input: number }, { output: number }> {
  */
 class InspectingRecoveryTask extends Task<Record<string, unknown>, { output: number }> {
   static override readonly type = "InspectingRecoveryTask";
-  static override readonly cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
   public lastInput: Record<string, unknown> = {};
 
   static override inputSchema(): DataPortSchema {

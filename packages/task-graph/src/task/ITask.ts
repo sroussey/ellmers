@@ -27,6 +27,7 @@ import type {
 } from "./TaskEvents";
 import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./TaskJSON";
 import { TaskRunner } from "./TaskRunner";
+import type { CachePolicy } from "../cache/CachePolicy";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
 /**
@@ -34,6 +35,11 @@ import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes"
  */
 export interface IExecuteContext {
   signal: AbortSignal;
+  /**
+   * Stable identifier for the current graph run. Set when the caller passes
+   * `runId` in the run config; `undefined` for ad-hoc task runs.
+   */
+  runId?: string;
   /**
    * Update the task's progress.
    * @param progress - 0..100 for measured progress, or `undefined` for
@@ -124,6 +130,13 @@ export interface IRunConfig {
   registry?: ServiceRegistry;
 
   /**
+   * Stable identifier for the current graph run, threaded through from
+   * {@link TaskGraphRunConfig.runId}. Exposed on {@link IExecuteContext} so
+   * tasks can correlate their work to the enclosing run.
+   */
+  runId?: string;
+
+  /**
    * Parent abort signal to link to this task's abort controller.
    * When the parent signal is aborted, this task will also be aborted.
    * Set automatically by context.own() to propagate cancellation from parent to child tasks.
@@ -166,7 +179,13 @@ export interface ITaskStaticProperties {
   readonly category?: string;
   readonly title?: string;
   readonly description?: string;
-  readonly cacheable: boolean;
+  /**
+   * @deprecated Use `cachePolicy: CachePolicy` instead. The `cacheable` static
+   * is preserved as a back-compat shim and will be removed in a future release.
+   */
+  readonly cacheable?: boolean;
+  /** Canonical declaration of this task's cache policy. */
+  readonly cachePolicy?: CachePolicy;
   readonly hasDynamicSchemas: boolean;
   readonly hasDynamicEntitlements: boolean;
   readonly passthroughInputsToOutputs?: boolean;
@@ -244,6 +263,8 @@ export interface ITaskIO<Input extends TaskInput> {
   addInput(overrides: Partial<Input> | undefined): boolean;
   validateInput(input: Input): Promise<boolean>;
   get cacheable(): boolean;
+  getCacheVersion(): string;
+  getCachePolicy(inputs: Input): CachePolicy;
   narrowInput(input: Partial<Input>, registry: ServiceRegistry): Promise<Partial<Input>>;
   entitlements(): TaskEntitlements;
 }

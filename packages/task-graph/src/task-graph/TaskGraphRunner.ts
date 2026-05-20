@@ -16,6 +16,7 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
+import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
@@ -114,6 +115,15 @@ export class TaskGraphRunner {
    * Output cache repository
    */
   protected outputCache?: TaskOutputRepository;
+
+  /**
+   * True when the caller explicitly passed `outputCache: false` in the run
+   * config, meaning all caching (including CACHE_REGISTRY-based routing) should
+   * be suppressed. Distinct from `this.outputCache === undefined`, which just
+   * means no legacy repo was configured (CACHE_REGISTRY may still apply).
+   */
+  protected legacyCacheExplicitlyDisabled: boolean = false;
+
   /**
    * Whether leaf tasks (no outgoing edges) should accumulate their streaming
    * output. True by default so workflow return values are complete.
@@ -135,6 +145,21 @@ export class TaskGraphRunner {
    * and disable() methods (which take no arguments) have something to act on.
    */
   protected currentCtx?: RunContext;
+
+  /**
+   * Stable identifier for the current graph run. Threaded from
+   * {@link TaskGraphRunConfig.runId} through handleStart so that each
+   * per-task run call carries the same identifier.
+   */
+  protected runId?: string;
+
+  /**
+   * Run-private cache wrapper for the current run. Set by handleStart when a
+   * runId and private cache slot are both present; cleared at the end of each
+   * run. Used to fire-and-forget clearRun() after a successful run.
+   */
+  protected currentRunPrivate?: RunPrivateCacheRepo;
+  protected baseRegistryForRun?: ServiceRegistry;
 
   /**
    * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
@@ -232,6 +257,18 @@ export class TaskGraphRunner {
       }
 
       await this.handleComplete();
+
+      // Await cleanup of run-private cache entries so that a same-runId restart
+      // immediately after this call cannot race against deletions.
+      const runPrivateToClean = this.currentRunPrivate;
+      this.currentRunPrivate = undefined;
+      if (runPrivateToClean) {
+        try {
+          await runPrivateToClean.clearRun();
+        } catch (e) {
+          getLogger().warn("RunPrivateCacheRepo.clearRun failed", { error: e });
+        }
+      }
 
       return this.filterLeafResults(results);
     } finally {
@@ -511,13 +548,17 @@ export class TaskGraphRunner {
         accumulateLeafOutputs: this.accumulateLeafOutputs,
         updateProgress: (t, p, m, ...a) =>
           this.runScheduler.handleProgress(this.currentCtx!, t, p, m, ...a),
+        runId: this.runId,
+        legacyCacheExplicitlyDisabled: this.legacyCacheExplicitlyDisabled,
       });
     }
 
     const results = await task.runner.run(input, {
-      // Pass `false` when no cache so TaskRunner.handleStart explicitly clears
-      // its own cached reference (undefined would leave the old value intact).
-      outputCache: this.outputCache ?? false,
+      // When caching was explicitly disabled (outputCache: false in run config),
+      // pass `false` so TaskRunner clears any stale cacheRegistry. Otherwise pass
+      // `this.outputCache` (which may be undefined, letting TaskRunner use
+      // CACHE_REGISTRY from the per-run ServiceRegistry).
+      outputCache: this.legacyCacheExplicitlyDisabled ? false : this.outputCache,
       updateProgress: async (
         task: ITask,
         progress: number | undefined,
@@ -527,6 +568,7 @@ export class TaskGraphRunner {
         await this.runScheduler.handleProgress(this.currentCtx!, task, progress, message, ...args),
       registry: this.registry,
       resourceScope: this.resourceScope,
+      runId: this.runId,
     });
 
     await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
@@ -556,6 +598,46 @@ export class TaskGraphRunner {
   }
 
   /**
+   * Tracks private cache repos that have already received the durability warning,
+   * keyed by the repo instance. WeakSet so a freshly constructed repo that is no
+   * longer referenced is automatically eligible for re-warning if it shows up
+   * again later. Static because routing is repo-instance scoped, not runner
+   * scoped — a process can have one durable repo and many `TaskGraphRunner`s.
+   */
+  private static __durabilityWarnedRepos = new WeakSet<object>();
+
+  /**
+   * Conservative two-tier detector that decides whether a graph may route any
+   * task to the `private` cache slot. Used by both the durability warning and
+   * the `runId`-required guard in {@link handleStart}.
+   *
+   * 1. Read the static `cachePolicy` off the task's constructor. If `kind` is
+   *    "private", the task is definitely private.
+   * 2. Otherwise, if the task overrides `getCachePolicy` (i.e. its prototype's
+   *    method is not `Task.prototype.getCachePolicy`), conservatively treat it
+   *    as potentially private — the override may decide based on inputs that
+   *    are not available at graph-start time.
+   *
+   * Note: probing `getCachePolicy({} as any)` is unsafe because input-dependent
+   * overrides can throw or return the wrong branch when given empty inputs.
+   */
+  public static graphUsesPrivatePolicy(graph: TaskGraph): boolean {
+    return graph.getTasks().some((t) => {
+      const ctor = t.constructor as typeof Task;
+      if (ctor.cachePolicy?.kind === "private") return true;
+      // Override detection: prototype method differs from Task.prototype's.
+      const proto = ctor.prototype as { getCachePolicy?: unknown };
+      if (
+        typeof proto.getCachePolicy === "function" &&
+        proto.getCachePolicy !== Task.prototype.getCachePolicy
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /**
    * Handles the start of task graph execution
    * @param parentSignal Optional abort signal from parent
    */
@@ -569,6 +651,77 @@ export class TaskGraphRunner {
     if (config?.resourceScope !== undefined) {
       this.resourceScope = config.resourceScope;
     }
+    this.baseRegistryForRun = this.registry;
+
+    // Store run identifier for per-task propagation.
+    this.runId = config?.runId;
+
+    // Warn once per non-durable private repo (across runs) when at least one
+    // task in the graph routes to the private slot. This catches the
+    // dev-mode-in-production misconfiguration where an in-memory store is wired
+    // for convenience but restart-survival is expected. Rate-limited via a
+    // WeakSet keyed by the repo instance so repeated `runGraph` calls against
+    // the same registry do not flood the log.
+    if (this.registry.has(CACHE_REGISTRY)) {
+      const checkRegistry = this.registry.get(CACHE_REGISTRY);
+      if (checkRegistry.private && !checkRegistry.private.isDurable()) {
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          const repo = checkRegistry.private as object;
+          if (!TaskGraphRunner.__durabilityWarnedRepos.has(repo)) {
+            TaskGraphRunner.__durabilityWarnedRepos.add(repo);
+            getLogger().warn(
+              "TaskGraphRunner: private cache repo may be used but is non-durable — " +
+                "restart-survival will not work. Ensure the CacheRegistry 'private' " +
+                "slot is backed by a durable storage backend."
+            );
+          }
+        }
+      }
+
+      // Strict guard: if the graph contains a private-policy task but no runId
+      // was provided, we cannot namespace writes — they would land directly in
+      // the shared private repo and collide across runs. TaskGraphRunner is the
+      // documented owner of runId, so this is a configuration error.
+      if (!this.runId && checkRegistry.private) {
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          throw new TaskConfigurationError(
+            "TaskGraphRunner: graph contains a private-policy task but no runId was provided. " +
+              "Provide `runId` in TaskGraphRunConfig so private cache entries can be namespaced."
+          );
+        }
+      }
+    }
+
+    // If there is a private cache slot and a runId, wrap the private slot in a
+    // RunPrivateCacheRepo so all tasks in this run see a namespaced view of the
+    // backing store. Build a child ServiceRegistry that overrides CACHE_REGISTRY
+    // for this run only; the parent registry is unchanged.
+    if (this.runId && this.registry.has(CACHE_REGISTRY)) {
+      const baseRegistry = this.registry.get(CACHE_REGISTRY);
+      if (baseRegistry.private) {
+        const wrappedPrivate = new RunPrivateCacheRepo({
+          backing: baseRegistry.private,
+          runId: this.runId,
+        });
+        // Retain a reference so runGraph can fire-and-forget clearRun() after success.
+        this.currentRunPrivate = wrappedPrivate;
+        const wrappedRegistry = new DefaultCacheRegistry({
+          deterministic: baseRegistry.deterministic,
+          private: wrappedPrivate,
+        });
+        const childContainer = this.registry.container.createChildContainer();
+        const runtimeServices = new ServiceRegistry(childContainer);
+        // Copy all registrations from parent into child, then override CACHE_REGISTRY.
+        runtimeServices.registerInstance(CACHE_REGISTRY, wrappedRegistry);
+        this.registry = runtimeServices;
+
+        // Register a disposal marker in the resource scope so the run boundary is
+        // documented and callers can attach connection-bearing disposers on the same key.
+        this.resourceScope?.register(`cache:private:${this.runId}`, async () => {
+          // intentionally empty — RunPrivateCacheRepo has no resources of its own
+        });
+      }
+    }
 
     this.accumulateLeafOutputs = config?.accumulateLeafOutputs !== false;
 
@@ -576,13 +729,21 @@ export class TaskGraphRunner {
       if (typeof config.outputCache === "boolean") {
         if (config.outputCache === true) {
           this.outputCache = this.registry.get(TASK_OUTPUT_REPOSITORY);
+          this.legacyCacheExplicitlyDisabled = false;
         } else {
+          // outputCache: false — suppress all caching, including CACHE_REGISTRY.
           this.outputCache = undefined;
+          this.legacyCacheExplicitlyDisabled = true;
         }
       } else {
         this.outputCache = config.outputCache;
+        this.legacyCacheExplicitlyDisabled = false;
       }
       this.graph.outputCache = this.outputCache;
+    } else {
+      // No explicit outputCache in this run's config — preserve existing legacy
+      // repo (if any) but do not disable CACHE_REGISTRY routing.
+      this.legacyCacheExplicitlyDisabled = false;
     }
 
     // Prevent reentrancy
@@ -718,6 +879,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("complete");
   }
@@ -738,6 +903,8 @@ export class TaskGraphRunner {
         }
       })
     );
+    // Do NOT clear run-private entries on failure — left for restart / janitor TTL sweep.
+    this.currentRunPrivate = undefined;
     const ctx = this.currentCtx;
     this.running = false;
 
@@ -748,6 +915,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("error", error);
   }
@@ -775,6 +946,8 @@ export class TaskGraphRunner {
         }
       })
     );
+    // Do NOT clear run-private entries on abort — left for restart / janitor TTL sweep.
+    this.currentRunPrivate = undefined;
     const ctx = this.currentCtx;
 
     if (ctx?.telemetrySpan) {
@@ -784,6 +957,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("abort");
   }

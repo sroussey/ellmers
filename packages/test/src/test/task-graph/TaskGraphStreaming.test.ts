@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   getOutputStreamMode,
@@ -32,7 +32,7 @@ type TextOutput = { text: string };
  */
 class StreamSourceTask extends Task<TextInput, TextOutput> {
   public static override type = "StreamSourceTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -81,7 +81,7 @@ class StreamSourceTask extends Task<TextInput, TextOutput> {
  */
 class StreamConsumerTask extends Task<TextInput, TextOutput> {
   public static override type = "StreamConsumerTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -125,7 +125,7 @@ class StreamConsumerTask extends Task<TextInput, TextOutput> {
  */
 class NonStreamConsumerTask extends Task<TextInput, TextOutput> {
   public static override type = "NonStreamConsumerTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -159,7 +159,7 @@ class NonStreamConsumerTask extends Task<TextInput, TextOutput> {
  */
 class AppendEmptyFinishSource extends Task<TextInput, TextOutput> {
   public static override type = "AppendEmptyFinishSource";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -204,7 +204,7 @@ class AppendEmptyFinishSource extends Task<TextInput, TextOutput> {
  */
 class ReplaceSourceTask extends Task<TextInput, TextOutput> {
   public static override type = "ReplaceSourceTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -714,7 +714,7 @@ describe("TaskGraph Streaming", () => {
    */
   class RapidStreamTask extends Task<TextInput, TextOutput> {
     public static override type = "RapidStreamTask";
-    public static override cacheable = false;
+    public static override cachePolicy: CachePolicy = { kind: "none" };
 
     public static override inputSchema(): DataPortSchema {
       return {
@@ -757,7 +757,7 @@ describe("TaskGraph Streaming", () => {
    */
   class AlwaysFailTask extends Task<TextInput, TextOutput> {
     public static override type = "AlwaysFailTask";
-    public static override cacheable = false;
+    public static override cachePolicy: CachePolicy = { kind: "none" };
 
     public static override inputSchema(): DataPortSchema {
       return {

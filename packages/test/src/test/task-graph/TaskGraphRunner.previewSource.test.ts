@@ -3,7 +3,7 @@
  * Copyright 2025 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { Task, TaskGraph, TaskRegistry } from "@workglow/task-graph";
+import { Task, TaskGraph, TaskRegistry, type CachePolicy } from "@workglow/task-graph";
 import {
   imageValueFromBuffer,
   registerPreviewResizeFn,
@@ -17,7 +17,7 @@ class TestImageSource extends Task<Record<string, unknown>, { image: ImageValue 
   public static override readonly category = "Test" as const;
   public static override readonly title = "TestImageSource";
   public static override readonly description = "";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema() {
     return { type: "object" as const, properties: {} } as any;
   }

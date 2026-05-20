@@ -41,17 +41,17 @@ function fakeImageValue(width = 8, height = 8, previewScale = 1): ImageValue {
 }
 
 describe("AiImageOutputTask", () => {
-  describe("seed-aware cacheable", () => {
-    it("is not cacheable when seed is undefined", () => {
+  describe("seed-aware cache policy", () => {
+    it("returns private cache policy when seed is undefined", () => {
       const task = new TestImageTask({});
-      task.runInputData = { prompt: "x", model: "m" };
-      expect(task.cacheable).toBe(false);
+      const policy = task.getCachePolicy({ prompt: "x", model: "m" });
+      expect(policy).toEqual({ kind: "private" });
     });
 
-    it("is cacheable when seed is set", () => {
+    it("returns deterministic cache policy when seed is set", () => {
       const task = new TestImageTask({});
-      task.runInputData = { prompt: "x", model: "m", seed: 42 };
-      expect(task.cacheable).toBe(true);
+      const policy = task.getCachePolicy({ prompt: "x", model: "m", seed: 42 });
+      expect(policy).toEqual({ kind: "deterministic" });
     });
   });
 

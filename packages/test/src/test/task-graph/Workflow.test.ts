@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import {
   computeGraphInputSchema,
   CreateWorkflow,
@@ -1200,7 +1201,7 @@ type StreamRelayOutput = { text: string };
 
 class StreamRelayTask extends Task<StreamRelayInput, StreamRelayOutput> {
   public static override type = "StreamRelayTask";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {

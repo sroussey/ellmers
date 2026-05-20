@@ -5,7 +5,7 @@
  */
 
 import { DocumentNode, KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -77,7 +77,7 @@ export class KbToDocumentsTask extends Task<
   public static override title = "Knowledge Base to Documents";
   public static override description =
     "List documents from a knowledge base, optionally filtering to only those that need embedding";
-  public static override cacheable = false; // Depends on external state
+  public static override cachePolicy: CachePolicy = { kind: "none" }; // Depends on external state
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

@@ -8,6 +8,7 @@ import type { DataPortSchema } from "@workglow/util/schema";
 import { GraphAsTask } from "../task/GraphAsTask";
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
+import type { CachePolicy } from "../cache/CachePolicy";
 import type { DataPorts } from "../task/TaskTypes";
 import { DATAFLOW_ALL_PORTS } from "./Dataflow";
 import type { ITaskGraph } from "./ITaskGraph";
@@ -118,7 +119,7 @@ function convertPipeFunctionToTask<I extends DataPorts, O extends DataPorts>(
         additionalProperties: true,
       } as const satisfies DataPortSchema;
     };
-    public static override cacheable = false;
+    public static override cachePolicy: CachePolicy = { kind: "none" };
     public override async execute(input: I, context: IExecuteContext) {
       return fn(input, context);
     }

@@ -5,6 +5,8 @@
  */
 
 import { getPortCodec } from "@workglow/util";
+import type { CacheRegistry } from "../cache/CacheRegistry";
+import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
@@ -35,14 +37,21 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    * resulting object is a stable, serialization-equivalent representation
    * suitable for use as a cache key. Properties without a format annotation are
    * passed through unchanged. No-op when no cache is configured.
+   *
+   * The reserved sentinel field `__cv` (cache version) is injected into the
+   * normalized object before fingerprinting so that bumping a task's `static
+   * version` automatically invalidates its cached outputs. Tasks must never
+   * declare an input port named `__cv`.
    */
   async buildKey(inputs: Input, outputCache: TaskOutputRepository | undefined): Promise<Input> {
     if (!outputCache) return inputs;
     const inputSchema = (this.task.constructor as typeof Task).inputSchema();
-    return (await CacheCoordinator.normalizeInputsForCacheKey(
+    const normalized = await CacheCoordinator.normalizeInputsForCacheKey(
       inputs as Record<string, unknown>,
       inputSchema as unknown as SchemaProperties
-    )) as Input;
+    );
+    (normalized as Record<string, unknown>).__cv = this.task.getCacheVersion();
+    return normalized as Input;
   }
 
   /**
@@ -99,6 +108,51 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       outputSchema as unknown as SchemaProperties
     );
     await outputCache.saveOutput(this.task.type, keyInputs, wireOutputs as Output);
+  }
+
+  // ========================================================================
+  // Policy-aware routing methods
+  // ========================================================================
+
+  /**
+   * Resolve the repository slot to use given a registry and policy. Returns
+   * `undefined` if the registry is missing, the policy is `kind: "none"`, or
+   * the relevant slot is unregistered. All callers treat `undefined` as "skip
+   * caching" — no errors, no warnings.
+   */
+  private repoFor(
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): TaskOutputRepository | undefined {
+    if (!registry || !isPolicyCached(policy)) return undefined;
+    return isPolicyPrivate(policy) ? registry.private : registry.deterministic;
+  }
+
+  public async buildKeyForPolicy(
+    inputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): Promise<Input> {
+    return this.buildKey(inputs, this.repoFor(registry, policy));
+  }
+
+  public async lookupByPolicy(
+    keyInputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    isStreamable: boolean,
+    ctx: TaskRunContext
+  ): Promise<Output | undefined> {
+    return this.lookup(keyInputs, this.repoFor(registry, policy), isStreamable, ctx);
+  }
+
+  public async saveByPolicy(
+    keyInputs: Input,
+    output: Output,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy
+  ): Promise<void> {
+    return this.save(keyInputs, output, this.repoFor(registry, policy));
   }
 
   // ========================================================================

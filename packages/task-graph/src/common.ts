@@ -38,6 +38,7 @@ export * from "./task-graph/TransformTypes";
 export * from "./task-graph/transforms";
 export * from "./task-graph/autoConnect";
 
+export * from "./cache";
 export * from "./task/CacheCoordinator";
 export * from "./task/StreamProcessor";
 export * from "./task/TaskRunContext";

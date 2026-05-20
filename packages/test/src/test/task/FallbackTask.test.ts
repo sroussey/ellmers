@@ -14,6 +14,7 @@ import {
   TaskInput,
   TaskStatus,
   Workflow,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
@@ -101,7 +102,7 @@ class ConditionalFailTask extends Task<{ value: number }, { result: number }> {
 
 class SlowSucceedingTask extends Task<{ value: number }, { result: number }> {
   public static override type = "FallbackTest_SlowSucceedingTask";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -357,7 +358,7 @@ describe("FallbackTask", () => {
       // we should see blended values between each pair of attempt markers.
       class MidProgressTask extends Task<{ value: number }, { result: number }> {
         public static override type = "FallbackTest_DataMidProgressTask";
-        public static override readonly cacheable = false;
+        public static override cachePolicy: CachePolicy = { kind: "none" };
 
         public static override inputSchema(): DataPortSchema {
           return {

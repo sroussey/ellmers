@@ -1,5 +1,38 @@
 # @workglow/task-graph
 
+## [Unreleased]
+
+### Added
+
+- `CachePolicy` discriminated union (`deterministic` / `private` / `none`) declared via static `Task.cachePolicy` or instance `getCachePolicy(inputs)` override for input-dependent policies.
+- `Task.version` static + `getCacheVersion()` for explicit cache invalidation. Bumping the version invalidates cached outputs.
+- `CacheRegistry` service registered under `CACHE_REGISTRY` token with two optional slots (`deterministic`, `private`). Missing slot = no-op caching.
+- `RunPrivateCacheRepo` namespacing wrapper keyed by `runId`. `TaskGraphRunner` builds this automatically when `runId` is supplied in run config.
+- `CacheJanitor.sweepStaleRunPrivate(olderThanMs)` for app-scheduled cleanup of crashed-run cache rows.
+- New abstract methods on `TaskOutputRepository`: `isDurable()`, `deleteByTaskTypePrefix()`, `clearOlderThanWithTaskTypePrefix()`, `sizeByTaskTypePrefix()`. `TaskOutputTabularRepository` provides default implementations via row iteration.
+
+### Changed
+
+- `TaskRunner` resolves the per-task cache via `CACHE_REGISTRY` in the `ServiceRegistry` and routes by `getCachePolicy(inputs)`. Legacy `config.outputCache: TaskOutputRepository` still works as a back-compat shim mapped to the `deterministic` slot.
+- `TaskGraphRunner` threads `runId` through `IExecuteContext`. Throws `TaskConfigurationError` if a graph contains a `private`-policy task but no `runId` is provided. Awaits `clearRun()` on successful completion; failed/aborted runs leave entries for restart or TTL sweep.
+- Cache key now includes the task's `cacheVersion` via a reserved `__cv` sentinel injected into normalized inputs. Tasks may not declare an input port named `__cv` (rejected at construction).
+- `AiImageOutputTask` now routes to `private` when no `seed` is supplied (was: uncached) and `deterministic` when seeded.
+- Telemetry span attribute renamed from `workglow.task.cacheable` (boolean) to `workglow.task.cache_policy` (string) and is now set after policy resolution, so input-dependent policies report the correct value.
+
+### Deprecated
+
+- `static cacheable: boolean` on Task subclasses. Use `static cachePolicy: CachePolicy = { kind: "none" | "deterministic" | "private" }` instead. The boolean shim emits a one-shot warning per task type and will be removed in a future release.
+- `ITaskStaticProperties.cacheable` interface field marked `@deprecated`. The interface now declares the optional `cachePolicy` field as the canonical replacement.
+
+### Migration
+
+- Replace `static cacheable = false` with `static cachePolicy: CachePolicy = { kind: "none" }`.
+- Replace any `outputCache: someRepo` run-config use with registering a `CacheRegistry` instance in `ServiceRegistry`:
+  ```ts
+  services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic: repo }));
+  ```
+- Provide a `runId` in `IRunConfig` when running graphs with `private`-policy tasks (caller-supplied; typically a UUID matching a DB row).
+
 ## 0.2.37
 
 ### Features

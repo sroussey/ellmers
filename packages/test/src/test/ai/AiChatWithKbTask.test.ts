@@ -27,7 +27,7 @@ describe("AiChatWithKbTask — schema and registration", () => {
   it("has required static properties", () => {
     expect(AiChatWithKbTask.type).toBe("AiChatWithKbTask");
     expect(AiChatWithKbTask.category).toBe("AI Chat");
-    expect(AiChatWithKbTask.cacheable).toBe(false);
+    expect(AiChatWithKbTask.cachePolicy).toEqual({ kind: "none" });
   });
 
   it("input schema requires model, prompt, knowledgeBaseIds", () => {

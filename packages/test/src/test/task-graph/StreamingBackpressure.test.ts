@@ -20,7 +20,7 @@
  *     downstream tasks from starting.
  */
 
-import type { StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, StreamEvent } from "@workglow/task-graph";
 import {
   Dataflow,
   IExecuteContext,
@@ -50,7 +50,7 @@ type TextOutput = { text: string };
  */
 class HighRateProducer extends Task<PromptInput, TextOutput> {
   public static override type = "StreamingBackpressure_HighRateProducer";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public totalEvents: number;
   public yieldCount = 0;
@@ -110,7 +110,7 @@ function expectedAccumulatedText(totalEvents: number): string {
  */
 class MaterialisedConsumer extends Task<{ text: string }, TextOutput> {
   public static override type = "StreamingBackpressure_MaterialisedConsumer";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return {
@@ -138,7 +138,7 @@ class MaterialisedConsumer extends Task<{ text: string }, TextOutput> {
  */
 class ErroringProducer extends Task<PromptInput, TextOutput> {
   public static override type = "StreamingBackpressure_ErroringProducer";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public preErrorEvents: number;
   public readonly errorMessage = "producer failed mid-stream";

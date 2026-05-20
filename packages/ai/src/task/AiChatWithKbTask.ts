@@ -6,7 +6,7 @@
 
 import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base";
 import { getKnowledgeBase, slugifyHeading } from "@workglow/knowledge-base";
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
@@ -283,7 +283,7 @@ export class AiChatWithKbTask extends StreamingAiTask<
   public static override title = "AI Chat (Knowledge Base)";
   public static override description =
     "Multi-turn chat grounded in one or more knowledge bases. Retrieves on every user turn, injects numbered context, and emits structured per-chunk citation references.";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return {

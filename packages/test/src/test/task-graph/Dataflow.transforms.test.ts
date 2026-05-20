@@ -10,6 +10,7 @@ import {
   TaskGraph,
   TaskStatus,
   registerBuiltInTransforms,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -102,7 +103,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
       static override readonly category = "Test";
       static override readonly title = "Src";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -128,7 +129,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
       static override readonly category = "Test";
       static override readonly title = "Tgt";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -170,7 +171,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
       static override readonly category = "Test";
       static override readonly title = "SrcX";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -190,7 +191,7 @@ describe("Dataflow.semanticallyCompatible with transforms", () => {
       static override readonly category = "Test";
       static override readonly title = "TgtX";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",

@@ -12,6 +12,7 @@ import {
   Task,
   TaskGraph,
   Workflow,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { InputTask, OutputTask } from "@workglow/tasks";
 import { Container, ServiceRegistry, setLogger, sleep } from "@workglow/util";
@@ -633,7 +634,7 @@ describe("GraphAsTask Dynamic Schema", () => {
       // graph, so the activity row was stuck on the stale "Map 22/22" message.
       class MidProgressTask extends Task<{ value: number }, { result: number }> {
         public static override type = "GraphAsTaskTest_MidProgressTask";
-        public static override readonly cacheable = false;
+        public static override cachePolicy: CachePolicy = { kind: "none" };
 
         public static override inputSchema(): DataPortSchema {
           return {
@@ -715,7 +716,7 @@ describe("GraphAsTask Dynamic Schema", () => {
     it("outer graph_progress does not stick on 'Map N/N' while a slow GraphAsTask runs", async () => {
       class EmbedStepTask extends Task<{ value: number }, { embedded: number }> {
         public static override type = "GraphAsTaskTest_EmbedStepTask";
-        public static override readonly cacheable = false;
+        public static override cachePolicy: CachePolicy = { kind: "none" };
 
         public static override inputSchema(): DataPortSchema {
           return {
@@ -748,7 +749,7 @@ describe("GraphAsTask Dynamic Schema", () => {
 
       class MultiplyTask extends Task<{ item: number }, { item: number }> {
         public static override type = "GraphAsTaskTest_MultiplyTask";
-        public static override readonly cacheable = false;
+        public static override cachePolicy: CachePolicy = { kind: "none" };
 
         public static override inputSchema(): DataPortSchema {
           return {
