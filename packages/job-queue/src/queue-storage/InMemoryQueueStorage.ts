@@ -355,6 +355,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     await sleep(0);
@@ -373,6 +374,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("progress" in fields) target.progress = fields.progress ?? 0;
     if ("progress_message" in fields) target.progress_message = fields.progress_message ?? "";
     if ("progress_details" in fields) target.progress_details = fields.progress_details ?? null;
+    if ("visible_at" in fields) target.visible_at = fields.visible_at ?? null;
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 

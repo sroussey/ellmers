@@ -165,4 +165,14 @@ export class IndexedDbJobStore<Input, Output> implements IJobStore<Input, Output
       completed_at: current?.completed_at ?? now,
     });
   }
+
+  async markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void> {
+    await this.core.finalize(id, {
+      visible_at: opts.visible_at.toISOString(),
+      error_code: opts.errorCode,
+    });
+  }
 }

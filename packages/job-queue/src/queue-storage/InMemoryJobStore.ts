@@ -139,4 +139,14 @@ export class InMemoryJobStore<Input, Output> implements IJobStore<Input, Output>
     this.pending.delete(id);
     await this.core.failWithError(id, opts);
   }
+
+  async markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void> {
+    await this.core.finalize(id, {
+      visible_at: opts.visible_at.toISOString(),
+      error_code: opts.errorCode,
+    });
+  }
 }

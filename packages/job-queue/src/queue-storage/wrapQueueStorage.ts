@@ -360,6 +360,16 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       completed_at: current?.completed_at ?? now,
     });
   }
+
+  async markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void> {
+    await this.storage.finalize(id, {
+      visible_at: opts.visible_at.toISOString(),
+      error_code: opts.errorCode,
+    });
+  }
 }
 
 function applySendOptions<Input, Output>(
