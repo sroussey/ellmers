@@ -1,0 +1,54 @@
+{
+  "name": "@workglow/cloudflare",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/libs.git",
+    "directory": "providers/cloudflare"
+  },
+  "description": "Cloudflare backends for @workglow/job-queue (Queues).",
+  "scripts": {
+    "watch": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "bun run build-js && bun run build-types",
+    "build-js": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test"
+  },
+  "exports": {
+    "./job-queue": {
+      "browser": {
+        "types": "./dist/job-queue/browser.d.ts",
+        "import": "./dist/job-queue/browser.js"
+      },
+      "types": "./dist/job-queue/browser.d.ts",
+      "import": "./dist/job-queue/browser.js"
+    }
+  },
+  "peerDependencies": {
+    "@cloudflare/workers-types": "^4.20240101.0",
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240101.0",
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ]
+}
