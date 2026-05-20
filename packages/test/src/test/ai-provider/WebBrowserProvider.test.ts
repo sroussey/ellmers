@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChatMessage, ModelRecord, StructuredGenerationTaskInput } from "@workglow/ai";
+import type {
+  ChatMessage,
+  ModelRecord,
+  StructuredGenerationTaskInput,
+  ToolCallingTaskInput,
+  ToolDefinition,
+} from "@workglow/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,18 +20,19 @@ const {
   WEB_BROWSER_RUN_FNS,
   WebBrowser_TextGeneration_Unified,
   WebBrowser_StructuredGeneration,
+  WebBrowser_ToolCalling,
   sessions,
   chatHistory,
   probe,
 } = _testOnly;
 
 /**
- * Test-time helper: the chrome-ai run-fns we test take the strongly-typed
- * `StructuredGenerationTaskInput`, which requires a `model` field that's
- * irrelevant to provider-level tests (the dispatcher fills it in upstream).
- * We coerce away the requirement here.
+ * Test-time helpers: the chrome-ai run-fns we test take strongly-typed task
+ * inputs requiring a `model` field that's irrelevant to provider-level
+ * tests (the dispatcher fills it in upstream). We coerce that away here.
  */
 const asSGI = (v: unknown): StructuredGenerationTaskInput => v as StructuredGenerationTaskInput;
+const asTCI = (v: unknown): ToolCallingTaskInput => v as ToolCallingTaskInput;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -629,6 +636,199 @@ describe("WebBrowser_StructuredGeneration session cache", () => {
       );
       // Two creates — schema fingerprint mismatch invalidated the cache.
       expect(factory.create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------
+// ToolCalling session cache (H2)
+// --------------------------------------------------------------------------
+
+/**
+ * Fake `LanguageModel` for tool-calling tests. The session's
+ * `promptStreaming` immediately invokes each declared tool's `execute`
+ * callback so the run-fn captures the tool calls, then closes the stream.
+ *
+ * `callsBy[toolName]` supplies args for each capture; if omitted defaults
+ * to `{}`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeFakeToolCallingModel(callsBy: Record<string, unknown> = {}): any {
+  const factory = {
+    availability: vi.fn().mockResolvedValue("available"),
+    create: vi.fn(
+      async (options?: {
+        tools?: Array<{ name: string; execute: (...args: unknown[]) => Promise<string> }>;
+      }) => {
+        const tools = options?.tools ?? [];
+        return {
+          promptStreaming: () =>
+            new ReadableStream<string>({
+              async start(controller) {
+                for (const t of tools) {
+                  if (t.name === "_probe") continue; // probe tool ignored here
+                  const args = callsBy[t.name] ?? {};
+                  await t.execute(args);
+                }
+                controller.close();
+              },
+            }),
+          destroy: vi.fn(),
+        };
+      }
+    ),
+  };
+  return { factory };
+}
+
+describe("WebBrowser_ToolCalling session cache", () => {
+  const sid = "tc-test-1";
+  const toolA: ToolDefinition = {
+    name: "tool_a",
+    description: "tool a",
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+  };
+  const toolB: ToolDefinition = {
+    name: "tool_b",
+    description: "tool b",
+    inputSchema: { type: "object", properties: {}, additionalProperties: true },
+  };
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("reuses cache when sessionId + messages + tool set match", async () => {
+    const { factory } = makeFakeToolCallingModel();
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages: messages2 }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      // Same tool set, same conversation thread → cache reuse, one create().
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("rebuilds when the tool set changes", async () => {
+    const { factory } = makeFakeToolCallingModel();
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA, toolB], messages: messages2 }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      // Different fingerprint → cache invalidated, two creates.
+      expect(factory.create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+
+  it("drops + destroys the cache entry on prompt failure", async () => {
+    // Sequenced session: first promptStreaming() returns a clean close,
+    // second errors. Same session handle returned from both create() calls
+    // (cache reuse exercises the same `session` object).
+    let promptCount = 0;
+    const sessionImpl = {
+      promptStreaming: (): ReadableStream<string> =>
+        new ReadableStream<string>({
+          start(controller) {
+            promptCount += 1;
+            if (promptCount === 1) {
+              controller.close();
+            } else {
+              controller.error(new Error("boom"));
+            }
+          },
+        }),
+      destroy: vi.fn(),
+    };
+    const factory = {
+      availability: vi.fn().mockResolvedValue("available"),
+      create: vi.fn(async () => sessionImpl),
+    };
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const messages: ChatMessage[] = [
+        { role: "user", content: [{ type: "text", text: "do it" }] },
+      ];
+      const emit = vi.fn();
+      // First turn seeds the cache successfully.
+      await WebBrowser_ToolCalling(
+        asTCI({ prompt: "", tools: [toolA], messages }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        undefined,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      // Second turn reuses the cached session whose stream now errors.
+      const messages2: ChatMessage[] = [
+        ...messages,
+        { role: "assistant", content: [{ type: "text", text: "ok" }] },
+        { role: "user", content: [{ type: "text", text: "again" }] },
+      ];
+      await expect(
+        WebBrowser_ToolCalling(
+          asTCI({ prompt: "", tools: [toolA], messages: messages2 }),
+          undefined,
+          new AbortController().signal,
+          emit,
+          undefined,
+          sid
+        )
+      ).rejects.toThrow(/boom/);
+      // Cache cleaned up.
+      expect(sessions.getChromeSession(sid)).toBeUndefined();
     } finally {
       restore();
     }
