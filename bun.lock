@@ -431,10 +431,12 @@
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20240101.0",
         "@workglow/job-queue": "workspace:*",
+        "@workglow/util": "workspace:*",
       },
       "peerDependencies": {
         "@cloudflare/workers-types": "^4.20240101.0",
         "@workglow/job-queue": "workspace:*",
+        "@workglow/util": "workspace:*",
       },
     },
     "providers/electron": {

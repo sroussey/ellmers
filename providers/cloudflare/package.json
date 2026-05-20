@@ -30,16 +30,21 @@
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",
-    "@workglow/job-queue": "workspace:*"
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/util": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/util": {
       "optional": false
     }
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240101.0",
-    "@workglow/job-queue": "workspace:*"
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/util": "workspace:*"
   },
   "files": [
     "dist",
