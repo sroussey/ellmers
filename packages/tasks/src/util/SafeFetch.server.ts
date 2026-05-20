@@ -18,9 +18,13 @@
  * `packages/tasks/src/bun.ts` via `registerSafeFetch`.
  */
 
-import { PermanentJobError } from "@workglow/job-queue";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { Agent, fetch as undiciFetch } from "undici";
+import {
+  createFetchUrlJobError,
+  FetchUrlErrorCode,
+  isFetchUrlJobError,
+} from "../task/FetchUrlJobError";
 import { registerSafeFetch, type SafeFetchFn, type SafeFetchOptions } from "./SafeFetch";
 import { classifyIpLiteral, classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
@@ -54,13 +58,19 @@ async function resolveAll(hostname: string): Promise<readonly ResolvedAddress[]>
   try {
     const addrs = await dnsLookup(hostname, { all: true, verbatim: true });
     if (!Array.isArray(addrs) || addrs.length === 0) {
-      throw new PermanentJobError(`DNS lookup returned no addresses for '${hostname}'`);
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.DNS_FAILED,
+        `DNS lookup returned no addresses for '${hostname}'`
+      );
     }
     return addrs.map((a) => ({ address: a.address, family: a.family as 4 | 6 }));
   } catch (err) {
-    if (err instanceof PermanentJobError) throw err;
+    if (isFetchUrlJobError(err)) throw err;
     const msg = err instanceof Error ? err.message : String(err);
-    throw new PermanentJobError(`DNS lookup failed for '${hostname}': ${msg}`);
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.DNS_FAILED,
+      `DNS lookup failed for '${hostname}': ${msg}`
+    );
   }
 }
 
@@ -86,12 +96,18 @@ async function fetchOneHop(
 ): Promise<{ response: Response; dispatcher: Agent }> {
   const classification = classifyUrl(url);
   if (classification.kind === "invalid") {
-    throw new PermanentJobError(`Refusing to fetch invalid URL: ${classification.reason}`);
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.INVALID_URL,
+      `Refusing to fetch invalid URL: ${classification.reason}`,
+      { url }
+    );
   }
   if (classification.kind === "private" && !opts.allowPrivate) {
-    throw new PermanentJobError(
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.PRIVATE_DENIED,
       `Refusing to fetch private/internal URL ${url}: ${classification.reason}. ` +
-        `Grant the 'network:private' entitlement to allow this request.`
+        `Grant the 'network:private' entitlement to allow this request.`,
+      { url }
     );
   }
   if (
@@ -99,10 +115,12 @@ async function fetchOneHop(
     opts.privateResourceScopes !== undefined &&
     !urlMatchesScope(url, opts.privateResourceScopes)
   ) {
-    throw new PermanentJobError(
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.SCOPE_DENIED,
       `Refusing to fetch ${url}: outside granted network:private scope ` +
         `[${opts.privateResourceScopes.join(", ")}]. A compromised upstream may be attempting ` +
-        `to escape the task's authorized private-host origin.`
+        `to escape the task's authorized private-host origin.`,
+      { url }
     );
   }
 
@@ -121,15 +139,19 @@ async function fetchOneHop(
     for (const addr of addrs) {
       const ipClass = classifyIpLiteral(addr.address);
       if (ipClass === undefined) {
-        throw new PermanentJobError(
-          `DNS resolved '${host}' to an unparseable address '${addr.address}'`
+        throw createFetchUrlJobError(
+          FetchUrlErrorCode.DNS_FAILED,
+          `DNS resolved '${host}' to an unparseable address '${addr.address}'`,
+          { url }
         );
       }
       if (ipClass.kind === "private" && !opts.allowPrivate) {
-        throw new PermanentJobError(
+        throw createFetchUrlJobError(
+          FetchUrlErrorCode.PRIVATE_DENIED,
           `Refusing to fetch ${url}: hostname '${host}' resolved to private address ` +
             `${addr.address} (${ipClass.reason}). This may indicate DNS rebinding. ` +
-            `Grant the 'network:private' entitlement to allow this request.`
+            `Grant the 'network:private' entitlement to allow this request.`,
+          { url }
         );
       }
     }
@@ -217,8 +239,10 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
     const location = response.headers.get("location");
     if (!location) {
       closeAgent(dispatcher);
-      throw new PermanentJobError(
-        `Refusing to follow redirect from ${currentUrl}: missing Location header.`
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.REDIRECT_MISSING_LOCATION,
+        `Refusing to follow redirect from ${currentUrl}: missing Location header.`,
+        { url: currentUrl }
       );
     }
 
@@ -226,7 +250,11 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
     currentUrl = new URL(location, currentUrl).toString();
   }
 
-  throw new PermanentJobError(`Refusing to fetch ${url}: too many redirects.`);
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.TOO_MANY_REDIRECTS,
+    `Refusing to fetch ${url}: too many redirects.`,
+    { url }
+  );
 };
 
 // Register at module load — the Node/Bun entrypoint re-exports this file

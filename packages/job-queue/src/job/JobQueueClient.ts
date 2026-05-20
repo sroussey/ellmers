@@ -615,6 +615,17 @@ export class JobQueueClient<Input, Output> {
   }
 
   protected buildErrorFromCode(message: string, errorCode?: string): JobError {
+    // FetchUrlTask codes — keep retryable set in sync with @workglow/tasks FetchUrlErrorCode
+    if (errorCode?.startsWith("FETCH_")) {
+      const retryable =
+        errorCode === "FETCH_HTTP_RATE_LIMITED" ||
+        errorCode === "FETCH_HTTP_SERVER_ERROR" ||
+        errorCode === "FETCH_NETWORK_ERROR";
+      const err = retryable ? new RetryableJobError(message) : new PermanentJobError(message);
+      err.code = errorCode;
+      applyPersistedDiagnosticsToStack(err, message);
+      return err;
+    }
     if (errorCode === "PermanentJobError") {
       const err = new PermanentJobError(message);
       applyPersistedDiagnosticsToStack(err, message);
@@ -636,6 +647,9 @@ export class JobQueueClient<Input, Output> {
       return err;
     }
     const err = new JobError(message);
+    if (errorCode) {
+      err.code = errorCode;
+    }
     applyPersistedDiagnosticsToStack(err, message);
     return err;
   }

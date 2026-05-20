@@ -95,9 +95,14 @@ export class TaskFailedError extends TaskError {
 export class JobTaskFailedError extends TaskFailedError {
   static override readonly type: string = "JobTaskFailedError";
   public jobError: JobError;
+  /** Machine-readable code when the underlying job error provides one (e.g. FETCH_HTTP_CLIENT_ERROR). */
+  public code?: string;
   constructor(err: JobError) {
     super(String(err));
     this.jobError = err;
+    if (err.code) {
+      this.code = err.code;
+    }
   }
 }
 

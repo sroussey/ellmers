@@ -14,33 +14,27 @@ export * from "./task/ArrayTask";
 export * from "./task/DateFormatTask";
 export * from "./task/DebugLogTask";
 export * from "./task/DelayTask";
+export * from "./task/FetchUrlJobError";
 export * from "./task/FetchUrlTask";
 export * from "./task/HumanApprovalTask";
 export * from "./task/HumanInputTask";
-export {
-  registerFilterOp,
-  applyFilter,
-  hasFilterOp,
-  _resetFilterRegistryForTests,
-} from "@workglow/util/media";
-export type { FilterOpFn } from "@workglow/util/media";
-export { ImageFilterTask } from "./task/image/ImageFilterTask";
-export type { ImageFilterInput, ImageFilterOutput } from "./task/image/ImageFilterTask";
 export * from "./task/image/blur/ImageBlurTask";
 export * from "./task/image/border/ImageBorderTask";
 export * from "./task/image/brightness/ImageBrightnessTask";
-export * from "./task/image/imageCodecLimits";
 export * from "./task/image/contrast/ImageContrastTask";
 export * from "./task/image/crop/ImageCropTask";
 export * from "./task/image/flip/ImageFlipTask";
 export * from "./task/image/grayscale/ImageGrayscaleTask";
+export * from "./task/image/imageCodecLimits";
+export { ImageFilterTask } from "./task/image/ImageFilterTask";
+export type { ImageFilterInput, ImageFilterOutput } from "./task/image/ImageFilterTask";
+export * from "./task/image/imageRasterCodecRegistry";
+export * from "./task/image/ImageSchemas";
 export * from "./task/image/invert/ImageInvertTask";
 export * from "./task/image/pixelate/ImagePixelateTask";
 export * from "./task/image/posterize/ImagePosterizeTask";
-export * from "./task/image/imageRasterCodecRegistry";
 export * from "./task/image/resize/ImageResizeTask";
 export * from "./task/image/rotate/ImageRotateTask";
-export * from "./task/image/ImageSchemas";
 export * from "./task/image/sepia/ImageSepiaTask";
 export * from "./task/image/text/ImageTextTask";
 export * from "./task/image/threshold/ImageThresholdTask";
@@ -87,6 +81,13 @@ export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
+export {
+  _resetFilterRegistryForTests,
+  applyFilter,
+  hasFilterOp,
+  registerFilterOp,
+} from "@workglow/util/media";
+export type { FilterOpFn } from "@workglow/util/media";
 
 import { TaskRegistry } from "@workglow/task-graph";
 import { DateFormatTask } from "./task/DateFormatTask";

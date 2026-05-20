@@ -1,0 +1,165 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {
+  AbortSignalJobError,
+  JobError,
+  PermanentJobError,
+  RetryableJobError,
+} from "@workglow/job-queue";
+
+/**
+ * Machine-readable error codes for {@link FetchUrlJob} / {@link FetchUrlTask}.
+ * Persisted as `error_code` on queued jobs when a fetch fails.
+ */
+export const FetchUrlErrorCode = {
+  INVALID_URL: "FETCH_INVALID_URL",
+  PRIVATE_DENIED: "FETCH_PRIVATE_DENIED",
+  SCOPE_DENIED: "FETCH_SCOPE_DENIED",
+  DNS_FAILED: "FETCH_DNS_FAILED",
+  TOO_MANY_REDIRECTS: "FETCH_TOO_MANY_REDIRECTS",
+  REDIRECT_MISSING_LOCATION: "FETCH_REDIRECT_MISSING_LOCATION",
+  HTTP_CLIENT_ERROR: "FETCH_HTTP_CLIENT_ERROR",
+  HTTP_RATE_LIMITED: "FETCH_HTTP_RATE_LIMITED",
+  HTTP_SERVER_ERROR: "FETCH_HTTP_SERVER_ERROR",
+  RESPONSE_PARSE_ERROR: "FETCH_RESPONSE_PARSE_ERROR",
+  INVALID_RESPONSE_TYPE: "FETCH_INVALID_RESPONSE_TYPE",
+  NETWORK_ERROR: "FETCH_NETWORK_ERROR",
+  NO_RESPONSE_BODY: "FETCH_NO_RESPONSE_BODY",
+  CONFIGURATION: "FETCH_CONFIGURATION",
+} as const;
+
+export type FetchUrlErrorCodeValue = (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];
+
+/** Error codes that should be retried by the job queue. */
+export const FETCH_URL_RETRYABLE_ERROR_CODES: ReadonlySet<FetchUrlErrorCodeValue> = new Set([
+  FetchUrlErrorCode.HTTP_RATE_LIMITED,
+  FetchUrlErrorCode.HTTP_SERVER_ERROR,
+  FetchUrlErrorCode.NETWORK_ERROR,
+]);
+
+export function isFetchUrlErrorCode(
+  value: string | undefined | null
+): value is FetchUrlErrorCodeValue {
+  if (!value) return false;
+  return (Object.values(FetchUrlErrorCode) as string[]).includes(value);
+}
+
+export function isFetchUrlRetryableErrorCode(
+  code: string | undefined | null
+): code is FetchUrlErrorCodeValue {
+  return isFetchUrlErrorCode(code) && FETCH_URL_RETRYABLE_ERROR_CODES.has(code);
+}
+
+export interface FetchUrlJobErrorDetails {
+  readonly url?: string;
+  readonly httpStatus?: number;
+  readonly httpStatusText?: string;
+}
+
+export type FetchUrlJobErrorInstance = JobError & {
+  code: FetchUrlErrorCodeValue;
+  url?: string;
+  httpStatus?: number;
+  httpStatusText?: string;
+  retryDate?: Date;
+};
+
+function attachFetchUrlFields(
+  error: JobError,
+  code: FetchUrlErrorCodeValue,
+  details: FetchUrlJobErrorDetails | undefined
+): FetchUrlJobErrorInstance {
+  const withCode = error as FetchUrlJobErrorInstance;
+  withCode.code = code;
+  if (details?.url !== undefined) {
+    withCode.url = details.url;
+  }
+  if (details?.httpStatus !== undefined) {
+    withCode.httpStatus = details.httpStatus;
+  }
+  if (details?.httpStatusText !== undefined) {
+    withCode.httpStatusText = details.httpStatusText;
+  }
+  return withCode;
+}
+
+/**
+ * Create a {@link JobError} for a fetch failure with a stable `code` for persistence.
+ */
+export function createFetchUrlJobError(
+  code: FetchUrlErrorCodeValue,
+  message: string,
+  options?: FetchUrlJobErrorDetails & { retryDate?: Date }
+): FetchUrlJobErrorInstance {
+  const base = FETCH_URL_RETRYABLE_ERROR_CODES.has(code)
+    ? new RetryableJobError(message, options?.retryDate)
+    : new PermanentJobError(message);
+  return attachFetchUrlFields(base, code, options);
+}
+
+/**
+ * Reconstruct a fetch error from persisted queue fields (`error`, `error_code`).
+ */
+export function fetchUrlJobErrorFromPersisted(
+  message: string,
+  errorCode: string | undefined
+): JobError | undefined {
+  if (!isFetchUrlErrorCode(errorCode)) {
+    return undefined;
+  }
+  if (FETCH_URL_RETRYABLE_ERROR_CODES.has(errorCode)) {
+    return attachFetchUrlFields(new RetryableJobError(message), errorCode, undefined);
+  }
+  return attachFetchUrlFields(new PermanentJobError(message), errorCode, undefined);
+}
+
+export function httpStatusToFetchUrlErrorCode(status: number): FetchUrlErrorCodeValue {
+  if (status === 429) {
+    return FetchUrlErrorCode.HTTP_RATE_LIMITED;
+  }
+  if (status === 503) {
+    return FetchUrlErrorCode.HTTP_SERVER_ERROR;
+  }
+  if (status >= 500) {
+    return FetchUrlErrorCode.HTTP_SERVER_ERROR;
+  }
+  return FetchUrlErrorCode.HTTP_CLIENT_ERROR;
+}
+
+export function createFetchUrlHttpError(
+  url: string,
+  status: number,
+  statusText: string,
+  retryDate?: Date
+): FetchUrlJobErrorInstance {
+  const code = httpStatusToFetchUrlErrorCode(status);
+  const message = `Failed to fetch ${url}: ${status} ${statusText}`;
+  return createFetchUrlJobError(code, message, {
+    url,
+    httpStatus: status,
+    httpStatusText: statusText,
+    retryDate,
+  });
+}
+
+export function wrapFetchUrlNetworkError(url: string, cause: unknown): FetchUrlJobErrorInstance {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return createFetchUrlJobError(
+    FetchUrlErrorCode.NETWORK_ERROR,
+    `Network error fetching ${url}: ${detail}`,
+    { url }
+  );
+}
+
+export function isFetchUrlJobError(error: unknown): error is FetchUrlJobErrorInstance {
+  return error instanceof JobError && isFetchUrlErrorCode((error as JobError).code);
+}
+
+/** @internal Used by fetch helpers when the run was aborted. */
+export function createFetchUrlAbortedError(): AbortSignalJobError {
+  return new AbortSignalJobError("Fetch aborted");
+}

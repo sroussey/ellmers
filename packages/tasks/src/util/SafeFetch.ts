@@ -16,7 +16,7 @@
  * `network:private` entitlement (via its dynamic `entitlements()`).
  */
 
-import { PermanentJobError } from "@workglow/job-queue";
+import { createFetchUrlJobError, FetchUrlErrorCode } from "../task/FetchUrlJobError";
 import { classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
 // ========================================================================
@@ -64,20 +64,28 @@ function assertAllowedUrl(
 ): void {
   const classification = classifyUrl(url);
   if (classification.kind === "invalid") {
-    throw new PermanentJobError(`Refusing to fetch invalid URL: ${classification.reason}`);
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.INVALID_URL,
+      `Refusing to fetch invalid URL: ${classification.reason}`,
+      { url }
+    );
   }
   if (classification.kind !== "private") return;
   if (!allowPrivate) {
-    throw new PermanentJobError(
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.PRIVATE_DENIED,
       `Refusing to fetch private/internal URL ${url}: ${classification.reason}. ` +
-        `Grant the 'network:private' entitlement to allow this request.`
+        `Grant the 'network:private' entitlement to allow this request.`,
+      { url }
     );
   }
   if (privateResourceScopes !== undefined && !urlMatchesScope(url, privateResourceScopes)) {
-    throw new PermanentJobError(
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.SCOPE_DENIED,
       `Refusing to fetch private/internal URL ${url}: outside granted network:private scope ` +
         `[${privateResourceScopes.join(", ")}]. A compromised upstream may be attempting ` +
-        `to escape the task's authorized private-host origin.`
+        `to escape the task's authorized private-host origin.`,
+      { url }
     );
   }
 }
@@ -124,15 +132,21 @@ async function defaultSafeFetch(url: string, options: SafeFetchOptions): Promise
 
     const location = response.headers.get("location");
     if (!location) {
-      throw new PermanentJobError(
-        `Refusing to follow redirect from ${currentUrl}: missing Location header.`
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.REDIRECT_MISSING_LOCATION,
+        `Refusing to follow redirect from ${currentUrl}: missing Location header.`,
+        { url: currentUrl }
       );
     }
 
     currentUrl = new URL(location, currentUrl).toString();
   }
 
-  throw new PermanentJobError(`Refusing to fetch ${url}: too many redirects.`);
+  throw createFetchUrlJobError(
+    FetchUrlErrorCode.TOO_MANY_REDIRECTS,
+    `Refusing to fetch ${url}: too many redirects.`,
+    { url }
+  );
 }
 
 // ========================================================================

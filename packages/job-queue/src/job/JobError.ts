@@ -9,6 +9,18 @@ import { BaseError } from "@workglow/util";
 export class JobError extends BaseError {
   public static override type: string = "JobError";
   public retryable = false;
+  /**
+   * Machine-readable error code persisted as `error_code` on queued jobs.
+   * When set, takes precedence over the error class name for persistence.
+   */
+  public code?: string;
+}
+
+/**
+ * Value stored in queue `error_code` for a failed job.
+ */
+export function jobErrorPersistedCode(error: JobError): string {
+  return error.code ?? error.constructor.name;
 }
 
 /**

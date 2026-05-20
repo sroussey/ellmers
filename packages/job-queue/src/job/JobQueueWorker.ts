@@ -26,6 +26,7 @@ import {
   AbortSignalJobError,
   JobDisabledError,
   JobError,
+  jobErrorPersistedCode,
   JobNotFoundError,
   PermanentJobError,
   RetryableJobError,
@@ -690,7 +691,7 @@ export class JobQueueWorker<
               await this.deadLetter.send({
                 original: currentJob.input,
                 error: error.message,
-                errorCode: error.constructor.name ?? null,
+                errorCode: jobErrorPersistedCode(error),
                 attempts: currentJob.attempts,
                 queueName: this.queueName,
                 jobRunId: currentJob.jobRunId,
@@ -824,7 +825,7 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
       job.error = error.message;
-      job.errorCode = error?.constructor?.name ?? null;
+      job.errorCode = jobErrorPersistedCode(error);
 
       // H2 atomic fail: hand error/errorCode/abortRequested directly to
       // claim.fail() so they land in a single storage write together with
@@ -832,11 +833,12 @@ export class JobQueueWorker<
       // where a crash could leave the row PROCESSING with an `error`
       // already written.
       const abortRequested = error instanceof AbortSignalJobError;
+      const persistedCode = jobErrorPersistedCode(error);
       const claim = this.getClaim(job.id);
       if (claim) {
         await claim.fail({
           error: error.message,
-          errorCode: error.constructor.name ?? null,
+          errorCode: persistedCode,
           abortRequested,
         });
       } else {
@@ -844,14 +846,9 @@ export class JobQueueWorker<
         // legacy two-step is still correct here because we're writing
         // straight to the job store; the atomicity loss only matters when
         // ack/fail and the result write are split across claim and store.
-        await this.jobStore.saveError(
-          job.id,
-          error.message,
-          error.constructor.name ?? null,
-          abortRequested
-        );
+        await this.jobStore.saveError(job.id, error.message, persistedCode, abortRequested);
       }
-      this.events.emit("job_error", job.id, error.message, error.constructor.name);
+      this.events.emit("job_error", job.id, error.message, persistedCode);
     } catch (err) {
       getLogger().error("failJob errored:", { error: err });
     } finally {

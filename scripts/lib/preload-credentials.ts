@@ -24,4 +24,6 @@ if (unlocked && hydrated.length > 0) {
   console.log(
     `[test-preload] Unlocked encrypted credentials, hydrated env: ${hydrated.join(", ")}`
   );
+} else {
+  console.warn(`[test-preload] Failed to unlock encrypted credentials`, { unlocked, hydrated });
 }

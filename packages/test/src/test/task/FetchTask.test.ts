@@ -20,10 +20,12 @@ import {
 } from "@workglow/task-graph";
 import {
   fetchUrl,
+  FetchUrlErrorCode,
   FetchUrlJob,
   FetchUrlTask,
   FetchUrlTaskInput,
   FetchUrlTaskOutput,
+  isFetchUrlJobError,
   registerSafeFetch,
   type SafeFetchFn,
 } from "@workglow/tasks";
@@ -165,12 +167,16 @@ describe("FetchUrlTask", () => {
       url: "https://api.example.com/notfound",
     });
 
-    try {
-      await fetchPromise;
-    } catch (e: any) {
-      expect(e).toBeInstanceOf(JobTaskFailedError);
-      expect(e.jobError).toBeInstanceOf(PermanentJobError);
-      expect(e.jobError.message).toContain("404");
+    const error = await fetchPromise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.jobError).toBeInstanceOf(PermanentJobError);
+    expect(jobFailed.jobError.message).toContain("404");
+    expect(jobFailed.code).toBe(FetchUrlErrorCode.HTTP_CLIENT_ERROR);
+    expect(jobFailed.jobError.code).toBe(FetchUrlErrorCode.HTTP_CLIENT_ERROR);
+    expect(isFetchUrlJobError(jobFailed.jobError)).toBe(true);
+    if (isFetchUrlJobError(jobFailed.jobError)) {
+      expect(jobFailed.jobError.httpStatus).toBe(404);
     }
 
     expect(mockFetch.mock.calls.length).toBe(1);
@@ -183,13 +189,13 @@ describe("FetchUrlTask", () => {
       url: "https://api.example.com/network-error",
     });
 
-    await expect(fetchPromise).rejects.toThrow("Network error");
-    await expect(fetchPromise).rejects.toBeInstanceOf(JobTaskFailedError);
-    await expect(fetchPromise).rejects.toHaveProperty("jobError");
-    await expect(fetchPromise).rejects.toHaveProperty(
-      "jobError.message",
-      expect.stringContaining("Network error")
-    );
+    const error = await fetchPromise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.message).toContain("Network error");
+    expect(jobFailed.code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect(jobFailed.jobError.code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+    expect(jobFailed.jobError).toBeInstanceOf(RetryableJobError);
 
     expect(mockFetch.mock.calls.length).toBe(1);
   });
@@ -210,8 +216,11 @@ describe("FetchUrlTask", () => {
       url: "https://api.example.com/invalid-json",
     });
 
-    await expect(fetchPromise).rejects.toThrow();
-    await expect(fetchPromise).rejects.toHaveProperty("message", expect.stringContaining("JSON"));
+    const error = await fetchPromise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(JobTaskFailedError);
+    const jobFailed = error as JobTaskFailedError;
+    expect(jobFailed.message).toContain("parse");
+    expect(jobFailed.code).toBe(FetchUrlErrorCode.RESPONSE_PARSE_ERROR);
 
     expect(mockFetch.mock.calls.length).toBe(1);
   });
@@ -272,6 +281,7 @@ describe("FetchUrlTask", () => {
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect(error.code).toBe(FetchUrlErrorCode.HTTP_RATE_LIMITED);
     expect(error.jobError.message).toContain("429");
     expect(error.jobError.retryDate).toBeInstanceOf(Date);
 
@@ -300,10 +310,45 @@ describe("FetchUrlTask", () => {
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(JobTaskFailedError);
+    expect(error.code).toBe(FetchUrlErrorCode.HTTP_SERVER_ERROR);
     expect(error.jobError).toBeInstanceOf(RetryableJobError);
     expect(error.jobError.message).toContain("503");
 
     expect(mockFetch.mock.calls.length).toBe(1);
+  });
+
+  test("persists FETCH_* error_code on queued job failure", async () => {
+    const queueName = "fetch-error-code-queue";
+    const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
+    await storage.migrate();
+
+    const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
+      storage,
+      queueName,
+      pollIntervalMs: 1,
+    });
+    const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
+      storage,
+      queueName,
+    });
+    client.attach(server);
+    getTaskQueueRegistry().registerQueue({ server, client, storage });
+
+    mockFetch.mockImplementation(() =>
+      Promise.resolve(new Response("Not Found", { status: 404, statusText: "Not Found" }))
+    );
+
+    const handle = await client.send({ url: "https://api.example.com/missing" });
+    await server.start();
+    const queueError = await handle.waitFor().catch((e: unknown) => e);
+    expect(queueError).toBeInstanceOf(PermanentJobError);
+    expect((queueError as PermanentJobError).code).toBe(FetchUrlErrorCode.HTTP_CLIENT_ERROR);
+
+    const failedJob = await client.getJob(handle.id);
+    expect(failedJob?.errorCode).toBe(FetchUrlErrorCode.HTTP_CLIENT_ERROR);
+
+    await server.stop();
+    await storage.deleteAll();
   });
 
   test("handles Retry-After with HTTP date format", async () => {

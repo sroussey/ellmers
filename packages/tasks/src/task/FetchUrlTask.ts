@@ -4,13 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  AbortSignalJobError,
-  IJobExecuteContext,
-  Job,
-  PermanentJobError,
-  RetryableJobError,
-} from "@workglow/job-queue";
+import { AbortSignalJobError, IJobExecuteContext, Job } from "@workglow/job-queue";
 import type {
   IExecuteContext,
   RegisteredQueue,
@@ -27,12 +21,19 @@ import {
   Task,
   TaskConfigSchema,
   TaskConfigurationError,
-  TaskInvalidInputError,
   Workflow,
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { safeFetch } from "../util/SafeFetch";
 import { classifyUrl, urlResourcePattern } from "../util/UrlClassifier";
+import {
+  createFetchUrlAbortedError,
+  createFetchUrlHttpError,
+  createFetchUrlJobError,
+  FetchUrlErrorCode,
+  isFetchUrlJobError,
+  wrapFetchUrlNetworkError,
+} from "./FetchUrlJobError";
 
 const inputSchema = {
   type: "object",
@@ -133,12 +134,27 @@ async function fetchWithProgress(
   onProgress?: (progress: number) => Promise<void>
 ): Promise<Response> {
   if (!options.signal) {
-    throw new TaskConfigurationError("An AbortSignal must be provided.");
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.CONFIGURATION,
+      "An AbortSignal must be provided."
+    );
   }
 
-  const response = await safeFetch(url, options);
+  let response: Response;
+  try {
+    response = await safeFetch(url, options);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortSignalJobError") {
+      throw err;
+    }
+    throw wrapFetchUrlNetworkError(url, err);
+  }
   if (!response.body) {
-    throw new Error("ReadableStream not supported in this environment.");
+    throw createFetchUrlJobError(
+      FetchUrlErrorCode.NO_RESPONSE_BODY,
+      "ReadableStream not supported in this environment.",
+      { url }
+    );
   }
 
   const contentLength = response.headers.get("Content-Length");
@@ -154,7 +170,7 @@ async function fetchWithProgress(
           while (true) {
             // Check if the request was aborted
             if (options.signal?.aborted) {
-              controller.error(new AbortSignalJobError("Fetch aborted"));
+              controller.error(createFetchUrlAbortedError());
               reader.cancel();
               return;
             }
@@ -203,8 +219,10 @@ export class FetchUrlJob<
   override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
     const classification = classifyUrl(input.url!);
     if (classification.kind === "invalid") {
-      throw new PermanentJobError(
-        `Refusing to fetch invalid URL ${input.url}: ${classification.reason ?? "malformed"}`
+      throw createFetchUrlJobError(
+        FetchUrlErrorCode.INVALID_URL,
+        `Refusing to fetch invalid URL ${input.url}: ${classification.reason ?? "malformed"}`,
+        { url: input.url }
       );
     }
 
@@ -223,18 +241,26 @@ export class FetchUrlJob<
     // private hosts/ports via Location headers. Least-privilege: the task
     // can only reach the private origin it was specifically authorized for.
     const isPrivate = classification.kind === "private";
-    const response = await fetchWithProgress(
-      input.url!,
-      {
-        method: input.method,
-        headers: input.headers,
-        body: input.body,
-        signal: context.signal,
-        allowPrivate: isPrivate,
-        privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
-      },
-      async (progress: number) => await context.updateProgress(progress)
-    );
+    let response: Response;
+    try {
+      response = await fetchWithProgress(
+        input.url!,
+        {
+          method: input.method,
+          headers: input.headers,
+          body: input.body,
+          signal: context.signal,
+          allowPrivate: isPrivate,
+          privateResourceScopes: isPrivate ? [urlResourcePattern(input.url!)] : undefined,
+        },
+        async (progress: number) => await context.updateProgress(progress)
+      );
+    } catch (err) {
+      if (err instanceof AbortSignalJobError) {
+        throw err;
+      }
+      throw wrapFetchUrlNetworkError(input.url!, err);
+    }
 
     if (response.ok) {
       // Extract metadata from response
@@ -268,47 +294,54 @@ export class FetchUrlJob<
           resolvedResponseType = "json"; // Default fallback
         }
       }
-      if (resolvedResponseType === "json") {
-        return { json: await response.json(), metadata } as Output;
-      } else if (resolvedResponseType === "text") {
-        return { text: await response.text(), metadata } as Output;
-      } else if (resolvedResponseType === "blob") {
-        return { blob: await response.blob(), metadata } as Output;
-      } else if (resolvedResponseType === "arraybuffer") {
-        return { arraybuffer: await response.arrayBuffer(), metadata } as Output;
+      try {
+        if (resolvedResponseType === "json") {
+          return { json: await response.json(), metadata } as Output;
+        } else if (resolvedResponseType === "text") {
+          return { text: await response.text(), metadata } as Output;
+        } else if (resolvedResponseType === "blob") {
+          return { blob: await response.blob(), metadata } as Output;
+        } else if (resolvedResponseType === "arraybuffer") {
+          return { arraybuffer: await response.arrayBuffer(), metadata } as Output;
+        }
+        throw createFetchUrlJobError(
+          FetchUrlErrorCode.INVALID_RESPONSE_TYPE,
+          `Invalid response type: ${resolvedResponseType}`,
+          { url: input.url }
+        );
+      } catch (err) {
+        if (isFetchUrlJobError(err) || err instanceof AbortSignalJobError) {
+          throw err;
+        }
+        const detail = err instanceof Error ? err.message : String(err);
+        throw createFetchUrlJobError(
+          FetchUrlErrorCode.RESPONSE_PARSE_ERROR,
+          `Failed to parse ${resolvedResponseType} response from ${input.url}: ${detail}`,
+          { url: input.url }
+        );
       }
-      throw new TaskInvalidInputError(`Invalid response type: ${resolvedResponseType}`);
     } else {
+      let retryDate: Date | undefined;
       if (
         response.status === 429 ||
         response.status === 503 ||
         response.headers.get("Retry-After")
       ) {
-        let retryDate: Date | undefined;
         const retryAfterStr = response.headers.get("Retry-After");
         if (retryAfterStr) {
-          // Try parsing as seconds first (the common case)
           const seconds = Number(retryAfterStr);
           if (Number.isFinite(seconds) && seconds > 0) {
             retryDate = new Date(Date.now() + seconds * 1000);
           } else {
-            // Fall back to HTTP date parsing
             const parsedDate = new Date(retryAfterStr);
             if (!isNaN(parsedDate.getTime()) && parsedDate > new Date()) {
               retryDate = parsedDate;
             }
           }
         }
-
-        throw new RetryableJobError(
-          `Failed to fetch ${input.url}: ${response.status} ${response.statusText}`,
-          retryDate
-        );
-      } else {
-        throw new PermanentJobError(
-          `Failed to fetch ${input.url}: ${response.status} ${response.statusText}`
-        );
       }
+
+      throw createFetchUrlHttpError(input.url!, response.status, response.statusText, retryDate);
     }
   }
 }
