@@ -391,24 +391,139 @@ export class JobQueueWorker<
   }
 
   /**
-   * Fetch up to `this.prefetch` claims from the queue and register them in
-   * {@link activeClaims}. Returns an array of jobs ready to be dispatched.
+   * Fetch up to `this.prefetch` claims from the queue. Returned claims are
+   * not yet registered in {@link activeClaims}; {@link processClaims} does
+   * that as it consumes the batch.
    */
-  private async nextBatch(): Promise<QueueJob[]> {
-    const claims = await this.messageQueue.receive({
+  private async nextBatch(): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
+    return await this.messageQueue.receive({
       workerId: this.workerId,
       leaseMs: this.leaseMs,
       max: this.prefetch,
     });
-    const jobs: QueueJob[] = [];
+  }
+
+  /**
+   * Drive a pre-fetched batch of claims through the dispatch pipeline.
+   *
+   * Settles every claim before resolving: each claim is either dispatched via
+   * {@link processSingleJob} (which owns its terminal ack/fail/retry), or
+   * released back to PENDING via {@link releaseClaimedJob} when shutdown
+   * fires mid-batch or the limiter has no slot available. This is critical
+   * for push-only transports (e.g. Cloudflare Queues' `queue()` handler)
+   * where any unacked claim left in flight when the handler returns is
+   * redelivered.
+   *
+   * Exposed as `public` so external drivers can feed claims they received
+   * out-of-band (CFQ adapter, tests) through the same pipeline the internal
+   * loop uses.
+   */
+  public async processClaims(
+    claims: readonly IClaim<JobStorageFormat<Input, Output>>[]
+  ): Promise<void> {
+    // Public callers (push-only transports like Cloudflare Queues' queue()
+    // handler) MUST observe full settlement before returning so the runtime
+    // doesn't redeliver still-in-flight claims. Pass awaitAll=true to block
+    // until every dispatched job's processSingleJob promise settles.
+    await this.processClaimsInternal(claims, true);
+  }
+
+  /**
+   * Internal variant of {@link processClaims} that returns counts useful for
+   * the polling loop's idle/backoff logic. Public callers go through
+   * {@link processClaims}; the loop calls this directly so it can detect
+   * the "limiter full for every claim" case without racing the async
+   * lifetime of {@link processSingleJob}.
+   *
+   * @param awaitAll - When true, wait for every dispatched processSingleJob
+   *   to settle before resolving. The polling-loop caller passes false because
+   *   it intentionally fires jobs in the background and reschedules on the
+   *   next loop iteration; the public {@link processClaims} caller passes
+   *   true to satisfy the "settle every claim before resolving" contract
+   *   that push-only transports depend on.
+   */
+  private async processClaimsInternal(
+    claims: readonly IClaim<JobStorageFormat<Input, Output>>[],
+    awaitAll: boolean = false
+  ): Promise<{ dispatched: number; limiterFull: boolean }> {
+    let dispatched = 0;
+    let limiterFull = false;
+    // Track each dispatched job alongside its promise so awaitAll can inspect
+    // settled results and log rejections with jobId context, instead of a
+    // swallowing .catch losing all observability.
+    const inflight: { job: QueueJob; promise: Promise<void> }[] = [];
+
     for (const claim of claims) {
       const job = this.storageToClass(claim.body) as QueueJob;
       if (job.id != null) {
         this.activeClaims.set(job.id, claim);
       }
-      jobs.push(job);
+
+      if (!this.running) {
+        // Stopped during the batch. Release all remaining claims back to PENDING.
+        await this.releaseClaimedJob(job);
+        continue;
+      }
+
+      const limiterToken = await this.limiter.tryAcquire();
+      if (limiterToken === null || limiterToken === undefined) {
+        // No limiter slot available — release the claim back so another
+        // worker (or this one on a later iteration) can pick it up.
+        await this.releaseClaimedJob(job);
+        limiterFull = true;
+        continue;
+      }
+
+      if (!this.running) {
+        // Stop fired while tryAcquire was in flight.
+        try {
+          await this.limiter.release(limiterToken);
+        } catch {
+          // best-effort
+        }
+        await this.releaseClaimedJob(job);
+        continue;
+      }
+
+      // Dispatch in background to allow concurrent jobs. processSingleJob owns
+      // the terminal ack/fail/retry for this claim and its own error handling,
+      // so anything reaching this layer as a rejection is unexpected and worth
+      // logging.
+      const promise = this.processSingleJob(job, limiterToken);
+      if (!awaitAll) {
+        // Background dispatch (polling-loop caller): the promise is fire-and-
+        // forget, so attach a swallow+log .catch to prevent unhandled rejection
+        // warnings while still surfacing the failure to operators.
+        promise.catch((err) => {
+          getLogger().error("processSingleJob unexpectedly rejected", {
+            jobId: job.id,
+            error: err,
+          });
+        });
+      }
+      inflight.push({ job, promise });
+      dispatched++;
     }
-    return jobs;
+
+    if (awaitAll && inflight.length > 0) {
+      // Wait for every dispatched job to settle before returning. Required by
+      // public callers driving push-only transports — see processClaims doc.
+      // Inspect the settled results so unexpected rejections (which would
+      // otherwise be invisible without an unhandled-rejection handler) are
+      // logged with jobId context.
+      const results = await Promise.allSettled(inflight.map((i) => i.promise));
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i]!;
+        if (r.status === "rejected") {
+          getLogger().error("processSingleJob unexpectedly rejected", {
+            jobId: inflight[i]!.job.id,
+            error: r.reason,
+          });
+        }
+      }
+    }
+
+    return { dispatched, limiterFull };
   }
 
   /**
@@ -441,8 +556,8 @@ export class JobQueueWorker<
         // non-blocking tryAcquire for each. Jobs that can't immediately get a
         // limiter slot are released back to PENDING so other workers can pick
         // them up. With prefetch == 1 the behavior is identical to before.
-        const jobs = await this.nextBatch();
-        if (jobs.length === 0) {
+        const claims = await this.nextBatch();
+        if (claims.length === 0) {
           // Queue is empty — sleep until notified of new work or until the
           // next deferred job becomes ready.
           const delay = await this.getIdleDelay();
@@ -450,40 +565,7 @@ export class JobQueueWorker<
           continue;
         }
 
-        let anyDispatched = false;
-        let limiterFull = false;
-
-        for (const job of jobs) {
-          if (!this.running) {
-            // Stopped during the batch. Release all remaining jobs back to PENDING.
-            await this.releaseClaimedJob(job);
-            continue;
-          }
-
-          const limiterToken = await this.limiter.tryAcquire();
-          if (limiterToken === null || limiterToken === undefined) {
-            // No limiter slot available — release the claim back so another
-            // worker (or this one on a later iteration) can pick it up.
-            await this.releaseClaimedJob(job);
-            limiterFull = true;
-            continue;
-          }
-
-          if (!this.running) {
-            // Stop fired while tryAcquire was in flight.
-            try {
-              await this.limiter.release(limiterToken);
-            } catch {
-              // best-effort
-            }
-            await this.releaseClaimedJob(job);
-            continue;
-          }
-
-          // Don't await - process in background to allow concurrent jobs.
-          this.processSingleJob(job, limiterToken);
-          anyDispatched = true;
-        }
+        const { dispatched, limiterFull } = await this.processClaimsInternal(claims);
 
         if (!this.running) {
           return;
@@ -491,7 +573,7 @@ export class JobQueueWorker<
 
         // If the limiter was full for every claim we fetched, back off before
         // retrying so we don't busy-loop hammering the queue.
-        if (!anyDispatched && limiterFull) {
+        if (dispatched === 0 && limiterFull) {
           await this.waitForWakeOrTimeout(await this.getLimiterWakeDelay());
         }
       } catch {

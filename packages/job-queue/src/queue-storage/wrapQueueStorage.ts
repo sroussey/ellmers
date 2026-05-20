@@ -176,6 +176,15 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     bodies: readonly JobStorageFormat<Input, Output>[],
     opts?: SendOptions
   ): Promise<readonly MessageId[]> {
+    // H3: a single fingerprint applied to a whole batch is almost always a
+    // bug — every body would dedup against the first row, returning the same
+    // id for distinct payloads. Mirrors the guard in SqsMessageQueue /
+    // CloudflareMessageQueue so the contract is uniform across adapters.
+    if (opts?.fingerprint != null) {
+      throw new RangeError(
+        "sendBatch does not accept a single fingerprint applied to all bodies; use send() per body for fingerprinted dedup"
+      );
+    }
     const ids: MessageId[] = [];
     for (const body of bodies) {
       ids.push(await this.send(body, opts));
@@ -298,6 +307,77 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     // was undefined or the storage didn't bump (the bug it was working around
     // is fixed by finalize itself).
     await this.storage.finalize(id, { status });
+  }
+
+  async create(body: JobStorageFormat<Input, Output>, opts: SendOptions): Promise<MessageId> {
+    const job = applySendOptions(body, opts);
+    return this.storage.add(job);
+  }
+
+  async findActiveByFingerprint(
+    fingerprint: string,
+    _queueName: string
+  ): Promise<JobRecord<Input, Output> | undefined> {
+    // The wrapped storage is already scoped to a single queue, so any
+    // PENDING/PROCESSING row found here is in "this" queue. The queueName
+    // parameter is accepted for interface compatibility but not used for
+    // filtering — the storage instance boundary provides the scope.
+    const [pending, processing] = await Promise.all([
+      this.storage.peek("PENDING"),
+      this.storage.peek("PROCESSING"),
+    ]);
+    return [...pending, ...processing].find((j) => j.fingerprint === fingerprint);
+  }
+
+  async getMany(
+    ids: readonly MessageId[]
+  ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
+    return Promise.all(ids.map((id) => this.storage.get(id)));
+  }
+
+  async completeWithResult(id: MessageId, result: Output): Promise<void> {
+    this.pending.delete(id);
+    await this.storage.finalize(id, {
+      output: result,
+      error: null,
+      error_code: null,
+      status: "COMPLETED",
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+  async failWithError(
+    id: MessageId,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    this.pending.delete(id);
+    const current = await this.storage.get(id);
+    const now = new Date().toISOString();
+    const abortRequestedAt =
+      opts.abortRequested === true
+        ? (current?.abort_requested_at ?? now)
+        : (current?.abort_requested_at ?? null);
+    await this.storage.finalize(id, {
+      ...("error" in opts ? { error: opts.error ?? null } : {}),
+      ...("errorCode" in opts ? { error_code: opts.errorCode ?? null } : {}),
+      abort_requested_at: abortRequestedAt,
+      status: "FAILED",
+      completed_at: current?.completed_at ?? now,
+    });
+  }
+
+  async markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void> {
+    await this.storage.finalize(id, {
+      visible_at: opts.visible_at.toISOString(),
+      error_code: opts.errorCode,
+    });
   }
 }
 

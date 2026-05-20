@@ -325,5 +325,55 @@ export function sqliteQueueMigrations(
         );
       },
     },
+    {
+      component,
+      version: 5,
+      description:
+        "Add UNIQUE partial index for findActiveByFingerprint O(1) lookup + fingerprint dedup at the DB layer (H2)",
+      up(db: Sqlite.Database) {
+        // H2: UNIQUE so concurrent send() calls with the same fingerprint can
+        // race to INSERT and have the DB resolve the winner via a
+        // SQLITE_CONSTRAINT_UNIQUE error. Numbered v5 (not v4) because main's
+        // v4 is the max_attempts default convergence; the fingerprint index
+        // lands on top of it.
+        db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_${tableName}_fingerprint_active
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING');
+        `);
+      },
+    },
+    {
+      component,
+      version: 6,
+      description:
+        "Converge idx_<table>_fingerprint_active to UNIQUE for DBs that applied a pre-edit non-unique variant",
+      up(db: Sqlite.Database) {
+        // Defensive convergence: the migration runner keys on (component,
+        // version), so a DB that recorded a non-unique fingerprint index at
+        // any earlier point never re-runs the v5 CREATE. v6 inspects the
+        // existing index DDL via sqlite_master and rewrites it as UNIQUE if
+        // needed.
+        const indexName = `idx_${tableName}_fingerprint_active`;
+        const row = db
+          .prepare<
+            [string],
+            { sql: string | null }
+          >(`SELECT sql FROM sqlite_master WHERE type='index' AND name=?`)
+          .get(indexName);
+        // Already UNIQUE — no-op.
+        if (row && row.sql != null && /CREATE\s+UNIQUE\s+INDEX/i.test(row.sql)) {
+          return;
+        }
+        // Missing entirely or non-unique variant. Drop and recreate as UNIQUE
+        // under the same canonical name (consumers grep for it).
+        db.exec(`
+          DROP INDEX IF EXISTS ${indexName};
+          CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING');
+        `);
+      },
+    },
   ];
 }

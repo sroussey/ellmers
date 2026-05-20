@@ -214,7 +214,13 @@ export class JobQueueClient<Input, Output> {
       status: JobStatus.PENDING,
     };
 
-    const id = await this.messageQueue.send(job);
+    const id = await this.messageQueue.send(job, {
+      fingerprint: options?.fingerprint,
+      jobRunId: options?.jobRunId,
+      maxAttempts: options?.maxAttempts,
+      delaySeconds: options?.delaySeconds,
+      timeoutSeconds: options?.timeoutSeconds,
+    });
 
     // Same-process fast path: poke the worker directly so it doesn't have to
     // wait for the poll interval (crucial for Sqlite/Postgres, whose

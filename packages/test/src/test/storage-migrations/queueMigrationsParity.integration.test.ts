@@ -10,6 +10,7 @@ import type { Pool } from "@workglow/postgres/storage";
 import { PostgresMigrationRunner } from "@workglow/postgres/storage";
 import { buildSqliteQueuePostV3TableSql, sqliteQueueMigrations } from "@workglow/sqlite/job-queue";
 import { Sqlite, SqliteMigrationRunner } from "@workglow/sqlite/storage";
+import { MIGRATIONS_TABLE } from "@workglow/storage";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -79,6 +80,185 @@ describe("postgres queue migrations: v1→v2→v3 schema parity", () => {
     } finally {
       await a.close();
       await b.close();
+    }
+  });
+});
+
+/**
+ * v4 was edited in place between two iterations of PR #516: the first
+ * version created a non-unique index, the second made it UNIQUE. Consumers
+ * who applied the first variant have a (component, version=4) row in
+ * `_storage_migrations` so the runner will never re-execute v4 — they would
+ * be stuck with a non-unique index forever. v5 detects and converges these
+ * DBs.
+ */
+describe("postgres queue migrations: v5 converges pre-edit v4", () => {
+  it("converges a DB that applied the non-unique v4 to UNIQUE", async () => {
+    const pg = new PGlite();
+    try {
+      const db = pg as unknown as Pool;
+      const all = postgresQueueMigrations("jobs_legacy_v4", []);
+      const runner = new PostgresMigrationRunner(db);
+
+      // Run v1..v3 normally, then synthesize a pre-edit v4: create a
+      // NON-unique partial index and mark v4 as applied in the ledger.
+      await runner.run(all.slice(0, 3));
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_legacy_v4_fingerprint_active
+          ON jobs_legacy_v4(queue, fingerprint)
+          WHERE status IN ('PENDING','PROCESSING')
+      `);
+      await db.query(
+        `INSERT INTO ${MIGRATIONS_TABLE}(component, version, description) VALUES ($1, $2, $3)`,
+        ["queue:postgres:jobs_legacy_v4", 4, "pre-edit non-unique v4 (synthetic)"]
+      );
+
+      // Sanity: before v5 runs, the index is NOT unique.
+      const before = await db.query<{ indisunique: boolean }>(
+        `SELECT i.indisunique
+           FROM pg_class c
+           JOIN pg_index i ON i.indexrelid = c.oid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = 'idx_jobs_legacy_v4_fingerprint_active'
+            AND n.nspname = current_schema()`
+      );
+      expect(before.rows[0]?.indisunique).toBe(false);
+
+      // Run the full chain — only v5 should execute.
+      const applied = await runner.run(all);
+      expect(applied.map((m) => m.version)).toEqual([5]);
+
+      const after = await db.query<{ indisunique: boolean }>(
+        `SELECT i.indisunique
+           FROM pg_class c
+           JOIN pg_index i ON i.indexrelid = c.oid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = 'idx_jobs_legacy_v4_fingerprint_active'
+            AND n.nspname = current_schema()`
+      );
+      expect(after.rows[0]?.indisunique).toBe(true);
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it("v5 is a no-op on a DB that already has a UNIQUE v4 index", async () => {
+    const pg = new PGlite();
+    try {
+      const db = pg as unknown as Pool;
+      const all = postgresQueueMigrations("jobs_unique_v4", []);
+      const runner = new PostgresMigrationRunner(db);
+
+      // Fresh install — picks up the post-edit (UNIQUE) v4.
+      await runner.run(all);
+
+      const before = await db.query<{ indisunique: boolean }>(
+        `SELECT i.indisunique
+           FROM pg_class c
+           JOIN pg_index i ON i.indexrelid = c.oid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = 'idx_jobs_unique_v4_fingerprint_active'
+            AND n.nspname = current_schema()`
+      );
+      expect(before.rows[0]?.indisunique).toBe(true);
+
+      // Re-run should apply nothing (v5 already recorded). To exercise the
+      // v5 idempotency branch directly, run a v5-only chain against a fresh
+      // bookkeeping entry: drop the v5 row and re-run; v5's existence check
+      // should observe the already-UNIQUE index and short-circuit without
+      // dropping/recreating it.
+      await db.query(`DELETE FROM ${MIGRATIONS_TABLE} WHERE component = $1 AND version = $2`, [
+        "queue:postgres:jobs_unique_v4",
+        5,
+      ]);
+      const applied = await runner.run(all);
+      expect(applied.map((m) => m.version)).toEqual([5]);
+
+      // Index is still UNIQUE — v5 did not drop/recreate (or did so harmlessly).
+      const after = await db.query<{ indisunique: boolean }>(
+        `SELECT i.indisunique
+           FROM pg_class c
+           JOIN pg_index i ON i.indexrelid = c.oid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = 'idx_jobs_unique_v4_fingerprint_active'
+            AND n.nspname = current_schema()`
+      );
+      expect(after.rows[0]?.indisunique).toBe(true);
+    } finally {
+      await pg.close();
+    }
+  });
+});
+
+describe("sqlite queue migrations: v6 converges pre-edit non-unique fingerprint index", () => {
+  it("converges a DB that recorded a non-unique fingerprint index at v5", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    try {
+      const all = sqliteQueueMigrations("jobs_legacy_v5", []);
+      const runner = new SqliteMigrationRunner(db);
+
+      // Run v1-v4 (v4 is main's max_attempts default convergence).
+      await runner.run(all.slice(0, 4));
+      // Synthesize a pre-edit v5: NON-unique partial index + ledger row.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_legacy_v5_fingerprint_active
+          ON jobs_legacy_v5(queue, fingerprint)
+          WHERE status IN ('PENDING','PROCESSING');
+      `);
+      db.prepare(
+        `INSERT INTO ${MIGRATIONS_TABLE}(component, version, description) VALUES (?, ?, ?)`
+      ).run("queue:sqlite:jobs_legacy_v5", 5, "pre-edit non-unique v5 (synthetic)");
+
+      const readSql = (): string | null => {
+        const row = db
+          .prepare<
+            [],
+            { sql: string | null }
+          >(`SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_jobs_legacy_v5_fingerprint_active'`)
+          .get();
+        return row?.sql ?? null;
+      };
+      expect(readSql()).toMatch(/CREATE\s+INDEX/i);
+      expect(readSql()).not.toMatch(/CREATE\s+UNIQUE/i);
+
+      const applied = await runner.run(all);
+      expect(applied.map((m) => m.version)).toEqual([6]);
+      expect(readSql()).toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("v6 is a no-op on a DB that already has a UNIQUE v5 index", async () => {
+    await Sqlite.init();
+    const db = new Sqlite.Database(":memory:");
+    try {
+      const all = sqliteQueueMigrations("jobs_unique_v5", []);
+      const runner = new SqliteMigrationRunner(db);
+      await runner.run(all);
+
+      const readSql = (): string | null => {
+        const row = db
+          .prepare<
+            [],
+            { sql: string | null }
+          >(`SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_jobs_unique_v5_fingerprint_active'`)
+          .get();
+        return row?.sql ?? null;
+      };
+      expect(readSql()).toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
+
+      // Force v6 to re-run with the index already UNIQUE.
+      db.prepare(`DELETE FROM ${MIGRATIONS_TABLE} WHERE component = ? AND version = ?`).run(
+        "queue:sqlite:jobs_unique_v5",
+        6
+      );
+      const applied = await runner.run(all);
+      expect(applied.map((m) => m.version)).toEqual([6]);
+      expect(readSql()).toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
+    } finally {
+      db.close();
     }
   });
 });
@@ -293,11 +473,13 @@ describe("sqlite queue migrations: v4 max_attempts convergence", () => {
       // Sanity precondition: this synthetic DB really *is* stuck at 23.
       expect(Number(getMaxAttemptsDefault(sqlite, "jobs"))).toBe(23);
 
-      // Run the full migration list — only v4 should fire.
+      // Run the full migration list — v4 (max_attempts converge), v5 (UNIQUE
+      // fingerprint index), and v6 (fingerprint-index UNIQUE convergence) all
+      // fire since the ledger only records v1-v3.
       const applied = await new SqliteMigrationRunner(sqlite).run(
         sqliteQueueMigrations("jobs", [])
       );
-      expect(applied.map((m) => m.version)).toEqual([4]);
+      expect(applied.map((m) => m.version)).toEqual([4, 5, 6]);
 
       // Post-condition: default is now 10 (matches Postgres parity).
       expect(Number(getMaxAttemptsDefault(sqlite, "jobs"))).toBe(10);
@@ -315,7 +497,7 @@ describe("sqlite queue migrations: v4 max_attempts convergence", () => {
       const firstRun = await new SqliteMigrationRunner(sqlite).run(
         sqliteQueueMigrations("jobs", [])
       );
-      expect(firstRun.map((m) => m.version)).toEqual([1, 2, 3, 4]);
+      expect(firstRun.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6]);
       expect(Number(getMaxAttemptsDefault(sqlite, "jobs"))).toBe(10);
 
       // Capture the table SQL to assert v4 left it untouched on re-run.
@@ -326,7 +508,7 @@ describe("sqlite queue migrations: v4 max_attempts convergence", () => {
         >("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?")
         .get("jobs")?.sql;
 
-      // Second `run()` should apply nothing — ledger already has v1..v4.
+      // Second `run()` should apply nothing — ledger already has v1..v6.
       const secondRun = await new SqliteMigrationRunner(sqlite).run(
         sqliteQueueMigrations("jobs", [])
       );
