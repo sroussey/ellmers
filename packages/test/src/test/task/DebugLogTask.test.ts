@@ -23,7 +23,7 @@ describe("DebugLogTask", () => {
   it("should have correct static properties", () => {
     expect(DebugLogTask.type).toBe("DebugLogTask");
     expect(DebugLogTask.category).toBe("Utility");
-    expect(DebugLogTask.cacheable).toBe(false);
+    expect(DebugLogTask.cachePolicy.kind).toBe("none");
     expect(DebugLogTask.passthroughInputsToOutputs).toBe(true);
   });
 
