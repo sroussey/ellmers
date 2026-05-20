@@ -7,6 +7,8 @@
 import { WorkerManager } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { advanceFakeTimers, flushAsyncWork } from "../helpers/advanceFakeTimers";
+
 type WorkerEventListener = (event: any) => void;
 
 interface FakeWorkerOptions {
@@ -138,27 +140,6 @@ class FakeWorker {
   }
 }
 
-async function flushAsyncWork(): Promise<void> {
-  for (let i = 0; i < 3; i += 1) {
-    await Promise.resolve();
-    if ("advanceTimersByTimeAsync" in vi && typeof vi.advanceTimersByTimeAsync === "function") {
-      await vi.advanceTimersByTimeAsync(0);
-    } else {
-      vi.advanceTimersByTime(0);
-    }
-  }
-  await Promise.resolve();
-}
-
-async function advanceTime(ms: number): Promise<void> {
-  if ("advanceTimersByTimeAsync" in vi && typeof vi.advanceTimersByTimeAsync === "function") {
-    await vi.advanceTimersByTimeAsync(ms);
-  } else {
-    vi.advanceTimersByTime(ms);
-    await flushAsyncWork();
-  }
-}
-
 describe("WorkerManager idle termination", () => {
   let managers: WorkerManager[] = [];
 
@@ -203,7 +184,7 @@ describe("WorkerManager idle termination", () => {
     await flushAsyncWork();
     await expect(firstCall).resolves.toEqual({ workerId: 1, args: [] });
 
-    await advanceTime(100);
+    await advanceFakeTimers(100);
     expect(workers[0]?.terminateCallCount).toBe(1);
 
     const secondCall = manager.callWorkerFunction<{ workerId: number }>(
@@ -241,16 +222,16 @@ describe("WorkerManager idle termination", () => {
     );
 
     await flushAsyncWork();
-    await advanceTime(10);
+    await advanceFakeTimers(10);
     await expect(firstCall).resolves.toEqual({ workerId: 1, args: [10] });
 
-    await advanceTime(60);
+    await advanceFakeTimers(60);
     expect(workers[0]?.terminateCallCount).toBe(0);
 
-    await advanceTime(10);
+    await advanceFakeTimers(10);
     await expect(secondCall).resolves.toEqual({ workerId: 1, args: [80] });
 
-    await advanceTime(50);
+    await advanceFakeTimers(50);
     expect(workers[0]?.terminateCallCount).toBe(1);
   });
 
@@ -276,7 +257,7 @@ describe("WorkerManager idle termination", () => {
     await flushAsyncWork();
     await expect(firstCall).resolves.toEqual({ workerId: 1, args: [] });
 
-    await advanceTime(1_000);
+    await advanceFakeTimers(1_000);
     expect(workers[0]?.terminateCallCount).toBe(0);
 
     const secondCall = manager.callWorkerFunction<{ workerId: number }>(
@@ -309,7 +290,7 @@ describe("WorkerManager idle termination", () => {
       .then((value) => ({ ok: true as const, value }))
       .catch((error: unknown) => ({ ok: false as const, error }));
     await flushAsyncWork();
-    await advanceTime(10_001);
+    await advanceFakeTimers(10_001);
     const result = await firstCallResult;
     expect(result.ok).toBe(false);
     if (result.ok) {
@@ -351,14 +332,14 @@ describe("WorkerManager idle termination", () => {
 
     const firstChunk = stream.next();
     await flushAsyncWork();
-    await advanceTime(5);
+    await advanceFakeTimers(5);
     await expect(firstChunk).resolves.toEqual({
       done: false,
       value: { workerId: 1, chunk: 1 },
     });
     await stream.return(undefined);
 
-    await advanceTime(50);
+    await advanceFakeTimers(50);
     expect(workers[0]?.terminateCallCount).toBe(1);
   });
 
@@ -386,7 +367,7 @@ describe("WorkerManager idle termination", () => {
     await flushAsyncWork();
     await expect(previewCall).resolves.toBeUndefined();
 
-    await advanceTime(50);
+    await advanceFakeTimers(50);
     expect(workers[0]?.terminateCallCount).toBe(1);
   });
 });

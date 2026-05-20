@@ -25,7 +25,9 @@ import {
 } from "@workglow/browser-control/task";
 import { DisposeStrategy, ResourceScope } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
 import { MockBrowserContext } from "../browser/MockBrowserContext";
+import { advanceFakeTimers } from "../helpers/advanceFakeTimers";
 
 // ---------------------------------------------------------------------------
 // Shared setup helpers
@@ -183,7 +185,7 @@ describe("SequentialTasks – browser session churn regression", () => {
 
         // Advance time past the idle window — the timer callback should fire
         // and dispose the session.
-        await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+        await advanceFakeTimers(IDLE_MS + 100);
 
         expect(BrowserSessionRegistry.has(sessionId)).toBe(false);
         expect(ctx.connected).toBe(false);
@@ -206,7 +208,7 @@ describe("SequentialTasks – browser session churn regression", () => {
         await scope.runComplete();
 
         // Advance halfway through the idle window.
-        await vi.advanceTimersByTimeAsync(IDLE_MS / 2);
+        await advanceFakeTimers(IDLE_MS / 2, { flush: false });
         expect(BrowserSessionRegistry.has(sessionId)).toBe(true);
 
         // Run another task — its execute() calls touch(), cancelling the pending
@@ -217,12 +219,12 @@ describe("SequentialTasks – browser session churn regression", () => {
 
         // Another half-window passes — still within the new idle window, so
         // the session must survive.
-        await vi.advanceTimersByTimeAsync(IDLE_MS / 2);
+        await advanceFakeTimers(IDLE_MS / 2, { flush: false });
         expect(BrowserSessionRegistry.has(sessionId)).toBe(true);
         expect(ctx.connected).toBe(true);
 
         // Now let the full idle window expire from the last touch.
-        await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+        await advanceFakeTimers(IDLE_MS + 100);
         expect(BrowserSessionRegistry.has(sessionId)).toBe(false);
         expect(ctx.connected).toBe(false);
       } finally {

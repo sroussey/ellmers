@@ -7,6 +7,8 @@
 import { DisposePresets, DisposeStrategy, ResourceScope } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { advanceFakeTimers } from "../helpers/advanceFakeTimers";
+
 describe("DisposeStrategy.runCompletion (default)", () => {
   it("disposes all resources on runComplete()", async () => {
     const scope = new ResourceScope();
@@ -121,10 +123,10 @@ describe("DisposeStrategy.inactivity", () => {
     await scope.runComplete();
     expect(d).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(999);
+    await advanceFakeTimers(999, { flush: false });
     expect(d).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(1);
+    await advanceFakeTimers(1);
     expect(d).toHaveBeenCalledOnce();
     expect(scope.size).toBe(0);
   });
@@ -135,9 +137,9 @@ describe("DisposeStrategy.inactivity", () => {
     scope.register("a", d);
     await scope.runComplete();
 
-    await vi.advanceTimersByTimeAsync(500);
+    await advanceFakeTimers(500);
     scope.touch("a");
-    await vi.advanceTimersByTimeAsync(10_000);
+    await advanceFakeTimers(10_000);
 
     expect(d).not.toHaveBeenCalled();
     expect(scope.size).toBe(1);
@@ -149,11 +151,11 @@ describe("DisposeStrategy.inactivity", () => {
     scope.register("a", d);
 
     await scope.runComplete();
-    await vi.advanceTimersByTimeAsync(800);
+    await advanceFakeTimers(800);
     await scope.runComplete(); // re-arms with another 1000ms
-    await vi.advanceTimersByTimeAsync(500);
+    await advanceFakeTimers(500);
     expect(d).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(500);
+    await advanceFakeTimers(500);
     expect(d).toHaveBeenCalledOnce();
   });
 
@@ -192,14 +194,14 @@ describe("DisposeStrategy.inactivity", () => {
     scope.register("a", d);
 
     await scope.runComplete();
-    await vi.advanceTimersByTimeAsync(500);
+    await advanceFakeTimers(500);
 
     // New run begins.
     await scope.runStart();
     expect(d).not.toHaveBeenCalled();
 
     // Advance well past the original idleMs — the cleared timer must not fire.
-    await vi.advanceTimersByTimeAsync(2_000);
+    await advanceFakeTimers(2_000);
     expect(d).not.toHaveBeenCalled();
     expect(scope.size).toBe(1);
   });
@@ -226,7 +228,7 @@ describe("DisposeStrategy.inactivity", () => {
     scope.register("a", d2);
 
     // If a stale timer were still armed, advancing to idleMs would fire it.
-    await vi.advanceTimersByTimeAsync(2_000);
+    await advanceFakeTimers(2_000);
     expect(d2).not.toHaveBeenCalled();
     expect(scope.size).toBe(1);
   });
@@ -243,7 +245,7 @@ describe("DisposeStrategy.inactivity", () => {
     await scope.runComplete();
 
     // Simulate "next run begins" — but the runner forgets runStart().
-    await vi.advanceTimersByTimeAsync(1000);
+    await advanceFakeTimers(1000);
 
     expect(d).toHaveBeenCalledOnce();
     expect(scope.size).toBe(0);

@@ -24,23 +24,68 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getTestingLogger } from "../../binding/TestingLogger";
 
+const MODEL_ID = "onnx:Supabase/gte-small:q8";
+
+const model: HfTransformersOnnxModelRecord = {
+  model_id: MODEL_ID,
+  title: "gte-small",
+  description: "Supabase/gte-small quantized to 8bit",
+  capabilities: ["text.embedding"],
+  provider: HF_TRANSFORMERS_ONNX,
+  provider_config: {
+    pipeline: "feature-extraction",
+    model_path: "Supabase/gte-small",
+    dtype: "q8",
+    native_dimensions: 384,
+  },
+  metadata: {},
+};
+
+function isAbortRelatedError(err: unknown): boolean {
+  let current: unknown = err;
+  while (current && typeof current === "object") {
+    const e = current as { name?: string; message?: string; cause?: unknown; code?: string };
+    if (
+      e.name === "AbortError" ||
+      e.name === "AbortSignalJobError" ||
+      e.name === "TaskAbortedError"
+    ) {
+      return true;
+    }
+    const message = e.message?.toLowerCase() ?? "";
+    if (
+      message.includes("abort") ||
+      message.includes("protobuf parsing failed") ||
+      message.includes("json parse error") ||
+      message.includes("unexpected eof") ||
+      message.includes("closed")
+    ) {
+      return true;
+    }
+    if (e.code === "ERR_INVALID_STATE") {
+      return true;
+    }
+    current = e.cause;
+  }
+  return false;
+}
+
 describe("ModelDownloadTask abort behavior", () => {
   let logger = getTestingLogger();
   setLogger(logger);
-
-  const modelId = "onnx:Supabase/gte-small:q8";
 
   beforeAll(async () => {
     await setTaskQueueRegistry(null);
     setGlobalModelRepository(new InMemoryModelRepository());
     await clearPipelineCache();
     await registerHuggingFaceTransformersInline();
+    await getGlobalModelRepository().addModel(model);
   });
 
   afterAll(async () => {
     try {
       await unloadModel({
-        model: modelId,
+        model: MODEL_ID,
       });
     } catch {}
     await getTaskQueueRegistry().stopQueues();
@@ -49,26 +94,8 @@ describe("ModelDownloadTask abort behavior", () => {
   });
 
   it("should abort download when task is aborted", async () => {
-    // Register a model
-    const model: HfTransformersOnnxModelRecord = {
-      model_id: modelId,
-      title: "gte-small",
-      description: "Supabase/gte-small quantized to 8bit",
-      capabilities: ["text.embedding"],
-      provider: HF_TRANSFORMERS_ONNX,
-      provider_config: {
-        pipeline: "feature-extraction",
-        model_path: "Supabase/gte-small",
-        dtype: "q8",
-        native_dimensions: 384,
-      },
-      metadata: {},
-    };
-
-    await getGlobalModelRepository().addModel(model);
-
     const download = new ModelDownloadTask({
-      defaults: { model: modelId },
+      defaults: { model: MODEL_ID },
     });
 
     let progressCount = 0;
@@ -113,24 +140,16 @@ describe("ModelDownloadTask abort behavior", () => {
         logger.info("Download should have been aborted after seeing progress events");
         expect.fail("Download should have been aborted after seeing progress events");
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.info("Download failed:", { error });
       // Expected to throw - verify the task is in aborting or error state
       expect([TaskStatus.ABORTING, TaskStatus.FAILED]).toContain(download.status);
 
-      // The error should indicate abort (could be from our code or from the library)
-      const errorMessage: string = error?.message?.toLowerCase() || "";
-      const isAbortError =
-        errorMessage.includes("abort") ||
-        errorMessage.includes("protobuf parsing failed") ||
-        errorMessage.includes("json parse error") ||
-        errorMessage.includes("unexpected eof") ||
-        errorMessage.includes("closed") ||
-        error?.code === "ERR_INVALID_STATE";
+      if (!isAbortRelatedError(error)) {
+        console.error("Unexpected error:", { error });
+      }
 
-      if (!isAbortError) console.error("Unexpected error:", { errorMessage, error });
-
-      expect(isAbortError).toBe(true);
+      expect(isAbortRelatedError(error)).toBe(true);
 
       // Give it a moment to settle any in-flight operations
       const sleepPromise = sleep(1000);
