@@ -179,7 +179,13 @@ export interface ITaskStaticProperties {
   readonly category?: string;
   readonly title?: string;
   readonly description?: string;
-  readonly cacheable: boolean;
+  /**
+   * @deprecated Use `cachePolicy: CachePolicy` instead. The `cacheable` static
+   * is preserved as a back-compat shim and will be removed in a future release.
+   */
+  readonly cacheable?: boolean;
+  /** Canonical declaration of this task's cache policy. */
+  readonly cachePolicy: CachePolicy;
   readonly hasDynamicSchemas: boolean;
   readonly hasDynamicEntitlements: boolean;
   readonly passthroughInputsToOutputs?: boolean;
