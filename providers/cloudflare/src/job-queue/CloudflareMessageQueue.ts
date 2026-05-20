@@ -112,7 +112,11 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     return ids;
   }
 
-  async receive(): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
+  async receive(_opts?: {
+    workerId: string;
+    leaseMs: number;
+    max?: number;
+  }): Promise<readonly IClaim<JobStorageFormat<Input, Output>>[]> {
     throw new Error(
       "CloudflareMessageQueue.receive() is not supported — Cloudflare Queues are push-only. Drive processing from your Worker's queue() handler via handleQueueBatch()."
     );
