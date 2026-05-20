@@ -16,6 +16,7 @@ import {
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
 import { getBrowserDeps } from "../BrowserTaskDeps";
+import type { CachePolicy } from "@workglow/task-graph";
 
 const browserSessionTaskConfigSchema = {
   type: "object",

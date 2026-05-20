@@ -269,7 +269,7 @@ export class TaskGraphRunner {
         try {
           await runPrivateToClean.clearRun();
         } catch (e) {
-          getLogger().warn("RunPrivateCacheRepo.clearRun failed", e);
+          getLogger().warn("RunPrivateCacheRepo.clearRun failed", { error: e });
         }
       }
 
