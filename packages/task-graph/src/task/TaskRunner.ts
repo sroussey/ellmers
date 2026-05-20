@@ -12,12 +12,9 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
+import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache";
+import type { CacheRegistry } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
-import {
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
-  type CacheRegistry,
-} from "../cache";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
 import { CacheCoordinator } from "./CacheCoordinator";
@@ -133,6 +130,13 @@ export class TaskRunner<
   protected runId?: string;
 
   /**
+   * Tracks task types that have already received the "private policy without
+   * runId" downgrade warning, so the warning fires only once per task type
+   * across the process lifetime. Mirrors {@link Task.__cacheableDeprecationWarned}.
+   */
+  private static __privateWithoutRunIdWarned = new Set<string>();
+
+  /**
    * Constructor for TaskRunner
    * @param task The task to run
    */
@@ -216,7 +220,28 @@ export class TaskRunner<
           }
         }
 
-        const policy = this.task.getCachePolicy(inputs);
+        let policy = this.task.getCachePolicy(inputs);
+
+        // Standalone TaskRunner cannot namespace private cache writes without a
+        // runId — TaskGraphRunner owns the wrap. If a standalone caller routes
+        // to the private slot with no runId, downgrade to `kind: "none"` so the
+        // task does not write directly into the shared private repo (which
+        // would collide across callers). Warn once per task type so the
+        // configuration mistake surfaces without flooding the log.
+        if (policy.kind === "private" && !this.runId && this.cacheRegistry?.private !== undefined) {
+          const taskType = this.task.type;
+          if (!TaskRunner.__privateWithoutRunIdWarned.has(taskType)) {
+            TaskRunner.__privateWithoutRunIdWarned.add(taskType);
+            getLogger().warn(
+              `TaskRunner: task "${taskType}" has a private cache policy but no runId was ` +
+                `provided. Private cache writes are skipped for this run — use TaskGraphRunner ` +
+                `with runId for run-namespaced private caching, or provide an already namespaced ` +
+                `private cache repo in CACHE_REGISTRY.`
+            );
+          }
+          policy = { kind: "none" };
+        }
+
         const keyInputs = await this.cacheCoordinator.buildKeyForPolicy(
           inputs,
           this.cacheRegistry,

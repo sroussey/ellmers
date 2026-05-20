@@ -16,12 +16,8 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
+import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
-import {
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
-  RunPrivateCacheRepo,
-} from "../cache";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
 import { isTaskStreamable } from "../task/StreamTypes";
@@ -163,6 +159,7 @@ export class TaskGraphRunner {
    * run. Used to fire-and-forget clearRun() after a successful run.
    */
   protected currentRunPrivate?: RunPrivateCacheRepo;
+  protected baseRegistryForRun?: ServiceRegistry;
 
   /**
    * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
@@ -601,6 +598,46 @@ export class TaskGraphRunner {
   }
 
   /**
+   * Tracks private cache repos that have already received the durability warning,
+   * keyed by the repo instance. WeakSet so a freshly constructed repo that is no
+   * longer referenced is automatically eligible for re-warning if it shows up
+   * again later. Static because routing is repo-instance scoped, not runner
+   * scoped — a process can have one durable repo and many `TaskGraphRunner`s.
+   */
+  private static __durabilityWarnedRepos = new WeakSet<object>();
+
+  /**
+   * Conservative two-tier detector that decides whether a graph may route any
+   * task to the `private` cache slot. Used by both the durability warning and
+   * the `runId`-required guard in {@link handleStart}.
+   *
+   * 1. Read the static `cachePolicy` off the task's constructor. If `kind` is
+   *    "private", the task is definitely private.
+   * 2. Otherwise, if the task overrides `getCachePolicy` (i.e. its prototype's
+   *    method is not `Task.prototype.getCachePolicy`), conservatively treat it
+   *    as potentially private — the override may decide based on inputs that
+   *    are not available at graph-start time.
+   *
+   * Note: probing `getCachePolicy({} as any)` is unsafe because input-dependent
+   * overrides can throw or return the wrong branch when given empty inputs.
+   */
+  public static graphUsesPrivatePolicy(graph: TaskGraph): boolean {
+    return graph.getTasks().some((t) => {
+      const ctor = t.constructor as typeof Task;
+      if (ctor.cachePolicy?.kind === "private") return true;
+      // Override detection: prototype method differs from Task.prototype's.
+      const proto = ctor.prototype as { getCachePolicy?: unknown };
+      if (
+        typeof proto.getCachePolicy === "function" &&
+        proto.getCachePolicy !== Task.prototype.getCachePolicy
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /**
    * Handles the start of task graph execution
    * @param parentSignal Optional abort signal from parent
    */
@@ -614,28 +651,42 @@ export class TaskGraphRunner {
     if (config?.resourceScope !== undefined) {
       this.resourceScope = config.resourceScope;
     }
+    this.baseRegistryForRun = this.registry;
 
     // Store run identifier for per-task propagation.
     this.runId = config?.runId;
 
-    // Warn once per run when a non-durable private cache slot is registered and
-    // at least one task in the graph routes to the private slot. This catches the
+    // Warn once per non-durable private repo (across runs) when at least one
+    // task in the graph routes to the private slot. This catches the
     // dev-mode-in-production misconfiguration where an in-memory store is wired
-    // for convenience but restart-survival is expected.
+    // for convenience but restart-survival is expected. Rate-limited via a
+    // WeakSet keyed by the repo instance so repeated `runGraph` calls against
+    // the same registry do not flood the log.
     if (this.registry.has(CACHE_REGISTRY)) {
       const checkRegistry = this.registry.get(CACHE_REGISTRY);
       if (checkRegistry.private && !checkRegistry.private.isDurable()) {
-        const usesPrivate = this.graph.getTasks().some((t) => {
-          try {
-            return (t as Task).getCachePolicy({} as any).kind === "private";
-          } catch {
-            return false;
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          const repo = checkRegistry.private as object;
+          if (!TaskGraphRunner.__durabilityWarnedRepos.has(repo)) {
+            TaskGraphRunner.__durabilityWarnedRepos.add(repo);
+            getLogger().warn(
+              "TaskGraphRunner: private cache repo may be used but is non-durable — " +
+                "restart-survival will not work. Ensure the CacheRegistry 'private' " +
+                "slot is backed by a durable storage backend."
+            );
           }
-        });
-        if (usesPrivate) {
-          getLogger().warn(
-            "TaskGraphRunner: private cache is non-durable — restart-survival will not work. " +
-              "Configure a durable storage backend for the CacheRegistry 'private' slot."
+        }
+      }
+
+      // Strict guard: if the graph contains a private-policy task but no runId
+      // was provided, we cannot namespace writes — they would land directly in
+      // the shared private repo and collide across runs. TaskGraphRunner is the
+      // documented owner of runId, so this is a configuration error.
+      if (!this.runId && checkRegistry.private) {
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          throw new TaskConfigurationError(
+            "TaskGraphRunner: graph contains a private-policy task but no runId was provided. " +
+              "Provide `runId` in TaskGraphRunConfig so private cache entries can be namespaced."
           );
         }
       }
@@ -828,6 +879,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("complete");
   }
@@ -860,6 +915,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("error", error);
   }
@@ -898,6 +957,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("abort");
   }

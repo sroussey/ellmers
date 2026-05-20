@@ -5,10 +5,10 @@
  */
 
 import type { ServiceRegistry } from "@workglow/util";
-import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
 import { deepEqual, EventEmitter, getLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
+import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
 import { DATAFLOW_ALL_PORTS } from "../task-graph/Dataflow";
 import { TaskGraph } from "../task-graph/TaskGraph";
 import type { IExecuteContext, IExecutePreviewContext, IRunConfig, ITask } from "./ITask";
@@ -388,8 +388,7 @@ export class Task<
   public getCachePolicy(_inputs: Input): CachePolicy {
     const ctor = this.constructor as typeof Task;
     const hasLegacyOverride =
-      Object.prototype.hasOwnProperty.call(ctor, "cacheable") &&
-      (ctor as any).cacheable === false;
+      Object.prototype.hasOwnProperty.call(ctor, "cacheable") && (ctor as any).cacheable === false;
     const hasPolicyOverride = Object.prototype.hasOwnProperty.call(ctor, "cachePolicy");
 
     if (hasLegacyOverride && !hasPolicyOverride) {
@@ -542,6 +541,24 @@ export class Task<
 
     // Store runtime configuration
     this.runConfig = runConfig;
+
+    // Reject input schemas that declare a `__cv` port: this name is reserved by
+    // CacheCoordinator.buildKey for the cache version sentinel. Allowing a task
+    // to declare it would silently shadow cache versioning and cause cache
+    // collisions across versions. `inputSchema()` can legally return a boolean
+    // (see addInput/setInput handling); skip the check in that case.
+    const inputSchema = (this.constructor as typeof Task).inputSchema();
+    if (
+      inputSchema &&
+      typeof inputSchema !== "boolean" &&
+      inputSchema.properties &&
+      Object.prototype.hasOwnProperty.call(inputSchema.properties, "__cv")
+    ) {
+      throw new TaskConfigurationError(
+        `Task "${(this.constructor as typeof Task).type}": input port name '__cv' is reserved ` +
+          `for cache versioning. Rename the port to avoid collision with the cache key sentinel.`
+      );
+    }
   }
 
   // ========================================================================
