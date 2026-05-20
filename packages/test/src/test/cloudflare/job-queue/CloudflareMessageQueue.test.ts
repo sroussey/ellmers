@@ -73,7 +73,7 @@ describe("CloudflareMessageQueue.send", () => {
     expect(q.send).toHaveBeenCalledOnce();
   });
 
-  it("on publish failure: marks JobStore FAILED with ENQUEUE_FAILED, rethrows", async () => {
+  it("on publish failure (H4): keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
     const jobStore = await newStore();
     const q = {
       send: vi.fn().mockRejectedValue(new Error("cf down")),
@@ -86,10 +86,19 @@ describe("CloudflareMessageQueue.send", () => {
       jobStore,
     });
 
+    const t0 = Date.now();
     await expect(mq.send(body("x"))).rejects.toThrow("cf down");
+
+    // No row in FAILED — H4 makes producer-side throws transient.
     const failed = await jobStore.peek(JobStatus.FAILED);
-    expect(failed).toHaveLength(1);
-    expect(failed[0].error_code).toBe("ENQUEUE_FAILED");
+    expect(failed).toHaveLength(0);
+
+    // Row stays PENDING with error_code stamped and visible_at deferred.
+    const pending = await jobStore.peek(JobStatus.PENDING);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.error_code).toBe("ENQUEUE_FAILED");
+    expect(new Date(pending[0]!.visible_at!).getTime()).toBeGreaterThan(t0);
+    expect(pending[0]!.attempts ?? 0).toBe(0);
   });
 
   it("send delaySeconds > 12h throws RangeError", async () => {
@@ -117,5 +126,19 @@ describe("CloudflareMessageQueue.send", () => {
     await expect(mq.receive({ workerId: "w", leaseMs: 30_000 })).rejects.toThrow(
       /handleQueueBatch/
     );
+  });
+
+  it("H3: sendBatch rejects when opts.fingerprint is set", async () => {
+    const jobStore = await newStore();
+    const q = fakeQueue();
+    const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      queue: q as any,
+      queueName: "q",
+      jobStore,
+    });
+    const bodies = Array.from({ length: 10 }, (_, i) => body(`b-${i}`));
+    await expect(mq.sendBatch(bodies, { fingerprint: "X" })).rejects.toBeInstanceOf(RangeError);
+    expect(q.sendBatch).not.toHaveBeenCalled();
   });
 });

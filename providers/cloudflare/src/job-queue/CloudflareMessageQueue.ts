@@ -16,6 +16,12 @@ import {
 import type { CloudMessageBody, CloudflareQueueOptions } from "./types";
 
 const CF_MAX_DELAY_SECONDS = 12 * 60 * 60;
+/**
+ * Backoff applied to `visible_at` when an enqueue throws transiently. Keeps
+ * the row PENDING so a subsequent producer retry / poll picks it up again
+ * instead of marking it FAILED on the first network blip. See H4.
+ */
+const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
 
 /**
  * `IMessageQueue` adapter backed by a Cloudflare Queues producer binding.
@@ -67,8 +73,11 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
       );
       return id;
     } catch (err) {
-      await this.jobStore.failWithError(id, {
-        error: err instanceof Error ? err.message : String(err),
+      // H4: a producer-side throw is transient — leave the row PENDING so a
+      // retry or a polling consumer can pick it back up. We shift visible_at
+      // forward and stamp error_code; status/attempts are untouched.
+      await this.jobStore.markEnqueueDeferred(id, {
+        visible_at: new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS),
         errorCode: "ENQUEUE_FAILED",
       });
       throw err;
@@ -79,17 +88,18 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     bodies: readonly JobStorageFormat<Input, Output>[],
     opts: SendOptions = {}
   ): Promise<readonly MessageId[]> {
+    // H3: applying a single fingerprint to a whole batch is almost always a
+    // bug — every body would dedup against the first row, returning the same
+    // id for distinct payloads. Force callers that want fingerprint-based
+    // dedup to use per-body send() instead.
+    if (opts.fingerprint != null) {
+      throw new RangeError(
+        "sendBatch does not accept a single fingerprint applied to all bodies; use send() per body for fingerprinted dedup"
+      );
+    }
     const ids: MessageId[] = [];
     for (const body of bodies) {
-      let resolved: MessageId | undefined;
-      if (opts.fingerprint) {
-        const existing = await this.jobStore.findActiveByFingerprint(
-          opts.fingerprint,
-          this.queueName
-        );
-        if (existing?.id != null) resolved = existing.id as MessageId;
-      }
-      if (resolved == null) resolved = await this.jobStore.create(body, opts);
+      const resolved = await this.jobStore.create(body, opts);
       ids.push(resolved);
     }
 
@@ -101,9 +111,12 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     try {
       await this.queue.sendBatch(messages);
     } catch (err) {
+      // H4: transient — keep every row PENDING with visible_at pushed forward
+      // and error_code set. Re-throw so the caller sees the failure.
+      const defer = new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS);
       for (const id of ids) {
-        await this.jobStore.failWithError(id, {
-          error: err instanceof Error ? err.message : String(err),
+        await this.jobStore.markEnqueueDeferred(id, {
+          visible_at: defer,
           errorCode: "ENQUEUE_FAILED",
         });
       }

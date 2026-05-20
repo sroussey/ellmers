@@ -64,16 +64,24 @@ describe("SqsMessageQueue.send", () => {
     expect(sqsMock.commandCalls(SendMessageCommand)).toHaveLength(1);
   });
 
-  it("on publish failure: marks JobStore FAILED with ENQUEUE_FAILED, rethrows", async () => {
+  it("on publish failure (H4): keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
     const { mq, jobStore } = buildMq();
     sqsMock.on(SendMessageCommand).rejects(new Error("network down"));
 
+    const t0 = Date.now();
     await expect(mq.send(body("x"))).rejects.toThrow("network down");
 
-    const rows = await jobStore.peek(JobStatus.FAILED);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.error_code).toBe("ENQUEUE_FAILED");
-    expect(rows[0]!.error).toBe("network down");
+    // No row in FAILED — H4 makes producer-side throws transient.
+    const failed = await jobStore.peek(JobStatus.FAILED);
+    expect(failed).toHaveLength(0);
+
+    // Row is still PENDING with error_code stamped and visible_at deferred.
+    const pending = await jobStore.peek(JobStatus.PENDING);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.error_code).toBe("ENQUEUE_FAILED");
+    expect(new Date(pending[0]!.visible_at!).getTime()).toBeGreaterThan(t0);
+    // attempts must not be bumped on a producer-side failure.
+    expect(pending[0]!.attempts ?? 0).toBe(0);
   });
 
   it("throws RangeError when delaySeconds > 900", async () => {
@@ -93,6 +101,13 @@ describe("SqsMessageQueue.send", () => {
     expect(calls[0]!.args[0].input.Entries).toHaveLength(10);
     expect(calls[1]!.args[0].input.Entries).toHaveLength(10);
     expect(calls[2]!.args[0].input.Entries).toHaveLength(3);
+  });
+
+  it("H3: sendBatch rejects when opts.fingerprint is set", async () => {
+    const { mq } = buildMq();
+    const bodies = Array.from({ length: 10 }, (_, i) => body(`b-${i}`));
+    await expect(mq.sendBatch(bodies, { fingerprint: "X" })).rejects.toBeInstanceOf(RangeError);
+    expect(sqsMock.commandCalls(SendMessageBatchCommand)).toHaveLength(0);
   });
 });
 
