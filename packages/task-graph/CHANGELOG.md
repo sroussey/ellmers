@@ -1,5 +1,25 @@
 # @workglow/task-graph
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+#### ai
+
+- update image input handling across vision tasks
+
+#### job-queue
+
+- enhance error handling with machine-readable codes
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ## 0.2.35

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+### Bug Fixes
+
+- FetchUrl permanent codes + SQLite v4 + error-code registry (#518)
+
+#### job-queue
+
+- follow-up correctness fixes to PR #511 (#513)
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
+### Tests
+
+- add tabular-storage contract invariant suite across all backends (#510)
+
 ## 0.2.36
 
 ## 0.2.35

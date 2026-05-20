@@ -1,5 +1,29 @@
 # @workglow/job-queue
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+#### job-queue
+
+- enhance error handling with machine-readable codes
+
+### Bug Fixes
+
+- FetchUrl permanent codes + SQLite v4 + error-code registry (#518)
+
+#### job-queue
+
+- follow-up correctness fixes to PR #511 (#513)
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ## 0.2.35

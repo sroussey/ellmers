@@ -1,5 +1,29 @@
 # @workglow/tasks
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+#### ai
+
+- update image input handling across vision tasks
+
+#### job-queue
+
+- enhance error handling with machine-readable codes
+
+### Bug Fixes
+
+- FetchUrl permanent codes + SQLite v4 + error-code registry (#518)
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ### Chores

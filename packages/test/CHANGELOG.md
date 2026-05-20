@@ -1,5 +1,47 @@
 # @workglow/test
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+#### ai
+
+- update image input handling across vision tasks
+- enhance HuggingFace model configuration and pipeline mapping
+
+#### job-queue
+
+- enhance error handling with machine-readable codes
+
+### Bug Fixes
+
+- FetchUrl permanent codes + SQLite v4 + error-code registry (#518)
+
+#### job-queue
+
+- follow-up correctness fixes to PR #511 (#513)
+
+### Refactors
+
+#### tests
+
+- streamline timer handling with advanceFakeTimers utility
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
+### Tests
+
+- fix description text changed
+- add tabular-storage contract invariant suite across all backends (#510)
+
+### Chores
+
+- update configuration files and improve code organization
+
 ## 0.2.36
 
 ### Features

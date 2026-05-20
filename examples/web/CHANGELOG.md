@@ -1,5 +1,17 @@
 # @workglow/web
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ### Chores

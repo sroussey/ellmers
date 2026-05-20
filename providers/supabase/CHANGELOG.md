@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+### Bug Fixes
+
+#### job-queue
+
+- follow-up correctness fixes to PR #511 (#513)
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ## 0.2.35

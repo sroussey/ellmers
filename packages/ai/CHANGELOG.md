@@ -1,5 +1,22 @@
 # @workglow/ai
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
+#### ai
+
+- update image input handling across vision tasks
+- enhance HuggingFace model configuration and pipeline mapping
+
+### Refactors
+
+#### job-queue
+
+- drop legacy limiter methods, fix QueuedExecutionStrategy release, rename releaseClaim (#511)
+
 ## 0.2.36
 
 ### Features

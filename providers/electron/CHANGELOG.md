@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.37
+
+### Features
+
+- Add pluggable disposal strategies to ResourceScope (#509)
+
 ## 0.2.36
 
 ## 0.2.35

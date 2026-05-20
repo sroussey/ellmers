@@ -1,7 +1,7 @@
 {
   "name": "@workglow/ai",
   "type": "module",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "repository": {
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git",
