@@ -249,10 +249,10 @@ For the `private` slot, the runner constructs a per-run `RunPrivateCacheRepo` wr
 
 ### Run identity (`runId`)
 
-`runId` is an opaque string passed in `TaskGraphRunConfig`:
+`runId` is an opaque string passed in `TaskGraphRunConfig`. `TaskGraph.run` takes `(input, config)` — `runId` lives in the config (second argument), not the input:
 
 ```ts
-graph.run({ runId, registry, ... });
+graph.run({}, { runId, registry, ... });
 ```
 
 The caller owns generation. The contract:
@@ -261,7 +261,7 @@ The caller owns generation. The contract:
 - A restart after a crash uses the **same** `runId` — that is how durable resume works.
 - Concurrent runs of the same workflow get **different** `runId`s.
 
-If the graph contains any `private`-policy task and `runId` is missing, `handleStart` rejects the run synchronously.
+`handleStart` rejects the run synchronously only when **all** of the following hold: a `CACHE_REGISTRY` is registered, its `private` slot is populated, and the graph contains at least one task whose policy may resolve to `kind: "private"` (a static `cachePolicy` of that kind, or a `getCachePolicy(inputs)` override that can return it). Graphs without a private slot — or without any private-policy task — can omit `runId`.
 
 ### Cache key
 
@@ -278,9 +278,9 @@ key = sha256(taskType + getCacheVersion() + fingerprint(inputs))
 | Tier            | Written        | Read                                  | Deleted                                                                                                                                |
 | --------------- | -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `deterministic` | On task success | On task start                         | Never automatically. App owns invalidation (typically via `version` bumps).                                                            |
-| `private`       | On task success | On task start, filtered to current `runId` | **(a)** `privateRepo.clearRun(runId)` on `succeeded`. **(b)** TTL sweep via `CacheJanitor.sweepStaleRunPrivate(olderThanMs)` for abandoned runs. |
+| `private`       | On task success | On task start, filtered to current `runId` | **(a)** `privateRepo.clearRun()` on `succeeded` (the wrapper already knows its `runId`). **(b)** TTL sweep via `CacheJanitor.sweepStaleRunPrivate(olderThanMs)` for abandoned runs. |
 
-Failed tasks are never cached — only `Ok` results reach `saveOutput`. Both slots are insert-if-absent: a same-key write while the original row exists is dropped silently.
+Failed tasks are never cached — only `Ok` results reach `saveOutput`. `saveOutput` is upsert by primary key (last writer wins) — the underlying `TaskOutputTabularRepository` calls `put()` on its tabular storage, so a same-key write replaces the existing row.
 
 ### Durable execution model
 

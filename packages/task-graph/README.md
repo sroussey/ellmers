@@ -182,7 +182,7 @@ You can define schemas using plain JSON Schema, TypeBox, or Zod. Here are exampl
 #### Using Plain JSON Schema
 
 ```typescript
-import { Task, IExecuteContext } from "@workglow/task-graph";
+import { Task, IExecuteContext, type CachePolicy } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util";
 
 const MyInputSchema = {
@@ -268,7 +268,7 @@ class TextProcessorTask extends Task<MyInput, MyOutput> {
 TypeBox schemas are JSON Schema compatible and can be used directly:
 
 ```typescript
-import { Task, IExecuteContext } from "@workglow/task-graph";
+import { Task, IExecuteContext, type CachePolicy } from "@workglow/task-graph";
 import { Type } from "@sinclair/typebox";
 import { DataPortSchema, FromSchema } from "@workglow/util";
 
@@ -343,7 +343,7 @@ class TextProcessorTask extends Task<MyInput, MyOutput> {
 Zod 4 has built-in JSON Schema support using the `.toJSONSchema()` method:
 
 ```typescript
-import { Task, IExecuteContext } from "@workglow/task-graph";
+import { Task, IExecuteContext, type CachePolicy } from "@workglow/task-graph";
 import { z } from "zod";
 import { DataPortSchema } from "@workglow/util";
 
@@ -762,7 +762,9 @@ import {
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
 import { ServiceRegistry } from "@workglow/util";
-import { InMemoryTabularStorage, SqliteTabularStorage } from "@workglow/storage";
+import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
+
+await Sqlite.init();
 
 const deterministic = new TaskOutputTabularRepository({
   tabularRepository: new SqliteTabularStorage(
@@ -785,22 +787,23 @@ const privateBacking = new TaskOutputTabularRepository({
 });
 
 const registry = new ServiceRegistry();
-registry.set(CACHE_REGISTRY, new DefaultCacheRegistry({
-  deterministic,
-  private: privateBacking,
-}));
+registry.registerInstance(
+  CACHE_REGISTRY,
+  new DefaultCacheRegistry({ deterministic, private: privateBacking })
+);
 
-await graph.run({ registry, runId: "run-" + crypto.randomUUID() });
+// TaskGraph.run takes (input, config) — runId/registry are run config, not input.
+await graph.run({}, { registry, runId: "run-" + crypto.randomUUID() });
 ```
 
 The runner constructs a per-run `RunPrivateCacheRepo` wrapper over the `private` slot, namespaced by `runId`. The wrapper exists only for the duration of the run; the rows it writes survive in the backing store until either explicit cleanup (on successful completion) or the TTL janitor sweeps them (after a crashed run is abandoned).
 
 ### Run identity and durable execution
 
-A run is identified by an opaque `runId` string supplied by the caller of `.run()`:
+A run is identified by an opaque `runId` string supplied by the caller of `.run()` in the run config (the second argument; the first argument is graph input):
 
 ```typescript
-await graph.run({ runId, registry });
+await graph.run({}, { runId, registry });
 ```
 
 - **First start** of a user-triggered run: generate a fresh `runId` (UUID is typical) and persist it alongside the rest of the run metadata.
@@ -809,9 +812,11 @@ await graph.run({ runId, registry });
 
 The runner does not generate `runId` for you. That is the caller's job — only the caller knows whether this `.run()` call is a fresh start or a restart.
 
+If the registered `private` slot is present and the graph contains any task whose policy may resolve to `kind: "private"` (statically or via `getCachePolicy(inputs)`), the runner rejects the run synchronously when `runId` is missing. Graphs without a private slot (or without any private-policy task) don't need a `runId`.
+
 #### Cleanup
 
-- On `succeeded`, the runner awaits `privateRepo.clearRun(runId)` before resolving so that a restart with the same `runId` cannot accidentally hit stale entries from the previous attempt.
+- On `succeeded`, the runner awaits `privateRepo.clearRun()` before resolving so that a restart with the same `runId` cannot accidentally hit stale entries from the previous attempt. The wrapper already knows its `runId`, so the method takes no arguments.
 - On crash (no terminal status reached), nothing happens at the cache layer — the entries stay on disk so the restart can find them.
 - For abandoned runs (crashed and never restarted), schedule the `CacheJanitor`:
 
@@ -913,17 +918,21 @@ const deterministic = new TaskOutputTabularRepository({
 });
 
 const registry = new ServiceRegistry();
-registry.set(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic }));
+registry.registerInstance(
+  CACHE_REGISTRY,
+  new DefaultCacheRegistry({ deterministic })
+);
 
 const graph = new TaskGraph();
 graph.addTask(new ExpensiveTask({ n: 42 }, { id: "exp" }));
 
+// TaskGraph.run takes (input, config). registry/runId live in config.
 let t = Date.now();
-await graph.run({ registry, runId: "run-1" });
+await graph.run({}, { registry, runId: "run-1" });
 const firstRunMs = Date.now() - t;
 
 t = Date.now();
-await graph.run({ registry, runId: "run-2" }); // different run, same inputs → cache hit
+await graph.run({}, { registry, runId: "run-2" }); // different run, same inputs → cache hit
 const secondRunMs = Date.now() - t;
 
 console.log({ firstRunMs, secondRunMs });
@@ -979,9 +988,8 @@ import {
   FsFolderTabularStorage,
   InMemoryTabularStorage,
   IndexedDbTabularStorage,
-  SqliteTabularStorage,
 } from "@workglow/storage";
-import { Sqlite } from "@workglow/storage/sqlite";
+import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 
 // In-memory (e.g. tests)
 const memoryOutput = new TaskOutputTabularRepository({
