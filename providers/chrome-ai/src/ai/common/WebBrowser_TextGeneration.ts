@@ -25,6 +25,10 @@ import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
  * Multi-turn chat is handled by {@link WebBrowser_Chat}, which reuses
  * sessions via the {@link deleteChromeSession} disposer wired into
  * `ResourceScope`.
+ *
+ * `temperature` is `@deprecated` for non-extension contexts in the current
+ * Chrome spec and silently ignored on the open web. Passed through anyway
+ * so extension callers still get the knob.
  */
 export const WebBrowser_TextGeneration: AiProviderRunFn<
   TextGenerationTaskInput,

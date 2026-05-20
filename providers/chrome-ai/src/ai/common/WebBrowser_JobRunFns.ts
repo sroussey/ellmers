@@ -36,7 +36,7 @@ import { WebBrowser_ToolCalling } from "./WebBrowser_ToolCalling";
  * (multi-turn, session-reusing); a bare `input.prompt` means single-shot
  * text generation.
  */
-const WebBrowser_TextGeneration_Unified: AiProviderRunFn<
+export const WebBrowser_TextGeneration_Unified: AiProviderRunFn<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

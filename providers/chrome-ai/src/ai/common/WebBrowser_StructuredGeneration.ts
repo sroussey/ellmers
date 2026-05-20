@@ -29,6 +29,10 @@ import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
  * `omitResponseConstraintInput` is set to `true`: the schema is already
  * enforced via the runtime constraint, so re-sending it as a prompt
  * preamble would waste context budget.
+ *
+ * `temperature` is `@deprecated` for non-extension contexts in the current
+ * Chrome spec and silently ignored on the open web. Passed through anyway
+ * so extension callers still get the knob.
  */
 export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,

@@ -11,7 +11,21 @@ export * from "./common/WebBrowser_ModelSchema";
 export * from "./registerWebBrowser";
 
 import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
-import { WEB_BROWSER_RUN_FNS } from "./common/WebBrowser_JobRunFns";
+import {
+  buildInitialPromptsFromHistory,
+  findLastUserIndex,
+  messageText,
+} from "./common/WebBrowser_ChatHistory";
+import {
+  WEB_BROWSER_RUN_FNS,
+  WebBrowser_TextGeneration_Unified,
+} from "./common/WebBrowser_JobRunFns";
+import {
+  deleteChromeSession,
+  dropChromeSessionEntry,
+  getChromeSession,
+  setChromeSession,
+} from "./common/WebBrowser_Sessions";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 
 /**
@@ -21,4 +35,16 @@ export const _testOnly = {
   WebBrowserProvider,
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
+  WebBrowser_TextGeneration_Unified,
+  sessions: {
+    getChromeSession,
+    setChromeSession,
+    deleteChromeSession,
+    dropChromeSessionEntry,
+  },
+  chatHistory: {
+    messageText,
+    findLastUserIndex,
+    buildInitialPromptsFromHistory,
+  },
 } as const;

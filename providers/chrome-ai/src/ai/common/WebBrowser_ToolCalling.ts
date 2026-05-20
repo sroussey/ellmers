@@ -12,7 +12,13 @@ import type {
   ToolCallingTaskOutput,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai";
+import { uuid4 } from "@workglow/util";
 
+import {
+  buildInitialPromptsFromHistory,
+  findLastUserIndex,
+  messageText,
+} from "./WebBrowser_ChatHistory";
 import {
   createDownloadMonitor,
   ensureAvailable,
@@ -20,13 +26,6 @@ import {
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
-
-function messageText(msg: ChatMessage): string {
-  return msg.content
-    .map((b) => (b.type === "text" ? b.text : ""))
-    .filter((s) => s.length > 0)
-    .join("\n\n");
-}
 
 function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
   if (typeof prompt === "string") return prompt;
@@ -45,10 +44,8 @@ function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
  * Build `initialPrompts` + the trailing prompt text from a {@link ToolCallingTaskInput}.
  *
  * When `input.messages` is present we treat the last user message as the
- * turn-in-progress; everything before it goes into `initialPrompts`. tool
- * messages and non-text content blocks are dropped — Chrome's open-web Prompt
- * API surface is system/user/assistant + text/image/audio, and our base64
- * ContentBlock images aren't wired up yet. Multi-turn tool-calling histories
+ * turn-in-progress; everything before it goes into `initialPrompts` via
+ * {@link buildInitialPromptsFromHistory}. Multi-turn tool-calling histories
  * (assistant tool_use + tool role tool_result) collapse to text-only frames,
  * so a follow-up turn after tool execution may lose structured tool-call
  * context. The orchestrator is responsible for re-supplying any context the
@@ -61,38 +58,14 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
   const hasMessages = Array.isArray(input.messages) && input.messages.length > 0;
   if (hasMessages) {
     const messages = input.messages as readonly ChatMessage[];
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserIdx = i;
-        break;
-      }
-    }
+    const lastUserIdx = findLastUserIndex(messages);
     if (lastUserIdx < 0) {
       return { initialPrompts: [], promptText: flattenPrompt(input.prompt) };
     }
-
-    const history = messages.slice(0, lastUserIdx);
-    const tail: LanguageModelMessage[] = [];
-    let leadingSystem: LanguageModelSystemMessage | undefined;
-    for (let i = 0; i < history.length; i++) {
-      const msg = history[i];
-      const text = messageText(msg);
-      if (text.length === 0) continue;
-      if (msg.role === "system") {
-        if (i === 0 && leadingSystem === undefined) {
-          leadingSystem = { role: "system", content: text };
-        }
-        continue;
-      }
-      if (msg.role === "user" || msg.role === "assistant") {
-        tail.push({ role: msg.role, content: text });
-      }
-    }
-    const initialPrompts: LanguageModelCreateOptions["initialPrompts"] = leadingSystem
-      ? [leadingSystem, ...tail]
-      : tail;
-    return { initialPrompts, promptText: messageText(messages[lastUserIdx]) };
+    return {
+      initialPrompts: buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx)),
+      promptText: messageText(messages[lastUserIdx]),
+    };
   }
 
   const initialPrompts: LanguageModelCreateOptions["initialPrompts"] = input.systemPrompt
@@ -119,6 +92,10 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
  * orchestrator's next turn (with real tool results re-fed via `messages`)
  * is what produces the useful follow-up text — this turn's role is to
  * extract the tool intent, not to converse.
+ *
+ * `temperature` is `@deprecated` for non-extension contexts in the current
+ * Chrome spec and silently ignored on the open web. Passed through anyway
+ * so extension callers still get the knob.
  */
 export const WebBrowser_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
@@ -144,12 +121,12 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
           description: buildToolDescription(td),
           inputSchema: td.inputSchema as object,
           execute: async (...args: unknown[]): Promise<string> => {
+            // If the user aborted mid-loop, short-circuit without capturing
+            // — the surrounding `promptStreaming` will throw on its next
+            // read and the finally below will tear down the session.
+            if (signal?.aborted) return "";
             const callInput = (args[0] ?? {}) as Record<string, unknown>;
-            capturedCalls.push({
-              id: crypto.randomUUID(),
-              name: td.name,
-              input: callInput,
-            });
+            capturedCalls.push({ id: uuid4(), name: td.name, input: callInput });
             return "";
           },
         }));
