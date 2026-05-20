@@ -349,7 +349,7 @@ export class Task<
   public get cacheable(): boolean {
     if (this.runConfig?.cacheable !== undefined) return this.runConfig.cacheable;
     if (this.config?.cacheable !== undefined) return this.config.cacheable;
-    return this.getCachePolicy((this.runInputData ?? ({} as Input))).kind !== "none";
+    return this.getCachePolicy((this.runInputData ?? {}) as unknown as Input).kind !== "none";
   }
 
   /**
