@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
+import { TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:GestureRecognizerTask");
@@ -95,7 +97,7 @@ const TypeHandGestureDetection = {
 export const GestureRecognizerInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     numHands: {
       type: "number",
@@ -154,7 +156,12 @@ export const GestureRecognizerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type GestureRecognizerTaskInput = FromSchema<typeof GestureRecognizerInputSchema>;
+export type GestureRecognizerTaskInput = WithImageValuePorts<
+  FromSchema<typeof GestureRecognizerInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type GestureRecognizerTaskOutput = FromSchema<typeof GestureRecognizerOutputSchema>;
 export type GestureRecognizerTaskConfig = TaskConfig<GestureRecognizerTaskInput>;
 

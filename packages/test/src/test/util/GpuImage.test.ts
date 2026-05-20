@@ -6,6 +6,7 @@
 import "@workglow/tasks";
 import type { GpuImage, GpuImageBackend } from "@workglow/util/media";
 import { GpuImageFactory, imageValueFromBuffer, ImageValueSchema } from "@workglow/util/media";
+import type { PropertySchema } from "@workglow/util/schema";
 import { describe, expect, test } from "vitest";
 
 describe("GpuImage interface", () => {
@@ -51,6 +52,11 @@ describe("GpuImageFactory Proxy guards", () => {
 });
 
 describe("ImageValueSchema", () => {
+  test("is assignable as a data port property schema", () => {
+    const schema: PropertySchema = ImageValueSchema();
+    expect(schema).toMatchObject({ format: "image" });
+  });
+
   test("declares format:'image' so the input resolver hydrates it", () => {
     const schema = ImageValueSchema({ title: "Image" }) as Record<string, unknown>;
     expect(schema.format).toBe("image");

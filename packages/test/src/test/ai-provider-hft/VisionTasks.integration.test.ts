@@ -26,6 +26,7 @@ import {
 } from "@workglow/huggingface-transformers/ai-runtime";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
 import { setLogger } from "@workglow/util";
+import { isImageValue } from "@workglow/util/media";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
@@ -51,15 +52,14 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
   describe("ImageSegmentationTask", () => {
     it("should segment an image using HFT", async () => {
       const model: HfTransformersOnnxModelRecord = {
-        model_id: "onnx:Xenova/segformer-b0-finetuned-ade-512-512",
-        title: "Segformer B0 ADE",
-        description: "Image segmentation model",
+        model_id: "onnx:jonathandinu/face-parsing",
+        title: "Face Parsing",
+        description: "Face parsing image segmentation model",
         capabilities: ["image.segmentation"],
         provider: HF_TRANSFORMERS_ONNX,
         provider_config: {
           pipeline: "image-segmentation",
-          model_path: "Xenova/segformer-b0-finetuned-ade-512-512",
-          dtype: "q8",
+          model_path: "jonathandinu/face-parsing",
         },
         metadata: {},
       };
@@ -74,11 +74,19 @@ describe("Vision Tasks - HuggingFace Transformers", () => {
       expect(result).toBeDefined();
       expect(result.masks).toBeDefined();
       expect(Array.isArray(result.masks)).toBe(true);
-      // Normalize masks to a flat array (handles both single array and nested array cases)
-      const masksArray = Array.isArray(result.masks[0])
-        ? (result.masks as any[]).flat()
-        : (result.masks as Array<{ label: string; score: number; mask: { [x: string]: unknown } }>);
-      expect(masksArray.map((i) => i.label).includes("sky")).toBe(true);
+      type SegmentationMask = {
+        readonly label: string;
+        readonly score: number;
+        readonly mask: unknown;
+      };
+
+      const masksArray: readonly SegmentationMask[] = result.masks as readonly SegmentationMask[];
+      expect(masksArray.length).toBeGreaterThan(0);
+      for (const item of masksArray) {
+        expect(isImageValue(item.mask)).toBe(true);
+        expect((item.mask as { readonly width: number }).width).toBeGreaterThan(0);
+        expect((item.mask as { readonly height: number }).height).toBeGreaterThan(0);
+      }
     }, 30000);
   });
 

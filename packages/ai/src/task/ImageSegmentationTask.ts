@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:ImageSegmentationTask");
@@ -16,7 +18,7 @@ const modelSchema = TypeModel("model:ImageSegmentationTask");
 export const ImageSegmentationInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     threshold: {
       type: "number",
@@ -41,6 +43,11 @@ export const ImageSegmentationInputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+const TypeMask = ImageValueSchema({
+  title: "Mask",
+  description: "Mask image",
+});
+
 const segmentationMaskSchema = {
   type: "object",
   properties: {
@@ -56,25 +63,18 @@ const segmentationMaskSchema = {
       minimum: 0,
       maximum: 1,
     },
-    mask: {
-      type: "object",
-      format: "image",
-      title: "Mask",
-      description: "Mask image",
-    },
+    mask: TypeMask,
   },
   required: ["label", "score", "mask"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export const ImageSegmentationOutputSchema = {
   type: "object",
   properties: {
     masks: {
-      oneOf: [
-        { type: "array", items: segmentationMaskSchema },
-        { type: "array", items: { type: "array", items: segmentationMaskSchema } },
-      ],
+      type: "array",
+      items: segmentationMaskSchema,
       title: "Segmentation Masks",
       description: "The segmented regions with their labels, scores, and masks",
     },
@@ -83,8 +83,15 @@ export const ImageSegmentationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageSegmentationTaskInput = FromSchema<typeof ImageSegmentationInputSchema>;
-export type ImageSegmentationTaskOutput = FromSchema<typeof ImageSegmentationOutputSchema>;
+export type ImageSegmentationTaskInput = WithImageValuePorts<
+  FromSchema<typeof ImageSegmentationInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
+export type ImageSegmentationTaskOutput = {
+  masks: { label: string; score: number; mask: ImageValue }[];
+};
 export type ImageSegmentationTaskConfig = TaskConfig<ImageSegmentationTaskInput>;
 
 /**

@@ -6,6 +6,8 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import {
   DataPortSchema,
   FromSchema,
@@ -13,20 +15,22 @@ import {
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel, TypeSingleOrArray } from "./base/AiTaskSchemas";
+import { TypeModel, TypeSingleOrArray } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:ImageEmbeddingTask");
 
-export const ImageEmbeddingInputSchema = {
+const imageEmbeddingInputSchema = {
   type: "object",
   properties: {
-    image: TypeSingleOrArray(TypeImageInput),
+    image: TypeSingleOrArray(ImageValueSchema()),
     model: modelSchema,
   },
   required: ["image", "model"],
   additionalProperties: false,
 } as const satisfies DataPortSchema;
+
+export const ImageEmbeddingInputSchema: DataPortSchema = imageEmbeddingInputSchema;
 
 export const ImageEmbeddingOutputSchema = {
   type: "object",
@@ -42,9 +46,11 @@ export const ImageEmbeddingOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageEmbeddingTaskInput = FromSchema<
-  typeof ImageEmbeddingInputSchema,
-  TypedArraySchemaOptions
+export type ImageEmbeddingTaskInput = WithImageValuePorts<
+  FromSchema<typeof imageEmbeddingInputSchema, TypedArraySchemaOptions>,
+  {
+    readonly image: ImageValue | readonly ImageValue[];
+  }
 >;
 export type ImageEmbeddingTaskOutput = FromSchema<
   typeof ImageEmbeddingOutputSchema,

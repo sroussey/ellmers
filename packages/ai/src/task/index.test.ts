@@ -4,12 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ImageValue } from "@workglow/util/media";
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, type Capability } from "../capability/Capabilities";
+import type { ImageEmbeddingTaskInput } from "./ImageEmbeddingTask";
 import { AiTask } from "./base/AiTask";
 import { registerAiTasks } from "./index";
 
+const imageEmbeddingInputImageIsTyped: ImageEmbeddingTaskInput["image"] extends
+  | ImageValue
+  | readonly ImageValue[]
+  ? true
+  : false = true;
+
 describe("AI task requires audit", () => {
+  it("infers image embedding input image as ImageValue or ImageValue[]", () => {
+    expect(imageEmbeddingInputImageIsTyped).toBe(true);
+  });
+
   it("every registered task declares a static requires array of valid capabilities", () => {
     const tasks = registerAiTasks();
     const validCapabilities = new Set(Object.keys(CAPABILITIES));

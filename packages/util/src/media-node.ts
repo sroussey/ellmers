@@ -31,10 +31,8 @@ export type {
   GpuImageEncodeFormat,
   GpuImageStatic,
 } from "./media/gpuImage";
-export { ImageValueSchema } from "./media/imageValueSchema";
 export * from "./media/imageRasterCodecRegistry";
 export type { ImageChannels } from "./media/imageTypes";
-export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
 export {
   imageValueFromBitmap,
   imageValueFromBuffer,
@@ -50,6 +48,8 @@ export type {
   NodeImageFormat,
   NodeImageValue,
 } from "./media/imageValue";
+export { ImageValueSchema } from "./media/imageValueSchema";
+export type { WithImageValuePorts } from "./media/imageValueSchema";
 export * from "./media/MediaRawImage";
 export {
   getPreviewBudget,
@@ -57,6 +57,7 @@ export {
   registerPreviewResizeFn,
   setPreviewBudget,
 } from "./media/previewBudget";
+export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
 export async function getGpuDevice(): Promise<null> {
   return null;
 }
@@ -77,10 +78,10 @@ export type { TexturePool, TexturePoolOptions } from "./media/texturePool.browse
 // WebGpuImage is browser-only at runtime; type-only re-export lets
 // browser-targeted filter files (*.webgpu.ts) type-check under node tsc.
 export {
-  SharpImage,
   decodeBufferToRaw,
   encodeRawPixels,
   probeImageDimensions,
+  SharpImage,
 } from "./media/sharpImage.server";
 export type {
   DecodeBufferToRawOptions,

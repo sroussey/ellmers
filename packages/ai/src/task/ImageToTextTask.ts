@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:ImageToTextTask");
@@ -22,7 +24,7 @@ const generatedTextSchema = {
 export const ImageToTextInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     maxTokens: {
       type: "number",
@@ -50,7 +52,12 @@ export const ImageToTextOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageToTextTaskInput = FromSchema<typeof ImageToTextInputSchema>;
+export type ImageToTextTaskInput = WithImageValuePorts<
+  FromSchema<typeof ImageToTextInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type ImageToTextTaskOutput = FromSchema<typeof ImageToTextOutputSchema>;
 export type ImageToTextTaskConfig = TaskConfig<ImageToTextTaskInput>;
 

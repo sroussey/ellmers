@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:FaceDetectorTask");
@@ -96,7 +98,7 @@ const TypeFaceDetection = {
 export const FaceDetectorInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     minDetectionConfidence: {
       type: "number",
@@ -137,7 +139,12 @@ export const FaceDetectorOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type FaceDetectorTaskInput = FromSchema<typeof FaceDetectorInputSchema>;
+export type FaceDetectorTaskInput = WithImageValuePorts<
+  FromSchema<typeof FaceDetectorInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type FaceDetectorTaskOutput = FromSchema<typeof FaceDetectorOutputSchema>;
 export type FaceDetectorTaskConfig = TaskConfig<FaceDetectorTaskInput>;
 

@@ -5,6 +5,7 @@
  */
 import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { PixelateParams } from "./pixelate.cpu";
 
@@ -23,14 +24,14 @@ const inputSchema = {
   },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: { image: ImageValueSchema({ title: "Image", description: "Pixelated image" }) },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export interface ImagePixelateTaskInput extends ImageFilterInput {
   blockSize?: number;
@@ -48,10 +49,10 @@ export class ImagePixelateTask extends ImageFilterTask<
   public static override description = "Pixelates an image by averaging blocks of pixels";
 
   static override inputSchema() {
-    return inputSchema as never;
+    return inputSchema;
   }
   static override outputSchema() {
-    return outputSchema as never;
+    return outputSchema;
   }
 
   protected readonly filterName = "pixelate";

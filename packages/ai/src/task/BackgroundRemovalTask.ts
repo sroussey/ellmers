@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:BackgroundRemovalTask");
@@ -17,7 +18,7 @@ const modelSchema = TypeModel("model:BackgroundRemovalTask");
 export const BackgroundRemovalInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
   },
   required: ["image", "model"],
@@ -36,8 +37,13 @@ export const BackgroundRemovalOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type BackgroundRemovalTaskInput = FromSchema<typeof BackgroundRemovalInputSchema>;
-export type BackgroundRemovalTaskOutput = FromSchema<typeof BackgroundRemovalOutputSchema>;
+export type BackgroundRemovalTaskInput = WithImageValuePorts<
+  FromSchema<typeof BackgroundRemovalInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
+export type BackgroundRemovalTaskOutput = { image: ImageValue };
 export type BackgroundRemovalTaskConfig = TaskConfig<BackgroundRemovalTaskInput>;
 
 /**

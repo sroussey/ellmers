@@ -10,6 +10,7 @@ import type {
   ImageSegmentationTaskOutput,
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
+import { imageValueFromBitmap } from "@workglow/util/media";
 import { loadTfmpTasksVisionSDK } from "./TFMP_Client";
 import { TFMPModelConfig } from "./TFMP_ModelSchema";
 import { getModelTask } from "./TFMP_Runtime";
@@ -27,15 +28,12 @@ export const TFMP_ImageSegmentation: AiProviderRunFn<
     throw new PermanentJobError("Failed to segment image: Empty result");
   }
 
+  const maskBitmap = await createImageBitmap(result.categoryMask.canvas);
   const masks = [
     {
       label: "segment",
       score: 1.0,
-      mask: {
-        data: result.categoryMask.canvas,
-        width: result.categoryMask.width,
-        height: result.categoryMask.height,
-      },
+      mask: imageValueFromBitmap(maskBitmap, result.categoryMask.width, result.categoryMask.height),
     },
   ];
 

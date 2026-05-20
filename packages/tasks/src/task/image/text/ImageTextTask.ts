@@ -11,12 +11,12 @@ import {
   type IExecutePreviewContext,
   type TaskConfig,
 } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
 import {
   CpuImage,
   getPreviewBudget,
   ImageValueSchema,
   resolveColor,
-  type ImageValue,
   type RgbaPixelBuffer,
 } from "@workglow/util/media";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -198,7 +198,14 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageTextTaskInput = FromSchema<typeof inputSchema>;
+type ImageTextSchemaInput = FromSchema<typeof inputSchema>;
+
+export type ImageTextTaskInput = WithImageValuePorts<
+  ImageTextSchemaInput,
+  {
+    image: ImageValue;
+  }
+>;
 export type ImageTextTaskOutput = { image: ImageValue };
 
 interface ResolvedTextParams {

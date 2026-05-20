@@ -5,6 +5,7 @@
  */
 import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { RotateParams } from "./rotate.cpu";
 
@@ -26,14 +27,14 @@ const inputSchema = {
   },
   required: ["image", "angle"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: { image: ImageValueSchema({ title: "Image", description: "Rotated image" }) },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export interface ImageRotateTaskInput extends ImageFilterInput {
   angle: 90 | 180 | 270;
@@ -52,10 +53,10 @@ export class ImageRotateTask extends ImageFilterTask<
   public static override description = "Rotates an image by 90, 180, or 270 degrees clockwise";
 
   static override inputSchema() {
-    return inputSchema as never;
+    return inputSchema;
   }
   static override outputSchema() {
-    return outputSchema as never;
+    return outputSchema;
   }
 
   protected readonly filterName = "rotate";

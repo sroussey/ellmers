@@ -519,8 +519,11 @@ export class TaskRunner<
       Object.assign(this.task.config, resolved);
     }
 
-    // Resolve schema-annotated inputs (models, repositories) before validation
-    const schema = (this.task.constructor as typeof Task).inputSchema();
+    // Resolve schema-annotated inputs (models, repositories) before validation.
+    // Dynamic-schema tasks (InputTask, GraphAsTask, …) store the effective schema on
+    // the instance; the static schema has no format annotations and would skip hydration.
+    const ctor = this.task.constructor as typeof Task;
+    const schema = ctor.hasDynamicSchemas ? this.task.inputSchema() : ctor.inputSchema();
     this.task.runInputData = (await resolveSchemaInputs(
       this.task.runInputData as Record<string, unknown>,
       schema,

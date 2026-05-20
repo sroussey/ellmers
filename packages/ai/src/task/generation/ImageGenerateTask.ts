@@ -31,7 +31,7 @@ export const ImageGenerateInputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export const ImageGenerateOutputSchema = AiImageOutputSchema;
+export const ImageGenerateOutputSchema: DataPortSchema = AiImageOutputSchema;
 
 export type ImageGenerateTaskInput = FromSchema<typeof ImageGenerateInputSchema>;
 export type ImageGenerateTaskOutput = AiImageOutput;

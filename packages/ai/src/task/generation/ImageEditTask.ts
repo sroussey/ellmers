@@ -6,6 +6,7 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
@@ -48,9 +49,18 @@ export const ImageEditInputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export const ImageEditOutputSchema = AiImageOutputSchema;
+export const ImageEditOutputSchema: DataPortSchema = AiImageOutputSchema;
 
-export type ImageEditTaskInput = FromSchema<typeof ImageEditInputSchema>;
+type ImageEditSchemaInput = FromSchema<typeof ImageEditInputSchema>;
+
+export type ImageEditTaskInput = WithImageValuePorts<
+  ImageEditSchemaInput,
+  {
+    image: ImageValue;
+    mask?: ImageValue;
+    additionalImages?: ImageValue[];
+  }
+>;
 export type ImageEditTaskOutput = AiImageOutput;
 export type ImageEditTaskConfig = TaskConfig<ImageEditTaskInput>;
 

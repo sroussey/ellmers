@@ -5,6 +5,7 @@
  */
 import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { FlipParams } from "./flip.cpu";
 
@@ -22,14 +23,14 @@ const inputSchema = {
   },
   required: ["image", "direction"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: { image: ImageValueSchema({ title: "Image", description: "Flipped image" }) },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export interface ImageFlipTaskInput extends ImageFilterInput {
   direction: "horizontal" | "vertical";
@@ -47,10 +48,10 @@ export class ImageFlipTask extends ImageFilterTask<
   public static override description = "Flips an image horizontally or vertically";
 
   static override inputSchema() {
-    return inputSchema as never;
+    return inputSchema;
   }
   static override outputSchema() {
-    return outputSchema as never;
+    return outputSchema;
   }
 
   protected readonly filterName = "flip";

@@ -3,7 +3,16 @@
  * Copyright 2026 Steven Roussey
  * All Rights Reserved
  */
-import type { DataPortSchema } from "../json-schema/DataPortSchema";
+
+import { PropertySchema } from "../schema-entry";
+import type { ImageValue } from "./imageValue";
+
+export type WithImageValuePorts<
+  SchemaInput extends object,
+  ImagePorts extends Partial<
+    Record<keyof SchemaInput, ImageValue | readonly ImageValue[] | undefined>
+  >,
+> = Omit<SchemaInput, Extract<keyof ImagePorts, keyof SchemaInput>> & ImagePorts;
 
 /**
  * Schema annotation for `ImageValue` ports. Multi-type form so the
@@ -12,13 +21,27 @@ import type { DataPortSchema } from "../json-schema/DataPortSchema";
  * ImageValue, or a `Buffer`-like). The `format: "image"` annotation drives
  * the input resolver.
  */
-export function ImageValueSchema(annotations: Record<string, unknown> = {}): DataPortSchema {
+export const ImageValueSchemaDefault = {
+  oneOf: [
+    {
+      type: "string",
+      format: "image:data-uri",
+    },
+    {
+      type: "object",
+      // properties: {},
+      // additionalProperties: true,
+      format: "image",
+    },
+  ],
+  title: "Image",
+  description: "Image",
+  format: "image",
+} as const satisfies PropertySchema;
+
+export function ImageValueSchema(annotations: Record<string, unknown> = {}) {
   return {
-    type: ["string", "object"],
-    properties: {},
-    title: "Image",
-    description: "Image (hydrated to ImageValue at task entry)",
+    ...ImageValueSchemaDefault,
     ...annotations,
-    format: "image",
-  } as unknown as DataPortSchema;
+  } as const satisfies PropertySchema;
 }

@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
+import { TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:FaceLandmarkerTask");
@@ -74,7 +76,7 @@ const TypeFaceLandmarkerDetection = {
 export const FaceLandmarkerInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     numFaces: {
       type: "number",
@@ -147,7 +149,12 @@ export const FaceLandmarkerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type FaceLandmarkerTaskInput = FromSchema<typeof FaceLandmarkerInputSchema>;
+export type FaceLandmarkerTaskInput = WithImageValuePorts<
+  FromSchema<typeof FaceLandmarkerInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type FaceLandmarkerTaskOutput = FromSchema<typeof FaceLandmarkerOutputSchema>;
 export type FaceLandmarkerTaskConfig = TaskConfig<FaceLandmarkerTaskInput>;
 

@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeImageInput, TypeModel, TypePoseLandmark } from "./base/AiTaskSchemas";
+import { TypeModel, TypePoseLandmark } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:PoseLandmarkerTask");
@@ -66,7 +68,7 @@ const TypePoseDetection = {
 export const PoseLandmarkerInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     numPoses: {
       type: "number",
@@ -132,7 +134,12 @@ export const PoseLandmarkerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type PoseLandmarkerTaskInput = FromSchema<typeof PoseLandmarkerInputSchema>;
+export type PoseLandmarkerTaskInput = WithImageValuePorts<
+  FromSchema<typeof PoseLandmarkerInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type PoseLandmarkerTaskOutput = FromSchema<typeof PoseLandmarkerOutputSchema>;
 export type PoseLandmarkerTaskConfig = TaskConfig<PoseLandmarkerTaskInput>;
 

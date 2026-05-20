@@ -5,6 +5,7 @@
  */
 import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema, type ColorObject } from "@workglow/util/media";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import { ColorValueSchema } from "../ImageSchemas";
 import type { TintParams } from "./tint.cpu";
@@ -25,14 +26,14 @@ const inputSchema = {
   },
   required: ["image", "color"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: { image: ImageValueSchema({ title: "Image", description: "Tinted image" }) },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export interface ImageTintTaskInput extends ImageFilterInput {
   color: ColorObject | string;
@@ -51,10 +52,10 @@ export class ImageTintTask extends ImageFilterTask<
   public static override description = "Applies a color tint to an image";
 
   static override inputSchema() {
-    return inputSchema as never;
+    return inputSchema;
   }
   static override outputSchema() {
-    return outputSchema as never;
+    return outputSchema;
   }
 
   protected readonly filterName = "tint";

@@ -5,6 +5,7 @@
  */
 import { CreateWorkflow, Workflow, type TaskConfig } from "@workglow/task-graph";
 import { ImageValueSchema } from "@workglow/util/media";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { ImageFilterTask, type ImageFilterInput, type ImageFilterOutput } from "../ImageFilterTask";
 import type { ResizeParams } from "./resize.cpu";
 
@@ -34,14 +35,14 @@ const inputSchema = {
   },
   required: ["image", "width", "height"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 const outputSchema = {
   type: "object",
   properties: { image: ImageValueSchema({ title: "Image", description: "Resized image" }) },
   required: ["image"],
   additionalProperties: false,
-} as const;
+} as const satisfies DataPortSchema;
 
 export interface ImageResizeTaskInput extends ImageFilterInput {
   width: number;
@@ -62,10 +63,10 @@ export class ImageResizeTask extends ImageFilterTask<
   public static override description = "Resizes an image using nearest-neighbor sampling";
 
   static override inputSchema() {
-    return inputSchema as never;
+    return inputSchema;
   }
   static override outputSchema() {
-    return outputSchema as never;
+    return outputSchema;
   }
 
   protected readonly filterName = "resize";

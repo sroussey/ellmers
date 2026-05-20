@@ -6,9 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
+import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import { ImageValueSchema } from "@workglow/util/media";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
-import { TypeBoundingBox, TypeImageInput, TypeModel } from "./base/AiTaskSchemas";
+import { TypeBoundingBox, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
 const modelSchema = TypeModel("model:ObjectDetectionTask");
@@ -37,7 +39,7 @@ const detectionSchema = {
 export const ObjectDetectionInputSchema = {
   type: "object",
   properties: {
-    image: TypeImageInput,
+    image: ImageValueSchema(),
     model: modelSchema,
     labels: {
       type: "array",
@@ -79,7 +81,12 @@ export const ObjectDetectionOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ObjectDetectionTaskInput = FromSchema<typeof ObjectDetectionInputSchema>;
+export type ObjectDetectionTaskInput = WithImageValuePorts<
+  FromSchema<typeof ObjectDetectionInputSchema>,
+  {
+    image: ImageValue;
+  }
+>;
 export type ObjectDetectionTaskOutput = FromSchema<typeof ObjectDetectionOutputSchema>;
 export type ObjectDetectionTaskConfig = TaskConfig<ObjectDetectionTaskInput>;
 
