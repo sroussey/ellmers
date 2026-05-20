@@ -626,8 +626,11 @@ export class TaskGraphRunner {
       const checkRegistry = this.registry.get(CACHE_REGISTRY);
       if (checkRegistry.private && !checkRegistry.private.isDurable()) {
         const usesPrivate = this.graph.getTasks().some((t) => {
-          const ctor = t.constructor as typeof Task;
-          return (ctor.cachePolicy ?? { kind: "deterministic" }).kind === "private";
+          try {
+            return (t as Task).getCachePolicy({} as any).kind === "private";
+          } catch {
+            return false;
+          }
         });
         if (usesPrivate) {
           getLogger().warn(
