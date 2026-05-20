@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Task } from "@workglow/task-graph";
+import { Task, TaskConfigurationError } from "@workglow/task-graph";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 describe("Task.getCacheVersion", () => {
@@ -32,5 +33,43 @@ describe("Task.getCacheVersion", () => {
 
   it("defaults to '1' when no subclass overrides", () => {
     expect(new Task().getCacheVersion()).toBe("1");
+  });
+});
+
+describe("__cv reserved input port name", () => {
+  it("rejects construction of a Task whose inputSchema declares __cv", () => {
+    class BadTask extends Task {
+      public static override type = "BadCvTask";
+      public static override inputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: {
+            __cv: { type: "string" },
+            other: { type: "string" },
+          },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+    }
+
+    expect(() => new BadTask()).toThrow(TaskConfigurationError);
+    expect(() => new BadTask()).toThrow(/__cv/);
+  });
+
+  it("permits construction when __cv is absent", () => {
+    class OkTask extends Task {
+      public static override type = "OkCvTask";
+      public static override inputSchema(): DataPortSchema {
+        return {
+          type: "object",
+          properties: {
+            q: { type: "string" },
+          },
+          additionalProperties: false,
+        } as const satisfies DataPortSchema;
+      }
+    }
+
+    expect(() => new OkTask()).not.toThrow();
   });
 });
