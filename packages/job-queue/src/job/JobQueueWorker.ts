@@ -447,7 +447,10 @@ export class JobQueueWorker<
   ): Promise<{ dispatched: number; limiterFull: boolean }> {
     let dispatched = 0;
     let limiterFull = false;
-    const inflight: Promise<void>[] = [];
+    // Track each dispatched job alongside its promise so awaitAll can inspect
+    // settled results and log rejections with jobId context, instead of a
+    // swallowing .catch losing all observability.
+    const inflight: { job: QueueJob; promise: Promise<void> }[] = [];
 
     for (const claim of claims) {
       const job = this.storageToClass(claim.body) as QueueJob;
@@ -483,17 +486,40 @@ export class JobQueueWorker<
 
       // Dispatch in background to allow concurrent jobs. processSingleJob owns
       // the terminal ack/fail/retry for this claim and its own error handling,
-      // so a throw here does not abort siblings. We capture every dispatched
-      // promise (with a swallowing .catch so Promise.allSettled is purely
-      // formalism) so the awaitAll branch can block on settlement.
-      inflight.push(this.processSingleJob(job, limiterToken).catch(() => {}));
+      // so anything reaching this layer as a rejection is unexpected and worth
+      // logging.
+      const promise = this.processSingleJob(job, limiterToken);
+      if (!awaitAll) {
+        // Background dispatch (polling-loop caller): the promise is fire-and-
+        // forget, so attach a swallow+log .catch to prevent unhandled rejection
+        // warnings while still surfacing the failure to operators.
+        promise.catch((err) => {
+          getLogger().error("processSingleJob unexpectedly rejected", {
+            jobId: job.id,
+            error: err,
+          });
+        });
+      }
+      inflight.push({ job, promise });
       dispatched++;
     }
 
     if (awaitAll && inflight.length > 0) {
       // Wait for every dispatched job to settle before returning. Required by
       // public callers driving push-only transports — see processClaims doc.
-      await Promise.allSettled(inflight);
+      // Inspect the settled results so unexpected rejections (which would
+      // otherwise be invisible without an unhandled-rejection handler) are
+      // logged with jobId context.
+      const results = await Promise.allSettled(inflight.map((i) => i.promise));
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i]!;
+        if (r.status === "rejected") {
+          getLogger().error("processSingleJob unexpectedly rejected", {
+            jobId: inflight[i]!.job.id,
+            error: r.reason,
+          });
+        }
+      }
     }
 
     return { dispatched, limiterFull };
