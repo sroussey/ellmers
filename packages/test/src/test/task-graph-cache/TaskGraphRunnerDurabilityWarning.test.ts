@@ -9,9 +9,9 @@ import {
   DefaultCacheRegistry,
   Task,
   TaskGraph,
-  type CachePolicy,
 } from "@workglow/task-graph";
 import { Container, ResourceScope, ServiceRegistry, getLogger, setLogger } from "@workglow/util";
+import type { CachePolicy } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
