@@ -11,9 +11,9 @@ import type { Capability } from "../capability/Capabilities";
  * Each task type maps to one or more pipelines (first is primary).
  */
 const TASK_TO_PIPELINES: Record<string, string[]> = {
-  TextEmbeddingTask: ["feature-extraction"],
+  TextEmbeddingTask: ["feature-extraction", "sentence-similarity"],
   TextGenerationTask: ["text-generation"],
-  TextSummaryTask: ["sentence-similarity", "summarization"],
+  TextSummaryTask: ["summarization"],
   TextTranslationTask: ["translation"],
   TextClassificationTask: ["text-classification", "zero-shot-classification"],
   TextQuestionAnswerTask: ["question-answering"],
@@ -61,6 +61,10 @@ const PIPELINE_TO_CAPABILITIES: Record<string, readonly Capability[]> = {
   "zero-shot-object-detection": ["image.object-detection"],
 };
 
+const TRANSFORMERS_JS_PIPELINE_REMAP: Record<string, string> = {
+  "sentence-similarity": "feature-extraction",
+};
+
 /** Convert an app task type to its primary HuggingFace pipeline name. */
 export function taskTypeToPipeline(taskType: string): string | undefined {
   return TASK_TO_PIPELINES[taskType]?.[0];
@@ -85,4 +89,9 @@ export function pipelineToTaskTypes(pipeline: string): string[] {
  */
 export function pipelineToCapabilities(pipeline: string): readonly Capability[] {
   return PIPELINE_TO_CAPABILITIES[pipeline] ?? [];
+}
+
+/** Normalize HuggingFace Hub pipeline tags to pipeline names accepted by Transformers.js. */
+export function normalizeTransformersJsPipeline(pipeline: string): string {
+  return TRANSFORMERS_JS_PIPELINE_REMAP[pipeline] ?? pipeline;
 }

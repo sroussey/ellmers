@@ -6,6 +6,11 @@
 
 import type { ModelRecord } from "@workglow/ai";
 import {
+  mapHfProviderConfig,
+  pipelineToTaskTypes,
+  taskTypeToPipelines,
+} from "@workglow/ai/provider-utils";
+import {
   HuggingFaceTransformersQueuedProvider,
   _testOnly,
 } from "@workglow/huggingface-transformers/ai";
@@ -93,6 +98,28 @@ describe("HuggingFaceTransformersQueuedProvider.inferCapabilities", () => {
   it("returns baseline meta-ops for truly unknown models", () => {
     const caps = provider.inferCapabilities(model("totally-unknown-no-hints"));
     expect(caps).toEqual(["model.search", "model.info"]);
+  });
+});
+
+describe("HFT HuggingFace pipeline mappings", () => {
+  it("treats sentence-similarity as text embedding but stores feature-extraction for Transformers.js", () => {
+    expect(taskTypeToPipelines("TextEmbeddingTask")).toContain("sentence-similarity");
+    expect(pipelineToTaskTypes("sentence-similarity")).toEqual(["TextEmbeddingTask"]);
+    expect(
+      mapHfProviderConfig(
+        {
+          id: "sentence-transformers/all-MiniLM-L6-v2",
+          modelId: "sentence-transformers/all-MiniLM-L6-v2",
+          pipeline_tag: "sentence-similarity",
+          likes: 0,
+          downloads: 1,
+        },
+        "HF_TRANSFORMERS_ONNX"
+      )
+    ).toEqual({
+      model_path: "sentence-transformers/all-MiniLM-L6-v2",
+      pipeline: "feature-extraction",
+    });
   });
 });
 

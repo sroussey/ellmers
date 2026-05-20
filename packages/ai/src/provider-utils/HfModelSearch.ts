@@ -5,7 +5,7 @@
  */
 
 import type { ModelSearchResultItem } from "../task/ModelSearchTask";
-import { pipelineToCapabilities } from "./PipelineTaskMapping";
+import { normalizeTransformersJsPipeline, pipelineToCapabilities } from "./PipelineTaskMapping";
 
 export interface HfModelEntry {
   id: string;
@@ -37,7 +37,9 @@ export function mapHfProviderConfig(
     case "HF_TRANSFORMERS_ONNX":
       return {
         model_path: entry.id,
-        ...(entry.pipeline_tag ? { pipeline: entry.pipeline_tag } : {}),
+        ...(entry.pipeline_tag
+          ? { pipeline: normalizeTransformersJsPipeline(entry.pipeline_tag) }
+          : {}),
       };
     case "LOCAL_LLAMACPP":
       return { model_path: entry.id };
