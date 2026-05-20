@@ -13,6 +13,41 @@ import { parsePartialJson } from "@workglow/util/worker";
 
 import { createDownloadMonitor, ensureAvailable, getApi } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
+import {
+  deleteChromeSession,
+  dropChromeSessionEntry,
+  getChromeSession,
+  setChromeSession,
+} from "./WebBrowser_Sessions";
+
+/**
+ * Stable fingerprint of an `outputSchema` value, used to decide whether a
+ * cached Chrome session can be reused. The schema is canonicalised by
+ * sorting object keys before stringification so that semantically-equal
+ * schemas with differently-ordered properties produce the same fingerprint.
+ *
+ * Implementation note: we intentionally do not hash this. A medium-length
+ * JSON string is fine as a cache key — the cache lives in-memory, scoped
+ * to a session id, and turn-over is low.
+ */
+function schemaFingerprint(schema: object): string {
+  return canonicalStringify(schema);
+}
+
+/**
+ * Recursively sorts object keys so `JSON.stringify` produces a stable
+ * representation independent of insertion order. Arrays preserve order
+ * (semantically meaningful in JSON Schema for e.g. `oneOf`/`enum`).
+ */
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  const entries = keys.map(
+    (k) => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`
+  );
+  return `{${entries.join(",")}}`;
+}
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`.
@@ -33,12 +68,20 @@ import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
  * `temperature` is `@deprecated` for non-extension contexts in the current
  * Chrome spec and silently ignored on the open web. Passed through anyway
  * so extension callers still get the knob.
+ *
+ * ## Session reuse
+ *
+ * When `sessionId` is provided we cache the underlying `LanguageModel`
+ * keyed by it, mirroring `WebBrowser_Chat`. Reuse is gated on schema
+ * fingerprint: Chrome's `responseConstraint` state is bound to whatever
+ * schema was first prompted, so mixing schemas on a reused session is
+ * undefined behavior and forces a rebuild.
  */
 export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit, outputSchema) => {
+> = async (input, _model, signal, emit, outputSchema, sessionId) => {
   const factory = getApi(
     "LanguageModel",
     typeof LanguageModel !== "undefined" ? LanguageModel : undefined
@@ -50,11 +93,35 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
     throw new Error("WebBrowser_StructuredGeneration: outputSchema is required");
   }
 
-  const session = await factory.create({
-    signal,
-    temperature: input.temperature ?? undefined,
-    monitor: createDownloadMonitor(emit),
-  });
+  const fingerprint = schemaFingerprint(schema);
+
+  // StructuredGeneration has no message history of its own — successive
+  // calls with the same `sessionId` are independent prompts. We reuse the
+  // cached session purely to amortise the cost of `LanguageModel.create()`,
+  // gating only on schema fingerprint. The watermark we record is a
+  // monotonic call counter so existing fingerprint-aware cache consumers
+  // (and future evolution toward true multi-turn structured-gen) keep a
+  // consistent shape with `WebBrowser_Chat`.
+  let cached = sessionId ? getChromeSession(sessionId) : undefined;
+  if (sessionId !== undefined && cached && cached.schemaFingerprint !== fingerprint) {
+    deleteChromeSession(sessionId);
+    cached = undefined;
+  }
+  const priorMessageCount = cached?.messageCount ?? 0;
+
+  const usedCachedSession = cached !== undefined;
+  let session: LanguageModel;
+  if (cached) {
+    session = cached.session;
+  } else {
+    session = await factory.create({
+      signal,
+      temperature: input.temperature ?? undefined,
+      monitor: createDownloadMonitor(emit),
+    });
+  }
+
+  let cacheWritten = false;
   try {
     const stream = session.promptStreaming(input.prompt, {
       signal,
@@ -93,11 +160,35 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
     } catch {
       finalObject = (parsePartialJson(accumulatedJson) ?? {}) as Record<string, unknown>;
     }
+
+    if (sessionId !== undefined) {
+      // Ownership of `session` transfers to the cache; the provider's
+      // `disposeSession` reclaims it at end of run.
+      setChromeSession(sessionId, {
+        session,
+        messageCount: priorMessageCount + 1,
+        schemaFingerprint: fingerprint,
+      });
+      cacheWritten = true;
+    }
     emit({
       type: "finish",
       data: { object: finalObject } as StructuredGenerationTaskOutput,
     });
   } finally {
-    session.destroy();
+    // Mirror WebBrowser_Chat's cache-poison handling. If we threw before
+    // writing the cache entry and we reused a cached session, the cache
+    // entry is now poisoned (partial state); drop it (only if it still
+    // points at our handle, to avoid trampling a replacement) and destroy.
+    if (!cacheWritten) {
+      if (sessionId !== undefined && usedCachedSession) {
+        dropChromeSessionEntry(sessionId, session);
+      }
+      try {
+        session.destroy();
+      } catch {
+        // best-effort
+      }
+    }
   }
 };

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ChatMessage, ModelRecord } from "@workglow/ai";
+import type { ChatMessage, ModelRecord, StructuredGenerationTaskInput } from "@workglow/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,10 +13,19 @@ const {
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
   WebBrowser_TextGeneration_Unified,
+  WebBrowser_StructuredGeneration,
   sessions,
   chatHistory,
   probe,
 } = _testOnly;
+
+/**
+ * Test-time helper: the chrome-ai run-fns we test take the strongly-typed
+ * `StructuredGenerationTaskInput`, which requires a `model` field that's
+ * irrelevant to provider-level tests (the dispatcher fills it in upstream).
+ * We coerce away the requirement here.
+ */
+const asSGI = (v: unknown): StructuredGenerationTaskInput => v as StructuredGenerationTaskInput;
 
 function model(model_id: string, capabilities: readonly string[] = []): ModelRecord {
   return {
@@ -476,5 +485,152 @@ describe("probeWebBrowserCapabilities", () => {
     const postCaps = provider.inferCapabilities(model("chrome-prompt"));
     expect(postCaps).toContain("json-mode");
     expect(postCaps).not.toContain("tool-use");
+  });
+});
+
+// --------------------------------------------------------------------------
+// StructuredGeneration session cache (H1)
+// --------------------------------------------------------------------------
+
+/**
+ * Install a fake `LanguageModel` global so the run-fn's `getApi` /
+ * `ensureAvailable` checks pass. Returns a teardown.
+ */
+function installLanguageModelGlobal(impl: unknown): () => void {
+  const prior = (globalThis as Record<string, unknown>).LanguageModel;
+  (globalThis as Record<string, unknown>).LanguageModel = impl;
+  return () => {
+    if (prior === undefined) {
+      delete (globalThis as Record<string, unknown>).LanguageModel;
+    } else {
+      (globalThis as Record<string, unknown>).LanguageModel = prior;
+    }
+  };
+}
+
+/**
+ * Fake `LanguageModel` factory + session that streams a single chunk of
+ * pre-canned text. `text` is the full JSON payload returned by the
+ * model's "response" in one snapshot — sufficient for our parse pipeline
+ * because Chrome's stream surface emits progressive snapshots.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeFakeLanguageModel(text: string | (() => string)): any {
+  let destroyed = 0;
+  const factory = {
+    availability: vi.fn().mockResolvedValue("available"),
+    create: vi.fn(async () => ({
+      promptStreaming: (_p: string, _o?: unknown) => {
+        const value = typeof text === "function" ? text() : text;
+        return new ReadableStream<string>({
+          start(controller) {
+            controller.enqueue(value);
+            controller.close();
+          },
+        });
+      },
+      destroy: () => {
+        destroyed += 1;
+      },
+    })),
+  };
+  return { factory, destroyed: () => destroyed };
+}
+
+describe("WebBrowser_StructuredGeneration session cache", () => {
+  const schema = {
+    type: "object",
+    properties: { x: { type: "number" } },
+    required: ["x"],
+    additionalProperties: false,
+  } as const;
+  const sid = "sg-test-1";
+
+  afterEach(() => {
+    sessions.deleteChromeSession(sid);
+  });
+
+  it("first call with sessionId seeds the cache", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      expect(sessions.getChromeSession(sid)).toBeDefined();
+      expect(sessions.getChromeSession(sid)?.schemaFingerprint).toBeDefined();
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("second call with the same schema reuses the cached session", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p2", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      // Only ONE create() — the second call reused the cached session.
+      expect(factory.create).toHaveBeenCalledTimes(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it("mismatched schema fingerprint forces rebuild", async () => {
+    const { factory } = makeFakeLanguageModel('{"x":1}');
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p1", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema,
+        sid
+      );
+      const otherSchema = {
+        type: "object",
+        properties: { x: { type: "number" }, y: { type: "string" } },
+        required: ["x"],
+        additionalProperties: false,
+      } as const;
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p2", outputSchema: otherSchema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        // streaming text is a valid `{x:1}` which satisfies otherSchema too
+        otherSchema,
+        sid
+      );
+      // Two creates — schema fingerprint mismatch invalidated the cache.
+      expect(factory.create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
   });
 });
