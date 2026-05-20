@@ -189,6 +189,21 @@ describe("TaskGraphRunner durability warning", () => {
     expect(matches.length).toBe(2);
   });
 
+  it("restores registry between runs to avoid nested RunPrivateCacheRepo wrappers", async () => {
+    const backing = new InMemoryTaskOutputRepository();
+    await (backing as any).setupDatabase?.();
+    const services = new ServiceRegistry(new Container());
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ private: backing }));
+
+    const g = new TaskGraph();
+    g.addTask(new PrivTask({ defaults: { q: "hello" } } as any));
+
+    await g.run({}, { runId: "wrap-a", registry: services, resourceScope: new ResourceScope() });
+    await g.run({}, { runId: "wrap-b", resourceScope: new ResourceScope() });
+
+    expect(messages.some((m) => m.includes("RunPrivateCacheRepo.clearRun failed"))).toBe(false);
+  });
+
   it("warns when task declares static cachePolicy:'private' even if getCachePolicy returns 'deterministic' for empty inputs", async () => {
     class TrickyTask extends Task<{ q: string }, { r: string }> {
       public static override type = "TrickyPrivateForEmpty";

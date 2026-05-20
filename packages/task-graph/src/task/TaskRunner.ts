@@ -233,8 +233,9 @@ export class TaskRunner<
             TaskRunner.__privateWithoutRunIdWarned.add(taskType);
             getLogger().warn(
               `TaskRunner: task "${taskType}" has a private cache policy but no runId was ` +
-                `provided. Private cache writes are skipped for this run — run via TaskGraphRunner ` +
-                `or pass a runId in IRunConfig to enable run-namespaced private caching.`
+                `provided. Private cache writes are skipped for this run — use TaskGraphRunner ` +
+                `with runId for run-namespaced private caching, or provide an already namespaced ` +
+                `private cache repo in CACHE_REGISTRY.`
             );
           }
           policy = { kind: "none" };

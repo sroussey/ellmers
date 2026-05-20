@@ -159,6 +159,7 @@ export class TaskGraphRunner {
    * run. Used to fire-and-forget clearRun() after a successful run.
    */
   protected currentRunPrivate?: RunPrivateCacheRepo;
+  protected baseRegistryForRun?: ServiceRegistry;
 
   /**
    * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
@@ -650,6 +651,7 @@ export class TaskGraphRunner {
     if (config?.resourceScope !== undefined) {
       this.resourceScope = config.resourceScope;
     }
+    this.baseRegistryForRun = this.registry;
 
     // Store run identifier for per-task propagation.
     this.runId = config?.runId;
@@ -877,6 +879,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("complete");
   }
@@ -909,6 +915,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("error", error);
   }
@@ -947,6 +957,10 @@ export class TaskGraphRunner {
     }
     ctx?.dispose();
     this.currentCtx = undefined;
+    if (this.baseRegistryForRun !== undefined) {
+      this.registry = this.baseRegistryForRun;
+      this.baseRegistryForRun = undefined;
+    }
 
     this.graph.emit("abort");
   }
