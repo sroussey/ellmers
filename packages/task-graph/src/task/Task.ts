@@ -336,10 +336,20 @@ export class Task<
     return this.config?.description ?? (this.constructor as typeof Task).description;
   }
 
+  /**
+   * Whether this task instance is currently cacheable. Reads `runConfig.cacheable`
+   * and `config.cacheable` first (per-instance overrides for back-compat), then
+   * derives from `getCachePolicy(runInputData)`.
+   *
+   * Note: for tasks that override `getCachePolicy(inputs)` with input-dependent
+   * logic (e.g., `AiImageOutputTask` returns `private` when seed is absent), the
+   * value of `task.cacheable` can change as `runInputData` changes. Prefer calling
+   * `getCachePolicy(inputs)` directly when you have explicit inputs.
+   */
   public get cacheable(): boolean {
     if (this.runConfig?.cacheable !== undefined) return this.runConfig.cacheable;
     if (this.config?.cacheable !== undefined) return this.config.cacheable;
-    return this.getCachePolicy(this.runInputData as any ?? ({} as any)).kind !== "none";
+    return this.getCachePolicy((this.runInputData ?? ({} as Input))).kind !== "none";
   }
 
   /**
