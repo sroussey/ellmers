@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 
 import {
+  createDownloadMonitor,
   ensureAvailable,
   getApi,
   getConfig,
@@ -24,9 +25,13 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   const config = getConfig(model);
 
   const summarizer = await factory.create({
-    type: config.summary_type,
+    signal,
+    // Our schema preserves the historical `"tl;dr"` token; the current spec
+    // (and `@types/dom-chromium-ai`) uses `"tldr"`. Normalize at the edge.
+    type: config.summary_type === "tl;dr" ? "tldr" : config.summary_type,
     length: config.summary_length,
     format: config.summary_format,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = summarizer.summarizeStreaming(input.text, { signal });

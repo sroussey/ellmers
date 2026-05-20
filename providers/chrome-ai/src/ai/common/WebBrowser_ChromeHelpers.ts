@@ -6,8 +6,11 @@
 
 import { PermanentJobError } from "@workglow/job-queue";
 import type { StreamEvent } from "@workglow/task-graph";
-import { AIAvailability } from "./WebBrowser_ChromeAI";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
+
+// Chrome built-in AI globals (`LanguageModel`, `Summarizer`, etc.) and their
+// option types are declared by `@types/dom-chromium-ai`, which is loaded
+// transitively as a devDependency and surfaces as ambient global types.
 
 export interface ProviderConfig {
   readonly pipeline?: string;
@@ -33,15 +36,83 @@ export function getApi<T>(name: string, global: T | undefined): T {
 
 export async function ensureAvailable(
   name: string,
-  factory: { availability(): Promise<AIAvailability> }
-): Promise<void> {
-  const status = await factory.availability();
+  factory: { availability(options?: never): Promise<Availability> },
+  options?: unknown
+): Promise<Availability> {
+  const status = await factory.availability(options as never);
   if (status === "unavailable") {
     throw new PermanentJobError(
-      `Chrome Built-in AI "${name}" is not available (status: "no"). ` +
+      `Chrome Built-in AI "${name}" is not available. ` +
         `Ensure you are using a compatible Chrome version with the flag enabled.`
     );
   }
+  return status;
+}
+
+/**
+ * Throttle (ms) between `phase` progress events emitted from a
+ * `downloadprogress` listener. Chrome can fire this listener at very high
+ * frequency; we cap upstream traffic without dropping the first/last frames.
+ */
+const PROGRESS_THROTTLE_MS = 100;
+
+/**
+ * Returns a `monitor` callback for any Chrome built-in AI `create()` call
+ * that forwards `downloadprogress` events as `phase` stream events.
+ *
+ * The `loaded` field on the event is a fraction in `[0, 1]`. We map it to a
+ * 0–100 percentage and emit `{ type: "phase", message, progress }`. The
+ * first event and the final 100% event are always emitted; intermediate
+ * events are throttled to {@link PROGRESS_THROTTLE_MS}.
+ *
+ * @see https://developer.chrome.com/docs/ai/prompt-api#download-progress
+ */
+export function createDownloadMonitor<Output>(
+  emit: (event: StreamEvent<Output>) => void,
+  message: string = "Downloading model"
+): CreateMonitorCallback {
+  return (m) => {
+    let lastEmit = 0;
+    let pending: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const send = (progress: number): void => {
+      emit({ type: "phase", message, progress } as StreamEvent<Output>);
+      lastEmit = Date.now();
+      pending = null;
+    };
+
+    m.addEventListener("downloadprogress", (e) => {
+      const fraction = typeof e.loaded === "number" ? e.loaded : 0;
+      const progress = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+      const now = Date.now();
+      const isFirst = lastEmit === 0;
+      const isFinal = progress >= 100;
+
+      if (isFirst || isFinal) {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        send(progress);
+        return;
+      }
+
+      if (now - lastEmit < PROGRESS_THROTTLE_MS) {
+        pending = progress;
+        if (!timer) {
+          const wait = Math.max(1, PROGRESS_THROTTLE_MS - (now - lastEmit));
+          timer = setTimeout(() => {
+            timer = null;
+            if (pending !== null) send(pending);
+          }, wait);
+        }
+        return;
+      }
+
+      send(progress);
+    });
+  };
 }
 
 /**

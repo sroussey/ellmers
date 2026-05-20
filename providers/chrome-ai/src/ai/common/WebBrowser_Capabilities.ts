@@ -37,7 +37,15 @@ export function inferWebBrowserCapabilities(model: CapabilityHints): readonly Ca
   const baseName = id.toLowerCase();
 
   if (/prompt|gemini[-_]?nano/.test(baseName)) {
-    return ["text.generation", "text.rewriter", "text.summary", "model.info", "model.search"];
+    return [
+      "text.generation",
+      "json-mode",
+      "tool-use",
+      "text.rewriter",
+      "text.summary",
+      "model.info",
+      "model.search",
+    ];
   }
   if (/summariz/.test(baseName)) {
     return ["text.summary", "model.info", "model.search"];

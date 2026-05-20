@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 
 import {
+  createDownloadMonitor,
   ensureAvailable,
   getApi,
   getConfig,
@@ -24,8 +25,10 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
   const config = getConfig(model);
 
   const rewriter = await factory.create({
+    signal,
     tone: config.rewriter_tone,
     length: config.rewriter_length,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = rewriter.rewriteStreaming(input.text, {

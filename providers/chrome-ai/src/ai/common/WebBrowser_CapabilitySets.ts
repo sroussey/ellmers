@@ -7,6 +7,11 @@
 import type { Capability } from "@workglow/ai/worker";
 
 export const WEB_BROWSER_TEXT_GENERATION = ["text.generation"] as const satisfies Capability[];
+export const WEB_BROWSER_JSON_MODE = [
+  "text.generation",
+  "json-mode",
+] as const satisfies Capability[];
+export const WEB_BROWSER_TOOL_USE = ["text.generation", "tool-use"] as const satisfies Capability[];
 export const WEB_BROWSER_TEXT_REWRITER = ["text.rewriter"] as const satisfies Capability[];
 export const WEB_BROWSER_TEXT_SUMMARY = ["text.summary"] as const satisfies Capability[];
 export const WEB_BROWSER_TEXT_TRANSLATION = ["text.translation"] as const satisfies Capability[];
@@ -18,6 +23,8 @@ export const WEB_BROWSER_MODEL_INFO = ["model.info"] as const satisfies Capabili
 
 export const WEB_BROWSER_CAPABILITY_SETS = [
   WEB_BROWSER_TEXT_GENERATION,
+  WEB_BROWSER_JSON_MODE,
+  WEB_BROWSER_TOOL_USE,
   WEB_BROWSER_TEXT_REWRITER,
   WEB_BROWSER_TEXT_SUMMARY,
   WEB_BROWSER_TEXT_TRANSLATION,

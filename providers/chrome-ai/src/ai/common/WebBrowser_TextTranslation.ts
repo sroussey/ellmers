@@ -11,8 +11,11 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 
-import { AIAvailability } from "./WebBrowser_ChromeAI";
-import { ensureAvailable, getApi, snapshotStreamToSnapshots } from "./WebBrowser_ChromeHelpers";
+import {
+  createDownloadMonitor,
+  getApi,
+  snapshotStreamToSnapshots,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextTranslation: AiProviderRunFn<
@@ -21,30 +24,23 @@ export const WebBrowser_TextTranslation: AiProviderRunFn<
   WebBrowserModelConfig
 > = async (input, _model, signal, emit) => {
   const factory = getApi("Translator", typeof Translator !== "undefined" ? Translator : undefined);
-  let status: AIAvailability;
-  try {
-    status = await factory.availability({
-      sourceLanguage: input.source_lang,
-      targetLanguage: input.target_lang,
-    });
-  } catch {
-    throw new PermanentJobError(
-      `Chrome Built-in AI "Translator" is not available (status: "no"). ` +
-        `Ensure you are using a compatible Chrome version with the flag enabled.`
-    );
-  }
-  if (status === "unavailable") {
-    throw new PermanentJobError(
-      `Chrome Built-in AI "Translator" is not available (status: "no"). ` +
-        `Ensure you are using a compatible Chrome version with the flag enabled.`
-    );
-  }
 
-  await ensureAvailable("Translator", factory);
-
-  const translator = await factory.create({
+  const status = await factory.availability({
     sourceLanguage: input.source_lang,
     targetLanguage: input.target_lang,
+  });
+  if (status === "unavailable") {
+    throw new PermanentJobError(
+      `Chrome Built-in AI "Translator" is not available for ${input.source_lang} → ${input.target_lang}. ` +
+        `Ensure you are using a compatible Chrome version with the flag enabled.`
+    );
+  }
+
+  const translator = await factory.create({
+    signal,
+    sourceLanguage: input.source_lang,
+    targetLanguage: input.target_lang,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = translator.translateStreaming(input.text, { signal });

@@ -10,9 +10,22 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 
-import { ensureAvailable, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
+import {
+  createDownloadMonitor,
+  ensureAvailable,
+  getApi,
+  snapshotStreamToTextDeltas,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
+/**
+ * Single-shot text generation. `TextGenerationTask` doesn't allocate a
+ * session id (only stateful tasks like {@link AiChatTask} do), so this path
+ * always creates a fresh session and destroys it at the end of the turn.
+ * Multi-turn chat is handled by {@link WebBrowser_Chat}, which reuses
+ * sessions via the {@link deleteChromeSession} disposer wired into
+ * `ResourceScope`.
+ */
 export const WebBrowser_TextGeneration: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
@@ -25,7 +38,9 @@ export const WebBrowser_TextGeneration: AiProviderRunFn<
   await ensureAvailable("LanguageModel", factory);
 
   const session = await factory.create({
+    signal,
     temperature: input.temperature ?? undefined,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = session.promptStreaming(input.prompt, { signal });

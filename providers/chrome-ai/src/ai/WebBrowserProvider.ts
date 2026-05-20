@@ -17,6 +17,7 @@ import {
 } from "./common/WebBrowser_Capabilities";
 import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
+import { deleteChromeSession } from "./common/WebBrowser_Sessions";
 
 /**
  * AI provider for Chrome Built-in AI APIs (Gemini Nano on-device).
@@ -54,5 +55,14 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
     return webBrowserWorkerRunFnSpecs();
+  }
+
+  /**
+   * Releases any cached Chrome `LanguageModel` session for the given id.
+   * `AiChatTask` registers this via `ResourceScope` so multi-turn chat
+   * sessions are torn down when the owning run completes.
+   */
+  override async disposeSession(sessionId: string): Promise<void> {
+    deleteChromeSession(sessionId);
   }
 }
