@@ -75,12 +75,11 @@ function canonicalStringify(value: unknown): string {
  * ## Session reuse
  *
  * When `sessionId` is provided we cache the underlying `LanguageModel`
- * keyed by it, mirroring `WebBrowser_Chat`. Reuse is gated on:
- *  - watermark match: `messageCount` of the cached entry equals the
- *    pre-turn message count (0 for the first turn).
- *  - schema match: same `schemaFingerprint` (Chrome's `responseConstraint`
- *    state is bound to whatever schema was first prompted; mixing schemas
- *    on a reused session is undefined behavior, so we rebuild).
+ * keyed by it, mirroring `WebBrowser_Chat`. Sessions are reused by
+ * `sessionId`; however, if the `outputSchema` changes (detected via
+ * `schemaFingerprint`), we rebuild the Chrome session because
+ * `responseConstraint` state is bound to the schema first used with that
+ * session, and mixing schemas on a reused session is undefined behavior.
  *
  * ## Validation
  *
