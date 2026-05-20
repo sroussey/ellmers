@@ -435,7 +435,7 @@ describe("TaskRunner Streaming", () => {
       expect(result.text).toBe("Hello world");
 
       // Verify it was actually cached
-      const cached = await cache.getOutput("TestStreamingAppendTask", { prompt: "test" });
+      const cached = await cache.getOutput("TestStreamingAppendTask", { prompt: "test", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any)?.text).toBe("Hello world");
     });
@@ -559,7 +559,7 @@ describe("TaskRunner Streaming", () => {
 
       await task.run({ prompt: "test" });
 
-      const cached = await cache.getOutput("TestStreamingReplaceTask", { prompt: "test" });
+      const cached = await cache.getOutput("TestStreamingReplaceTask", { prompt: "test", __cv: "1" });
       expect(cached).toBeDefined();
       expect((cached as any)?.text).toBe("Bonjour le monde");
     });
