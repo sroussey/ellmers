@@ -385,6 +385,53 @@ class ApiCallJob extends Job<{ endpoint: string }, { data: unknown }> {
 }
 ```
 
+#### Custom error-code reconstruction
+
+When a worker persists a domain-specific `error_code` (e.g. `FETCH_PRIVATE_DENIED`,
+`LLM_CONTEXT_LENGTH_EXCEEDED`) and a client `waitFor()`s the job, the client
+needs to rebuild a typed `JobError` (retryable vs permanent) from the persisted
+code alone — the worker process may not exist anymore.
+
+`JobQueueClient` consults the **error-code reconstructor registry** for this.
+Packages register a reconstructor for their code prefix as a module side-effect:
+
+```typescript
+import { registerErrorCodeReconstructor, PermanentJobError, RetryableJobError } from "@workglow/job-queue";
+
+function buildMyError(errorCode: string, message: string) {
+  if (errorCode === "MY_RATE_LIMITED") return new RetryableJobError(message);
+  const err = new PermanentJobError(message);
+  err.code = errorCode;
+  return err;
+}
+
+registerErrorCodeReconstructor("MY_", buildMyError);
+```
+
+Contract:
+
+- **Prefix-matched, first-registered-wins** on conflicts (a warning is logged
+  if a second registration overwrites the first).
+- **Reconstructors MUST NOT throw.** Return a fallback `PermanentJobError`
+  with `code` set when you receive an unknown future code sharing your prefix —
+  this keeps older clients forward-compatible with newer workers. If a
+  reconstructor does throw, the client logs a warning and falls through to a
+  generic `JobError` with `code` set to the persisted code.
+- **Built-in codes take precedence over registered reconstructors.**
+  `PermanentJobError`, `RetryableJobError`, `AbortSignalJobError`, and
+  `JobDisabledError` are handled by the client directly — a registered prefix
+  that happens to match (e.g. `"P"` against `PermanentJobError`) will *not*
+  intercept them. Do not register reconstructors for these names.
+- **Reconstructors MUST set `code` to the passed `errorCode`.** The client
+  defensively overrides any mismatch (and warns) so downstream branching on
+  `err.code` is reliable.
+- For test hygiene, prefer `snapshotErrorCodeReconstructors()` +
+  `restoreErrorCodeReconstructors(snapshot)` in `beforeEach`/`afterEach` so
+  registrations made by neighboring test files (via ESM import side-effects)
+  are not destroyed for the rest of the worker. `clearErrorCodeReconstructors()`
+  and `unregisterErrorCodeReconstructor()` remain available but permanently
+  clear the table for the current worker.
+
 ### Event Listeners
 
 ```typescript

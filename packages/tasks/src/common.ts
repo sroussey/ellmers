@@ -9,6 +9,13 @@
 
 import "./task/adaptive";
 
+// Register the FETCH_* error-code reconstructor as a module side-effect so
+// JobQueueClient can rebuild typed FetchUrl errors from persisted codes
+// without statically importing @workglow/tasks (cross-package coupling).
+import { registerErrorCodeReconstructor } from "@workglow/job-queue";
+import { buildFetchUrlError } from "./task/FetchUrlJobError";
+registerErrorCodeReconstructor("FETCH_", buildFetchUrlError);
+
 export * from "./task/adaptive";
 export * from "./task/ArrayTask";
 export * from "./task/DateFormatTask";

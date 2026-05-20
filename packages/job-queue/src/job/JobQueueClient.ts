@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EventEmitter } from "@workglow/util";
+import { EventEmitter, getLogger } from "@workglow/util";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
 import type {
@@ -24,6 +24,7 @@ import {
   RetryableJobError,
 } from "./JobError";
 import { applyPersistedDiagnosticsToStack } from "./JobErrorDiagnostics";
+import { lookupErrorCodeReconstructor } from "./JobErrorRegistry";
 import {
   JobProgressListener,
   JobQueueEventListener,
@@ -615,17 +616,12 @@ export class JobQueueClient<Input, Output> {
   }
 
   protected buildErrorFromCode(message: string, errorCode?: string): JobError {
-    // FetchUrlTask codes — keep retryable set in sync with @workglow/tasks FetchUrlErrorCode
-    if (errorCode?.startsWith("FETCH_")) {
-      const retryable =
-        errorCode === "FETCH_HTTP_RATE_LIMITED" ||
-        errorCode === "FETCH_HTTP_SERVER_ERROR" ||
-        errorCode === "FETCH_NETWORK_ERROR";
-      const err = retryable ? new RetryableJobError(message) : new PermanentJobError(message);
-      err.code = errorCode;
-      applyPersistedDiagnosticsToStack(err, message);
-      return err;
-    }
+    // Built-in codes take precedence over the {@link JobErrorRegistry} so a
+    // registered prefix can never accidentally intercept core types
+    // (e.g. a `"P"` prefix shadowing `PermanentJobError`). Only after the
+    // built-in switch fails do we consult the registry for domain-specific
+    // codes (e.g. FETCH_*, LLM_*, FILE_*). See `JobErrorRegistry.ts` for
+    // the contract.
     if (errorCode === "PermanentJobError") {
       const err = new PermanentJobError(message);
       applyPersistedDiagnosticsToStack(err, message);
@@ -645,6 +641,37 @@ export class JobQueueClient<Input, Output> {
       const err = new JobDisabledError(message);
       applyPersistedDiagnosticsToStack(err, message);
       return err;
+    }
+    if (errorCode) {
+      const reconstructor = lookupErrorCodeReconstructor(errorCode);
+      if (reconstructor) {
+        try {
+          const err = reconstructor(errorCode, message);
+          // Reconstructors MUST set `code` per the registry contract, but
+          // defend against forgetful implementations so downstream branching
+          // on `err.code` still works. Mismatches are likely bugs in the
+          // reconstructor — warn so they're visible.
+          if (err.code !== errorCode) {
+            if (err.code) {
+              getLogger().warn("error-code reconstructor returned mismatched code; overriding", {
+                errorCode,
+                reconstructorCode: err.code,
+              });
+            }
+            err.code = errorCode;
+          }
+          applyPersistedDiagnosticsToStack(err, message);
+          return err;
+        } catch (reconstructorError) {
+          // A throwing reconstructor must not break job-result delivery —
+          // fall through to the generic `JobError` path with `code`
+          // preserved so callers can still branch on the persisted code.
+          getLogger().warn("error-code reconstructor threw", {
+            errorCode,
+            error: reconstructorError,
+          });
+        }
+      }
     }
     const err = new JobError(message);
     if (errorCode) {

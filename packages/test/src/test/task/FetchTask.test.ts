@@ -7,6 +7,7 @@
 import {
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
+  JobError,
   JobQueueClient,
   JobQueueServer,
   PermanentJobError,
@@ -19,6 +20,7 @@ import {
   setTaskQueueRegistry,
 } from "@workglow/task-graph";
 import {
+  createFetchUrlJobError,
   fetchUrl,
   FetchUrlErrorCode,
   FetchUrlJob,
@@ -713,6 +715,101 @@ describe("FetchUrlTask", () => {
       task.setInput({ response_type: "json" });
 
       expect(schemaChangeEmitted).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // C1 regression: SafeFetch throws permanent FETCH_* errors (SSRF deny, DNS
+  // failure, invalid URL, etc). The outer catches in fetchWithProgress /
+  // FetchUrlJob.execute previously rewrote *every* non-Abort throw into a
+  // NETWORK_ERROR (retryable) — burning the full retry budget on a permanent
+  // SSRF deny. Each case below asserts the original code/class is preserved.
+  //
+  // SECURITY: a permanent SSRF deny that gets re-classified as retryable is
+  // a privilege-escalation amplifier — the queue worker keeps the
+  // (potentially attacker-controlled) URL alive for 10 attempts. Treat any
+  // regression here as a security issue.
+  // -------------------------------------------------------------------------
+  describe("FetchUrlTask permanent error pass-through", () => {
+    const permanentCases: ReadonlyArray<{
+      readonly label: string;
+      readonly code: (typeof FetchUrlErrorCode)[keyof typeof FetchUrlErrorCode];
+    }> = [
+      { label: "PRIVATE_DENIED", code: FetchUrlErrorCode.PRIVATE_DENIED },
+      { label: "SCOPE_DENIED", code: FetchUrlErrorCode.SCOPE_DENIED },
+      { label: "INVALID_URL", code: FetchUrlErrorCode.INVALID_URL },
+      { label: "DNS_FAILED", code: FetchUrlErrorCode.DNS_FAILED },
+      { label: "REDIRECT_MISSING_LOCATION", code: FetchUrlErrorCode.REDIRECT_MISSING_LOCATION },
+      { label: "TOO_MANY_REDIRECTS", code: FetchUrlErrorCode.TOO_MANY_REDIRECTS },
+      { label: "NO_RESPONSE_BODY", code: FetchUrlErrorCode.NO_RESPONSE_BODY },
+      { label: "CONFIGURATION", code: FetchUrlErrorCode.CONFIGURATION },
+    ];
+
+    for (const { label, code } of permanentCases) {
+      test(`${label} thrown by safeFetch is preserved (not rewrapped as NETWORK_ERROR)`, async () => {
+        mockFetch.mockImplementation(() =>
+          Promise.reject(createFetchUrlJobError(code, `${label} from mock`, { url: "x" }))
+        );
+
+        const fetchPromise = fetchUrl({
+          url: "https://api.example.com/will-deny",
+        });
+        const error = await fetchPromise.catch((e: unknown) => e);
+        // JobTaskFailedError wraps at the task layer; assert on `.jobError`.
+        const jobErr = (error as { jobError?: unknown }).jobError ?? error;
+        expect(isFetchUrlJobError(jobErr)).toBe(true);
+        expect((jobErr as { code?: string }).code).toBe(code);
+        expect(jobErr).toBeInstanceOf(PermanentJobError);
+        // Critical: not rewrapped as NETWORK_ERROR (retryable).
+        expect((jobErr as { code?: string }).code).not.toBe(FetchUrlErrorCode.NETWORK_ERROR);
+      });
+    }
+
+    test("genuine TypeError still wraps to NETWORK_ERROR (positive control)", async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.reject(new TypeError("connect ECONNREFUSED 127.0.0.1:443"))
+      );
+      const error = await fetchUrl({ url: "https://api.example.com/down" }).catch(
+        (e: unknown) => e
+      );
+      const jobErr = (error as { jobError?: unknown }).jobError ?? error;
+      expect(isFetchUrlJobError(jobErr)).toBe(true);
+      expect((jobErr as { code?: string }).code).toBe(FetchUrlErrorCode.NETWORK_ERROR);
+      expect(jobErr).toBeInstanceOf(RetryableJobError);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // H2 regression: confirm @workglow/tasks registers its FETCH_*
+  // reconstructor on import so JobQueueClient round-trips persisted codes
+  // back to the correct retryable/permanent JobError subclass.
+  // -------------------------------------------------------------------------
+  describe("FETCH_* codes reconstructed by JobQueueClient", () => {
+    class TestableClient<I, O> extends JobQueueClient<I, O> {
+      public buildErrorFromCodePublic(message: string, errorCode?: string): JobError {
+        return this.buildErrorFromCode(message, errorCode);
+      }
+    }
+
+    test("FETCH_HTTP_RATE_LIMITED reconstructed by client is RetryableJobError", () => {
+      const client = new TestableClient<unknown, unknown>({
+        storage: new InMemoryQueueStorage("q"),
+        queueName: "q",
+      });
+      const err = client.buildErrorFromCodePublic("rate limited", "FETCH_HTTP_RATE_LIMITED");
+      expect(err).toBeInstanceOf(RetryableJobError);
+      expect(err.code).toBe("FETCH_HTTP_RATE_LIMITED");
+    });
+
+    test("FETCH_PRIVATE_DENIED reconstructed by client is PermanentJobError", () => {
+      const client = new TestableClient<unknown, unknown>({
+        storage: new InMemoryQueueStorage("q"),
+        queueName: "q",
+      });
+      const err = client.buildErrorFromCodePublic("private denied", "FETCH_PRIVATE_DENIED");
+      expect(err).toBeInstanceOf(PermanentJobError);
+      expect(err).not.toBeInstanceOf(RetryableJobError);
+      expect(err.code).toBe("FETCH_PRIVATE_DENIED");
     });
   });
 });

@@ -117,6 +117,29 @@ export function fetchUrlJobErrorFromPersisted(
   return attachFetchUrlFields(new PermanentJobError(message), errorCode, undefined);
 }
 
+/**
+ * Adapter for {@link registerErrorCodeReconstructor}. Reconstructs a
+ * `FetchUrlJobError`-shaped error from a persisted `FETCH_*` code.
+ *
+ * Unknown future codes that still start with `FETCH_` fall back to a generic
+ * `PermanentJobError` so a forward-compat worker can persist a new code and
+ * an older client can still surface a typed error (with a warning logged so
+ * the version skew is visible).
+ */
+export function buildFetchUrlError(errorCode: string, message: string): JobError {
+  const reconstructed = fetchUrlJobErrorFromPersisted(message, errorCode);
+  if (reconstructed) {
+    return reconstructed;
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    `buildFetchUrlError: unknown FETCH_* error code "${errorCode}" — falling back to PermanentJobError`
+  );
+  const fallback = new PermanentJobError(message);
+  fallback.code = errorCode;
+  return fallback;
+}
+
 export function httpStatusToFetchUrlErrorCode(status: number): FetchUrlErrorCodeValue {
   if (status === 429) {
     return FetchUrlErrorCode.HTTP_RATE_LIMITED;
