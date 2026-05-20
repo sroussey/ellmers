@@ -83,7 +83,8 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.id = jobWithPrefixes.id ?? uuid4();
     jobWithPrefixes.job_run_id = jobWithPrefixes.job_run_id ?? uuid4();
     jobWithPrefixes.queue = this.queueName;
-    jobWithPrefixes.fingerprint = await makeFingerprint(jobWithPrefixes.input);
+    jobWithPrefixes.fingerprint =
+      jobWithPrefixes.fingerprint ?? (await makeFingerprint(jobWithPrefixes.input));
     jobWithPrefixes.status = JobStatus.PENDING;
     jobWithPrefixes.progress = 0;
     jobWithPrefixes.progress_message = "";
@@ -357,6 +358,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     await sleep(0);
@@ -375,6 +377,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("progress" in fields) target.progress = fields.progress ?? 0;
     if ("progress_message" in fields) target.progress_message = fields.progress_message ?? "";
     if ("progress_details" in fields) target.progress_details = fields.progress_details ?? null;
+    if ("visible_at" in fields) target.visible_at = fields.visible_at ?? null;
     this.events.emit("change", { type: "UPDATE", old: oldJob, new: job });
   }
 
@@ -465,6 +468,78 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     for (const job of deletedJobs) {
       this.events.emit("change", { type: "DELETE", old: job });
     }
+  }
+
+  /**
+   * Find an active (PENDING or PROCESSING) record by fingerprint.
+   * Used by IJobStore.findActiveByFingerprint for cloud-queue dedup.
+   */
+  public async findActiveByFingerprint(
+    fingerprint: string
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    await sleep(0);
+    return this.jobQueue.find(
+      (j) =>
+        this.matchesPrefixes(j) &&
+        j.fingerprint === fingerprint &&
+        (j.status === JobStatus.PENDING || j.status === JobStatus.PROCESSING)
+    );
+  }
+
+  /**
+   * Batch read by id. Returns results in the same order as `ids`, with
+   * `undefined` for ids that don't exist or don't match prefixes.
+   */
+  public async getMany(
+    ids: readonly unknown[]
+  ): Promise<readonly (JobStorageFormat<Input, Output> | undefined)[]> {
+    await sleep(0);
+    const byId = new Map<unknown, JobStorageFormat<Input, Output>>();
+    for (const j of this.jobQueue) {
+      if (this.matchesPrefixes(j) && j.id !== undefined) {
+        byId.set(j.id, j);
+      }
+    }
+    return ids.map((id) => byId.get(id));
+  }
+
+  /**
+   * Atomically write `output` and set status to COMPLETED in one mutation.
+   */
+  public async completeWithResult(id: unknown, output: Output | null): Promise<void> {
+    await this.finalize(id, {
+      output,
+      error: null,
+      error_code: null,
+      status: JobStatus.COMPLETED,
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Atomically write error fields and set status to FAILED in one mutation.
+   */
+  public async failWithError(
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    const now = new Date().toISOString();
+    const abortRequestedAt =
+      opts.abortRequested === true
+        ? (job?.abort_requested_at ?? now)
+        : (job?.abort_requested_at ?? null);
+    await this.finalize(id, {
+      ...("error" in opts ? { error: opts.error ?? null } : {}),
+      ...("errorCode" in opts ? { error_code: opts.errorCode ?? null } : {}),
+      abort_requested_at: abortRequestedAt,
+      status: JobStatus.FAILED,
+      completed_at: job?.completed_at ?? now,
+    });
   }
 
   /**

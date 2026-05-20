@@ -248,6 +248,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
+      // H2: UNIQUE so concurrent inserts for the same active (queue,
+      // fingerprint) race to the DB and resolve via 23505 unique_violation.
+      // Supabase shares this DDL pattern with the Postgres provider.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
     ];
 
     for (const indexSql of indexes) {
@@ -270,7 +274,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     const now = new Date().toISOString();
     job.queue = this.queueName;
     job.job_run_id = job.job_run_id ?? uuid4();
-    job.fingerprint = await makeFingerprint(job.input);
+    job.fingerprint = job.fingerprint ?? (await makeFingerprint(job.input));
     job.status = JobStatus.PENDING;
     job.progress = 0;
     job.progress_message = "";
@@ -299,7 +303,26 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       .select("id")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // H2: race-safety for fingerprint dedup. Supabase surfaces Postgres
+      // unique_violation as `code === "23505"` on the PostgREST error shape.
+      // When the partial UNIQUE index on (queue, fingerprint) WHERE status
+      // IN ('PENDING','PROCESSING') fires, resolve the race by returning
+      // the winner's id instead of bubbling the error up.
+      const e = error as { code?: string; details?: string; message?: string };
+      const isUniqueViolation = e?.code === "23505";
+      const involvesFingerprint =
+        (typeof e?.details === "string" && /fingerprint/i.test(e.details)) ||
+        (typeof e?.message === "string" && /fingerprint/i.test(e.message));
+      if (isUniqueViolation && involvesFingerprint && job.fingerprint) {
+        const winner = await this.findActiveByFingerprint(job.fingerprint, this.queueName);
+        if (winner?.id != null) {
+          job.id = winner.id;
+          return winner.id;
+        }
+      }
+      throw error;
+    }
     if (!data) throw new Error("Failed to add to queue");
 
     job.id = data.id;
@@ -670,6 +693,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     // Partial update — Supabase's PostgREST `update()` only writes the
@@ -687,6 +711,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("progress" in fields) patch.progress = fields.progress ?? 0;
     if ("progress_message" in fields) patch.progress_message = fields.progress_message ?? "";
     if ("progress_details" in fields) patch.progress_details = fields.progress_details ?? null;
+    if ("visible_at" in fields) patch.visible_at = fields.visible_at ?? null;
     if (Object.keys(patch).length === 0) return;
     let query = this.client
       .from(this.tableName)
@@ -845,6 +870,131 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     query = this.applyPrefixFilters(query);
     const { error } = await query;
 
+    if (error) throw error;
+  }
+
+  /**
+   * Finds the most recent active (PENDING or PROCESSING) job with the given fingerprint in this queue.
+   * Uses the partial index idx_<table>_fingerprint_active for O(1) lookup.
+   */
+  public async findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const prefixConditions = this.buildPrefixWhereSql();
+    const validatedQueueName = this.validateSqlValue(queueName, "queueName");
+    const escapedQueueName = this.escapeSqlString(validatedQueueName);
+    const escapedFingerprint = this.escapeSqlString(fingerprint);
+
+    const sql = `
+      SELECT * FROM ${this.tableName}
+        WHERE fingerprint = '${escapedFingerprint}' AND queue = '${escapedQueueName}'
+          AND status IN ('PENDING','PROCESSING')${prefixConditions}
+        ORDER BY created_at DESC
+        LIMIT 1`;
+
+    const { data, error } = await this.client.rpc("exec_sql", { query: sql });
+    if (error) throw error;
+    if (!data || !Array.isArray(data) || data.length === 0) return undefined;
+    return data[0] as JobStorageFormat<Input, Output>;
+  }
+
+  /**
+   * Retrieves multiple jobs by their IDs in a single query.
+   * Returns results in the same order as the input ids array, with undefined for missing ids.
+   */
+  public async getMany(
+    ids: readonly unknown[]
+  ): Promise<Array<JobStorageFormat<Input, Output> | undefined>> {
+    if (ids.length === 0) return [];
+
+    let query = this.client
+      .from(this.tableName)
+      .select("*")
+      .in("id", ids as any[])
+      .eq("queue", this.queueName);
+    query = this.applyPrefixFilters(query);
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const map = new Map<unknown, JobStorageFormat<Input, Output>>();
+    for (const row of (data ?? []) as JobStorageFormat<Input, Output>[]) {
+      map.set(row.id, row);
+    }
+    return ids.map((id) => map.get(id));
+  }
+
+  /**
+   * Atomically writes output and sets status=COMPLETED.
+   */
+  public async completeWithResult(id: unknown, result: Output): Promise<void> {
+    const now = new Date().toISOString();
+    let query = this.client
+      .from(this.tableName)
+      .update({
+        output: result ?? null,
+        status: "COMPLETED" as JobStatus,
+        progress: 100,
+        progress_message: "",
+        progress_details: null,
+        completed_at: now,
+      })
+      .eq("id", id as never)
+      .eq("queue", this.queueName);
+    query = this.applyPrefixFilters(query);
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  /**
+   * Atomically writes error fields and sets status=FAILED.
+   * Preserves existing error/error_code when opts fields are absent.
+   */
+  public async failWithError(
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    // For Supabase's PostgREST API, COALESCE isn't directly available — we use
+    // raw SQL via exec_sql to preserve existing values when opts fields are absent.
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) {
+      throw new Error(`Invalid job id: ${id}`);
+    }
+    const prefixConditions = this.buildPrefixWhereSql();
+    const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
+    const escapedQueueName = this.escapeSqlString(validatedQueueName);
+
+    const errorLiteral =
+      "error" in opts
+        ? opts.error != null
+          ? `'${this.escapeSqlString(opts.error)}'`
+          : "NULL"
+        : "NULL";
+    const errorCodeLiteral =
+      "errorCode" in opts
+        ? opts.errorCode != null
+          ? `'${this.escapeSqlString(opts.errorCode)}'`
+          : "NULL"
+        : "NULL";
+    const abortClause =
+      opts.abortRequested === true
+        ? `CASE WHEN abort_requested_at IS NOT NULL THEN abort_requested_at ELSE NOW() AT TIME ZONE 'UTC' END`
+        : `abort_requested_at`;
+
+    const sql = `
+      UPDATE ${this.tableName}
+          SET error = COALESCE(${errorLiteral}, error),
+              error_code = COALESCE(${errorCodeLiteral}, error_code),
+              abort_requested_at = ${abortClause},
+              status = 'FAILED',
+              completed_at = COALESCE(completed_at, NOW() AT TIME ZONE 'UTC')
+        WHERE id = ${numericId} AND queue = '${escapedQueueName}'${prefixConditions}`;
+
+    const { error } = await this.client.rpc("exec_sql", { query: sql });
     if (error) throw error;
   }
 

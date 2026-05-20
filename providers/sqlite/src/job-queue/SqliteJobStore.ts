@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IJobStore, JobRecord, JobStatus, MessageId } from "@workglow/job-queue";
+import type {
+  IJobStore,
+  JobRecord,
+  JobStatus,
+  JobStorageFormat,
+  MessageId,
+  SendOptions,
+} from "@workglow/job-queue";
 import type { SqlitePendingWrite } from "./SqliteMessageQueue";
 import { SqliteQueueStorage } from "./SqliteQueueStorage";
 
@@ -91,5 +98,59 @@ export class SqliteJobStore<Input, Output> implements IJobStore<Input, Output> {
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
     await this.core.saveStatus(id, status);
+  }
+
+  async create(body: JobStorageFormat<Input, Output>, opts: SendOptions): Promise<MessageId> {
+    const enriched = {
+      ...body,
+      fingerprint: opts.fingerprint ?? body.fingerprint,
+      job_run_id: opts.jobRunId ?? body.job_run_id,
+      max_attempts: opts.maxAttempts ?? body.max_attempts,
+      deadline_at:
+        opts.timeoutSeconds != null
+          ? new Date(Date.now() + opts.timeoutSeconds * 1000).toISOString()
+          : body.deadline_at,
+    } as JobStorageFormat<Input, Output>;
+    return this.core.add(enriched);
+  }
+
+  async findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobRecord<Input, Output> | undefined> {
+    return this.core.findActiveByFingerprint(fingerprint, queueName);
+  }
+
+  async getMany(
+    ids: readonly MessageId[]
+  ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
+    return this.core.getMany(ids);
+  }
+
+  async completeWithResult(id: MessageId, result: Output): Promise<void> {
+    this.pending.delete(id);
+    await this.core.completeWithResult(id, result);
+  }
+
+  async failWithError(
+    id: MessageId,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    this.pending.delete(id);
+    await this.core.failWithError(id, opts);
+  }
+
+  async markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void> {
+    await this.core.finalize(id, {
+      visible_at: opts.visible_at.toISOString(),
+      error_code: opts.errorCode,
+    });
   }
 }

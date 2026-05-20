@@ -259,5 +259,67 @@ export function postgresQueueMigrations(
         `);
       },
     },
+    {
+      component,
+      version: 4,
+      description:
+        "Add UNIQUE partial index for findActiveByFingerprint O(1) lookup + fingerprint dedup at the DB layer (H2)",
+      async up(db: Pool) {
+        // H2: UNIQUE so concurrent send() calls with the same fingerprint can
+        // race to INSERT and have the DB resolve the winner via a 23505 unique-
+        // violation. The cloud-queue adapters used to optimistically check
+        // findActiveByFingerprint then insert, leaving a TOCTOU window. With
+        // UNIQUE in place, the insert path can catch the violation and
+        // re-resolve via findActiveByFingerprint. Edited in place rather than
+        // a v5 because PR #516 is still unmerged at the time of this fixup,
+        // so no consumer has applied v4 yet — confirmed via PR state at the
+        // top of the worktree session.
+        await db.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_${tableName}_fingerprint_active
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING')
+        `);
+      },
+    },
+    {
+      component,
+      version: 5,
+      description:
+        "Converge idx_<table>_fingerprint_active to UNIQUE for DBs that applied the pre-edit v4 (non-unique) variant",
+      async up(db: Pool) {
+        // PR #516 reviewers flagged that v4 was edited in place after some
+        // pull-request consumers may already have applied the pre-edit
+        // (non-unique) variant. The migration runner keys on (component,
+        // version) alone, so an already-recorded v4 is never re-run — those
+        // DBs would stay non-unique forever. v5 inspects the existing index
+        // and converts it if needed, idempotently.
+        const indexName = `idx_${tableName}_fingerprint_active`;
+        const result = await db.query<{ indisunique: boolean }>(
+          `SELECT i.indisunique
+             FROM pg_class c
+             JOIN pg_index i ON i.indexrelid = c.oid
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = $1
+              AND n.nspname = current_schema()`,
+          [indexName]
+        );
+        const existing = result.rows[0];
+        if (existing && existing.indisunique) {
+          // Already UNIQUE — DB applied the post-edit v4 (or this v5 ran
+          // previously). No-op.
+          return;
+        }
+        // Either the index is missing entirely or it's the pre-edit
+        // non-unique variant. Drop and recreate as UNIQUE. We use the same
+        // canonical name so downstream code (PostgresQueueStorage,
+        // SupabaseQueueStorage, the H2 race tests) keeps finding it by name.
+        await db.query(`DROP INDEX IF EXISTS ${indexName}`);
+        await db.query(`
+          CREATE UNIQUE INDEX IF NOT EXISTS ${indexName}
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING')
+        `);
+      },
+    },
   ];
 }

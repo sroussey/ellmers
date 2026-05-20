@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { MessageId } from "./IMessageQueue";
+import type { MessageId, SendOptions } from "./IMessageQueue";
 import type { JobStatus, JobStorageFormat } from "./IQueueStorage";
 
 /**
@@ -59,4 +59,84 @@ export interface IJobStore<Input, Output> {
   abort(id: MessageId): Promise<void>;
   /** Force-overwrite the status field without incrementing attempts. Used to persist DISABLED after lease release. */
   saveStatus(id: MessageId, status: JobStatus): Promise<void>;
+
+  /**
+   * Insert a new job record built from a {@link JobStorageFormat} body and
+   * {@link SendOptions}. Sets status to PENDING, generates the id, persists
+   * fingerprint / job_run_id / max_attempts / deadline_at, then returns the
+   * generated id. Used by message-queue adapters that don't share a SQL core
+   * with the store (SQS, Cloudflare Queues). SQL backends should delegate to
+   * their existing native insert path.
+   */
+  create(body: JobStorageFormat<Input, Output>, opts: SendOptions): Promise<MessageId>;
+
+  /**
+   * Return the existing PENDING or PROCESSING record for the given
+   * `fingerprint` within this queue, if any. Used by cloud-queue adapters to
+   * implement fingerprint deduplication uniformly (without relying on
+   * native dedup features of the underlying transport).
+   *
+   * Backends with a unique partial index on `(queue, fingerprint) WHERE
+   * status IN ('PENDING','PROCESSING')` should use it for O(1) lookup;
+   * in-memory backends do a scan.
+   */
+  findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobRecord<Input, Output> | undefined>;
+
+  /**
+   * Batch read by id. Returns records in the same order as `ids`, with
+   * `undefined` for ids that don't exist. Default fallback implementation
+   * may loop {@link get}; native backends should override with a single
+   * `WHERE id IN (...)` query.
+   */
+  getMany(ids: readonly MessageId[]): Promise<readonly (JobRecord<Input, Output> | undefined)[]>;
+
+  /**
+   * Atomically write `output` and set status to COMPLETED in a single
+   * storage operation. Used by message-queue adapters that don't share a
+   * pending-buffer core with the store (SQS, Cloudflare Queues) so the
+   * "ack atomically persists the result" guarantee from {@link IClaim.ack}
+   * can be honored end-to-end.
+   */
+  completeWithResult(id: MessageId, result: Output): Promise<void>;
+
+  /**
+   * Atomically write error fields and set status to FAILED in a single
+   * storage operation. Counterpart to {@link completeWithResult} for the
+   * failure path; honors {@link IClaim.fail}'s atomicity guarantee for
+   * cloud adapters.
+   */
+  failWithError(
+    id: MessageId,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void>;
+
+  /**
+   * Mark a row's enqueue as deferred after a transient producer-side
+   * failure: set `visible_at` to a future timestamp (backoff) and stash an
+   * `error_code` (e.g. "ENQUEUE_FAILED") WITHOUT touching `status` or
+   * `attempts`. The row stays PENDING so a future poll or producer retry
+   * will pick it up again.
+   *
+   * Used by cloud adapters (SQS, Cloudflare Queues) whose `send`/`sendBatch`
+   * may throw with the row already inserted: instead of overwriting PENDING
+   * with FAILED — which would permanently lose the job for any consumer
+   * polling for PENDING work — we shift `visible_at` forward and let the
+   * normal retry surface (or operator action) drive recovery.
+   *
+   * Implementations that don't currently persist `visible_at` outside the
+   * status state machine may log + no-op, but should at minimum not throw
+   * and not corrupt other fields. SQL backends should issue a single
+   * `UPDATE ... SET visible_at = ..., error_code = ... WHERE id = ...`.
+   */
+  markEnqueueDeferred(
+    id: MessageId,
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<void>;
 }

@@ -28,6 +28,17 @@ export interface SendOptions {
 export interface IMessageQueue<Body> {
   readonly scope: QueueStorageScope;
   send(body: Body, opts?: SendOptions): Promise<MessageId>;
+  /**
+   * Enqueue a batch of bodies.
+   *
+   * `opts.fingerprint` is REJECTED by adapters that participate in
+   * fingerprint deduplication (SQS, Cloudflare Queues): applying a single
+   * fingerprint to N distinct bodies would dedup every body against the
+   * first row, returning the same id N times. If you need fingerprinted
+   * dedup, call {@link send} per body so each call can carry its own
+   * fingerprint. Other options (`delaySeconds`, `timeoutSeconds`,
+   * `jobRunId`, `maxAttempts`) apply uniformly to every body in the batch.
+   */
   sendBatch(bodies: readonly Body[], opts?: SendOptions): Promise<readonly MessageId[]>;
   receive(opts: {
     workerId: string;

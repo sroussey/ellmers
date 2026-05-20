@@ -124,7 +124,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     const now = new Date().toISOString();
     job.queue = this.queueName;
     job.job_run_id = job.job_run_id ?? uuid4();
-    job.fingerprint = await makeFingerprint(job.input);
+    job.fingerprint = job.fingerprint ?? (await makeFingerprint(job.input));
     job.status = JobStatus.PENDING;
     job.progress = 0;
     job.progress_message = "";
@@ -169,7 +169,33 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       job.progress_message,
       job.progress_details ? JSON.stringify(job.progress_details) : null,
     ];
-    const result = await this.db.query(sql, params);
+    let result: { rows: Array<{ id: unknown }> } | undefined;
+    try {
+      result = (await this.db.query(sql, params)) as { rows: Array<{ id: unknown }> } | undefined;
+    } catch (err) {
+      // H2: race-safety for fingerprint dedup. With the v4 UNIQUE partial
+      // index in place, two concurrent inserts for the same (queue,
+      // fingerprint) where one row is PENDING/PROCESSING raise a 23505
+      // unique_violation. We resolve the race by returning the winner's id
+      // (the row that's already PENDING/PROCESSING). Any other error
+      // re-throws.
+      const e = err as { code?: string; constraint?: string; message?: string };
+      const isUniqueViolation = e?.code === "23505";
+      const involvesFingerprint =
+        typeof e?.constraint === "string"
+          ? e.constraint.includes("fingerprint")
+          : typeof e?.message === "string"
+            ? e.message.includes("fingerprint")
+            : false;
+      if (isUniqueViolation && involvesFingerprint && job.fingerprint) {
+        const winner = await this.findActiveByFingerprint(job.fingerprint, this.queueName);
+        if (winner?.id != null) {
+          job.id = winner.id;
+          return winner.id;
+        }
+      }
+      throw err;
+    }
 
     if (!result) throw new Error("Failed to add to queue");
     job.id = result.rows[0].id;
@@ -431,6 +457,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     // Build a dynamic SET clause covering only the fields the caller supplied —
@@ -463,6 +490,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
         fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
       );
     }
+    if ("visible_at" in fields) push("visible_at", fields.visible_at ?? null);
     if (sets.length === 0) return; // nothing to write
     const idParam = nextParam;
     nextParam += 1;
@@ -625,6 +653,104 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     await this.db.query(
       `DELETE FROM ${this.tableName} WHERE id = $1 AND queue = $2${prefixConditions}`,
       [jobId, this.queueName, ...prefixParams]
+    );
+  }
+
+  /**
+   * Finds the most recent active (PENDING or PROCESSING) job with the given fingerprint in this queue.
+   * Uses the partial index idx_<table>_fingerprint_active for O(1) lookup.
+   */
+  public async findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    const result = await this.db.query<JobStorageFormat<Input, Output>>(
+      `SELECT * FROM ${this.tableName}
+        WHERE fingerprint = $1 AND queue = $2
+          AND status IN ('PENDING','PROCESSING')${prefixConditions}
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [fingerprint, queueName, ...prefixParams]
+    );
+    if (!result || result.rows.length === 0) return undefined;
+    return result.rows[0];
+  }
+
+  /**
+   * Retrieves multiple jobs by their IDs in a single query.
+   * Returns results in the same order as the input ids array, with undefined for missing ids.
+   */
+  public async getMany(
+    ids: readonly unknown[]
+  ): Promise<Array<JobStorageFormat<Input, Output> | undefined>> {
+    if (ids.length === 0) return [];
+    // Filter to only integer-coercible IDs — Postgres SERIAL IDs are integers.
+    // Non-integer ids (e.g. UUIDs passed from tests) will never match a row.
+    const numericIds = ids.map((id) => Number(id)).filter((n) => Number.isInteger(n) && n > 0);
+    if (numericIds.length === 0) return ids.map(() => undefined);
+    // $1 = ids array, $2 = queue, $3+ = prefix params
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    const result = await this.db.query<JobStorageFormat<Input, Output>>(
+      `SELECT * FROM ${this.tableName}
+        WHERE id = ANY($1::int[]) AND queue = $2${prefixConditions}`,
+      [numericIds, this.queueName, ...prefixParams]
+    );
+    if (!result) return ids.map(() => undefined);
+    const map = new Map<number, JobStorageFormat<Input, Output>>();
+    for (const row of result.rows) {
+      map.set(Number(row.id), row);
+    }
+    return ids.map((id) => map.get(Number(id)));
+  }
+
+  /**
+   * Atomically writes output and sets status=COMPLETED.
+   */
+  public async completeWithResult(id: unknown, result: Output): Promise<void> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
+    await this.db.query(
+      `UPDATE ${this.tableName}
+          SET output = $1,
+              status = 'COMPLETED',
+              progress = 100,
+              progress_message = '',
+              progress_details = NULL,
+              completed_at = NOW() AT TIME ZONE 'UTC'
+        WHERE id = $2 AND queue = $3${prefixConditions}`,
+      [result != null ? JSON.stringify(result) : null, id, this.queueName, ...prefixParams]
+    );
+  }
+
+  /**
+   * Atomically writes error fields and sets status=FAILED.
+   * COALESCEs preserve existing error/error_code when opts fields are absent.
+   */
+  public async failWithError(
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(5);
+    await this.db.query(
+      `UPDATE ${this.tableName}
+          SET error = COALESCE($1, error),
+              error_code = COALESCE($2, error_code),
+              abort_requested_at = CASE WHEN $3 THEN NOW() AT TIME ZONE 'UTC' ELSE abort_requested_at END,
+              status = 'FAILED',
+              completed_at = COALESCE(completed_at, NOW() AT TIME ZONE 'UTC')
+        WHERE id = $4 AND queue = $5${prefixConditions}`,
+      [
+        "error" in opts ? (opts.error ?? null) : null,
+        "errorCode" in opts ? (opts.errorCode ?? null) : null,
+        opts.abortRequested === true,
+        id,
+        this.queueName,
+        ...prefixParams,
+      ]
     );
   }
 
