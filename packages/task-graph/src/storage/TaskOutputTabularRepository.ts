@@ -185,7 +185,7 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
    *
    * @param prefix - The prefix to match against `taskType` (e.g. `__run:my-run::`)
    */
-  async deleteByTaskTypePrefix(prefix: string): Promise<void> {
+  override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
     for await (const row of this.tabularRepository.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {
         await this.tabularRepository.delete({ key: row.key, taskType: row.taskType });
@@ -203,7 +203,7 @@ export class TaskOutputTabularRepository extends TaskOutputRepository {
    * @param prefix - The taskType prefix to match (e.g. `__run:`)
    * @param olderThanInMs - Age threshold in milliseconds; rows older than this are deleted
    */
-  async clearOlderThanWithTaskTypePrefix(prefix: string, olderThanInMs: number): Promise<void> {
+  override async clearOlderThanWithTaskTypePrefix(prefix: string, olderThanInMs: number): Promise<void> {
     const cutoff = Date.now() - olderThanInMs;
     for await (const row of this.tabularRepository.records()) {
       if (typeof row.taskType === "string" && row.taskType.startsWith(prefix)) {

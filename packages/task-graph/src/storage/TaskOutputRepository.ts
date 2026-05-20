@@ -96,9 +96,11 @@ export abstract class TaskOutputRepository {
   /**
    * Persist a task output keyed by `(taskType, fingerprint(inputs))`.
    *
-   * Contract: MUST be idempotent for identical (key, value) pairs and MAY drop
-   * the write if the key already exists. This supports concurrent writers
-   * producing the same deterministic output without coordination.
+   * Backing implementations upsert by primary key (last-writer-wins). For
+   * deterministic cache entries (`CachePolicy.kind === "deterministic"`) this
+   * is benign because all writers produce equal values. Run-private writes
+   * are single-writer-per-runId in practice (one worker per run), so the
+   * upsert behavior is also fine there.
    */
   abstract saveOutput(
     taskType: string,
@@ -141,4 +143,30 @@ export abstract class TaskOutputRepository {
    * point of the private cache tier, will not actually work in that case.
    */
   abstract isDurable(): boolean;
+
+  /**
+   * Delete every entry whose `taskType` starts with `prefix`. Used by
+   * `RunPrivateCacheRepo.clearRun()` to delete entries for a specific `runId`.
+   *
+   * Default implementation throws — backing repositories that support run-private
+   * caching MUST override this.
+   */
+  async deleteByTaskTypePrefix(_prefix: string): Promise<void> {
+    throw new Error(
+      `${this.constructor.name}: deleteByTaskTypePrefix is not supported by this repository.`
+    );
+  }
+
+  /**
+   * Delete entries whose `taskType` starts with `prefix` and were created more
+   * than `olderThanMs` ago. Used by `CacheJanitor.sweepStaleRunPrivate()`.
+   *
+   * Default implementation throws — backing repositories that support periodic
+   * janitor sweeps of run-private rows MUST override this.
+   */
+  async clearOlderThanWithTaskTypePrefix(_prefix: string, _olderThanMs: number): Promise<void> {
+    throw new Error(
+      `${this.constructor.name}: clearOlderThanWithTaskTypePrefix is not supported by this repository.`
+    );
+  }
 }
