@@ -58,6 +58,6 @@
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   }
 }
