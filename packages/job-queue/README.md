@@ -385,6 +385,42 @@ class ApiCallJob extends Job<{ endpoint: string }, { data: unknown }> {
 }
 ```
 
+#### Custom error-code reconstruction
+
+When a worker persists a domain-specific `error_code` (e.g. `FETCH_PRIVATE_DENIED`,
+`LLM_CONTEXT_LENGTH_EXCEEDED`) and a client `waitFor()`s the job, the client
+needs to rebuild a typed `JobError` (retryable vs permanent) from the persisted
+code alone — the worker process may not exist anymore.
+
+`JobQueueClient` consults the **error-code reconstructor registry** for this.
+Packages register a reconstructor for their code prefix as a module side-effect:
+
+```typescript
+import { registerErrorCodeReconstructor, PermanentJobError, RetryableJobError } from "@workglow/job-queue";
+
+function buildMyError(errorCode: string, message: string) {
+  if (errorCode === "MY_RATE_LIMITED") return new RetryableJobError(message);
+  const err = new PermanentJobError(message);
+  err.code = errorCode;
+  return err;
+}
+
+registerErrorCodeReconstructor("MY_", buildMyError);
+```
+
+Contract:
+
+- **Prefix-matched, first-registered-wins** on conflicts (a warning is logged
+  if a second registration overwrites the first).
+- **Reconstructors MUST NOT throw.** Return a fallback `PermanentJobError`
+  with `code` set when you receive an unknown future code sharing your prefix —
+  this keeps older clients forward-compatible with newer workers.
+- Built-in codes (`PermanentJobError`, `RetryableJobError`, `AbortSignalJobError`,
+  `JobDisabledError`) are handled by the client directly and do not need to be
+  registered.
+- Use `clearErrorCodeReconstructors()` / `unregisterErrorCodeReconstructor()`
+  in tests to keep the global table clean between cases.
+
 ### Event Listeners
 
 ```typescript
