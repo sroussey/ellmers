@@ -94,21 +94,29 @@ function rebuildSqliteQueueTableForV4Default(
   db.exec("PRAGMA foreign_keys = OFF;");
 
   try {
-    // Snapshot user-defined triggers + views attached to this table; SQLite
-    // drops these when we drop the original table, so we replay them after
-    // the rename so a deployment's user-defined automation survives the
-    // rebuild. Indexes are recreated explicitly below via CREATE INDEX so
-    // we skip them here on purpose.
+    // Snapshot user-defined triggers attached to this table; SQLite drops
+    // them when we drop the original table, so we replay them after the
+    // rename so a deployment's user-defined automation survives the rebuild.
+    // Indexes are recreated explicitly below via CREATE INDEX so we skip
+    // them here on purpose.
+    //
+    // VIEWS are intentionally NOT preserved here: in `sqlite_schema` a view's
+    // `tbl_name` column is the VIEW's own name, not the table the view
+    // references, so a `tbl_name = ?` filter cannot locate views that
+    // reference the queue table. Parsing the view's `sql` to find dependent
+    // tables is fragile (whitespace, quoting, aliases, subselects, CTEs) and
+    // there are no in-tree consumers that rely on it. Operators with views
+    // over the queue table must re-create them after this migration runs.
     type SchemaObj = {
       readonly type: string;
       readonly name: string;
       readonly sql: string | null;
     };
-    const userObjects: SchemaObj[] = db
+    const userTriggers: SchemaObj[] = db
       .prepare<
         [string],
         SchemaObj
-      >("SELECT type, name, sql FROM sqlite_schema " + "WHERE type IN ('trigger','view') AND tbl_name = ? " + "AND name NOT LIKE 'sqlite_%'")
+      >("SELECT type, name, sql FROM sqlite_schema " + "WHERE type = 'trigger' AND tbl_name = ? " + "AND name NOT LIKE 'sqlite_%'")
       .all(tableName);
 
     const newTable = `${tableName}__new_v4`;
@@ -123,9 +131,9 @@ function rebuildSqliteQueueTableForV4Default(
       CREATE INDEX IF NOT EXISTS job_queue_job_run_id${indexSuffix}_idx ON ${tableName} (${prefixIndexPrefix}queue, job_run_id);
     `);
 
-    for (const obj of userObjects) {
-      if (obj.sql) {
-        db.exec(`${obj.sql};`);
+    for (const trg of userTriggers) {
+      if (trg.sql) {
+        db.exec(`${trg.sql};`);
       }
     }
 
@@ -296,7 +304,7 @@ export function sqliteQueueMigrations(
       // fresh installs (and on DBs whose v3 already converged inside v3's
       // block above) the includes(...) guard turns this into a no-op.
       description:
-        "Converge SQLite queue max_attempts DEFAULT 23 → 10 on pre-fix v3 DBs (idempotent rebuild)",
+        "Converge SQLite queue max_attempts DEFAULT 23 → 10 on pre-fix v3 DBs (idempotent rebuild). User-defined triggers on the queue table are preserved; user-defined views referencing the queue table are NOT preserved and must be DROPped before this migration runs and re-created afterwards by the operator (SQLite's drop+rename leaves a dependent view invalid mid-rebuild and fails the txn).",
       up(db: Sqlite.Database) {
         type TableSqlRow = { readonly sql: string | null };
         const tableSqlRow = db

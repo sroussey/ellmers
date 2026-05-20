@@ -404,7 +404,7 @@ describe("sqlite queue migrations: v4 max_attempts convergence", () => {
     }
   });
 
-  it("v4 preserves user-defined triggers on the queue table", async () => {
+  it("v4 preserves user-defined triggers on the queue table (and the trigger still fires)", async () => {
     await Sqlite.init();
     const sqlite = new Sqlite.Database(":memory:");
     try {
@@ -444,6 +444,54 @@ describe("sqlite queue migrations: v4 max_attempts convergence", () => {
         .prepare<[], { job_fp: string; status: string }>("SELECT job_fp, status FROM audit")
         .all();
       expect(audit).toContainEqual({ job_fp: "fp1", status: "COMPLETED" });
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it("v4 does NOT capture user-defined views over the queue table (documented limitation)", async () => {
+    // Pins the documented behavior so anyone tempted to add view preservation
+    // also updates the README/migration description: in `sqlite_schema` a
+    // view's `tbl_name` is the VIEW's own name, not the referenced table —
+    // so our `tbl_name = ?` snapshot cannot locate views that reference the
+    // queue table, and we deliberately don't parse view SQL to fix it.
+    //
+    // We do not exercise the "view present during rebuild" path here because
+    // SQLite's drop+rename in the rebuild leaves a dependent view in an
+    // invalid state (its referenced table briefly does not exist), which
+    // breaks the whole txn. Operators with views on the queue table must
+    // drop and re-create those views around the migration; we assert below
+    // only what's relevant to the comment claim — that the snapshot query
+    // returns zero rows for views, not triggers.
+    await Sqlite.init();
+    const sqlite = new Sqlite.Database(":memory:");
+    try {
+      fabricatePreFixV3Db(sqlite, "jobs");
+      sqlite.exec("CREATE VIEW jobs_pending AS SELECT * FROM jobs WHERE status = 'PENDING';");
+
+      // The snapshot query that the rebuild helper uses must not match the
+      // view, by design (views have `tbl_name = <view-name>`, not `jobs`).
+      const matchedByRebuildQuery = sqlite
+        .prepare<
+          [string],
+          { type: string; name: string }
+        >("SELECT type, name FROM sqlite_schema WHERE type = 'trigger' AND tbl_name = ? AND name NOT LIKE 'sqlite_%'")
+        .all("jobs");
+      expect(matchedByRebuildQuery.find((r) => r.name === "jobs_pending")).toBeUndefined();
+
+      // Drop the dependent view so the rebuild can run cleanly (mirrors the
+      // operator workflow the README/migration description documents).
+      sqlite.exec("DROP VIEW jobs_pending;");
+      await new SqliteMigrationRunner(sqlite).run(sqliteQueueMigrations("jobs", []));
+
+      // After migration, the view is not re-created (operator must do so).
+      const views = sqlite
+        .prepare<
+          [],
+          { name: string }
+        >("SELECT name FROM sqlite_schema WHERE type = 'view' AND name = 'jobs_pending'")
+        .all();
+      expect(views).toEqual([]);
     } finally {
       sqlite.close();
     }
