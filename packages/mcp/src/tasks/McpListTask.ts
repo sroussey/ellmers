@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import {
   getMcpServerConfig,
   getMcpServerTransport,
@@ -194,7 +195,7 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
   public static override title = "MCP List";
   public static override description =
     "Lists tools, resources, or prompts available on an MCP server";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override hasDynamicSchemas: boolean = true;
   public static override hasDynamicEntitlements: boolean = true;
 

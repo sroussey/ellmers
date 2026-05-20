@@ -11,6 +11,7 @@ import {
   TaskGraphRunner,
   TaskStatus,
   registerBuiltInTransforms,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -26,7 +27,7 @@ describe("TaskGraphRunner applies transforms on edges", () => {
       static override readonly category = "Test";
       static override readonly title = "Src";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -53,7 +54,7 @@ describe("TaskGraphRunner applies transforms on edges", () => {
       static override readonly category = "Test";
       static override readonly title = "Tgt";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",

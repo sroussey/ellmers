@@ -11,7 +11,7 @@ import {
   getMcpTaskDeps,
   TypeMcpServer,
 } from "@workglow/mcp/util";
-import type { TaskEntitlements } from "@workglow/task-graph";
+import type { CachePolicy, TaskEntitlements } from "@workglow/task-graph";
 import {
   CreateWorkflow,
   Entitlements,
@@ -171,7 +171,7 @@ export class McpToolCallTask extends Task<
   public static override category = "MCP";
   public static override title = "MCP Call Tool";
   public static override description = "Calls a tool on an MCP server and returns the result";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override customizable = true;
   public static override hasDynamicSchemas = true;
   public static override hasDynamicEntitlements: boolean = true;

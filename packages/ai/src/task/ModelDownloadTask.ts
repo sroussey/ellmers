@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -79,7 +79,7 @@ export class ModelDownloadTask extends AiTask<
   public static override outputSchema(): DataPortSchema {
     return ModelDownloadOutputSchema satisfies DataPortSchema;
   }
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public files: { file: string; progress: number }[] = [];
 

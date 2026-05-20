@@ -6,7 +6,7 @@
 
 import type { KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
-import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
+import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
@@ -56,7 +56,7 @@ export class KbReindexTask extends Task<
   public static override description =
     "Re-chunk and re-embed every document in a knowledge base using its configured models.";
   public static readonly requires: readonly Capability[] = [] as const satisfies Capability[];
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override inputSchema(): DataPortSchema {
     return inputSchema as DataPortSchema;

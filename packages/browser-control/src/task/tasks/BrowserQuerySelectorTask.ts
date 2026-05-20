@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { CachePolicy } from "@workglow/task-graph";
 import { IExecuteContext, Task, TaskConfig, TaskConfigSchema } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
@@ -58,7 +59,7 @@ export class BrowserQuerySelectorTask extends Task<
   public static override title = "Browser Query Selector";
   public static override description =
     "Queries all elements matching a CSS selector and returns their refs";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return TaskConfigSchema;

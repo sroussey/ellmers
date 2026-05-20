@@ -11,6 +11,7 @@ import {
   Task,
   TaskRegistry,
   TaskRunContext,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -56,7 +57,7 @@ type AccumOutput = { text: string };
 class AccumStreamingTask extends Task<AccumInput, AccumOutput> {
   public static override readonly type = "TestAccumStreaming";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override readonly title = "Accum";
   public static override readonly description = "Accum";
   public static override inputSchema(): DataPortSchema {
@@ -87,7 +88,7 @@ type ReplaceOutput = { result: string };
 class ReplaceStreamingTask extends Task<ReplaceInput, ReplaceOutput> {
   public static override readonly type = "TestReplaceStreaming";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override readonly title = "Replace";
   public static override readonly description = "Replace";
   public static override inputSchema(): DataPortSchema {
@@ -189,7 +190,7 @@ class CacheableStreamingTask extends Task<CacheableInput, CacheableOutput> {
 class NonCacheableStreamingTask extends Task<CacheableInput, CacheableOutput> {
   public static override readonly type = "TestNonCacheableStreaming";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override readonly title = "NonCacheable";
   public static override readonly description = "NonCacheable";
   public static override inputSchema(): DataPortSchema {

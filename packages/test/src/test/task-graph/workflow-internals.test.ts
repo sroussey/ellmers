@@ -14,6 +14,7 @@ import {
   WorkflowBuilder,
   WorkflowEventBridge,
   runLoopAutoConnect,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { EventEmitter } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -26,7 +27,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 class WfInternalsSourceTask extends Task<{ value: string }, { value: string }> {
   public static override readonly type = "WfInternals_Source";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -47,7 +48,7 @@ class WfInternalsSourceTask extends Task<{ value: string }, { value: string }> {
 class WfInternalsSinkTask extends Task<{ value: string }, { result: string }> {
   public static override readonly type = "WfInternals_Sink";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",

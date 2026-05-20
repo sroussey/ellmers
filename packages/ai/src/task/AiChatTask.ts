@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IExecuteContext, StreamEvent } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
@@ -181,7 +181,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
   public static override title = "AI Chat";
   public static override description =
     "Multi-turn chat with a language model, using a human connector to collect user input between turns.";
-  public static override cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override configSchema(): DataPortSchema {
     return {

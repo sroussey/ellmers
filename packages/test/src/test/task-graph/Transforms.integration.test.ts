@@ -15,6 +15,7 @@ import {
   createGraphFromGraphJSON,
   registerBaseTasks,
   registerBuiltInTransforms,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import { InputTask, OutputTask, registerCommonTasks } from "@workglow/tasks";
 import type { DataPortSchema } from "@workglow/util/schema";
@@ -73,7 +74,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "Src";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -94,7 +95,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "Tgt";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -139,7 +140,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "StreamSrc";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -170,7 +171,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "NonStreamTgt";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -210,7 +211,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "SrcRTF";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -231,7 +232,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "TgtRTF";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",
@@ -269,7 +270,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "RTJSrc";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
@@ -290,7 +291,7 @@ describe("Transforms end-to-end", () => {
       static override readonly category = "Test";
       static override readonly title = "RTJTgt";
       static override readonly description = "";
-      static override readonly cacheable = false;
+      static override cachePolicy: CachePolicy = { kind: "none" };
       static override inputSchema(): DataPortSchema {
         return {
           type: "object",

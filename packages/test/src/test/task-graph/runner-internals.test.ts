@@ -15,6 +15,7 @@ import {
   TaskGraphRunner,
   TaskRegistry,
   TaskStatus,
+  type CachePolicy,
 } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -26,7 +27,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 class RunnerInternalsSourceTask extends Task<{ value: string }, { value: string }> {
   public static override readonly type = "RunnerInternals_Source";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override readonly title = "Source";
   public static override readonly description = "Source";
   public static override inputSchema(): DataPortSchema {
@@ -49,7 +50,7 @@ class RunnerInternalsSourceTask extends Task<{ value: string }, { value: string 
 class RunnerInternalsSinkTask extends Task<{ value: string }, { result: string }> {
   public static override readonly type = "RunnerInternals_Sink";
   public static override readonly category = "Test";
-  public static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override readonly title = "Sink";
   public static override readonly description = "Sink";
   public static override inputSchema(): DataPortSchema {

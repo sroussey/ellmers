@@ -14,6 +14,7 @@ import {
 } from "@workglow/task-graph";
 import { DataPortSchema, FromSchema } from "@workglow/util/schema";
 import { BrowserSessionRegistry } from "../BrowserSessionRegistry";
+import type { CachePolicy } from "@workglow/task-graph";
 
 const browserUploadTaskConfigSchema = {
   type: "object",
@@ -77,7 +78,7 @@ export class BrowserUploadTask extends Task<
   public static override title = "Browser Upload";
   public static override description =
     "Uploads one or more files to a file input element in the browser";
-  static override readonly cacheable = false;
+  public static override cachePolicy: CachePolicy = { kind: "none" };
 
   public static override entitlements(): TaskEntitlements {
     return {

@@ -4,7 +4,7 @@
  * All Rights Reserved
  */
 
-import type { IExecuteContext, StreamEvent, StreamFinish } from "@workglow/task-graph";
+import type { CachePolicy, IExecuteContext, StreamEvent, StreamFinish } from "@workglow/task-graph";
 import { CreateWorkflow, Task, TaskConfig, Workflow } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 
@@ -23,7 +23,7 @@ export class OutputTask extends Task<OutputTaskInput, OutputTaskOutput, OutputTa
   static override title = "Output";
   static override description = "Ends the workflow";
   static override hasDynamicSchemas = true;
-  static override cacheable = false;
+  static override cachePolicy: CachePolicy = { kind: "none" };
   static override isGraphOutput = true;
   static override isPassthrough = true;
 
