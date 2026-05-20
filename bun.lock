@@ -685,11 +685,11 @@
     },
   },
   "trustedDependencies": [
-    "protobufjs",
+    "node-llama-cpp",
     "better-sqlite3",
+    "protobufjs",
     "sharp",
     "onnxruntime-node",
-    "node-llama-cpp",
   ],
   "catalog": {
     "@anthropic-ai/sdk": "^0.97.1",

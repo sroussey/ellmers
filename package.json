@@ -86,7 +86,7 @@
     "@sqliteai/sqlite-vector-win32-x86_64": "^0.9.95"
   },
   "devDependencies": {
-    "@sqliteai/sqlite-vector": "^0.9.95",
+    "@sqliteai/sqlite-vector": "catalog:",
     "@types/bun": "^1.3.14",
     "@types/node": "^24.12.4",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
