@@ -262,10 +262,20 @@ export function postgresQueueMigrations(
     {
       component,
       version: 4,
-      description: "Add partial index for findActiveByFingerprint O(1) lookup",
+      description:
+        "Add UNIQUE partial index for findActiveByFingerprint O(1) lookup + fingerprint dedup at the DB layer (H2)",
       async up(db: Pool) {
+        // H2: UNIQUE so concurrent send() calls with the same fingerprint can
+        // race to INSERT and have the DB resolve the winner via a 23505 unique-
+        // violation. The cloud-queue adapters used to optimistically check
+        // findActiveByFingerprint then insert, leaving a TOCTOU window. With
+        // UNIQUE in place, the insert path can catch the violation and
+        // re-resolve via findActiveByFingerprint. Edited in place rather than
+        // a v5 because PR #516 is still unmerged at the time of this fixup,
+        // so no consumer has applied v4 yet — confirmed via PR state at the
+        // top of the worktree session.
         await db.query(`
-          CREATE INDEX IF NOT EXISTS idx_${tableName}_fingerprint_active
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_${tableName}_fingerprint_active
             ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
             WHERE status IN ('PENDING','PROCESSING')
         `);

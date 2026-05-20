@@ -329,8 +329,12 @@ export function runGenericJobQueueTests(
     });
 
     it("should clear all jobs in the queue", async () => {
+      // H2: a UNIQUE partial index on (queue, fingerprint) WHERE status IN
+      // ('PENDING','PROCESSING') now dedupes identical-input sends. Use two
+      // distinct inputs (and hence distinct auto-fingerprints) so the test
+      // exercises deleteAll on multiple rows.
       await client.send({ taskType: "task1", data: "input1" });
-      await client.send({ taskType: "task1", data: "input1" });
+      await client.send({ taskType: "task1", data: "input2" });
       expect(await client.size()).toBe(2);
       await storage.deleteAll();
       expect(await client.size()).toBe(0);

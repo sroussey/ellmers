@@ -169,7 +169,33 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       job.progress_message,
       job.progress_details ? JSON.stringify(job.progress_details) : null,
     ];
-    const result = await this.db.query(sql, params);
+    let result: { rows: Array<{ id: unknown }> } | undefined;
+    try {
+      result = (await this.db.query(sql, params)) as { rows: Array<{ id: unknown }> } | undefined;
+    } catch (err) {
+      // H2: race-safety for fingerprint dedup. With the v4 UNIQUE partial
+      // index in place, two concurrent inserts for the same (queue,
+      // fingerprint) where one row is PENDING/PROCESSING raise a 23505
+      // unique_violation. We resolve the race by returning the winner's id
+      // (the row that's already PENDING/PROCESSING). Any other error
+      // re-throws.
+      const e = err as { code?: string; constraint?: string; message?: string };
+      const isUniqueViolation = e?.code === "23505";
+      const involvesFingerprint =
+        typeof e?.constraint === "string"
+          ? e.constraint.includes("fingerprint")
+          : typeof e?.message === "string"
+            ? e.message.includes("fingerprint")
+            : false;
+      if (isUniqueViolation && involvesFingerprint && job.fingerprint) {
+        const winner = await this.findActiveByFingerprint(job.fingerprint, this.queueName);
+        if (winner?.id != null) {
+          job.id = winner.id;
+          return winner.id;
+        }
+      }
+      throw err;
+    }
 
     if (!result) throw new Error("Failed to add to queue");
     job.id = result.rows[0].id;
@@ -429,6 +455,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     // Build a dynamic SET clause covering only the fields the caller supplied —
@@ -461,6 +488,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
         fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
       );
     }
+    if ("visible_at" in fields) push("visible_at", fields.visible_at ?? null);
     if (sets.length === 0) return; // nothing to write
     const idParam = nextParam;
     nextParam += 1;

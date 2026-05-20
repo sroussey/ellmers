@@ -151,20 +151,44 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
 
     const stmt = this.db.prepare<unknown[], { id: string }>(AddQuery);
 
-    const result = stmt.get(
-      ...prefixParamValues,
-      job.queue,
-      job.fingerprint,
-      JSON.stringify(job.input),
-      job.visible_at,
-      job.deadline_at ?? null,
-      job.max_attempts!,
-      job.job_run_id,
-      job.progress,
-      job.progress_message,
-      job.progress_details ? JSON.stringify(job.progress_details) : null,
-      job.created_at
-    ) as { id: string } | undefined;
+    let result: { id: string } | undefined;
+    try {
+      result = stmt.get(
+        ...prefixParamValues,
+        job.queue,
+        job.fingerprint,
+        JSON.stringify(job.input),
+        job.visible_at,
+        job.deadline_at ?? null,
+        job.max_attempts!,
+        job.job_run_id,
+        job.progress,
+        job.progress_message,
+        job.progress_details ? JSON.stringify(job.progress_details) : null,
+        job.created_at
+      ) as { id: string } | undefined;
+    } catch (err) {
+      // H2: race-safety for fingerprint dedup. With the v4 UNIQUE partial
+      // index in place, two concurrent inserts for the same (queue,
+      // fingerprint) where one row is PENDING/PROCESSING raise a
+      // SQLITE_CONSTRAINT_UNIQUE error. We resolve the race by returning the
+      // winner's id (the row that's already PENDING/PROCESSING). The error
+      // shape differs between better-sqlite3 (`code`) and node:sqlite
+      // (also `code`) so we check both string forms defensively.
+      const e = err as { code?: string; message?: string };
+      const isUniqueViolation =
+        e?.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+        (typeof e?.message === "string" && /UNIQUE constraint failed/i.test(e.message));
+      const involvesFingerprint = typeof e?.message === "string" && /fingerprint/i.test(e.message);
+      if (isUniqueViolation && involvesFingerprint && job.fingerprint) {
+        const winner = await this.findActiveByFingerprint(job.fingerprint, this.queueName);
+        if (winner?.id != null) {
+          job.id = winner.id as string;
+          return winner.id;
+        }
+      }
+      throw err;
+    }
 
     job.id = result?.id;
     return result?.id;
@@ -553,6 +577,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     const sets: string[] = [];
@@ -579,6 +604,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
         fields.progress_details != null ? JSON.stringify(fields.progress_details) : null
       );
     }
+    if ("visible_at" in fields) push("visible_at", fields.visible_at ?? null);
     if (sets.length === 0) return;
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();

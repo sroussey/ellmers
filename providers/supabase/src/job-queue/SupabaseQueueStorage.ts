@@ -248,7 +248,10 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
-      `CREATE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
+      // H2: UNIQUE so concurrent inserts for the same active (queue,
+      // fingerprint) race to the DB and resolve via 23505 unique_violation.
+      // Supabase shares this DDL pattern with the Postgres provider.
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
     ];
 
     for (const indexSql of indexes) {
@@ -300,7 +303,26 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       .select("id")
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // H2: race-safety for fingerprint dedup. Supabase surfaces Postgres
+      // unique_violation as `code === "23505"` on the PostgREST error shape.
+      // When the partial UNIQUE index on (queue, fingerprint) WHERE status
+      // IN ('PENDING','PROCESSING') fires, resolve the race by returning
+      // the winner's id instead of bubbling the error up.
+      const e = error as { code?: string; details?: string; message?: string };
+      const isUniqueViolation = e?.code === "23505";
+      const involvesFingerprint =
+        (typeof e?.details === "string" && /fingerprint/i.test(e.details)) ||
+        (typeof e?.message === "string" && /fingerprint/i.test(e.message));
+      if (isUniqueViolation && involvesFingerprint && job.fingerprint) {
+        const winner = await this.findActiveByFingerprint(job.fingerprint, this.queueName);
+        if (winner?.id != null) {
+          job.id = winner.id;
+          return winner.id;
+        }
+      }
+      throw error;
+    }
     if (!data) throw new Error("Failed to add to queue");
 
     job.id = data.id;
@@ -673,6 +695,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       progress?: number;
       progress_message?: string;
       progress_details?: Record<string, any> | null;
+      visible_at?: string | null;
     }
   ): Promise<void> {
     // Partial update — Supabase's PostgREST `update()` only writes the
@@ -690,6 +713,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     if ("progress" in fields) patch.progress = fields.progress ?? 0;
     if ("progress_message" in fields) patch.progress_message = fields.progress_message ?? "";
     if ("progress_details" in fields) patch.progress_details = fields.progress_details ?? null;
+    if ("visible_at" in fields) patch.visible_at = fields.visible_at ?? null;
     if (Object.keys(patch).length === 0) return;
     let query = this.client
       .from(this.tableName)
