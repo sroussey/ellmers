@@ -7,7 +7,11 @@
 import type { ITabularStorage } from "@workglow/storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { itExpectFail } from "../../itExpectFail";
-import type { TabularStorageContractOpts, VectorItemPrimaryKeyNames, VectorItemSchema } from "../types";
+import type {
+  TabularStorageContractOpts,
+  VectorItemPrimaryKeyNames,
+  VectorItemSchema,
+} from "../types";
 
 export function vectorColumnFormatBlock(opts: TabularStorageContractOpts): void {
   const expectFails = new Set(opts.expectedFailures ?? []);

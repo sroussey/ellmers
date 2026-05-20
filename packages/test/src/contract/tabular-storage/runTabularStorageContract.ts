@@ -20,5 +20,5 @@ export function runTabularStorageContract(opts: TabularStorageContractOpts): voi
   });
 }
 
-export type { TabularStorageContractAssertion, TabularStorageContractOpts } from "./types";
 export { VectorItemPrimaryKeyNames, VectorItemSchema } from "./types";
+export type { TabularStorageContractAssertion, TabularStorageContractOpts } from "./types";
