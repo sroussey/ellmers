@@ -30,16 +30,6 @@ export class CacheJanitor {
   }
 
   async sweepStaleRunPrivate(olderThanMs: number): Promise<void> {
-    const anyRepo = this.privateBacking as unknown as {
-      clearOlderThanWithTaskTypePrefix?: (prefix: string, olderThanMs: number) => Promise<void>;
-    };
-    if (typeof anyRepo.clearOlderThanWithTaskTypePrefix === "function") {
-      await anyRepo.clearOlderThanWithTaskTypePrefix("__run:", olderThanMs);
-      return;
-    }
-    throw new Error(
-      "CacheJanitor.sweepStaleRunPrivate: backing repository does not implement " +
-        "clearOlderThanWithTaskTypePrefix(prefix, olderThanMs). Use a TaskOutputTabularRepository-derived store."
-    );
+    await this.privateBacking.clearOlderThanWithTaskTypePrefix("__run:", olderThanMs);
   }
 }

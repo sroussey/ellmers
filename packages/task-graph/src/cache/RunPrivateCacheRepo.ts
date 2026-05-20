@@ -50,6 +50,11 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     return this.backing.getOutput(this.ns(taskType), inputs);
   }
 
+  /**
+   * Override of `TaskOutputRepository.clear()` that only deletes entries
+   * namespaced under THIS wrapper's `runId`. Entries from other runs are not
+   * touched. Use the backing repository directly if you need a global clear.
+   */
   public async clear(): Promise<void> {
     await this.clearRun();
   }
@@ -60,17 +65,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * Requires the backing repository to implement `deleteByTaskTypePrefix`.
    */
   public async clearRun(): Promise<void> {
-    const anyBacking = this.backing as unknown as {
-      deleteByTaskTypePrefix?: (prefix: string) => Promise<void>;
-    };
-    if (typeof anyBacking.deleteByTaskTypePrefix === "function") {
-      await anyBacking.deleteByTaskTypePrefix(`__run:${this.runId}::`);
-      return;
-    }
-    throw new Error(
-      "RunPrivateCacheRepo.clearRun: backing repository does not implement " +
-        "deleteByTaskTypePrefix(prefix). Add it to the backing store or use a different repo."
-    );
+    await this.backing.deleteByTaskTypePrefix(`__run:${this.runId}::`);
   }
 
   public async size(): Promise<number> {
