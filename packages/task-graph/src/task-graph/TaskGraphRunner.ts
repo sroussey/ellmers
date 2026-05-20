@@ -16,12 +16,8 @@ import {
   SpanStatusCode,
   uuid4,
 } from "@workglow/util";
+import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
-import {
-  CACHE_REGISTRY,
-  DefaultCacheRegistry,
-  RunPrivateCacheRepo,
-} from "../cache";
 import { ENTITLEMENT_ENFORCER, formatEntitlementDenial } from "../task/EntitlementEnforcer";
 import { ITask } from "../task/ITask";
 import { isTaskStreamable } from "../task/StreamTypes";
@@ -601,6 +597,37 @@ export class TaskGraphRunner {
   }
 
   /**
+   * Conservative two-tier detector that decides whether a graph may route any
+   * task to the `private` cache slot. Used by the `runId`-required guard in
+   * {@link handleStart}.
+   *
+   * 1. Read the static `cachePolicy` off the task's constructor. If `kind` is
+   *    "private", the task is definitely private.
+   * 2. Otherwise, if the task overrides `getCachePolicy` (i.e. its prototype's
+   *    method is not `Task.prototype.getCachePolicy`), conservatively treat it
+   *    as potentially private — the override may decide based on inputs that
+   *    are not available at graph-start time.
+   *
+   * Note: probing `getCachePolicy({} as any)` is unsafe because input-dependent
+   * overrides can throw or return the wrong branch when given empty inputs.
+   */
+  public static graphUsesPrivatePolicy(graph: TaskGraph): boolean {
+    return graph.getTasks().some((t) => {
+      const ctor = t.constructor as typeof Task;
+      if (ctor.cachePolicy?.kind === "private") return true;
+      // Override detection: prototype method differs from Task.prototype's.
+      const proto = ctor.prototype as { getCachePolicy?: unknown };
+      if (
+        typeof proto.getCachePolicy === "function" &&
+        proto.getCachePolicy !== Task.prototype.getCachePolicy
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /**
    * Handles the start of task graph execution
    * @param parentSignal Optional abort signal from parent
    */
@@ -636,6 +663,19 @@ export class TaskGraphRunner {
           getLogger().warn(
             "TaskGraphRunner: private cache is non-durable — restart-survival will not work. " +
               "Configure a durable storage backend for the CacheRegistry 'private' slot."
+          );
+        }
+      }
+
+      // Strict guard: if the graph contains a private-policy task but no runId
+      // was provided, we cannot namespace writes — they would land directly in
+      // the shared private repo and collide across runs. TaskGraphRunner is the
+      // documented owner of runId, so this is a configuration error.
+      if (!this.runId && checkRegistry.private) {
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          throw new TaskConfigurationError(
+            "TaskGraphRunner: graph contains a private-policy task but no runId was provided. " +
+              "Provide `runId` in TaskGraphRunConfig so private cache entries can be namespaced."
           );
         }
       }
