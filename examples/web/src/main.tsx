@@ -46,10 +46,10 @@ console.log(
 console.log(
   `  %cworkflow = new Workflow();
   workflow.%creset%c();
-  workflow.%ctextRewriter%c({%cmodel%c: %c'onnx:Xenova/LaMini-Flan-T5-783M:q8'%c, %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %cprompt%c: %c'Rewrite the following text in reverse:'%c });
+  workflow.%ctextEmbedding%c({%cmodel%c: %c'onnx:Xenova/all-MiniLM-L6-v2:fp16'%c, %ctext%c: %c'The quick brown fox jumps over the lazy dog.'%c, %c%c%c%c });
   workflow.%crename%c(%c'*'%c, %c'console'%c);
   workflow.%cdebugLog%c({ %clevel%c: %c'info'%c });
-  
+
   console.log(JSON.stringify(workflow.toDependencyJSON({ withBoundaryNodes: false }),null,2));
   `,
   `color: ${grey}; font-weight: normal;`,

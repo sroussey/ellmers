@@ -186,9 +186,15 @@ export class AiTask<
       // accumulator (e.g. `ACCUMULATOR_NO_FINISH`).
       const cause = providerError ?? e;
       const matErr = e as { code?: string; message?: string; lastEventType?: string };
+      const providerMsg =
+        providerError instanceof Error
+          ? providerError.message
+          : providerError !== undefined
+            ? String(providerError)
+            : undefined;
       const wrapped = new TaskError(
         providerError !== undefined
-          ? `AiTask: provider failed before stream completion (${matErr?.message ?? String(e)})`
+          ? `AiTask: provider failed before stream completion (${providerMsg})`
           : (matErr?.message ?? String(e))
       ) as TaskError & { cause?: unknown; code?: string; lastEventType?: string };
       wrapped.cause = cause;

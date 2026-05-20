@@ -4,9 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { registerAiTasks } from "@workglow/ai";
 import { registerHuggingFaceTransformers } from "@workglow/huggingface-transformers/ai";
-import { getTaskQueueRegistry, JsonTaskItem, TaskGraph, Workflow } from "@workglow/task-graph";
-import { JsonTask } from "@workglow/tasks";
+import {
+  getTaskQueueRegistry,
+  JsonTaskItem,
+  registerBaseTasks,
+  TaskGraph,
+  Workflow,
+} from "@workglow/task-graph";
+import { JsonTask, registerCommonTasks } from "@workglow/tasks";
 import { registerTensorFlowMediaPipe } from "@workglow/tf-mediapipe/ai";
 import { ReactFlowProvider } from "@xyflow/react";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
@@ -20,6 +27,15 @@ import { GraphStoreStatus } from "./status/GraphStoreStatus";
 import { OutputRepositoryStatus } from "./status/OutputRepositoryStatus";
 import { QueuesStatus } from "./status/QueueStatus";
 import { IndexedDbTaskGraphRepository, IndexedDbTaskOutputRepository } from "./storage";
+
+// Task registrations must run before this module's top-level await loads the
+// saved graph from IndexedDB — `createGraphFromGraphJSON` looks task classes
+// up in `TaskRegistry` by string name, and the call in `main.tsx` runs *after*
+// this module finishes evaluating (static imports with TLA evaluate fully
+// before the importer's body).
+registerBaseTasks();
+registerCommonTasks();
+registerAiTasks();
 
 const JsonEditor = lazy(async () => {
   const { JsonEditor } = await import("./editor/JsonEditor");
@@ -43,44 +59,66 @@ await queueRegistry.clearQueues();
 await queueRegistry.startQueues();
 const taskOutputCache = new IndexedDbTaskOutputRepository();
 const taskGraphRepo = new IndexedDbTaskGraphRepository();
+
+// const cacheServices = globalServiceRegistry;
+// cacheServices.registerInstance(
+//   CACHE_REGISTRY,
+//   new DefaultCacheRegistry({ deterministic: taskOutputCache })
+// );
+
 const resetGraph = () => {
   const workflow = (window as any)["workflow"] as Workflow;
+  // Demo flow: embed a sentence + classify its sentiment.
+  //
+  // We avoid seq2seq architectures (T5, m2m100) on purpose — the
+  // `onnxruntime-web@1.26.0-dev` build that ships with
+  // `@huggingface/transformers@4.2.0` has multiple optimizer-pass crashes
+  // (MatMulNBits Q8 fusion, SimplifiedLayerNormFusion + fp16 cast insertion)
+  // that fire reliably on encoder-decoder layer-norm patterns. Encoder-only
+  // BERT-family models go through a different optimization path and load
+  // cleanly.
   workflow
     .reset()
     .downloadModel({
       model: {
-        tasks: ["TextGenerationTask", "TextRewriterTask"],
+        model_id: "onnx:Xenova/all-MiniLM-L6-v2:fp16",
+        // `capabilities` is what AiTask.gateOrThrow checks against the task's
+        // `requires`. The `tasks: [...]` field used by older versions of this
+        // example is just metadata — it is not what gets checked at runtime.
+        capabilities: ["text.embedding"],
         provider: "HF_TRANSFORMERS_ONNX",
         provider_config: {
-          pipeline: "text2text-generation",
-          model_path: "Xenova/LaMini-Flan-T5-783M",
-          dtype: "q8",
-          device: "wasm",
+          pipeline: "feature-extraction",
+          model_path: "Xenova/all-MiniLM-L6-v2",
+          native_dimensions: 384,
+          dtype: "fp16",
+          device: "webgpu",
         },
       },
     })
-    .textRewriter({
+    .textEmbedding({
       text: "The quick brown fox jumps over the lazy dog.",
-      prompt: "Rewrite the following text in reverse:",
     })
     .downloadModel({
       model: {
-        tasks: ["TextTranslationTask"],
+        model_id: "onnx:Xenova/distilbert-sst2:fp16",
+        capabilities: ["text.classification"],
         provider: "HF_TRANSFORMERS_ONNX",
         provider_config: {
-          pipeline: "translation",
-          model_path: "Xenova/m2m100_418M",
-          language_style: "ISO-639",
-          dtype: "q8",
+          pipeline: "text-classification",
+          model_path: "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
+          dtype: "fp16",
+          device: "webgpu",
         },
       },
     })
-    .textTranslation({
-      source_lang: "en",
-      target_lang: "es",
+    .textClassification({
+      text: "I love this AI pipeline library — building workflows is really enjoyable.",
     })
-    .rename("*", "console")
+    .rename("*", "classifications")
+    .rename("*", "embedding", { index: -3 })
     .debugLog({ log_level: "info" });
+
   taskGraphRepo.saveTaskGraph("default", workflow.graph);
 };
 
