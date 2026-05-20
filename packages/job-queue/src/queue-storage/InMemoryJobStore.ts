@@ -5,10 +5,10 @@
  */
 
 import type { IJobStore, JobRecord } from "./IJobStore";
-import type { MessageId } from "./IMessageQueue";
+import type { MessageId, SendOptions } from "./IMessageQueue";
 import type { PendingInMemoryWrite } from "./InMemoryMessageQueue";
 import { InMemoryQueueStorage } from "./InMemoryQueueStorage";
-import type { JobStatus } from "./IQueueStorage";
+import type { JobStatus, JobStorageFormat } from "./IQueueStorage";
 
 export class InMemoryJobStore<Input, Output> implements IJobStore<Input, Output> {
   /** @internal — shared with the paired message queue */
@@ -93,5 +93,50 @@ export class InMemoryJobStore<Input, Output> implements IJobStore<Input, Output>
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
     await this.core.saveStatus(id, status);
+  }
+
+  async create(body: JobStorageFormat<Input, Output>, opts: SendOptions): Promise<MessageId> {
+    const enriched = {
+      ...body,
+      fingerprint: opts.fingerprint ?? body.fingerprint,
+      job_run_id: opts.jobRunId ?? body.job_run_id,
+      max_attempts: opts.maxAttempts ?? body.max_attempts,
+      deadline_at:
+        opts.timeoutSeconds != null
+          ? new Date(Date.now() + opts.timeoutSeconds * 1000).toISOString()
+          : body.deadline_at,
+    } as JobStorageFormat<Input, Output>;
+    return this.core.add(enriched);
+  }
+
+  async findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobRecord<Input, Output> | undefined> {
+    if (queueName !== this.core.queueName) return undefined;
+    return this.core.findActiveByFingerprint(fingerprint);
+  }
+
+  async getMany(
+    ids: readonly MessageId[]
+  ): Promise<readonly (JobRecord<Input, Output> | undefined)[]> {
+    return this.core.getMany(ids);
+  }
+
+  async completeWithResult(id: MessageId, result: Output): Promise<void> {
+    this.pending.delete(id);
+    await this.core.completeWithResult(id, result);
+  }
+
+  async failWithError(
+    id: MessageId,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    this.pending.delete(id);
+    await this.core.failWithError(id, opts);
   }
 }

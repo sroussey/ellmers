@@ -120,7 +120,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     const now = new Date().toISOString();
     job.job_run_id = job.job_run_id ?? uuid4();
     job.queue = this.queueName;
-    job.fingerprint = await makeFingerprint(job.input);
+    job.fingerprint = job.fingerprint ?? (await makeFingerprint(job.input));
     job.status = JobStatus.PENDING;
     job.progress = 0;
     job.progress_message = "";
@@ -662,6 +662,144 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
         WHERE id = ? AND queue = ?${prefixConditions}`;
     const stmt = this.db.prepare(DeleteQuery);
     stmt.run(String(jobId), this.queueName, ...prefixParams);
+  }
+
+  /**
+   * Finds the most recent active (PENDING or PROCESSING) job with the given fingerprint in this queue.
+   * Uses the partial index idx_<table>_fingerprint_active for O(1) lookup.
+   */
+  public async findActiveByFingerprint(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobStorageFormat<Input, Output> | undefined> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+
+    const stmt = this.db.prepare<
+      unknown[],
+      JobStorageFormat<Input, Output> & {
+        input: string;
+        output: string | null;
+        progress_details: string | null;
+      }
+    >(
+      `SELECT * FROM ${this.tableName}
+        WHERE fingerprint = ? AND queue = ?
+          AND status IN ('PENDING','PROCESSING')${prefixConditions}
+        ORDER BY created_at DESC
+        LIMIT 1`
+    );
+    const result = stmt.get(fingerprint, queueName, ...prefixParams);
+    if (!result) return undefined;
+
+    if (result.input) result.input = JSON.parse(result.input);
+    if (result.output) result.output = JSON.parse(result.output);
+    if (result.progress_details) result.progress_details = JSON.parse(result.progress_details);
+    return result;
+  }
+
+  /**
+   * Retrieves multiple jobs by their IDs in a single query.
+   * Returns results in the same order as the input ids array, with undefined for missing ids.
+   */
+  public async getMany(
+    ids: readonly unknown[]
+  ): Promise<Array<JobStorageFormat<Input, Output> | undefined>> {
+    if (ids.length === 0) return [];
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+
+    const placeholders = ids.map(() => "?").join(", ");
+    const stmt = this.db.prepare<
+      unknown[],
+      JobStorageFormat<Input, Output> & {
+        input: string;
+        output: string | null;
+        progress_details: string | null;
+      }
+    >(
+      `SELECT * FROM ${this.tableName}
+        WHERE id IN (${placeholders}) AND queue = ?${prefixConditions}`
+    );
+    const rows = stmt.all(...ids.map(String), this.queueName, ...prefixParams);
+    const map = new Map<string, JobStorageFormat<Input, Output>>();
+    for (const row of rows as (typeof rows)[number][]) {
+      if (row.input) (row as any).input = JSON.parse(row.input as unknown as string);
+      if (row.output) (row as any).output = JSON.parse(row.output as unknown as string);
+      if (row.progress_details)
+        (row as any).progress_details = JSON.parse(row.progress_details as unknown as string);
+      map.set(String(row.id), row as unknown as JobStorageFormat<Input, Output>);
+    }
+    return ids.map((id) => map.get(String(id)));
+  }
+
+  /**
+   * Atomically writes output and sets status=COMPLETED.
+   */
+  public async completeWithResult(id: unknown, result: Output): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName}
+          SET output = ?,
+              status = 'COMPLETED',
+              progress = 100,
+              progress_message = '',
+              progress_details = NULL,
+              completed_at = ?
+        WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(
+      result != null ? JSON.stringify(result) : null,
+      now,
+      String(id),
+      this.queueName,
+      ...prefixParams
+    );
+  }
+
+  /**
+   * Atomically writes error fields and sets status=FAILED.
+   * COALESCE-equivalent: only overwrites error/error_code when opts provides them.
+   */
+  public async failWithError(
+    id: unknown,
+    opts: {
+      readonly error?: string | null;
+      readonly errorCode?: string | null;
+      readonly abortRequested?: boolean;
+    }
+  ): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const now = new Date().toISOString();
+
+    // Build SET clause dynamically: only overwrite error/error_code when provided
+    const sets: string[] = ["status = 'FAILED'", "completed_at = COALESCE(completed_at, ?)"];
+    const params: unknown[] = [now];
+
+    if ("error" in opts) {
+      sets.push("error = COALESCE(?, error)");
+      params.push(opts.error ?? null);
+    }
+    if ("errorCode" in opts) {
+      sets.push("error_code = COALESCE(?, error_code)");
+      params.push(opts.errorCode ?? null);
+    }
+    if (opts.abortRequested === true) {
+      sets.push("abort_requested_at = COALESCE(abort_requested_at, ?)");
+      params.push(now);
+    }
+
+    params.push(String(id), this.queueName, ...prefixParams);
+
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName}
+          SET ${sets.join(", ")}
+        WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(...(params as never[]));
   }
 
   /**

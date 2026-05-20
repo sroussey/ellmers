@@ -116,5 +116,17 @@ export function sqliteQueueMigrations(
         `);
       },
     },
+    {
+      component,
+      version: 4,
+      description: "Add partial index for findActiveByFingerprint O(1) lookup",
+      up(db: Sqlite.Database) {
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_${tableName}_fingerprint_active
+            ON ${tableName}(${prefixIndexPrefix}queue, fingerprint)
+            WHERE status IN ('PENDING','PROCESSING');
+        `);
+      },
+    },
   ];
 }
