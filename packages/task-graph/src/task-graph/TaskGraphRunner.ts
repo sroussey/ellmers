@@ -597,9 +597,18 @@ export class TaskGraphRunner {
   }
 
   /**
+   * Tracks private cache repos that have already received the durability warning,
+   * keyed by the repo instance. WeakSet so a freshly constructed repo that is no
+   * longer referenced is automatically eligible for re-warning if it shows up
+   * again later. Static because routing is repo-instance scoped, not runner
+   * scoped — a process can have one durable repo and many `TaskGraphRunner`s.
+   */
+  private static __durabilityWarnedRepos = new WeakSet<object>();
+
+  /**
    * Conservative two-tier detector that decides whether a graph may route any
-   * task to the `private` cache slot. Used by the `runId`-required guard in
-   * {@link handleStart}.
+   * task to the `private` cache slot. Used by both the durability warning and
+   * the `runId`-required guard in {@link handleStart}.
    *
    * 1. Read the static `cachePolicy` off the task's constructor. If `kind` is
    *    "private", the task is definitely private.
@@ -645,25 +654,25 @@ export class TaskGraphRunner {
     // Store run identifier for per-task propagation.
     this.runId = config?.runId;
 
-    // Warn once per run when a non-durable private cache slot is registered and
-    // at least one task in the graph routes to the private slot. This catches the
+    // Warn once per non-durable private repo (across runs) when at least one
+    // task in the graph routes to the private slot. This catches the
     // dev-mode-in-production misconfiguration where an in-memory store is wired
-    // for convenience but restart-survival is expected.
+    // for convenience but restart-survival is expected. Rate-limited via a
+    // WeakSet keyed by the repo instance so repeated `runGraph` calls against
+    // the same registry do not flood the log.
     if (this.registry.has(CACHE_REGISTRY)) {
       const checkRegistry = this.registry.get(CACHE_REGISTRY);
       if (checkRegistry.private && !checkRegistry.private.isDurable()) {
-        const usesPrivate = this.graph.getTasks().some((t) => {
-          try {
-            return (t as Task).getCachePolicy({} as any).kind === "private";
-          } catch {
-            return false;
+        if (TaskGraphRunner.graphUsesPrivatePolicy(this.graph)) {
+          const repo = checkRegistry.private as object;
+          if (!TaskGraphRunner.__durabilityWarnedRepos.has(repo)) {
+            TaskGraphRunner.__durabilityWarnedRepos.add(repo);
+            getLogger().warn(
+              "TaskGraphRunner: private cache repo may be used but is non-durable — " +
+                "restart-survival will not work. Ensure the CacheRegistry 'private' " +
+                "slot is backed by a durable storage backend."
+            );
           }
-        });
-        if (usesPrivate) {
-          getLogger().warn(
-            "TaskGraphRunner: private cache is non-durable — restart-survival will not work. " +
-              "Configure a durable storage backend for the CacheRegistry 'private' slot."
-          );
         }
       }
 
