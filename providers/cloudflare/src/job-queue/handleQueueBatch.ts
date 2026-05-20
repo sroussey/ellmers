@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IClaim, IJobStore, JobStorageFormat, MessageId } from "@workglow/job-queue";
+import {
+  type IClaim,
+  type IJobStore,
+  JobStatus,
+  type JobStorageFormat,
+  type MessageId,
+} from "@workglow/job-queue";
+import { getLogger } from "@workglow/util";
 import { CloudflareClaim } from "./CloudflareClaim";
 import type { CloudMessageBody } from "./types";
 
@@ -41,9 +48,26 @@ export async function handleQueueBatch<Input, Output>(
     const message = messages[i];
     if (!record) {
       message.ack();
-      // eslint-disable-next-line no-console
-      console.warn(
+      getLogger().warn(
         `[handleQueueBatch] orphan message id=${message.body.id} acked (no JobStore record found)`
+      );
+      continue;
+    }
+    // C2: Cloudflare Queues is at-least-once, so a row that's already in a
+    // terminal status (the original handler ran and ack'd, but the runtime
+    // chose to redeliver anyway because of an at-least-once edge case or a
+    // delayed ack visibility issue) must not flow into the worker — if it
+    // did, validateJobState would throw PermanentJobError, the non-retryable
+    // branch would route to failJob → claim.fail → failWithError, overwriting
+    // the terminal status. ack and skip at the dispatch boundary instead.
+    if (
+      record.status === JobStatus.COMPLETED ||
+      record.status === JobStatus.FAILED ||
+      record.status === JobStatus.DISABLED
+    ) {
+      message.ack();
+      getLogger().warn(
+        `[handleQueueBatch] dropping terminal-status redelivery id=${message.body.id} status=${record.status}`
       );
       continue;
     }
