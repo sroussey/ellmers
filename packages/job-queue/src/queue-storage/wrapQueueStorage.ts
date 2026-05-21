@@ -69,8 +69,7 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
     // do not fall back to current — that's the prior attempt's value and finalize() must overwrite it
-    const output =
-      result !== undefined ? result : buf?.output !== undefined ? buf.output : null;
+    const output = result !== undefined ? result : buf?.output !== undefined ? buf.output : null;
     await this.storage.finalize(this.id, {
       // `output` cast — finalize is typed against Output but receives the
       // result the worker passed in; the queue body's Output and the claim's
@@ -342,23 +341,25 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     }
 
     // Fallback for backends without a native implementation (in-memory,
-    // IndexedDB): page through PENDING then PROCESSING with a hard cap. The
-    // wrapped storage is already scoped to a single queue, so any row found
-    // here is in "this" queue — the queueName parameter is accepted for
-    // interface compatibility but not used for filtering.
+    // IndexedDB): single bounded peek per status, up to MAX_FINGERPRINT_SCAN
+    // total rows across PENDING + PROCESSING. The actual cap is the minimum
+    // of MAX_FINGERPRINT_SCAN and whatever the underlying peek() impl
+    // chooses to cap `num` at internally. We rely on MAX_FINGERPRINT_SCAN as
+    // a hard ceiling and surface a one-shot warning when we exhaust it
+    // without finding a match. The wrapped storage is already scoped to a
+    // single queue, so any row found here is in "this" queue — the
+    // queueName parameter is accepted for interface compatibility but not
+    // used for filtering.
     let scanned = 0;
-    const pageSize = 1000;
     for (const status of ["PENDING", "PROCESSING"] as const) {
       const remaining = MAX_FINGERPRINT_SCAN - scanned;
       if (remaining <= 0) break;
-      const rows = await this.storage.peek(status, Math.min(pageSize, remaining));
+      const rows = await this.storage.peek(status, remaining);
       for (const r of rows) {
         scanned += 1;
         if (r.fingerprint === fingerprint) return r;
         if (scanned >= MAX_FINGERPRINT_SCAN) break;
       }
-      // peek() implementations cap their `num` arg internally so we accept
-      // the bounded scan and rely on MAX_FINGERPRINT_SCAN as a hard ceiling.
     }
 
     if (scanned >= MAX_FINGERPRINT_SCAN && !__fingerprintScanExhaustedWarned) {
