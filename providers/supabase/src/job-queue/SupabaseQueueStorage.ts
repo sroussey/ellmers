@@ -223,26 +223,6 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       }
     }
 
-    // Add new columns to existing tables and rename old columns (idempotent)
-    const alterSqls = [
-      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone`,
-      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN run_after TO visible_at`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN last_ran_at TO last_attempted_at`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN run_attempts TO attempts`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN max_retries TO max_attempts`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN worker_id TO lease_owner`,
-    ];
-    for (const sql of alterSqls) {
-      const { error } = await this.client.rpc("exec_sql", { query: sql });
-      // 42703 = undefined_column: expected on re-run after a RENAME COLUMN has
-      // already applied (the old column no longer exists). All other errors
-      // (permission denied, wrong table name, etc.) are re-thrown.
-      if (error && error.code !== "42703") {
-        throw new Error(`Failed to rename column: ${error.message}`);
-      }
-    }
-
     // Create indexes with prefix columns prepended
     const indexes = [
       `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
@@ -992,6 +972,40 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
               abort_requested_at = ${abortClause},
               status = 'FAILED',
               completed_at = COALESCE(completed_at, NOW() AT TIME ZONE 'UTC')
+        WHERE id = ${numericId} AND queue = '${escapedQueueName}'${prefixConditions}`;
+
+    const { error } = await this.client.rpc("exec_sql", { query: sql });
+    if (error) throw error;
+  }
+
+  /**
+   * Atomically writes status=DISABLED, releases the lease, clears progress
+   * fields, and stamps `completed_at` (preserving an existing value via
+   * COALESCE). Does NOT write error/error_code — DISABLED is not an error
+   * transition.
+   *
+   * Implemented via `exec_sql` so the COALESCE on completed_at runs inside
+   * the same UPDATE — PostgREST `.update()` cannot reference existing column
+   * values, which would otherwise force a read-then-write and open a race
+   * window with concurrent updates. Mirrors the {@link failWithError} pattern.
+   */
+  public async markDisabled(id: unknown): Promise<void> {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) {
+      throw new Error(`Invalid job id: ${id}`);
+    }
+    const prefixConditions = this.buildPrefixWhereSql();
+    const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
+    const escapedQueueName = this.escapeSqlString(validatedQueueName);
+
+    const sql = `
+      UPDATE ${this.tableName}
+          SET status = 'DISABLED',
+              completed_at = COALESCE(completed_at, NOW() AT TIME ZONE 'UTC'),
+              lease_owner = NULL,
+              progress = 0,
+              progress_message = '',
+              progress_details = NULL
         WHERE id = ${numericId} AND queue = '${escapedQueueName}'${prefixConditions}`;
 
     const { error } = await this.client.rpc("exec_sql", { query: sql });

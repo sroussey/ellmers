@@ -13,8 +13,8 @@ import {
   type JobStorageFormat,
   type MessageId,
 } from "@workglow/job-queue";
-import type { CloudMessageBody } from "./types";
 import { persistWithRetry } from "./persistWithRetry";
+import type { CloudMessageBody } from "./types";
 
 export interface CloudflareClaimOptions<Input, Output> {
   readonly message: Message<CloudMessageBody>;
@@ -90,5 +90,15 @@ export class CloudflareClaim<Input, Output> implements IClaim<JobStorageFormat<I
     throw new Error(
       "extendLease not supported by Cloudflare Queues — run with extendLeaseWhileRunning: false and size jobs to fit within the 30s visibility window"
     );
+  }
+
+  async disable(): Promise<void> {
+    // Persist the DISABLED terminal state FIRST, ack the queue message after.
+    // If ack races a redelivery, `handleQueueBatch` drops terminal-status
+    // redeliveries — so a redundant redelivery is filtered. The reverse order
+    // would lose the disable on a transient store error: the message would
+    // be acked + gone, but the row stuck in PROCESSING with no retry path.
+    await this.jobStore.markDisabled(this.id);
+    this.message.ack();
   }
 }

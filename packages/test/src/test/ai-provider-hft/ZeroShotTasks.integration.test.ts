@@ -31,6 +31,7 @@ import {
   InMemoryQueueStorage,
   JobQueueClient,
   JobQueueServer,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import type { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { getTaskQueueRegistry, setTaskQueueRegistry } from "@workglow/task-graph";
@@ -56,17 +57,20 @@ describe("Zero-Shot Classification Tasks", () => {
         HF_TRANSFORMERS_ONNX_CPU
       );
       await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
         pollIntervalMs: 1,
       });
 
       const client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
       });
 
@@ -119,17 +123,20 @@ describe("Zero-Shot Classification Tasks", () => {
         HF_TRANSFORMERS_ONNX_CPU
       );
       await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
         pollIntervalMs: 1,
       });
 
       const client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
       });
 
@@ -177,17 +184,20 @@ describe("Zero-Shot Classification Tasks", () => {
         HF_TRANSFORMERS_ONNX_CPU
       );
       await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
         pollIntervalMs: 1,
       });
 
       const client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
       });
 
@@ -245,17 +255,20 @@ describe("Zero-Shot Classification Tasks", () => {
         HF_TRANSFORMERS_ONNX_CPU
       );
       await storage.migrate();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       const server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(AiJob as any, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
         limiter: new ConcurrencyLimiter(1),
         pollIntervalMs: 1,
       });
 
       const client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-        storage,
+        messageQueue,
+        jobStore,
         queueName: HF_TRANSFORMERS_ONNX_CPU,
       });
 

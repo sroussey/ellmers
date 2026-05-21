@@ -58,9 +58,8 @@ export interface IClaim<Body> {
   retry(opts?: { delaySeconds?: number }): Promise<void>;
   /**
    * Mark the message as failed (terminal). Error/errorCode/abortRequested
-   * are persisted atomically with the FAILED status — no separate
-   * `saveError` call beforehand. The `permanent` flag is a hint to skip
-   * back-off scheduling; storage layers may ignore it.
+   * are persisted atomically with the FAILED status. The `permanent` flag
+   * is a hint to skip back-off scheduling; storage layers may ignore it.
    */
   fail(opts?: ClaimFailOptions): Promise<void>;
   /** Extend the lease by `ms` milliseconds. */
@@ -69,9 +68,7 @@ export interface IClaim<Body> {
    * Mark the message as DISABLED (terminal). Atomic: writes status =
    * DISABLED, releases the lease, and clears progress fields in a single
    * storage write. Does NOT write error/error_code — DISABLED is not an
-   * error transition. Optional in this interface for backward
-   * compatibility with existing claim impls; every in-tree IClaim
-   * implements it.
+   * error transition.
    */
-  disable?(opts?: ClaimDisableOptions): Promise<void>;
+  disable(opts?: ClaimDisableOptions): Promise<void>;
 }

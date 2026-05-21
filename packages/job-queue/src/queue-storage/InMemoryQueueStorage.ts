@@ -517,6 +517,24 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Atomically write status=DISABLED, release the lease, clear progress
+   * fields, and stamp `completed_at` in one mutation. Does NOT write
+   * error/error_code — DISABLED is not an error transition.
+   */
+  public async markDisabled(id: unknown): Promise<void> {
+    const job = this.jobQueue.find((j) => j.id === id && this.matchesPrefixes(j));
+    const completedAt = job?.completed_at ?? new Date().toISOString();
+    await this.finalize(id, {
+      status: JobStatus.DISABLED,
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
+
+  /**
    * Atomically write error fields and set status to FAILED in one mutation.
    */
   public async failWithError(

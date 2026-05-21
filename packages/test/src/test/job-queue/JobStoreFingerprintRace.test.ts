@@ -83,8 +83,8 @@ const sqliteBackend: BackendUnderTest = {
   setup: async () => {
     const db = new Sqlite.Database(":memory:");
     const queueName = `fp-race-${uuid4()}`;
-    const { jobStore, core } = createSqliteQueue<TestInput, TestOutput>(queueName, db);
-    await core.migrate();
+    const { jobStore, messageQueue } = createSqliteQueue<TestInput, TestOutput>(queueName, db);
+    await messageQueue.migrate();
     return {
       jobStore,
       queueName,
@@ -117,19 +117,15 @@ runFingerprintRace(sqliteBackend);
 // inspects the migration object's SQL string. Confirms postgres v4 is
 // CREATE UNIQUE INDEX matching the sqlite version's shape.
 // ---------------------------------------------------------------------------
-describe("Postgres v4 fingerprint migration shape", () => {
+describe("Postgres fingerprint migration shape", () => {
   it("uses CREATE UNIQUE INDEX with PENDING/PROCESSING partial predicate", async () => {
-    // Capture SQL by feeding a fake pool to the v4 up() and recording its
-    // .query() calls. The migrations file's exports cover only the array;
-    // each migration's `up` writes via the passed pool, so this is the only
-    // way to inspect the literal SQL from inside vitest.
     const { postgresQueueMigrations } = await import("@workglow/postgres/job-queue");
     const migs = postgresQueueMigrations("job_queue", []);
-    const v4 = migs.find((m: any) => m.version === 4) as any;
-    expect(v4).toBeDefined();
+    const v1 = migs.find((m: any) => m.version === 1) as any;
+    expect(v1).toBeDefined();
 
     const queries: string[] = [];
-    await v4.up({ query: async (sql: string) => queries.push(sql) } as any);
+    await v1.up({ query: async (sql: string) => queries.push(sql) } as any);
     const joined = queries.join("\n");
     expect(joined).toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
     expect(joined).toMatch(/WHERE\s+status\s+IN\s*\(\s*'PENDING','PROCESSING'/i);
@@ -139,13 +135,13 @@ describe("Postgres v4 fingerprint migration shape", () => {
 // ---------------------------------------------------------------------------
 // Migration-shape assertion (SQLite)
 // ---------------------------------------------------------------------------
-describe("SQLite v5 fingerprint migration shape", () => {
+describe("SQLite fingerprint migration shape", () => {
   it("uses CREATE UNIQUE INDEX with PENDING/PROCESSING partial predicate", async () => {
     const migs = sqliteQueueMigrations("job_queue", []);
-    const v5 = migs.find((m) => m.version === 5) as any;
-    expect(v5).toBeDefined();
+    const v1 = migs.find((m) => m.version === 1) as any;
+    expect(v1).toBeDefined();
     const queries: string[] = [];
-    await v5.up({ exec: (sql: string) => queries.push(sql) } as any);
+    await v1.up({ exec: (sql: string) => queries.push(sql) } as any);
     const joined = queries.join("\n");
     expect(joined).toMatch(/CREATE\s+UNIQUE\s+INDEX/i);
     expect(joined).toMatch(/WHERE\s+status\s+IN\s*\(\s*'PENDING','PROCESSING'/i);

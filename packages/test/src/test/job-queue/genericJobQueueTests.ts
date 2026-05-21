@@ -16,6 +16,7 @@ import {
   JobStatus,
   PermanentJobError,
   RetryableJobError,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import type { ISpan, ITelemetryProvider } from "@workglow/util";
 import {
@@ -183,9 +184,11 @@ export function runGenericJobQueueTests(
     storage = storageFactory(queueName);
     await storage.migrate();
 
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const limiter = await limiterFactory?.(queueName, 4, 60);
     server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter,
       pollIntervalMs: 1,
@@ -195,7 +198,8 @@ export function runGenericJobQueueTests(
     });
 
     client = new JobQueueClient<TInput, TOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 
@@ -229,9 +233,11 @@ export function runGenericJobQueueTests(
 
       // Create a new server with deletion settings
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -276,9 +282,11 @@ export function runGenericJobQueueTests(
     it("should delete jobs immediately when timing is set to 0", async () => {
       // Create a new server with immediate deletion
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -510,28 +518,35 @@ export function runGenericJobQueueTests(
       const limiter1 = await limiterFactory?.(queueName1, 4, 60);
       const limiter2 = await limiterFactory?.(queueName2, 4, 60);
 
+      const wrapped1 = wrapQueueStorage(storage1);
+      const wrapped2 = wrapQueueStorage(storage2);
+
       const server1 = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage: storage1,
+        messageQueue: wrapped1.messageQueue,
+        jobStore: wrapped1.jobStore,
         queueName: queueName1,
         limiter: limiter1,
         pollIntervalMs: 1,
       });
 
       const server2 = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage: storage2,
+        messageQueue: wrapped2.messageQueue,
+        jobStore: wrapped2.jobStore,
         queueName: queueName2,
         limiter: limiter2,
         pollIntervalMs: 1,
       });
 
       const client1 = new JobQueueClient<TInput, TOutput>({
-        storage: storage1,
+        messageQueue: wrapped1.messageQueue,
+        jobStore: wrapped1.jobStore,
         queueName: queueName1,
       });
       client1.attach(server1);
 
       const client2 = new JobQueueClient<TInput, TOutput>({
-        storage: storage2,
+        messageQueue: wrapped2.messageQueue,
+        jobStore: wrapped2.jobStore,
         queueName: queueName2,
       });
       client2.attach(server2);
@@ -670,9 +685,11 @@ export function runGenericJobQueueTests(
       // Use a long poll interval so the only way the worker can pick up the job
       // on time is via the direct handleJobAdded notify path.
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -696,9 +713,11 @@ export function runGenericJobQueueTests(
       // pollIntervalMs is 60s — without notify() flipping hasDeferredJobs, the
       // worker would sleep through the full 60s and miss the visible_at deadline.
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -726,9 +745,11 @@ export function runGenericJobQueueTests(
       // Long poll interval so the only route to abort delivery is the
       // in-process requestAbort path (Change 3).
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -760,9 +781,11 @@ export function runGenericJobQueueTests(
 
     it("worker.stop drains in-flight jobs before returning", async () => {
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -1269,15 +1292,11 @@ export function runGenericJobQueueTests(
     });
   });
 
-  describe("atomic ack/fail (H2)", () => {
-    it("ack persists result+status in one write — no separate saveResult step", async () => {
-      // The H2 contract: claim.ack(result) writes output + COMPLETED in a
-      // single storage operation. Earlier the worker did
-      // `jobStore.saveResult(...)` THEN `claim.ack()` — two separate writes
-      // that could split a row into "result saved, status still PROCESSING".
-      // We exercise that contract directly through the storage API: there
-      // should be no path that observes a COMPLETED row with output=null
-      // when the caller passed a non-null result.
+  describe("atomic ack/fail", () => {
+    it("ack persists result+status in one write", async () => {
+      // claim.ack(result) writes output + COMPLETED in a single storage
+      // operation. There must be no path that observes a COMPLETED row with
+      // output=null when the caller passed a non-null result.
       const handle = await client.send({ taskType: "task1", data: "atomic-ack" });
       const id = handle.id;
       const claimed = await storage.next("test-worker", { leaseMs: 30_000 });
@@ -1293,6 +1312,66 @@ export function runGenericJobQueueTests(
       const final = await storage.get(id);
       expect(final?.status).toBe(JobStatus.COMPLETED);
       expect(final?.output).toEqual({ result: "computed" });
+    });
+  });
+
+  describe("jobStore.markDisabled atomic terminal write", () => {
+    it("clears lease_owner, progress fields, stamps completed_at, leaves error untouched", async () => {
+      // Exercises the IJobStore.markDisabled contract directly through the
+      // JobStore facade (not the claim). This is the path Cloudflare/SQS take
+      // when their claim's disable() runs, and the path the worker's
+      // disableJob no-claim fallback takes.
+      const { jobStore } = wrapQueueStorage(storage);
+
+      const handle = await client.send({ taskType: "task1", data: "to-disable" });
+      const id = handle.id;
+      // Claim it so lease_owner gets set and the row is PROCESSING.
+      const claimed = await storage.next("disable-worker", { leaseMs: 30_000 });
+      expect(claimed?.id).toBe(id);
+      expect(claimed?.lease_owner).toBe("disable-worker");
+      // Push some progress so we can verify it gets cleared.
+      await storage.saveProgress(id, 42, "half done", { phase: "x" });
+
+      await jobStore.markDisabled(id);
+
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.DISABLED);
+      expect(final?.lease_owner).toBeNull();
+      expect(final?.progress).toBe(0);
+      expect(final?.progress_message).toBe("");
+      expect(final?.progress_details).toBeNull();
+      expect(final?.completed_at).toBeTruthy();
+      // DISABLED is not an error transition.
+      expect(final?.error ?? null).toBeNull();
+      expect(final?.error_code ?? null).toBeNull();
+    });
+
+    it("preserves an existing completed_at instead of clobbering it", async () => {
+      // Parity across backends: Postgres/SQLite COALESCE on completed_at,
+      // InMemory/IndexedDb/wrapQueueStorage use `current?.completed_at ?? now`,
+      // and Supabase reads-then-writes for the same effect. None should
+      // overwrite a previously-stamped completed_at.
+      const { jobStore } = wrapQueueStorage(storage);
+
+      const handle = await client.send({ taskType: "task1", data: "preserve-completed-at" });
+      const id = handle.id;
+      // Claim and finalize as COMPLETED so completed_at is set.
+      await storage.next("preserve-worker", { leaseMs: 30_000 });
+      const firstCompletedAt = new Date(Date.now() - 60_000).toISOString();
+      await storage.finalize(id, {
+        status: JobStatus.COMPLETED,
+        completed_at: firstCompletedAt,
+        output: { result: "ok" } as unknown as TOutput,
+      });
+
+      await jobStore.markDisabled(id);
+
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.DISABLED);
+      // Postgres/Supabase return TIMESTAMPTZ as Date; SQLite/InMemory as
+      // ISO string. Normalize via Date.getTime() comparison.
+      const normalizedFinal = final?.completed_at ? new Date(final.completed_at).getTime() : null;
+      expect(normalizedFinal).toBe(new Date(firstCompletedAt).getTime());
     });
   });
 

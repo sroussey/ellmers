@@ -111,28 +111,6 @@ export interface OrderBy<Entity> {
 export interface QueryOptions<Entity> {
   readonly orderBy?: ReadonlyArray<OrderBy<Entity>>;
   readonly limit?: number;
-  /**
-   * @deprecated Offset-based paging is unstable when rows are inserted or
-   * deleted between page fetches (entries can be skipped or duplicated).
-   * Use {@link ITabularStorage.getPage} / {@link ITabularStorage.queryPage}
-   * with a {@link PageCursor} instead.
-   *
-   * @example
-   * ```ts
-   * // Before (offset paging):
-   * const rows = await storage.getAll({ orderBy, limit: 50, offset: 100 });
-   *
-   * // After (cursor paging — also stable under concurrent writes):
-   * let cursor: PageCursor | undefined;
-   * for (let i = 0; i < 2; i++) {
-   *   const skip = await storage.getPage({ orderBy, limit: 50, cursor });
-   *   cursor = skip.nextCursor;
-   *   if (!cursor) break;
-   * }
-   * const page = await storage.getPage({ orderBy, limit: 50, cursor });
-   * const rows = page.items;
-   * ```
-   */
   readonly offset?: number;
 }
 
@@ -328,8 +306,6 @@ export interface ITabularStorage<
    * @param offset - Number of records to skip
    * @param limit - Maximum number of records to return
    * @returns Array of entities or undefined if no records found
-   * @deprecated Offset-based paging is unstable under concurrent writes.
-   *   Use {@link getPage} for stable, keyset-based pagination.
    */
   getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined>;
 

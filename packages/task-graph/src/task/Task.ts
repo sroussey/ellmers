@@ -5,7 +5,7 @@
  */
 
 import type { ServiceRegistry } from "@workglow/util";
-import { deepEqual, EventEmitter, getLogger, uuid4 } from "@workglow/util";
+import { deepEqual, EventEmitter, uuid4 } from "@workglow/util";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import { type CachePolicy, DEFAULT_CACHE_POLICY } from "../cache/CachePolicy";
@@ -131,16 +131,6 @@ export class Task<
    * and emit 'entitlementChange' events when their entitlements change.
    */
   public static hasDynamicEntitlements: boolean = false;
-
-  /**
-   * Tracks task types that have already received the legacy `cacheable = false` deprecation
-   * warning, so the warning fires only once per task type across the process lifetime.
-   *
-   * H7: keyed by a synthetic typeKey (see {@link getCachePolicy}) — when a
-   * subclass leaves the static `type` at the base "Task" value, the key
-   * is `Task#<ClassName>` so subclasses don't silence each other.
-   */
-  private static __cacheableDeprecationWarned = new Set<string>();
 
   /**
    * Entitlements required by this task class.
@@ -383,41 +373,32 @@ export class Task<
   }
 
   /**
-   * Returns the effective cache policy for this task given its inputs. Default
-   * implementation honors the legacy `cacheable=false` static (maps to
-   * `{ kind: "none" }`) for back-compat with a one-time deprecation warning,
-   * otherwise returns the class's static `cachePolicy`. Override for dynamic
-   * decisions (e.g., AiImageOutputTask returns `private` when seed is absent).
+   * Returns the effective cache policy for this task given its inputs.
+   *
+   * Resolution order:
+   *   1. Per-instance `runConfig.cacheable === false` or `config.cacheable === false`
+   *      → `{ kind: "none" }` (callsite opt-out wins).
+   *   2. Class-static `cacheable === false` (declared on the subclass) →
+   *      `{ kind: "none" }`. The coarse on/off flag remains supported alongside
+   *      the canonical `cachePolicy`; setting it on the class is equivalent
+   *      to declaring `static cachePolicy: CachePolicy = { kind: "none" }`.
+   *   3. Class-static `cachePolicy` if declared.
+   *   4. {@link DEFAULT_CACHE_POLICY}.
+   *
+   * Override for dynamic decisions (e.g., AiImageOutputTask returns `private`
+   * when seed is absent).
    */
   public getCachePolicy(_inputs: Input): CachePolicy {
     const ctor = this.constructor as typeof Task;
-    const hasLegacyOverride =
-      Object.prototype.hasOwnProperty.call(ctor, "cacheable") && (ctor as any).cacheable === false;
-    const hasPolicyOverride = Object.prototype.hasOwnProperty.call(ctor, "cachePolicy");
-
-    if (hasLegacyOverride && !hasPolicyOverride) {
-      // H7: keying the dedup Set by `ctor.type` alone collapsed every subclass
-      // that hadn't overridden the static `type` (which still reads "Task"
-      // from the base) into a single warning — the first offender silenced
-      // the rest. Fall back to the subclass's runtime `name` when `type` is
-      // still the base value so each distinct class gets its own warning.
-      // The verbose env override exists for one-shot diagnostic runs where
-      // an operator wants every occurrence (not just the first per class)
-      // surfaced — e.g., grepping CI logs to find every legacy site.
-      const typeKey = ctor.type === "Task" ? `Task#${ctor.name}` : ctor.type;
-      const verbose =
-        typeof process !== "undefined" && process.env?.WORKGLOW_CACHE_DEPRECATION === "verbose";
-      if (verbose || !Task.__cacheableDeprecationWarned.has(typeKey)) {
-        Task.__cacheableDeprecationWarned.add(typeKey);
-        getLogger().warn(
-          `Task "${typeKey}": static \`cacheable = false\` is deprecated. ` +
-            `Use \`static cachePolicy: CachePolicy = { kind: "none" }\` instead.`
-        );
-      }
+    if (this.runConfig?.cacheable === false || this.config?.cacheable === false)
+      return { kind: "none" };
+    if (
+      Object.prototype.hasOwnProperty.call(ctor, "cacheable") &&
+      (ctor as { cacheable?: unknown }).cacheable === false &&
+      !Object.prototype.hasOwnProperty.call(ctor, "cachePolicy")
+    ) {
       return { kind: "none" };
     }
-    if (this.runConfig?.cacheable === false || this.config?.cacheable === false)
-      return { kind: "none" }; // per-instance shim, no warning
     return ctor.cachePolicy ?? DEFAULT_CACHE_POLICY;
   }
 
@@ -1270,5 +1251,7 @@ export class Task<
  * application code".
  */
 export function __resetCacheableDeprecationWarnings(): void {
-  (Task as unknown as { __cacheableDeprecationWarned: Set<string> }).__cacheableDeprecationWarned.clear();
+  (
+    Task as unknown as { __cacheableDeprecationWarned: Set<string> }
+  ).__cacheableDeprecationWarned.clear();
 }

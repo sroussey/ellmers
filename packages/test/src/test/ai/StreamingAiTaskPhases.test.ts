@@ -20,6 +20,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   RateLimiter,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
@@ -52,12 +53,14 @@ describe("StreamingAiTask default phase emissions", () => {
 
     storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(MOCK_PROVIDER);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: MOCK_PROVIDER,
         limiter: new RateLimiter(new InMemoryRateLimiterStorage(), MOCK_PROVIDER, {
           maxExecutions: 10,
@@ -68,7 +71,8 @@ describe("StreamingAiTask default phase emissions", () => {
     );
 
     client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName: MOCK_PROVIDER,
     });
 

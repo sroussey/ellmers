@@ -72,9 +72,10 @@ export class TaskRunner<
   protected currentCtx?: TaskRunContext;
 
   /**
-   * The output cache for the task
-   * @deprecated Use `cacheRegistry` instead. Kept for back-compat with callers
-   * that pass `outputCache: repo` through IRunConfig.
+   * Output cache repository resolved per-run. Set when the caller passes
+   * `outputCache: repo | true` through IRunConfig; the {@link cacheRegistry}
+   * deterministic slot is synthesized from it. When `outputCache` is absent
+   * and a CACHE_REGISTRY is registered, that is used instead.
    */
   protected outputCache?: TaskOutputRepository;
 
@@ -174,9 +175,13 @@ export class TaskRunner<
       : config;
     this.ownsResourceScope = ownsScope;
 
+    // ctx is threaded through locals from here; nothing inside run() re-reads
+    // this.currentCtx (which can be nulled by handleAbort firing on the abort
+    // listener during an interleaved abort). Declared outside the try so the
+    // finally block can run scope cleanup even if handleStart itself throws.
+    let ctx: TaskRunContext | undefined;
     try {
-      await this.handleStart(effectiveConfig);
-      const ctx = this.currentCtx!;
+      ctx = await this.handleStart(effectiveConfig);
 
       const proto = Object.getPrototypeOf(this.task);
       if (
@@ -203,7 +208,7 @@ export class TaskRunner<
         }
 
         if (ctx.abortController.signal.aborted) {
-          await this.handleAbort();
+          await this.handleAbort(ctx);
           throw new TaskAbortedError("Promise for task created and aborted before run");
         }
 
@@ -247,7 +252,7 @@ export class TaskRunner<
           policy = { kind: "none" };
         }
 
-        this.currentCtx?.telemetrySpan?.setAttributes({
+        ctx.telemetrySpan?.setAttributes({
           "workglow.task.cache_policy": policy.kind,
         });
 
@@ -284,15 +289,42 @@ export class TaskRunner<
           this.task.runOutputData = outputs ?? ({} as Output);
         }
 
-        await this.handleComplete();
+        await this.handleComplete(ctx);
 
         return this.task.runOutputData as Output;
       } catch (err: any) {
-        await this.handleError(err);
+        await this.handleError(err, ctx);
         // If a timeout triggered the abort, throw the TaskTimeoutError instead
         // of the generic TaskAbortedError that the task's execute() may have thrown.
         throw this.task.error instanceof TaskTimeoutError ? this.task.error : err;
       }
+    } catch (err: any) {
+      // Reachable when handleStart() throws before assigning `ctx` (e.g.,
+      // resourceScope.runStart or telemetry init blows up). Without this,
+      // task.status would be stuck at PROCESSING with currentCtx still set
+      // and no error/event ever emitted.
+      if (ctx === undefined) {
+        const partial = this.currentCtx;
+        if (partial) {
+          await this.handleError(err, partial);
+        } else {
+          this.task.status = TaskStatus.FAILED;
+          this.task.error =
+            err instanceof TaskError
+              ? err
+              : new TaskFailedError(
+                  `Task "${this.task.type}" (${this.task.id}): ${err?.message || "Task failed"}`
+                );
+          if (this.task.error instanceof TaskError) {
+            this.task.error.taskType ??= this.task.type;
+            this.task.error.taskId ??= this.task.id;
+          }
+          this.task.emit("error", this.task.error);
+          this.task.emit("status", this.task.status);
+        }
+        this.running = false;
+      }
+      throw err;
     } finally {
       if (ownsScope) {
         await effectiveConfig.resourceScope!.runComplete();
@@ -603,8 +635,14 @@ export class TaskRunner<
    * Handles task start. Concurrent-run rejection happens in {@link run} before
    * any state mutation; by the time `handleStart` runs, the task status is
    * guaranteed to be non-PROCESSING.
+   *
+   * Returns the per-run {@link TaskRunContext} so `run()` can thread it
+   * through locals instead of re-reading `this.currentCtx` across awaits.
+   * The instance field `this.currentCtx` is still set as the *external*
+   * pointer used by no-arg public methods (`abort()`, `disable()`); internal
+   * flow should use the returned ctx exclusively.
    */
-  protected async handleStart(config: IRunConfig = {}): Promise<void> {
+  protected async handleStart(config: IRunConfig = {}): Promise<TaskRunContext> {
     this.running = true;
 
     this.task.startedAt = new Date();
@@ -615,8 +653,11 @@ export class TaskRunner<
     const ctx = new TaskRunContext(config.signal);
     this.currentCtx = ctx;
 
+    // Listener captures the local `ctx`, not `this.currentCtx`. If a later run
+    // replaces the instance field before this listener fires, handleAbort still
+    // operates on the ctx the listener was attached to.
     ctx.abortController.signal.addEventListener("abort", () => {
-      this.handleAbort();
+      void this.handleAbort(ctx);
     });
 
     // Apply registry override first so that cache resolution below uses the
@@ -676,14 +717,17 @@ export class TaskRunner<
 
     // Early-out if parent signal was already aborted (TaskRunContext constructor
     // already aborted ctx.abortController in that case)
-    if (ctx.abortController.signal.aborted) return;
+    if (ctx.abortController.signal.aborted) return ctx;
 
-    // Start timeout timer if configured (timeout is a design-time config property)
+    // Start timeout timer if configured (timeout is a design-time config property).
+    // Fire on the captured ctx's controller rather than this.abort() so a timeout
+    // armed for *this* run can't accidentally abort a later run if scope-teardown
+    // racing leaves the timer alive past terminal-handler.
     const timeout = (this.task.config as Record<string, unknown>).timeout as number | undefined;
     if (timeout !== undefined && timeout > 0) {
       ctx.pendingTimeoutError = new TaskTimeoutError(timeout);
       ctx.timeoutTimer = setTimeout(() => {
-        this.abort();
+        ctx.abortController.abort();
       }, timeout);
     }
 
@@ -701,6 +745,7 @@ export class TaskRunner<
 
     this.task.emit("start");
     this.task.emit("status", this.task.status);
+    return ctx;
   }
   private updateProgress = async (
     _task: ITask,
@@ -714,29 +759,35 @@ export class TaskRunner<
   }
 
   /**
-   * Clears the timeout timer if one is active.
+   * Clears the timeout timer on the given ctx if one is active.
    */
-  protected clearTimeoutTimer(): void {
-    const ctx = this.currentCtx;
-    if (ctx?.timeoutTimer !== undefined) {
+  protected clearTimeoutTimer(ctx: TaskRunContext): void {
+    if (ctx.timeoutTimer !== undefined) {
       clearTimeout(ctx.timeoutTimer);
       ctx.timeoutTimer = undefined;
     }
   }
 
   /**
-   * Handles task abort
+   * Handles task abort.
+   *
+   * Idempotent per-ctx via {@link TaskRunContext.terminated}: the abort
+   * listener fires synchronously inside `controller.abort()` and may race
+   * with the run flow's own catch-block; both paths can land here. The
+   * `terminated` flag (set before any await) lets the second arrival fall
+   * through, while `task.status` is too brittle to gate on because adjacent
+   * runs on the same task can mutate it.
    */
-  protected async handleAbort(): Promise<void> {
-    if (this.task.status === TaskStatus.ABORTING) return;
-    this.clearTimeoutTimer();
-    const ctx = this.currentCtx;
+  protected async handleAbort(ctx: TaskRunContext): Promise<void> {
+    if (ctx.terminated) return;
+    ctx.terminated = true;
+    this.clearTimeoutTimer(ctx);
     this.task.status = TaskStatus.ABORTING;
     await this.handleProgress(100);
     // Use the pending timeout error if the abort was triggered by a timeout
-    this.task.error = ctx?.pendingTimeoutError ?? new TaskAbortedError();
+    this.task.error = ctx.pendingTimeoutError ?? new TaskAbortedError();
 
-    if (ctx?.telemetrySpan) {
+    if (ctx.telemetrySpan) {
       ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, "aborted");
       ctx.telemetrySpan.addEvent("workglow.task.aborted", {
         "workglow.task.error": this.task.error.message,
@@ -753,8 +804,11 @@ export class TaskRunner<
       }
     }
 
-    ctx?.dispose();
-    this.currentCtx = undefined;
+    ctx.dispose();
+    // CAS-style clear: only release the instance pointer if it still points at
+    // *this* ctx. Prevents a stale terminal handler from clobbering a newer
+    // run's currentCtx.
+    if (this.currentCtx === ctx) this.currentCtx = undefined;
 
     this.task.emit("abort", this.task.error);
     this.task.emit("status", this.task.status);
@@ -765,24 +819,27 @@ export class TaskRunner<
   }
 
   /**
-   * Handles task completion
+   * Handles task completion.
+   *
+   * Idempotent per-ctx — see {@link handleAbort} for the rationale on using
+   * `ctx.terminated` instead of `task.status` as the guard.
    */
-  protected async handleComplete(): Promise<void> {
-    if (this.task.status === TaskStatus.COMPLETED) return;
-    this.clearTimeoutTimer();
-    const ctx = this.currentCtx;
+  protected async handleComplete(ctx: TaskRunContext): Promise<void> {
+    if (ctx.terminated) return;
+    ctx.terminated = true;
+    this.clearTimeoutTimer(ctx);
 
     this.task.completedAt = new Date();
     this.task.status = TaskStatus.COMPLETED;
     await this.handleProgress(100);
 
-    if (ctx?.telemetrySpan) {
+    if (ctx.telemetrySpan) {
       ctx.telemetrySpan.setStatus(SpanStatusCode.OK);
       ctx.telemetrySpan.end();
     }
 
-    ctx?.dispose();
-    this.currentCtx = undefined;
+    ctx.dispose();
+    if (this.currentCtx === ctx) this.currentCtx = undefined;
 
     this.task.emit("complete");
     this.task.emit("status", this.task.status);
@@ -793,7 +850,10 @@ export class TaskRunner<
   }
 
   protected async handleDisable(ctx: TaskRunContext | undefined): Promise<void> {
-    if (this.task.status === TaskStatus.DISABLED) return;
+    // Idempotent per-ctx where one exists; falls back to status-based guard
+    // for the no-active-run case (public disable() called with no current ctx).
+    if (ctx?.terminated || this.task.status === TaskStatus.DISABLED) return;
+    if (ctx) ctx.terminated = true;
     this.task.status = TaskStatus.DISABLED;
     await this.handleProgress(100);
     this.task.completedAt = new Date();
@@ -809,14 +869,16 @@ export class TaskRunner<
   }
 
   /**
-   * Handles task error
-   * @param err Error that occurred
+   * Handles task error.
+   *
+   * If the underlying error is an abort, delegate to {@link handleAbort} —
+   * which is idempotent per-ctx, so a parallel abort-listener path is safe.
    */
-  protected async handleError(err: Error): Promise<void> {
-    if (err instanceof TaskAbortedError) return this.handleAbort();
-    if (this.task.status === TaskStatus.FAILED) return;
-    this.clearTimeoutTimer();
-    const ctx = this.currentCtx;
+  protected async handleError(err: Error, ctx: TaskRunContext): Promise<void> {
+    if (err instanceof TaskAbortedError) return this.handleAbort(ctx);
+    if (ctx.terminated) return;
+    ctx.terminated = true;
+    this.clearTimeoutTimer(ctx);
     if (this.task.hasChildren()) {
       this.task.subGraph!.abort();
     }
@@ -837,14 +899,14 @@ export class TaskRunner<
     this.task.status = TaskStatus.FAILED;
     await this.handleProgress(100);
 
-    if (ctx?.telemetrySpan) {
+    if (ctx.telemetrySpan) {
       ctx.telemetrySpan.setStatus(SpanStatusCode.ERROR, this.task.error.message);
       ctx.telemetrySpan.setAttributes({ "workglow.task.error": this.task.error.message });
       ctx.telemetrySpan.end();
     }
 
-    ctx?.dispose();
-    this.currentCtx = undefined;
+    ctx.dispose();
+    if (this.currentCtx === ctx) this.currentCtx = undefined;
 
     this.task.emit("error", this.task.error);
     this.task.emit("status", this.task.status);

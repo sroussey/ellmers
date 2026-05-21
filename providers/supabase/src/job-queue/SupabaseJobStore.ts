@@ -12,22 +12,14 @@ import type {
   MessageId,
   SendOptions,
 } from "@workglow/job-queue";
-import type { SupabasePendingWrite } from "./SupabaseMessageQueue";
 import type { SupabaseQueueStorage } from "./SupabaseQueueStorage";
 
 export class SupabaseJobStore<Input, Output> implements IJobStore<Input, Output> {
   /** @internal — shared with the paired message queue */
   public readonly core: SupabaseQueueStorage<Input, Output>;
 
-  /** @internal — shared transient buffer for saveResult/saveError. */
-  private readonly pending: Map<unknown, SupabasePendingWrite<Output>>;
-
-  constructor(
-    core: SupabaseQueueStorage<Input, Output>,
-    pending: Map<unknown, SupabasePendingWrite<Output>>
-  ) {
+  constructor(core: SupabaseQueueStorage<Input, Output>) {
     this.core = core;
-    this.pending = pending;
   }
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
@@ -59,36 +51,15 @@ export class SupabaseJobStore<Input, Output> implements IJobStore<Input, Output>
     await this.core.saveProgress(id, progress, message, details as Record<string, any>);
   }
 
-  async saveResult(id: MessageId, output: Output): Promise<void> {
-    const buf = this.pending.get(id) ?? {};
-    buf.output = output ?? null;
-    this.pending.set(id, buf);
-  }
-
-  async saveError(
-    id: MessageId,
-    error: string,
-    errorCode: string | null,
-    abortRequested: boolean
-  ): Promise<void> {
-    const buf = this.pending.get(id) ?? {};
-    buf.error = error;
-    buf.errorCode = errorCode;
-    buf.abortRequested = abortRequested;
-    this.pending.set(id, buf);
-  }
-
   async deleteByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void> {
     await this.core.deleteJobsByStatusAndAge(status, olderThanMs);
   }
 
   async delete(id: MessageId): Promise<void> {
-    this.pending.delete(id);
     await this.core.delete(id);
   }
 
   async deleteAll(): Promise<void> {
-    this.pending.clear();
     await this.core.deleteAll();
   }
 
@@ -128,7 +99,6 @@ export class SupabaseJobStore<Input, Output> implements IJobStore<Input, Output>
   }
 
   async completeWithResult(id: MessageId, result: Output): Promise<void> {
-    this.pending.delete(id);
     await this.core.completeWithResult(id, result);
   }
 
@@ -140,8 +110,11 @@ export class SupabaseJobStore<Input, Output> implements IJobStore<Input, Output>
       readonly abortRequested?: boolean;
     }
   ): Promise<void> {
-    this.pending.delete(id);
     await this.core.failWithError(id, opts);
+  }
+
+  async markDisabled(id: MessageId): Promise<void> {
+    await this.core.markDisabled(id);
   }
 
   async markEnqueueDeferred(

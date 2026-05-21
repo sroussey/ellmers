@@ -94,6 +94,37 @@ describe("SqsClaim", () => {
     expect(row?.error_code).toBe("E_BOOM");
   });
 
+  it("disable() persists DISABLED before deleting the SQS message", async () => {
+    // Ordering matters: a successful DeleteMessage + a failed markDisabled
+    // would leave the row stuck in PROCESSING with the message gone. The
+    // safe order is markDisabled first — if delete then fails, the message
+    // is redelivered and SqsMessageQueue's dispatch path drops terminal-status
+    // redeliveries. Asserted by reading the row's status before/after the
+    // DeleteMessageCommand callback fires.
+    const { jobStore, id, record, sqs } = await setup();
+    const claim = new SqsClaim<In, Out>({
+      sqs,
+      queueUrl: "https://sqs.test/q",
+      jobStore,
+      record,
+      receiptHandle: "rh-1",
+    });
+
+    let statusAtDelete: string | undefined;
+    sqsMock.on(DeleteMessageCommand).callsFake(async () => {
+      statusAtDelete = (await jobStore.get(id))?.status;
+      return {};
+    });
+
+    await claim.disable();
+
+    expect(statusAtDelete).toBe(JobStatus.DISABLED);
+    const row = await jobStore.get(id);
+    expect(row?.status).toBe(JobStatus.DISABLED);
+    expect(row?.lease_owner).toBeNull();
+    expect(sqsMock.commandCalls(DeleteMessageCommand)).toHaveLength(1);
+  });
+
   it("retry({ delaySeconds: 42 }) calls ChangeMessageVisibility with VisibilityTimeout=42", async () => {
     const { jobStore, record, sqs } = await setup();
     const claim = new SqsClaim<In, Out>({

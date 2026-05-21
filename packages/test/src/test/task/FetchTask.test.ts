@@ -5,6 +5,7 @@
  */
 
 import {
+  createInMemoryQueue,
   InMemoryQueueStorage,
   InMemoryRateLimiterStorage,
   JobError,
@@ -13,6 +14,7 @@ import {
   PermanentJobError,
   RateLimiter,
   RetryableJobError,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
@@ -115,10 +117,12 @@ describe("FetchUrlTask", () => {
     // Create storage
     const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     // Create server with the FetchUrlJob class
     const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter: rateLimiter,
       pollIntervalMs: 1,
@@ -126,7 +130,8 @@ describe("FetchUrlTask", () => {
 
     // Create client
     const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 
@@ -323,14 +328,17 @@ describe("FetchUrlTask", () => {
     const queueName = "fetch-error-code-queue";
     const storage = new InMemoryQueueStorage<FetchUrlTaskInput, FetchUrlTaskOutput>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     const server = new JobQueueServer<FetchUrlTaskInput, FetchUrlTaskOutput>(FetchUrlJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 1,
     });
     const client = new JobQueueClient<FetchUrlTaskInput, FetchUrlTaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
     client.attach(server);
@@ -793,7 +801,7 @@ describe("FetchUrlTask", () => {
 
     test("FETCH_HTTP_RATE_LIMITED reconstructed by client is RetryableJobError", () => {
       const client = new TestableClient<unknown, unknown>({
-        storage: new InMemoryQueueStorage("q"),
+        ...createInMemoryQueue<unknown, unknown>("q"),
         queueName: "q",
       });
       const err = client.buildErrorFromCodePublic("rate limited", "FETCH_HTTP_RATE_LIMITED");
@@ -803,7 +811,7 @@ describe("FetchUrlTask", () => {
 
     test("FETCH_PRIVATE_DENIED reconstructed by client is PermanentJobError", () => {
       const client = new TestableClient<unknown, unknown>({
-        storage: new InMemoryQueueStorage("q"),
+        ...createInMemoryQueue<unknown, unknown>("q"),
         queueName: "q",
       });
       const err = client.buildErrorFromCodePublic("private denied", "FETCH_PRIVATE_DENIED");

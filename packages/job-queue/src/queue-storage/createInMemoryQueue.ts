@@ -5,7 +5,7 @@
  */
 
 import { InMemoryJobStore } from "./InMemoryJobStore";
-import { InMemoryMessageQueue, type PendingInMemoryWrite } from "./InMemoryMessageQueue";
+import { InMemoryMessageQueue } from "./InMemoryMessageQueue";
 import { InMemoryQueueStorage } from "./InMemoryQueueStorage";
 import type { QueueStorageOptions } from "./IQueueStorage";
 
@@ -20,14 +20,10 @@ export function createInMemoryQueue<Input, Output>(
 ): {
   messageQueue: InMemoryMessageQueue<Input, Output>;
   jobStore: InMemoryJobStore<Input, Output>;
-  /** @internal — exposed for callers that still need the legacy storage object. */
-  core: InMemoryQueueStorage<Input, Output>;
 } {
   const core = new InMemoryQueueStorage<Input, Output>(queueName, opts);
-  const pending = new Map<unknown, PendingInMemoryWrite<Output>>();
   return {
-    messageQueue: new InMemoryMessageQueue<Input, Output>(core, pending),
-    jobStore: new InMemoryJobStore<Input, Output>(core, pending),
-    core,
+    messageQueue: new InMemoryMessageQueue<Input, Output>(core),
+    jobStore: new InMemoryJobStore<Input, Output>(core),
   };
 }

@@ -39,7 +39,7 @@ describe("handleQueueBatch — terminal-status redelivery", () => {
   for (const terminal of [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.DISABLED] as const) {
     it(`drops redelivered ${terminal} row: zero claims, message.ack called, row unchanged`, async () => {
       const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-      const jobStore = new InMemoryJobStore(core, new Map());
+      const jobStore = new InMemoryJobStore(core);
 
       const id = await jobStore.create(body("term"), {});
       if (terminal === JobStatus.COMPLETED) {

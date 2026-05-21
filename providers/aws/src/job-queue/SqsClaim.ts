@@ -132,4 +132,20 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
       })
     );
   }
+
+  async disable(): Promise<void> {
+    // Persist the DISABLED terminal state FIRST. If the message-delete then
+    // fails the SqsMessageQueue dispatch path drops terminal-status
+    // redeliveries safely, so the worst case is a redundant redelivery that
+    // is filtered. The reverse order would lose the disable: a deleted
+    // message + a failed markDisabled leaves the row stuck in PROCESSING
+    // with no chance of redelivery.
+    await this.jobStore.markDisabled(this.id);
+    await this.sqs.send(
+      new DeleteMessageCommand({
+        QueueUrl: this.queueUrl,
+        ReceiptHandle: this.receiptHandle,
+      })
+    );
+  }
 }

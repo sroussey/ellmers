@@ -158,6 +158,34 @@ describe("SingleTask", () => {
         expect(task.status).toBe(TaskStatus.ABORTING);
       });
 
+      it("survives sync run/abort race without TypeError on currentCtx (regression)", async () => {
+        // Regression: when `IDisposeStrategy.onRunStart` was required, an
+        // extra `await undefined` inside `ResourceScope.runStart()` shifted
+        // microtask ordering so that `task.abort()` (called sync after
+        // `task.run()`) ran the abort listener AND nullified `currentCtx`
+        // before `handleStart` returned. `run()` then read `this.currentCtx!`
+        // as undefined and crashed in `ctx.abortController.signal.aborted`.
+        //
+        // The refactor threads ctx through locals from `handleStart`'s return
+        // value, so the abort listener nullifying the instance field is no
+        // longer observable from run(). This test guards that invariant by
+        // exercising the exact pattern: sync run; sync abort; await.
+        const runPromise = task.run();
+        task.abort();
+        let caught: unknown = undefined;
+        try {
+          await runPromise;
+        } catch (err) {
+          caught = err;
+        }
+        // The result is allowed to be either: aborted (TaskAbortedError) or
+        // completed before the abort took effect. The thing that must NEVER
+        // happen is a TypeError from a null-deref of currentCtx.
+        if (caught !== undefined) {
+          expect(caught).not.toBeInstanceOf(TypeError);
+        }
+      });
+
       it("should support disable event listener", async () => {
         let disableEmitted = false;
 

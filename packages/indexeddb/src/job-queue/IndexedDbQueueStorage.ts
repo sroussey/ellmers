@@ -636,6 +636,27 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
+   * Atomically writes status=DISABLED, releases the lease, clears progress
+   * fields, and stamps completed_at (preserving an existing value). IDB
+   * is single-threaded per-origin within a JS context, so the get + finalize
+   * pair is observably atomic — no other transaction can interleave between
+   * them inside this microtask chain.
+   */
+  public async markDisabled(id: unknown): Promise<void> {
+    const existing = await this.get(id);
+    if (!existing) return;
+    const completedAt = existing.completed_at ?? new Date().toISOString();
+    await this.finalize(id, {
+      status: JobStatus.DISABLED,
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
+
+  /**
    * Deletes all jobs from the queue.
    */
   public async deleteAll(): Promise<void> {

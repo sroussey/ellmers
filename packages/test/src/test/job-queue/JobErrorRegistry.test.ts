@@ -7,6 +7,7 @@
 import {
   AbortSignalJobError,
   clearErrorCodeReconstructors,
+  createInMemoryQueue,
   InMemoryQueueStorage,
   Job,
   JobDisabledError,
@@ -20,6 +21,7 @@ import {
   RetryableJobError,
   snapshotErrorCodeReconstructors,
   unregisterErrorCodeReconstructor,
+  wrapQueueStorage,
   type IJobExecuteContext,
 } from "@workglow/job-queue";
 import { sleep } from "@workglow/util";
@@ -71,7 +73,7 @@ describe("JobErrorRegistry", () => {
     });
 
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
     const err = client.buildErrorFromCodePublic("boom", "FOO_BAR");
@@ -83,7 +85,7 @@ describe("JobErrorRegistry", () => {
 
   test("unregistered code prefix falls back to generic JobError", () => {
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
     const err = client.buildErrorFromCodePublic("oops", "UNKNOWN_PREFIX_FOO");
@@ -96,7 +98,7 @@ describe("JobErrorRegistry", () => {
 
   test("built-in codes still work after the registry rewrite", () => {
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
     expect(client.buildErrorFromCodePublic("p", "PermanentJobError")).toBeInstanceOf(
@@ -121,7 +123,7 @@ describe("JobErrorRegistry", () => {
       expect(warn).toHaveBeenCalledOnce();
 
       const client = new TestableClient<unknown, unknown>({
-        storage: new InMemoryQueueStorage("q"),
+        ...createInMemoryQueue<unknown, unknown>("q"),
         queueName: "q",
       });
       // Last writer wins — should reconstruct as BarError now.
@@ -168,7 +170,7 @@ describe("JobErrorRegistry", () => {
     registerErrorCodeReconstructor("ABC_DEF_", (_c, m) => new BarError(m));
 
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
     expect(client.buildErrorFromCodePublic("m", "ABC_DEF_GHI")).toBeInstanceOf(FooError);
@@ -187,7 +189,7 @@ describe("JobErrorRegistry", () => {
     });
 
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
 
@@ -205,7 +207,7 @@ describe("JobErrorRegistry", () => {
       });
 
       const client = new TestableClient<unknown, unknown>({
-        storage: new InMemoryQueueStorage("q"),
+        ...createInMemoryQueue<unknown, unknown>("q"),
         queueName: "q",
       });
 
@@ -228,7 +230,7 @@ describe("JobErrorRegistry", () => {
     });
 
     const client = new TestableClient<unknown, unknown>({
-      storage: new InMemoryQueueStorage("q"),
+      ...createInMemoryQueue<unknown, unknown>("q"),
       queueName: "q",
     });
 
@@ -258,13 +260,16 @@ describe("JobErrorRegistry", () => {
 
     const storage = new InMemoryQueueStorage<{ thing: string }, { ok: boolean }>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<{ thing: string }, { ok: boolean }>(ThrowsCustomJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 1,
     });
     const client = new JobQueueClient<{ thing: string }, { ok: boolean }>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
     client.attach(server);

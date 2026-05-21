@@ -8,9 +8,7 @@ import type { MessageId, SendOptions } from "./IMessageQueue";
 import type { JobStatus, JobStorageFormat } from "./IQueueStorage";
 
 /**
- * Record describing a stored job. Currently an alias for the legacy
- * {@link JobStorageFormat} so adapters and native implementations can share
- * the same record shape.
+ * Record describing a stored job.
  */
 export type JobRecord<Input, Output> = JobStorageFormat<Input, Output>;
 
@@ -29,27 +27,6 @@ export interface IJobStore<Input, Output> {
     progress: number,
     message: string,
     details: Record<string, any> | null
-  ): Promise<void>;
-  /**
-   * @deprecated H2 (libs): result is now written atomically with the
-   * COMPLETED status via {@link IClaim.ack}'s `result` argument. New code
-   * should call `claim.ack(output)` directly. This method is retained as
-   * a buffered no-op wrapper for one minor release so callers depending on
-   * a separate write step keep compiling; backends route the value through
-   * the pending-buffer until ack persists it.
-   */
-  saveResult(id: MessageId, output: Output): Promise<void>;
-  /**
-   * @deprecated H2 (libs): error fields are now written atomically with the
-   * FAILED status via {@link IClaim.fail}'s opts. New code should call
-   * `claim.fail({ error, errorCode, abortRequested })` directly. Retained
-   * as a buffered no-op wrapper for one minor release.
-   */
-  saveError(
-    id: MessageId,
-    error: string,
-    errorCode: string | null,
-    abortRequested: boolean
   ): Promise<void>;
   deleteByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void>;
   /** Delete a single job by id. */
@@ -116,6 +93,17 @@ export interface IJobStore<Input, Output> {
       readonly abortRequested?: boolean;
     }
   ): Promise<void>;
+
+  /**
+   * Atomically write status=DISABLED, release the lease, clear progress
+   * fields, and stamp `completed_at` in a single storage operation.
+   * Counterpart to {@link completeWithResult} / {@link failWithError} for
+   * the disable path; honors {@link IClaim.disable}'s atomicity guarantee
+   * for cloud adapters whose worker does not share a wrapped core with the
+   * store (SQS, Cloudflare Queues). Does NOT write error/error_code —
+   * DISABLED is not an error transition.
+   */
+  markDisabled(id: MessageId): Promise<void>;
 
   /**
    * Mark a row's enqueue as deferred after a transient producer-side

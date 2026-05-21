@@ -262,6 +262,21 @@ export interface IQueueStorage<Input, Output> {
   ): Promise<void>;
 
   /**
+   * Atomically writes the DISABLED terminal transition: status=DISABLED,
+   * lease_owner=null, progress=0, progress_message="", progress_details=null,
+   * and stamps completed_at (preserving any existing value). Does NOT touch
+   * error/error_code — DISABLED is not an error transition.
+   *
+   * This is the storage-level primitive backing {@link IJobStore.markDisabled}.
+   * Implementations must write all fields in a single operation so the row is
+   * never observed in a partial DISABLED state with a stale lease_owner or
+   * leftover progress.
+   *
+   * @param id - The id of the job to mark disabled.
+   */
+  markDisabled(id: unknown): Promise<void>;
+
+  /**
    * Optional native fingerprint dedup lookup. Returns the active
    * (PENDING or PROCESSING) row for the given fingerprint within this
    * queue, if any. Backends with a partial unique index on

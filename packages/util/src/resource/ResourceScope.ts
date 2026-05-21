@@ -79,6 +79,10 @@ export class ResourceScope {
    * not implement it). Closes the race where an inactivity timer armed
    * by the previous `runComplete` could fire and dispose a resource the
    * next run is about to use.
+   *
+   * The guard is load-bearing: it keeps runStart synchronous for strategies
+   * without pre-run work, which preserves the microtask ordering that the
+   * task runner's abort-during-handleStart code path depends on.
    */
   async runStart(): Promise<void> {
     if (this.strategy.onRunStart) {

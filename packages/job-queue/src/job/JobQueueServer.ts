@@ -9,13 +9,8 @@ import { ILimiter } from "../limiter/ILimiter";
 import { NullLimiter } from "../limiter/NullLimiter";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
-import type {
-  IQueueStorage,
-  JobStorageFormat,
-  QueueChangePayload,
-} from "../queue-storage/IQueueStorage";
+import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
-import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import { JobQueueClient } from "./JobQueueClient";
@@ -62,14 +57,8 @@ export type JobQueueServerEvents = keyof JobQueueServerEventListeners<unknown, u
  * Options for creating a JobQueueServer
  */
 export interface JobQueueServerOptions<Input, Output> {
-  /**
-   * Legacy single-storage option. Provide either `storage` OR the paired
-   * `messageQueue`+`jobStore`. When `storage` is given it is wrapped via
-   * {@link wrapQueueStorage} internally.
-   */
-  readonly storage?: IQueueStorage<Input, Output>;
-  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
-  readonly jobStore?: IJobStore<Input, Output>;
+  readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore: IJobStore<Input, Output>;
   readonly queueName: string;
   readonly limiter?: ILimiter;
   readonly workerCount?: number;
@@ -104,8 +93,6 @@ export class JobQueueServer<
   public readonly queueName: string;
   protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
   protected readonly jobStore: IJobStore<Input, Output>;
-  /** Optional legacy storage handle, set when the user constructed via `storage`. */
-  protected readonly storage: IQueueStorage<Input, Output> | null;
   protected readonly jobClass: JobClass<Input, Output>;
   public readonly limiter: ILimiter;
   protected readonly workerCount: number;
@@ -138,20 +125,8 @@ export class JobQueueServer<
 
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueServerOptions<Input, Output>) {
     this.queueName = options.queueName;
-    if (options.messageQueue && options.jobStore) {
-      this.messageQueue = options.messageQueue;
-      this.jobStore = options.jobStore;
-      this.storage = null;
-    } else if (options.storage) {
-      const wrapped = wrapQueueStorage(options.storage);
-      this.messageQueue = wrapped.messageQueue;
-      this.jobStore = wrapped.jobStore;
-      this.storage = options.storage;
-    } else {
-      throw new Error(
-        "JobQueueServer requires either `storage` or both `messageQueue` and `jobStore`"
-      );
-    }
+    this.messageQueue = options.messageQueue;
+    this.jobStore = options.jobStore;
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.workerCount = options.workerCount ?? 1;
@@ -192,7 +167,7 @@ export class JobQueueServer<
         {
           queueName: this.queueName,
           limiterScope: this.limiter.scope,
-          storage: this.storage?.constructor.name ?? this.messageQueue.constructor.name,
+          storage: this.messageQueue.constructor.name,
         }
       );
     }
@@ -290,13 +265,6 @@ export class JobQueueServer<
    */
   public getStats(): JobQueueStats {
     return { ...this.stats };
-  }
-
-  /**
-   * Get the storage instance (for client connection)
-   */
-  public getStorage(): IQueueStorage<Input, Output> | null {
-    return this.storage;
   }
 
   /** Get the message queue paired with this server. */

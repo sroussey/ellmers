@@ -7,13 +7,8 @@
 import { EventEmitter, getLogger } from "@workglow/util";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
-import type {
-  IQueueStorage,
-  JobStorageFormat,
-  QueueChangePayload,
-} from "../queue-storage/IQueueStorage";
+import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
-import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import { Job } from "./Job";
 import {
   AbortSignalJobError,
@@ -49,13 +44,8 @@ export interface JobHandle<Output> {
  * Options for creating a JobQueueClient
  */
 export interface JobQueueClientOptions<Input, Output> {
-  /**
-   * Legacy single-storage option. Provide either `storage` OR the paired
-   * `messageQueue`+`jobStore`.
-   */
-  readonly storage?: IQueueStorage<Input, Output>;
-  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
-  readonly jobStore?: IJobStore<Input, Output>;
+  readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore: IJobStore<Input, Output>;
   readonly queueName: string;
 }
 
@@ -68,7 +58,6 @@ export class JobQueueClient<Input, Output> {
   public readonly queueName: string;
   protected readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
   protected readonly jobStore: IJobStore<Input, Output>;
-  protected readonly storage: IQueueStorage<Input, Output> | null;
   protected readonly events = new EventEmitter<JobQueueEventListeners<Input, Output>>();
   protected server: JobQueueServer<Input, Output> | null = null;
   protected storageUnsubscribe: (() => void) | null = null;
@@ -103,20 +92,8 @@ export class JobQueueClient<Input, Output> {
 
   constructor(options: JobQueueClientOptions<Input, Output>) {
     this.queueName = options.queueName;
-    if (options.messageQueue && options.jobStore) {
-      this.messageQueue = options.messageQueue;
-      this.jobStore = options.jobStore;
-      this.storage = null;
-    } else if (options.storage) {
-      const wrapped = wrapQueueStorage(options.storage);
-      this.messageQueue = wrapped.messageQueue;
-      this.jobStore = wrapped.jobStore;
-      this.storage = options.storage;
-    } else {
-      throw new Error(
-        "JobQueueClient requires either `storage` or both `messageQueue` and `jobStore`"
-      );
-    }
+    this.messageQueue = options.messageQueue;
+    this.jobStore = options.jobStore;
   }
 
   /**
@@ -614,7 +591,7 @@ export class JobQueueClient<Input, Output> {
   }
 
   protected storageToClass(details: JobStorageFormat<Input, Output>): Job<Input, Output> {
-    return storageToClass(details, Job, { includeWorkerId: true });
+    return storageToClass(details, Job);
   }
 
   protected buildErrorFromJob(job: Job<Input, Output>): JobError {

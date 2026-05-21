@@ -23,11 +23,11 @@ describe.skipIf(!RUN_SUPABASE_TESTS)("SupabaseJobStoreExtensions", () => {
     name: "Supabase",
     setup: async () => {
       const queueName = `test-supabase-ext-${uuid4()}`;
-      const { jobStore, core } = createSupabaseQueue<{ value: string }, { result: string }>(
+      const { jobStore, messageQueue } = createSupabaseQueue<{ value: string }, { result: string }>(
         queueName,
         client
       );
-      await core.migrate();
+      await messageQueue.migrate();
       return {
         jobStore,
         queueName,

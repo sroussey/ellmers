@@ -199,18 +199,13 @@ export function runJobStoreExtensionTests(backend: BackendUnderTest): void {
       expect(record?.abort_requested_at).toBeTruthy();
     });
 
-    it("failWithError({}) still sets status=FAILED and doesn't clobber existing error fields", async () => {
+    it("failWithError({}) still sets status=FAILED", async () => {
       const id = await jobStore.create(
         { input: { value: "to-fail-empty" }, visible_at: null, completed_at: null },
         {}
       );
 
-      // Pre-populate error fields via saveError (deprecated path)
-      await jobStore.saveError(id, "original error", "ORIG_CODE", false);
-
-      // failWithError with empty opts must set FAILED but leave existing fields alone
-      // For in-memory, the pending-buffer error is drained on failWithError, so the
-      // status FAILED write is the key invariant here.
+      // failWithError with empty opts must set FAILED.
       await jobStore.failWithError(id, {});
 
       const record = await jobStore.get(id);
@@ -251,8 +246,11 @@ const sqliteBackend: BackendUnderTest = {
   name: "SQLite",
   setup: async () => {
     const queueName = `test-sqlite-ext-${uuid4()}`;
-    const { jobStore, core } = createSqliteQueue<TestInput, TestOutput>(queueName, sqliteDb);
-    await core.migrate();
+    const { jobStore, messageQueue } = createSqliteQueue<TestInput, TestOutput>(
+      queueName,
+      sqliteDb
+    );
+    await messageQueue.migrate();
     return {
       jobStore,
       queueName,

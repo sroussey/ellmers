@@ -24,11 +24,11 @@ describe.skipIf(!RUN_POSTGRES_TESTS)("PostgresJobStoreExtensions", () => {
     name: "Postgres",
     setup: async () => {
       const queueName = `test-pg-ext-${uuid4()}`;
-      const { jobStore, core } = createPostgresQueue<{ value: string }, { result: string }>(
+      const { jobStore, messageQueue } = createPostgresQueue<{ value: string }, { result: string }>(
         queueName,
         db
       );
-      await core.migrate();
+      await messageQueue.migrate();
       return {
         jobStore,
         queueName,
