@@ -36,6 +36,13 @@ const SQS_MAX_RECEIVE = 10;
  */
 const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
 
+/**
+ * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
+ * WeakSet so we don't pin store instances in memory — the warning fires
+ * once per process per store, then the store's lifecycle is unaffected.
+ */
+const __warnedInMemoryStores = new WeakSet<object>();
+
 export class SqsMessageQueue<Input, Output> implements IMessageQueue<
   JobStorageFormat<Input, Output>
 > {
@@ -51,6 +58,21 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     this.queueUrl = opts.queueUrl;
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
+
+    // H3: warn loudly (once per store) when paired with InMemoryJobStore.
+    // SQS at-least-once + an in-memory store means partial-failure rows
+    // strand forever (no shared lease-expiry sweep across processes).
+    const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
+      ?.constructor;
+    if (
+      storeCtor?.name === "InMemoryJobStore" &&
+      !__warnedInMemoryStores.has(opts.jobStore as unknown as object)
+    ) {
+      __warnedInMemoryStores.add(opts.jobStore as unknown as object);
+      getLogger().warn(
+        "[SqsMessageQueue] InMemoryJobStore detected — cloud adapters require a lease-sweeping JobStore (Postgres/Supabase/SQLite). Rows may strand on partial failures."
+      );
+    }
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts: SendOptions = {}): Promise<MessageId> {
