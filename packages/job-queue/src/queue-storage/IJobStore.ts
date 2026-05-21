@@ -95,6 +95,17 @@ export interface IJobStore<Input, Output> {
   ): Promise<void>;
 
   /**
+   * Atomically write status=DISABLED, release the lease, clear progress
+   * fields, and stamp `completed_at` in a single storage operation.
+   * Counterpart to {@link completeWithResult} / {@link failWithError} for
+   * the disable path; honors {@link IClaim.disable}'s atomicity guarantee
+   * for cloud adapters whose worker does not share a wrapped core with the
+   * store (SQS, Cloudflare Queues). Does NOT write error/error_code —
+   * DISABLED is not an error transition.
+   */
+  markDisabled(id: MessageId): Promise<void>;
+
+  /**
    * Mark a row's enqueue as deferred after a transient producer-side
    * failure: set `visible_at` to a future timestamp (backoff) and stash an
    * `error_code` (e.g. "ENQUEUE_FAILED") WITHOUT touching `status` or

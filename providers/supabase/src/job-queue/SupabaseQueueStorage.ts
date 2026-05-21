@@ -979,6 +979,30 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
+   * Atomically writes status=DISABLED, releases the lease, clears progress
+   * fields, and stamps `completed_at`. Does NOT write error/error_code —
+   * DISABLED is not an error transition.
+   */
+  public async markDisabled(id: unknown): Promise<void> {
+    const now = new Date().toISOString();
+    let query = this.client
+      .from(this.tableName)
+      .update({
+        status: "DISABLED" as JobStatus,
+        completed_at: now,
+        lease_owner: null,
+        progress: 0,
+        progress_message: "",
+        progress_details: null,
+      })
+      .eq("id", id as never)
+      .eq("queue", this.queueName);
+    query = this.applyPrefixFilters(query);
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  /**
    * Delete jobs with a specific status older than a cutoff date
    * @param status - Status of jobs to delete
    * @param olderThanMs - Delete jobs completed more than this many milliseconds ago

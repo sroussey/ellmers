@@ -880,19 +880,19 @@ export class JobQueueWorker<
    */
   protected async failJob(job: Job<Input, Output>, error: JobError): Promise<void> {
     try {
+      const persistedCode = jobErrorPersistedCode(error);
       job.status = JobStatus.FAILED;
       job.progress = 100;
       job.completedAt = new Date();
       job.progressMessage = "";
       job.progressDetails = null;
       job.error = error.message;
-      job.errorCode = jobErrorPersistedCode(error);
+      job.errorCode = persistedCode;
 
       // Atomic fail: hand error/errorCode/abortRequested directly to
       // claim.fail() so they land in a single storage write together with
       // status=FAILED.
       const abortRequested = error instanceof AbortSignalJobError;
-      const persistedCode = jobErrorPersistedCode(error);
       const claim = this.getClaim(job.id);
       if (claim) {
         await claim.fail({

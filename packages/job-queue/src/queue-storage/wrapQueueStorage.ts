@@ -253,6 +253,19 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     });
   }
 
+  async markDisabled(id: MessageId): Promise<void> {
+    const current = await this.storage.get(id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.storage.finalize(id, {
+      status: "DISABLED",
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
+
   async failWithError(
     id: MessageId,
     opts: {

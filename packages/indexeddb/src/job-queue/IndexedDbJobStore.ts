@@ -135,6 +135,19 @@ export class IndexedDbJobStore<Input, Output> implements IJobStore<Input, Output
     });
   }
 
+  async markDisabled(id: MessageId): Promise<void> {
+    const current = await this.core.get(id);
+    const completedAt = current?.completed_at ?? new Date().toISOString();
+    await this.core.finalize(id, {
+      status: "DISABLED",
+      completed_at: completedAt,
+      lease_owner: null,
+      progress: 0,
+      progress_message: "",
+      progress_details: null,
+    });
+  }
+
   async markEnqueueDeferred(
     id: MessageId,
     opts: { readonly visible_at: Date; readonly errorCode: string }

@@ -82,6 +82,6 @@ export class CloudflareClaim<Input, Output> implements IClaim<JobStorageFormat<I
 
   async disable(): Promise<void> {
     this.message.ack();
-    await this.jobStore.saveStatus(this.id, JobStatus.DISABLED);
+    await this.jobStore.markDisabled(this.id);
   }
 }

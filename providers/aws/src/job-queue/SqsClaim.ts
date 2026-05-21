@@ -127,6 +127,6 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
         ReceiptHandle: this.receiptHandle,
       })
     );
-    await this.jobStore.saveStatus(this.id, JobStatus.DISABLED);
+    await this.jobStore.markDisabled(this.id);
   }
 }

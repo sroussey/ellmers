@@ -831,6 +831,28 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
   }
 
   /**
+   * Atomically writes status=DISABLED, releases the lease, clears progress
+   * fields, and stamps `completed_at`. Does NOT write error/error_code —
+   * DISABLED is not an error transition.
+   */
+  public async markDisabled(id: unknown): Promise<void> {
+    const prefixConditions = this.buildPrefixWhereClause();
+    const prefixParams = this.getPrefixParamValues();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(
+      `UPDATE ${this.tableName}
+          SET status = 'DISABLED',
+              completed_at = COALESCE(completed_at, ?),
+              lease_owner = NULL,
+              progress = 0,
+              progress_message = '',
+              progress_details = NULL
+        WHERE id = ? AND queue = ?${prefixConditions}`
+    );
+    stmt.run(now, String(id), this.queueName, ...prefixParams);
+  }
+
+  /**
    * Delete jobs with a specific status older than a cutoff date
    * @param status - Status of jobs to delete
    * @param olderThanMs - Delete jobs completed more than this many milliseconds ago

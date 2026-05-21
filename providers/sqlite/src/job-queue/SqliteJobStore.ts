@@ -113,6 +113,10 @@ export class SqliteJobStore<Input, Output> implements IJobStore<Input, Output> {
     await this.core.failWithError(id, opts);
   }
 
+  async markDisabled(id: MessageId): Promise<void> {
+    await this.core.markDisabled(id);
+  }
+
   async markEnqueueDeferred(
     id: MessageId,
     opts: { readonly visible_at: Date; readonly errorCode: string }
