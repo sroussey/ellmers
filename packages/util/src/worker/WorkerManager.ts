@@ -6,6 +6,7 @@
 
 import { createServiceToken, globalServiceRegistry } from "../di";
 import { getLogger } from "../logging";
+import { scrubStack } from "./scrubStack";
 
 export class WorkerManager {
   private workers: Map<string, Worker> = new Map();
@@ -271,11 +272,22 @@ export class WorkerManager {
           } else if (type === "error") {
             cleanup();
             getLogger().debug(`Worker ${workerName} function ${functionName} error.`, { data });
+            // H8: defense-in-depth — a third-party worker that didn't go
+            // through our scrubbing postError may still ship absolute paths
+            // in `data.stack`. Re-scrub with the manager process's cwd
+            // before handing the rehydrated Error to the caller.
+            const scrubbedStack =
+              typeof data === "object" && data !== null && typeof data.stack === "string"
+                ? scrubStack(
+                    data.stack,
+                    [typeof process !== "undefined" ? process.cwd() : ""].filter(Boolean)
+                  )
+                : undefined;
             const err =
               typeof data === "object" && data !== null
                 ? Object.assign(new Error(data.message ?? String(data)), {
                     name: data.name ?? "Error",
-                    ...(typeof data.stack === "string" ? { stack: data.stack } : {}),
+                    ...(scrubbedStack !== undefined ? { stack: scrubbedStack } : {}),
                   })
                 : new Error(String(data));
             reject(err);

@@ -135,6 +135,10 @@ export class Task<
   /**
    * Tracks task types that have already received the legacy `cacheable = false` deprecation
    * warning, so the warning fires only once per task type across the process lifetime.
+   *
+   * H7: keyed by a synthetic typeKey (see {@link getCachePolicy}) — when a
+   * subclass leaves the static `type` at the base "Task" value, the key
+   * is `Task#<ClassName>` so subclasses don't silence each other.
    */
   private static __cacheableDeprecationWarned = new Set<string>();
 
@@ -392,10 +396,21 @@ export class Task<
     const hasPolicyOverride = Object.prototype.hasOwnProperty.call(ctor, "cachePolicy");
 
     if (hasLegacyOverride && !hasPolicyOverride) {
-      if (!Task.__cacheableDeprecationWarned.has(ctor.type)) {
-        Task.__cacheableDeprecationWarned.add(ctor.type);
+      // H7: keying the dedup Set by `ctor.type` alone collapsed every subclass
+      // that hadn't overridden the static `type` (which still reads "Task"
+      // from the base) into a single warning — the first offender silenced
+      // the rest. Fall back to the subclass's runtime `name` when `type` is
+      // still the base value so each distinct class gets its own warning.
+      // The verbose env override exists for one-shot diagnostic runs where
+      // an operator wants every occurrence (not just the first per class)
+      // surfaced — e.g., grepping CI logs to find every legacy site.
+      const typeKey = ctor.type === "Task" ? `Task#${ctor.name}` : ctor.type;
+      const verbose =
+        typeof process !== "undefined" && process.env?.WORKGLOW_CACHE_DEPRECATION === "verbose";
+      if (verbose || !Task.__cacheableDeprecationWarned.has(typeKey)) {
+        Task.__cacheableDeprecationWarned.add(typeKey);
         getLogger().warn(
-          `Task "${ctor.type}": static \`cacheable = false\` is deprecated. ` +
+          `Task "${typeKey}": static \`cacheable = false\` is deprecated. ` +
             `Use \`static cachePolicy: CachePolicy = { kind: "none" }\` instead.`
         );
       }
@@ -1245,4 +1260,15 @@ export class Task<
     }
     this.events.emit("regenerate");
   }
+}
+
+/**
+ * Test helper: clear the H7 dedup Set so each test case can re-trigger the
+ * one-time legacy-`cacheable` deprecation warning. Lives in production code
+ * (not a __tests__ file) so it's reachable from outside the package's test
+ * harness; the leading double-underscore signals "do not rely on this in
+ * application code".
+ */
+export function __resetCacheableDeprecationWarnings(): void {
+  (Task as unknown as { __cacheableDeprecationWarned: Set<string> }).__cacheableDeprecationWarned.clear();
 }

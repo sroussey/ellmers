@@ -14,6 +14,7 @@ import {
   type MessageId,
 } from "@workglow/job-queue";
 import type { CloudMessageBody } from "./types";
+import { persistWithRetry } from "./persistWithRetry";
 
 export interface CloudflareClaimOptions<Input, Output> {
   readonly message: Message<CloudMessageBody>;
@@ -51,23 +52,34 @@ export class CloudflareClaim<Input, Output> implements IClaim<JobStorageFormat<I
   // Reversing the order would risk double-delivery, which is worse.
   // CloudflareClaim.fail() also calls message.ack() (NOT message.retry()):
   // terminal failures must not be redelivered by CFQ; the worker decides
-  // retry policy via attempts/max_attempts.
+  // retry policy via attempts/max_attempts. The JobStore write is wrapped
+  // in persistWithRetry so a transient DB blip doesn't strand the row.
   async ack(result?: unknown): Promise<void> {
     this.message.ack();
     if (result !== undefined) {
-      await this.jobStore.completeWithResult(this.id, result as Output);
+      await persistWithRetry(
+        () => this.jobStore.completeWithResult(this.id, result as Output),
+        "CloudflareClaim.ack"
+      );
     } else {
-      await this.jobStore.saveStatus(this.id, JobStatus.COMPLETED);
+      await persistWithRetry(
+        () => this.jobStore.saveStatus(this.id, JobStatus.COMPLETED),
+        "CloudflareClaim.ack"
+      );
     }
   }
 
   async fail(opts?: ClaimFailOptions): Promise<void> {
     this.message.ack();
-    await this.jobStore.failWithError(this.id, {
-      error: opts?.error,
-      errorCode: opts?.errorCode,
-      abortRequested: opts?.abortRequested,
-    });
+    await persistWithRetry(
+      () =>
+        this.jobStore.failWithError(this.id, {
+          error: opts?.error,
+          errorCode: opts?.errorCode,
+          abortRequested: opts?.abortRequested,
+        }),
+      "CloudflareClaim.fail"
+    );
   }
 
   async retry(opts?: { delaySeconds?: number }): Promise<void> {

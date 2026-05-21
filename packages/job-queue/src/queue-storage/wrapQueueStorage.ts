@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getLogger } from "@workglow/util";
 import type { IClaim } from "./IClaim";
 import type { IJobStore, JobRecord } from "./IJobStore";
 import type { IMessageQueue, MessageId, SendOptions } from "./IMessageQueue";
@@ -14,6 +15,23 @@ import type {
   QueueChangePayload,
   QueueSubscribeOptions,
 } from "./IQueueStorage";
+
+/**
+ * Upper bound on the number of PENDING + PROCESSING rows scanned by the
+ * wrapper-fallback {@link WrappedJobStore.findActiveByFingerprint}. The
+ * native storage path (Postgres/SQLite/Supabase) uses a partial unique
+ * index for O(1) lookup; this wrapper fallback only runs for backends
+ * that don't expose `findActiveByFingerprint` on the storage layer
+ * (in-memory, IndexedDB). 10k is enough to keep dedup correct for any
+ * realistic single-queue working set without unbounded scans under load.
+ */
+const MAX_FINGERPRINT_SCAN = 10_000;
+
+/**
+ * One-shot warning gate for the bounded-scan exhaustion path so a hot
+ * queue doesn't flood logs with the same message every send.
+ */
+let __fingerprintScanExhaustedWarned = false;
 
 /**
  * Transient per-id buffer of outputs / errors written via
@@ -50,12 +68,8 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    const output =
-      result !== undefined
-        ? result
-        : buf?.output !== undefined
-          ? buf.output
-          : (current.output ?? null);
+    // do not fall back to current — that's the prior attempt's value and finalize() must overwrite it
+    const output = result !== undefined ? result : buf?.output !== undefined ? buf.output : null;
     await this.storage.finalize(this.id, {
       // `output` cast — finalize is typed against Output but receives the
       // result the worker passed in; the queue body's Output and the claim's
@@ -103,18 +117,16 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     const buf = this.pending.get(this.id);
     this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
+    // do not fall back to current — that's the prior attempt's value and finalize() must overwrite it
     const error =
-      opts?.error !== undefined
-        ? opts.error
-        : buf?.error !== undefined
-          ? buf.error
-          : (current.error ?? null);
+      opts?.error !== undefined ? opts.error : buf?.error !== undefined ? buf.error : null;
+    // do not fall back to current — that's the prior attempt's value and finalize() must overwrite it
     const errorCode =
       opts?.errorCode !== undefined
         ? opts.errorCode
         : buf?.errorCode !== undefined
           ? buf.errorCode
-          : (current.error_code ?? null);
+          : null;
     const abortRequested =
       opts?.abortRequested !== undefined ? opts.abortRequested : (buf?.abortRequested ?? false);
     await this.storage.finalize(this.id, {
@@ -318,15 +330,45 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     fingerprint: string,
     _queueName: string
   ): Promise<JobRecord<Input, Output> | undefined> {
-    // The wrapped storage is already scoped to a single queue, so any
-    // PENDING/PROCESSING row found here is in "this" queue. The queueName
-    // parameter is accepted for interface compatibility but not used for
-    // filtering — the storage instance boundary provides the scope.
-    const [pending, processing] = await Promise.all([
-      this.storage.peek("PENDING"),
-      this.storage.peek("PROCESSING"),
-    ]);
-    return [...pending, ...processing].find((j) => j.fingerprint === fingerprint);
+    // Prefer the native storage implementation when available (Postgres,
+    // SQLite, Supabase): those backends have a partial unique index on
+    // (queue, fingerprint) WHERE status IN ('PENDING','PROCESSING') for
+    // O(1) lookup. Falling through to a peek-and-scan would be a perf
+    // regression on the hot dedup path.
+    const native = this.storage.findActiveByFingerprint;
+    if (typeof native === "function") {
+      return native.call(this.storage, fingerprint, _queueName);
+    }
+
+    // Fallback for backends without a native implementation (in-memory,
+    // IndexedDB): single bounded peek per status, up to MAX_FINGERPRINT_SCAN
+    // total rows across PENDING + PROCESSING. The actual cap is the minimum
+    // of MAX_FINGERPRINT_SCAN and whatever the underlying peek() impl
+    // chooses to cap `num` at internally. We rely on MAX_FINGERPRINT_SCAN as
+    // a hard ceiling and surface a one-shot warning when we exhaust it
+    // without finding a match. The wrapped storage is already scoped to a
+    // single queue, so any row found here is in "this" queue — the
+    // queueName parameter is accepted for interface compatibility but not
+    // used for filtering.
+    let scanned = 0;
+    for (const status of ["PENDING", "PROCESSING"] as const) {
+      const remaining = MAX_FINGERPRINT_SCAN - scanned;
+      if (remaining <= 0) break;
+      const rows = await this.storage.peek(status, remaining);
+      for (const r of rows) {
+        scanned += 1;
+        if (r.fingerprint === fingerprint) return r;
+        if (scanned >= MAX_FINGERPRINT_SCAN) break;
+      }
+    }
+
+    if (scanned >= MAX_FINGERPRINT_SCAN && !__fingerprintScanExhaustedWarned) {
+      __fingerprintScanExhaustedWarned = true;
+      getLogger().warn(
+        "WrappedJobStore.findActiveByFingerprint: scanned MAX_FINGERPRINT_SCAN rows without a match; dedup may be best-effort under load"
+      );
+    }
+    return undefined;
   }
 
   async getMany(
@@ -378,6 +420,22 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       visible_at: opts.visible_at.toISOString(),
       error_code: opts.errorCode,
     });
+  }
+
+  async markEnqueueDeferredMany(
+    ids: readonly MessageId[],
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
+    // H4: default impl — fan out the per-id writes in parallel rather than
+    // forcing callers into a serial for/await loop. allSettled so a single
+    // failed id doesn't tank the rest of the batch; structured failure list
+    // surfaces to the caller's AggregateError handling. SQL backends can
+    // override with a single bulk UPDATE for a one-round-trip path.
+    const results = await Promise.allSettled(ids.map((id) => this.markEnqueueDeferred(id, opts)));
+    const failed = results.flatMap((r, i) =>
+      r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
+    );
+    return { failed };
   }
 }
 

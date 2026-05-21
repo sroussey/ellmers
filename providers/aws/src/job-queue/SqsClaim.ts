@@ -18,6 +18,7 @@ import {
   type MessageId,
   JobStatus,
 } from "@workglow/job-queue";
+import { persistWithRetry } from "./persistWithRetry";
 
 const SQS_MAX_VISIBILITY_FROM_FIRST_RECEIVE_MS = 12 * 60 * 60 * 1000;
 
@@ -63,7 +64,9 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
   // If the store write throws, the SQS message is already gone — the row
   // stays PROCESSING but no redelivery is possible; the lease-expiry sweep
   // eventually marks it FAILED/PENDING. Reversing the order would risk
-  // double-delivery, which is the worse failure mode.
+  // double-delivery, which is the worse failure mode. The JobStore write is
+  // wrapped in persistWithRetry so a transient DB blip doesn't strand the
+  // row — lease-expiry remains the worst-case safety net.
   async ack(result?: unknown): Promise<void> {
     await this.sqs.send(
       new DeleteMessageCommand({
@@ -72,9 +75,15 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
       })
     );
     if (result !== undefined) {
-      await this.jobStore.completeWithResult(this.id, result as Output);
+      await persistWithRetry(
+        () => this.jobStore.completeWithResult(this.id, result as Output),
+        "SqsClaim.ack"
+      );
     } else {
-      await this.jobStore.saveStatus(this.id, JobStatus.COMPLETED);
+      await persistWithRetry(
+        () => this.jobStore.saveStatus(this.id, JobStatus.COMPLETED),
+        "SqsClaim.ack"
+      );
     }
   }
 
@@ -85,11 +94,15 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
         ReceiptHandle: this.receiptHandle,
       })
     );
-    await this.jobStore.failWithError(this.id, {
-      error: opts?.error,
-      errorCode: opts?.errorCode,
-      abortRequested: opts?.abortRequested,
-    });
+    await persistWithRetry(
+      () =>
+        this.jobStore.failWithError(this.id, {
+          error: opts?.error,
+          errorCode: opts?.errorCode,
+          abortRequested: opts?.abortRequested,
+        }),
+      "SqsClaim.fail"
+    );
   }
 
   async retry(opts?: { delaySeconds?: number }): Promise<void> {
