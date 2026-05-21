@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Cactus_DownloadRemove } from "../ai/common/Cactus_DownloadRemove";
 import { cactusConfigJson, cactusEngines } from "../ai/common/Cactus_Runtime";
 
 describe("Cactus_DownloadRemove", () => {
+  afterEach(() => {
+    cactusEngines.clear();
+    cactusConfigJson.clear();
+  });
+
   it("drops cached engine and config; emits finish", async () => {
     cactusEngines.set("needle-26m", {} as any);
     cactusConfigJson.set("needle-26m", { fake: true });
