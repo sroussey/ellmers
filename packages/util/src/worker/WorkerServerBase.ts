@@ -5,6 +5,7 @@
  */
 
 import { createServiceToken } from "../di";
+import { scrubStack } from "./scrubStack";
 
 /** Service token for the platform-specific WorkerServer instance. */
 export const WORKER_SERVER = createServiceToken<WorkerServerBase>("worker.server");
@@ -203,11 +204,25 @@ export class WorkerServerBase {
       return; // Already responded to this request
     }
     this.completedRequests.add(id);
+    // H8: scrub absolute paths from any stack we ship to the parent and
+    // omit the stack entirely in production unless the operator opts in
+    // via WORKGLOW_INCLUDE_STACKS=1. Without this, build-server / container
+    // / customer-deployment roots leaked through every UI that rendered
+    // the rejected promise.
+    const roots = [typeof process !== "undefined" ? process.cwd() : ""].filter(Boolean);
+    const includeStack =
+      typeof process === "undefined" ||
+      process.env?.NODE_ENV !== "production" ||
+      process.env?.WORKGLOW_INCLUDE_STACKS === "1";
     let data: { message: string; name: string; stack?: string };
     if (typeof error === "string") {
       data = { message: error, name: "Error" };
     } else if (error instanceof Error) {
-      data = { message: error.message, name: error.name, stack: error.stack };
+      data = { message: error.message, name: error.name };
+      if (includeStack) {
+        const scrubbed = scrubStack(error.stack, roots);
+        if (scrubbed !== undefined) data.stack = scrubbed;
+      }
     } else {
       data = { message: String(error), name: "Error" };
     }
