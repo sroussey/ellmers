@@ -75,12 +75,19 @@ export class ResourceScope {
 
   /**
    * Called by runners just before a new run begins. Delegates to the
-   * strategy's `onRunStart` hook. Closes the race where an inactivity timer
-   * armed by the previous `runComplete` could fire and dispose a resource
-   * the next run is about to use.
+   * strategy's optional `onRunStart` hook (no-op when the strategy does
+   * not implement it). Closes the race where an inactivity timer armed
+   * by the previous `runComplete` could fire and dispose a resource the
+   * next run is about to use.
+   *
+   * The guard is load-bearing: it keeps runStart synchronous for strategies
+   * without pre-run work, which preserves the microtask ordering that the
+   * task runner's abort-during-handleStart code path depends on.
    */
   async runStart(): Promise<void> {
-    await this.strategy.onRunStart(this);
+    if (this.strategy.onRunStart) {
+      await this.strategy.onRunStart(this);
+    }
   }
 
   /**

@@ -32,8 +32,15 @@ import type { ResourceScope } from "./ResourceScope";
  */
 export interface IDisposeStrategy {
   onRegister(key: string, disposer: () => Promise<void>, scope: ResourceScope): () => Promise<void>;
-  /** Called by `ResourceScope.runStart()` before a run begins. */
-  onRunStart(scope: ResourceScope): Promise<void> | void;
+  /**
+   * Called by `ResourceScope.runStart()` before a run begins.
+   * Optional — `ResourceScope.runStart` no-ops when the strategy does not
+   * implement this hook. Keeping it optional preserves the microtask shape
+   * of `runStart()` (zero internal awaits) for strategies that have no
+   * pre-run work; making it required adds an `await undefined` that changes
+   * abort-race timing in the task runner.
+   */
+  onRunStart?(scope: ResourceScope): Promise<void> | void;
   touch(key: string): void;
   onRunComplete(scope: ResourceScope): Promise<void>;
   onScopeDestroy(scope: ResourceScope): Promise<void>;
