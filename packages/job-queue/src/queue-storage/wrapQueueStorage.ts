@@ -420,6 +420,22 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       error_code: opts.errorCode,
     });
   }
+
+  async markEnqueueDeferredMany(
+    ids: readonly MessageId[],
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
+    // H4: default impl — fan out the per-id writes in parallel rather than
+    // forcing callers into a serial for/await loop. allSettled so a single
+    // failed id doesn't tank the rest of the batch; structured failure list
+    // surfaces to the caller's AggregateError handling. SQL backends can
+    // override with a single bulk UPDATE for a one-round-trip path.
+    const results = await Promise.allSettled(ids.map((id) => this.markEnqueueDeferred(id, opts)));
+    const failed = results.flatMap((r, i) =>
+      r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
+    );
+    return { failed };
+  }
 }
 
 function applySendOptions<Input, Output>(

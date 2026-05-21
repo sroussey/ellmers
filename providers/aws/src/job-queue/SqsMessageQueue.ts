@@ -172,13 +172,20 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // forward and error_code set, instead of FAILING (which would
       // permanently drop the work for any consumer that's polling for
       // PENDING). Successful rows in the batch keep their original PENDING +
-      // visible_at = now from create().
+      // visible_at = now from create(). Use the batched many-variant so we
+      // do one parallel fan-out rather than a serial per-id round-trip
+      // storm; the WrappedJobStore default impl is always present.
       const defer = new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS);
-      for (const { id } of failures) {
-        await this.jobStore.markEnqueueDeferred(id, {
-          visible_at: defer,
-          errorCode: "ENQUEUE_FAILED",
-        });
+      const failedIds = failures.map((f) => f.id);
+      const deferResult = await this.jobStore.markEnqueueDeferredMany!(failedIds, {
+        visible_at: defer,
+        errorCode: "ENQUEUE_FAILED",
+      });
+      for (const { id, err } of deferResult.failed) {
+        getLogger().error(
+          `[SqsMessageQueue] markEnqueueDeferred failed id=${String(id)}`,
+          { err }
+        );
       }
       throw new AggregateError(
         failures.map((f) => (f.err instanceof Error ? f.err : new Error(String(f.err)))),

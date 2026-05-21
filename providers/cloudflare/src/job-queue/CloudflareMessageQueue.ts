@@ -135,13 +135,20 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
       await this.queue.sendBatch(messages);
     } catch (err) {
       // H4: transient — keep every row PENDING with visible_at pushed forward
-      // and error_code set. Re-throw so the caller sees the failure.
+      // and error_code set. Re-throw so the caller sees the failure. Use the
+      // batched many-variant so we fan out the per-id writes in parallel
+      // rather than serializing them; the WrappedJobStore default impl is
+      // always present.
       const defer = new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS);
-      for (const id of ids) {
-        await this.jobStore.markEnqueueDeferred(id, {
-          visible_at: defer,
-          errorCode: "ENQUEUE_FAILED",
-        });
+      const deferResult = await this.jobStore.markEnqueueDeferredMany!(ids, {
+        visible_at: defer,
+        errorCode: "ENQUEUE_FAILED",
+      });
+      for (const { id, err: deferErr } of deferResult.failed) {
+        getLogger().error(
+          `[CloudflareMessageQueue] markEnqueueDeferred failed id=${String(id)}`,
+          { err: deferErr }
+        );
       }
       throw err;
     }
