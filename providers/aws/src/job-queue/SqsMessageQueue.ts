@@ -37,6 +37,23 @@ const SQS_MAX_RECEIVE = 10;
 const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
 
 /**
+ * H5: clamp the defer interval to the original `delaySeconds` floor so a row
+ * with a legitimate large delay (e.g. 1h scheduled work) is NOT pulled
+ * forward to now + 30s by a producer-side blip. Returns the maximum of the
+ * original delay and the producer-retry backoff so:
+ *   - delaySeconds = 0   → wait 30s before next producer attempt
+ *   - delaySeconds = 3600 → wait 3600s (the original schedule)
+ *
+ * TODO: full exponential backoff requires a new enqueue_defer_attempts field;
+ * see follow-up issue. Today's mitigation just prevents the bug where a
+ * scheduled row is silently re-delivered ahead of schedule.
+ */
+function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
+  const original = originalDelaySeconds != null ? originalDelaySeconds * 1000 : 0;
+  return Math.max(original, ENQUEUE_DEFER_BACKOFF_MS);
+}
+
+/**
  * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
@@ -108,8 +125,10 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // H4: a producer-side throw is transient — leave the row PENDING so a
       // retry or a polling consumer can pick it back up. We shift visible_at
       // forward and stamp error_code; status/attempts are untouched.
+      // H5: clamp to the original delaySeconds floor so a scheduled row is
+      // not pulled forward by the producer-retry backoff.
       await this.jobStore.markEnqueueDeferred(id, {
-        visible_at: new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS),
+        visible_at: new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds)),
         errorCode: "ENQUEUE_FAILED",
       });
       throw err;
@@ -175,7 +194,8 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // visible_at = now from create(). Use the batched many-variant so we
       // do one parallel fan-out rather than a serial per-id round-trip
       // storm; the WrappedJobStore default impl is always present.
-      const defer = new Date(Date.now() + ENQUEUE_DEFER_BACKOFF_MS);
+      // H5: clamp to the original delaySeconds floor.
+      const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const failedIds = failures.map((f) => f.id);
       const deferResult = await this.jobStore.markEnqueueDeferredMany!(failedIds, {
         visible_at: defer,
