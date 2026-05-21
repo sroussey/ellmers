@@ -7,9 +7,11 @@
 import type { ImageValue } from "@workglow/util/media";
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, type Capability } from "../capability/Capabilities";
-import type { ImageEmbeddingTaskInput } from "./ImageEmbeddingTask";
 import { AiTask } from "./base/AiTask";
+import type { ImageEmbeddingTaskInput } from "./ImageEmbeddingTask";
 import { registerAiTasks } from "./index";
+import { StructuredGenerationTask } from "./StructuredGenerationTask";
+import { ToolCallingTask } from "./ToolCallingTask";
 
 const imageEmbeddingInputImageIsTyped: ImageEmbeddingTaskInput["image"] extends
   | ImageValue
@@ -64,5 +66,29 @@ describe("AI task requires audit", () => {
     for (const cap of expected) {
       expect(seen.has(cap), `expected at least one task with ${cap}`).toBe(true);
     }
+  });
+});
+
+describe("ToolCallingTask.requires (post-relaxation)", () => {
+  it("requires exactly ['tool-use']", () => {
+    expect([...ToolCallingTask.requires]).toEqual(["tool-use"]);
+  });
+
+  it("is satisfied by a tool-only model (capabilities: ['tool-use'])", () => {
+    const required = new Set(ToolCallingTask.requires);
+    const have = new Set(["tool-use"]);
+    expect([...required].every((c) => have.has(c))).toBe(true);
+  });
+
+  it("is satisfied by a chat-LLM model (capabilities: ['text.generation', 'tool-use'])", () => {
+    const required = new Set(ToolCallingTask.requires);
+    const have = new Set(["text.generation", "tool-use"]);
+    expect([...required].every((c) => have.has(c))).toBe(true);
+  });
+});
+
+describe("StructuredGenerationTask.requires (post-relaxation)", () => {
+  it("requires exactly ['json-mode']", () => {
+    expect([...StructuredGenerationTask.requires]).toEqual(["json-mode"]);
   });
 });
