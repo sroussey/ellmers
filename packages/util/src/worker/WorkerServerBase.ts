@@ -203,11 +203,11 @@ export class WorkerServerBase {
       return; // Already responded to this request
     }
     this.completedRequests.add(id);
-    let data: { message: string; name: string };
+    let data: { message: string; name: string; stack?: string };
     if (typeof error === "string") {
       data = { message: error, name: "Error" };
     } else if (error instanceof Error) {
-      data = { message: error.message, name: error.name };
+      data = { message: error.message, name: error.name, stack: error.stack };
     } else {
       data = { message: String(error), name: "Error" };
     }

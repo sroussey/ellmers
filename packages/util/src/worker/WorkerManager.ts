@@ -275,6 +275,7 @@ export class WorkerManager {
               typeof data === "object" && data !== null
                 ? Object.assign(new Error(data.message ?? String(data)), {
                     name: data.name ?? "Error",
+                    ...(typeof data.stack === "string" ? { stack: data.stack } : {}),
                   })
                 : new Error(String(data));
             reject(err);
