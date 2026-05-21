@@ -984,12 +984,17 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
    * DISABLED is not an error transition.
    */
   public async markDisabled(id: unknown): Promise<void> {
-    const now = new Date().toISOString();
+    // Fetch first so we can preserve an existing completed_at (parity with
+    // Postgres/SQLite COALESCE and the InMemory/IndexedDb/WrappedJobStore
+    // `current?.completed_at ?? now` pattern). PostgREST has no COALESCE on
+    // .update(), so we read-then-write.
+    const existing = await this.get(id);
+    const completedAt = existing?.completed_at ?? new Date().toISOString();
     let query = this.client
       .from(this.tableName)
       .update({
         status: "DISABLED" as JobStatus,
-        completed_at: now,
+        completed_at: completedAt,
         lease_owner: null,
         progress: 0,
         progress_message: "",

@@ -1315,6 +1315,66 @@ export function runGenericJobQueueTests(
     });
   });
 
+  describe("jobStore.markDisabled atomic terminal write", () => {
+    it("clears lease_owner, progress fields, stamps completed_at, leaves error untouched", async () => {
+      // Exercises the IJobStore.markDisabled contract directly through the
+      // JobStore facade (not the claim). This is the path Cloudflare/SQS take
+      // when their claim's disable() runs, and the path the worker's
+      // disableJob no-claim fallback takes.
+      const { jobStore } = wrapQueueStorage(storage);
+
+      const handle = await client.send({ taskType: "task1", data: "to-disable" });
+      const id = handle.id;
+      // Claim it so lease_owner gets set and the row is PROCESSING.
+      const claimed = await storage.next("disable-worker", { leaseMs: 30_000 });
+      expect(claimed?.id).toBe(id);
+      expect(claimed?.lease_owner).toBe("disable-worker");
+      // Push some progress so we can verify it gets cleared.
+      await storage.saveProgress(id, 42, "half done", { phase: "x" });
+
+      await jobStore.markDisabled(id);
+
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.DISABLED);
+      expect(final?.lease_owner).toBeNull();
+      expect(final?.progress).toBe(0);
+      expect(final?.progress_message).toBe("");
+      expect(final?.progress_details).toBeNull();
+      expect(final?.completed_at).toBeTruthy();
+      // DISABLED is not an error transition.
+      expect(final?.error ?? null).toBeNull();
+      expect(final?.error_code ?? null).toBeNull();
+    });
+
+    it("preserves an existing completed_at instead of clobbering it", async () => {
+      // Parity across backends: Postgres/SQLite COALESCE on completed_at,
+      // InMemory/IndexedDb/wrapQueueStorage use `current?.completed_at ?? now`,
+      // and Supabase reads-then-writes for the same effect. None should
+      // overwrite a previously-stamped completed_at.
+      const { jobStore } = wrapQueueStorage(storage);
+
+      const handle = await client.send({ taskType: "task1", data: "preserve-completed-at" });
+      const id = handle.id;
+      // Claim and finalize as COMPLETED so completed_at is set.
+      await storage.next("preserve-worker", { leaseMs: 30_000 });
+      const firstCompletedAt = new Date(Date.now() - 60_000).toISOString();
+      await storage.finalize(id, {
+        status: JobStatus.COMPLETED,
+        completed_at: firstCompletedAt,
+        output: { result: "ok" } as unknown as TOutput,
+      });
+
+      await jobStore.markDisabled(id);
+
+      const final = await storage.get(id);
+      expect(final?.status).toBe(JobStatus.DISABLED);
+      // Postgres/Supabase return TIMESTAMPTZ as Date; SQLite/InMemory as
+      // ISO string. Normalize via Date.getTime() comparison.
+      const normalizedFinal = final?.completed_at ? new Date(final.completed_at).getTime() : null;
+      expect(normalizedFinal).toBe(new Date(firstCompletedAt).getTime());
+    });
+  });
+
   describe("ack must not bump attempts (C2 + M4)", () => {
     it("submit → claim → finalize(COMPLETED): attempts stays at 0", async () => {
       // The contract: ack/fail go through storage.finalize(), which does NOT

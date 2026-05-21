@@ -72,9 +72,10 @@ export class TaskRunner<
   protected currentCtx?: TaskRunContext;
 
   /**
-   * The output cache for the task
-   * @deprecated Use `cacheRegistry` instead. Kept for back-compat with callers
-   * that pass `outputCache: repo` through IRunConfig.
+   * Output cache repository resolved per-run. Set when the caller passes
+   * `outputCache: repo | true` through IRunConfig; the {@link cacheRegistry}
+   * deterministic slot is synthesized from it. When `outputCache` is absent
+   * and a CACHE_REGISTRY is registered, that is used instead.
    */
   protected outputCache?: TaskOutputRepository;
 

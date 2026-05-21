@@ -933,7 +933,10 @@ export class JobQueueWorker<
       if (claim) {
         await claim.disable();
       } else {
-        await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
+        // No active claim (lease lost / aborted). Use markDisabled, not
+        // saveStatus, so the no-claim path produces the same row state as
+        // claim.disable() (lease_owner=null, progress cleared, completed_at set).
+        await this.jobStore.markDisabled(job.id);
       }
       this.events.emit("job_disabled", job.id);
     } catch (err) {
