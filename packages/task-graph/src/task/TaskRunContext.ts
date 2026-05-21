@@ -24,6 +24,14 @@ export class TaskRunContext {
   timeoutTimer?: ReturnType<typeof setTimeout>;
   pendingTimeoutError?: TaskTimeoutError;
 
+  /**
+   * Set by the first terminal handler (handleAbort / handleComplete / handleError /
+   * handleDisable) that runs for this ctx. Lets handlers be idempotent per-ctx
+   * without leaning on `task.status`, which is externally observable and can be
+   * mutated by adjacent runs.
+   */
+  terminated: boolean = false;
+
   // Removes the parentSignal abort listener; set in the constructor when
   // parentSignal is provided. Idempotent dispose().
   private parentSignalCleanup?: () => void;
