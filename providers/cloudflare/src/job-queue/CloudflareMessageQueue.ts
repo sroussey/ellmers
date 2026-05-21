@@ -139,6 +139,15 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
         "sendBatch does not accept a single fingerprint applied to all bodies; use send() per body for fingerprinted dedup"
       );
     }
+    // H6: mirror the send() check before the jobStore.create loop. Without
+    // this, an over-limit delaySeconds would create N PENDING rows and only
+    // fail at the queue.sendBatch boundary — leaving the rows stranded via
+    // the H4 defer path even though the call was structurally invalid.
+    if (opts.delaySeconds != null && opts.delaySeconds > CF_MAX_DELAY_SECONDS) {
+      throw new RangeError(
+        `Cloudflare Queues sendBatch delaySeconds=${opts.delaySeconds} exceeds the 12h maximum (${CF_MAX_DELAY_SECONDS}s)`
+      );
+    }
     const ids: MessageId[] = [];
     for (const body of bodies) {
       const resolved = await this.jobStore.create(body, opts);
