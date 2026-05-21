@@ -42,6 +42,24 @@ function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
 }
 
 /**
+ * Fallback used when the underlying `IJobStore` does not implement the
+ * optional `markEnqueueDeferredMany` (bare InMemoryJobStore, etc.). Mirrors
+ * the WrappedJobStore default impl: parallel per-id writes via
+ * `Promise.allSettled` so a single transient failure doesn't tank the rest.
+ */
+async function markEnqueueDeferredManyFallback<Input, Output>(
+  jobStore: IJobStore<Input, Output>,
+  ids: readonly MessageId[],
+  opts: { readonly visible_at: Date; readonly errorCode: string }
+): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
+  const results = await Promise.allSettled(ids.map((id) => jobStore.markEnqueueDeferred(id, opts)));
+  const failed = results.flatMap((r, i) =>
+    r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
+  );
+  return { failed };
+}
+
+/**
  * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
@@ -163,21 +181,22 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
       await this.queue.sendBatch(messages);
     } catch (err) {
       // H4: transient — keep every row PENDING with visible_at pushed forward
-      // and error_code set. Re-throw so the caller sees the failure. Use the
-      // batched many-variant so we fan out the per-id writes in parallel
-      // rather than serializing them; the WrappedJobStore default impl is
-      // always present.
+      // and error_code set. Re-throw so the caller sees the failure. Prefer
+      // the batched many-variant when the IJobStore exposes it (WrappedJobStore
+      // ships a Promise.allSettled default; native SQL backends can override
+      // with a single bulk UPDATE). Fall back to a per-id allSettled fan-out
+      // for bare IJobStore impls (e.g. InMemoryJobStore in tests) that don't
+      // implement the optional method.
       // H5: clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
-      const deferResult = await this.jobStore.markEnqueueDeferredMany!(ids, {
-        visible_at: defer,
-        errorCode: "ENQUEUE_FAILED",
-      });
+      const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };
+      const deferResult = this.jobStore.markEnqueueDeferredMany
+        ? await this.jobStore.markEnqueueDeferredMany(ids, deferOpts)
+        : await markEnqueueDeferredManyFallback(this.jobStore, ids, deferOpts);
       for (const { id, err: deferErr } of deferResult.failed) {
-        getLogger().error(
-          `[CloudflareMessageQueue] markEnqueueDeferred failed id=${String(id)}`,
-          { err: deferErr }
-        );
+        getLogger().error(`[CloudflareMessageQueue] markEnqueueDeferred failed id=${String(id)}`, {
+          err: deferErr,
+        });
       }
       throw err;
     }

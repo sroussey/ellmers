@@ -54,6 +54,24 @@ function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
 }
 
 /**
+ * Fallback used when the underlying `IJobStore` does not implement the
+ * optional `markEnqueueDeferredMany` (bare InMemoryJobStore, etc.). Mirrors
+ * the WrappedJobStore default impl: parallel per-id writes via
+ * `Promise.allSettled` so a single transient failure doesn't tank the rest.
+ */
+async function markEnqueueDeferredManyFallback<Input, Output>(
+  jobStore: IJobStore<Input, Output>,
+  ids: readonly MessageId[],
+  opts: { readonly visible_at: Date; readonly errorCode: string }
+): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
+  const results = await Promise.allSettled(ids.map((id) => jobStore.markEnqueueDeferred(id, opts)));
+  const failed = results.flatMap((r, i) =>
+    r.status === "rejected" ? [{ id: ids[i]!, err: r.reason }] : []
+  );
+  return { failed };
+}
+
+/**
  * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
@@ -191,21 +209,21 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // forward and error_code set, instead of FAILING (which would
       // permanently drop the work for any consumer that's polling for
       // PENDING). Successful rows in the batch keep their original PENDING +
-      // visible_at = now from create(). Use the batched many-variant so we
-      // do one parallel fan-out rather than a serial per-id round-trip
-      // storm; the WrappedJobStore default impl is always present.
+      // visible_at = now from create(). Prefer the batched many-variant when
+      // the IJobStore exposes it (WrappedJobStore ships a Promise.allSettled
+      // default; native SQL backends can override with a single bulk UPDATE).
+      // Fall back to a per-id allSettled fan-out for bare IJobStore impls
+      // (e.g. InMemoryJobStore in tests) that don't implement the optional
+      // method.
       // H5: clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const failedIds = failures.map((f) => f.id);
-      const deferResult = await this.jobStore.markEnqueueDeferredMany!(failedIds, {
-        visible_at: defer,
-        errorCode: "ENQUEUE_FAILED",
-      });
+      const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };
+      const deferResult = this.jobStore.markEnqueueDeferredMany
+        ? await this.jobStore.markEnqueueDeferredMany(failedIds, deferOpts)
+        : await markEnqueueDeferredManyFallback(this.jobStore, failedIds, deferOpts);
       for (const { id, err } of deferResult.failed) {
-        getLogger().error(
-          `[SqsMessageQueue] markEnqueueDeferred failed id=${String(id)}`,
-          { err }
-        );
+        getLogger().error(`[SqsMessageQueue] markEnqueueDeferred failed id=${String(id)}`, { err });
       }
       throw new AggregateError(
         failures.map((f) => (f.err instanceof Error ? f.err : new Error(String(f.err)))),
