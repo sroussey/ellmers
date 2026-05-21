@@ -9,6 +9,12 @@
 export * from "./common/Cactus_Constants";
 export * from "./common/Cactus_ModelCatalog";
 export * from "./common/Cactus_ModelSchema";
+// Mutable runtime state (e.g. cactusEngines, cactusEngineLoadsInFlight,
+// cactusConfigJson, cactusSessions) is intentionally NOT re-exported here.
+// The `./ai` and `./ai-runtime` entry points are bundled separately, so
+// re-exporting from both creates two distinct module instances — and reads
+// on one would not see writes from the other. Import runtime state from
+// `@workglow/cactus/ai-runtime` instead.
 export * from "./CactusProvider";
 export * from "./CactusQueuedProvider";
 export * from "./registerCactus";

@@ -12,5 +12,5 @@ Wraps the 258 KB needle-rs WASM runtime and the 22 MB INT4 SafeTensors **Needle 
 
 ## Entry points
 
-- `@workglow/cactus/ai` — main-thread shell: `registerCactus`, `registerCactusInline`, schema, constants
+- `@workglow/cactus/ai` — main-thread shell: `registerCactus`, schema, constants, provider classes
 - `@workglow/cactus/ai-runtime` — worker server and inline runtime: `registerCactusWorker`, `registerCactusInline`, runtime helpers
