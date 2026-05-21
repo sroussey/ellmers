@@ -276,10 +276,7 @@ export class ToolCallingTask extends StreamingAiTask<
 > {
   public static override type = "ToolCallingTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
-  public static override readonly requires = [
-    "text.generation",
-    "tool-use",
-  ] as const satisfies Capability[];
+  public static override readonly requires = ["tool-use"] as const satisfies Capability[];
   protected static override readonly streamingPhaseLabel = "Generating";
   public static override category = "AI Text";
   public static override title = "Tool Calling";

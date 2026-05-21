@@ -38,8 +38,8 @@ export const CAPABILITIES = {
   "vision.pose-landmarks": "Body pose keypoints",
   "vision.gesture": "Hand gesture recognition",
   // Modifiers (combine with a base capability)
-  "tool-use": "Function/tool calling on text generation",
-  "json-mode": "Structured-output JSON conformance",
+  "tool-use": "Function/tool calling — emit structured tool invocations from input text",
+  "json-mode": "Structured-output JSON conformance — emit JSON matching a schema",
   "vision-input": "Accepts image inputs alongside text",
   // Meta-ops on the provider/model itself
   "model.search": "Search this provider's catalog",
