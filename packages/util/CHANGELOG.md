@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.3.1
+
+### Bug Fixes
+
+#### util
+
+- preserve worker error stack across postMessage
+
 ## 0.3.0
 
 ## 0.2.37

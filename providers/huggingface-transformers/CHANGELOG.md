@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Bug Fixes
+
+#### huggingface-transformers
+
+- use createImageBitmap for ImageSegmentation in workers
+
 ## 0.3.0
 
 ## 0.2.37
