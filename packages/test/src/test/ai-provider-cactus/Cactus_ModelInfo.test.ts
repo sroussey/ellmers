@@ -6,7 +6,9 @@
 
 import type { ModelInfoTaskOutput } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
-import { Cactus_ModelInfo } from "../ai/common/Cactus_ModelInfo";
+import { runFnFor } from "./test-utils";
+
+const Cactus_ModelInfo = runFnFor(["model.info"]);
 
 describe("Cactus_ModelInfo", () => {
   it("emits a finish with local+browser+node, not-cached, not-loaded when fresh", async () => {

@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { _testOnly } from "@workglow/cactus/ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { Cactus_DownloadRemove } from "../ai/common/Cactus_DownloadRemove";
-import { cactusConfigJson, cactusEngines } from "../ai/common/Cactus_Runtime";
+import { runFnFor } from "./test-utils";
+
+const { cactusConfigJson, cactusEngines } = _testOnly;
+const Cactus_DownloadRemove = runFnFor(["model.download-remove"]);
 
 describe("Cactus_DownloadRemove", () => {
   afterEach(() => {

@@ -38,6 +38,7 @@
     "@workglow/cloudflare": "workspace:*",
     "@cloudflare/workers-types": "^4.20260521.1",
     "@workglow/bun-webview": "workspace:*",
+    "@workglow/cactus": "workspace:*",
     "@workglow/electron": "workspace:*",
     "@workglow/google-gemini": "workspace:*",
     "@workglow/playwright": "workspace:*",

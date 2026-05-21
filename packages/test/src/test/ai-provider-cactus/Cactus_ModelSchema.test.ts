@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { CactusModelConfigSchema } from "@workglow/cactus/ai";
 import { compileSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
-import { CactusModelConfigSchema } from "../ai/common/Cactus_ModelSchema";
 
 const validator = compileSchema(CactusModelConfigSchema);
 

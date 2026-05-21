@@ -4,12 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { _testOnly } from "@workglow/cactus/ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Cactus_Download } from "../ai/common/Cactus_Download";
-import { cactusConfigJson, cactusEngines } from "../ai/common/Cactus_Runtime";
+import { runFnFor } from "./test-utils";
+
+const { cactusConfigJson, cactusEngines } = _testOnly;
+const Cactus_Download = runFnFor(["model.download"]);
 
 const RUN = process.env.RUN_CACTUS_TESTS === "1";
 

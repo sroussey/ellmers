@@ -6,7 +6,9 @@
 
 import type { ModelSearchTaskOutput } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
-import { Cactus_ModelSearch } from "../ai/common/Cactus_ModelSearch";
+import { runFnFor } from "./test-utils";
+
+const Cactus_ModelSearch = runFnFor(["model.search"]);
 
 describe("Cactus_ModelSearch", () => {
   it("emits a single finish with the catalog", async () => {

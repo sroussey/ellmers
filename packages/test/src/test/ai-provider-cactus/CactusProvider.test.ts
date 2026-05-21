@@ -5,8 +5,8 @@
  */
 
 import type { ModelRecord } from "@workglow/ai/worker";
+import { CactusQueuedProvider } from "@workglow/cactus/ai";
 import { describe, expect, it } from "vitest";
-import { inferCactusCapabilities } from "../ai/common/Cactus_Capabilities";
 
 function model(): ModelRecord {
   return {
@@ -20,9 +20,9 @@ function model(): ModelRecord {
   } as ModelRecord;
 }
 
-describe("inferCactusCapabilities", () => {
+describe("CactusQueuedProvider.inferCapabilities", () => {
   it("always returns the full Cactus capability set", () => {
-    const caps = inferCactusCapabilities(model());
+    const caps = new CactusQueuedProvider().inferCapabilities(model());
     expect(caps).toEqual([
       "tool-use",
       "model.download",
