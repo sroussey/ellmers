@@ -223,26 +223,6 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       }
     }
 
-    // Add new columns to existing tables and rename old columns (idempotent)
-    const alterSqls = [
-      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS abort_requested_at timestamp with time zone`,
-      `ALTER TABLE ${this.tableName} ADD COLUMN IF NOT EXISTS lease_expires_at timestamp with time zone`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN run_after TO visible_at`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN last_ran_at TO last_attempted_at`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN run_attempts TO attempts`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN max_retries TO max_attempts`,
-      `ALTER TABLE ${this.tableName} RENAME COLUMN worker_id TO lease_owner`,
-    ];
-    for (const sql of alterSqls) {
-      const { error } = await this.client.rpc("exec_sql", { query: sql });
-      // 42703 = undefined_column: expected on re-run after a RENAME COLUMN has
-      // already applied (the old column no longer exists). All other errors
-      // (permission denied, wrong table name, etc.) are re-thrown.
-      if (error && error.code !== "42703") {
-        throw new Error(`Failed to rename column: ${error.message}`);
-      }
-    }
-
     // Create indexes with prefix columns prepended
     const indexes = [
       `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,

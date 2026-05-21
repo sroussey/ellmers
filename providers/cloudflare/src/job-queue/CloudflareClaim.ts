@@ -79,4 +79,9 @@ export class CloudflareClaim<Input, Output> implements IClaim<JobStorageFormat<I
       "extendLease not supported by Cloudflare Queues — run with extendLeaseWhileRunning: false and size jobs to fit within the 30s visibility window"
     );
   }
+
+  async disable(): Promise<void> {
+    this.message.ack();
+    await this.jobStore.saveStatus(this.id, JobStatus.DISABLED);
+  }
 }

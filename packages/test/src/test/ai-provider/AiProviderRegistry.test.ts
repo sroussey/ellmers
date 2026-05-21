@@ -20,6 +20,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   RateLimiter,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import {
   getTaskQueueRegistry,
@@ -68,13 +69,15 @@ describe("AiProviderRegistry", () => {
   beforeEach(async () => {
     storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(TEST_PROVIDER);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
       // AiJob's `execute` signature changed in the Promise+emit refactor and no
       // longer matches Job's base signature (see @ts-expect-error on AiJob.execute).
       AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: TEST_PROVIDER,
         limiter: new RateLimiter(new InMemoryRateLimiterStorage(), TEST_PROVIDER, {
           maxExecutions: 4,
@@ -85,7 +88,8 @@ describe("AiProviderRegistry", () => {
     );
 
     client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName: TEST_PROVIDER,
     });
 

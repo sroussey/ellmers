@@ -15,6 +15,7 @@ import {
   JobStatus,
   RateLimiter,
   RetryableJobError,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -163,13 +164,15 @@ describe("InMemoryQueueStorage — abort_requested_at & lease expiry", () => {
   });
 
   it("abort PROCESSING worker observes abort_requested_at via checkForAbortingJobs", async () => {
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, SimpleTestJob>(SimpleTestJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     await server.start();
@@ -266,14 +269,16 @@ describe("InMemoryJobQueue — dead-letter queue (PR 5)", () => {
   it("exhausted job lands in DLQ with correct fields", async () => {
     const dlq = new CollectingQueue<DeadLetter<TI>>();
 
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, AlwaysFailJob>(AlwaysFailJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
       deadLetter: dlq,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     await server.start();
@@ -303,13 +308,15 @@ describe("InMemoryJobQueue — dead-letter queue (PR 5)", () => {
     const dlq = new CollectingQueue<DeadLetter<TI>>();
 
     // Deliberately do NOT pass deadLetter — default is "discard"
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, AlwaysFailJob>(AlwaysFailJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     await server.start();
@@ -356,15 +363,17 @@ describe("InMemoryJobQueue — worker prefetch (PR 5)", () => {
 
     const limiter = new ConcurrencyLimiter(2);
 
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, TrackedSlowJob>(TrackedSlowJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 200,
       limiter,
       prefetch: 4,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     await server.start();

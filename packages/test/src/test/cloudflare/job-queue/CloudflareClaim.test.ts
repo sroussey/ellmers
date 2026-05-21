@@ -40,7 +40,7 @@ function emptyBody(): JobStorageFormat<TestInput, TestOutput> {
 
 async function setup() {
   const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-  const jobStore = new InMemoryJobStore(core, new Map());
+  const jobStore = new InMemoryJobStore(core);
   const id = await jobStore.create(emptyBody(), {});
   const record = (await jobStore.get(id))!;
   return { jobStore, id, record };

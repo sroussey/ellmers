@@ -15,11 +15,10 @@ import type { ResourceScope } from "./ResourceScope";
  *    timers between runs must also clear any pending timer for the key
  *    being re-registered (an idle timer firing while a new run is in
  *    flight would dispose a resource the run is about to use).
- *  - `onRunStart` (optional): when the owning runner is about to start a
- *    new run. The {@link InactivityStrategy} uses this to clear all pending
- *    timers, closing the race between "timer armed at runComplete" and
- *    "next run begins before the timer fires". Optional to preserve
- *    backward compatibility with strategies implemented outside this tree.
+ *  - `onRunStart`: when the owning runner is about to start a new run. The
+ *    {@link InactivityStrategy} uses this to clear all pending timers,
+ *    closing the race between "timer armed at runComplete" and "next run
+ *    begins before the timer fires".
  *  - `touch`: when a task signals the resource is still in use (resets
  *    inactivity timers, etc.).
  *  - `onRunComplete`: when the owning run finishes (success, error, or abort)
@@ -33,12 +32,8 @@ import type { ResourceScope } from "./ResourceScope";
  */
 export interface IDisposeStrategy {
   onRegister(key: string, disposer: () => Promise<void>, scope: ResourceScope): () => Promise<void>;
-  /**
-   * Called by `ResourceScope.runStart()` before a run begins. Optional —
-   * external strategies written against the original four-method shape
-   * continue to work; `ResourceScope` no-ops when this is undefined.
-   */
-  onRunStart?(scope: ResourceScope): Promise<void> | void;
+  /** Called by `ResourceScope.runStart()` before a run begins. */
+  onRunStart(scope: ResourceScope): Promise<void> | void;
   touch(key: string): void;
   onRunComplete(scope: ResourceScope): Promise<void>;
   onScopeDestroy(scope: ResourceScope): Promise<void>;

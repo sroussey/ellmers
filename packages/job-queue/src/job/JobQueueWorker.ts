@@ -17,9 +17,8 @@ import { NullLimiter } from "../limiter/NullLimiter";
 import type { IClaim } from "../queue-storage/IClaim";
 import type { IJobStore } from "../queue-storage/IJobStore";
 import type { IMessageQueue } from "../queue-storage/IMessageQueue";
-import type { IQueueStorage, JobStorageFormat } from "../queue-storage/IQueueStorage";
+import type { JobStorageFormat } from "../queue-storage/IQueueStorage";
 import { JobStatus } from "../queue-storage/IQueueStorage";
-import { wrapQueueStorage } from "../queue-storage/wrapQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
 import {
@@ -67,14 +66,8 @@ export type JobQueueWorkerEvents = keyof JobQueueWorkerEventListeners<unknown, u
  * Options for creating a JobQueueWorker
  */
 export interface JobQueueWorkerOptions<Input, Output> {
-  /**
-   * Legacy single-storage option. Provide either `storage` OR the paired
-   * `messageQueue`+`jobStore`. When `storage` is given it is wrapped via
-   * {@link wrapQueueStorage} internally.
-   */
-  readonly storage?: IQueueStorage<Input, Output>;
-  readonly messageQueue?: IMessageQueue<JobStorageFormat<Input, Output>>;
-  readonly jobStore?: IJobStore<Input, Output>;
+  readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
+  readonly jobStore: IJobStore<Input, Output>;
   readonly queueName: string;
   readonly limiter?: ILimiter;
   readonly pollIntervalMs?: number;
@@ -193,18 +186,8 @@ export class JobQueueWorker<
   constructor(jobClass: JobClass<Input, Output>, options: JobQueueWorkerOptions<Input, Output>) {
     this.queueName = options.queueName;
     this.workerId = options.workerId ?? uuid4();
-    if (options.messageQueue && options.jobStore) {
-      this.messageQueue = options.messageQueue;
-      this.jobStore = options.jobStore;
-    } else if (options.storage) {
-      const wrapped = wrapQueueStorage(options.storage);
-      this.messageQueue = wrapped.messageQueue;
-      this.jobStore = wrapped.jobStore;
-    } else {
-      throw new Error(
-        "JobQueueWorker requires either `storage` or both `messageQueue` and `jobStore`"
-      );
-    }
+    this.messageQueue = options.messageQueue;
+    this.jobStore = options.jobStore;
     this.jobClass = jobClass;
     this.limiter = options.limiter ?? new NullLimiter();
     this.pollIntervalMs = options.pollIntervalMs ?? 100;
@@ -871,22 +854,18 @@ export class JobQueueWorker<
       job.error = null;
       job.errorCode = null;
 
-      // H2 atomic ack: hand the result directly to claim.ack() so result +
+      // Atomic ack: hand the result directly to claim.ack() so result +
       // COMPLETED status land in a single storage write. If we crash here
       // — anywhere between this call site and the storage layer's commit —
       // the row stays PROCESSING, the lease expires, the next worker
-      // reclaims it, and no `job_complete` is ever emitted. Before this
-      // change we issued `saveResult` then `ack`: a crash between the two
-      // left a PROCESSING row with the output already written, no
-      // `job_complete`, and a redelivery that overwrote the previously-
-      // saved output.
+      // reclaims it, and no `job_complete` is ever emitted.
       const claim = this.getClaim(job.id);
       if (claim) {
         await claim.ack(output ?? null);
       } else {
-        // No active claim (rare path — e.g. abort beat us to it). Fall back
-        // to the legacy two-step so the result is still persisted.
-        await this.jobStore.saveResult(job.id, (output ?? null) as Output);
+        // No active claim (rare path — e.g. abort beat us to it). Write
+        // result + COMPLETED status atomically via the job store.
+        await this.jobStore.completeWithResult(job.id, (output ?? null) as Output);
       }
       this.events.emit("job_complete", job.id, output as Output);
     } catch (err) {
@@ -909,11 +888,9 @@ export class JobQueueWorker<
       job.error = error.message;
       job.errorCode = jobErrorPersistedCode(error);
 
-      // H2 atomic fail: hand error/errorCode/abortRequested directly to
+      // Atomic fail: hand error/errorCode/abortRequested directly to
       // claim.fail() so they land in a single storage write together with
-      // status=FAILED. Eliminates the saveError-then-fail two-write window
-      // where a crash could leave the row PROCESSING with an `error`
-      // already written.
+      // status=FAILED.
       const abortRequested = error instanceof AbortSignalJobError;
       const persistedCode = jobErrorPersistedCode(error);
       const claim = this.getClaim(job.id);
@@ -924,11 +901,12 @@ export class JobQueueWorker<
           abortRequested,
         });
       } else {
-        // Fallback — no active claim (e.g. lease lost or abort path). The
-        // legacy two-step is still correct here because we're writing
-        // straight to the job store; the atomicity loss only matters when
-        // ack/fail and the result write are split across claim and store.
-        await this.jobStore.saveError(job.id, error.message, persistedCode, abortRequested);
+        // No active claim (e.g. lease lost or abort path).
+        await this.jobStore.failWithError(job.id, {
+          error: error.message,
+          errorCode: persistedCode,
+          abortRequested,
+        });
       }
       this.events.emit("job_error", job.id, error.message, persistedCode);
     } catch (err) {
@@ -949,19 +927,12 @@ export class JobQueueWorker<
       job.progressMessage = "";
       job.progressDetails = null;
 
-      // H5 atomic disable: a single storage write sets status=DISABLED,
-      // releases the lease, and clears progress fields. Replaces the legacy
-      // two-write `claim.fail()` then `jobStore.saveStatus(DISABLED)` path
-      // which briefly persisted FAILED before overwriting with DISABLED —
-      // any subscriber observing during the window saw a spurious
-      // FAILED transition and fired a `job_error` event.
+      // Atomic disable: a single storage write sets status=DISABLED,
+      // releases the lease, and clears progress fields.
       const claim = this.getClaim(job.id);
-      if (claim?.disable) {
+      if (claim) {
         await claim.disable();
       } else {
-        // Fallback for external IClaim impls that haven't adopted disable()
-        // yet. saveStatus uses finalize() under the hood (no attempts bump,
-        // no error write), so it's correct as a single-write fallback.
         await this.jobStore.saveStatus(job.id, JobStatus.DISABLED);
       }
       this.events.emit("job_disabled", job.id);

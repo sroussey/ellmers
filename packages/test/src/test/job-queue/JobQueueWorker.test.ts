@@ -15,6 +15,7 @@ import {
   JobQueueWorker,
   JobStatus,
   RateLimiter,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { setLogger, sleep, uuid4 } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -102,14 +103,16 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
       windowSizeInSeconds: 60,
     });
 
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, TJob>(TJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
       limiter,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     // Insert a job whose deadline is already in the past so validateJobState
@@ -156,13 +159,15 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     // re-checking state. Without the JobDisabledError dispatch branch in
     // processSingleJob's catch, this error fell into the generic failJob
     // branch and clobbered status to FAILED.
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new JobQueueServer<TI, TO, TJob>(TJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     await server.start();
@@ -225,13 +230,15 @@ describe("JobQueueWorker — PR #511 follow-up regressions", () => {
     // aborting the controller here would have been too late to trip the
     // activeJobAbortControllers.get(...).signal.aborted branch. The worker
     // would enter execute() instead of failing during validation.
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const server = new PreAbortedServer(TJob, {
-      storage: storage as any,
+      messageQueue,
+      jobStore,
       queueName,
       pollIntervalMs: 5,
       stopTimeoutMs: 0,
     });
-    const client = new JobQueueClient<TI, TO>({ storage: storage as any, queueName });
+    const client = new JobQueueClient<TI, TO>({ messageQueue, jobStore, queueName });
     client.attach(server);
 
     const handle = await client.send({ taskType: "long_running", data: "pre-abort" });

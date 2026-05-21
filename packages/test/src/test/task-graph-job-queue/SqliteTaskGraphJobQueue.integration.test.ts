@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ConcurrencyLimiter, JobQueueClient, JobQueueServer } from "@workglow/job-queue";
+import {
+  ConcurrencyLimiter,
+  JobQueueClient,
+  JobQueueServer,
+  wrapQueueStorage,
+} from "@workglow/job-queue";
 import { SqliteQueueStorage } from "@workglow/sqlite/job-queue";
 import { Sqlite } from "@workglow/sqlite/storage";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
@@ -22,16 +27,19 @@ describe("SqliteTaskGraphJobQueue", async () => {
     const queueName = `sqlite_test_queue_${uuid4()}`;
     const storage = new SqliteQueueStorage<TaskInput, TaskOutput>(db, queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter: new ConcurrencyLimiter(1),
       pollIntervalMs: 1,
     });
 
     const client = new JobQueueClient<TaskInput, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 

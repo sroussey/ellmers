@@ -7,7 +7,7 @@
 import type { QueueStorageOptions } from "@workglow/job-queue";
 import type { Pool } from "@workglow/postgres/storage";
 import { PostgresJobStore } from "./PostgresJobStore";
-import { PostgresMessageQueue, type PostgresPendingWrite } from "./PostgresMessageQueue";
+import { PostgresMessageQueue } from "./PostgresMessageQueue";
 import { PostgresQueueStorage } from "./PostgresQueueStorage";
 
 /**
@@ -22,14 +22,10 @@ export function createPostgresQueue<Input, Output>(
 ): {
   messageQueue: PostgresMessageQueue<Input, Output>;
   jobStore: PostgresJobStore<Input, Output>;
-  /** @internal — exposed for callers that still need the legacy storage object. */
-  core: PostgresQueueStorage<Input, Output>;
 } {
   const core = new PostgresQueueStorage<Input, Output>(pool, queueName, opts);
-  const pending = new Map<unknown, PostgresPendingWrite<Output>>();
   return {
-    messageQueue: new PostgresMessageQueue<Input, Output>(core, pending),
-    jobStore: new PostgresJobStore<Input, Output>(core, pending),
-    core,
+    messageQueue: new PostgresMessageQueue<Input, Output>(core),
+    jobStore: new PostgresJobStore<Input, Output>(core),
   };
 }

@@ -30,14 +30,8 @@ function dateToISOString(date: Date | null | undefined): string | null {
  */
 export function storageToClass<Input, Output>(
   details: JobStorageFormat<Input, Output>,
-  jobClass: JobClass<Input, Output>,
-  options?: {
-    /** @deprecated use includeLeaseOwner instead */
-    readonly includeWorkerId?: boolean;
-    readonly includeLeaseOwner?: boolean;
-  }
+  jobClass: JobClass<Input, Output>
 ): Job<Input, Output> {
-  const includeLeaseOwner = options?.includeLeaseOwner ?? options?.includeWorkerId ?? true;
   return new jobClass({
     id: details.id,
     jobRunId: details.job_run_id,
@@ -58,7 +52,7 @@ export function storageToClass<Input, Output>(
     errorCode: details.error_code ?? null,
     attempts: details.attempts ?? 0,
     maxAttempts: details.max_attempts ?? 10,
-    ...(includeLeaseOwner ? { leaseOwner: details.lease_owner ?? null } : {}),
+    leaseOwner: details.lease_owner ?? null,
     abort_requested_at: details.abort_requested_at ?? null,
     lease_expires_at: details.lease_expires_at ?? null,
   });

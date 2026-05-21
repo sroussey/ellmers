@@ -19,6 +19,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   RateLimiter,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import type { StreamEvent } from "@workglow/task-graph";
 import {
@@ -46,12 +47,14 @@ describe("Streaming Provider", () => {
   beforeEach(async () => {
     storage = new InMemoryQueueStorage<AiJobInput<TaskInput>, TaskOutput>(MOCK_PROVIDER);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     server = new JobQueueServer<AiJobInput<TaskInput>, TaskOutput>(
       // AiJob's execute signature diverges from Job's base; cast is intentional.
       AiJob<AiJobInput<TaskInput>, TaskOutput> as any,
       {
-        storage,
+        messageQueue,
+        jobStore,
         queueName: MOCK_PROVIDER,
         limiter: new RateLimiter(new InMemoryRateLimiterStorage(), MOCK_PROVIDER, {
           maxExecutions: 4,
@@ -62,7 +65,8 @@ describe("Streaming Provider", () => {
     );
 
     client = new JobQueueClient<AiJobInput<TaskInput>, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName: MOCK_PROVIDER,
     });
 

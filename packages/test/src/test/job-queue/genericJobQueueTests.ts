@@ -16,6 +16,7 @@ import {
   JobStatus,
   PermanentJobError,
   RetryableJobError,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import type { ISpan, ITelemetryProvider } from "@workglow/util";
 import {
@@ -183,9 +184,11 @@ export function runGenericJobQueueTests(
     storage = storageFactory(queueName);
     await storage.migrate();
 
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
     const limiter = await limiterFactory?.(queueName, 4, 60);
     server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter,
       pollIntervalMs: 1,
@@ -195,7 +198,8 @@ export function runGenericJobQueueTests(
     });
 
     client = new JobQueueClient<TInput, TOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 
@@ -229,9 +233,11 @@ export function runGenericJobQueueTests(
 
       // Create a new server with deletion settings
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -276,9 +282,11 @@ export function runGenericJobQueueTests(
     it("should delete jobs immediately when timing is set to 0", async () => {
       // Create a new server with immediate deletion
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -510,28 +518,35 @@ export function runGenericJobQueueTests(
       const limiter1 = await limiterFactory?.(queueName1, 4, 60);
       const limiter2 = await limiterFactory?.(queueName2, 4, 60);
 
+      const wrapped1 = wrapQueueStorage(storage1);
+      const wrapped2 = wrapQueueStorage(storage2);
+
       const server1 = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage: storage1,
+        messageQueue: wrapped1.messageQueue,
+        jobStore: wrapped1.jobStore,
         queueName: queueName1,
         limiter: limiter1,
         pollIntervalMs: 1,
       });
 
       const server2 = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage: storage2,
+        messageQueue: wrapped2.messageQueue,
+        jobStore: wrapped2.jobStore,
         queueName: queueName2,
         limiter: limiter2,
         pollIntervalMs: 1,
       });
 
       const client1 = new JobQueueClient<TInput, TOutput>({
-        storage: storage1,
+        messageQueue: wrapped1.messageQueue,
+        jobStore: wrapped1.jobStore,
         queueName: queueName1,
       });
       client1.attach(server1);
 
       const client2 = new JobQueueClient<TInput, TOutput>({
-        storage: storage2,
+        messageQueue: wrapped2.messageQueue,
+        jobStore: wrapped2.jobStore,
         queueName: queueName2,
       });
       client2.attach(server2);
@@ -670,9 +685,11 @@ export function runGenericJobQueueTests(
       // Use a long poll interval so the only way the worker can pick up the job
       // on time is via the direct handleJobAdded notify path.
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -696,9 +713,11 @@ export function runGenericJobQueueTests(
       // pollIntervalMs is 60s — without notify() flipping hasDeferredJobs, the
       // worker would sleep through the full 60s and miss the visible_at deadline.
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -726,9 +745,11 @@ export function runGenericJobQueueTests(
       // Long poll interval so the only route to abort delivery is the
       // in-process requestAbort path (Change 3).
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 60_000,
@@ -760,9 +781,11 @@ export function runGenericJobQueueTests(
 
     it("worker.stop drains in-flight jobs before returning", async () => {
       await server.stop();
+      const { messageQueue, jobStore } = wrapQueueStorage(storage);
       const limiter = await limiterFactory?.(queueName, 4, 60);
       server = new JobQueueServer<TInput, TOutput, TestJob>(TestJob, {
-        storage,
+        messageQueue,
+        jobStore,
         queueName,
         limiter,
         pollIntervalMs: 1,
@@ -1269,15 +1292,11 @@ export function runGenericJobQueueTests(
     });
   });
 
-  describe("atomic ack/fail (H2)", () => {
-    it("ack persists result+status in one write — no separate saveResult step", async () => {
-      // The H2 contract: claim.ack(result) writes output + COMPLETED in a
-      // single storage operation. Earlier the worker did
-      // `jobStore.saveResult(...)` THEN `claim.ack()` — two separate writes
-      // that could split a row into "result saved, status still PROCESSING".
-      // We exercise that contract directly through the storage API: there
-      // should be no path that observes a COMPLETED row with output=null
-      // when the caller passed a non-null result.
+  describe("atomic ack/fail", () => {
+    it("ack persists result+status in one write", async () => {
+      // claim.ack(result) writes output + COMPLETED in a single storage
+      // operation. There must be no path that observes a COMPLETED row with
+      // output=null when the caller passed a non-null result.
       const handle = await client.send({ taskType: "task1", data: "atomic-ack" });
       const id = handle.id;
       const claimed = await storage.next("test-worker", { leaseMs: 30_000 });

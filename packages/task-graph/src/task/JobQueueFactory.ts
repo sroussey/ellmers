@@ -12,6 +12,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   JobQueueServerOptions,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
 import type { RegisteredQueue } from "./TaskQueueRegistry";
@@ -63,9 +64,11 @@ const defaultJobQueueFactory: JobQueueFactory = async <
     (options?.storage as IQueueStorage<Input, Output>) ??
     new InMemoryQueueStorage<Input, Output>(queueName);
   await storage.migrate();
+  const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
   const server = new JobQueueServer<Input, Output>(jobClass as JobClassConstructor<any, any>, {
-    storage,
+    messageQueue,
+    jobStore,
     queueName,
     limiter: options?.limiter,
     workerCount: options?.workerCount,
@@ -78,7 +81,8 @@ const defaultJobQueueFactory: JobQueueFactory = async <
   });
 
   const client = new JobQueueClient<Input, Output>({
-    storage,
+    messageQueue,
+    jobStore,
     queueName,
   });
 
@@ -112,9 +116,11 @@ export function createJobQueueFactoryWithOptions(
       (mergedOptions.storage as IQueueStorage<Input, Output>) ??
       new InMemoryQueueStorage<Input, Output>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     const server = new JobQueueServer<Input, Output>(jobClass as JobClassConstructor<any, any>, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter: mergedOptions.limiter,
       workerCount: mergedOptions.workerCount,
@@ -127,7 +133,8 @@ export function createJobQueueFactoryWithOptions(
     });
 
     const client = new JobQueueClient<Input, Output>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 

@@ -32,7 +32,7 @@ function body(v: string): JobStorageFormat<TestInput, TestOutput> {
 describe("CloudflareMessageQueue.sendBatch — H4 transient failure", () => {
   it("queue.sendBatch throw: re-throws but all rows stay PENDING with deferred visible_at", async () => {
     const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-    const jobStore = new InMemoryJobStore(core, new Map());
+    const jobStore = new InMemoryJobStore(core);
 
     const send = vi.fn().mockResolvedValue(undefined);
     const sendBatch = vi.fn().mockRejectedValue(new Error("cf transient"));

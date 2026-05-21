@@ -38,7 +38,7 @@ function fakeMessage(envelope: unknown) {
 describe("handleQueueBatch", () => {
   it("builds claims from batch.messages and awaits worker.processClaims", async () => {
     const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-    const jobStore = new InMemoryJobStore(core, new Map());
+    const jobStore = new InMemoryJobStore(core);
     const ids = await Promise.all([
       jobStore.create(emptyBody("a"), {}),
       jobStore.create(emptyBody("b"), {}),
@@ -61,7 +61,7 @@ describe("handleQueueBatch", () => {
 
   it("orphan message (id with no JobStore record) is acked and skipped", async () => {
     const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-    const jobStore = new InMemoryJobStore(core, new Map());
+    const jobStore = new InMemoryJobStore(core);
     const realId = await jobStore.create(emptyBody("a"), {});
     const messages = [
       fakeMessage({ id: String(realId), attempts: 0 }),

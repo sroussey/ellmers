@@ -33,7 +33,7 @@ function fakeQueue() {
 
 async function newStore() {
   const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
-  const jobStore = new InMemoryJobStore(core, new Map());
+  const jobStore = new InMemoryJobStore(core);
   return jobStore;
 }
 

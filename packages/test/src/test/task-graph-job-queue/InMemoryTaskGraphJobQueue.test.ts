@@ -9,6 +9,7 @@ import {
   InMemoryQueueStorage,
   JobQueueClient,
   JobQueueServer,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
@@ -23,16 +24,19 @@ describe("InMemoryTaskGraphJobQueue", () => {
     const queueName = `inMemory_test_queue_${uuid4()}`;
     const storage = new InMemoryQueueStorage<TaskInput, TaskOutput>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter: new ConcurrencyLimiter(1),
       pollIntervalMs: 1,
     });
 
     const client = new JobQueueClient<TaskInput, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 

@@ -10,6 +10,7 @@ import {
   JobQueueClient,
   JobQueueServer,
   RateLimiter,
+  wrapQueueStorage,
 } from "@workglow/job-queue";
 import { TaskInput, TaskOutput } from "@workglow/task-graph";
 import { setLogger, uuid4 } from "@workglow/util";
@@ -25,9 +26,11 @@ describe("IndexedDbTaskGraphJobQueue", () => {
     const queueName = `idx_test_queue_${uuid4()}`;
     const storage = new IndexedDbQueueStorage<TaskInput, TaskOutput>(queueName);
     await storage.migrate();
+    const { messageQueue, jobStore } = wrapQueueStorage(storage);
 
     const server = new JobQueueServer<TaskInput, TaskOutput>(TestJob, {
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
       limiter: new RateLimiter(new InMemoryRateLimiterStorage(), queueName, {
         maxExecutions: 1,
@@ -37,7 +40,8 @@ describe("IndexedDbTaskGraphJobQueue", () => {
     });
 
     const client = new JobQueueClient<TaskInput, TaskOutput>({
-      storage,
+      messageQueue,
+      jobStore,
       queueName,
     });
 

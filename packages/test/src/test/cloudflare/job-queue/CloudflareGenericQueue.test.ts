@@ -60,7 +60,7 @@ class TestJob extends Job<TInput, TOutput> {
 
 function setup() {
   const core = new InMemoryQueueStorage<TInput, TOutput>("cfq-test");
-  const jobStore = new InMemoryJobStore(core, new Map());
+  const jobStore = new InMemoryJobStore(core);
   const binding = new FakeQueueBinding();
   const { messageQueue } = createCloudflareQueue<TInput, TOutput>({
     queue: binding.queue,

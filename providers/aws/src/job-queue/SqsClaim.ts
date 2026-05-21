@@ -119,4 +119,14 @@ export class SqsClaim<Input, Output> implements IClaim<JobStorageFormat<Input, O
       })
     );
   }
+
+  async disable(): Promise<void> {
+    await this.sqs.send(
+      new DeleteMessageCommand({
+        QueueUrl: this.queueUrl,
+        ReceiptHandle: this.receiptHandle,
+      })
+    );
+    await this.jobStore.saveStatus(this.id, JobStatus.DISABLED);
+  }
 }

@@ -23,6 +23,8 @@ export class RunCompletionStrategy implements IDisposeStrategy {
 
   touch(_key: string): void {}
 
+  onRunStart(_scope: ResourceScope): void {}
+
   async onRunComplete(scope: ResourceScope): Promise<void> {
     await scope.disposeAll();
   }

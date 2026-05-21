@@ -5,7 +5,7 @@
  */
 
 import { IndexedDbJobStore } from "./IndexedDbJobStore";
-import { IndexedDbMessageQueue, type PendingIndexedDbWrite } from "./IndexedDbMessageQueue";
+import { IndexedDbMessageQueue } from "./IndexedDbMessageQueue";
 import { IndexedDbQueueStorage, type IndexedDbQueueStorageOptions } from "./IndexedDbQueueStorage";
 
 /**
@@ -19,14 +19,10 @@ export function createIndexedDbQueue<Input, Output>(
 ): {
   messageQueue: IndexedDbMessageQueue<Input, Output>;
   jobStore: IndexedDbJobStore<Input, Output>;
-  /** @internal — exposed for callers that still need the legacy storage object. */
-  core: IndexedDbQueueStorage<Input, Output>;
 } {
   const core = new IndexedDbQueueStorage<Input, Output>(queueName, opts);
-  const pending = new Map<unknown, PendingIndexedDbWrite<Output>>();
   return {
-    messageQueue: new IndexedDbMessageQueue<Input, Output>(core, pending),
-    jobStore: new IndexedDbJobStore<Input, Output>(core, pending),
-    core,
+    messageQueue: new IndexedDbMessageQueue<Input, Output>(core),
+    jobStore: new IndexedDbJobStore<Input, Output>(core),
   };
 }

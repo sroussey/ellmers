@@ -15,25 +15,9 @@ import type {
   QueueSubscribeOptions,
 } from "./IQueueStorage";
 
-/**
- * Transient per-id buffer of outputs / errors written via
- * {@link IJobStore.saveResult} / {@link IJobStore.saveError} ahead of the
- * terminal {@link IClaim.ack} / {@link IClaim.fail} that actually persists
- * the row. Folding both into a single legacy `storage.complete(...)` call
- * avoids double-incrementing the `attempts` counter on backends whose
- * `complete()` always bumps it.
- */
-type PendingWrite<Output> = {
-  output?: Output | null;
-  error?: string | null;
-  errorCode?: string | null;
-  abortRequested?: boolean;
-};
-
 class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Output>> {
   constructor(
     private readonly storage: IQueueStorage<Input, Output>,
-    private readonly pending: Map<unknown, PendingWrite<Output>>,
     public readonly id: MessageId,
     public readonly body: JobStorageFormat<Input, Output>,
     public readonly attempts: number,
@@ -41,21 +25,8 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
   ) {}
 
   async ack(result?: unknown): Promise<void> {
-    // Atomic ack: persist result + terminal status in a single write so a
-    // crash between "save result" and "set COMPLETED" cannot leave a row
-    // PROCESSING with an output the worker thinks it saved. The caller may
-    // pass `result` explicitly (preferred — H2 atomicity guarantee) or rely
-    // on the legacy pending-buffer fallback for callers still going through
-    // jobStore.saveResult(...).
-    const buf = this.pending.get(this.id);
-    this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    const output =
-      result !== undefined
-        ? result
-        : buf?.output !== undefined
-          ? buf.output
-          : (current.output ?? null);
+    const output = result !== undefined ? result : (current.output ?? null);
     await this.storage.finalize(this.id, {
       // `output` cast — finalize is typed against Output but receives the
       // result the worker passed in; the queue body's Output and the claim's
@@ -69,7 +40,6 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
   }
 
   async retry(opts?: { delaySeconds?: number }): Promise<void> {
-    this.pending.delete(this.id);
     const delay = opts?.delaySeconds ?? 0;
     const visibleAt = new Date(Date.now() + delay * 1000).toISOString();
     const current = (await this.storage.get(this.id)) ?? this.body;
@@ -83,10 +53,7 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
       progress_message: "",
       progress_details: null,
       // Clear abort_requested_at on retry — an abort flag set during the
-      // failed attempt must not survive into the next retry. Mirrors what
-      // each storage backend does at the SQL level in `complete()` for
-      // PENDING-retry, but applying it here in the wrapper guarantees the
-      // behaviour for storages that route writes through the wrapper.
+      // failed attempt must not survive into the next retry.
       abort_requested_at: null,
     });
   }
@@ -98,25 +65,10 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     permanent?: boolean;
   }): Promise<void> {
     void opts?.permanent; // hint — worker owns retry-vs-fail decision
-    // Prefer explicitly-provided args (H2 atomicity). Fall back to the
-    // pending buffer for callers that still route through jobStore.saveError.
-    const buf = this.pending.get(this.id);
-    this.pending.delete(this.id);
     const current = (await this.storage.get(this.id)) ?? this.body;
-    const error =
-      opts?.error !== undefined
-        ? opts.error
-        : buf?.error !== undefined
-          ? buf.error
-          : (current.error ?? null);
-    const errorCode =
-      opts?.errorCode !== undefined
-        ? opts.errorCode
-        : buf?.errorCode !== undefined
-          ? buf.errorCode
-          : (current.error_code ?? null);
-    const abortRequested =
-      opts?.abortRequested !== undefined ? opts.abortRequested : (buf?.abortRequested ?? false);
+    const error = opts?.error !== undefined ? opts.error : (current.error ?? null);
+    const errorCode = opts?.errorCode !== undefined ? opts.errorCode : (current.error_code ?? null);
+    const abortRequested = opts?.abortRequested === true;
     await this.storage.finalize(this.id, {
       error,
       error_code: errorCode,
@@ -132,17 +84,7 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
     await this.storage.extendLease(this.id, this.workerId, ms);
   }
 
-  /**
-   * Atomic disable (H5): one storage write that sets status=DISABLED,
-   * releases the lease, and clears progress fields. Does NOT write
-   * error/error_code — DISABLED is a normal terminal transition, not a
-   * failure. Replaces the legacy two-write `claim.fail()` then
-   * `jobStore.saveStatus(DISABLED)` path that briefly published FAILED
-   * to subscribers before overwriting with DISABLED, firing a spurious
-   * `job_error` event in between.
-   */
   async disable(): Promise<void> {
-    this.pending.delete(this.id);
     const current = await this.storage.get(this.id);
     const completedAt = current?.completed_at ?? new Date().toISOString();
     await this.storage.finalize(this.id, {
@@ -152,7 +94,6 @@ class WrappedClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outp
       progress: 0,
       progress_message: "",
       progress_details: null,
-      // No error / error_code writes — DISABLED is not an error state.
     });
   }
 }
@@ -162,10 +103,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     return this.storage.scope;
   }
 
-  constructor(
-    private readonly storage: IQueueStorage<Input, Output>,
-    private readonly pending: Map<unknown, PendingWrite<Output>>
-  ) {}
+  constructor(private readonly storage: IQueueStorage<Input, Output>) {}
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {
     const job = applySendOptions(body, opts);
@@ -176,9 +114,9 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
     bodies: readonly JobStorageFormat<Input, Output>[],
     opts?: SendOptions
   ): Promise<readonly MessageId[]> {
-    // H3: a single fingerprint applied to a whole batch is almost always a
-    // bug — every body would dedup against the first row, returning the same
-    // id for distinct payloads. Mirrors the guard in SqsMessageQueue /
+    // A single fingerprint applied to a whole batch is almost always a bug —
+    // every body would dedup against the first row, returning the same id for
+    // distinct payloads. Mirrors the guard in SqsMessageQueue /
     // CloudflareMessageQueue so the contract is uniform across adapters.
     if (opts?.fingerprint != null) {
       throw new RangeError(
@@ -205,7 +143,6 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
       claims.push(
         new WrappedClaim<Input, Output>(
           this.storage,
-          this.pending,
           next.id,
           next,
           next.attempts ?? 0,
@@ -217,7 +154,6 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
   }
 
   async releaseClaim(id: MessageId): Promise<void> {
-    this.pending.delete(id);
     await this.storage.releaseClaim(id);
   }
 
@@ -238,10 +174,7 @@ class WrappedMessageQueue<Input, Output> implements IMessageQueue<JobStorageForm
 }
 
 class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
-  constructor(
-    private readonly storage: IQueueStorage<Input, Output>,
-    private readonly pending: Map<unknown, PendingWrite<Output>>
-  ) {}
+  constructor(private readonly storage: IQueueStorage<Input, Output>) {}
 
   get(id: MessageId): Promise<JobRecord<Input, Output> | undefined> {
     return this.storage.get(id);
@@ -266,34 +199,13 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   ): Promise<void> {
     await this.storage.saveProgress(id, progress, message, details);
   }
-  async saveResult(id: MessageId, output: Output): Promise<void> {
-    // Buffered until claim.ack() persists it. Calling storage.complete() here
-    // would double-bump `attempts` on backends whose complete() increments it.
-    const buf = this.pending.get(id) ?? {};
-    buf.output = output ?? null;
-    this.pending.set(id, buf);
-  }
-  async saveError(
-    id: MessageId,
-    error: string,
-    errorCode: string | null,
-    abortRequested: boolean
-  ): Promise<void> {
-    const buf = this.pending.get(id) ?? {};
-    buf.error = error;
-    buf.errorCode = errorCode;
-    buf.abortRequested = abortRequested;
-    this.pending.set(id, buf);
-  }
   async deleteByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void> {
     await this.storage.deleteJobsByStatusAndAge(status, olderThanMs);
   }
   async delete(id: MessageId): Promise<void> {
-    this.pending.delete(id);
     await this.storage.delete(id);
   }
   async deleteAll(): Promise<void> {
-    this.pending.clear();
     await this.storage.deleteAll();
   }
   async abort(id: MessageId): Promise<void> {
@@ -301,11 +213,7 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async saveStatus(id: MessageId, status: JobStatus): Promise<void> {
-    // Use finalize() so the status write does not bump attempts. The previous
-    // implementation went through complete() and pre-decremented attempts by 1
-    // to offset the increment — a fragile compensation that broke if attempts
-    // was undefined or the storage didn't bump (the bug it was working around
-    // is fixed by finalize itself).
+    // Use finalize() so the status write does not bump attempts.
     await this.storage.finalize(id, { status });
   }
 
@@ -336,7 +244,6 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async completeWithResult(id: MessageId, result: Output): Promise<void> {
-    this.pending.delete(id);
     await this.storage.finalize(id, {
       output: result,
       error: null,
@@ -354,7 +261,6 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
       readonly abortRequested?: boolean;
     }
   ): Promise<void> {
-    this.pending.delete(id);
     const current = await this.storage.get(id);
     const now = new Date().toISOString();
     const abortRequestedAt =
@@ -405,9 +311,8 @@ export function wrapQueueStorage<Input, Output>(
   messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
   jobStore: IJobStore<Input, Output>;
 } {
-  const pending = new Map<unknown, PendingWrite<Output>>();
   return {
-    messageQueue: new WrappedMessageQueue(storage, pending),
-    jobStore: new WrappedJobStore(storage, pending),
+    messageQueue: new WrappedMessageQueue(storage),
+    jobStore: new WrappedJobStore(storage),
   };
 }

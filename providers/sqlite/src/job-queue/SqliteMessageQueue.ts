@@ -17,22 +17,9 @@ import type {
 import { JobStatus } from "@workglow/job-queue";
 import { SqliteQueueStorage } from "./SqliteQueueStorage";
 
-/**
- * Per-id buffer that lets {@link IJobStore.saveResult}/{@link IJobStore.saveError}
- * stage output/error until the terminal claim.ack()/fail() persists them in
- * a single complete() call (avoids double-bumping `attempts`).
- */
-export type SqlitePendingWrite<Output> = {
-  output?: Output | null;
-  error?: string | null;
-  errorCode?: string | null;
-  abortRequested?: boolean;
-};
-
 class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Output>> {
   constructor(
     private readonly core: SqliteQueueStorage<Input, Output>,
-    private readonly pending: Map<unknown, SqlitePendingWrite<Output>>,
     public readonly id: MessageId,
     public readonly body: JobStorageFormat<Input, Output>,
     public readonly attempts: number,
@@ -40,15 +27,8 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
   ) {}
 
   async ack(result?: unknown): Promise<void> {
-    const buf = this.pending.get(this.id);
-    this.pending.delete(this.id);
     const current = (await this.core.get(this.id)) ?? this.body;
-    const output =
-      result !== undefined
-        ? result
-        : buf?.output !== undefined
-          ? buf.output
-          : (current.output ?? null);
+    const output = result !== undefined ? result : (current.output ?? null);
     await this.core.finalize(this.id, {
       output: output as Output | null,
       error: null,
@@ -59,7 +39,6 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
   }
 
   async retry(opts?: { delaySeconds?: number }): Promise<void> {
-    this.pending.delete(this.id);
     const delay = opts?.delaySeconds ?? 0;
     const current = (await this.core.get(this.id)) ?? this.body;
     await this.core.complete({
@@ -81,23 +60,10 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
     permanent?: boolean;
   }): Promise<void> {
     void opts?.permanent;
-    const buf = this.pending.get(this.id);
-    this.pending.delete(this.id);
     const current = (await this.core.get(this.id)) ?? this.body;
-    const error =
-      opts?.error !== undefined
-        ? opts.error
-        : buf?.error !== undefined
-          ? buf.error
-          : (current.error ?? null);
-    const errorCode =
-      opts?.errorCode !== undefined
-        ? opts.errorCode
-        : buf?.errorCode !== undefined
-          ? buf.errorCode
-          : (current.error_code ?? null);
-    const abortRequested =
-      opts?.abortRequested !== undefined ? opts.abortRequested : (buf?.abortRequested ?? false);
+    const error = opts?.error !== undefined ? opts.error : (current.error ?? null);
+    const errorCode = opts?.errorCode !== undefined ? opts.errorCode : (current.error_code ?? null);
+    const abortRequested = opts?.abortRequested === true;
     await this.core.finalize(this.id, {
       error,
       error_code: errorCode,
@@ -114,7 +80,6 @@ class SqliteClaim<Input, Output> implements IClaim<JobStorageFormat<Input, Outpu
   }
 
   async disable(): Promise<void> {
-    this.pending.delete(this.id);
     const current = await this.core.get(this.id);
     const completedAt = current?.completed_at ?? new Date().toISOString();
     await this.core.finalize(this.id, {
@@ -136,15 +101,8 @@ export class SqliteMessageQueue<Input, Output> implements IMessageQueue<
   /** @internal — shared with the paired job store */
   public readonly core: SqliteQueueStorage<Input, Output>;
 
-  /** @internal — shared transient buffer for saveResult/saveError. */
-  private readonly pending: Map<unknown, SqlitePendingWrite<Output>>;
-
-  constructor(
-    core: SqliteQueueStorage<Input, Output>,
-    pending: Map<unknown, SqlitePendingWrite<Output>>
-  ) {
+  constructor(core: SqliteQueueStorage<Input, Output>) {
     this.core = core;
-    this.pending = pending;
   }
 
   async send(body: JobStorageFormat<Input, Output>, opts?: SendOptions): Promise<MessageId> {
@@ -173,21 +131,13 @@ export class SqliteMessageQueue<Input, Output> implements IMessageQueue<
       const job = await this.core.next(opts.workerId, { leaseMs: opts.leaseMs });
       if (!job) break;
       claims.push(
-        new SqliteClaim<Input, Output>(
-          this.core,
-          this.pending,
-          job.id,
-          job,
-          job.attempts ?? 0,
-          opts.workerId
-        )
+        new SqliteClaim<Input, Output>(this.core, job.id, job, job.attempts ?? 0, opts.workerId)
       );
     }
     return claims;
   }
 
   async releaseClaim(id: MessageId): Promise<void> {
-    this.pending.delete(id);
     await this.core.releaseClaim(id);
   }
 

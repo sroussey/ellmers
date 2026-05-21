@@ -32,14 +32,6 @@ describe("CachePolicy", () => {
     expect(new Dyn().getCachePolicy({ priv: false } as any)).toEqual({ kind: "deterministic" });
   });
 
-  it("legacy cacheable=false maps to { kind: 'none' }", () => {
-    class Legacy extends Task {
-      public static override type = "Legacy";
-      public static override cacheable = false;
-    }
-    expect(new Legacy().getCachePolicy({} as any)).toEqual({ kind: "none" });
-  });
-
   it("policy helpers", () => {
     expect(isPolicyCached({ kind: "none" })).toBe(false);
     expect(isPolicyCached({ kind: "deterministic" })).toBe(true);
