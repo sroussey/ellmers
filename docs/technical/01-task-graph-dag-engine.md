@@ -81,15 +81,19 @@ Every task class must declare several static properties and two static schema me
 import { Task } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
 
-interface MyInput { text: string }
-interface MyOutput { wordCount: number }
+interface MyInput {
+  text: string;
+}
+interface MyOutput {
+  wordCount: number;
+}
 
 class WordCountTask extends Task<MyInput, MyOutput> {
   static readonly type = "WordCountTask";
   static readonly category = "Text";
   static readonly title = "Word Count";
   static readonly description = "Counts words in a string";
-  static readonly cacheable = true;
+  static readonly cachePolicy = { kind: "deterministic" } as const;
 
   static inputSchema(): DataPortSchema {
     return {
@@ -119,23 +123,23 @@ class WordCountTask extends Task<MyInput, MyOutput> {
 
 ### Required Static Properties
 
-| Property      | Type      | Description                                              |
-|---------------|-----------|----------------------------------------------------------|
-| `type`        | `string`  | Unique identifier for this task class in the registry    |
-| `category`    | `string`  | Grouping label for UI organization                       |
-| `title`       | `string`  | Human-readable name                                      |
-| `description` | `string`  | Brief description of the task's purpose                  |
-| `cacheable`   | `boolean` | Whether results can be cached across runs                |
+| Property      | Type     | Description                                           |
+| ------------- | -------- | ----------------------------------------------------- |
+| `type`        | `string` | Unique identifier for this task class in the registry |
+| `category`    | `string` | Grouping label for UI organization                    |
+| `title`       | `string` | Human-readable name                                   |
+| `description` | `string` | Brief description of the task's purpose               |
+| `cachePolicy` | `object` | Whether and where results can be cached across runs   |
 
 ### Optional Static Properties
 
-| Property                    | Type      | Default | Description                                           |
-|-----------------------------|-----------|---------|-------------------------------------------------------|
-| `hasDynamicSchemas`         | `boolean` | `false` | Set `true` if schemas change at runtime               |
-| `passthroughInputsToOutputs` | `boolean` | `false` | Mirror dynamic input ports to output                  |
-| `customizable`              | `boolean` | `false` | Allow saving as a preset in the builder               |
-| `isGraphOutput`             | `boolean` | `false` | Mark as the definitive output node of a graph         |
-| `hasDynamicEntitlements`    | `boolean` | `false` | Entitlements depend on runtime state                   |
+| Property                     | Type      | Default | Description                                   |
+| ---------------------------- | --------- | ------- | --------------------------------------------- |
+| `hasDynamicSchemas`          | `boolean` | `false` | Set `true` if schemas change at runtime       |
+| `passthroughInputsToOutputs` | `boolean` | `false` | Mirror dynamic input ports to output          |
+| `customizable`               | `boolean` | `false` | Allow saving as a preset in the builder       |
+| `isGraphOutput`              | `boolean` | `false` | Mark as the definitive output node of a graph |
+| `hasDynamicEntitlements`     | `boolean` | `false` | Entitlements depend on runtime state          |
 
 ### The execute() Method
 
@@ -208,23 +212,23 @@ graph.addDataflows([
 
 ### Special Port Identifiers
 
-| Constant             | Value       | Purpose                                    |
-|----------------------|-------------|--------------------------------------------|
-| `DATAFLOW_ALL_PORTS` | `"*"`       | Pass entire output object as input         |
-| `DATAFLOW_ERROR_PORT`| `"[error]"` | Route error objects between tasks          |
+| Constant              | Value       | Purpose                            |
+| --------------------- | ----------- | ---------------------------------- |
+| `DATAFLOW_ALL_PORTS`  | `"*"`       | Pass entire output object as input |
+| `DATAFLOW_ERROR_PORT` | `"[error]"` | Route error objects between tasks  |
 
 ### Querying the Graph
 
 ```typescript
-graph.getTask(taskId);                    // Get task by ID
-graph.getTasks();                         // All tasks
-graph.topologicallySortedNodes();         // Tasks in execution order
-graph.getDataflow(dataflowId);            // Get dataflow by ID
-graph.getDataflows();                     // All dataflows
-graph.getSourceDataflows(taskId);         // Incoming dataflows for a task
-graph.getTargetDataflows(taskId);         // Outgoing dataflows from a task
-graph.getSourceTasks(taskId);             // Upstream tasks
-graph.getTargetTasks(taskId);             // Downstream tasks
+graph.getTask(taskId); // Get task by ID
+graph.getTasks(); // All tasks
+graph.topologicallySortedNodes(); // Tasks in execution order
+graph.getDataflow(dataflowId); // Get dataflow by ID
+graph.getDataflows(); // All dataflows
+graph.getSourceDataflows(taskId); // Incoming dataflows for a task
+graph.getTargetDataflows(taskId); // Outgoing dataflows from a task
+graph.getSourceTasks(taskId); // Upstream tasks
+graph.getTargetTasks(taskId); // Downstream tasks
 ```
 
 ### Running the Graph
@@ -232,40 +236,38 @@ graph.getTargetTasks(taskId);             // Downstream tasks
 ```typescript
 // Full execution
 const results = await graph.run<MyOutput>(
-  { text: "hello world" },  // Input for root tasks
+  { text: "hello world" }, // Input for root tasks
   {
-    outputCache: true,       // Enable caching
-    timeout: 30000,          // 30 second timeout
-    maxTasks: 100,           // Safety limit
+    outputCache: true, // Enable caching
+    timeout: 30000, // 30 second timeout
+    maxTasks: 100, // Safety limit
     parentSignal: controller.signal, // External abort
   }
 );
 
 // Preview execution (lightweight UI updates)
-const previews = await graph.runPreview<MyOutput>(
-  { text: "hello world" }
-);
+const previews = await graph.runPreview<MyOutput>({ text: "hello world" });
 ```
 
 ### Run Configuration
 
 The `TaskGraphRunConfig` interface provides these options:
 
-| Option                  | Type                              | Description                                          |
-|-------------------------|-----------------------------------|------------------------------------------------------|
-| `outputCache`           | `TaskOutputRepository \| boolean` | Cache backend or `true` to use global                |
-| `parentSignal`          | `AbortSignal`                     | Signal to abort the entire graph                     |
-| `registry`              | `ServiceRegistry`                 | DI registry for this execution                       |
+| Option                  | Type                              | Description                                                 |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------- |
+| `outputCache`           | `TaskOutputRepository \| boolean` | Cache backend or `true` to use global                       |
+| `parentSignal`          | `AbortSignal`                     | Signal to abort the entire graph                            |
+| `registry`              | `ServiceRegistry`                 | DI registry for this execution                              |
 | `accumulateLeafOutputs` | `boolean`                         | Accumulate streaming output for leaf nodes (default `true`) |
-| `timeout`               | `number`                          | Max execution time in milliseconds                   |
-| `maxTasks`              | `number`                          | Maximum number of tasks allowed                      |
-| `enforceEntitlements`   | `boolean`                         | Check entitlements before execution                  |
+| `timeout`               | `number`                          | Max execution time in milliseconds                          |
+| `maxTasks`              | `number`                          | Maximum number of tasks allowed                             |
+| `enforceEntitlements`   | `boolean`                         | Check entitlements before execution                         |
 
 ### Abort and Reset
 
 ```typescript
-graph.abort();       // Abort all running tasks
-graph.resetGraph();  // Reset all tasks to PENDING
+graph.abort(); // Abort all running tasks
+graph.resetGraph(); // Reset all tasks to PENDING
 ```
 
 ---
@@ -290,13 +292,13 @@ TaskGraphRunner (facade)
                                           discarded by terminal handlers
 ```
 
-| Class | Responsibility | Lifetime |
-|---|---|---|
-| `TaskGraphRunner` | Public API, lifecycle handlers, per-task orchestration in `runTask`, `runGraphPreview` body | Whole runner |
-| `RunScheduler` | For-await run loop, `pushStatusFromNodeToEdges`, disabled cascade, progress aggregation, timeout arm/clear | Whole runner |
-| `EdgeMaterializer` | `copyInputFromEdgesToNode`, `pushOutputFromNodeToEdges`, error-port routing, `resetTask` | Whole runner |
-| `StreamPump` | `prepareStreamingInputs` (tee), `runStreamingTask`, accumulation policy, stream fan-out | Whole runner |
-| `RunContext` | One run's mutable state — abort controller, in-progress maps, error map, telemetry span, timeout timer, entitlement enforcer | Single `runGraph()` call |
+| Class              | Responsibility                                                                                                               | Lifetime                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `TaskGraphRunner`  | Public API, lifecycle handlers, per-task orchestration in `runTask`, `runGraphPreview` body                                  | Whole runner             |
+| `RunScheduler`     | For-await run loop, `pushStatusFromNodeToEdges`, disabled cascade, progress aggregation, timeout arm/clear                   | Whole runner             |
+| `EdgeMaterializer` | `copyInputFromEdgesToNode`, `pushOutputFromNodeToEdges`, error-port routing, `resetTask`                                     | Whole runner             |
+| `StreamPump`       | `prepareStreamingInputs` (tee), `runStreamingTask`, accumulation policy, stream fan-out                                      | Whole runner             |
+| `RunContext`       | One run's mutable state — abort controller, in-progress maps, error map, telemetry span, timeout timer, entitlement enforcer | Single `runGraph()` call |
 
 All four collaborator classes are marked `@internal` and re-exported from `@workglow/task-graph` so unit tests can construct them directly.
 
@@ -304,13 +306,13 @@ All four collaborator classes are marked `@internal` and re-exported from `@work
 
 These are easy to confuse — both relate to a single run, but they live on opposite sides of the start of execution.
 
-| | `TaskGraphRunConfig` | `RunContext` |
-|---|---|---|
-| **Direction** | Caller → runner (input) | Runner-internal (state) |
-| **Lifetime** | Provided once before the run starts | Created at run start, destroyed at run end |
-| **Mutability** | Caller-built; runner reads it | Runner-mutated throughout the run |
-| **Visibility** | Public (part of `runGraph` API) | `@internal` collaborator state |
-| **Purpose** | Wishes/policy for the run | Bookkeeping while the run is in flight |
+|                | `TaskGraphRunConfig`                | `RunContext`                               |
+| -------------- | ----------------------------------- | ------------------------------------------ |
+| **Direction**  | Caller → runner (input)             | Runner-internal (state)                    |
+| **Lifetime**   | Provided once before the run starts | Created at run start, destroyed at run end |
+| **Mutability** | Caller-built; runner reads it       | Runner-mutated throughout the run          |
+| **Visibility** | Public (part of `runGraph` API)     | `@internal` collaborator state             |
+| **Purpose**    | Wishes/policy for the run           | Bookkeeping while the run is in flight     |
 
 `handleStart` translates the caller's wishes into runtime state:
 
@@ -321,7 +323,7 @@ config.enforceEntitlements + registry → ctx.activeEnforcer
 (no config equivalent)  → ctx.runId, ctx.inProgressTasks, ctx.failedTaskErrors, ctx.telemetrySpan
 ```
 
-Long-lived state from `config` (`registry`, `outputCache`, `resourceScope`, `accumulateLeafOutputs`) goes onto the facade — not into `RunContext`. Only state that exists *only while a run is in flight* belongs in `RunContext`.
+Long-lived state from `config` (`registry`, `outputCache`, `resourceScope`, `accumulateLeafOutputs`) goes onto the facade — not into `RunContext`. Only state that exists _only while a run is in flight_ belongs in `RunContext`.
 
 **Mnemonic:** `TaskGraphRunConfig` is what the caller asks for; `RunContext` is what the runner is doing right now.
 
@@ -382,9 +384,9 @@ TaskRunner.run(overrides, config)
 2. setInput(overrides)      -- Merge overrides into runInputData
 3. resolveSchemaInputs()    -- Resolve format annotations (models, repositories)
 4. validateInput()          -- Validate against compiled JSON Schema
-5. Check cache              -- If cacheable, look up cached result
+5. Check cache              -- If the cache policy allows it, look up cached result
 6. executeTask()            -- Call task.execute(input, context)
-7. Cache result             -- If cacheable, store in output cache
+7. Cache result             -- If the cache policy allows it, store in output cache
 8. handleComplete()         -- Set status to COMPLETED, emit events
   |
   v
@@ -407,15 +409,15 @@ PENDING --> PROCESSING --> STREAMING --> COMPLETED
 PENDING --> DISABLED
 ```
 
-| Status       | Description                                                            |
-|--------------|------------------------------------------------------------------------|
-| `PENDING`    | Task has not started. Inputs can be modified freely.                   |
-| `PROCESSING` | Task is currently executing its `execute()` method.                    |
-| `STREAMING`  | Task has begun producing streaming output chunks.                      |
-| `COMPLETED`  | Execution finished successfully. Output is locked and immutable.       |
-| `FAILED`     | Execution threw an error.                                              |
-| `ABORTING`   | Abort has been requested; cleanup is in progress.                      |
-| `DISABLED`   | Task was disabled (e.g., by a ConditionalTask that deactivated it).   |
+| Status       | Description                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| `PENDING`    | Task has not started. Inputs can be modified freely.                |
+| `PROCESSING` | Task is currently executing its `execute()` method.                 |
+| `STREAMING`  | Task has begun producing streaming output chunks.                   |
+| `COMPLETED`  | Execution finished successfully. Output is locked and immutable.    |
+| `FAILED`     | Execution threw an error.                                           |
+| `ABORTING`   | Abort has been requested; cleanup is in progress.                   |
+| `DISABLED`   | Task was disabled (e.g., by a ConditionalTask that deactivated it). |
 
 ### Immutability After Completion
 
@@ -440,21 +442,21 @@ const results = await workflow.run();
 
 ### Builder Methods
 
-| Method                      | Description                                           |
-|-----------------------------|-------------------------------------------------------|
-| `addTask(task)`             | Add a task to the workflow                            |
-| `pipe(...tasks)`            | Chain tasks sequentially with auto-wired dataflows    |
-| `parallel(tasks)`           | Run tasks in parallel from the current position       |
-| `group(config)`             | Start a sub-group (wraps in GraphAsTask)              |
-| `endGroup()`                | Close the current group                               |
-| `map(config)`               | Start a map loop over array inputs                    |
-| `endMap()`                  | Close the map loop                                    |
-| `reduce(config)`            | Start a reduce loop with accumulator                  |
-| `endReduce()`               | Close the reduce loop                                 |
-| `while(config)`             | Start a conditional loop                              |
-| `endWhile()`                | Close the while loop                                  |
-| `run(input?, config?)`      | Build the graph and execute                           |
-| `runPreview(input?)`        | Build the graph and run preview-only execution        |
+| Method                 | Description                                        |
+| ---------------------- | -------------------------------------------------- |
+| `addTask(task)`        | Add a task to the workflow                         |
+| `pipe(...tasks)`       | Chain tasks sequentially with auto-wired dataflows |
+| `parallel(tasks)`      | Run tasks in parallel from the current position    |
+| `group(config)`        | Start a sub-group (wraps in GraphAsTask)           |
+| `endGroup()`           | Close the current group                            |
+| `map(config)`          | Start a map loop over array inputs                 |
+| `endMap()`             | Close the map loop                                 |
+| `reduce(config)`       | Start a reduce loop with accumulator               |
+| `endReduce()`          | Close the reduce loop                              |
+| `while(config)`        | Start a conditional loop                           |
+| `endWhile()`           | Close the while loop                               |
+| `run(input?, config?)` | Build the graph and execute                        |
+| `runPreview(input?)`   | Build the graph and run preview-only execution     |
 
 ---
 
@@ -464,20 +466,20 @@ TaskGraph emits events for structural changes and task lifecycle updates:
 
 ### Graph Structural Events
 
-| Event             | Parameters    | Description                          |
-|-------------------|---------------|--------------------------------------|
-| `task_added`      | `taskId`      | A task was added to the graph        |
-| `task_removed`    | `taskId`      | A task was removed from the graph    |
-| `dataflow_added`  | `dataflowId`  | A dataflow was added                 |
-| `dataflow_removed`| `dataflowId`  | A dataflow was removed               |
+| Event              | Parameters   | Description                       |
+| ------------------ | ------------ | --------------------------------- |
+| `task_added`       | `taskId`     | A task was added to the graph     |
+| `task_removed`     | `taskId`     | A task was removed from the graph |
+| `dataflow_added`   | `dataflowId` | A dataflow was added              |
+| `dataflow_removed` | `dataflowId` | A dataflow was removed            |
 
 ### Streaming Events
 
-| Event                | Parameters              | Description                        |
-|----------------------|-------------------------|------------------------------------|
-| `task_stream_start`  | `taskId`                | A streaming task began output      |
-| `task_stream_chunk`  | `taskId, StreamEvent`   | A streaming chunk was produced     |
-| `task_stream_end`    | `taskId, output`        | Streaming completed                |
+| Event               | Parameters            | Description                    |
+| ------------------- | --------------------- | ------------------------------ |
+| `task_stream_start` | `taskId`              | A streaming task began output  |
+| `task_stream_chunk` | `taskId, StreamEvent` | A streaming chunk was produced |
+| `task_stream_end`   | `taskId, output`      | Streaming completed            |
 
 ### Subscription Helpers
 
@@ -536,8 +538,8 @@ import { serialGraph } from "@workglow/task-graph";
 
 const graph = serialGraph(
   [taskA, taskB, taskC],
-  "input",   // input port name
-  "output"   // output port name
+  "input", // input port name
+  "output" // output port name
 );
 ```
 
@@ -557,7 +559,7 @@ class DoubleTask extends Task<{ value: number }, { result: number }> {
   static readonly category = "Math";
   static readonly title = "Double";
   static readonly description = "Doubles the input value";
-  static readonly cacheable = true;
+  static readonly cachePolicy = { kind: "deterministic" } as const;
 
   static inputSchema(): DataPortSchema {
     return {
@@ -584,7 +586,7 @@ class AddTask extends Task<{ a: number; b: number }, { sum: number }> {
   static readonly category = "Math";
   static readonly title = "Add";
   static readonly description = "Adds two numbers";
-  static readonly cacheable = true;
+  static readonly cachePolicy = { kind: "deterministic" } as const;
 
   static inputSchema(): DataPortSchema {
     return {

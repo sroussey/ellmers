@@ -72,7 +72,7 @@ TaskRunner.run(overrides, config)
    - If the signal is already aborted, throw TaskAbortedError
   |
   v
-7. Check cache (if cacheable)
+7. Check cache (if the effective cache policy is cached)
    - Look up cached output by (task.type, input)
    - If found: assign cached result to runOutputData and return. No preview overlay.
   |
@@ -83,7 +83,7 @@ TaskRunner.run(overrides, config)
    - execute() (or executeStream()) is the only path called by run(). There is no preview overlay.
   |
   v
-9. Store in cache (if cacheable and output is new)
+9. Store in cache (if the effective cache policy is cached and output is new)
   |
   v
 10. handleComplete()
@@ -348,12 +348,16 @@ If the user edits TaskA's defaults and wants to re-run the entire pipeline, the 
 
 ### How Caching Works
 
-The output cache is a `TaskOutputRepository` that maps `(taskType, input)` to `output`. During `run()`:
+The output cache is selected from the `CacheRegistry` according to the task's effective `CachePolicy`, then maps `(taskType, input)` to `output`. During `run()`:
 
 ```typescript
-if (task.cacheable) {
-  const cached = await outputCache.getOutput(task.type, inputs);
-  if (cached) {
+const policy = task.getCachePolicy(inputs);
+const outputCache = repoFor(cacheRegistry, policy);
+const keyInputs = await buildCacheKey(inputs, outputCache);
+
+if (outputCache) {
+  const cached = await outputCache.getOutput(task.type, keyInputs);
+  if (cached !== undefined) {
     // Cache hit: return cached output verbatim. No preview overlay.
     task.runOutputData = cached;
     return;
@@ -361,8 +365,8 @@ if (task.cacheable) {
 }
 
 const result = await task.execute(input, context);
-if (task.cacheable && result !== undefined) {
-  await outputCache.saveOutput(task.type, inputs, result);
+if (outputCache && result !== undefined) {
+  await outputCache.saveOutput(task.type, keyInputs, result);
 }
 ```
 
@@ -371,16 +375,26 @@ if (task.cacheable && result !== undefined) {
 Caching can be configured at multiple levels:
 
 ```typescript
-// Task-level: static property
+// Task-level: default policy
 class MyTask extends Task {
-  static readonly cacheable = true;
+  public static override cachePolicy: CachePolicy = { kind: "deterministic" };
 }
 
-// Instance-level: config override
+// Tasks with side effects opt out
+class DebugLogTask extends Task {
+  public static override cachePolicy: CachePolicy = { kind: "none" };
+}
+
+// Non-deterministic-but-worth-keeping tasks use run-private caching
+class ImageGenerationTask extends Task {
+  public static override cachePolicy: CachePolicy = { kind: "private" };
+}
+
+// Instance-level legacy override: disables caching for this instance
 const task = new MyTask({ cacheable: false });
 
-// Runtime-level: runConfig override
-await task.run({}, { cacheable: true });
+// Runtime-level legacy override: disables caching for this run
+await task.run({}, { cacheable: false });
 
 // Graph-level: enable global cache
 await graph.run({}, { outputCache: true });
@@ -389,11 +403,18 @@ await graph.run({}, { outputCache: true });
 await graph.run({}, { outputCache: myPostgresCache });
 ```
 
-The precedence order (highest to lowest):
+`CachePolicy.kind` controls which repository slot is used:
 
-1. `runConfig.cacheable` (runtime override)
-2. `config.cacheable` (instance-level)
-3. `static cacheable` (class-level)
+1. `"deterministic"` uses the shared deterministic cache. This is the default for `Task`.
+2. `"private"` uses the run-private cache, namespaced by `runId`, for non-deterministic outputs that should not leak between workflow runs.
+3. `"none"` disables cache lookup and writes.
+
+The effective policy is resolved as follows:
+
+1. `getCachePolicy(inputs)` may be overridden for input-dependent decisions.
+2. The default `getCachePolicy()` maps legacy `static cacheable = false` to `{ kind: "none" }` when the class has not declared its own `cachePolicy`.
+3. `runConfig.cacheable === false` or `config.cacheable === false` also maps to `{ kind: "none" }` as a backwards-compatible disable switch.
+4. Otherwise, the class's static `cachePolicy` is used, falling back to `{ kind: "deterministic" }`.
 
 ### Cache and Preview Execution
 

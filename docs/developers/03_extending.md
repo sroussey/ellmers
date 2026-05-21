@@ -102,7 +102,7 @@ const SimpleDebugLogTaskOutputSchema = {
 type SimpleDebugLogTaskOutputs = FromSchema<SimpleDebugLogTaskOutputSchema>;
 
 export class SimpleDebugLogTask extends Task<SimpleDebugLogTaskInputs, SimpleDebugLogTaskOutputs> {
-  public static cacheable = false;
+  public static cachePolicy: CachePolicy = { kind: "none" };
   public static inputSchema = () => SimpleDebugLogTaskInputSchema;
   public static outputSchema = () => SimpleDebugLogTaskOutputSchema;
   execute() {
@@ -115,7 +115,7 @@ export class SimpleDebugLogTask extends Task<SimpleDebugLogTaskInputs, SimpleDeb
 new SimpleDebugLogTask({ message: "hello world" }).run();
 ```
 
-In the above code, we added an output to the Task. We also added `static cacheable` flag to tell the system that this Task has side effects and should always run the execute method. This is important for the system to know if it can cache the output of the Task or not.
+In the above code, we added an output to the Task. We also set `cachePolicy` to `{ kind: "none" }` to tell the system that this Task has side effects and should always run the execute method. This is important for the system to know if it can cache the output of the Task or not.
 
 ### Register the Task
 
@@ -149,14 +149,14 @@ When defining task input schemas, you can use `format` annotations to enable aut
 
 The system supports several format annotations out of the box:
 
-| Format                            | Description                         | Helper Function               |
-| --------------------------------- | ----------------------------------- | ----------------------------- |
-| `model`                           | Any AI model configuration          | `TypeModel()`                 |
-| `model:TaskName`                  | Model compatible with specific task | —                             |
-| `storage:tabular`                 | Tabular data storage                | `TypeTabularStorage()`        |
-| `knowledge-base`                  | Knowledge base instance             | `TypeKnowledgeBase()`         |
-| `credential`                      | Credential from credential store    | —                             |
-| `tasks`                           | Task class from task registry       | —                             |
+| Format            | Description                         | Helper Function        |
+| ----------------- | ----------------------------------- | ---------------------- |
+| `model`           | Any AI model configuration          | `TypeModel()`          |
+| `model:TaskName`  | Model compatible with specific task | —                      |
+| `storage:tabular` | Tabular data storage                | `TypeTabularStorage()` |
+| `knowledge-base`  | Knowledge base instance             | `TypeKnowledgeBase()`  |
+| `credential`      | Credential from credential store    | —                      |
+| `tasks`           | Task class from task registry       | —                      |
 
 ### Example: Using Format Annotations
 
@@ -195,7 +195,10 @@ export class MyTask extends Task<MyTaskInput> {
   static readonly type = "MyTask";
   static inputSchema = () => MyTaskInputSchema;
 
-  async executePreview(input: MyTaskInput, ctx: IExecutePreviewContext): Promise<MyTaskOutput | undefined> {
+  async executePreview(
+    input: MyTaskInput,
+    ctx: IExecutePreviewContext
+  ): Promise<MyTaskOutput | undefined> {
     // By the time executePreview runs, model is a ModelConfig object
     // and dataSource is an ITabularStorage instance
     const { model, dataSource, prompt } = input;
@@ -280,23 +283,23 @@ The `workglow` package provides a comprehensive set of tasks for building RAG (R
 
 ### Vector and Embedding Tasks
 
-| Task                    | Description                                                                 |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `TextEmbeddingTask`     | Generates embeddings using configurable models                              |
-| `ChunkVectorUpsertTask` | Stores chunks + embeddings in a KnowledgeBase (1:1 aligned)                 |
-| `VectorQuantizeTask`    | Quantizes vectors for storage efficiency                                    |
+| Task                    | Description                                                 |
+| ----------------------- | ----------------------------------------------------------- |
+| `TextEmbeddingTask`     | Generates embeddings using configurable models              |
+| `ChunkVectorUpsertTask` | Stores chunks + embeddings in a KnowledgeBase (1:1 aligned) |
+| `VectorQuantizeTask`    | Quantizes vectors for storage efficiency                    |
 
 ### Retrieval and Generation Tasks
 
-| Task                     | Description                                                              |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `ChunkRetrievalTask`     | End-to-end retrieval: embeds query, runs similarity or hybrid search     |
-| `QueryExpanderTask`      | Rule-based query expansion (multi-query / synonyms)                      |
-| `RerankerTask`           | Reranks results (simple heuristic or reciprocal-rank-fusion)             |
-| `HierarchyJoinTask`      | Enriches retrieval metadata with parent context                          |
-| `ContextBuilderTask`     | Builds formatted context for LLM prompts                                 |
-| `TextQuestionAnswerTask` | Generates answers from context                                           |
-| `TextGenerationTask`     | General text generation                                                  |
+| Task                     | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
+| `ChunkRetrievalTask`     | End-to-end retrieval: embeds query, runs similarity or hybrid search |
+| `QueryExpanderTask`      | Rule-based query expansion (multi-query / synonyms)                  |
+| `RerankerTask`           | Reranks results (simple heuristic or reciprocal-rank-fusion)         |
+| `HierarchyJoinTask`      | Enriches retrieval metadata with parent context                      |
+| `ContextBuilderTask`     | Builds formatted context for LLM prompts                             |
+| `TextQuestionAnswerTask` | Generates answers from context                                       |
+| `TextGenerationTask`     | General text generation                                              |
 
 ### Chainable RAG Pipeline Example
 
@@ -391,12 +394,12 @@ interface BaseNode {
 
 Each task passes through what the next task needs:
 
-| Task                  | Passes Through           | Adds                                      |
-| --------------------- | ------------------------ | ----------------------------------------- |
-| `structuralParser`    | -                        | `doc_id`, `documentTree`, `nodeCount`     |
-| `documentEnricher`    | `doc_id`, `documentTree` | `summaryCount`, `entityCount`             |
+| Task                  | Passes Through           | Adds                                       |
+| --------------------- | ------------------------ | ------------------------------------------ |
+| `structuralParser`    | -                        | `doc_id`, `documentTree`, `nodeCount`      |
+| `documentEnricher`    | `doc_id`, `documentTree` | `summaryCount`, `entityCount`              |
 | `hierarchicalChunker` | `doc_id`                 | `chunks: ChunkRecord[]`, `text[]`, `count` |
-| `textEmbedding`       | (implicit)               | `vector[]`                                |
-| `chunkVectorUpsert`   | -                        | `count`, `doc_id`, `chunk_ids`            |
+| `textEmbedding`       | (implicit)               | `vector[]`                                 |
+| `chunkVectorUpsert`   | -                        | `count`, `doc_id`, `chunk_ids`             |
 
 This design eliminates the need for external loops - the entire pipeline chains together naturally.

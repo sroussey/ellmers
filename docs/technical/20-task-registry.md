@@ -24,13 +24,13 @@ applications, per-request task allow-lists) are handled by a parallel **dependen
 
 ### Key design goals
 
-| Goal | Mechanism |
-|---|---|
-| Runtime discovery of task types | `TaskRegistry.all` (global `Map`) |
-| Dynamic instantiation from serialized data | `getTaskConstructors()` + `new taskClass(config)` |
-| Scoped / sandboxed registries | `TASK_CONSTRUCTORS` DI token per `ServiceRegistry` |
-| Schema-driven input resolution | `format: "tasks"` input resolver and compactor |
-| Batch registration of built-in tasks | `registerBaseTasks()`, `registerCommonTasks()`, `registerAiTasks()` |
+| Goal                                       | Mechanism                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------- |
+| Runtime discovery of task types            | `TaskRegistry.all` (global `Map`)                                   |
+| Dynamic instantiation from serialized data | `getTaskConstructors()` + `new taskClass(config)`                   |
+| Scoped / sandboxed registries              | `TASK_CONSTRUCTORS` DI token per `ServiceRegistry`                  |
+| Schema-driven input resolution             | `format: "tasks"` input resolver and compactor                      |
+| Batch registration of built-in tasks       | `registerBaseTasks()`, `registerCommonTasks()`, `registerAiTasks()` |
 
 ---
 
@@ -88,7 +88,7 @@ export interface ITaskStaticProperties {
   readonly category?: string;
   readonly title?: string;
   readonly description?: string;
-  readonly cacheable: boolean;
+  readonly cachePolicy?: CachePolicy;
   readonly hasDynamicSchemas: boolean;
   readonly hasDynamicEntitlements: boolean;
   readonly passthroughInputsToOutputs?: boolean;
@@ -103,22 +103,22 @@ export interface ITaskStaticProperties {
 
 ### Property reference
 
-| Property | Type | Required | Description |
-|---|---|---|---|
-| `type` | `string` | Yes | Unique identifier used as the registry key and in serialized JSON. By convention, matches the class name (e.g. `"DelayTask"`). |
-| `category` | `string` | No | Grouping label for UI display. Common values: `"Utility"`, `"Flow Control"`, `"AI"`, `"String"`, `"Scalar"`, `"Vector"`, `"MCP"`, `"Hidden"`. |
-| `title` | `string` | No | Short human-readable label. Defaults to `""` in the `Task` base class. |
-| `description` | `string` | No | Longer explanation of what the task does. Used in CLI help, tooltips, and agent tool descriptions. |
-| `cacheable` | `boolean` | Yes | Whether the task's output can be cached given the same input. Tasks with side effects (network, file I/O, delay) set this to `false`. |
-| `hasDynamicSchemas` | `boolean` | Yes | When `true`, the task's input/output schemas can change at runtime (e.g. `GraphAsTask` recomputes schemas from its sub-graph). |
-| `hasDynamicEntitlements` | `boolean` | Yes | When `true`, entitlements depend on runtime state (e.g. child tasks in a compound graph). |
-| `passthroughInputsToOutputs` | `boolean` | No | When `true`, dynamically added input ports are mirrored as output ports of the same name and type. |
-| `isGraphOutput` | `boolean` | No | Marks this task as the graph's output collector. The graph runner preferentially collects results from tasks with this flag. |
-| `customizable` | `boolean` | No | When `true`, this task can be saved as a custom preset with a frozen configuration in the workflow builder UI. |
-| `inputSchema()` | `() => DataPortSchema` | Yes | Returns the JSON Schema object describing the task's input ports. |
-| `outputSchema()` | `() => DataPortSchema` | Yes | Returns the JSON Schema object describing the task's output ports. |
-| `configSchema()` | `() => DataPortSchema` | Yes | Returns the JSON Schema for the task's configuration (persisted settings, not runtime data). |
-| `entitlements()` | `() => TaskEntitlements` | Yes | Declares the permissions this task requires (network access, code execution, credential access, etc.). |
+| Property                     | Type                     | Required | Description                                                                                                                                   |
+| ---------------------------- | ------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                       | `string`                 | Yes      | Unique identifier used as the registry key and in serialized JSON. By convention, matches the class name (e.g. `"DelayTask"`).                |
+| `category`                   | `string`                 | No       | Grouping label for UI display. Common values: `"Utility"`, `"Flow Control"`, `"AI"`, `"String"`, `"Scalar"`, `"Vector"`, `"MCP"`, `"Hidden"`. |
+| `title`                      | `string`                 | No       | Short human-readable label. Defaults to `""` in the `Task` base class.                                                                        |
+| `description`                | `string`                 | No       | Longer explanation of what the task does. Used in CLI help, tooltips, and agent tool descriptions.                                            |
+| `cachePolicy`                | `CachePolicy`            | Yes      | Whether and where the task's output can be cached given the same input. Tasks with side effects set this to `{ kind: "none" }`.               |
+| `hasDynamicSchemas`          | `boolean`                | Yes      | When `true`, the task's input/output schemas can change at runtime (e.g. `GraphAsTask` recomputes schemas from its sub-graph).                |
+| `hasDynamicEntitlements`     | `boolean`                | Yes      | When `true`, entitlements depend on runtime state (e.g. child tasks in a compound graph).                                                     |
+| `passthroughInputsToOutputs` | `boolean`                | No       | When `true`, dynamically added input ports are mirrored as output ports of the same name and type.                                            |
+| `isGraphOutput`              | `boolean`                | No       | Marks this task as the graph's output collector. The graph runner preferentially collects results from tasks with this flag.                  |
+| `customizable`               | `boolean`                | No       | When `true`, this task can be saved as a custom preset with a frozen configuration in the workflow builder UI.                                |
+| `inputSchema()`              | `() => DataPortSchema`   | Yes      | Returns the JSON Schema object describing the task's input ports.                                                                             |
+| `outputSchema()`             | `() => DataPortSchema`   | Yes      | Returns the JSON Schema object describing the task's output ports.                                                                            |
+| `configSchema()`             | `() => DataPortSchema`   | Yes      | Returns the JSON Schema for the task's configuration (persisted settings, not runtime data).                                                  |
+| `entitlements()`             | `() => TaskEntitlements` | Yes      | Declares the permissions this task requires (network access, code execution, credential access, etc.).                                        |
 
 ### Default values from the Task base class
 
@@ -129,7 +129,7 @@ public static type: TaskTypeName = "Task";
 public static category: string = "Hidden";
 public static title: string = "";
 public static description: string = "";
-public static cacheable: boolean = true;
+public static cachePolicy: CachePolicy = { kind: "deterministic" };
 public static hasDynamicSchemas: boolean = false;
 public static hasDynamicEntitlements: boolean = false;
 public static passthroughInputsToOutputs: boolean = false;
@@ -145,11 +145,13 @@ public static customizable: boolean = false;
 properties interface:
 
 ```ts
-type ITaskConstructorType<Input, Output, Config> =
-  new (config: Config, runConfig?: Partial<IRunConfig>) => ITask<Input, Output, Config>;
+type ITaskConstructorType<Input, Output, Config> = new (
+  config: Config,
+  runConfig?: Partial<IRunConfig>
+) => ITask<Input, Output, Config>;
 
-export type ITaskConstructor<Input, Output, Config> =
-  ITaskConstructorType<Input, Output, Config> & ITaskStaticProperties;
+export type ITaskConstructor<Input, Output, Config> = ITaskConstructorType<Input, Output, Config> &
+  ITaskStaticProperties;
 ```
 
 This means any value stored in the registry is both:
@@ -188,7 +190,7 @@ import { FetchUrlTask } from "./task/FetchUrlTask";
 // ... more imports
 
 export const registerCommonTasks = () => {
-  const tasks = [DelayTask, FetchUrlTask, /* ... */];
+  const tasks = [DelayTask, FetchUrlTask /* ... */];
   tasks.map(TaskRegistry.registerTask);
   return tasks;
 };
@@ -238,7 +240,7 @@ if (!globalServiceRegistry.has(TASK_CONSTRUCTORS)) {
   globalServiceRegistry.register(
     TASK_CONSTRUCTORS,
     (): Map<string, AnyTaskConstructor> => TaskRegistry.all,
-    true  // singleton
+    true // singleton
   );
 }
 ```
@@ -249,13 +251,9 @@ This is the recommended way to read the constructors map. It checks the provided
 `ServiceRegistry` first, then falls back to the global `TaskRegistry.all`:
 
 ```ts
-export function getTaskConstructors(
-  registry?: ServiceRegistry
-): Map<string, AnyTaskConstructor> {
+export function getTaskConstructors(registry?: ServiceRegistry): Map<string, AnyTaskConstructor> {
   if (!registry) return TaskRegistry.all;
-  return registry.has(TASK_CONSTRUCTORS)
-    ? registry.get(TASK_CONSTRUCTORS)
-    : TaskRegistry.all;
+  return registry.has(TASK_CONSTRUCTORS) ? registry.get(TASK_CONSTRUCTORS) : TaskRegistry.all;
 }
 ```
 
@@ -292,11 +290,11 @@ const task = createTaskFromGraphJSON(jsonItem, sandboxed);
 
 ### Helper functions
 
-| Function | Description |
-|---|---|
-| `getGlobalTaskConstructors()` | Returns the map from `globalServiceRegistry.get(TASK_CONSTRUCTORS)`. |
-| `setGlobalTaskConstructors(map)` | Replaces the global factory with a fixed instance map. |
-| `getTaskConstructors(registry?)` | Registry-aware lookup with global fallback. The primary API. |
+| Function                         | Description                                                          |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `getGlobalTaskConstructors()`    | Returns the map from `globalServiceRegistry.get(TASK_CONSTRUCTORS)`. |
+| `setGlobalTaskConstructors(map)` | Replaces the global factory with a fixed instance map.               |
+| `getTaskConstructors(registry?)` | Registry-aware lookup with global fallback. The primary API.         |
 
 ---
 
@@ -376,11 +374,11 @@ package:
 
 ### Registration tiers
 
-| Function | Package | Tasks registered |
-|---|---|---|
-| `registerBaseTasks()` | `@workglow/task-graph` | `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask` |
-| `registerCommonTasks()` | `@workglow/tasks` | ~50 utility tasks: `DelayTask`, `FetchUrlTask`, `JavaScriptTask`, `LambdaTask`, `MergeTask`, `SplitTask`, string/scalar/vector math tasks, MCP tasks, `JsonPathTask`, `RegexTask`, `TemplateTask`, `DateFormatTask`, and more |
-| `registerAiTasks()` | `@workglow/ai` | ~40 AI tasks: `TextGenerationTask`, `TextEmbeddingTask`, `ImageClassificationTask`, `ChunkRetrievalTask`, `AgentTask`, `ToolCallingTask`, `StructuredGenerationTask`, and more |
+| Function                | Package                | Tasks registered                                                                                                                                                                                                              |
+| ----------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerBaseTasks()`   | `@workglow/task-graph` | `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask`                                                                                                                                        |
+| `registerCommonTasks()` | `@workglow/tasks`      | ~50 utility tasks: `DelayTask`, `FetchUrlTask`, `JavaScriptTask`, `LambdaTask`, `MergeTask`, `SplitTask`, string/scalar/vector math tasks, MCP tasks, `JsonPathTask`, `RegexTask`, `TemplateTask`, `DateFormatTask`, and more |
+| `registerAiTasks()`     | `@workglow/ai`         | ~40 AI tasks: `TextGenerationTask`, `TextEmbeddingTask`, `ImageClassificationTask`, `ChunkRetrievalTask`, `AgentTask`, `ToolCallingTask`, `StructuredGenerationTask`, and more                                                |
 
 ### Typical application bootstrap
 
@@ -438,10 +436,10 @@ Application entry point
 ```ts
 const ctor = TaskRegistry.all.get("TextGenerationTask");
 if (ctor) {
-  console.log(ctor.type);         // "TextGenerationTask"
-  console.log(ctor.category);     // "AI"
-  console.log(ctor.description);  // "Generates text using a language model"
-  console.log(ctor.cacheable);    // true
+  console.log(ctor.type); // "TextGenerationTask"
+  console.log(ctor.category); // "AI"
+  console.log(ctor.description); // "Generates text using a language model"
+  console.log(ctor.cachePolicy); // { kind: "deterministic" }
 }
 ```
 
@@ -477,7 +475,7 @@ for (const [, ctor] of TaskRegistry.all) {
 ```ts
 const ctor = TaskRegistry.all.get("FetchUrlTask");
 if (ctor) {
-  const inputPorts = ctor.inputSchema();   // JSON Schema with properties
+  const inputPorts = ctor.inputSchema(); // JSON Schema with properties
   const outputPorts = ctor.outputSchema();
   const config = ctor.configSchema();
 
@@ -518,45 +516,45 @@ function resolveTaskType(name: string): ITaskConstructor<any, any, any> | undefi
 
 ### `TaskRegistry` (singleton object)
 
-| Member | Type | Description |
-|---|---|---|
-| `all` | `Map<string, ITaskConstructor<any, any, any>>` | The global map of registered task constructors, keyed by `type` name. |
-| `registerTask(taskClass)` | `(taskClass: ITaskConstructor) => void` | Registers a task constructor. Uses `taskClass.type` as the key. |
+| Member                    | Type                                           | Description                                                           |
+| ------------------------- | ---------------------------------------------- | --------------------------------------------------------------------- |
+| `all`                     | `Map<string, ITaskConstructor<any, any, any>>` | The global map of registered task constructors, keyed by `type` name. |
+| `registerTask(taskClass)` | `(taskClass: ITaskConstructor) => void`        | Registers a task constructor. Uses `taskClass.type` as the key.       |
 
 ### DI tokens and helpers
 
-| Export | Type | Description |
-|---|---|---|
-| `TASK_CONSTRUCTORS` | `ServiceToken<Map<string, ITaskConstructor>>` | DI service token for scoped task constructor maps. |
-| `getGlobalTaskConstructors()` | `() => Map<string, ITaskConstructor>` | Returns the task map from the global `ServiceRegistry`. |
-| `setGlobalTaskConstructors(map)` | `(map: Map) => void` | Replaces the global task constructors with a fixed map instance. |
-| `getTaskConstructors(registry?)` | `(registry?: ServiceRegistry) => Map` | Returns the task constructors from the given registry, falling back to the global `TaskRegistry.all`. **This is the primary lookup function used throughout the codebase.** |
+| Export                           | Type                                          | Description                                                                                                                                                                 |
+| -------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TASK_CONSTRUCTORS`              | `ServiceToken<Map<string, ITaskConstructor>>` | DI service token for scoped task constructor maps.                                                                                                                          |
+| `getGlobalTaskConstructors()`    | `() => Map<string, ITaskConstructor>`         | Returns the task map from the global `ServiceRegistry`.                                                                                                                     |
+| `setGlobalTaskConstructors(map)` | `(map: Map) => void`                          | Replaces the global task constructors with a fixed map instance.                                                                                                            |
+| `getTaskConstructors(registry?)` | `(registry?: ServiceRegistry) => Map`         | Returns the task constructors from the given registry, falling back to the global `TaskRegistry.all`. **This is the primary lookup function used throughout the codebase.** |
 
 ### Batch registration functions
 
-| Function | Package | Description |
-|---|---|---|
-| `registerBaseTasks()` | `@workglow/task-graph` | Registers flow-control tasks: `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask`. Returns the array of registered constructors. |
-| `registerCommonTasks()` | `@workglow/tasks` | Registers ~50 utility, string, scalar, vector, and MCP tasks. Returns the array of registered constructors. |
-| `registerAiTasks()` | `@workglow/ai` | Registers ~40 AI tasks spanning text, image, RAG, vision, and agent categories. Returns the array of registered constructors. |
+| Function                | Package                | Description                                                                                                                                                         |
+| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerBaseTasks()`   | `@workglow/task-graph` | Registers flow-control tasks: `GraphAsTask`, `ConditionalTask`, `FallbackTask`, `MapTask`, `WhileTask`, `ReduceTask`. Returns the array of registered constructors. |
+| `registerCommonTasks()` | `@workglow/tasks`      | Registers ~50 utility, string, scalar, vector, and MCP tasks. Returns the array of registered constructors.                                                         |
+| `registerAiTasks()`     | `@workglow/ai`         | Registers ~40 AI tasks spanning text, image, RAG, vision, and agent categories. Returns the array of registered constructors.                                       |
 
 ### Input resolver / compactor
 
-| Registration | Format prefix | Direction | Description |
-|---|---|---|---|
-| `registerInputResolver("tasks", ...)` | `"tasks"` | string --> object | Converts a task type name to a tool definition object (`{ name, description, inputSchema, outputSchema, configSchema? }`). |
-| `registerInputCompactor("tasks", ...)` | `"tasks"` | object --> string | Extracts the `name` field from a tool definition and validates it exists in the registry, returning the string name. |
+| Registration                           | Format prefix | Direction         | Description                                                                                                                |
+| -------------------------------------- | ------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `registerInputResolver("tasks", ...)`  | `"tasks"`     | string --> object | Converts a task type name to a tool definition object (`{ name, description, inputSchema, outputSchema, configSchema? }`). |
+| `registerInputCompactor("tasks", ...)` | `"tasks"`     | object --> string | Extracts the `name` field from a tool definition and validates it exists in the registry, returning the string name.       |
 
 ### JSON deserialization functions
 
 These functions use `getTaskConstructors(registry)` internally to look up constructors:
 
-| Function | Description |
-|---|---|
-| `createTaskFromDependencyJSON(item, registry?, options?)` | Creates a task instance from a dependency-style JSON item. Recursively processes `subtasks` for compound tasks. |
-| `createGraphFromDependencyJSON(items, registry?, options?)` | Creates a `TaskGraph` from an array of dependency-style JSON items. |
-| `createTaskFromGraphJSON(item, registry?, options?)` | Creates a task instance from a graph-style JSON item (with `subgraph` instead of `subtasks`). |
-| `createGraphFromGraphJSON(graphJson, registry?, options?)` | Creates a complete `TaskGraph` with tasks and dataflows from graph-style JSON. |
+| Function                                                    | Description                                                                                                     |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `createTaskFromDependencyJSON(item, registry?, options?)`   | Creates a task instance from a dependency-style JSON item. Recursively processes `subtasks` for compound tasks. |
+| `createGraphFromDependencyJSON(items, registry?, options?)` | Creates a `TaskGraph` from an array of dependency-style JSON items.                                             |
+| `createTaskFromGraphJSON(item, registry?, options?)`        | Creates a task instance from a graph-style JSON item (with `subgraph` instead of `subtasks`).                   |
+| `createGraphFromGraphJSON(graphJson, registry?, options?)`  | Creates a complete `TaskGraph` with tasks and dataflows from graph-style JSON.                                  |
 
 ### `TaskDeserializationOptions`
 
@@ -585,9 +583,11 @@ Defined in `packages/task-graph/src/task/ITask.ts`. The intersection of the cons
 function type and `ITaskStaticProperties`:
 
 ```ts
-type ITaskConstructor<Input, Output, Config> =
-  (new (config: Config, runConfig?: Partial<IRunConfig>) => ITask<Input, Output, Config>)
-  & ITaskStaticProperties;
+type ITaskConstructor<Input, Output, Config> = (new (
+  config: Config,
+  runConfig?: Partial<IRunConfig>
+) => ITask<Input, Output, Config>) &
+  ITaskStaticProperties;
 ```
 
 ### Utility function: `taskTypesToTools()`
@@ -599,7 +599,7 @@ task type names into tool definition objects for use with `ToolCallingTask` and 
 function taskTypesToTools(
   taskNames: ReadonlyArray<string>,
   registry?: ServiceRegistry
-): ToolDefinitionWithTaskType[]
+): ToolDefinitionWithTaskType[];
 ```
 
 Each returned object includes `name`, `description`, `inputSchema`, `outputSchema`, an
@@ -644,7 +644,7 @@ export class RepeatTask extends Task<RepeatInput, RepeatOutput> {
   static override readonly category = "String";
   static override readonly title = "Repeat";
   static override readonly description = "Repeats input text a specified number of times";
-  static override readonly cacheable = true;
+  static override readonly cachePolicy = { kind: "deterministic" } as const;
 
   static override inputSchema(): DataPortSchema {
     return inputSchema;

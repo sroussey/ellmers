@@ -788,7 +788,7 @@ const results = await graph.run();
 ```typescript
 class StreamingTextTask extends Task<{ prompt: string }, { text: string }> {
   static readonly type = "StreamingTextTask";
-  static readonly cacheable = false;
+  static readonly cachePolicy = { kind: "none" } as const;
 
   static outputSchema(): DataPortSchema {
     return {

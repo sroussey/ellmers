@@ -450,7 +450,7 @@ interface SentimentOutput extends TaskOutput {
 class SentimentAnalysisTask extends AiTask<SentimentInput, SentimentOutput> {
   static readonly type = "SentimentAnalysisTask";
   static readonly category = "Text";
-  static readonly cacheable = true;
+  static readonly cachePolicy = { kind: "deterministic" } as const;
 
   static inputSchema(): DataPortSchema {
     return {

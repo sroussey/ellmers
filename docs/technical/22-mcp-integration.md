@@ -98,11 +98,11 @@ When a task receives a string server reference (e.g., `"my-tools"`), the resolve
 
 Three transport types are supported:
 
-| Transport | Protocol | Use Case |
-|-----------|----------|----------|
-| `stdio` | Standard I/O pipes | Local tool servers spawned as child processes (Node.js/Bun only) |
-| `sse` | Server-Sent Events over HTTP | Remote servers using the legacy SSE transport |
-| `streamable-http` | Streamable HTTP | Remote servers using the current MCP HTTP transport |
+| Transport         | Protocol                     | Use Case                                                         |
+| ----------------- | ---------------------------- | ---------------------------------------------------------------- |
+| `stdio`           | Standard I/O pipes           | Local tool servers spawned as child processes (Node.js/Bun only) |
+| `sse`             | Server-Sent Events over HTTP | Remote servers using the legacy SSE transport                    |
+| `streamable-http` | Streamable HTTP              | Remote servers using the current MCP HTTP transport              |
 
 The configuration schema uses JSON Schema conditional validation (`if`/`then`) to enforce transport-specific required fields:
 
@@ -118,11 +118,11 @@ The `McpServerConfig` interface defines the full set of configuration properties
 interface McpServerConfig {
   readonly transport?: string;
   readonly server_url?: string;
-  readonly command?: string;        // stdio only
-  readonly args?: string[];         // stdio only
+  readonly command?: string; // stdio only
+  readonly args?: string[]; // stdio only
   readonly env?: Record<string, string>; // stdio only
   readonly auth?: McpAuthConfig;
-  readonly auth_type?: string;      // flat auth from schema forms
+  readonly auth_type?: string; // flat auth from schema forms
   readonly authProvider?: OAuthClientProvider; // external provider
 }
 ```
@@ -131,16 +131,16 @@ interface McpServerConfig {
 
 The `McpServerRecordSchema` extends the server config schema with metadata fields for the repository:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `server_id` | `string` | Primary key for the repository |
-| `label` | `string` | Human-readable display label |
-| `description` | `string` | Optional description |
-| `transport` | `string` | One of `"stdio"`, `"sse"`, `"streamable-http"` |
-| `server_url` | `string` | URL for SSE/Streamable HTTP transports |
-| `command` | `string` | Command to run for stdio transport |
-| `args` | `string[]` | Command arguments for stdio transport |
-| `env` | `object` | Environment variables for stdio transport |
+| Field         | Type       | Description                                    |
+| ------------- | ---------- | ---------------------------------------------- |
+| `server_id`   | `string`   | Primary key for the repository                 |
+| `label`       | `string`   | Human-readable display label                   |
+| `description` | `string`   | Optional description                           |
+| `transport`   | `string`   | One of `"stdio"`, `"sse"`, `"streamable-http"` |
+| `server_url`  | `string`   | URL for SSE/Streamable HTTP transports         |
+| `command`     | `string`   | Command to run for stdio transport             |
+| `args`        | `string[]` | Command arguments for stdio transport          |
+| `env`         | `object`   | Environment variables for stdio transport      |
 
 ## Authentication
 
@@ -148,14 +148,14 @@ The `McpServerRecordSchema` extends the server config schema with metadata field
 
 The MCP integration supports six authentication methods, defined as a discriminated union on the `type` field:
 
-| Auth Type | Description | Required Fields |
-|-----------|-------------|-----------------|
-| `none` | No authentication | -- |
-| `bearer` | Static bearer token | `token` |
-| `client_credentials` | OAuth 2.0 Client Credentials Grant | `client_id`, `client_secret` |
-| `private_key_jwt` | OAuth 2.0 with JWT client assertion (dynamic signing) | `client_id`, `private_key`, `algorithm` |
-| `static_private_key_jwt` | OAuth 2.0 with pre-built JWT assertion | `client_id`, `jwt_bearer_assertion` |
-| `authorization_code` | OAuth 2.0 Authorization Code Grant | `client_id`, `redirect_url` |
+| Auth Type                | Description                                           | Required Fields                         |
+| ------------------------ | ----------------------------------------------------- | --------------------------------------- |
+| `none`                   | No authentication                                     | --                                      |
+| `bearer`                 | Static bearer token                                   | `token`                                 |
+| `client_credentials`     | OAuth 2.0 Client Credentials Grant                    | `client_id`, `client_secret`            |
+| `private_key_jwt`        | OAuth 2.0 with JWT client assertion (dynamic signing) | `client_id`, `private_key`, `algorithm` |
+| `static_private_key_jwt` | OAuth 2.0 with pre-built JWT assertion                | `client_id`, `jwt_bearer_assertion`     |
+| `authorization_code`     | OAuth 2.0 Authorization Code Grant                    | `client_id`, `redirect_url`             |
 
 ### CredentialStoreOAuthProvider
 
@@ -204,18 +204,19 @@ All MCP tasks extend the base `Task` class from `@workglow/task-graph` and follo
 Calls a tool on an MCP server and returns the result.
 
 **Static Properties:**
+
 - `type`: `"McpToolCallTask"`
 - `category`: `"MCP"`
-- `cacheable`: `false`
+- `cachePolicy`: `{ kind: "none" }`
 - `customizable`: `true`
 - `hasDynamicSchemas`: `true`
 
 **Config Schema:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `server` | `string \| McpServerConfig` | MCP server reference (ID or inline config) |
-| `tool_name` | `string` | Name of the tool to call (format: `"string:mcp-toolname"`) |
+| Field       | Type                        | Description                                                |
+| ----------- | --------------------------- | ---------------------------------------------------------- |
+| `server`    | `string \| McpServerConfig` | MCP server reference (ID or inline config)                 |
+| `tool_name` | `string`                    | Name of the tool to call (format: `"string:mcp-toolname"`) |
 
 **Dynamic Schema Discovery:** When the task has a server and tool name configured but no explicit input/output schemas, `discoverSchemas()` connects to the server, lists available tools, and adopts the matching tool's `inputSchema` and `outputSchema`. This allows the UI to display appropriate input fields for any MCP tool without hardcoding schemas.
 
@@ -236,18 +237,19 @@ workflow.mcpToolCall({
 Gets a prompt from an MCP server.
 
 **Static Properties:**
+
 - `type`: `"McpPromptGetTask"`
 - `category`: `"MCP"`
-- `cacheable`: `false`
+- `cachePolicy`: `{ kind: "none" }`
 - `customizable`: `true`
 - `hasDynamicSchemas`: `true`
 
 **Config Schema:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `server` | `string \| McpServerConfig` | MCP server reference |
-| `prompt_name` | `string` | Name of the prompt to get (format: `"string:mcp-promptname"`) |
+| Field         | Type                        | Description                                                   |
+| ------------- | --------------------------- | ------------------------------------------------------------- |
+| `server`      | `string \| McpServerConfig` | MCP server reference                                          |
+| `prompt_name` | `string`                    | Name of the prompt to get (format: `"string:mcp-promptname"`) |
 
 **Dynamic Schema Discovery:** Connects to the server's prompt list and builds an input schema from the prompt's declared arguments. Each argument becomes a string property; required arguments are marked as required in the schema.
 
@@ -268,17 +270,18 @@ workflow.mcpPromptGet({
 Reads a resource from an MCP server.
 
 **Static Properties:**
+
 - `type`: `"McpResourceReadTask"`
 - `category`: `"MCP"`
-- `cacheable`: `false`
+- `cachePolicy`: `{ kind: "none" }`
 - `customizable`: `true`
 
 **Config Schema:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `server` | `string \| McpServerConfig` | MCP server reference |
-| `resource_uri` | `string` | URI of the resource to read (format: `"string:uri:mcp-resourceuri"`) |
+| Field          | Type                        | Description                                                          |
+| -------------- | --------------------------- | -------------------------------------------------------------------- |
+| `server`       | `string \| McpServerConfig` | MCP server reference                                                 |
+| `resource_uri` | `string`                    | URI of the resource to read (format: `"string:uri:mcp-resourceuri"`) |
 
 **Output:** Returns `contents`, an array of resource items. Each item has a `uri` and either `text` (for text resources) or `blob` (for binary resources), plus an optional `mimeType`.
 
@@ -297,17 +300,18 @@ workflow.mcpResourceRead({
 Lists tools, resources, or prompts available on an MCP server.
 
 **Static Properties:**
+
 - `type`: `"McpListTask"`
 - `category`: `"MCP"`
-- `cacheable`: `false`
+- `cachePolicy`: `{ kind: "none" }`
 - `hasDynamicSchemas`: `true`
 
 **Input Schema:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `server` | `string \| McpServerConfig` | MCP server reference |
-| `list_type` | `"tools" \| "resources" \| "prompts"` | What to list |
+| Field       | Type                                  | Description          |
+| ----------- | ------------------------------------- | -------------------- |
+| `server`    | `string \| McpServerConfig`           | MCP server reference |
+| `list_type` | `"tools" \| "resources" \| "prompts"` | What to list         |
 
 **Dynamic Output Schema:** The output schema changes based on `list_type`. When set to `"tools"`, only the `tools` array is in the output schema. When set to `"resources"`, only the `resources` array. When set to `"prompts"`, only the `prompts` array. When `list_type` is not yet determined, the output schema includes all three. The task emits a schema change event whenever `list_type` changes via `setInput()`.
 
@@ -323,14 +327,15 @@ workflow.mcpList({ server: "my-server", list_type: "tools" });
 Searches the public MCP server registry at `https://registry.modelcontextprotocol.io` for servers matching a query.
 
 **Static Properties:**
+
 - `type`: `"McpSearchTask"`
 - `category`: `"MCP"`
-- `cacheable`: `false`
+- `cachePolicy`: `{ kind: "none" }`
 
 **Input Schema:**
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field   | Type     | Description                       |
+| ------- | -------- | --------------------------------- |
 | `query` | `string` | Search query for the MCP registry |
 
 **Output:** Returns `results`, an array of search result items. Each item includes an `id`, `label`, `description`, and a `config` object that can be used to configure a connection to the discovered server.
@@ -367,16 +372,16 @@ registry.registerInstance(HUMAN_CONNECTOR, connector);
 
 MCP tasks declare entitlements to enable permission-based execution control. Each task declares static entitlements and can augment them at the instance level based on the configured transport:
 
-| Entitlement | Value | Used By |
-|-------------|-------|---------|
-| `Entitlements.MCP` | `"mcp"` | `McpListTask` |
-| `Entitlements.MCP_TOOL_CALL` | `"mcp:tool-call"` | `McpToolCallTask` |
-| `Entitlements.MCP_PROMPT_GET` | `"mcp:prompt-get"` | `McpPromptGetTask` |
-| `Entitlements.MCP_RESOURCE_READ` | `"mcp:resource-read"` | `McpResourceReadTask` |
-| `Entitlements.MCP_STDIO` | `"mcp:stdio"` | Any MCP task using stdio transport |
-| `Entitlements.NETWORK` | `"network"` | All server-connecting MCP tasks (optional) |
-| `Entitlements.NETWORK_HTTP` | `"network:http"` | `McpSearchTask` |
-| `Entitlements.CREDENTIAL` | `"credential"` | Tasks requiring authentication (optional) |
+| Entitlement                      | Value                 | Used By                                    |
+| -------------------------------- | --------------------- | ------------------------------------------ |
+| `Entitlements.MCP`               | `"mcp"`               | `McpListTask`                              |
+| `Entitlements.MCP_TOOL_CALL`     | `"mcp:tool-call"`     | `McpToolCallTask`                          |
+| `Entitlements.MCP_PROMPT_GET`    | `"mcp:prompt-get"`    | `McpPromptGetTask`                         |
+| `Entitlements.MCP_RESOURCE_READ` | `"mcp:resource-read"` | `McpResourceReadTask`                      |
+| `Entitlements.MCP_STDIO`         | `"mcp:stdio"`         | Any MCP task using stdio transport         |
+| `Entitlements.NETWORK`           | `"network"`           | All server-connecting MCP tasks (optional) |
+| `Entitlements.NETWORK_HTTP`      | `"network:http"`      | `McpSearchTask`                            |
+| `Entitlements.CREDENTIAL`        | `"credential"`        | Tasks requiring authentication (optional)  |
 
 Instance-level entitlements are computed dynamically: when a task's server config uses the `stdio` transport, the `MCP_STDIO` entitlement is added via `mergeEntitlements()`, signaling that the task will spawn a local process.
 
@@ -387,8 +392,10 @@ The `McpTaskDeps` interface defines the platform-specific dependencies that must
 ```typescript
 interface McpTaskDeps {
   readonly mcpClientFactory: {
-    readonly create: (config: McpServerConfig, signal?: AbortSignal) =>
-      Promise<{ client: Client; transport: Transport }>;
+    readonly create: (
+      config: McpServerConfig,
+      signal?: AbortSignal
+    ) => Promise<{ client: Client; transport: Transport }>;
   };
   readonly mcpServerConfigSchema: {
     readonly properties: DataPortSchemaObject["properties"];
@@ -406,55 +413,55 @@ Attempting to use MCP tasks without registering dependencies throws a descriptiv
 
 ### Registry Functions
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `registerMcpServer` | `(config: McpServerRecord) => Promise<void>` | Register a server in both the in-memory map and repository. |
-| `getMcpServer` | `(id: string) => McpServerConnection \| undefined` | Look up a server connection by ID. |
-| `getGlobalMcpServers` | `() => Map<string, McpServerConnection>` | Get the global server connection map. |
-| `getGlobalMcpServerRepository` | `() => McpServerRepository` | Get the global server repository. |
-| `setGlobalMcpServerRepository` | `(repo: McpServerRepository) => void` | Replace the global server repository. |
+| Function                       | Signature                                          | Description                                                 |
+| ------------------------------ | -------------------------------------------------- | ----------------------------------------------------------- |
+| `registerMcpServer`            | `(config: McpServerRecord) => Promise<void>`       | Register a server in both the in-memory map and repository. |
+| `getMcpServer`                 | `(id: string) => McpServerConnection \| undefined` | Look up a server connection by ID.                          |
+| `getGlobalMcpServers`          | `() => Map<string, McpServerConnection>`           | Get the global server connection map.                       |
+| `getGlobalMcpServerRepository` | `() => McpServerRepository`                        | Get the global server repository.                           |
+| `setGlobalMcpServerRepository` | `(repo: McpServerRepository) => void`              | Replace the global server repository.                       |
 
 ### McpServerRepository
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `addServer` | `(record: McpServerRecord) => Promise<McpServerRecord>` | Add or update a server record. |
-| `removeServer` | `(server_id: string) => Promise<void>` | Remove a server by ID. |
-| `getServer` | `(server_id: string) => Promise<McpServerRecord \| undefined>` | Look up a server record. |
-| `enumerateAll` | `() => Promise<McpServerRecord[]>` | List all server records. |
-| `size` | `() => Promise<number>` | Count of stored servers. |
-| `on` / `off` / `once` / `waitOn` | Event subscription methods | Listen for `server_added`, `server_removed`, `server_updated`. |
+| Method                           | Signature                                                      | Description                                                    |
+| -------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| `addServer`                      | `(record: McpServerRecord) => Promise<McpServerRecord>`        | Add or update a server record.                                 |
+| `removeServer`                   | `(server_id: string) => Promise<void>`                         | Remove a server by ID.                                         |
+| `getServer`                      | `(server_id: string) => Promise<McpServerRecord \| undefined>` | Look up a server record.                                       |
+| `enumerateAll`                   | `() => Promise<McpServerRecord[]>`                             | List all server records.                                       |
+| `size`                           | `() => Promise<number>`                                        | Count of stored servers.                                       |
+| `on` / `off` / `once` / `waitOn` | Event subscription methods                                     | Listen for `server_added`, `server_removed`, `server_updated`. |
 
 ### Client Utilities
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `createMcpClient` | `(config: McpServerConfig, signal?: AbortSignal) => Promise<{ client: Client; transport: Transport }>` | Create and connect an MCP client. |
-| `buildAuthConfig` | `(flat: Record<string, unknown>) => McpAuthConfig \| undefined` | Build typed auth config from flat schema properties. |
-| `createAuthProvider` | `(auth: McpAuthConfig, serverUrl: string, store?: ICredentialStore) => OAuthClientProvider \| undefined` | Create an OAuth provider for the given auth config. |
-| `resolveAuthSecrets` | `(auth: McpAuthConfig, store?: ICredentialStore) => Promise<McpAuthConfig>` | Resolve credential store keys to secret values. |
-| `getMcpServerConfig` | `(configOrInput: Record<string, unknown>) => McpServerConfig` | Extract and validate server config from a task config/input object. |
+| Function             | Signature                                                                                                | Description                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `createMcpClient`    | `(config: McpServerConfig, signal?: AbortSignal) => Promise<{ client: Client; transport: Transport }>`   | Create and connect an MCP client.                                   |
+| `buildAuthConfig`    | `(flat: Record<string, unknown>) => McpAuthConfig \| undefined`                                          | Build typed auth config from flat schema properties.                |
+| `createAuthProvider` | `(auth: McpAuthConfig, serverUrl: string, store?: ICredentialStore) => OAuthClientProvider \| undefined` | Create an OAuth provider for the given auth config.                 |
+| `resolveAuthSecrets` | `(auth: McpAuthConfig, store?: ICredentialStore) => Promise<McpAuthConfig>`                              | Resolve credential store keys to secret values.                     |
+| `getMcpServerConfig` | `(configOrInput: Record<string, unknown>) => McpServerConfig`                                            | Extract and validate server config from a task config/input object. |
 
 ### Task Classes
 
-| Class | Type String | Category | Inputs | Outputs |
-|-------|------------|----------|--------|---------|
-| `McpToolCallTask` | `"McpToolCallTask"` | MCP | Dynamic (from tool schema) | `{ content, isError, ...structured }` |
-| `McpPromptGetTask` | `"McpPromptGetTask"` | MCP | Dynamic (from prompt arguments) | `{ messages, description? }` |
-| `McpResourceReadTask` | `"McpResourceReadTask"` | MCP | (none) | `{ contents }` |
-| `McpListTask` | `"McpListTask"` | MCP | `{ server, list_type }` | `{ tools? \| resources? \| prompts? }` |
-| `McpSearchTask` | `"McpSearchTask"` | MCP | `{ query }` | `{ results }` |
+| Class                 | Type String             | Category | Inputs                          | Outputs                                |
+| --------------------- | ----------------------- | -------- | ------------------------------- | -------------------------------------- |
+| `McpToolCallTask`     | `"McpToolCallTask"`     | MCP      | Dynamic (from tool schema)      | `{ content, isError, ...structured }`  |
+| `McpPromptGetTask`    | `"McpPromptGetTask"`    | MCP      | Dynamic (from prompt arguments) | `{ messages, description? }`           |
+| `McpResourceReadTask` | `"McpResourceReadTask"` | MCP      | (none)                          | `{ contents }`                         |
+| `McpListTask`         | `"McpListTask"`         | MCP      | `{ server, list_type }`         | `{ tools? \| resources? \| prompts? }` |
+| `McpSearchTask`       | `"McpSearchTask"`       | MCP      | `{ query }`                     | `{ results }`                          |
 
 ### Standalone Execution Functions
 
 Each task class also exports a standalone function for use outside pipelines:
 
-| Function | Signature |
-|----------|-----------|
-| `mcpToolCall` | `(input: Record<string, unknown>, config: McpToolCallTaskConfig) => Promise<McpToolCallTaskOutput>` |
-| `mcpPromptGet` | `(input: Record<string, unknown>, config: McpPromptGetTaskConfig) => Promise<McpPromptGetTaskOutput>` |
-| `mcpResourceRead` | `(config: McpResourceReadTaskConfig) => Promise<McpResourceReadTaskOutput>` |
-| `mcpList` | `(input: McpListTaskInput, config?: TaskConfig) => Promise<McpListTaskOutput>` |
-| `mcpSearch` | `(input: McpSearchTaskInput, config?: TaskConfig) => Promise<McpSearchTaskOutput>` |
-| `searchMcpRegistry` | `(query: string, signal?: AbortSignal) => Promise<McpSearchResultItem[]>` |
-| `searchMcpRegistryPage` | `(query: string, options?: { cursor?; signal? }) => Promise<McpRegistrySearchPage>` |
+| Function                | Signature                                                                                             |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| `mcpToolCall`           | `(input: Record<string, unknown>, config: McpToolCallTaskConfig) => Promise<McpToolCallTaskOutput>`   |
+| `mcpPromptGet`          | `(input: Record<string, unknown>, config: McpPromptGetTaskConfig) => Promise<McpPromptGetTaskOutput>` |
+| `mcpResourceRead`       | `(config: McpResourceReadTaskConfig) => Promise<McpResourceReadTaskOutput>`                           |
+| `mcpList`               | `(input: McpListTaskInput, config?: TaskConfig) => Promise<McpListTaskOutput>`                        |
+| `mcpSearch`             | `(input: McpSearchTaskInput, config?: TaskConfig) => Promise<McpSearchTaskOutput>`                    |
+| `searchMcpRegistry`     | `(query: string, signal?: AbortSignal) => Promise<McpSearchResultItem[]>`                             |
+| `searchMcpRegistryPage` | `(query: string, options?: { cursor?; signal? }) => Promise<McpRegistrySearchPage>`                   |
