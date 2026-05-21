@@ -254,16 +254,11 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
   }
 
   async markDisabled(id: MessageId): Promise<void> {
-    const current = await this.storage.get(id);
-    const completedAt = current?.completed_at ?? new Date().toISOString();
-    await this.storage.finalize(id, {
-      status: "DISABLED",
-      completed_at: completedAt,
-      lease_owner: null,
-      progress: 0,
-      progress_message: "",
-      progress_details: null,
-    });
+    // Delegate to the core's atomic markDisabled — IQueueStorage requires
+    // it to be a single-op write that preserves completed_at via COALESCE.
+    // Calling it here keeps WrappedJobStore consistent with backends that
+    // bypass the wrapper (e.g. PostgresJobStore, SupabaseJobStore).
+    await this.storage.markDisabled(id);
   }
 
   async failWithError(

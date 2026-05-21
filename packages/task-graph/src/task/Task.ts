@@ -373,15 +373,32 @@ export class Task<
   }
 
   /**
-   * Returns the effective cache policy for this task given its inputs. Default
-   * implementation returns the class's static `cachePolicy`. Override for
-   * dynamic decisions (e.g., AiImageOutputTask returns `private` when seed is
-   * absent).
+   * Returns the effective cache policy for this task given its inputs.
+   *
+   * Resolution order:
+   *   1. Per-instance `runConfig.cacheable === false` or `config.cacheable === false`
+   *      → `{ kind: "none" }` (callsite opt-out wins).
+   *   2. Class-static `cacheable === false` (declared on the subclass) →
+   *      `{ kind: "none" }`. The coarse on/off flag remains supported alongside
+   *      the canonical `cachePolicy`; setting it on the class is equivalent
+   *      to declaring `static cachePolicy: CachePolicy = { kind: "none" }`.
+   *   3. Class-static `cachePolicy` if declared.
+   *   4. {@link DEFAULT_CACHE_POLICY}.
+   *
+   * Override for dynamic decisions (e.g., AiImageOutputTask returns `private`
+   * when seed is absent).
    */
   public getCachePolicy(_inputs: Input): CachePolicy {
     const ctor = this.constructor as typeof Task;
     if (this.runConfig?.cacheable === false || this.config?.cacheable === false)
       return { kind: "none" };
+    if (
+      Object.prototype.hasOwnProperty.call(ctor, "cacheable") &&
+      (ctor as { cacheable?: unknown }).cacheable === false &&
+      !Object.prototype.hasOwnProperty.call(ctor, "cachePolicy")
+    ) {
+      return { kind: "none" };
+    }
     return ctor.cachePolicy ?? DEFAULT_CACHE_POLICY;
   }
 

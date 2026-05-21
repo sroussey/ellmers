@@ -980,30 +980,35 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
   /**
    * Atomically writes status=DISABLED, releases the lease, clears progress
-   * fields, and stamps `completed_at`. Does NOT write error/error_code —
-   * DISABLED is not an error transition.
+   * fields, and stamps `completed_at` (preserving an existing value via
+   * COALESCE). Does NOT write error/error_code — DISABLED is not an error
+   * transition.
+   *
+   * Implemented via `exec_sql` so the COALESCE on completed_at runs inside
+   * the same UPDATE — PostgREST `.update()` cannot reference existing column
+   * values, which would otherwise force a read-then-write and open a race
+   * window with concurrent updates. Mirrors the {@link failWithError} pattern.
    */
   public async markDisabled(id: unknown): Promise<void> {
-    // Fetch first so we can preserve an existing completed_at (parity with
-    // Postgres/SQLite COALESCE and the InMemory/IndexedDb/WrappedJobStore
-    // `current?.completed_at ?? now` pattern). PostgREST has no COALESCE on
-    // .update(), so we read-then-write.
-    const existing = await this.get(id);
-    const completedAt = existing?.completed_at ?? new Date().toISOString();
-    let query = this.client
-      .from(this.tableName)
-      .update({
-        status: "DISABLED" as JobStatus,
-        completed_at: completedAt,
-        lease_owner: null,
-        progress: 0,
-        progress_message: "",
-        progress_details: null,
-      })
-      .eq("id", id as never)
-      .eq("queue", this.queueName);
-    query = this.applyPrefixFilters(query);
-    const { error } = await query;
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) {
+      throw new Error(`Invalid job id: ${id}`);
+    }
+    const prefixConditions = this.buildPrefixWhereSql();
+    const validatedQueueName = this.validateSqlValue(this.queueName, "queueName");
+    const escapedQueueName = this.escapeSqlString(validatedQueueName);
+
+    const sql = `
+      UPDATE ${this.tableName}
+          SET status = 'DISABLED',
+              completed_at = COALESCE(completed_at, NOW() AT TIME ZONE 'UTC'),
+              lease_owner = NULL,
+              progress = 0,
+              progress_message = '',
+              progress_details = NULL
+        WHERE id = ${numericId} AND queue = '${escapedQueueName}'${prefixConditions}`;
+
+    const { error } = await this.client.rpc("exec_sql", { query: sql });
     if (error) throw error;
   }
 

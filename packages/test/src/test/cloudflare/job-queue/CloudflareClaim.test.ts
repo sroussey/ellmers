@@ -99,6 +99,35 @@ describe("CloudflareClaim", () => {
     expect(row?.error).toBe("boom");
   });
 
+  it("disable() persists DISABLED before acking the queue message", async () => {
+    // Ordering matters: ack-then-persist loses the disable if the store
+    // write throws — message gone, row stuck in PROCESSING with no retry
+    // path. persist-then-ack lets `handleQueueBatch` drop terminal-status
+    // redeliveries when the store wrote OK but ack didn't.
+    const { jobStore, id, record } = await setup();
+    const message = fakeMessage({ id: String(id), attempts: 0 });
+    const markSpy = vi.spyOn(jobStore, "markDisabled");
+    const claim = new CloudflareClaim<TestInput, TestOutput>({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      message: message as any,
+      jobStore,
+      record,
+    });
+
+    await claim.disable();
+
+    // Both ran; markDisabled ran first by invocation order.
+    expect(markSpy).toHaveBeenCalledOnce();
+    expect(message.ack).toHaveBeenCalledOnce();
+    const markCallOrder = markSpy.mock.invocationCallOrder[0]!;
+    const ackCallOrder = message.ack.mock.invocationCallOrder[0]!;
+    expect(markCallOrder).toBeLessThan(ackCallOrder);
+
+    const row = await jobStore.get(id);
+    expect(row?.status).toBe(JobStatus.DISABLED);
+    expect(row?.lease_owner).toBeNull();
+  });
+
   it("retry({delaySeconds: 30}) calls message.retry({ delaySeconds: 30 })", async () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });

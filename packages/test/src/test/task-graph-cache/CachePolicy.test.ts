@@ -21,6 +21,23 @@ describe("CachePolicy", () => {
     expect(new Side().getCachePolicy({} as any)).toEqual({ kind: "none" });
   });
 
+  it("static cacheable=false maps to {kind:'none'}", () => {
+    class NoCache extends Task {
+      public static override type = "NoCache";
+      public static override cacheable = false;
+    }
+    expect(new NoCache().getCachePolicy({} as any)).toEqual({ kind: "none" });
+  });
+
+  it("static cachePolicy wins over static cacheable=false", () => {
+    class Mixed extends Task {
+      public static override type = "Mixed";
+      public static override cacheable = false;
+      public static override cachePolicy: CachePolicy = { kind: "private" };
+    }
+    expect(new Mixed().getCachePolicy({} as any)).toEqual({ kind: "private" });
+  });
+
   it("subclass getCachePolicy override wins over static", () => {
     class Dyn extends Task {
       public static override type = "Dyn";

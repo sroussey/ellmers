@@ -177,10 +177,12 @@ export class TaskRunner<
 
     // ctx is threaded through locals from here; nothing inside run() re-reads
     // this.currentCtx (which can be nulled by handleAbort firing on the abort
-    // listener during an interleaved abort).
-    const ctx = await this.handleStart(effectiveConfig);
-
+    // listener during an interleaved abort). Declared outside the try so the
+    // finally block can run scope cleanup even if handleStart itself throws.
+    let ctx: TaskRunContext | undefined;
     try {
+      ctx = await this.handleStart(effectiveConfig);
+
       const proto = Object.getPrototypeOf(this.task);
       if (
         proto.execute === Task.prototype.execute &&
@@ -296,6 +298,33 @@ export class TaskRunner<
         // of the generic TaskAbortedError that the task's execute() may have thrown.
         throw this.task.error instanceof TaskTimeoutError ? this.task.error : err;
       }
+    } catch (err: any) {
+      // Reachable when handleStart() throws before assigning `ctx` (e.g.,
+      // resourceScope.runStart or telemetry init blows up). Without this,
+      // task.status would be stuck at PROCESSING with currentCtx still set
+      // and no error/event ever emitted.
+      if (ctx === undefined) {
+        const partial = this.currentCtx;
+        if (partial) {
+          await this.handleError(err, partial);
+        } else {
+          this.task.status = TaskStatus.FAILED;
+          this.task.error =
+            err instanceof TaskError
+              ? err
+              : new TaskFailedError(
+                  `Task "${this.task.type}" (${this.task.id}): ${err?.message || "Task failed"}`
+                );
+          if (this.task.error instanceof TaskError) {
+            this.task.error.taskType ??= this.task.type;
+            this.task.error.taskId ??= this.task.id;
+          }
+          this.task.emit("error", this.task.error);
+          this.task.emit("status", this.task.status);
+        }
+        this.running = false;
+      }
+      throw err;
     } finally {
       if (ownsScope) {
         await effectiveConfig.resourceScope!.runComplete();

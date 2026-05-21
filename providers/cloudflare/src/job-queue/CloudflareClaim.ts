@@ -81,7 +81,12 @@ export class CloudflareClaim<Input, Output> implements IClaim<JobStorageFormat<I
   }
 
   async disable(): Promise<void> {
-    this.message.ack();
+    // Persist the DISABLED terminal state FIRST, ack the queue message after.
+    // If ack races a redelivery, `handleQueueBatch` drops terminal-status
+    // redeliveries — so a redundant redelivery is filtered. The reverse order
+    // would lose the disable on a transient store error: the message would
+    // be acked + gone, but the row stuck in PROCESSING with no retry path.
     await this.jobStore.markDisabled(this.id);
+    this.message.ack();
   }
 }
