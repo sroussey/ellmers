@@ -1,5 +1,25 @@
 # @workglow/test
 
+## 0.3.2
+
+### Features
+
+- add Cactus (needle-rs) local tool-calling provider (#524)
+
+### Refactors
+
+- remove pre-v1 backward-compat code paths (#523)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1052.0
+- `@cloudflare/workers-types`: ^4.20260521.1
+- `miniflare`: ^4.20260520.0
+
 ## 0.3.1
 
 ## 0.3.0

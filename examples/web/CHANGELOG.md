@@ -1,5 +1,17 @@
 # @workglow/web
 
+## 0.3.2
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@uiw/codemirror-theme-vscode`: ^4.25.10
+- `@uiw/react-codemirror`: ^4.25.10
+- `vite`: ^8.0.14
+
 ## 0.3.1
 
 ## 0.3.0

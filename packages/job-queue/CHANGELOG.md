@@ -1,5 +1,27 @@
 # @workglow/job-queue
 
+## 0.3.2
+
+### Bug Fixes
+
+#### review
+
+- align findActiveByFingerprint fallback comment with actual cap
+
+#### job-queue,aws,cloudflare
+
+- batch markEnqueueDeferred to avoid serial DB hits on batch failure
+
+#### job-queue
+
+- findActiveByFingerprint scans past first 100 rows with bounded cap
+- WrappedClaim.ack/fail no longer inherits prior-attempt output on reclaimed lease
+- WrappedClaim.ack/fail no longer inherits prior-attempt output on reclaimed lease
+
+### Refactors
+
+- remove pre-v1 backward-compat code paths (#523)
+
 ## 0.3.1
 
 ## 0.3.0

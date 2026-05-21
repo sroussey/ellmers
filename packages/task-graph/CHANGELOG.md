@@ -1,5 +1,17 @@
 # @workglow/task-graph
 
+## 0.3.2
+
+### Bug Fixes
+
+#### task-graph
+
+- cacheable deprecation gate keys by class name when type unset; add verbose env override
+
+### Refactors
+
+- remove pre-v1 backward-compat code paths (#523)
+
 ## 0.3.1
 
 ## 0.3.0

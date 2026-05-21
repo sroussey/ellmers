@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Refactors
+
+- remove pre-v1 backward-compat code paths (#523)
+
 ## 0.3.1
 
 ## 0.3.0

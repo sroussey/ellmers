@@ -1,5 +1,17 @@
 # @workglow/util
 
+## 0.3.2
+
+### Bug Fixes
+
+#### util
+
+- scrub absolute paths from worker error stacks; omit in production unless WORKGLOW_INCLUDE_STACKS=1
+
+### Refactors
+
+- remove pre-v1 backward-compat code paths (#523)
+
 ## 0.3.1
 
 ### Bug Fixes
