@@ -127,4 +127,28 @@ export interface IJobStore<Input, Output> {
     id: MessageId,
     opts: { readonly visible_at: Date; readonly errorCode: string }
   ): Promise<void>;
+
+  /**
+   * Batch counterpart to {@link markEnqueueDeferred}. Used by cloud-queue
+   * adapters whose `sendBatch` may throw with N rows already inserted:
+   * a serial `for...await markEnqueueDeferred` loop turns one transient
+   * network failure into N sequential DB round-trips and often outlives
+   * the caller's deadline.
+   *
+   * The default {@link WrappedJobStore} implementation uses
+   * `Promise.allSettled` to fan out the per-id writes in parallel and
+   * returns a structured `{ failed }` list rather than throwing on the
+   * first error — callers (sendBatch) log each failed id and surface the
+   * aggregate via their existing `AggregateError`. Native SQL backends may
+   * override with a single `UPDATE ... WHERE id = ANY($1)` round-trip.
+   *
+   * Optional: the wrapper layer provides a default implementation so
+   * adapters can call this method as `jobStore.markEnqueueDeferredMany!`
+   * confident a fallback is present even if a custom IJobStore doesn't
+   * implement it natively.
+   */
+  markEnqueueDeferredMany?(
+    ids: readonly MessageId[],
+    opts: { readonly visible_at: Date; readonly errorCode: string }
+  ): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }>;
 }

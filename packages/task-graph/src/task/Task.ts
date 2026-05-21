@@ -1242,3 +1242,16 @@ export class Task<
     this.events.emit("regenerate");
   }
 }
+
+/**
+ * Test helper: clear the H7 dedup Set so each test case can re-trigger the
+ * one-time legacy-`cacheable` deprecation warning. Lives in production code
+ * (not a __tests__ file) so it's reachable from outside the package's test
+ * harness; the leading double-underscore signals "do not rely on this in
+ * application code".
+ */
+export function __resetCacheableDeprecationWarnings(): void {
+  (
+    Task as unknown as { __cacheableDeprecationWarned: Set<string> }
+  ).__cacheableDeprecationWarned.clear();
+}

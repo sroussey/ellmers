@@ -277,6 +277,25 @@ export interface IQueueStorage<Input, Output> {
   markDisabled(id: unknown): Promise<void>;
 
   /**
+   * Optional native fingerprint dedup lookup. Returns the active
+   * (PENDING or PROCESSING) row for the given fingerprint within this
+   * queue, if any. Backends with a partial unique index on
+   * `(queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`
+   * SHOULD implement this for O(1) lookup; the wrapper layer delegates
+   * to it when present and falls back to a bounded peek-and-scan
+   * otherwise. The scan fallback is O(N) in the active queue size
+   * and bounded — see WrappedJobStore.findActiveByFingerprint.
+   *
+   * @param fingerprint - The fingerprint to look up
+   * @param queueName - The queue name (storage is already scoped, used
+   *                    for parity with the IJobStore signature)
+   */
+  findActiveByFingerprint?(
+    fingerprint: string,
+    queueName: string
+  ): Promise<JobStorageFormat<Input, Output> | undefined>;
+
+  /**
    * Deletes all jobs from the queue storage
    */
   deleteAll(): Promise<void>;
