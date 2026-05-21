@@ -96,7 +96,9 @@ async function fetchAssetBytesNode(
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(filePath, bytes);
+  const tmpPath = `${filePath}.tmp`;
+  await fs.writeFile(tmpPath, bytes);
+  await fs.rename(tmpPath, filePath);
   return bytes;
 }
 
@@ -123,36 +125,48 @@ export const cactusEngines: Map<string, NeedleEngine> = new Map();
 /** @internal Exported for tests. */
 export const cactusConfigJson: Map<string, unknown> = new Map();
 
+const cactusEngineLoadsInFlight = new Map<string, Promise<NeedleEngine>>();
+
 export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleEngine> {
   const model_id = model.provider_config.model_id;
   const cached = cactusEngines.get(model_id);
   if (cached) return cached;
 
-  const sdk = await loadSdk();
-  const entry = getCactusCatalogEntry(model_id);
-  if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
+  const inFlight = cactusEngineLoadsInFlight.get(model_id);
+  if (inFlight) return inFlight;
 
-  const [weightsBytes, vocabBytes, configBytes] = await Promise.all([
-    fetchAssetBytes(model, entry.assets.weights),
-    fetchAssetBytes(model, entry.assets.vocab),
-    fetchAssetBytes(model, entry.assets.config),
-  ]);
+  const loadPromise = (async (): Promise<NeedleEngine> => {
+    const sdk = await loadSdk();
+    const entry = getCactusCatalogEntry(model_id);
+    if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-  try {
-    const text = new TextDecoder().decode(configBytes);
-    cactusConfigJson.set(model_id, JSON.parse(text));
-  } catch {
-    cactusConfigJson.set(model_id, null);
-  }
+    const [weightsBytes, vocabBytes, configBytes] = await Promise.all([
+      fetchAssetBytes(model, entry.assets.weights),
+      fetchAssetBytes(model, entry.assets.vocab),
+      fetchAssetBytes(model, entry.assets.config),
+    ]);
 
-  // needle-rs `NeedleWasm.load(weights_bytes: Uint8Array, vocab_text: string)` — vocab is a string.
-  const vocabText = new TextDecoder().decode(vocabBytes);
-  const engine = sdk.NeedleWasm.load(weightsBytes, vocabText);
-  if (!engine) {
-    throw new Error(`needle-rs NeedleWasm.load returned undefined for model ${model_id}`);
-  }
-  cactusEngines.set(model_id, engine);
-  return engine;
+    try {
+      const text = new TextDecoder().decode(configBytes);
+      cactusConfigJson.set(model_id, JSON.parse(text));
+    } catch {
+      cactusConfigJson.set(model_id, null);
+    }
+
+    // needle-rs `NeedleWasm.load(weights_bytes: Uint8Array, vocab_text: string)` — vocab is a string.
+    const vocabText = new TextDecoder().decode(vocabBytes);
+    const engine = sdk.NeedleWasm.load(weightsBytes, vocabText);
+    if (!engine) {
+      throw new Error(`needle-rs NeedleWasm.load returned undefined for model ${model_id}`);
+    }
+    cactusEngines.set(model_id, engine);
+    return engine;
+  })().finally(() => {
+    cactusEngineLoadsInFlight.delete(model_id);
+  });
+
+  cactusEngineLoadsInFlight.set(model_id, loadPromise);
+  return loadPromise;
 }
 
 export function isModelLoaded(model_id: string): boolean {
@@ -196,17 +210,32 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
   await fs.rm(dir, { recursive: true, force: true });
 }
 
+function disposeCactusEngine(model_id: string): void {
+  const engine = cactusEngines.get(model_id);
+  if (engine) {
+    try {
+      (engine as unknown as { free?: () => void }).free?.();
+    } catch {
+      /* best effort */
+    }
+  }
+  cactusEngines.delete(model_id);
+  cactusConfigJson.delete(model_id);
+}
+
 export async function removeCachedAssets(model: CactusModelConfig): Promise<void> {
   const model_id = model.provider_config.model_id;
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) return;
   await Promise.all([removeBrowserCacheEntries(entry), removeNodeCacheDir(model, model_id)]);
-  cactusEngines.delete(model_id);
-  cactusConfigJson.delete(model_id);
+  disposeCactusEngine(model_id);
 }
 
 /** Best-effort cleanup on shutdown. */
 export async function disposeCactusResources(): Promise<void> {
+  for (const id of Array.from(cactusEngines.keys())) {
+    disposeCactusEngine(id);
+  }
   cactusEngines.clear();
   cactusConfigJson.clear();
   cactusSessions.clear();
