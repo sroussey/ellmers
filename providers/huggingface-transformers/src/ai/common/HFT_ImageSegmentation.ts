@@ -12,11 +12,11 @@ import type {
 } from "@workglow/ai";
 import { imageValueToBlob } from "@workglow/ai/provider-utils";
 import type { ImageValue } from "@workglow/util/media";
-import { imageValueFromBuffer } from "@workglow/util/media";
+import { imageValueFromBitmap, imageValueFromBuffer } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-function rawImageToImageValue(image: RawImage): ImageValue {
+async function rawImageToImageValue(image: RawImage): Promise<ImageValue> {
   const raw = image as unknown as {
     readonly data: ArrayLike<number>;
     readonly width: number;
@@ -43,6 +43,19 @@ function rawImageToImageValue(image: RawImage): ImageValue {
     }
   }
 
+  // HF Transformers runs in a Web Worker in the browser, where `Buffer` is
+  // undefined. Branch on env: workers get a BrowserImageValue via
+  // createImageBitmap(ImageData); node gets a NodeImageValue via Buffer.
+  if (typeof Buffer === "undefined") {
+    const data = new Uint8ClampedArray(
+      rgba.buffer,
+      rgba.byteOffset,
+      rgba.byteLength
+    ) as unknown as Uint8ClampedArray<ArrayBuffer>;
+    const imageData = new ImageData(data, raw.width, raw.height);
+    const bitmap = await createImageBitmap(imageData);
+    return imageValueFromBitmap(bitmap, raw.width, raw.height);
+  }
   return imageValueFromBuffer(Buffer.from(rgba), "raw-rgba", raw.width, raw.height);
 }
 
@@ -63,13 +76,13 @@ export const HFT_ImageSegmentation: AiProviderRunFn<
 
   const masks = Array.isArray(result) ? result : [result];
 
-  const processedMasks = masks.map((mask) => {
-    return {
+  const processedMasks = await Promise.all(
+    masks.map(async (mask) => ({
       label: mask.label || "",
       score: mask.score || 0,
-      mask: rawImageToImageValue(mask.mask),
-    };
-  });
+      mask: await rawImageToImageValue(mask.mask),
+    }))
+  );
 
   emit({
     type: "finish",
