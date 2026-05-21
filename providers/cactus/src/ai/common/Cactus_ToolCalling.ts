@@ -94,5 +94,5 @@ export const Cactus_ToolCalling: AiProviderRunFn<
   if (validToolCalls.length > 0) {
     emit({ type: "object-delta", port: "toolCalls", objectDelta: [...validToolCalls] });
   }
-  emit({ type: "finish", data: {} as ToolCallingTaskOutput });
+  emit({ type: "finish", data: { text: raw, toolCalls: validToolCalls } });
 };

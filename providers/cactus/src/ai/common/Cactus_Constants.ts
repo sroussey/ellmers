@@ -13,4 +13,4 @@ export const CACTUS_DEFAULT_REVISION = "main";
 export const CACTUS_CACHE_NAME = "cactus-models-v1";
 
 /** Node/Bun on-disk cache root. */
-export const CACTUS_DEFAULT_MODELS_DIR = "./.cache/cactus";
+export const CACTUS_DEFAULT_MODELS_DIR = "~/.cache/cactus-models";

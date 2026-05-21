@@ -7,7 +7,7 @@
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import { getCactusCatalogEntry } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-import { cactusConfigJson, isModelLoaded } from "./Cactus_Runtime";
+import { isModelCached, isModelLoaded } from "./Cactus_Runtime";
 
 export const Cactus_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
@@ -20,7 +20,7 @@ export const Cactus_ModelInfo: AiProviderRunFn<
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
   const is_loaded = isModelLoaded(model_id);
-  const is_cached = is_loaded || cactusConfigJson.has(model_id);
+  const is_cached = isModelCached(model_id);
 
   emit({
     type: "finish",

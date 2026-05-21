@@ -4,7 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
+/**
+ * Browser-safe variant of Cactus_Runtime — Node built-ins (`node:fs/promises`, `node:path`)
+ * are excluded so browser bundlers do not need to resolve them.
+ * Asset persistence uses the browser Cache Storage API exclusively.
+ */
+
+import { CACTUS_CACHE_NAME } from "./Cactus_Constants";
 import {
   cactusAssetUrl,
   getCactusCatalogEntry,
@@ -47,20 +53,8 @@ export function getCactusSdk(): NeedleSdkModule {
 }
 
 // ============================================================================
-// Asset fetch + cache
+// Asset fetch + cache (browser-only: Cache Storage API)
 // ============================================================================
-
-function hasBrowserCacheStorage(): boolean {
-  return (
-    typeof globalThis !== "undefined" &&
-    "caches" in globalThis &&
-    typeof (globalThis as unknown as { caches?: CacheStorage }).caches?.open === "function"
-  );
-}
-
-function modelsDirOf(model: CactusModelConfig): string {
-  return model.provider_config.models_dir ?? CACTUS_DEFAULT_MODELS_DIR;
-}
 
 async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
@@ -76,34 +70,6 @@ async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
   return new Uint8Array(await resp.arrayBuffer());
 }
 
-async function fetchAssetBytesNode(
-  url: string,
-  models_dir: string,
-  model_id: string,
-  filename: string
-): Promise<Uint8Array> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const resolvedDir = models_dir.startsWith("~/")
-    ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
-    : path.resolve(models_dir, model_id);
-  const filePath = path.join(resolvedDir, filename);
-  try {
-    const buf = await fs.readFile(filePath);
-    return new Uint8Array(buf);
-  } catch {
-    // fall through to fetch
-  }
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
-  const bytes = new Uint8Array(await resp.arrayBuffer());
-  await fs.mkdir(resolvedDir, { recursive: true });
-  const tmpPath = `${filePath}.tmp`;
-  await fs.writeFile(tmpPath, bytes);
-  await fs.rename(tmpPath, filePath);
-  return bytes;
-}
-
 export async function fetchAssetBytes(
   model: CactusModelConfig,
   filename: string
@@ -112,10 +78,7 @@ export async function fetchAssetBytes(
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
   const url = cactusAssetUrl(entry, filename);
-  if (hasBrowserCacheStorage()) {
-    return fetchAssetBytesBrowser(url);
-  }
-  return fetchAssetBytesNode(url, modelsDirOf(model), model_id, filename);
+  return fetchAssetBytesBrowser(url);
 }
 
 // ============================================================================
@@ -177,7 +140,7 @@ export function isModelLoaded(model_id: string): boolean {
   return cactusEngines.has(model_id);
 }
 
-/** Mark a model_id as having its assets persisted on disk / in Cache Storage. */
+/** Mark a model_id as having its assets persisted in Cache Storage. */
 export function markModelCached(model_id: string): void {
   cactusCachedModelIds.add(model_id);
 }
@@ -203,7 +166,6 @@ export async function deleteCactusSession(id: string): Promise<boolean> {
 // ============================================================================
 
 async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<void> {
-  if (!hasBrowserCacheStorage()) return;
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   for (const filename of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
@@ -214,17 +176,6 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
       /* ignore */
     }
   }
-}
-
-async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): Promise<void> {
-  if (hasBrowserCacheStorage()) return;
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
-  const models_dir = modelsDirOf(model);
-  const resolvedDir = models_dir.startsWith("~/")
-    ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
-    : path.resolve(models_dir, model_id);
-  await fs.rm(resolvedDir, { recursive: true, force: true });
 }
 
 function disposeCactusEngine(model_id: string): void {
@@ -245,7 +196,7 @@ export async function removeCachedAssets(model: CactusModelConfig): Promise<void
   const model_id = model.provider_config.model_id;
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) return;
-  await Promise.all([removeBrowserCacheEntries(entry), removeNodeCacheDir(model, model_id)]);
+  await removeBrowserCacheEntries(entry);
   disposeCactusEngine(model_id);
 }
 

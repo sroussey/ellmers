@@ -11,7 +11,7 @@ import type {
 } from "@workglow/ai";
 import { getCactusCatalogEntry } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-import { fetchAssetBytes } from "./Cactus_Runtime";
+import { fetchAssetBytes, markModelCached } from "./Cactus_Runtime";
 
 export const Cactus_Download: AiProviderRunFn<
   ModelDownloadTaskRunInput,
@@ -32,5 +32,6 @@ export const Cactus_Download: AiProviderRunFn<
     });
     await fetchAssetBytes(model, assets[i]);
   }
+  markModelCached(model_id);
   emit({ type: "finish", data: { model: input.model! } });
 };
