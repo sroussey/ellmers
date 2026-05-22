@@ -53,20 +53,15 @@ export const WebBrowser_Chat: AiProviderRunFn<
     throw new Error("WebBrowser_Chat: trailing user message has no text content");
   }
 
-  // History the session should already have heard by the time we prompt.
-  // After this turn the session will additionally contain the trailing user
-  // turn + the assistant response we generate — i.e. `messages.length + 1`
-  // messages, which is the watermark we cache for the next call.
-  const priorHistory = messages.slice(0, lastUserIdx);
-  const { initialPrompts, fingerprint: historyFingerprint } =
-    buildInitialPromptsFromHistory(priorHistory);
-
-  // Cache hygiene: only reuse the cached session if its watermark exactly
-  // matches the history we'd otherwise re-feed. Out-of-sync caches (task
-  // reset mid-conversation, retroactive edits to `messages`) are torn down
-  // and rebuilt.
+  // Cache reuse requires: same sessionId, AND the cache's high-water mark
+  // equals the number of messages we expect Chrome to have heard BEFORE
+  // this turn (everything up to but not including the trailing user
+  // message). This is robust against retroactive edits to `messages` and
+  // against task resets that re-run from a smaller history.
   let cached = sessionId ? getChromeSession(sessionId) : undefined;
-  if (sessionId !== undefined && cached && cached.historyFingerprint !== historyFingerprint) {
+  const expectedPriorCount = lastUserIdx;
+  if (sessionId !== undefined && cached && cached.messageCount !== expectedPriorCount) {
+    // History diverged — tear down the stale session and rebuild.
     deleteChromeSession(sessionId);
     cached = undefined;
   }
@@ -76,6 +71,11 @@ export const WebBrowser_Chat: AiProviderRunFn<
   if (cached) {
     session = cached.session;
   } else {
+    // Fresh session: replay all prior history via initialPrompts so the
+    // model has full context for the trailing user turn.
+    const { initialPrompts } = buildInitialPromptsFromHistory(
+      messages.slice(0, lastUserIdx)
+    );
     session = await factory.create({
       signal,
       // `temperature` is `@deprecated` for non-extension contexts in the
@@ -89,6 +89,9 @@ export const WebBrowser_Chat: AiProviderRunFn<
 
   let cacheWritten = false;
   try {
+    // `promptStreaming` both runs the turn AND mutates the session's
+    // internal history so the next call's "prior count" is
+    // `messages.length + 1`.
     const stream = session.promptStreaming(promptText, { signal });
     for await (const e of snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text")) {
       emit(e);
@@ -99,9 +102,8 @@ export const WebBrowser_Chat: AiProviderRunFn<
       // to the cache; `WebBrowserProvider.disposeSession` (wired into
       // ResourceScope by AiChatTask) reclaims it at end of run.
       setChromeSession(sessionId, {
-       session,
-       messageCount: messages.length + 1,
-       historyFingerprint,
+        session,
+        messageCount: messages.length + 1,
       });
       cacheWritten = true;
     }

@@ -20,6 +20,13 @@
  */
 export interface ChromeChatSessionState {
   readonly session: LanguageModel;
+  /**
+   * Count of messages the session has heard *after* the most recent turn
+   * completes — i.e., `messages.length + 1` (the new assistant reply
+   * counts). Used by the next turn as a high-water mark to decide cache
+   * reuse: reuse iff `messageCount === lastUserIdx` (everything before
+   * the trailing user message has already been played into the session).
+   */
   readonly messageCount: number;
   /**
    * Stable fingerprint of the `outputSchema` the session was created for
@@ -35,7 +42,12 @@ export interface ChromeChatSessionState {
    * and can't be hot-swapped per turn.
    */
   readonly toolsFingerprint?: string;
-  /** Stable fingerprint of the filtered chat history replayed into the session. */
+  /**
+   * Stable fingerprint of the filtered chat history replayed into the
+   * session. No longer used for the chat-cache reuse decision (replaced by
+   * `messageCount`), but kept optional to preserve the public shape in
+   * case another caller still passes it.
+   */
   readonly historyFingerprint?: string;
 }
 
