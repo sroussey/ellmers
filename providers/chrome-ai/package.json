@@ -63,6 +63,7 @@
     }
   },
   "devDependencies": {
+    "@types/dom-chromium-ai": "^0.0.16",
     "@workglow/ai": "workspace:*",
     "@workglow/job-queue": "workspace:*",
     "@workglow/storage": "workspace:*",

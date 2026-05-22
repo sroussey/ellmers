@@ -24,11 +24,11 @@ import {
 import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 
-/** Default timeout for provider API calls (2 minutes). */
-const DEFAULT_AI_TIMEOUT_MS = 120_000;
+/** Default timeout for provider API calls (60 minutes). */
+const DEFAULT_AI_TIMEOUT_MS = 60 * 60 * 1000;
 
 /** Local inference (CPU/WASM) often needs several minutes (downloads, load, multi-turn tool follow-up). */
-const LOCAL_INFERENCE_DEFAULT_TIMEOUT_MS = 300_000;
+const LOCAL_INFERENCE_DEFAULT_TIMEOUT_MS = 120 * 60_000;
 
 /**
  * Cross-runtime macrotask yield. Tight microtask-only `await` chains starve
@@ -46,7 +46,11 @@ function resolveAiJobTimeoutMs(aiProvider: string, explicitMs: number | undefine
   if (explicitMs !== undefined) {
     return explicitMs;
   }
-  if (aiProvider === "LOCAL_LLAMACPP" || aiProvider === "HF_TRANSFORMERS_ONNX") {
+  if (
+    aiProvider === "LOCAL_LLAMACPP" ||
+    aiProvider === "HF_TRANSFORMERS_ONNX" ||
+    aiProvider === "WEB_BROWSER"
+  ) {
     return LOCAL_INFERENCE_DEFAULT_TIMEOUT_MS;
   }
   return DEFAULT_AI_TIMEOUT_MS;

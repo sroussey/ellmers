@@ -41,6 +41,11 @@ const ModelInfoOutputSchema = {
     supports_node: { type: "boolean" },
     is_cached: { type: "boolean" },
     is_loaded: { type: "boolean" },
+    is_downloading: {
+      type: "boolean",
+      description:
+        "Whether the runtime is actively downloading the model. Only present when a provider can report it.",
+    },
     file_sizes: {},
     quantizations: {
       type: "array",

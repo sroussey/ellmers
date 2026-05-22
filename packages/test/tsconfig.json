@@ -7,7 +7,7 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["@types/bun", "@cloudflare/workers-types"]
+    "types": ["@types/bun", "@cloudflare/workers-types", "@types/dom-chromium-ai"]
   },
   "references": [
     { "path": "../util" },

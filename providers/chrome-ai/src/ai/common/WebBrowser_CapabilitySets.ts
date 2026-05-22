@@ -15,6 +15,8 @@ export const WEB_BROWSER_TEXT_LANGUAGE_DETECTION = [
 ] as const satisfies Capability[];
 export const WEB_BROWSER_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const WEB_BROWSER_MODEL_INFO = ["model.info"] as const satisfies Capability[];
+export const WEB_BROWSER_MODEL_DOWNLOAD = ["model.download"] as const satisfies Capability[];
+export const WEB_BROWSER_MODEL_DISPOSE = ["model.dispose"] as const satisfies Capability[];
 
 export const WEB_BROWSER_CAPABILITY_SETS = [
   WEB_BROWSER_TEXT_GENERATION,
@@ -24,4 +26,6 @@ export const WEB_BROWSER_CAPABILITY_SETS = [
   WEB_BROWSER_TEXT_LANGUAGE_DETECTION,
   WEB_BROWSER_MODEL_SEARCH,
   WEB_BROWSER_MODEL_INFO,
+  WEB_BROWSER_MODEL_DOWNLOAD,
+  WEB_BROWSER_MODEL_DISPOSE,
 ] as const;

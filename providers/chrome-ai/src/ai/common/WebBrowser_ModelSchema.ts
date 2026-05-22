@@ -21,7 +21,7 @@ export const WebBrowserModelSchema = {
       properties: {
         summary_type: {
           type: "string",
-          enum: ["tl;dr", "key-points", "teaser", "headline"],
+          enum: ["tldr", "key-points", "teaser", "headline"],
           description: "Summarization style (Summarizer API only).",
         },
         summary_length: {

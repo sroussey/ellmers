@@ -8,15 +8,18 @@ import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
   Capability,
+  ModelConfig,
   ModelRecord,
 } from "@workglow/ai/worker";
-import { AiProvider } from "@workglow/ai/worker";
+import { AiProvider, getAiProviderRegistry } from "@workglow/ai/worker";
+import type { TaskInput } from "@workglow/task-graph";
 import {
   inferWebBrowserCapabilities,
   webBrowserWorkerRunFnSpecs,
 } from "./common/WebBrowser_Capabilities";
 import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
+import { disposeWebBrowserSession } from "./common/WebBrowser_Sessions";
 
 /**
  * AI provider for Chrome Built-in AI APIs (Gemini Nano on-device).
@@ -30,6 +33,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly displayName = "Chrome Built-in AI";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  private readonly sessionModels = new Map<string, WebBrowserModelConfig>();
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<
@@ -50,6 +54,34 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
     return inferWebBrowserCapabilities(model);
+  }
+
+  override createSession(model: ModelConfig): string {
+    const sessionId = crypto.randomUUID();
+    this.sessionModels.set(sessionId, model as WebBrowserModelConfig);
+    return sessionId;
+  }
+
+  override async disposeSession(sessionId: string): Promise<void> {
+    const model = this.sessionModels.get(sessionId);
+    this.sessionModels.delete(sessionId);
+    if (!model) {
+      await disposeWebBrowserSession(sessionId);
+      return;
+    }
+
+    const disposeFn = getAiProviderRegistry().getRunFnFor(this.name, ["model.dispose"]);
+    if (!disposeFn) {
+      await disposeWebBrowserSession(sessionId);
+      return;
+    }
+
+    await disposeFn(
+      { model, sessionId } as TaskInput,
+      model,
+      AbortSignal.timeout(30_000),
+      () => {}
+    );
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {

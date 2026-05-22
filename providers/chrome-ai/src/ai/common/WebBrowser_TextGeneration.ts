@@ -10,7 +10,8 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 
-import { ensureAvailable, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
+import { LANGUAGE_MODEL_AVAILABILITY_OPTIONS } from "./WebBrowser_ApiBinding";
+import { assertAvailability, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextGeneration: AiProviderRunFn<
@@ -22,7 +23,10 @@ export const WebBrowser_TextGeneration: AiProviderRunFn<
     "LanguageModel",
     typeof LanguageModel !== "undefined" ? LanguageModel : undefined
   );
-  await ensureAvailable("LanguageModel", factory);
+  assertAvailability(
+    "LanguageModel",
+    await factory.availability(LANGUAGE_MODEL_AVAILABILITY_OPTIONS)
+  );
 
   const session = await factory.create({
     temperature: input.temperature ?? undefined,

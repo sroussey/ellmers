@@ -7,7 +7,7 @@
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 
 import {
-  ensureAvailable,
+  assertAvailability,
   getApi,
   getConfig,
   snapshotStreamToTextDeltas,
@@ -20,7 +20,7 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
   const factory = getApi("Rewriter", typeof Rewriter !== "undefined" ? Rewriter : undefined);
-  await ensureAvailable("Rewriter", factory);
+  assertAvailability("Rewriter", await factory.availability());
   const config = getConfig(model);
 
   const rewriter = await factory.create({

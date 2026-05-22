@@ -33,6 +33,8 @@ describe("WebBrowserProvider.inferCapabilities", () => {
   it("infers text-gen + rewriter + summary for chrome-prompt / gemini-nano", () => {
     expect(provider.inferCapabilities(model("chrome-prompt"))).toContain("text.generation");
     expect(provider.inferCapabilities(model("gemini-nano"))).toContain("text.generation");
+    expect(provider.inferCapabilities(model("gemini-nano"))).toContain("model.download");
+    expect(provider.inferCapabilities(model("gemini-nano"))).toContain("model.info");
   });
 
   it("infers text.summary for summarizer model", () => {
@@ -58,7 +60,7 @@ describe("WebBrowserProvider.inferCapabilities", () => {
 
   it("returns baseline meta-ops for unknown ids", () => {
     const caps = provider.inferCapabilities(model("unknown-id"));
-    expect(caps).toEqual(["model.search", "model.info"]);
+    expect(caps).toEqual(["model.download", "model.search", "model.info"]);
   });
 });
 
@@ -68,9 +70,21 @@ describe("capability-set parity", () => {
     const specsServes = WEB_BROWSER_RUN_FN_SPECS.map((s) => [...s.serves].sort().join(","));
     expect(specsServes).toEqual(fnsServes);
   });
+
+  it("WEB_BROWSER_RUN_FN_SPECS includes model.dispose for worker proxy parity", () => {
+    const specsServes = WEB_BROWSER_RUN_FN_SPECS.map((s) => [...s.serves].sort().join(","));
+    expect(specsServes).toContain("model.dispose");
+  });
 });
 
 describe("WEB_BROWSER_RUN_FNS shape", () => {
+  it("uses the bare text.generation capability set for unified prompt and chat dispatch", () => {
+    const registrations = WEB_BROWSER_RUN_FNS.filter(
+      (r) => [...r.serves].sort().join(",") === "text.generation"
+    );
+    expect(registrations).toHaveLength(1);
+  });
+
   it("registers a runFn for every canonical Chrome AI capability set", () => {
     const sets = WEB_BROWSER_RUN_FNS.map((r) => [...r.serves].sort().join(","));
     expect(sets).toContain("text.generation");
@@ -80,5 +94,12 @@ describe("WEB_BROWSER_RUN_FNS shape", () => {
     expect(sets).toContain("text.language-detection");
     expect(sets).toContain("model.search");
     expect(sets).toContain("model.info");
+    expect(sets).toContain("model.download");
+    expect(sets).toContain("model.dispose");
+  });
+
+  it("registers model.dispose for in-memory session cleanup", () => {
+    const sets = WEB_BROWSER_RUN_FNS.map((r) => [...r.serves].sort().join(","));
+    expect(sets).toContain("model.dispose");
   });
 });

@@ -6,16 +6,22 @@
 
 import { PermanentJobError } from "@workglow/job-queue";
 import type { StreamEvent } from "@workglow/task-graph";
-import { AIAvailability } from "./WebBrowser_ChromeAI";
+import {
+  isWebBrowserModelCached,
+  resolveWebBrowserApi,
+  type WebBrowserApiBinding,
+} from "./WebBrowser_ApiBinding";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
+
+export { isWebBrowserModelCached, resolveWebBrowserApi } from "./WebBrowser_ApiBinding";
 
 export interface ProviderConfig {
   readonly pipeline?: string;
-  readonly summary_type?: "tl;dr" | "key-points" | "teaser" | "headline";
-  readonly summary_length?: "short" | "medium" | "long";
-  readonly summary_format?: "plain-text" | "markdown";
-  readonly rewriter_tone?: "as-is" | "more-formal" | "more-casual";
-  readonly rewriter_length?: "as-is" | "shorter" | "longer";
+  readonly summary_type?: SummarizerType;
+  readonly summary_length?: SummarizerLength;
+  readonly summary_format?: SummarizerFormat;
+  readonly rewriter_tone?: RewriterTone;
+  readonly rewriter_length?: RewriterLength;
 }
 
 export function getConfig(model: WebBrowserModelConfig | undefined): ProviderConfig {
@@ -31,11 +37,7 @@ export function getApi<T>(name: string, global: T | undefined): T {
   return global;
 }
 
-export async function ensureAvailable(
-  name: string,
-  factory: { availability(): Promise<AIAvailability> }
-): Promise<void> {
-  const status = await factory.availability();
+export function assertAvailability(name: string, status: Availability): void {
   if (status === "unavailable") {
     throw new PermanentJobError(
       `Chrome Built-in AI "${name}" is not available (status: "no"). ` +
@@ -44,14 +46,129 @@ export async function ensureAvailable(
   }
 }
 
+type PhaseEmit = (event: { type: "phase"; message: string; progress: number | undefined }) => void;
+
+export async function queryWebBrowserAvailability(
+  binding: WebBrowserApiBinding
+): Promise<Availability> {
+  try {
+    switch (binding.apiName) {
+      case "Summarizer":
+        return await binding.factory.availability(binding.availabilityOptions);
+      case "Rewriter":
+        return await binding.factory.availability(binding.availabilityOptions);
+      case "Translator":
+        return await binding.factory.availability(binding.availabilityOptions);
+      case "LanguageDetector":
+        return await binding.factory.availability(binding.availabilityOptions);
+      case "LanguageModel":
+        return await binding.factory.availability(binding.availabilityOptions);
+    }
+  } catch {
+    return "unavailable";
+  }
+}
+
+const downloadMonitor =
+  (apiName: string, emit: PhaseEmit): CreateMonitorCallback =>
+  (monitor) => {
+    monitor.addEventListener("downloadprogress", (event: ProgressEvent) => {
+      const pct = Math.round(event.loaded * 100);
+      if (event.loaded >= 1) {
+        emit({
+          type: "phase",
+          message: "Extracting and loading model...",
+          progress: undefined,
+        });
+      } else {
+        emit({
+          type: "phase",
+          message: `Downloading ${apiName} model...`,
+          progress: pct,
+        });
+      }
+    });
+  };
+
+async function createForDownload(
+  binding: WebBrowserApiBinding,
+  signal: AbortSignal | undefined,
+  emit: PhaseEmit
+): Promise<DestroyableModel> {
+  const monitor = downloadMonitor(binding.apiName, emit);
+  switch (binding.apiName) {
+    case "Summarizer":
+      return binding.factory.create({ ...binding.createOptions, signal, monitor });
+    case "Rewriter":
+      return binding.factory.create({ ...binding.createOptions, signal, monitor });
+    case "Translator":
+      return binding.factory.create({ ...binding.createOptions, signal, monitor });
+    case "LanguageDetector":
+      return binding.factory.create({ ...binding.createOptions, signal, monitor });
+    case "LanguageModel":
+      return binding.factory.create({ ...binding.createOptions, signal, monitor });
+  }
+}
+
 /**
- * Chrome streaming APIs return progressive full-text snapshots. This helper
- * converts them to append-mode text-delta events by diffing successive snapshots.
+ * Ensures the Chrome Built-in AI model for `binding` is downloaded and loaded.
+ * Emits `phase` events with 0–100 progress from the browser `downloadprogress` monitor.
+ */
+export async function downloadWebBrowserModel(
+  binding: WebBrowserApiBinding,
+  signal: AbortSignal | undefined,
+  emit: PhaseEmit
+): Promise<void> {
+  emit({ type: "phase", message: "Checking Chrome availability...", progress: 0 });
+
+  const status = await queryWebBrowserAvailability(binding);
+  if (status === "unavailable") {
+    throw new PermanentJobError(
+      `Chrome Built-in AI "${binding.apiName}" is not available on this device.`
+    );
+  }
+  if (isWebBrowserModelCached(status)) {
+    emit({ type: "phase", message: "Already on this device", progress: 100 });
+    return;
+  }
+
+  if (status === "downloading") {
+    emit({
+      type: "phase",
+      message: "Chrome is downloading the model — resuming...",
+      progress: undefined,
+    });
+  } else {
+    emit({ type: "phase", message: "Starting download...", progress: 0 });
+  }
+
+  const session = await createForDownload(binding, signal, emit);
+  session.destroy();
+  emit({ type: "phase", message: "Download complete", progress: 100 });
+}
+
+export async function queryWebBrowserModelStatus(
+  model: WebBrowserModelConfig | undefined
+): Promise<{
+  readonly availability: Availability;
+  readonly is_cached: boolean;
+  readonly is_loaded: boolean;
+}> {
+  const binding = resolveWebBrowserApi(model);
+  const availability = await queryWebBrowserAvailability(binding);
+  const ready = isWebBrowserModelCached(availability);
+  return { availability, is_cached: ready, is_loaded: ready };
+}
+
+/**
+ * Chrome streaming APIs have shipped both progressive full-text snapshots and
+ * append chunks across API versions. This helper emits append-mode text-delta
+ * events for both shapes.
  */
 export async function* snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
   port: string,
-  buildFallbackOutput: (text: string) => Output
+  _buildFallbackOutput: (text: string) => Output
 ): AsyncIterable<StreamEvent<Output>> {
   const reader = stream.getReader();
   let previousSnapshot = "";
@@ -66,8 +183,8 @@ export async function* snapshotStreamToTextDeltas<Output>(
           yield { type: "text-delta", port, textDelta: delta };
         }
       } else {
-        previousSnapshot = value;
-        yield { type: "snapshot", data: buildFallbackOutput(value) };
+        previousSnapshot += value;
+        yield { type: "text-delta", port, textDelta: value };
       }
     }
   } finally {

@@ -11,8 +11,7 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 
-import { AIAvailability } from "./WebBrowser_ChromeAI";
-import { ensureAvailable, getApi, snapshotStreamToSnapshots } from "./WebBrowser_ChromeHelpers";
+import { assertAvailability, getApi, snapshotStreamToSnapshots } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextTranslation: AiProviderRunFn<
@@ -21,31 +20,22 @@ export const WebBrowser_TextTranslation: AiProviderRunFn<
   WebBrowserModelConfig
 > = async (input, _model, signal, emit) => {
   const factory = getApi("Translator", typeof Translator !== "undefined" ? Translator : undefined);
-  let status: AIAvailability;
+  const langOptions: TranslatorCreateCoreOptions = {
+    sourceLanguage: input.source_lang,
+    targetLanguage: input.target_lang,
+  };
+  let status: Availability;
   try {
-    status = await factory.availability({
-      sourceLanguage: input.source_lang,
-      targetLanguage: input.target_lang,
-    });
+    status = await factory.availability(langOptions);
   } catch {
     throw new PermanentJobError(
       `Chrome Built-in AI "Translator" is not available (status: "no"). ` +
         `Ensure you are using a compatible Chrome version with the flag enabled.`
     );
   }
-  if (status === "unavailable") {
-    throw new PermanentJobError(
-      `Chrome Built-in AI "Translator" is not available (status: "no"). ` +
-        `Ensure you are using a compatible Chrome version with the flag enabled.`
-    );
-  }
+  assertAvailability("Translator", status);
 
-  await ensureAvailable("Translator", factory);
-
-  const translator = await factory.create({
-    sourceLanguage: input.source_lang,
-    targetLanguage: input.target_lang,
-  });
+  const translator = await factory.create(langOptions);
   try {
     const stream = translator.translateStreaming(input.text, { signal });
     for await (const e of snapshotStreamToSnapshots<TextTranslationTaskOutput>(stream, (text) => ({

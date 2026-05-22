@@ -10,7 +10,7 @@ import type {
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
 
-import { ensureAvailable, getApi } from "./WebBrowser_ChromeHelpers";
+import { assertAvailability, getApi } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
@@ -22,13 +22,17 @@ export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
     "LanguageDetector",
     typeof LanguageDetector !== "undefined" ? LanguageDetector : undefined
   );
-  await ensureAvailable("LanguageDetector", factory);
+  assertAvailability("LanguageDetector", await factory.availability());
 
   const detector = await factory.create();
   try {
     const detected = await detector.detect(input.text, { signal });
     const languages = detected
-      .map((d) => ({ language: d.detectedLanguage, score: d.confidence }))
+      .flatMap((d) =>
+        d.detectedLanguage !== undefined && d.confidence !== undefined
+          ? [{ language: d.detectedLanguage, score: d.confidence }]
+          : []
+      )
       .slice(0, input.maxLanguages ?? 5);
     emit({ type: "finish", data: { languages } });
   } finally {

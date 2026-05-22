@@ -6,7 +6,6 @@ dist
 *.d.ts
 *.d.ts.map
 !examples/web/src/vite-env.d.ts
-!providers/chrome-ai/src/ai/common/WebBrowser_ChromeAI.d.ts
 !packages/tasks/src/util/interpreter.d.ts
 storybook-static/
 packages/cli-web/

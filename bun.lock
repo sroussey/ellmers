@@ -283,6 +283,7 @@
         "@modelcontextprotocol/sdk": "catalog:",
         "@sqliteai/sqlite-vector": "catalog:",
         "@supabase/supabase-js": "catalog:",
+        "@types/dom-chromium-ai": "^0.0.16",
         "@types/pg": "^8.18.0",
         "@workglow/ai": "workspace:*",
         "@workglow/anthropic": "workspace:*",
@@ -433,6 +434,7 @@
       "name": "@workglow/chrome-ai",
       "version": "0.3.4",
       "devDependencies": {
+        "@types/dom-chromium-ai": "^0.0.16",
         "@workglow/ai": "workspace:*",
         "@workglow/job-queue": "workspace:*",
         "@workglow/storage": "workspace:*",
@@ -1280,6 +1282,8 @@
     "@types/d3-zoom": ["@types/d3-zoom@3.0.8", "", { "dependencies": { "@types/d3-interpolate": "*", "@types/d3-selection": "*" } }, "sha512-iqMC4/YlFCSlO8+2Ii1GGGliCAY4XdeG748w5vQUbevlbDu0zSjH/+jojorQVBK/se0j6DUFNPBGSqD3YWYnDw=="],
 
     "@types/deep-eql": ["@types/deep-eql@4.0.2", "", {}, "sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw=="],
+
+    "@types/dom-chromium-ai": ["@types/dom-chromium-ai@0.0.16", "", {}, "sha512-Z0vOBWckovkc85zctYKGEUUBHaqt9Oz8AUhAVyoNLAsMGlBhMNl/8w1n8JG1y0g7TW03EzWt5RsdcDD70ra58g=="],
 
     "@types/esrecurse": ["@types/esrecurse@4.3.1", "", {}, "sha512-xJBAbDifo5hpffDBuHl0Y8ywswbiAp/Wi7Y/GtAgSlZyIABppyurxVueOPE8LUQOxdlgi6Zqce7uoEpqNTeiUw=="],
 

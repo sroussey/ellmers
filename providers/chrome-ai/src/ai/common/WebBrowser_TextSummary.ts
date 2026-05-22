@@ -7,7 +7,7 @@
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 
 import {
-  ensureAvailable,
+  assertAvailability,
   getApi,
   getConfig,
   snapshotStreamToTextDeltas,
@@ -20,7 +20,7 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
   const factory = getApi("Summarizer", typeof Summarizer !== "undefined" ? Summarizer : undefined);
-  await ensureAvailable("Summarizer", factory);
+  assertAvailability("Summarizer", await factory.availability());
   const config = getConfig(model);
 
   const summarizer = await factory.create({
