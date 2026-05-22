@@ -12,7 +12,7 @@ import type {
   ToolDefinition,
 } from "@workglow/ai";
 import { extractMessageText } from "@workglow/ai/provider-utils";
-import { filterValidToolCalls } from "@workglow/ai/worker";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 import { getOrLoadEngine } from "./Cactus_Runtime.browser";
 
@@ -44,7 +44,7 @@ function parseToolCalls(raw: string): ToolCalls {
       return obj.map((o, i) => ({
         id: `call_${i}`,
         name: String(o.name ?? ""),
-        input: (o.arguments ?? o.params ?? {}) as Record<string, unknown>,
+        input: sanitizeToolArgs(o.arguments ?? o.params ?? {}) as Record<string, unknown>,
       }));
     }
     if (obj && typeof obj === "object" && typeof obj.name === "string") {
@@ -52,7 +52,7 @@ function parseToolCalls(raw: string): ToolCalls {
         {
           id: "call_0",
           name: obj.name,
-          input: (obj.arguments ?? obj.params ?? {}) as Record<string, unknown>,
+          input: sanitizeToolArgs(obj.arguments ?? obj.params ?? {}) as Record<string, unknown>,
         },
       ];
     }

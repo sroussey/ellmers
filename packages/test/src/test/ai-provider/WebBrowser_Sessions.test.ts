@@ -16,6 +16,7 @@ const {
   getWebBrowserSession,
   resetWebBrowserSessionsForTests,
   setWebBrowserSession,
+  sessions: { setChromeSession, getChromeSession },
 } = _testOnly;
 
 const model = {
@@ -77,6 +78,25 @@ describe("WebBrowser session store", () => {
     expect(destroyB).not.toHaveBeenCalled();
     expect(getWebBrowserSession("s1")).toBeUndefined();
     expect(getWebBrowserSession("s2")).toBeDefined();
+  });
+
+  it("disposeWebBrowserSessionsForModel reaches chat-cached entries", async () => {
+    // Regression: the unified Sessions store means model.dispose now finds
+    // sessions installed via the chat-cache API, not just lifecycle-only
+    // ones registered through setWebBrowserSession.
+    const destroyChat = vi.fn();
+    setChromeSession("chat-1", {
+      session: { destroy: destroyChat } as unknown as LanguageModel,
+      modelKey: "gemini-nano",
+      messageCount: 2,
+    });
+
+    expect(getChromeSession("chat-1")?.messageCount).toBe(2);
+    await disposeWebBrowserSessionsForModel("gemini-nano");
+
+    expect(destroyChat).toHaveBeenCalledOnce();
+    expect(getChromeSession("chat-1")).toBeUndefined();
+    expect(getWebBrowserSession("chat-1")).toBeUndefined();
   });
 
   it("disposes an idle session after 30 minutes without model activity", async () => {

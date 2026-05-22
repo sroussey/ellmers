@@ -11,7 +11,7 @@ import type {
   ToolCalls,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
+import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
@@ -87,7 +87,11 @@ export function createOllamaToolCallingStream(
               parsedInput = fnArgs as Record<string, unknown>;
             }
             const id = `call_${callIndex++}`;
-            toolCalls.push({ id, name: tc.function.name as string, input: parsedInput });
+            toolCalls.push({
+              id,
+              name: tc.function.name as string,
+              input: sanitizeToolArgs(parsedInput) as Record<string, unknown>,
+            });
           }
           emit({ type: "object-delta", port: "toolCalls", objectDelta: [...toolCalls] });
         }

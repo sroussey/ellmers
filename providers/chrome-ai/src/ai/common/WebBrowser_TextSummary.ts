@@ -7,8 +7,10 @@
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
 
 import {
-  assertAvailability,
+  createDownloadMonitor,
+  ensureAvailable,
   getApi,
+  getChromeGlobal,
   getConfig,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
@@ -19,24 +21,21 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   TextSummaryTaskOutput,
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
-  const factory = getApi("Summarizer", typeof Summarizer !== "undefined" ? Summarizer : undefined);
-  assertAvailability("Summarizer", await factory.availability());
+  const factory = getApi("Summarizer", getChromeGlobal<typeof Summarizer>("Summarizer"));
+  await ensureAvailable("Summarizer", factory);
   const config = getConfig(model);
 
   const summarizer = await factory.create({
+    signal,
     type: config.summary_type,
     length: config.summary_length,
     format: config.summary_format,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = summarizer.summarizeStreaming(input.text, { signal });
-    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
-      emit(e);
-    }
+    await snapshotStreamToTextDeltas<TextSummaryTaskOutput>(stream, "text", emit);
+    emit({ type: "finish", data: {} as TextSummaryTaskOutput });
   } finally {
     summarizer.destroy();
   }

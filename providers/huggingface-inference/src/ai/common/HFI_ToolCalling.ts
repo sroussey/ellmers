@@ -43,7 +43,6 @@ export const HFI_ToolCalling_Stream: AiProviderRunFn<
 
   const stream = client.chatCompletionStream(params, { signal });
 
-  for await (const e of accumulateOpenAIStream(stream)) {
-    emit(e);
-  }
+  await accumulateOpenAIStream(stream, emit);
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

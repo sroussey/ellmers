@@ -13,6 +13,10 @@ import {
 } from "./WebBrowser_ApiBinding";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
+// Chrome built-in AI globals (`LanguageModel`, `Summarizer`, etc.) and their
+// option types are declared by `@types/dom-chromium-ai`, which is loaded
+// transitively as a devDependency and surfaces as ambient global types.
+
 export { isWebBrowserModelCached, resolveWebBrowserApi } from "./WebBrowser_ApiBinding";
 
 export interface ProviderConfig {
@@ -37,6 +41,10 @@ export function getApi<T>(name: string, global: T | undefined): T {
   return global;
 }
 
+export function getChromeGlobal<T = unknown>(name: string): T | undefined {
+  return (globalThis as unknown as Record<string, T | undefined>)[name];
+}
+
 export function assertAvailability(name: string, status: Availability): void {
   if (status === "unavailable") {
     throw new PermanentJobError(
@@ -44,6 +52,92 @@ export function assertAvailability(name: string, status: Availability): void {
         `Ensure you are using a compatible Chrome version with the flag enabled.`
     );
   }
+}
+
+export async function ensureAvailable(
+  name: string,
+  factory: { availability(options?: never): Promise<Availability> },
+  options?: unknown
+): Promise<Availability> {
+  const status = await factory.availability(options as never);
+  assertAvailability(name, status);
+  return status;
+}
+
+export function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  const entries = keys.map(
+    (k) => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`
+  );
+  return `{${entries.join(",")}}`;
+}
+
+/**
+ * Throttle (ms) between `phase` progress events emitted from a
+ * `downloadprogress` listener. Chrome can fire this listener at very high
+ * frequency; we cap upstream traffic without dropping the first/last frames.
+ */
+const PROGRESS_THROTTLE_MS = 100;
+
+/**
+ * Returns a `monitor` callback for any Chrome built-in AI `create()` call
+ * that forwards `downloadprogress` events as `phase` stream events.
+ *
+ * The `loaded` field on the event is a fraction in `[0, 1]`. We map it to a
+ * 0–100 percentage and emit `{ type: "phase", message, progress }`. The
+ * first event and the final 100% event are always emitted; intermediate
+ * events are throttled to {@link PROGRESS_THROTTLE_MS}.
+ *
+ * @see https://developer.chrome.com/docs/ai/prompt-api#download-progress
+ */
+export function createDownloadMonitor<Output>(
+  emit: (event: StreamEvent<Output>) => void,
+  message: string = "Downloading model"
+): CreateMonitorCallback {
+  return (m) => {
+    let lastEmit = 0;
+    let pending: number | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const send = (progress: number): void => {
+      emit({ type: "phase", message, progress } as StreamEvent<Output>);
+      lastEmit = Date.now();
+      pending = null;
+    };
+
+    m.addEventListener("downloadprogress", (e) => {
+      const fraction = typeof e.loaded === "number" ? e.loaded : 0;
+      const progress = Math.max(0, Math.min(100, Math.round(fraction * 100)));
+      const now = Date.now();
+      const isFirst = lastEmit === 0;
+      const isFinal = progress >= 100;
+
+      if (isFirst || isFinal) {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        send(progress);
+        return;
+      }
+
+      if (now - lastEmit < PROGRESS_THROTTLE_MS) {
+        pending = progress;
+        if (!timer) {
+          const wait = Math.max(1, PROGRESS_THROTTLE_MS - (now - lastEmit));
+          timer = setTimeout(() => {
+            timer = null;
+            if (pending !== null) send(pending);
+          }, wait);
+        }
+        return;
+      }
+
+      send(progress);
+    });
+  };
 }
 
 type PhaseEmit = (event: { type: "phase"; message: string; progress: number | undefined }) => void;
@@ -69,7 +163,7 @@ export async function queryWebBrowserAvailability(
   }
 }
 
-const downloadMonitor =
+const phaseDownloadMonitor =
   (apiName: string, emit: PhaseEmit): CreateMonitorCallback =>
   (monitor) => {
     monitor.addEventListener("downloadprogress", (event: ProgressEvent) => {
@@ -95,7 +189,7 @@ async function createForDownload(
   signal: AbortSignal | undefined,
   emit: PhaseEmit
 ): Promise<DestroyableModel> {
-  const monitor = downloadMonitor(binding.apiName, emit);
+  const monitor = phaseDownloadMonitor(binding.apiName, emit);
   switch (binding.apiName) {
     case "Summarizer":
       return binding.factory.create({ ...binding.createOptions, signal, monitor });
@@ -161,54 +255,73 @@ export async function queryWebBrowserModelStatus(
 }
 
 /**
- * Chrome streaming APIs have shipped both progressive full-text snapshots and
- * append chunks across API versions. This helper emits append-mode text-delta
- * events for both shapes.
+ * Chrome streaming APIs return progressive full-text snapshots. This helper
+ * converts them to append-mode `text-delta` events by diffing successive
+ * snapshots and forwarding each delta to `emit`.
+ *
+ * **Reset semantics**: most snapshots are prefix-extensions of the previous
+ * one (the model is appending). When a snapshot is NOT a prefix extension
+ * (a self-correction: Chrome replaced rather than extended prior text), the
+ * accumulator is RESET to the new snapshot and the full new snapshot is
+ * emitted as a single delta. Consumers that reconstruct full text by
+ * concatenating successive deltas should treat a non-prefix delta as a
+ * reset boundary; use {@link snapshotStreamToSnapshots} if you need
+ * explicit replace-mode events.
+ *
+ * Identical consecutive snapshots emit no delta. The caller is responsible
+ * for emitting its own `finish` event after this returns — this helper
+ * never emits `finish`.
  */
-export async function* snapshotStreamToTextDeltas<Output>(
+export async function snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
   port: string,
-  _buildFallbackOutput: (text: string) => Output
-): AsyncIterable<StreamEvent<Output>> {
+  emit: (event: StreamEvent<Output>) => void
+): Promise<void> {
   const reader = stream.getReader();
-  let previousSnapshot = "";
+  let accumulatedText = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value.startsWith(previousSnapshot)) {
-        const delta = value.slice(previousSnapshot.length);
-        previousSnapshot = value;
+      if (value.startsWith(accumulatedText)) {
+        const delta = value.slice(accumulatedText.length);
+        accumulatedText = value;
         if (delta) {
-          yield { type: "text-delta", port, textDelta: delta };
+          emit({ type: "text-delta", port, textDelta: delta });
         }
       } else {
-        previousSnapshot += value;
-        yield { type: "text-delta", port, textDelta: value };
+        // Self-correction snapshot: Chrome replaced (not extended) prior text.
+        // Reset the accumulator and surface the full new snapshot as the
+        // delta. Consumers reconstructing full text by concatenation should
+        // treat any subsequent non-prefix delta as a reset boundary; use
+        // `snapshotStreamToSnapshots` if you need replace-mode semantics.
+        accumulatedText = value;
+        emit({ type: "text-delta", port, textDelta: value });
       }
     }
   } finally {
     reader.releaseLock();
   }
-  yield { type: "finish", data: {} as Output };
 }
 
 /**
- * Chrome streaming APIs return progressive full-text snapshots. Yields replace-mode snapshot events.
+ * Chrome streaming APIs return progressive full-text snapshots. Forwards
+ * each snapshot as a replace-mode `snapshot` event via `emit`. The caller
+ * is responsible for emitting its own `finish` event after this returns.
  */
-export async function* snapshotStreamToSnapshots<Output>(
+export async function snapshotStreamToSnapshots<Output>(
   stream: ReadableStream<string>,
-  buildOutput: (text: string) => Output
-): AsyncIterable<StreamEvent<Output>> {
+  buildOutput: (text: string) => Output,
+  emit: (event: StreamEvent<Output>) => void
+): Promise<void> {
   const reader = stream.getReader();
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      yield { type: "snapshot", data: buildOutput(value) };
+      emit({ type: "snapshot", data: buildOutput(value) });
     }
   } finally {
     reader.releaseLock();
   }
-  yield { type: "finish", data: {} as Output };
 }

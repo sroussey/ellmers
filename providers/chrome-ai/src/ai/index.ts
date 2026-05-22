@@ -11,19 +11,40 @@ export * from "./common/WebBrowser_Constants";
 export * from "./common/WebBrowser_ModelSchema";
 export * from "./registerWebBrowser";
 
-import { WEB_BROWSER_RUN_FN_SPECS } from "./common/WebBrowser_Capabilities";
-import { WebBrowser_Chat } from "./common/WebBrowser_Chat";
-import { WEB_BROWSER_RUN_FNS } from "./common/WebBrowser_JobRunFns";
 import {
-  WEB_BROWSER_SESSION_IDLE_MS,
+  CONSERVATIVE_PROBED_CAPABILITIES,
+  inferWebBrowserCapabilities,
+  inferWebBrowserCapabilitiesAsync,
+  WEB_BROWSER_RUN_FN_SPECS,
+} from "./common/WebBrowser_Capabilities";
+import { _resetProbeCache, probeWebBrowserCapabilities } from "./common/WebBrowser_CapabilityProbe";
+import { WebBrowser_Chat } from "./common/WebBrowser_Chat";
+import {
+  buildInitialPromptsFromHistory,
+  findLastUserIndex,
+  messageText,
+} from "./common/WebBrowser_ChatHistory";
+import { snapshotStreamToTextDeltas } from "./common/WebBrowser_ChromeHelpers";
+import {
+  WEB_BROWSER_RUN_FNS,
+  WebBrowser_TextGeneration_Unified,
+} from "./common/WebBrowser_JobRunFns";
+import {
+  deleteChromeSession,
   disposeWebBrowserSession,
   disposeWebBrowserSessionsForModel,
+  dropChromeSessionEntry,
+  getChromeSession,
   getWebBrowserModelKey,
   getWebBrowserSession,
   resetWebBrowserSessionsForTests,
+  setChromeSession,
   setWebBrowserSession,
   touchWebBrowserSession,
+  WEB_BROWSER_SESSION_IDLE_MS,
 } from "./common/WebBrowser_Sessions";
+import { WebBrowser_StructuredGeneration } from "./common/WebBrowser_StructuredGeneration";
+import { WebBrowser_ToolCalling } from "./common/WebBrowser_ToolCalling";
 import { WebBrowserProvider } from "./WebBrowserProvider";
 
 /**
@@ -34,6 +55,32 @@ export const _testOnly = {
   WEB_BROWSER_RUN_FN_SPECS,
   WEB_BROWSER_RUN_FNS,
   WebBrowser_Chat,
+  WebBrowser_TextGeneration_Unified,
+  WebBrowser_StructuredGeneration,
+  WebBrowser_ToolCalling,
+  // chat-session cache (per-turn reuse for AiChatTask / StructuredGen / ToolCalling)
+  sessions: {
+    getChromeSession,
+    setChromeSession,
+    deleteChromeSession,
+    dropChromeSessionEntry,
+  },
+  chatHistory: {
+    messageText,
+    findLastUserIndex,
+    buildInitialPromptsFromHistory,
+  },
+  chromeHelpers: {
+    snapshotStreamToTextDeltas,
+  },
+  probe: {
+    probeWebBrowserCapabilities,
+    inferWebBrowserCapabilities,
+    inferWebBrowserCapabilitiesAsync,
+    CONSERVATIVE_PROBED_CAPABILITIES,
+    _resetProbeCache,
+  },
+  // idle-evict session store (model-level lifecycle, used by ModelDispose)
   WEB_BROWSER_SESSION_IDLE_MS,
   disposeWebBrowserSession,
   disposeWebBrowserSessionsForModel,
