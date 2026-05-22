@@ -891,6 +891,125 @@ describe("WebBrowser_Chat session cache", () => {
       restore();
     }
   });
+
+  it("retries once with a fresh session when a cached session is destroyed", async () => {
+    // Turn 1's session prompts successfully (seeds the cache), then on
+    // turn 2's reuse its promptStreaming throws InvalidStateError as if
+    // Chrome had destroyed the session between calls. The run-fn must
+    // rebuild and retry once with a fresh session.
+    const staleDestroy = vi.fn();
+    const stalePrompt = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new ReadableStream<string>({
+            start(controller) {
+              controller.enqueue("hi back");
+              controller.close();
+            },
+          })
+      )
+      .mockImplementationOnce(() => {
+        throw new DOMException(
+          "The model execution session has been destroyed.",
+          "InvalidStateError"
+        );
+      });
+    const staleSession = { promptStreaming: stalePrompt, destroy: staleDestroy };
+
+    const freshDestroy = vi.fn();
+    const freshPrompt = vi.fn(
+      () =>
+        new ReadableStream<string>({
+          start(controller) {
+            controller.enqueue("recovery");
+            controller.close();
+          },
+        })
+    );
+    const freshSession = { promptStreaming: freshPrompt, destroy: freshDestroy };
+
+    const create = vi.fn().mockResolvedValueOnce(staleSession).mockResolvedValueOnce(freshSession);
+    const factory = { availability: vi.fn().mockResolvedValue("available"), create };
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      // Turn 1 — seeds the cache with the stale session.
+      await WebBrowser_TextGeneration_Unified(
+        { messages: [userMsg("hi")] },
+        undefined,
+        new AbortController().signal,
+        vi.fn(),
+        undefined,
+        sid
+      );
+      expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(2);
+
+      // Turn 2 — cached promptStreaming throws InvalidStateError;
+      // expect rebuild + retry.
+      const deltas: string[] = [];
+      await WebBrowser_TextGeneration_Unified(
+        { messages: [userMsg("hi"), assistantMsg("hi back"), userMsg("follow up")] },
+        undefined,
+        new AbortController().signal,
+        (event: unknown) => {
+          const e = event as { type: string; textDelta?: string };
+          if (e.type === "text-delta") deltas.push(e.textDelta ?? "");
+        },
+        undefined,
+        sid
+      );
+
+      // Two factory.create calls: turn 1's seed + turn 2's retry rebuild.
+      expect(create).toHaveBeenCalledTimes(2);
+      // Stale promptStreaming was called twice (success on turn 1, throw on turn 2).
+      expect(stalePrompt).toHaveBeenCalledTimes(2);
+      // Stale session destroyed during retry cleanup.
+      expect(staleDestroy).toHaveBeenCalledOnce();
+      // Retry session served the second turn.
+      expect(freshPrompt).toHaveBeenCalledOnce();
+      // Consumer saw only the retry's delta (the failing first attempt
+      // emitted nothing before throwing).
+      expect(deltas.join("")).toBe("recovery");
+      // Cache now points at the fresh session, watermark = 4.
+      expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(4);
+      expect(_testOnly.sessions.getChromeSession(sid)?.session).toBe(freshSession);
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not retry when a fresh (non-cached) session fails", async () => {
+    // No prior cache write, so the failing session was created fresh this
+    // turn — retrying would just hit the same broken model state.
+    const destroy = vi.fn();
+    const promptStreaming = vi.fn(() => {
+      throw new DOMException(
+        "The model execution session has been destroyed.",
+        "InvalidStateError"
+      );
+    });
+    const create = vi.fn().mockResolvedValue({ promptStreaming, destroy });
+    const factory = { availability: vi.fn().mockResolvedValue("available"), create };
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const emit = vi.fn();
+      await expect(
+        WebBrowser_TextGeneration_Unified(
+          { messages: [userMsg("hi")] },
+          undefined,
+          new AbortController().signal,
+          emit,
+          undefined,
+          sid
+        )
+      ).rejects.toThrow(/destroyed/);
+      // Single create + destroy; no retry rebuild.
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(destroy).toHaveBeenCalledOnce();
+    } finally {
+      restore();
+    }
+  });
 });
 
 // --------------------------------------------------------------------------

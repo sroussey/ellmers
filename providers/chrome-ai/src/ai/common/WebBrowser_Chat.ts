@@ -16,21 +16,24 @@ import type {
  *
  * ## Recovery model
  *
- * This run-fn intentionally does NOT retry on `InvalidStateError` ("session
- * destroyed"). When a cached session throws mid-turn we:
- *   1. Disown the cache entry (so a concurrent caller's session isn't
- *      double-destroyed).
- *   2. Destroy our handle and let the error propagate.
- *   3. The orchestrator's next turn rebuilds the session from full history
- *      via the cache-miss branch below.
+ * Chrome can destroy a `LanguageModel` session out from under us (e.g., tab
+ * backgrounding, GPU process restart, memory pressure). When we attempt to
+ * `promptStreaming` on a destroyed cached session it throws
+ * `DOMException("...session has been destroyed.", "InvalidStateError")`.
  *
- * Rebuild-on-next-turn is simpler than mid-turn retry (no doubled
- * `setTimeout` complexity, no risk of partial-prompt replay) and fits the
- * AiChatTask contract where the caller controls retry policy. If Chrome
- * starts destroying sessions aggressively enough that a per-turn rebuild
- * becomes a noticeable cost, restore an in-fn retry — but keep it
- * single-shot and only on `InvalidStateError`, never on user-visible
- * failures like aborts.
+ * Recovery is single-shot:
+ *
+ *   1. If we were using a CACHED session and the failure is `InvalidStateError`
+ *      AND we haven't emitted any text-delta yet — drop the poisoned cache
+ *      entry, destroy our handle, build a fresh session from full history,
+ *      and retry the prompt once.
+ *   2. Otherwise (fresh session failed, post-delta failure, or non-recoverable
+ *      error) — disown / destroy and let the error propagate so the
+ *      orchestrator can apply its own policy.
+ *
+ * The retry is gated on "no deltas emitted yet" because we can't unsend
+ * text deltas already forwarded to the consumer's accumulator; a mid-stream
+ * destroy is unrecoverable in-fn.
  */
 
 import {
@@ -86,15 +89,11 @@ export const WebBrowser_Chat: AiProviderRunFn<
     cached = undefined;
   }
 
-  const usedCachedSession = cached !== undefined;
-  let session: LanguageModel;
-  if (cached) {
-    session = cached.session;
-  } else {
+  const buildFreshSession = async (): Promise<LanguageModel> => {
     // Fresh session: replay all prior history via initialPrompts so the
     // model has full context for the trailing user turn.
     const { initialPrompts } = buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx));
-    session = await factory.create({
+    return factory.create({
       signal,
       // `temperature` is `@deprecated` for non-extension contexts in the
       // current Chrome spec; Chrome silently ignores it on the open web.
@@ -103,47 +102,82 @@ export const WebBrowser_Chat: AiProviderRunFn<
       initialPrompts,
       monitor: createDownloadMonitor(emit),
     });
-  }
+  };
 
-  let cacheWritten = false;
-  try {
-    // `promptStreaming` both runs the turn AND mutates the session's
-    // internal history so the next call's "prior count" is
-    // `messages.length + 1`.
-    const stream = session.promptStreaming(promptText, { signal });
-    await snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text", emit);
-    emit({ type: "finish", data: {} as AiChatProviderOutput });
-    if (sessionId !== undefined) {
-      // After a successful prompt the session contains everything in
-      // `messages` plus one assistant turn. Ownership of `session` transfers
-      // to the cache; `WebBrowserProvider.disposeSession` (wired into
-      // ResourceScope by AiChatTask) reclaims it at end of run.
-      setChromeSession(sessionId, {
-        session,
-        modelKey: getWebBrowserModelKey(model),
-        messageCount: messages.length + 1,
-      });
-      cacheWritten = true;
+  let usedCachedSession = cached !== undefined;
+  let session: LanguageModel = cached ? cached.session : await buildFreshSession();
+
+  let deltaEmitted = false;
+  const trackingEmit = (event: Parameters<typeof emit>[0]): void => {
+    if (event.type === "text-delta") deltaEmitted = true;
+    emit(event);
+  };
+
+  const attempt = async (): Promise<boolean> => {
+    let cacheWritten = false;
+    try {
+      // `promptStreaming` both runs the turn AND mutates the session's
+      // internal history so the next call's "prior count" is
+      // `messages.length + 1`.
+      const stream = session.promptStreaming(promptText, { signal });
+      await snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text", trackingEmit);
+      trackingEmit({ type: "finish", data: {} as AiChatProviderOutput });
+      if (sessionId !== undefined) {
+        // After a successful prompt the session contains everything in
+        // `messages` plus one assistant turn. Ownership of `session` transfers
+        // to the cache; `WebBrowserProvider.disposeSession` (wired into
+        // ResourceScope by AiChatTask) reclaims it at end of run.
+        setChromeSession(sessionId, {
+          session,
+          modelKey: getWebBrowserModelKey(model),
+          messageCount: messages.length + 1,
+        });
+        cacheWritten = true;
+      }
+      return true;
+    } finally {
+      // Two cases reach here without `cacheWritten`:
+      //   1. We created a fresh session and prompt threw / no sessionId — the
+      //      session is private to this call, just destroy it.
+      //   2. We reused a cached session and prompt threw mid-stream — Chrome's
+      //      session may now be in an inconsistent state (partial user turn,
+      //      no assistant response), so the cache entry is poisoned. Drop the
+      //      entry (only if it still points at our handle, to avoid trampling
+      //      a replacement) and destroy.
+      if (!cacheWritten) {
+        if (sessionId !== undefined && usedCachedSession) {
+          dropChromeSessionEntry(sessionId, session);
+        }
+        try {
+          session.destroy();
+        } catch {
+          // best-effort
+        }
+      }
     }
-  } finally {
-    // Two cases reach here without `cacheWritten`:
-    //   1. We created a fresh session and prompt threw / no sessionId — the
-    //      session is private to this call, just destroy it.
-    //   2. We reused a cached session and prompt threw mid-stream — Chrome's
-    //      session may now be in an inconsistent state (partial user turn,
-    //      no assistant response), so the cache entry is poisoned. Drop the
-    //      entry (only if it still points at our handle, to avoid trampling
-    //      a replacement) and destroy.
-    // Either way the next chat turn will rebuild from full history.
-    if (!cacheWritten) {
-      if (sessionId !== undefined && usedCachedSession) {
-        dropChromeSessionEntry(sessionId, session);
-      }
-      try {
-        session.destroy();
-      } catch {
-        // best-effort
-      }
+  };
+
+  try {
+    await attempt();
+  } catch (err) {
+    // Single-shot retry when a CACHED session was destroyed by Chrome before
+    // any delta reached the consumer. Gated on `!deltaEmitted` because we
+    // can't unsend deltas already forwarded.
+    if (usedCachedSession && !deltaEmitted && isDestroyedSessionError(err)) {
+      session = await buildFreshSession();
+      usedCachedSession = false;
+      await attempt();
+    } else {
+      throw err;
     }
   }
 };
+
+function isDestroyedSessionError(err: unknown): boolean {
+  // Chrome throws DOMException("...session has been destroyed.",
+  // "InvalidStateError") when prompt()/promptStreaming() runs on a session
+  // whose backing model has been torn down. Match by `name` rather than
+  // message text so the check survives Chrome wording changes.
+  if (!(err instanceof Error)) return false;
+  return err.name === "InvalidStateError";
+}
