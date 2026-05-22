@@ -21,6 +21,13 @@ export * from "./ai/registerCactus.browser";
 
 import { CactusQueuedProvider } from "./ai/CactusQueuedProvider.browser";
 import { CACTUS_RUN_FN_SPECS } from "./ai/common/Cactus_Capabilities";
+import {
+  CACTUS_HASH_PLACEHOLDER,
+  CactusIntegrityError,
+  isHashPlaceholder,
+  sha256Hex,
+  verifySha256,
+} from "./ai/common/Cactus_Integrity";
 import { CACTUS_RUN_FNS } from "./ai/common/Cactus_JobRunFns.browser";
 import { cactusConfigJson, cactusEngines } from "./ai/common/Cactus_Runtime.browser";
 
@@ -33,6 +40,11 @@ import { cactusConfigJson, cactusEngines } from "./ai/common/Cactus_Runtime.brow
  * and their runtime state copies are distinct module instances. Reading
  * the runtime state via `_testOnly` (rather than `@workglow/cactus/ai-runtime`)
  * guarantees the test observes the same Map that the run-fns mutate.
+ *
+ * The `Cactus_Integrity` symbols (sha256Hex, verifySha256, CactusIntegrityError,
+ * isHashPlaceholder, CACTUS_HASH_PLACEHOLDER) are pure/stateless helpers exposed
+ * here for unit testing only. They are not part of the stable public API; depend
+ * on the catalog's `sha256` field instead.
  */
 export const _testOnly = {
   CactusQueuedProvider,
@@ -40,4 +52,10 @@ export const _testOnly = {
   CACTUS_RUN_FNS,
   cactusEngines,
   cactusConfigJson,
+  // Integrity helpers (test-only):
+  CACTUS_HASH_PLACEHOLDER,
+  CactusIntegrityError,
+  isHashPlaceholder,
+  sha256Hex,
+  verifySha256,
 } as const;
