@@ -20,14 +20,7 @@ import {
   getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-import {
-  getCactusCachedModelIds,
-  getCactusConfigJson,
-  getCactusEngineLoadsInFlight,
-  getCactusEngines,
-  getCactusSessions,
-  getRuntime,
-} from "./Cactus_RuntimeState";
+import { getCactusSessions, getRuntime } from "./Cactus_RuntimeState";
 
 type NeedleSdkModule = typeof import("needle-rs");
 // `NeedleWasm` has a private constructor so `InstanceType<...>` cannot be used.
