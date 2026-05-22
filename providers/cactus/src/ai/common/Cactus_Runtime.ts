@@ -42,13 +42,13 @@ export interface CactusModelCacheInfo {
 //      reject separators, `..`, NUL, and any shell/path-special characters
 //      at the boundary. Fast-fail on malformed input.
 //
-//   2. `safeJoinUnderRoot` normalizes the candidate path with `path.resolve`
-//      and verifies it stays within the resolved root via `startsWith`.
-//      This is the canonical CodeQL-recognized sanitizer for the
-//      `js/path-injection` query — the analyzer cannot infer containment
-//      from regex allowlists upstream, so every filesystem entry point
-//      uses this helper to make the containment invariant explicit at
-//      the point of use.
+//   2. An inline `path.resolve` + `startsWith` containment check is
+//      duplicated at every `fs.*` call site. CodeQL's `js/path-injection`
+//      query does not trace through user-defined helper functions, so the
+//      sanitizer pattern must be visible in the same function scope as
+//      the filesystem call. `safeJoinUnderRoot` is retained for callers
+//      (like `resolveModelDir`) where local CodeQL recognition is not
+//      required.
 // ============================================================================
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -85,8 +85,12 @@ function assertSafeFilename(filename: string): void {
  *
  * This implements the recommended path-injection mitigation:
  * normalize with `path.resolve` (which collapses `..` segments) and then
- * verify the result begins with the resolved root. CodeQL's
- * `js/path-injection` query recognizes this pattern as a sanitizer.
+ * verify the result begins with the resolved root.
+ *
+ * NOTE: CodeQL's `js/path-injection` query does NOT trace through this
+ * helper — the sanitizer pattern must appear inline at each fs call site
+ * to satisfy the analyzer. This helper is retained as defense-in-depth
+ * and for callers where CodeQL recognition is not required.
  */
 function safeJoinUnderRoot(root: string, ...segments: string[]): string {
   const resolvedRoot = path.resolve(root);
@@ -150,8 +154,8 @@ function modelsDirOf(model: CactusModelConfig): string {
 function resolveModelDir(models_dir: string, model_id: string): string {
   assertSafeModelId(model_id);
   // First resolve the models root (handle `~/` expansion), then safe-join
-  // the model_id onto it. `safeJoinUnderRoot` is the CodeQL-recognized
-  // sanitizer.
+  // the model_id onto it. `safeJoinUnderRoot` provides defense-in-depth
+  // containment for non-CodeQL-recognized callers.
   const base = models_dir.startsWith("~/")
     ? path.resolve(
         process.env.HOME ?? process.env.USERPROFILE ?? ".",
@@ -188,14 +192,34 @@ async function getNodeAssetCacheInfo(
   signal: AbortSignal | undefined
 ): Promise<CactusModelCacheInfo> {
   const filenames = assetFilenames(entry);
-  const resolvedDir = resolveModelDir(modelsDirOf(model), entry.model_id);
+  const models_dir = modelsDirOf(model);
+  const model_id = entry.model_id;
+  assertSafeModelId(model_id);
+  // Compute the resolved model dir inline (not via resolveModelDir) so
+  // CodeQL's js/path-injection query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
   const stats = await Promise.all(
     filenames.map(async (filename) => {
       assertSafeFilename(filename);
+      // Inline sanitizer for CodeQL js/path-injection (helper functions
+      // aren't traced through by the query — re-check at the fs call site).
+      const target = path.resolve(resolvedDir, filename);
+      if (target !== resolvedDir && !target.startsWith(resolvedDir + path.sep)) {
+        return { filename, size: undefined, cached: false };
+      }
       try {
-        // safeJoinUnderRoot makes the containment check explicit so CodeQL
-        // can trace the sanitizer for the `js/path-injection` query.
-        const stat = await fs.stat(safeJoinUnderRoot(resolvedDir, filename));
+        const stat = await fs.stat(target);
         return { filename, size: stat.size, cached: true };
       } catch {
         return { filename, size: undefined, cached: false };
@@ -291,11 +315,37 @@ async function fetchAssetBytesNode(
 ): Promise<Uint8Array> {
   assertSafeModelId(model_id);
   assertSafeFilename(spec.filename);
-  const resolvedDir = resolveModelDir(models_dir, model_id);
-  // safeJoinUnderRoot keeps the CodeQL sanitizer trace local to each fs call.
-  const filePath = safeJoinUnderRoot(resolvedDir, spec.filename);
+  // Compute the resolved model dir inline (not via resolveModelDir) so
+  // CodeQL's js/path-injection query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
+  // Inline sanitizer for CodeQL js/path-injection — duplicated at every
+  // fs call site below since the query doesn't trace through helpers.
+  const filePath = path.resolve(resolvedDir, spec.filename);
+  if (filePath !== resolvedDir && !filePath.startsWith(resolvedDir + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(filePath)} is not within ${JSON.stringify(resolvedDir)}`
+    );
+  }
   try {
-    const buf = await fs.readFile(filePath);
+    // Re-resolve at the call site so CodeQL sees the sanitizer locally.
+    const readPath = path.resolve(resolvedDir, spec.filename);
+    if (readPath !== resolvedDir && !readPath.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    const buf = await fs.readFile(readPath);
     const bytes = new Uint8Array(buf);
     try {
       await verifySha256(bytes, spec.sha256, { url: `file:${filePath}`, filename: spec.filename });
@@ -303,7 +353,13 @@ async function fetchAssetBytesNode(
     } catch (err) {
       if (err instanceof CactusIntegrityError) {
         // On-disk asset is corrupt; evict and fall through to network.
-        await fs.unlink(filePath).catch(() => {});
+        const unlinkPath = path.resolve(resolvedDir, spec.filename);
+        if (unlinkPath !== resolvedDir && !unlinkPath.startsWith(resolvedDir + path.sep)) {
+          throw new Error(
+            `Path escape detected: ${JSON.stringify(unlinkPath)} is not within ${JSON.stringify(resolvedDir)}`
+          );
+        }
+        await fs.unlink(unlinkPath).catch(() => {});
       } else {
         throw err;
       }
@@ -327,17 +383,54 @@ async function fetchAssetBytesNode(
   }
   // Verify BEFORE writing the tmp file — never atomically promote unverified bytes.
   await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
-  await fs.mkdir(resolvedDir, { recursive: true });
-  // tmpPath is a sibling of filePath inside the (verified-contained) resolvedDir,
-  // so it inherits the containment property from filePath above.
+  // Inline sanitizer for the mkdir target — CodeQL needs the check local.
+  const mkdirTarget = path.resolve(safeRoot, model_id);
+  if (mkdirTarget !== safeRoot && !mkdirTarget.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(mkdirTarget)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
+  await fs.mkdir(mkdirTarget, { recursive: true });
+  // tmpPath is a sibling of filePath inside the (verified-contained) resolvedDir.
+  // The string-concat `${filePath}.tmp` inherits containment from filePath, but
+  // we also recompute via path.resolve below at each fs call so CodeQL sees the
+  // sanitizer locally.
   const tmpPath = `${filePath}.tmp`;
   try {
-    await fs.writeFile(tmpPath, bytes);
-    await fs.rename(tmpPath, filePath);
+    // Recompute the write target via path.resolve so the sanitizer is local.
+    const writeTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (writeTarget !== resolvedDir && !writeTarget.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(writeTarget)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    await fs.writeFile(writeTarget, bytes);
+    // Recompute both rename endpoints locally for CodeQL.
+    const renameFrom = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (renameFrom !== resolvedDir && !renameFrom.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(renameFrom)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    const renameTo = path.resolve(resolvedDir, spec.filename);
+    if (renameTo !== resolvedDir && !renameTo.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(renameTo)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    await fs.rename(renameFrom, renameTo);
   } catch (err) {
-    await fs.unlink(tmpPath).catch(() => {});
+    // Recompute the cleanup target locally for CodeQL.
+    const cleanupTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (cleanupTarget !== resolvedDir && !cleanupTarget.startsWith(resolvedDir + path.sep)) {
+      throw err;
+    }
+    await fs.unlink(cleanupTarget).catch(() => {});
     throw err;
   }
+  // Silence unused-binding warning: `tmpPath` is retained for clarity in the
+  // atomicity contract documented above.
+  void tmpPath;
   return bytes;
 }
 
@@ -527,10 +620,20 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
   if (hasBrowserCacheStorage()) return;
   assertSafeModelId(model_id);
   const models_dir = modelsDirOf(model);
-  // resolveModelDir already passes through safeJoinUnderRoot, so the
-  // returned path is contained within `models_dir`. Re-verify here so the
-  // CodeQL sanitizer trace is local to this fs entry point.
-  const resolvedDir = resolveModelDir(models_dir, model_id);
+  // Compute the resolved model dir inline (not via resolveModelDir) so
+  // CodeQL's js/path-injection query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
   await fs.rm(resolvedDir, { recursive: true, force: true });
 }
 
