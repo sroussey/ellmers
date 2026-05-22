@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.5
+
+### Bug Fixes
+
+- Chrome-ai (#514)
+
 ## 0.3.4
 
 ## 0.3.3

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.5
+
+### Chores
+
+- update @cloudflare/workers-types dependency to version 4.20260522.1 across multiple package.json files
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260522.1
+
 ## 0.3.4
 
 ## 0.3.3

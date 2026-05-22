@@ -1,5 +1,13 @@
 # @workglow/util
 
+## 0.3.5
+
+### Features
+
+#### cactus
+
+- enhance Cactus_ModelInfo to report cache status and file sizes
+
 ## 0.3.4
 
 ## 0.3.3

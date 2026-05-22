@@ -456,21 +456,8 @@ export class AiChatWithKbTask extends StreamingAiTask<
 
       // Resolve a URL per unique (kb, doc_id) by reading the document record's
       // metadata.url (the public route written by the ingest workflow).
-      // One IDB lookup per unique doc; cheap given maxRefs is small.
-      //
-      // We deliberately do NOT fall back to `metadata.sourceUri` here:
-      // sourceUri carries the raw asset path like `/raw/<domain>/foo.mdx`,
-      // which begins with `/` and would therefore pass `MarkdownLink`'s
-      // path-relative gate and route through TanStack to a non-existent
-      // page. For legacy chunks missing `metadata.url`, leaving the URL
-      // undefined renders a source chip without a click target — safer
-      // than a broken link. Re-ingest fills `metadata.url` in.
-      // Keyed by `kbId:doc_id` (composite), not `doc_id` alone: a `doc_id`
-      // is only unique within one KB, and retrieval ranges over many.
-      // Different KBs can share the same id (e.g. UUIDs colliding, or two
-      // KBs intentionally indexing the same source), so keying on
-      // `doc_id` alone would let the first KB's URL leak onto chunks
-      // from the second.
+      // One lookup per unique doc; cheap given maxRefs is small.
+
       const docUrlKey = (kbId: string, docId: string): string => `${kbId}:${docId}`;
       const docUrls = new Map<string, string | undefined>();
       const docFetches: Array<Promise<void>> = [];
@@ -483,8 +470,13 @@ export class AiChatWithKbTask extends StreamingAiTask<
           kb
             .getDocument(r.doc_id)
             .then((doc) => {
-              const md = (doc?.metadata ?? {}) as { url?: unknown };
-              const url = typeof md.url === "string" ? md.url : undefined;
+              const md = (doc?.metadata ?? {}) as { url?: unknown; sourceUri?: unknown };
+              const url =
+                typeof md.url === "string"
+                  ? md.url
+                  : typeof md.sourceUri === "string"
+                    ? md.sourceUri
+                    : undefined;
               docUrls.set(key, url);
             })
             .catch(() => {

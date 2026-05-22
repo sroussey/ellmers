@@ -1,5 +1,29 @@
 # @workglow/test
 
+## 0.3.5
+
+### Features
+
+#### chrome-ai
+
+- enhance WebBrowser provider with new capabilities and session management
+
+#### cactus
+
+- enhance Cactus_ModelInfo to report cache status and file sizes
+
+### Bug Fixes
+
+- Chrome-ai (#514)
+
+### Chores
+
+- update @cloudflare/workers-types dependency to version 4.20260522.1 across multiple package.json files
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260522.1
+
 ## 0.3.4
 
 ### Features

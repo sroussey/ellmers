@@ -1,5 +1,21 @@
 # @workglow/ai
 
+## 0.3.5
+
+### Features
+
+#### ai
+
+- enhance AiTask with model property requirements and semantic validation
+
+#### chrome-ai
+
+- enhance WebBrowser provider with new capabilities and session management
+
+### Bug Fixes
+
+- Chrome-ai (#514)
+
 ## 0.3.4
 
 ## 0.3.3

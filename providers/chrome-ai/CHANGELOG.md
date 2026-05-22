@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.5
+
+### Features
+
+#### chrome-ai
+
+- enhance WebBrowser provider with new capabilities and session management
+
+### Bug Fixes
+
+- Chrome-ai (#514)
+
 ## 0.3.4
 
 ## 0.3.3

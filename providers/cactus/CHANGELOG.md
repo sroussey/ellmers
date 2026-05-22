@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.5
+
+### Features
+
+#### cactus
+
+- enhance Cactus_ModelInfo to report cache status and file sizes
+
+### Bug Fixes
+
+- Chrome-ai (#514)
+
 ## 0.3.4
 
 ### Features
