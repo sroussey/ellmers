@@ -11,10 +11,13 @@
  */
 
 import { CACTUS_CACHE_NAME } from "./Cactus_Constants";
+import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
+  assetSpecsOf,
   cactusAssetUrl,
-  getCactusCatalogEntry,
+  type CactusAssetSpec,
   type CactusCatalogEntry,
+  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 
@@ -26,6 +29,46 @@ type NeedleEngine = NonNullable<ReturnType<NeedleSdkModule["NeedleWasm"]["load"]
 export interface CactusModelCacheInfo {
   readonly allCached: boolean;
   readonly file_sizes: Record<string, number> | null;
+}
+
+// ============================================================================
+// Path-safety allowlists (defense-in-depth, mirror of Cactus_Runtime.ts)
+//
+// The browser variant does not touch the filesystem, but applying the same
+// validation keeps both code paths in sync, hardens cache-key inputs, and
+// silences static analyzers that flag any use of user-supplied identifiers
+// in URL/path-shaped strings.
+//
+// TODO: lift these helpers into a shared module if/when a third caller
+// appears. Duplicated for now to avoid churn during the active PR.
+// ============================================================================
+
+const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+
+function assertSafeModelId(model_id: string): void {
+  if (typeof model_id !== "string" || !MODEL_ID_RE.test(model_id)) {
+    throw new Error(
+      `Invalid Cactus model_id ${JSON.stringify(model_id)}: ` +
+        `must match ${MODEL_ID_RE} (alphanumeric, underscore, hyphen; 1-64 chars).`
+    );
+  }
+}
+
+function assertSafeFilename(filename: string): void {
+  if (
+    typeof filename !== "string" ||
+    filename.length === 0 ||
+    filename.length > 255 ||
+    filename === "." ||
+    filename === ".." ||
+    !FILENAME_RE.test(filename)
+  ) {
+    throw new Error(
+      `Invalid Cactus asset filename ${JSON.stringify(filename)}: ` +
+        `must match ${FILENAME_RE} (no path separators, no '..').`
+    );
+  }
 }
 
 let _sdk: NeedleSdkModule | undefined;
@@ -62,7 +105,7 @@ export function getCactusSdk(): NeedleSdkModule {
 // ============================================================================
 
 function assetFilenames(entry: CactusCatalogEntry): string[] {
-  return [entry.assets.weights, entry.assets.vocab, entry.assets.config];
+  return assetSpecsOf(entry).map((s) => s.filename);
 }
 
 async function getRemoteAssetSize(
@@ -81,29 +124,79 @@ async function getRemoteAssetSize(
   }
 }
 
-async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
+async function fetchAssetBytesBrowser(
+  url: string,
+  spec: CactusAssetSpec
+): Promise<Uint8Array> {
+  assertSafeFilename(spec.filename);
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
   if (hit) {
-    return new Uint8Array(await hit.arrayBuffer());
+    const bytes = new Uint8Array(await hit.arrayBuffer());
+    try {
+      await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+      return bytes;
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        try {
+          await cache.delete(url);
+        } catch {
+          /* best effort */
+        }
+      } else {
+        throw err;
+      }
+    }
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
-  // Clone first — Response bodies can only be consumed once.
-  await cache.put(url, resp.clone());
-  return new Uint8Array(await resp.arrayBuffer());
+  const contentType = resp.headers.get("content-type") ?? "application/octet-stream";
+  const ab = await resp.arrayBuffer();
+  const bytes = new Uint8Array(ab);
+  if (spec.size > 0 && bytes.byteLength !== spec.size) {
+    throw new CactusIntegrityError({
+      url,
+      filename: spec.filename,
+      expected: `${spec.size} bytes`,
+      actual: `${bytes.byteLength} bytes`,
+    });
+  }
+  // Verify BEFORE storing — never persist unverified bytes to the cache.
+  await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+  const headers = new Headers({
+    "content-type": contentType,
+    "content-length": String(bytes.byteLength),
+  });
+  await cache.put(url, new Response(bytes, { headers }));
+  return bytes;
 }
 
 export async function fetchAssetBytes(
   model: CactusModelConfig,
-  filename: string
+  specOrFilename: CactusAssetSpec | string
 ): Promise<Uint8Array> {
   const model_id = model.provider_config.model_id;
+  assertSafeModelId(model_id);
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
-  const url = cactusAssetUrl(entry, filename);
-  return fetchAssetBytesBrowser(url);
+  const spec = resolveAssetSpec(entry, specOrFilename);
+  const url = cactusAssetUrl(entry, spec.filename);
+  return fetchAssetBytesBrowser(url, spec);
+}
+
+function resolveAssetSpec(
+  entry: CactusCatalogEntry,
+  specOrFilename: CactusAssetSpec | string
+): CactusAssetSpec {
+  if (typeof specOrFilename !== "string") return specOrFilename;
+  const found = assetSpecsOf(entry).find((s) => s.filename === specOrFilename);
+  if (!found) {
+    throw new Error(
+      `No asset spec for filename ${JSON.stringify(specOrFilename)} in catalog entry ${entry.model_id}`
+    );
+  }
+  return found;
 }
 
 // ============================================================================
@@ -248,7 +341,7 @@ export async function deleteCactusSession(id: string): Promise<boolean> {
 async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<void> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
-  for (const filename of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
+  for (const filename of assetFilenames(entry)) {
     const url = cactusAssetUrl(entry, filename);
     try {
       await cache.delete(url);
