@@ -863,11 +863,11 @@ describe("WebBrowser_Chat session cache", () => {
       );
       // Cache is at messageCount=2 after turn 1.
       expect(_testOnly.sessions.getChromeSession(sid)?.messageCount).toBe(2);
-      // Now simulate a retroactive history mutation: a NEW user message at
-      // index 0 (so lastUserIdx becomes 2, not 1). Cache's messageCount=2
-      // != expectedPriorCount=2? Actually equal here, so try shrinking.
-      // Shrink: a single user message again. lastUserIdx=0, but cache
-      // says messageCount=2 → mismatch → rebuild.
+      // Now simulate a retroactive history mutation by shrinking the history:
+      // the caller resends a single user message (messages.length=1, so
+      // lastUserIdx=0 and expectedPriorCount=1), but the cache still has
+      // messageCount=2 from the previous turn. The mismatch (1 !== 2) forces
+      // the run-fn to destroy the cached session and rebuild from scratch.
       await WebBrowser_TextGeneration_Unified(
         { messages: [userMsg("reset")] },
         undefined,
