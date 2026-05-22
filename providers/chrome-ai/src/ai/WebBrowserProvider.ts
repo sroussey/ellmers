@@ -8,18 +8,22 @@ import type {
   AiProviderPreviewRunFn,
   AiProviderRunFnRegistration,
   Capability,
-  ModelConfig,
   ModelRecord,
 } from "@workglow/ai/worker";
-import { AiProvider, getAiProviderRegistry } from "@workglow/ai/worker";
-import type { TaskInput } from "@workglow/task-graph";
+import { AiProvider } from "@workglow/ai/worker";
 import {
+  CONSERVATIVE_PROBED_CAPABILITIES,
   inferWebBrowserCapabilities,
   webBrowserWorkerRunFnSpecs,
 } from "./common/WebBrowser_Capabilities";
+import {
+  probeWebBrowserCapabilities,
+  type WebBrowserProbeFactory,
+  type WebBrowserProbedCapabilities,
+} from "./common/WebBrowser_CapabilityProbe";
 import { WEB_BROWSER } from "./common/WebBrowser_Constants";
 import type { WebBrowserModelConfig } from "./common/WebBrowser_ModelSchema";
-import { disposeWebBrowserSession } from "./common/WebBrowser_Sessions";
+import { deleteChromeSession } from "./common/WebBrowser_Sessions";
 
 /**
  * AI provider for Chrome Built-in AI APIs (Gemini Nano on-device).
@@ -33,7 +37,15 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly displayName = "Chrome Built-in AI";
   readonly isLocal = true;
   readonly supportsBrowser = true;
-  private readonly sessionModels = new Map<string, WebBrowserModelConfig>();
+
+  /**
+   * Result of {@link probeWebBrowserCapabilities}. Until the probe resolves
+   * we report the conservative subset (no `json-mode`, no `tool-use`) so we
+   * never advertise a capability a downstream task can't fulfil. Callers
+   * that need the final answer should await {@link ready}.
+   */
+  private probedCaps: WebBrowserProbedCapabilities = CONSERVATIVE_PROBED_CAPABILITIES;
+  private readonly probeReady: Promise<void>;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<
@@ -47,44 +59,43 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
       string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       AiProviderPreviewRunFn<any, any, WebBrowserModelConfig>
-    >
+    >,
+    /**
+     * Test seam: injectable probe factory. Production callers leave this
+     * undefined so the probe resolves against the real `LanguageModel`
+     * global.
+     */
+    probeFactory?: WebBrowserProbeFactory
   ) {
     super(promiseRunFns, previewTasks);
+    this.probeReady = probeWebBrowserCapabilities(probeFactory).then((result) => {
+      this.probedCaps = result;
+    });
+  }
+
+  /**
+   * Resolves once the capability probe has completed. After this point
+   * {@link inferCapabilities} reflects what the browser actually supports.
+   * Before this point it returns the conservative subset.
+   */
+  ready(): Promise<void> {
+    return this.probeReady;
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
-    return inferWebBrowserCapabilities(model);
-  }
-
-  override createSession(model: ModelConfig): string {
-    const sessionId = crypto.randomUUID();
-    this.sessionModels.set(sessionId, model as WebBrowserModelConfig);
-    return sessionId;
-  }
-
-  override async disposeSession(sessionId: string): Promise<void> {
-    const model = this.sessionModels.get(sessionId);
-    this.sessionModels.delete(sessionId);
-    if (!model) {
-      await disposeWebBrowserSession(sessionId);
-      return;
-    }
-
-    const disposeFn = getAiProviderRegistry().getRunFnFor(this.name, ["model.dispose"]);
-    if (!disposeFn) {
-      await disposeWebBrowserSession(sessionId);
-      return;
-    }
-
-    await disposeFn(
-      { model, sessionId } as TaskInput,
-      model,
-      AbortSignal.timeout(30_000),
-      () => {}
-    );
+    return inferWebBrowserCapabilities(model, this.probedCaps);
   }
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
     return webBrowserWorkerRunFnSpecs();
+  }
+
+  /**
+   * Releases any cached Chrome `LanguageModel` session for the given id.
+   * `AiChatTask` registers this via `ResourceScope` so multi-turn chat
+   * sessions are torn down when the owning run completes.
+   */
+  override async disposeSession(sessionId: string): Promise<void> {
+    deleteChromeSession(sessionId);
   }
 }

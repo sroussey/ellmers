@@ -11,7 +11,12 @@ import type {
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
 
-import { assertAvailability, getApi, snapshotStreamToSnapshots } from "./WebBrowser_ChromeHelpers";
+import {
+  createDownloadMonitor,
+  getApi,
+  getChromeGlobal,
+  snapshotStreamToSnapshots,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextTranslation: AiProviderRunFn<
@@ -19,23 +24,25 @@ export const WebBrowser_TextTranslation: AiProviderRunFn<
   TextTranslationTaskOutput,
   WebBrowserModelConfig
 > = async (input, _model, signal, emit) => {
-  const factory = getApi("Translator", typeof Translator !== "undefined" ? Translator : undefined);
-  const langOptions: TranslatorCreateCoreOptions = {
+  const factory = getApi("Translator", getChromeGlobal<typeof Translator>("Translator"));
+
+  const status = await factory.availability({
     sourceLanguage: input.source_lang,
     targetLanguage: input.target_lang,
-  };
-  let status: Availability;
-  try {
-    status = await factory.availability(langOptions);
-  } catch {
+  });
+  if (status === "unavailable") {
     throw new PermanentJobError(
-      `Chrome Built-in AI "Translator" is not available (status: "no"). ` +
+      `Chrome Built-in AI "Translator" is not available for ${input.source_lang} → ${input.target_lang}. ` +
         `Ensure you are using a compatible Chrome version with the flag enabled.`
     );
   }
-  assertAvailability("Translator", status);
 
-  const translator = await factory.create(langOptions);
+  const translator = await factory.create({
+    signal,
+    sourceLanguage: input.source_lang,
+    targetLanguage: input.target_lang,
+    monitor: createDownloadMonitor(emit),
+  });
   try {
     const stream = translator.translateStreaming(input.text, { signal });
     for await (const e of snapshotStreamToSnapshots<TextTranslationTaskOutput>(stream, (text) => ({

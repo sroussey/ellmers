@@ -10,7 +10,12 @@ import type {
   TextLanguageDetectionTaskOutput,
 } from "@workglow/ai";
 
-import { assertAvailability, getApi } from "./WebBrowser_ChromeHelpers";
+import {
+  createDownloadMonitor,
+  ensureAvailable,
+  getApi,
+  getChromeGlobal,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
@@ -20,11 +25,14 @@ export const WebBrowser_TextLanguageDetection: AiProviderRunFn<
 > = async (input, _model, signal, emit) => {
   const factory = getApi(
     "LanguageDetector",
-    typeof LanguageDetector !== "undefined" ? LanguageDetector : undefined
+    getChromeGlobal<typeof LanguageDetector>("LanguageDetector")
   );
-  assertAvailability("LanguageDetector", await factory.availability());
+  await ensureAvailable("LanguageDetector", factory);
 
-  const detector = await factory.create();
+  const detector = await factory.create({
+    signal,
+    monitor: createDownloadMonitor(emit),
+  });
   try {
     const detected = await detector.detect(input.text, { signal });
     const languages = detected

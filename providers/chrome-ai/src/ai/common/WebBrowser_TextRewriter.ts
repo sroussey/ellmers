@@ -7,8 +7,10 @@
 import type { AiProviderRunFn, TextRewriterTaskInput, TextRewriterTaskOutput } from "@workglow/ai";
 
 import {
-  assertAvailability,
+  createDownloadMonitor,
+  ensureAvailable,
   getApi,
+  getChromeGlobal,
   getConfig,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
@@ -19,24 +21,22 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
   TextRewriterTaskOutput,
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
-  const factory = getApi("Rewriter", typeof Rewriter !== "undefined" ? Rewriter : undefined);
-  assertAvailability("Rewriter", await factory.availability());
+  const factory = getApi("Rewriter", getChromeGlobal<typeof Rewriter>("Rewriter"));
+  await ensureAvailable("Rewriter", factory);
   const config = getConfig(model);
 
   const rewriter = await factory.create({
+    signal,
     tone: config.rewriter_tone,
     length: config.rewriter_length,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = rewriter.rewriteStreaming(input.text, {
       signal,
       context: input.prompt,
     });
-    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
+    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(stream, "text")) {
       emit(e);
     }
   } finally {

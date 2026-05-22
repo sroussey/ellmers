@@ -7,156 +7,120 @@
 import type {
   AiChatProviderInput,
   AiChatProviderOutput,
-  AiEmit,
   AiProviderRunFn,
   ChatMessage,
 } from "@workglow/ai";
-import { LANGUAGE_MODEL_AVAILABILITY_OPTIONS } from "./WebBrowser_ApiBinding";
-import { assertAvailability, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
+
+import {
+  buildInitialPromptsFromHistory,
+  findLastUserIndex,
+  messageText,
+} from "./WebBrowser_ChatHistory";
+import {
+  createDownloadMonitor,
+  ensureAvailable,
+  getApi,
+  getChromeGlobal,
+  snapshotStreamToTextDeltas,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 import {
-  disposeWebBrowserSession,
-  getWebBrowserModelKey,
-  getWebBrowserSession,
-  setWebBrowserSession,
-  touchWebBrowserSession,
+  deleteChromeSession,
+  dropChromeSessionEntry,
+  getChromeSession,
+  setChromeSession,
 } from "./WebBrowser_Sessions";
-
-interface PromptSession {
-  promptStreaming(prompt: string, options: { signal: AbortSignal }): ReadableStream<string>;
-  destroy(): void;
-}
-
-interface PromptFactory {
-  availability(options?: unknown): Promise<unknown>;
-  create(options?: unknown): Promise<PromptSession>;
-}
-
-function languageModelFactory(): PromptFactory | undefined {
-  const globals = globalThis as typeof globalThis & {
-    LanguageModel?: PromptFactory;
-    ai?: { languageModel?: PromptFactory };
-  };
-  return globals.LanguageModel ?? globals.ai?.languageModel;
-}
-
-function textFromMessage(message: ChatMessage): string {
-  return message.content
-    .filter((block) => block.type === "text")
-    .map((block) => (block as { type: "text"; text: string }).text)
-    .join("");
-}
-
-function latestUserText(messages: ReadonlyArray<ChatMessage>): string {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role !== "user") continue;
-    const text = textFromMessage(messages[i]);
-    if (text.length > 0) return text;
-  }
-  return "";
-}
-
-function recentHistory(messages: ReadonlyArray<ChatMessage>): string {
-  const previous = messages.slice(0, -1).slice(-8);
-  if (previous.length === 0) return "";
-  return previous
-    .map((message) => `${message.role.toUpperCase()}: ${textFromMessage(message)}`)
-    .filter((line) => !line.endsWith(": "))
-    .join("\n");
-}
-
-function promptFallback(input: AiChatProviderInput): string {
-  if (typeof input.prompt === "string") return input.prompt;
-  return input.prompt
-    .filter((block) => block.type === "text")
-    .map((block) => (block as { type: "text"; text: string }).text)
-    .join("");
-}
-
-function buildPrompt(input: AiChatProviderInput): string {
-  const messages = input.messages ?? [];
-  const history = recentHistory(messages);
-  const userText = latestUserText(messages) || promptFallback(input);
-  const parts = [
-    input.systemPrompt ? `SYSTEM AND CONTEXT:\n${input.systemPrompt}` : "",
-    history ? `RECENT HISTORY:\n${history}` : "",
-    `USER:\n${userText}`,
-  ];
-  return parts.filter((part) => part.length > 0).join("\n\n");
-}
-
-function isDestroyedSessionError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === "InvalidStateError") return true;
-  const message = error instanceof Error ? error.message : String(error);
-  return /session has been destroyed|session.*destroyed/i.test(message);
-}
-
-async function createPromptSession(): Promise<PromptSession> {
-  const factory = getApi("LanguageModel", languageModelFactory());
-  assertAvailability(
-    "LanguageModel",
-    (await factory.availability(LANGUAGE_MODEL_AVAILABILITY_OPTIONS)) as never
-  );
-  return (await factory.create({})) as PromptSession;
-}
-
-async function getOrCreateSession(
-  sessionId: string | undefined,
-  model: WebBrowserModelConfig | undefined
-): Promise<{ session: PromptSession; shouldDestroyOnComplete: boolean }> {
-  if (sessionId) {
-    const existing = getWebBrowserSession(sessionId);
-    if (existing)
-      return { session: existing.session as PromptSession, shouldDestroyOnComplete: false };
-  }
-
-  const session = await createPromptSession();
-  if (!sessionId) return { session, shouldDestroyOnComplete: true };
-
-  setWebBrowserSession(sessionId, {
-    modelKey: getWebBrowserModelKey(model),
-    session,
-  });
-  return { session, shouldDestroyOnComplete: false };
-}
-
-async function runPrompt(
-  input: AiChatProviderInput,
-  model: WebBrowserModelConfig | undefined,
-  signal: AbortSignal,
-  emit: AiEmit<AiChatProviderOutput>,
-  sessionId: string | undefined
-): Promise<void> {
-  const { session, shouldDestroyOnComplete } = await getOrCreateSession(sessionId, model);
-  try {
-    const stream = session.promptStreaming(buildPrompt(input), { signal });
-    for await (const event of snapshotStreamToTextDeltas<AiChatProviderOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
-      emit(event);
-    }
-    if (sessionId) touchWebBrowserSession(sessionId);
-  } finally {
-    if (shouldDestroyOnComplete) {
-      session.destroy();
-    }
-  }
-}
 
 export const WebBrowser_Chat: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   WebBrowserModelConfig
-> = async (input, model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, _model, signal, emit, _outputSchema, sessionId) => {
+  const factory = getApi("LanguageModel", getChromeGlobal<typeof LanguageModel>("LanguageModel"));
+  await ensureAvailable("LanguageModel", factory);
+
+  const messages: readonly ChatMessage[] = input.messages ?? [];
+  const lastUserIdx = findLastUserIndex(messages);
+  if (lastUserIdx < 0) {
+    throw new Error("WebBrowser_Chat: input.messages contains no user message");
+  }
+  const lastUser = messages[lastUserIdx];
+  const promptText = messageText(lastUser);
+  if (promptText.length === 0) {
+    throw new Error("WebBrowser_Chat: trailing user message has no text content");
+  }
+
+  // Cache reuse requires: same sessionId, AND the cache's high-water mark
+  // equals the number of messages we expect Chrome to have heard BEFORE
+  // this turn (everything up to but not including the trailing user
+  // message). This is robust against retroactive edits to `messages` and
+  // against task resets that re-run from a smaller history.
+  let cached = sessionId ? getChromeSession(sessionId) : undefined;
+  const expectedPriorCount = lastUserIdx;
+  if (sessionId !== undefined && cached && cached.messageCount !== expectedPriorCount) {
+    // History diverged — tear down the stale session and rebuild.
+    deleteChromeSession(sessionId);
+    cached = undefined;
+  }
+
+  const usedCachedSession = cached !== undefined;
+  let session: LanguageModel;
+  if (cached) {
+    session = cached.session;
+  } else {
+    // Fresh session: replay all prior history via initialPrompts so the
+    // model has full context for the trailing user turn.
+    const { initialPrompts } = buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx));
+    session = await factory.create({
+      signal,
+      // `temperature` is `@deprecated` for non-extension contexts in the
+      // current Chrome spec; Chrome silently ignores it on the open web.
+      // Passed through so extension callers still get the knob.
+      temperature: input.temperature ?? undefined,
+      initialPrompts,
+      monitor: createDownloadMonitor(emit),
+    });
+  }
+
+  let cacheWritten = false;
   try {
-    await runPrompt(input, model, signal, emit, sessionId);
-  } catch (error) {
-    if (!sessionId || signal.aborted || !isDestroyedSessionError(error)) {
-      throw error;
+    // `promptStreaming` both runs the turn AND mutates the session's
+    // internal history so the next call's "prior count" is
+    // `messages.length + 1`.
+    const stream = session.promptStreaming(promptText, { signal });
+    for await (const e of snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text")) {
+      emit(e);
     }
-    await disposeWebBrowserSession(sessionId);
-    await runPrompt(input, model, signal, emit, sessionId);
+    if (sessionId !== undefined) {
+      // After a successful prompt the session contains everything in
+      // `messages` plus one assistant turn. Ownership of `session` transfers
+      // to the cache; `WebBrowserProvider.disposeSession` (wired into
+      // ResourceScope by AiChatTask) reclaims it at end of run.
+      setChromeSession(sessionId, {
+        session,
+        messageCount: messages.length + 1,
+      });
+      cacheWritten = true;
+    }
+  } finally {
+    // Two cases reach here without `cacheWritten`:
+    //   1. We created a fresh session and prompt threw / no sessionId — the
+    //      session is private to this call, just destroy it.
+    //   2. We reused a cached session and prompt threw mid-stream — Chrome's
+    //      session may now be in an inconsistent state (partial user turn,
+    //      no assistant response), so the cache entry is poisoned. Drop the
+    //      entry (only if it still points at our handle, to avoid trampling
+    //      a replacement) and destroy.
+    // Either way the next chat turn will rebuild from full history.
+    if (!cacheWritten) {
+      if (sessionId !== undefined && usedCachedSession) {
+        dropChromeSessionEntry(sessionId, session);
+      }
+      try {
+        session.destroy();
+      } catch {
+        // best-effort
+      }
+    }
   }
 };

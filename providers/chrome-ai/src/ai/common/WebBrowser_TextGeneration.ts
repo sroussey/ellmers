@@ -10,36 +10,43 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 
-import { LANGUAGE_MODEL_AVAILABILITY_OPTIONS } from "./WebBrowser_ApiBinding";
-import { assertAvailability, getApi, snapshotStreamToTextDeltas } from "./WebBrowser_ChromeHelpers";
+import {
+  createDownloadMonitor,
+  ensureAvailable,
+  getApi,
+  getChromeGlobal,
+  snapshotStreamToTextDeltas,
+} from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
+/**
+ * Single-shot text generation. `TextGenerationTask` doesn't allocate a
+ * session id (only stateful tasks like {@link AiChatTask} do), so this path
+ * always creates a fresh session and destroys it at the end of the turn.
+ * Multi-turn chat is handled by {@link WebBrowser_Chat}, which reuses
+ * sessions via the {@link deleteChromeSession} disposer wired into
+ * `ResourceScope`.
+ *
+ * `temperature` is `@deprecated` for non-extension contexts in the current
+ * Chrome spec and silently ignored on the open web. Passed through anyway
+ * so extension callers still get the knob.
+ */
 export const WebBrowser_TextGeneration: AiProviderRunFn<
   TextGenerationTaskInput,
   TextGenerationTaskOutput,
   WebBrowserModelConfig
 > = async (input, _model, signal, emit) => {
-  const factory = getApi(
-    "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
-  );
-  assertAvailability(
-    "LanguageModel",
-    await factory.availability(LANGUAGE_MODEL_AVAILABILITY_OPTIONS)
-  );
+  const factory = getApi("LanguageModel", getChromeGlobal<typeof LanguageModel>("LanguageModel"));
+  await ensureAvailable("LanguageModel", factory);
 
   const session = await factory.create({
+    signal,
     temperature: input.temperature ?? undefined,
+    monitor: createDownloadMonitor(emit),
   });
   try {
     const stream = session.promptStreaming(input.prompt, { signal });
-    for await (const e of snapshotStreamToTextDeltas<TextGenerationTaskOutput>(
-      stream,
-      "text",
-      (text) => ({
-        text,
-      })
-    )) {
+    for await (const e of snapshotStreamToTextDeltas<TextGenerationTaskOutput>(stream, "text")) {
       emit(e);
     }
   } finally {
