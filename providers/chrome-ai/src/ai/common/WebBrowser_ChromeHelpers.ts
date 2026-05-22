@@ -34,6 +34,10 @@ export function getApi<T>(name: string, global: T | undefined): T {
   return global;
 }
 
+export function getChromeGlobal<T = unknown>(name: string): T | undefined {
+  return (globalThis as unknown as Record<string, T | undefined>)[name];
+}
+
 export async function ensureAvailable(
   name: string,
   factory: { availability(options?: never): Promise<Availability> },
@@ -47,6 +51,16 @@ export async function ensureAvailable(
     );
   }
   return status;
+}
+
+export function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  const entries = keys.map(
+    (k) => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`
+  );
+  return `{${entries.join(",")}}`;
 }
 
 /**
@@ -122,7 +136,7 @@ export function createDownloadMonitor<Output>(
 export async function* snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
   port: string,
-  buildFallbackOutput: (text: string) => Output
+  _buildFallbackOutput: (text: string) => Output
 ): AsyncIterable<StreamEvent<Output>> {
   const reader = stream.getReader();
   let previousSnapshot = "";
@@ -137,8 +151,8 @@ export async function* snapshotStreamToTextDeltas<Output>(
           yield { type: "text-delta", port, textDelta: delta };
         }
       } else {
-        previousSnapshot = value;
-        yield { type: "snapshot", data: buildFallbackOutput(value) };
+        previousSnapshot += value;
+        yield { type: "text-delta", port, textDelta: value };
       }
     }
   } finally {

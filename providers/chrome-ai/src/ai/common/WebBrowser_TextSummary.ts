@@ -11,6 +11,7 @@ import {
   ensureAvailable,
   getApi,
   getConfig,
+  getChromeGlobal,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
@@ -20,7 +21,7 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   TextSummaryTaskOutput,
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
-  const factory = getApi("Summarizer", typeof Summarizer !== "undefined" ? Summarizer : undefined);
+  const factory = getApi("Summarizer", getChromeGlobal<typeof Summarizer>("Summarizer"));
   await ensureAvailable("Summarizer", factory);
   const config = getConfig(model);
 

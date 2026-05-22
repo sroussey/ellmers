@@ -35,6 +35,8 @@ export interface ChromeChatSessionState {
    * and can't be hot-swapped per turn.
    */
   readonly toolsFingerprint?: string;
+  /** Stable fingerprint of the filtered chat history replayed into the session. */
+  readonly historyFingerprint?: string;
 }
 
 const chromeSessions = new Map<string, ChromeChatSessionState>();

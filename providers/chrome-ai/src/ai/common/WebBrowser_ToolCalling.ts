@@ -10,7 +10,6 @@ import type {
   ToolCall,
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
-  ToolDefinition,
 } from "@workglow/ai";
 import { buildToolDescription, filterValidToolCalls } from "@workglow/ai";
 import { uuid4 } from "@workglow/util";
@@ -27,15 +26,10 @@ import {
   createDownloadMonitor,
   ensureAvailable,
   getApi,
+  getChromeGlobal,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
-import {
-  deleteChromeSession,
-  dropChromeSessionEntry,
-  getChromeSession,
-  setChromeSession,
-} from "./WebBrowser_Sessions";
 
 function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
   if (typeof prompt === "string") return prompt;
@@ -64,7 +58,6 @@ function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
 function buildToolCallPrompt(input: ToolCallingTaskInput): {
   initialPrompts: LanguageModelCreateOptions["initialPrompts"];
   promptText: string;
-  priorMessageCount: number;
 } {
   const hasMessages = Array.isArray(input.messages) && input.messages.length > 0;
   if (hasMessages) {
@@ -74,37 +67,19 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
       return {
         initialPrompts: [],
         promptText: flattenPrompt(input.prompt),
-        priorMessageCount: messages.length,
       };
     }
+    const { initialPrompts } = buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx));
     return {
-      initialPrompts: buildInitialPromptsFromHistory(messages.slice(0, lastUserIdx)),
+      initialPrompts,
       promptText: messageText(messages[lastUserIdx]),
-      priorMessageCount: lastUserIdx,
     };
   }
 
   const initialPrompts: LanguageModelCreateOptions["initialPrompts"] = input.systemPrompt
     ? [{ role: "system", content: input.systemPrompt }]
     : [];
-  return { initialPrompts, promptText: flattenPrompt(input.prompt), priorMessageCount: 0 };
-}
-
-/**
- * Stable fingerprint of the tool set bound at `create()` time. Tool sets
- * are compared by sorted name list — Chrome can't hot-swap tools per turn,
- * so any change to the set invalidates a cached session. We intentionally
- * don't include each tool's `inputSchema` here: if the *names* match,
- * reuse; a schema-only edit on a same-named tool is unusual enough that
- * the modest correctness risk is preferable to the cache thrash of hashing
- * full schemas every turn.
- */
-function toolsFingerprint(tools: readonly ToolDefinition[]): string {
-  return tools
-    .map((t) => t.name)
-    .filter((n): n is string => typeof n === "string" && n.length > 0)
-    .sort()
-    .join(",");
+  return { initialPrompts, promptText: flattenPrompt(input.prompt) };
 }
 
 /**
@@ -130,18 +105,10 @@ function toolsFingerprint(tools: readonly ToolDefinition[]): string {
  * Chrome spec and silently ignored on the open web. Passed through anyway
  * so extension callers still get the knob.
  *
- * ## Session reuse
- *
- * When `sessionId` is provided and `input.messages` is present we *may*
- * cache the underlying `LanguageModel`. There's a real correctness risk
- * here: Chrome's tool-calling loop appends tool-result turns to the
- * session's internal state opaquely. Reusing the cached session across
- * orchestrator turns would double-feed those results once the orchestrator
- * also re-supplies them via `messages`. To stay safe:
- *  - We only cache when the orchestrator is driving via `input.messages`.
- *  - Cache reuse requires that the tool set hasn't changed.
- *  - On any error we drop and destroy the cache entry — Chrome's internal
- *    state may be in the middle of a tool-call cycle.
+ * We intentionally create a fresh Chrome session for every turn. Chrome's
+ * internal tool loop appends tool-result state opaquely, so cross-turn reuse
+ * would double-feed tool results once the orchestrator also supplies them via
+ * `messages`.
  *
  * ## Argument validation (H3)
  *
@@ -160,7 +127,7 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
 > = async (input, _model, signal, emit, _outputSchema, sessionId) => {
   const factory = getApi(
     "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
+    getChromeGlobal<typeof LanguageModel>("LanguageModel")
   );
   await ensureAvailable("LanguageModel", factory);
 
@@ -205,40 +172,14 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
           },
         }));
 
-  const { initialPrompts, promptText, priorMessageCount } = buildToolCallPrompt(input);
-  const fingerprint = toolsFingerprint(input.tools);
-
-  // Safety guard: only allow cache reuse when the orchestrator drives via
-  // `input.messages`. In the bare-prompt path Chrome's session may carry
-  // opaque tool-call state from a prior turn that we can't reason about.
-  const cacheable = sessionId !== undefined && Array.isArray(input.messages);
-
-  let cached = cacheable && sessionId ? getChromeSession(sessionId) : undefined;
-  if (
-    cacheable &&
-    sessionId &&
-    cached &&
-    (cached.messageCount !== priorMessageCount || cached.toolsFingerprint !== fingerprint)
-  ) {
-    deleteChromeSession(sessionId);
-    cached = undefined;
-  }
-
-  const usedCachedSession = cached !== undefined;
-  let session: LanguageModel;
-  if (cached) {
-    session = cached.session;
-  } else {
-    session = await factory.create({
-      signal,
-      temperature: input.temperature ?? undefined,
-      tools: chromeTools.length > 0 ? chromeTools : undefined,
-      initialPrompts,
-      monitor: createDownloadMonitor(emit),
-    });
-  }
-
-  let cacheWritten = false;
+  const { initialPrompts, promptText } = buildToolCallPrompt(input);
+  const session = await factory.create({
+    signal,
+    temperature: input.temperature ?? undefined,
+    tools: chromeTools.length > 0 ? chromeTools : undefined,
+    initialPrompts,
+    monitor: createDownloadMonitor(emit),
+  });
   try {
     const stream = session.promptStreaming(promptText, { signal });
     // Forward text-delta and snapshot events; swallow the inner `finish`
@@ -275,27 +216,12 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
     if (validated.length > 0) {
       emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
     }
-    if (cacheable && sessionId !== undefined) {
-      // Watermark post-turn count: prior history + 1 trailing user turn +
-      // 1 assistant turn. Matches WebBrowser_Chat's convention.
-      setChromeSession(sessionId, {
-        session,
-        messageCount: priorMessageCount + 2,
-        toolsFingerprint: fingerprint,
-      });
-      cacheWritten = true;
-    }
     emit({ type: "finish", data: {} as ToolCallingTaskOutput });
   } finally {
-    if (!cacheWritten) {
-      if (cacheable && sessionId !== undefined && usedCachedSession) {
-        dropChromeSessionEntry(sessionId, session);
-      }
-      try {
-        session.destroy();
-      } catch {
-        // best-effort
-      }
+    try {
+      session.destroy();
+    } catch {
+      // best-effort
     }
   }
 };

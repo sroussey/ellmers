@@ -14,6 +14,7 @@ import {
   createDownloadMonitor,
   ensureAvailable,
   getApi,
+  getChromeGlobal,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
@@ -37,7 +38,7 @@ export const WebBrowser_TextGeneration: AiProviderRunFn<
 > = async (input, _model, signal, emit) => {
   const factory = getApi(
     "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
+    getChromeGlobal<typeof LanguageModel>("LanguageModel")
   );
   await ensureAvailable("LanguageModel", factory);
 

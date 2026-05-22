@@ -5,6 +5,7 @@
  */
 
 import type { ChatMessage } from "@workglow/ai";
+import { canonicalStringify } from "./WebBrowser_ChromeHelpers";
 
 /**
  * Shared mapping helpers between {@link WebBrowser_Chat} and
@@ -31,6 +32,11 @@ export function findLastUserIndex(messages: readonly ChatMessage[]): number {
   return -1;
 }
 
+export interface ChromeInitialPromptState {
+  readonly initialPrompts: LanguageModelCreateOptions["initialPrompts"];
+  readonly fingerprint: string;
+}
+
 /**
  * Build the `initialPrompts` array for `LanguageModel.create()` from a slice
  * of conversation history.
@@ -44,7 +50,7 @@ export function findLastUserIndex(messages: readonly ChatMessage[]): number {
  */
 export function buildInitialPromptsFromHistory(
   history: readonly ChatMessage[]
-): LanguageModelCreateOptions["initialPrompts"] {
+): ChromeInitialPromptState {
   const tail: LanguageModelMessage[] = [];
   let leadingSystem: LanguageModelSystemMessage | undefined;
 
@@ -63,8 +69,12 @@ export function buildInitialPromptsFromHistory(
     }
   }
 
-  if (leadingSystem === undefined) {
-    return tail.length === 0 ? [] : tail;
-  }
-  return [leadingSystem, ...tail];
+  const initialPrompts: LanguageModelCreateOptions["initialPrompts"] =
+    leadingSystem === undefined
+      ? (tail.length === 0 ? [] : tail)
+      : ([leadingSystem, ...tail] as [LanguageModelSystemMessage, ...LanguageModelMessage[]]);
+  return {
+    initialPrompts,
+    fingerprint: canonicalStringify(initialPrompts),
+  };
 }

@@ -13,6 +13,7 @@ import { PermanentJobError } from "@workglow/job-queue";
 
 import {
   createDownloadMonitor,
+  getChromeGlobal,
   getApi,
   snapshotStreamToSnapshots,
 } from "./WebBrowser_ChromeHelpers";
@@ -23,7 +24,7 @@ export const WebBrowser_TextTranslation: AiProviderRunFn<
   TextTranslationTaskOutput,
   WebBrowserModelConfig
 > = async (input, _model, signal, emit) => {
-  const factory = getApi("Translator", typeof Translator !== "undefined" ? Translator : undefined);
+  const factory = getApi("Translator", getChromeGlobal<typeof Translator>("Translator"));
 
   const status = await factory.availability({
     sourceLanguage: input.source_lang,

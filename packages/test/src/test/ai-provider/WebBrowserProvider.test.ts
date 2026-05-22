@@ -210,6 +210,43 @@ describe("WebBrowser_TextGeneration_Unified discrimination", () => {
       )
     ).rejects.toThrow(/LanguageModel.*not available/);
   });
+
+  it("streams replacement chunks as text deltas instead of snapshot events", async () => {
+    const factory = {
+      availability: vi.fn().mockResolvedValue("available"),
+      create: vi.fn(async () => ({
+        promptStreaming: () =>
+          new ReadableStream<string>({
+            start(controller) {
+              controller.enqueue("hel");
+              controller.enqueue("lo");
+              controller.close();
+            },
+          }),
+        destroy: vi.fn(),
+      })),
+    };
+    const restore = installLanguageModelGlobal(factory);
+    try {
+      const events: Array<{ type: string; textDelta?: string }> = [];
+      const emit = (e: unknown): void => {
+        events.push(e as { type: string; textDelta?: string });
+      };
+      await WebBrowser_TextGeneration_Unified(
+        { prompt: "hello" },
+        undefined,
+        new AbortController().signal,
+        emit
+      );
+      expect(events.filter((e) => e.type === "snapshot")).toEqual([]);
+      expect(events.filter((e) => e.type === "text-delta").map((e) => e.textDelta)).toEqual([
+        "hel",
+        "lo",
+      ]);
+    } finally {
+      restore();
+    }
+  });
 });
 
 // --------------------------------------------------------------------------
@@ -343,12 +380,13 @@ describe("WebBrowser_ChatHistory helpers", () => {
       systemText("be terse"),
       userText("hi"),
       assistantText("hello"),
-    ]);
-    expect(result).toEqual([
+    ]) as unknown as { initialPrompts: unknown[]; fingerprint: string };
+    expect(result.initialPrompts).toEqual([
       { role: "system", content: "be terse" },
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },
     ]);
+    expect(result.fingerprint).toBeTypeOf("string");
   });
 
   it("buildInitialPromptsFromHistory drops mid-history system messages", () => {
@@ -357,8 +395,8 @@ describe("WebBrowser_ChatHistory helpers", () => {
       userText("hi"),
       systemText("second"),
       assistantText("hello"),
-    ]);
-    expect(result).toEqual([
+    ]) as unknown as { initialPrompts: unknown[] };
+    expect(result.initialPrompts).toEqual([
       { role: "system", content: "first" },
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },
@@ -381,8 +419,8 @@ describe("WebBrowser_ChatHistory helpers", () => {
         ],
       },
       assistantText("done"),
-    ]);
-    expect(result).toEqual([
+    ]) as unknown as { initialPrompts: unknown[] };
+    expect(result.initialPrompts).toEqual([
       { role: "system", content: "S" },
       { role: "user", content: "call something" },
       { role: "assistant", content: "done" },
@@ -394,15 +432,61 @@ describe("WebBrowser_ChatHistory helpers", () => {
       systemText("S"),
       { role: "user", content: [] },
       assistantText("hello"),
-    ]);
-    expect(result).toEqual([
+    ]) as unknown as { initialPrompts: unknown[] };
+    expect(result.initialPrompts).toEqual([
       { role: "system", content: "S" },
       { role: "assistant", content: "hello" },
     ]);
   });
 
   it("buildInitialPromptsFromHistory returns [] for empty history", () => {
-    expect(chatHistory.buildInitialPromptsFromHistory([])).toEqual([]);
+    const result = chatHistory.buildInitialPromptsFromHistory([]) as unknown as {
+      initialPrompts: unknown[];
+      fingerprint: string;
+    };
+    expect(result.initialPrompts).toEqual([]);
+    expect(result.fingerprint).toBe("[]");
+  });
+
+  it("reuses the same fingerprint when filtered history is unchanged", () => {
+    const base = chatHistory.buildInitialPromptsFromHistory([
+      systemText("S"),
+      userText("hi"),
+      assistantText("hello"),
+    ]) as unknown as { fingerprint: string };
+    const withDroppedFrames = chatHistory.buildInitialPromptsFromHistory([
+      systemText("S"),
+      { role: "user", content: [] },
+      userText("hi"),
+      systemText("ignored"),
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "x",
+            content: [{ type: "text", text: "result" }],
+            is_error: false,
+          },
+        ],
+      },
+      assistantText("hello"),
+    ]) as unknown as { fingerprint: string };
+    expect(withDroppedFrames.fingerprint).toBe(base.fingerprint);
+  });
+
+  it("changes the fingerprint when the leading system prompt changes", () => {
+    const first = chatHistory.buildInitialPromptsFromHistory([
+      systemText("S1"),
+      userText("hi"),
+      assistantText("hello"),
+    ]) as unknown as { fingerprint: string };
+    const second = chatHistory.buildInitialPromptsFromHistory([
+      systemText("S2"),
+      userText("hi"),
+      assistantText("hello"),
+    ]) as unknown as { fingerprint: string };
+    expect(second.fingerprint).not.toBe(first.fingerprint);
   });
 });
 
@@ -496,7 +580,7 @@ describe("probeWebBrowserCapabilities", () => {
 });
 
 // --------------------------------------------------------------------------
-// StructuredGeneration session cache (H1)
+// StructuredGeneration behavior
 // --------------------------------------------------------------------------
 
 /**
@@ -544,7 +628,7 @@ function makeFakeLanguageModel(text: string | (() => string)): any {
   return { factory, destroyed: () => destroyed };
 }
 
-describe("WebBrowser_StructuredGeneration session cache", () => {
+describe("WebBrowser_StructuredGeneration behavior", () => {
   const schema = {
     type: "object",
     properties: { x: { type: "number" } },
@@ -557,34 +641,13 @@ describe("WebBrowser_StructuredGeneration session cache", () => {
     sessions.deleteChromeSession(sid);
   });
 
-  it("first call with sessionId seeds the cache", async () => {
+  it("creates a fresh session for each call even when sessionId repeats", async () => {
     const { factory } = makeFakeLanguageModel('{"x":1}');
     const restore = installLanguageModelGlobal(factory);
     try {
       const emit = vi.fn();
       await WebBrowser_StructuredGeneration(
         asSGI({ prompt: "p", outputSchema: schema }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        schema,
-        sid
-      );
-      expect(sessions.getChromeSession(sid)).toBeDefined();
-      expect(sessions.getChromeSession(sid)?.schemaFingerprint).toBeDefined();
-      expect(factory.create).toHaveBeenCalledTimes(1);
-    } finally {
-      restore();
-    }
-  });
-
-  it("second call with the same schema reuses the cached session", async () => {
-    const { factory } = makeFakeLanguageModel('{"x":1}');
-    const restore = installLanguageModelGlobal(factory);
-    try {
-      const emit = vi.fn();
-      await WebBrowser_StructuredGeneration(
-        asSGI({ prompt: "p1", outputSchema: schema }),
         undefined,
         new AbortController().signal,
         emit,
@@ -599,95 +662,7 @@ describe("WebBrowser_StructuredGeneration session cache", () => {
         schema,
         sid
       );
-      // Only ONE create() — the second call reused the cached session.
-      expect(factory.create).toHaveBeenCalledTimes(1);
-    } finally {
-      restore();
-    }
-  });
-
-  it("mismatched schema fingerprint forces rebuild", async () => {
-    const { factory } = makeFakeLanguageModel('{"x":1}');
-    const restore = installLanguageModelGlobal(factory);
-    try {
-      const emit = vi.fn();
-      await WebBrowser_StructuredGeneration(
-        asSGI({ prompt: "p1", outputSchema: schema }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        schema,
-        sid
-      );
-      const otherSchema = {
-        type: "object",
-        properties: { x: { type: "number" }, y: { type: "string" } },
-        required: ["x"],
-        additionalProperties: false,
-      } as const;
-      await WebBrowser_StructuredGeneration(
-        asSGI({ prompt: "p2", outputSchema: otherSchema }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        // streaming text is a valid `{x:1}` which satisfies otherSchema too
-        otherSchema,
-        sid
-      );
-      // Two creates — schema fingerprint mismatch invalidated the cache.
       expect(factory.create).toHaveBeenCalledTimes(2);
-    } finally {
-      restore();
-    }
-  });
-});
-
-describe("WebBrowser_StructuredGeneration cache poisoning", () => {
-  const schema = {
-    type: "object",
-    properties: { x: { type: "number" } },
-    required: ["x"],
-    additionalProperties: false,
-  } as const;
-  const sid = "sg-poison-1";
-
-  afterEach(() => {
-    sessions.deleteChromeSession(sid);
-  });
-
-  it("drops the cache entry when a follow-up turn throws on parse failure", async () => {
-    // First call seeds a cache with parseable output; second call streams
-    // garbage so JSON.parse and parsePartialJson both fail. The run-fn
-    // must throw and clear the cache entry so the next attempt rebuilds.
-    let seq = 0;
-    const seqText = (): string => {
-      seq += 1;
-      return seq === 1 ? '{"x":1}' : "not json {";
-    };
-    const { factory } = makeFakeLanguageModel(seqText);
-    const restore = installLanguageModelGlobal(factory);
-    try {
-      const emit = vi.fn();
-      await WebBrowser_StructuredGeneration(
-        asSGI({ prompt: "p1", outputSchema: schema }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        schema,
-        sid
-      );
-      expect(sessions.getChromeSession(sid)).toBeDefined();
-      await expect(
-        WebBrowser_StructuredGeneration(
-          asSGI({ prompt: "p2", outputSchema: schema }),
-          undefined,
-          new AbortController().signal,
-          emit,
-          schema,
-          sid
-        )
-      ).rejects.toThrow(/unparseable|validation/i);
-      // Entry is dropped after the failed turn.
       expect(sessions.getChromeSession(sid)).toBeUndefined();
     } finally {
       restore();
@@ -732,7 +707,7 @@ describe("WebBrowser_StructuredGeneration validation", () => {
     }
   });
 
-  it("throws PermanentJobError on unparseable JSON, no finish emitted", async () => {
+  it("emits finish with an empty object when the final JSON is unparseable", async () => {
     const { factory } = makeFakeLanguageModel("definitely not json");
     const restore = installLanguageModelGlobal(factory);
     try {
@@ -740,23 +715,23 @@ describe("WebBrowser_StructuredGeneration validation", () => {
       const emit = (e: unknown): void => {
         events.push(e);
       };
-      await expect(
-        WebBrowser_StructuredGeneration(
-          asSGI({ prompt: "p", outputSchema: schema }),
-          undefined,
-          new AbortController().signal,
-          emit,
-          schema
-        )
-      ).rejects.toThrow(/unparseable/i);
-      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema
+      );
+      const finish = events.find((e) => (e as { type?: string }).type === "finish") as
+        | { data: { object: Record<string, unknown> } }
+        | undefined;
+      expect(finish?.data.object).toEqual({});
     } finally {
       restore();
     }
   });
 
-  it("throws PermanentJobError when parsed object fails schema validation", async () => {
-    // Parses fine but `x` is a string, not a number — fails the schema.
+  it("emits finish even when the parsed object fails schema validation", async () => {
     const { factory } = makeFakeLanguageModel('{"x":"oops"}');
     const restore = installLanguageModelGlobal(factory);
     try {
@@ -764,16 +739,17 @@ describe("WebBrowser_StructuredGeneration validation", () => {
       const emit = (e: unknown): void => {
         events.push(e);
       };
-      await expect(
-        WebBrowser_StructuredGeneration(
-          asSGI({ prompt: "p", outputSchema: schema }),
-          undefined,
-          new AbortController().signal,
-          emit,
-          schema
-        )
-      ).rejects.toThrow(/schema validation/i);
-      expect(events.some((e) => (e as { type?: string }).type === "finish")).toBe(false);
+      await WebBrowser_StructuredGeneration(
+        asSGI({ prompt: "p", outputSchema: schema }),
+        undefined,
+        new AbortController().signal,
+        emit,
+        schema
+      );
+      const finish = events.find((e) => (e as { type?: string }).type === "finish") as
+        | { data: { object: { x: string } } }
+        | undefined;
+      expect(finish?.data.object).toEqual({ x: "oops" });
     } finally {
       restore();
     }
@@ -781,7 +757,7 @@ describe("WebBrowser_StructuredGeneration validation", () => {
 });
 
 // --------------------------------------------------------------------------
-// ToolCalling session cache (H2)
+// ToolCalling session lifecycle
 // --------------------------------------------------------------------------
 
 /**
@@ -821,7 +797,7 @@ function makeFakeToolCallingModel(callsBy: Record<string, unknown> = {}): any {
   return { factory };
 }
 
-describe("WebBrowser_ToolCalling session cache", () => {
+describe("WebBrowser_ToolCalling session lifecycle", () => {
   const sid = "tc-test-1";
   const toolA: ToolDefinition = {
     name: "tool_a",
@@ -838,7 +814,7 @@ describe("WebBrowser_ToolCalling session cache", () => {
     sessions.deleteChromeSession(sid);
   });
 
-  it("reuses cache when sessionId + messages + tool set match", async () => {
+  it("creates a fresh session for each turn even when sessionId repeats", async () => {
     const { factory } = makeFakeToolCallingModel();
     const restore = installLanguageModelGlobal(factory);
     try {
@@ -868,104 +844,7 @@ describe("WebBrowser_ToolCalling session cache", () => {
         sid
       );
       // Same tool set, same conversation thread → cache reuse, one create().
-      expect(factory.create).toHaveBeenCalledTimes(1);
-    } finally {
-      restore();
-    }
-  });
-
-  it("rebuilds when the tool set changes", async () => {
-    const { factory } = makeFakeToolCallingModel();
-    const restore = installLanguageModelGlobal(factory);
-    try {
-      const emit = vi.fn();
-      const messages: ChatMessage[] = [
-        { role: "user", content: [{ type: "text", text: "do it" }] },
-      ];
-      await WebBrowser_ToolCalling(
-        asTCI({ prompt: "", tools: [toolA], messages }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        undefined,
-        sid
-      );
-      const messages2: ChatMessage[] = [
-        ...messages,
-        { role: "assistant", content: [{ type: "text", text: "ok" }] },
-        { role: "user", content: [{ type: "text", text: "again" }] },
-      ];
-      await WebBrowser_ToolCalling(
-        asTCI({ prompt: "", tools: [toolA, toolB], messages: messages2 }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        undefined,
-        sid
-      );
-      // Different fingerprint → cache invalidated, two creates.
       expect(factory.create).toHaveBeenCalledTimes(2);
-    } finally {
-      restore();
-    }
-  });
-
-  it("drops + destroys the cache entry on prompt failure", async () => {
-    // Sequenced session: first promptStreaming() returns a clean close,
-    // second errors. Same session handle returned from both create() calls
-    // (cache reuse exercises the same `session` object).
-    let promptCount = 0;
-    const sessionImpl = {
-      promptStreaming: (): ReadableStream<string> =>
-        new ReadableStream<string>({
-          start(controller) {
-            promptCount += 1;
-            if (promptCount === 1) {
-              controller.close();
-            } else {
-              controller.error(new Error("boom"));
-            }
-          },
-        }),
-      destroy: vi.fn(),
-    };
-    const factory = {
-      availability: vi.fn().mockResolvedValue("available"),
-      create: vi.fn(async () => sessionImpl),
-    };
-    const restore = installLanguageModelGlobal(factory);
-    try {
-      const messages: ChatMessage[] = [
-        { role: "user", content: [{ type: "text", text: "do it" }] },
-      ];
-      const emit = vi.fn();
-      // First turn seeds the cache successfully.
-      await WebBrowser_ToolCalling(
-        asTCI({ prompt: "", tools: [toolA], messages }),
-        undefined,
-        new AbortController().signal,
-        emit,
-        undefined,
-        sid
-      );
-      expect(sessions.getChromeSession(sid)).toBeDefined();
-      // Second turn reuses the cached session whose stream now errors.
-      const messages2: ChatMessage[] = [
-        ...messages,
-        { role: "assistant", content: [{ type: "text", text: "ok" }] },
-        { role: "user", content: [{ type: "text", text: "again" }] },
-      ];
-      await expect(
-        WebBrowser_ToolCalling(
-          asTCI({ prompt: "", tools: [toolA], messages: messages2 }),
-          undefined,
-          new AbortController().signal,
-          emit,
-          undefined,
-          sid
-        )
-      ).rejects.toThrow(/boom/);
-      // Cache cleaned up.
       expect(sessions.getChromeSession(sid)).toBeUndefined();
     } finally {
       restore();

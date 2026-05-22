@@ -11,6 +11,7 @@ import {
   ensureAvailable,
   getApi,
   getConfig,
+  getChromeGlobal,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
@@ -20,7 +21,7 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
   TextRewriterTaskOutput,
   WebBrowserModelConfig
 > = async (input, model, signal, emit) => {
-  const factory = getApi("Rewriter", typeof Rewriter !== "undefined" ? Rewriter : undefined);
+  const factory = getApi("Rewriter", getChromeGlobal<typeof Rewriter>("Rewriter"));
   await ensureAvailable("Rewriter", factory);
   const config = getConfig(model);
 

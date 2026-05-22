@@ -10,47 +10,17 @@ import type {
   StructuredGenerationTaskOutput,
 } from "@workglow/ai";
 import { PermanentJobError } from "@workglow/job-queue";
-import type { JsonSchema, SchemaNode } from "@workglow/util/schema";
+import type { JsonSchema } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import { parsePartialJson } from "@workglow/util/worker";
 
-import { createDownloadMonitor, ensureAvailable, getApi } from "./WebBrowser_ChromeHelpers";
-import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 import {
-  deleteChromeSession,
-  dropChromeSessionEntry,
-  getChromeSession,
-  setChromeSession,
-} from "./WebBrowser_Sessions";
-
-/**
- * Stable fingerprint of an `outputSchema` value, used to decide whether a
- * cached Chrome session can be reused. The schema is canonicalised by
- * sorting object keys before stringification so that semantically-equal
- * schemas with differently-ordered properties produce the same fingerprint.
- *
- * Implementation note: we intentionally do not hash this. A medium-length
- * JSON string is fine as a cache key — the cache lives in-memory, scoped
- * to a session id, and turn-over is low.
- */
-function schemaFingerprint(schema: object): string {
-  return canonicalStringify(schema);
-}
-
-/**
- * Recursively sorts object keys so `JSON.stringify` produces a stable
- * representation independent of insertion order. Arrays preserve order
- * (semantically meaningful in JSON Schema for e.g. `oneOf`/`enum`).
- */
-function canonicalStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  const entries = keys.map(
-    (k) => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`
-  );
-  return `{${entries.join(",")}}`;
-}
+  createDownloadMonitor,
+  ensureAvailable,
+  getApi,
+  getChromeGlobal,
+} from "./WebBrowser_ChromeHelpers";
+import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
 /**
  * Streaming run-fn for `["text.generation", "json-mode"]`.
@@ -72,33 +42,21 @@ function canonicalStringify(value: unknown): string {
  * Chrome spec and silently ignored on the open web. Passed through anyway
  * so extension callers still get the knob.
  *
- * ## Session reuse
- *
- * When `sessionId` is provided we cache the underlying `LanguageModel`
- * keyed by it, mirroring `WebBrowser_Chat`. Sessions are reused by
- * `sessionId`; however, if the `outputSchema` changes (detected via
- * `schemaFingerprint`), we rebuild the Chrome session because
- * `responseConstraint` state is bound to the schema first used with that
- * session, and mixing schemas on a reused session is undefined behavior.
- *
  * ## Validation
  *
  * Chrome's `responseConstraint` is best-effort, not a hard guarantee.
- * After streaming we validate both that the final accumulated text parses
- * as JSON *and* that the parsed object satisfies `outputSchema`. Failures
- * raise {@link PermanentJobError} — `StructuredGenerationTask` runs us
- * inside a retry loop that catches per-attempt errors, so throwing here
- * is the correct way to mark this attempt failed without misleading
- * downstream consumers with a `finish` carrying garbage.
+ * We still fail fast on malformed schemas, but parse/shape mismatches are
+ * surfaced via the `finish` payload so `StructuredGenerationTask` can apply
+ * its normal retry/repair loop around the provider response.
  */
 export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit, outputSchema, sessionId) => {
+> = async (input, _model, signal, emit, outputSchema, _sessionId) => {
   const factory = getApi(
     "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
+    getChromeGlobal<typeof LanguageModel>("LanguageModel")
   );
   await ensureAvailable("LanguageModel", factory);
 
@@ -110,43 +68,18 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   // Compile validator up-front so a bad schema fails fast (cheap, ahead of
   // any provider work). Re-thrown as PermanentJobError so the surrounding
   // retry loop doesn't waste attempts on a malformed schema.
-  let validator: SchemaNode;
   try {
-    validator = compileSchema(schema as JsonSchema);
+    compileSchema(schema as JsonSchema);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new PermanentJobError(`WebBrowser_StructuredGeneration: invalid outputSchema — ${msg}`);
   }
 
-  const fingerprint = schemaFingerprint(schema);
-
-  // StructuredGeneration has no message history of its own — successive
-  // calls with the same `sessionId` are independent prompts. We reuse the
-  // cached session purely to amortise the cost of `LanguageModel.create()`,
-  // gating only on schema fingerprint. The watermark we record is a
-  // monotonic call counter so existing fingerprint-aware cache consumers
-  // (and future evolution toward true multi-turn structured-gen) keep a
-  // consistent shape with `WebBrowser_Chat`.
-  let cached = sessionId ? getChromeSession(sessionId) : undefined;
-  if (sessionId !== undefined && cached && cached.schemaFingerprint !== fingerprint) {
-    deleteChromeSession(sessionId);
-    cached = undefined;
-  }
-  const priorMessageCount = cached?.messageCount ?? 0;
-
-  const usedCachedSession = cached !== undefined;
-  let session: LanguageModel;
-  if (cached) {
-    session = cached.session;
-  } else {
-    session = await factory.create({
-      signal,
-      temperature: input.temperature ?? undefined,
-      monitor: createDownloadMonitor(emit),
-    });
-  }
-
-  let cacheWritten = false;
+  const session = await factory.create({
+    signal,
+    temperature: input.temperature ?? undefined,
+    monitor: createDownloadMonitor(emit),
+  });
   try {
     const stream = session.promptStreaming(input.prompt, {
       signal,
@@ -179,57 +112,21 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
       reader.releaseLock();
     }
 
-    // Validate the *final* output. `responseConstraint` is best-effort on
-    // Chrome — if the model produces an unparseable continuation or a
-    // shape mismatch, we surface a permanent (per-attempt) error rather
-    // than fabricate a `{}` result that downstream code can't distinguish
-    // from a legitimate empty object.
     let finalObject: Record<string, unknown>;
     try {
       finalObject = JSON.parse(accumulatedJson) as Record<string, unknown>;
     } catch {
-      const partial = parsePartialJson(accumulatedJson);
-      if (partial === undefined) {
-        throw new PermanentJobError("Chrome AI returned unparseable JSON");
-      }
-      finalObject = partial as Record<string, unknown>;
-    }
-
-    const validation = validator.validate(finalObject);
-    if (!validation.valid) {
-      const firstError = validation.errors[0];
-      const detail = firstError?.message ?? "unknown validation error";
-      throw new PermanentJobError(`Chrome AI output failed schema validation: ${detail}`);
-    }
-
-    if (sessionId !== undefined) {
-      // Ownership of `session` transfers to the cache; the provider's
-      // `disposeSession` reclaims it at end of run.
-      setChromeSession(sessionId, {
-        session,
-        messageCount: priorMessageCount + 1,
-        schemaFingerprint: fingerprint,
-      });
-      cacheWritten = true;
+      finalObject = (parsePartialJson(accumulatedJson) ?? {}) as Record<string, unknown>;
     }
     emit({
       type: "finish",
       data: { object: finalObject } as StructuredGenerationTaskOutput,
     });
   } finally {
-    // Mirror WebBrowser_Chat's cache-poison handling. If we threw before
-    // writing the cache entry and we reused a cached session, the cache
-    // entry is now poisoned (partial state); drop it (only if it still
-    // points at our handle, to avoid trampling a replacement) and destroy.
-    if (!cacheWritten) {
-      if (sessionId !== undefined && usedCachedSession) {
-        dropChromeSessionEntry(sessionId, session);
-      }
-      try {
-        session.destroy();
-      } catch {
-        // best-effort
-      }
+    try {
+      session.destroy();
+    } catch {
+      // best-effort
     }
   }
 };

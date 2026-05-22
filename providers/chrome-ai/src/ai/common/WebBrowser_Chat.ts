@@ -20,6 +20,7 @@ import {
   createDownloadMonitor,
   ensureAvailable,
   getApi,
+  getChromeGlobal,
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
@@ -37,7 +38,7 @@ export const WebBrowser_Chat: AiProviderRunFn<
 > = async (input, _model, signal, emit, _outputSchema, sessionId) => {
   const factory = getApi(
     "LanguageModel",
-    typeof LanguageModel !== "undefined" ? LanguageModel : undefined
+    getChromeGlobal<typeof LanguageModel>("LanguageModel")
   );
   await ensureAvailable("LanguageModel", factory);
 
@@ -57,13 +58,15 @@ export const WebBrowser_Chat: AiProviderRunFn<
   // turn + the assistant response we generate — i.e. `messages.length + 1`
   // messages, which is the watermark we cache for the next call.
   const priorHistory = messages.slice(0, lastUserIdx);
+  const { initialPrompts, fingerprint: historyFingerprint } =
+    buildInitialPromptsFromHistory(priorHistory);
 
   // Cache hygiene: only reuse the cached session if its watermark exactly
   // matches the history we'd otherwise re-feed. Out-of-sync caches (task
   // reset mid-conversation, retroactive edits to `messages`) are torn down
   // and rebuilt.
   let cached = sessionId ? getChromeSession(sessionId) : undefined;
-  if (sessionId !== undefined && cached && cached.messageCount !== priorHistory.length) {
+  if (sessionId !== undefined && cached && cached.historyFingerprint !== historyFingerprint) {
     deleteChromeSession(sessionId);
     cached = undefined;
   }
@@ -79,7 +82,7 @@ export const WebBrowser_Chat: AiProviderRunFn<
       // current Chrome spec; Chrome silently ignores it on the open web.
       // Passed through so extension callers still get the knob.
       temperature: input.temperature ?? undefined,
-      initialPrompts: buildInitialPromptsFromHistory(priorHistory),
+      initialPrompts,
       monitor: createDownloadMonitor(emit),
     });
   }
@@ -99,7 +102,11 @@ export const WebBrowser_Chat: AiProviderRunFn<
       // `messages` plus one assistant turn. Ownership of `session` transfers
       // to the cache; `WebBrowserProvider.disposeSession` (wired into
       // ResourceScope by AiChatTask) reclaims it at end of run.
-      setChromeSession(sessionId, { session, messageCount: messages.length + 1 });
+      setChromeSession(sessionId, {
+       session,
+       messageCount: messages.length + 1,
+       historyFingerprint,
+      });
       cacheWritten = true;
     }
   } finally {
