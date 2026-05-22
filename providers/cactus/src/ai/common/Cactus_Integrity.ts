@@ -16,6 +16,14 @@
 /** Sentinel value used in the catalog while real hashes are not yet populated. */
 export const CACTUS_HASH_PLACEHOLDER = "TODO_FILL_AT_RELEASE";
 
+/**
+ * Raised whenever a Cactus asset fails an integrity check. The `expected`
+ * and `actual` fields are deliberately label-agnostic strings so the same
+ * error type covers both SHA-256 mismatches ("abc123...") and byte-length
+ * mismatches ("22000000 bytes"). The constructor message embeds them
+ * verbatim, so callers should phrase each side with whatever unit makes
+ * sense at the call site.
+ */
 export class CactusIntegrityError extends Error {
   readonly url: string;
   readonly filename: string;
@@ -24,7 +32,7 @@ export class CactusIntegrityError extends Error {
   constructor(opts: { url: string; filename: string; expected: string; actual: string }) {
     super(
       `Integrity check failed for ${opts.filename} from ${opts.url}: ` +
-        `expected sha256 ${opts.expected}, got ${opts.actual}`
+        `expected ${opts.expected}, got ${opts.actual}`
     );
     this.name = "CactusIntegrityError";
     this.url = opts.url;
@@ -59,6 +67,10 @@ export function isHashPlaceholder(expected: string): boolean {
  * Hashes `bytes` and throws `CactusIntegrityError` if it does not match
  * `expected`. Throws a plain `Error` if `expected` is malformed (not 64 hex
  * chars), since that is a catalog-author bug, not a content bug.
+ *
+ * When the hashes mismatch, both `expected` and `actual` are lowercase hex
+ * SHA-256 strings; the resulting error message reads
+ * `expected <hex>, got <hex>`.
  *
  * If `expected` is the `TODO_FILL_AT_RELEASE` placeholder, verification is
  * skipped and a one-time warning is logged. This keeps developers unblocked

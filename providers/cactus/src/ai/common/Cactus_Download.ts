@@ -35,12 +35,13 @@ export const Cactus_Download: AiProviderRunFn<
     try {
       await fetchAssetBytes(model, spec);
     } catch (err) {
-      if (err instanceof CactusIntegrityError) {
-        emit({
-          type: "phase",
-          message: `Integrity check failed for ${spec.filename}: expected sha256 ${err.expected}, got ${err.actual}`,
-        });
-      }
+      // Surface whatever the integrity layer phrased — it knows whether the
+      // mismatch was a SHA-256 digest or a byte-length pre-check, and the
+      // error message is already shaped correctly for both.
+      emit({
+        type: "phase",
+        message: err instanceof CactusIntegrityError ? err.message : String(err),
+      });
       throw err;
     }
   }
