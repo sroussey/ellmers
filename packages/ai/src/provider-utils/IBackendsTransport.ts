@@ -25,8 +25,8 @@ export interface IEnsureRunningRequest {
   readonly modelPath: string;
   /**
    * Backend-specific runtime options forwarded to the broker as opaque JSON.
-   * llamacpp uses `{ ctx: number }`; sd-cpp omits it; future backends define
-   * their own schema.
+   * llamacpp uses `{ ctx: number }`; sd-cpp passes an empty object `{}`;
+   * future backends define their own schema.
    */
   readonly opts: Readonly<Record<string, unknown>>;
 }
