@@ -8,7 +8,7 @@ import type { StreamEvent } from "@workglow/task-graph";
 import { parsePartialJson } from "@workglow/util/worker";
 import type { ToolCallingTaskOutput } from "../task/ToolCallingTask";
 import type { ToolCalls, ToolDefinition } from "../task/ToolCallingUtils";
-import { buildToolDescription } from "../task/ToolCallingUtils";
+import { buildToolDescription, sanitizeToolArgs } from "../task/ToolCallingUtils";
 
 /**
  * Shared helpers for providers that expose an OpenAI-compatible chat-completions
@@ -106,12 +106,13 @@ export function parseOpenAIToolCallMessage(
     const id = (tc.id as string | undefined) ?? `call_${idx}`;
     const name = tc.function.name as string;
     const rawArgs = tc.function.arguments;
-    const input =
+    const parsed =
       typeof rawArgs === "string"
         ? parseToolArgs(rawArgs)
         : rawArgs && typeof rawArgs === "object"
           ? (rawArgs as Record<string, unknown>)
           : {};
+    const input = sanitizeToolArgs(parsed) as Record<string, unknown>;
     result.push({ id, name, input });
     idx++;
   }
@@ -174,10 +175,12 @@ export async function accumulateOpenAIStream(
       // StreamProcessor's id-based upsert.
       const stableId = acc.id || `call_${idx}`;
 
+      const parsedInput = parseToolArgs(acc.arguments);
+      const sanitizedInput = sanitizeToolArgs(parsedInput) as Record<string, unknown>;
       emit({
         type: "object-delta",
         port: "toolCalls",
-        objectDelta: [{ id: stableId, name: acc.name, input: parseToolArgs(acc.arguments) }],
+        objectDelta: [{ id: stableId, name: acc.name, input: sanitizedInput }],
       });
     }
   }

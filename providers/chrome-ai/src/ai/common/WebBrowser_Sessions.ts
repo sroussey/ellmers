@@ -6,26 +6,39 @@
 
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
-// ---------------------------------------------------------------------------
-// Chrome chat-session cache (per-turn reuse for AiChatTask / StructuredGen / ToolCalling)
-// ---------------------------------------------------------------------------
-
 /**
- * Chat-session cache for Chrome Built-in AI's `LanguageModel`.
+ * Unified session store for Chrome Built-in AI `LanguageModel` handles.
  *
- * Keyed by the `sessionId` that `AiChatTask` allocates and threads through to
- * the provider. The owning task registers a disposer against its
- * `ResourceScope` so the entries are released when the run completes — see
- * {@link WebBrowserProvider.disposeSession}.
+ * One Map, two access patterns sharing the same entries:
  *
- * `messageCount` is our high-water mark for which entries of the AiChatTask
- * `messages[]` we've already played into the session (creation + each
- * subsequent `prompt`/`append`). On the next turn we slice from this index to
- * find the new messages to apply; if the count is out of sync we rebuild the
- * session from scratch.
+ *  - **Chat-cache API** (`getChromeSession` / `setChromeSession` /
+ *    `deleteChromeSession` / `dropChromeSessionEntry`) — used by
+ *    {@link WebBrowser_Chat} to reuse a session across turns. Entries
+ *    carry chat-cache state (`messageCount`, `schemaFingerprint`,
+ *    `toolsFingerprint`, `historyFingerprint`).
+ *
+ *  - **Lifecycle API** (`setWebBrowserSession` / `touchWebBrowserSession` /
+ *    `disposeWebBrowserSession` / `disposeWebBrowserSessionsForModel`) —
+ *    used by {@link WebBrowser_ModelDispose} to find and destroy live
+ *    sessions by id or by `modelKey`. Idle-evict timers automatically
+ *    destroy sessions after {@link WEB_BROWSER_SESSION_IDLE_MS} of inactivity.
+ *
+ * Every entry has a `modelKey` so the lifecycle API can find chat-cached
+ * sessions when `model.dispose` is invoked. Idle eviction applies to all
+ * entries (a stale chat session sitting in the cache is destroyed after
+ * the idle window, freeing Chrome's internal resources).
  */
+
+export const WEB_BROWSER_SESSION_IDLE_MS = 30 * 60_000;
+
 export interface ChromeChatSessionState {
   readonly session: LanguageModel;
+  /**
+   * Identifier the lifecycle API uses to group sessions for
+   * {@link disposeWebBrowserSessionsForModel}. Derive with
+   * {@link getWebBrowserModelKey}.
+   */
+  readonly modelKey: string;
   /**
    * Count of messages the session has heard *after* the most recent turn
    * completes — i.e., `messages.length + 1` (the new assistant reply
@@ -57,50 +70,14 @@ export interface ChromeChatSessionState {
   readonly historyFingerprint?: string;
 }
 
-const chromeSessions = new Map<string, ChromeChatSessionState>();
-
-export function getChromeSession(sessionId: string): ChromeChatSessionState | undefined {
-  return chromeSessions.get(sessionId);
-}
-
-export function setChromeSession(sessionId: string, state: ChromeChatSessionState): void {
-  chromeSessions.set(sessionId, state);
-}
-
-/** Destroy the cached session (if any) and drop the entry. Returns whether anything was removed. */
-export function deleteChromeSession(sessionId: string): boolean {
-  const state = chromeSessions.get(sessionId);
-  if (!state) return false;
-  try {
-    state.session.destroy();
-  } catch {
-    // best-effort: a session whose backing model is already gone may throw
-  }
-  return chromeSessions.delete(sessionId);
-}
-
-/**
- * Remove the cache entry for `sessionId` only if it still points at the
- * given session. Does NOT call `destroy()` — used by the chat run-fn on the
- * error path so it can disown a borrowed cache entry and then destroy the
- * (now-private) handle itself, without double-destroying if another caller
- * has since replaced the entry.
- */
-export function dropChromeSessionEntry(sessionId: string, session: LanguageModel): boolean {
-  const current = chromeSessions.get(sessionId);
-  if (current?.session !== session) return false;
-  return chromeSessions.delete(sessionId);
-}
-
-// ---------------------------------------------------------------------------
-// WebBrowser idle-evict session store (per-model lifecycle for ModelDispose)
-// ---------------------------------------------------------------------------
-
-export const WEB_BROWSER_SESSION_IDLE_MS = 30 * 60_000;
-
 export interface WebBrowserSessionEntry {
   readonly modelKey: string;
   readonly session: { destroy(): void };
+  /** Chat-cache state — populated only for sessions installed via the chat API. */
+  readonly messageCount?: number;
+  readonly schemaFingerprint?: string;
+  readonly toolsFingerprint?: string;
+  readonly historyFingerprint?: string;
   lastUsedAt: number;
   idleTimer: ReturnType<typeof setTimeout> | undefined;
 }
@@ -125,11 +102,8 @@ function clearIdleTimer(entry: WebBrowserSessionEntry): void {
   }
 }
 
-export function touchWebBrowserSession(sessionId: string): void {
-  const entry = sessions.get(sessionId);
-  if (!entry) return;
+function startIdleTimer(sessionId: string, entry: WebBrowserSessionEntry): void {
   entry.lastUsedAt = Date.now();
-  clearIdleTimer(entry);
   const timer = setTimeout(() => {
     void disposeWebBrowserSession(sessionId).catch((error: unknown) => {
       console.error(`WebBrowser session idle dispose failed for ${sessionId}`, error);
@@ -141,19 +115,32 @@ export function touchWebBrowserSession(sessionId: string): void {
   entry.idleTimer = timer;
 }
 
+export function touchWebBrowserSession(sessionId: string): void {
+  const entry = sessions.get(sessionId);
+  if (!entry) return;
+  clearIdleTimer(entry);
+  startIdleTimer(sessionId, entry);
+}
+
+/**
+ * Lifecycle-only registration. Used by tests and any future caller that
+ * wants a generic destroyable tracked under a `modelKey` without chat-cache
+ * state.
+ */
 export function setWebBrowserSession(
   sessionId: string,
   entry: Pick<WebBrowserSessionEntry, "modelKey" | "session">
 ): void {
   const existing = sessions.get(sessionId);
   if (existing) clearIdleTimer(existing);
-  sessions.set(sessionId, {
+  const next: WebBrowserSessionEntry = {
     modelKey: entry.modelKey,
     session: entry.session,
     lastUsedAt: Date.now(),
     idleTimer: undefined,
-  });
-  touchWebBrowserSession(sessionId);
+  };
+  sessions.set(sessionId, next);
+  startIdleTimer(sessionId, next);
 }
 
 export async function disposeWebBrowserSession(sessionId: string): Promise<void> {
@@ -180,4 +167,73 @@ export function resetWebBrowserSessionsForTests(): void {
     clearIdleTimer(entry);
   }
   sessions.clear();
+}
+
+/**
+ * Chat-cache API. Reads any entry for `sessionId`, returning the chat-cache
+ * view (subset of fields). Returns `undefined` when the entry is missing or
+ * was never installed with chat-cache state.
+ */
+export function getChromeSession(sessionId: string): ChromeChatSessionState | undefined {
+  const entry = sessions.get(sessionId);
+  if (!entry || entry.messageCount === undefined) return undefined;
+  return {
+    session: entry.session as LanguageModel,
+    modelKey: entry.modelKey,
+    messageCount: entry.messageCount,
+    schemaFingerprint: entry.schemaFingerprint,
+    toolsFingerprint: entry.toolsFingerprint,
+    historyFingerprint: entry.historyFingerprint,
+  };
+}
+
+/**
+ * Chat-cache API. Promotes an entry to chat-cached state, replacing any
+ * prior entry for `sessionId`. The unified entry is subject to idle
+ * eviction so a chat session left in the cache eventually frees its
+ * Chrome-side resources.
+ */
+export function setChromeSession(sessionId: string, state: ChromeChatSessionState): void {
+  const existing = sessions.get(sessionId);
+  if (existing) clearIdleTimer(existing);
+  const next: WebBrowserSessionEntry = {
+    modelKey: state.modelKey,
+    session: state.session,
+    messageCount: state.messageCount,
+    schemaFingerprint: state.schemaFingerprint,
+    toolsFingerprint: state.toolsFingerprint,
+    historyFingerprint: state.historyFingerprint,
+    lastUsedAt: Date.now(),
+    idleTimer: undefined,
+  };
+  sessions.set(sessionId, next);
+  startIdleTimer(sessionId, next);
+}
+
+/** Destroy the cached session (if any) and drop the entry. Returns whether anything was removed. */
+export function deleteChromeSession(sessionId: string): boolean {
+  const entry = sessions.get(sessionId);
+  if (!entry) return false;
+  clearIdleTimer(entry);
+  sessions.delete(sessionId);
+  try {
+    entry.session.destroy();
+  } catch {
+    // best-effort: a session whose backing model is already gone may throw
+  }
+  return true;
+}
+
+/**
+ * Remove the cache entry for `sessionId` only if it still points at the
+ * given session. Does NOT call `destroy()` — used by the chat run-fn on the
+ * error path so it can disown a borrowed cache entry and then destroy the
+ * (now-private) handle itself, without double-destroying if another caller
+ * has since replaced the entry.
+ */
+export function dropChromeSessionEntry(sessionId: string, session: LanguageModel): boolean {
+  const current = sessions.get(sessionId);
+  if (current?.session !== session) return false;
+  clearIdleTimer(current);
+  return sessions.delete(sessionId);
 }

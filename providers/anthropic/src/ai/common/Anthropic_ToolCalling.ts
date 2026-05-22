@@ -12,7 +12,7 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
+import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { parsePartialJson } from "@workglow/util/worker";
 import { getClient, getMaxTokens, getModelName } from "./Anthropic_Client";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
@@ -194,7 +194,7 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
           toolCallsByBlockIndex.set(index, {
             id: meta.id ?? "",
             name: meta.name ?? "",
-            input: parsedInput,
+            input: sanitizeToolArgs(parsedInput) as Record<string, unknown>,
           });
           emit({
             type: "object-delta",
@@ -214,7 +214,11 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
           finalInput = (parsePartialJson(meta.json) as Record<string, unknown>) ?? {};
         }
         const id = meta.id ?? "";
-        toolCallsByBlockIndex.set(index, { id, name: meta.name ?? "", input: finalInput });
+        toolCallsByBlockIndex.set(index, {
+          id,
+          name: meta.name ?? "",
+          input: sanitizeToolArgs(finalInput) as Record<string, unknown>,
+        });
         emit({
           type: "object-delta",
           port: "toolCalls",

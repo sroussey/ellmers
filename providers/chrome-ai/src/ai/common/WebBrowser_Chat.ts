@@ -11,6 +11,28 @@ import type {
   ChatMessage,
 } from "@workglow/ai";
 
+/**
+ * Chrome `LanguageModel`-backed chat run-fn.
+ *
+ * ## Recovery model
+ *
+ * This run-fn intentionally does NOT retry on `InvalidStateError` ("session
+ * destroyed"). When a cached session throws mid-turn we:
+ *   1. Disown the cache entry (so a concurrent caller's session isn't
+ *      double-destroyed).
+ *   2. Destroy our handle and let the error propagate.
+ *   3. The orchestrator's next turn rebuilds the session from full history
+ *      via the cache-miss branch below.
+ *
+ * Rebuild-on-next-turn is simpler than mid-turn retry (no doubled
+ * `setTimeout` complexity, no risk of partial-prompt replay) and fits the
+ * AiChatTask contract where the caller controls retry policy. If Chrome
+ * starts destroying sessions aggressively enough that a per-turn rebuild
+ * becomes a noticeable cost, restore an in-fn retry — but keep it
+ * single-shot and only on `InvalidStateError`, never on user-visible
+ * failures like aborts.
+ */
+
 import {
   buildInitialPromptsFromHistory,
   findLastUserIndex,
@@ -28,6 +50,7 @@ import {
   deleteChromeSession,
   dropChromeSessionEntry,
   getChromeSession,
+  getWebBrowserModelKey,
   setChromeSession,
 } from "./WebBrowser_Sessions";
 
@@ -35,7 +58,7 @@ export const WebBrowser_Chat: AiProviderRunFn<
   AiChatProviderInput,
   AiChatProviderOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit, _outputSchema, sessionId) => {
+> = async (input, model, signal, emit, _outputSchema, sessionId) => {
   const factory = getApi("LanguageModel", getChromeGlobal<typeof LanguageModel>("LanguageModel"));
   await ensureAvailable("LanguageModel", factory);
 
@@ -97,6 +120,7 @@ export const WebBrowser_Chat: AiProviderRunFn<
       // ResourceScope by AiChatTask) reclaims it at end of run.
       setChromeSession(sessionId, {
         session,
+        modelKey: getWebBrowserModelKey(model),
         messageCount: messages.length + 1,
       });
       cacheWritten = true;

@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
 } from "@workglow/ai";
 import { extractMessageText, toolChoiceForcesToolCall } from "@workglow/ai/provider-utils";
-import { filterValidToolCalls } from "@workglow/ai/worker";
+import { filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import type { StreamEvent } from "@workglow/task-graph";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 import {
@@ -203,7 +203,10 @@ function extractNativeFunctionCalls(
   return functionCalls.map((fc, index) => ({
     id: `call_${index}`,
     name: fc.functionName,
-    input: (fc.params ?? {}) as Record<string, unknown>,
+    input: sanitizeToolArgs((fc.params ?? {}) as Record<string, unknown>) as Record<
+      string,
+      unknown
+    >,
   }));
 }
 

@@ -12,7 +12,7 @@ import type {
   ToolCallingTaskOutput,
   ToolDefinition,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai/worker";
+import { buildToolDescription, filterValidToolCalls, sanitizeToolArgs } from "@workglow/ai/worker";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
 import { sanitizeSchemaForGemini } from "./Gemini_Schema";
@@ -154,7 +154,9 @@ export const Gemini_ToolCalling_Stream: AiProviderRunFn<
             {
               id,
               name: part.functionCall.name,
-              input: (part.functionCall.args as Record<string, unknown>) ?? {},
+              input: sanitizeToolArgs(
+                (part.functionCall.args as Record<string, unknown>) ?? {}
+              ) as Record<string, unknown>,
             },
           ],
           input.tools

@@ -277,6 +277,7 @@ describe("WebBrowser_Sessions cache", () => {
     const fake = fakeLanguageModel();
     sessions.setChromeSession("test-1", {
       session: fake as never,
+      modelKey: "gemini-nano",
       messageCount: 4,
     });
     expect(sessions.getChromeSession("test-1")?.messageCount).toBe(4);
@@ -293,6 +294,7 @@ describe("WebBrowser_Sessions cache", () => {
     const fake = fakeLanguageModel();
     sessions.setChromeSession("test-1", {
       session: fake as never,
+      modelKey: "gemini-nano",
       messageCount: 1,
     });
     const removed = sessions.dropChromeSessionEntry("test-1", fake as never);
@@ -306,11 +308,13 @@ describe("WebBrowser_Sessions cache", () => {
     const replacement = fakeLanguageModel();
     sessions.setChromeSession("test-1", {
       session: original as never,
+      modelKey: "gemini-nano",
       messageCount: 1,
     });
     // Simulate a concurrent caller replacing the entry.
     sessions.setChromeSession("test-1", {
       session: replacement as never,
+      modelKey: "gemini-nano",
       messageCount: 2,
     });
     const removed = sessions.dropChromeSessionEntry("test-1", original as never);

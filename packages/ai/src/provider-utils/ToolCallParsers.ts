@@ -7,6 +7,7 @@
 import { getLogger } from "@workglow/util/worker";
 import type { ToolCallingTaskInput } from "../task/ToolCallingTask";
 import type { ToolCalls } from "../task/ToolCallingUtils";
+import { sanitizeToolArgs } from "../task/ToolCallingUtils";
 
 // ============================================================================
 // Types
@@ -258,7 +259,7 @@ export function adaptParserResult(
     toolCalls: result.tool_calls.map((call, index) => ({
       id: call.id ?? `call_${index}`,
       name: input ? resolveParsedToolName(call.name, input) : call.name,
-      input: call.arguments,
+      input: sanitizeToolArgs(call.arguments) as Record<string, unknown>,
     })),
   };
 }
@@ -1319,7 +1320,7 @@ export function parseToolCallsFromText(responseText: string): {
       toolCalls: hermesResult.tool_calls.map((call, index) => ({
         id: call.id ?? `call_${index}`,
         name: call.name,
-        input: call.arguments,
+        input: sanitizeToolArgs(call.arguments) as Record<string, unknown>,
       })),
     };
   }
@@ -1339,7 +1340,10 @@ export function parseToolCallsFromText(responseText: string): {
         toolCalls.push({
           id,
           name: parsed.name as string,
-          input: (parsed.arguments ?? parsed.parameters ?? {}) as Record<string, unknown>,
+          input: sanitizeToolArgs(parsed.arguments ?? parsed.parameters ?? {}) as Record<
+            string,
+            unknown
+          >,
         });
         matchedRanges.push({ start: candidate.start, end: candidate.end });
       } else if (parsed.function?.name) {
@@ -1355,7 +1359,7 @@ export function parseToolCallsFromText(responseText: string): {
         toolCalls.push({
           id,
           name: parsed.function.name as string,
-          input: (functionArgs ?? {}) as Record<string, unknown>,
+          input: sanitizeToolArgs(functionArgs ?? {}) as Record<string, unknown>,
         });
         matchedRanges.push({ start: candidate.start, end: candidate.end });
       }
