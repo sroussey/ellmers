@@ -6,4 +6,6 @@
 
 // organize-imports-ignore
 
-export * from "./ai/runtime.browser";
+export * from "./ai/common/Cactus_Runtime.browser";
+export * from "./ai/registerCactusInline";
+export * from "./ai/registerCactusWorker";

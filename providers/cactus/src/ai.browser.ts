@@ -6,23 +6,23 @@
 
 // organize-imports-ignore
 
-export * from "./common/Cactus_Constants";
-export * from "./common/Cactus_ModelCatalog";
-export * from "./common/Cactus_ModelSchema";
+export * from "./ai/common/Cactus_Constants";
+export * from "./ai/common/Cactus_ModelCatalog";
+export * from "./ai/common/Cactus_ModelSchema";
 // Mutable runtime state (e.g. cactusEngines, cactusEngineLoadsInFlight,
 // cactusConfigJson, cactusSessions) is intentionally NOT re-exported here.
 // The `./ai` and `./ai-runtime` entry points are bundled separately, so
 // re-exporting from both creates two distinct module instances — and reads
 // on one would not see writes from the other. Import runtime state from
 // `@workglow/cactus/ai-runtime` instead.
-export * from "./CactusProvider";
-export * from "./CactusQueuedProvider";
-export * from "./registerCactus";
+export * from "./ai/CactusProvider";
+export * from "./ai/CactusQueuedProvider";
+export * from "./ai/registerCactus";
 
-import { CACTUS_RUN_FN_SPECS } from "./common/Cactus_Capabilities";
-import { CACTUS_RUN_FNS } from "./common/Cactus_JobRunFns";
-import { cactusConfigJson, cactusEngines } from "./common/Cactus_Runtime";
-import { CactusQueuedProvider } from "./CactusQueuedProvider";
+import { CactusQueuedProvider } from "./ai/CactusQueuedProvider";
+import { CACTUS_RUN_FN_SPECS } from "./ai/common/Cactus_Capabilities";
+import { CACTUS_RUN_FNS } from "./ai/common/Cactus_JobRunFns";
+import { cactusConfigJson, cactusEngines } from "./ai/common/Cactus_Runtime.browser";
 
 /**
  * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.

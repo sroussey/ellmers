@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import fs from "node:fs/promises";
+import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
 import {
   cactusAssetUrl,
@@ -82,8 +84,6 @@ async function fetchAssetBytesNode(
   model_id: string,
   filename: string
 ): Promise<Uint8Array> {
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
   const resolvedDir = models_dir.startsWith("~/")
     ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
     : path.resolve(models_dir, model_id);
@@ -218,8 +218,6 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
 
 async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): Promise<void> {
   if (hasBrowserCacheStorage()) return;
-  const fs = await import("node:fs/promises");
-  const path = await import("node:path");
   const models_dir = modelsDirOf(model);
   const resolvedDir = models_dir.startsWith("~/")
     ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
