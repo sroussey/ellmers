@@ -21,8 +21,8 @@ describe.skipIf(!RUN)("Cactus_Download (integration)", () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "cactus-download-"));
-    cactusEngines.clear();
-    cactusConfigJson.clear();
+    cactusEngines().clear();
+    cactusConfigJson().clear();
   });
 
   afterEach(() => {

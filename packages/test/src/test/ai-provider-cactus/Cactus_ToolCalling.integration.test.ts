@@ -49,8 +49,8 @@ describe.skipIf(!RUN)("Cactus_ToolCalling (integration)", () => {
   });
 
   afterAll(() => {
-    cactusEngines.clear();
-    cactusConfigJson.clear();
+    cactusEngines().clear();
+    cactusConfigJson().clear();
     rmSync(dir, { recursive: true, force: true });
   });
 

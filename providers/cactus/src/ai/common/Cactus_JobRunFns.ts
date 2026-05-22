@@ -20,10 +20,10 @@ import { Cactus_ModelSearch } from "./Cactus_ModelSearch";
 import { Cactus_ToolCalling } from "./Cactus_ToolCalling";
 
 export {
-  cactusConfigJson,
-  cactusEngines,
   deleteCactusSession,
   disposeCactusResources,
+  getCactusConfigJson,
+  getCactusEngines,
   getOrLoadEngine,
   loadSdk,
   removeCachedAssets,

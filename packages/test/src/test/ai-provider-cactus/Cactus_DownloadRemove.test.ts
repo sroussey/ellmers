@@ -13,13 +13,13 @@ const Cactus_DownloadRemove = runFnFor(["model.download-remove"]);
 
 describe("Cactus_DownloadRemove", () => {
   afterEach(() => {
-    cactusEngines.clear();
-    cactusConfigJson.clear();
+    cactusEngines().clear();
+    cactusConfigJson().clear();
   });
 
   it("drops cached engine and config; emits finish", async () => {
-    cactusEngines.set("needle-26m", {} as any);
-    cactusConfigJson.set("needle-26m", { fake: true });
+    cactusEngines().set("needle-26m", {} as any);
+    cactusConfigJson().set("needle-26m", { fake: true });
 
     let finished = false;
     const controller = new AbortController();
@@ -40,7 +40,7 @@ describe("Cactus_DownloadRemove", () => {
       }
     );
     expect(finished).toBe(true);
-    expect(cactusEngines.has("needle-26m")).toBe(false);
-    expect(cactusConfigJson.has("needle-26m")).toBe(false);
+    expect(cactusEngines().has("needle-26m")).toBe(false);
+    expect(cactusConfigJson().has("needle-26m")).toBe(false);
   });
 });

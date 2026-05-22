@@ -17,6 +17,14 @@ import {
   type CactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
+import {
+  getCactusCachedModelIds,
+  getCactusConfigJson,
+  getCactusEngineLoadsInFlight,
+  getCactusEngines,
+  getCactusSessions,
+  getRuntime,
+} from "./Cactus_RuntimeState";
 
 type NeedleSdkModule = typeof import("needle-rs");
 // `NeedleWasm` has a private constructor so `InstanceType<...>` cannot be used.
@@ -108,23 +116,21 @@ export async function fetchAssetBytes(
 
 // ============================================================================
 // Engine cache (in-memory, per worker/process)
+//
+// All Maps/Sets live on a globalThis-keyed singleton (see Cactus_RuntimeState).
+// This ensures the `./ai` and `./ai-runtime` bundles — each compiled separately —
+// share state. Callers should never store these references in module scope.
 // ============================================================================
 
-/** @internal Exported for tests. */
-export const cactusEngines: Map<string, NeedleEngine> = new Map();
-/** @internal Exported for tests. */
-export const cactusConfigJson: Map<string, unknown> = new Map();
-/** Tracks models whose assets have been persisted (downloaded) but not necessarily loaded. */
-const cactusCachedModelIds: Set<string> = new Set();
-
-const cactusEngineLoadsInFlight = new Map<string, Promise<NeedleEngine>>();
-
 export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleEngine> {
+  const state = getRuntime();
   const model_id = model.provider_config.model_id;
-  const cached = cactusEngines.get(model_id);
+  const cached = state.engines.get(model_id) as NeedleEngine | undefined;
   if (cached) return cached;
 
-  const inFlight = cactusEngineLoadsInFlight.get(model_id);
+  const inFlight = state.engineLoadsInFlight.get(model_id) as
+    | Promise<NeedleEngine>
+    | undefined;
   if (inFlight) return inFlight;
 
   const loadPromise = (async (): Promise<NeedleEngine> => {
@@ -140,9 +146,9 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
 
     try {
       const text = new TextDecoder().decode(configBytes);
-      cactusConfigJson.set(model_id, JSON.parse(text));
+      state.configJson.set(model_id, JSON.parse(text));
     } catch {
-      cactusConfigJson.set(model_id, null);
+      state.configJson.set(model_id, null);
     }
 
     // needle-rs `NeedleWasm.load(weights_bytes: Uint8Array, vocab_text: string)` — vocab is a string.
@@ -151,28 +157,29 @@ export async function getOrLoadEngine(model: CactusModelConfig): Promise<NeedleE
     if (!engine) {
       throw new Error(`needle-rs NeedleWasm.load returned undefined for model ${model_id}`);
     }
-    cactusEngines.set(model_id, engine);
+    state.engines.set(model_id, engine);
     return engine;
   })().finally(() => {
-    cactusEngineLoadsInFlight.delete(model_id);
+    state.engineLoadsInFlight.delete(model_id);
   });
 
-  cactusEngineLoadsInFlight.set(model_id, loadPromise);
+  state.engineLoadsInFlight.set(model_id, loadPromise);
   return loadPromise;
 }
 
 export function isModelLoaded(model_id: string): boolean {
-  return cactusEngines.has(model_id);
+  return getRuntime().engines.has(model_id);
 }
 
 /** Mark a model_id as having its assets persisted in Cache Storage. */
 export function markModelCached(model_id: string): void {
-  cactusCachedModelIds.add(model_id);
+  getRuntime().cachedModelIds.add(model_id);
 }
 
 /** Returns true if the model's assets have been downloaded or the engine is currently loaded. */
 export function isModelCached(model_id: string): boolean {
-  return cactusEngines.has(model_id) || cactusCachedModelIds.has(model_id);
+  const state = getRuntime();
+  return state.engines.has(model_id) || state.cachedModelIds.has(model_id);
 }
 
 export async function getCactusModelCacheInfo(
@@ -234,11 +241,8 @@ export async function getCactusModelCacheInfo(
 // Sessions (no-op — needle-rs is stateless across calls)
 // ============================================================================
 
-/** @internal Exported for tests. */
-export const cactusSessions: Map<string, Record<string, never>> = new Map();
-
 export async function deleteCactusSession(id: string): Promise<boolean> {
-  return cactusSessions.delete(id);
+  return getCactusSessions().delete(id);
 }
 
 // ============================================================================
@@ -259,17 +263,18 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
 }
 
 function disposeCactusEngine(model_id: string): void {
-  const engine = cactusEngines.get(model_id);
+  const state = getRuntime();
+  const engine = state.engines.get(model_id);
   if (engine) {
     try {
-      (engine as unknown as { free?: () => void }).free?.();
+      engine.free?.();
     } catch {
       /* best effort */
     }
   }
-  cactusEngines.delete(model_id);
-  cactusConfigJson.delete(model_id);
-  cactusCachedModelIds.delete(model_id);
+  state.engines.delete(model_id);
+  state.configJson.delete(model_id);
+  state.cachedModelIds.delete(model_id);
 }
 
 export async function removeCachedAssets(model: CactusModelConfig): Promise<void> {
@@ -282,11 +287,27 @@ export async function removeCachedAssets(model: CactusModelConfig): Promise<void
 
 /** Best-effort cleanup on shutdown. */
 export async function disposeCactusResources(): Promise<void> {
-  for (const id of Array.from(cactusEngines.keys())) {
+  const state = getRuntime();
+  for (const id of Array.from(state.engines.keys())) {
     disposeCactusEngine(id);
   }
-  cactusEngines.clear();
-  cactusConfigJson.clear();
-  cactusCachedModelIds.clear();
-  cactusSessions.clear();
+  state.engines.clear();
+  state.configJson.clear();
+  state.cachedModelIds.clear();
+  state.sessions.clear();
 }
+
+// ============================================================================
+// Legacy re-exports for callers that imported the maps/sets directly.
+//
+// Prefer the accessor form (`getCactusEngines()`, etc.) so that
+// `__resetRuntimeForTests()` produces fresh state.
+// ============================================================================
+
+export {
+  getCactusCachedModelIds,
+  getCactusConfigJson,
+  getCactusEngineLoadsInFlight,
+  getCactusEngines,
+  getCactusSessions,
+} from "./Cactus_RuntimeState";
