@@ -29,15 +29,26 @@ export interface CactusModelCacheInfo {
 }
 
 // ============================================================================
-// Path-safety allowlists (defense-in-depth)
+// Path-safety helpers (defense-in-depth + CodeQL-recognized sanitizer)
 //
 // `model_id` originates from user-supplied `provider_config.model_id` and
 // `filename` originates from the (effectively trusted) catalog. The catalog
 // lookup in `getCactusCatalogEntry` already restricts `model_id` to known
-// values, but static analyzers (CodeQL) cannot see through that lookup, so
-// we re-enforce explicit character allowlists at every filesystem entry
-// point. Both regexes reject path separators, `..`, NUL, and any other
-// shell/path-special characters.
+// values, but static analyzers cannot see through that lookup.
+//
+// Two layers of defense are applied at every filesystem entry point:
+//
+//   1. Character allowlists (`assertSafeModelId`, `assertSafeFilename`)
+//      reject separators, `..`, NUL, and any shell/path-special characters
+//      at the boundary. Fast-fail on malformed input.
+//
+//   2. `safeJoinUnderRoot` normalizes the candidate path with `path.resolve`
+//      and verifies it stays within the resolved root via `startsWith`.
+//      This is the canonical CodeQL-recognized sanitizer for the
+//      `js/path-injection` query — the analyzer cannot infer containment
+//      from regex allowlists upstream, so every filesystem entry point
+//      uses this helper to make the containment invariant explicit at
+//      the point of use.
 // ============================================================================
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -66,6 +77,29 @@ function assertSafeFilename(filename: string): void {
         `must match ${FILENAME_RE} (no path separators, no '..').`
     );
   }
+}
+
+/**
+ * Returns `path.resolve(root, ...segments)` only when the resolved result
+ * is contained within (or equal to) the resolved root. Throws otherwise.
+ *
+ * This implements the recommended path-injection mitigation:
+ * normalize with `path.resolve` (which collapses `..` segments) and then
+ * verify the result begins with the resolved root. CodeQL's
+ * `js/path-injection` query recognizes this pattern as a sanitizer.
+ */
+function safeJoinUnderRoot(root: string, ...segments: string[]): string {
+  const resolvedRoot = path.resolve(root);
+  const candidate = path.resolve(resolvedRoot, ...segments);
+  if (
+    candidate !== resolvedRoot &&
+    !candidate.startsWith(resolvedRoot + path.sep)
+  ) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(candidate)} is not within ${JSON.stringify(resolvedRoot)}`
+    );
+  }
+  return candidate;
 }
 
 let _sdk: NeedleSdkModule | undefined;
@@ -115,9 +149,16 @@ function modelsDirOf(model: CactusModelConfig): string {
 
 function resolveModelDir(models_dir: string, model_id: string): string {
   assertSafeModelId(model_id);
-  return models_dir.startsWith("~/")
-    ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
-    : path.resolve(models_dir, model_id);
+  // First resolve the models root (handle `~/` expansion), then safe-join
+  // the model_id onto it. `safeJoinUnderRoot` is the CodeQL-recognized
+  // sanitizer.
+  const base = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  return safeJoinUnderRoot(base, model_id);
 }
 
 function assetFilenames(entry: CactusCatalogEntry): string[] {
@@ -152,7 +193,9 @@ async function getNodeAssetCacheInfo(
     filenames.map(async (filename) => {
       assertSafeFilename(filename);
       try {
-        const stat = await fs.stat(path.join(resolvedDir, filename));
+        // safeJoinUnderRoot makes the containment check explicit so CodeQL
+        // can trace the sanitizer for the `js/path-injection` query.
+        const stat = await fs.stat(safeJoinUnderRoot(resolvedDir, filename));
         return { filename, size: stat.size, cached: true };
       } catch {
         return { filename, size: undefined, cached: false };
@@ -249,7 +292,8 @@ async function fetchAssetBytesNode(
   assertSafeModelId(model_id);
   assertSafeFilename(spec.filename);
   const resolvedDir = resolveModelDir(models_dir, model_id);
-  const filePath = path.join(resolvedDir, spec.filename);
+  // safeJoinUnderRoot keeps the CodeQL sanitizer trace local to each fs call.
+  const filePath = safeJoinUnderRoot(resolvedDir, spec.filename);
   try {
     const buf = await fs.readFile(filePath);
     const bytes = new Uint8Array(buf);
@@ -284,6 +328,8 @@ async function fetchAssetBytesNode(
   // Verify BEFORE writing the tmp file — never atomically promote unverified bytes.
   await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
   await fs.mkdir(resolvedDir, { recursive: true });
+  // tmpPath is a sibling of filePath inside the (verified-contained) resolvedDir,
+  // so it inherits the containment property from filePath above.
   const tmpPath = `${filePath}.tmp`;
   try {
     await fs.writeFile(tmpPath, bytes);
@@ -481,6 +527,9 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
   if (hasBrowserCacheStorage()) return;
   assertSafeModelId(model_id);
   const models_dir = modelsDirOf(model);
+  // resolveModelDir already passes through safeJoinUnderRoot, so the
+  // returned path is contained within `models_dir`. Re-verify here so the
+  // CodeQL sanitizer trace is local to this fs entry point.
   const resolvedDir = resolveModelDir(models_dir, model_id);
   await fs.rm(resolvedDir, { recursive: true, force: true });
 }
