@@ -29,7 +29,12 @@ describe("sha256Hex", () => {
   });
 
   it("accepts ArrayBuffer input", async () => {
-    const buf = asciiBytes("abc").buffer;
+    // `Uint8Array.prototype.buffer` is typed `ArrayBufferLike` in newer
+    // lib.dom.d.ts (it can be SharedArrayBuffer). Materialize a concrete
+    // ArrayBuffer so the test exercises that branch of sha256Hex's input.
+    const src = asciiBytes("abc");
+    const buf = new ArrayBuffer(src.byteLength);
+    new Uint8Array(buf).set(src);
     const hex = await sha256Hex(buf);
     expect(hex).toBe(SHA256_ABC);
   });
