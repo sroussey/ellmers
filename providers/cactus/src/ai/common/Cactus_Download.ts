@@ -9,7 +9,8 @@ import type {
   ModelDownloadTaskRunInput,
   ModelDownloadTaskRunOutput,
 } from "@workglow/ai";
-import { getCactusCatalogEntry } from "./Cactus_ModelCatalog";
+import { CactusIntegrityError } from "./Cactus_Integrity";
+import { assetSpecsOf, getCactusCatalogEntry } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 import { fetchAssetBytes, markModelCached } from "./Cactus_Runtime";
 
@@ -23,14 +24,29 @@ export const Cactus_Download: AiProviderRunFn<
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-  const assets = [entry.assets.weights, entry.assets.vocab, entry.assets.config];
-  for (let i = 0; i < assets.length; i++) {
+  const specs = assetSpecsOf(entry);
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i];
     emit({
       type: "phase",
-      message: `Downloading ${assets[i]}`,
-      progress: Math.round(((i + 0.5) / assets.length) * 99),
+      message: `Downloading ${spec.filename}`,
+      progress: Math.round(((i + 0.5) / specs.length) * 99),
     });
-    await fetchAssetBytes(model, assets[i]);
+    try {
+      await fetchAssetBytes(model, spec);
+    } catch (err) {
+      // Surface whatever the integrity layer phrased — it knows whether the
+      // mismatch was a SHA-256 digest or a byte-length pre-check, and the
+      // error message is already shaped correctly for both.
+      // StreamPhase.progress is required (number | undefined); pass undefined
+      // on the error path because there is no meaningful percentage to report.
+      emit({
+        type: "phase",
+        message: err instanceof CactusIntegrityError ? err.message : String(err),
+        progress: undefined,
+      });
+      throw err;
+    }
   }
   markModelCached(model_id);
   emit({ type: "finish", data: { model: input.model! } });
