@@ -45,7 +45,7 @@ import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
  * ## Validation
  *
  * Chrome's `responseConstraint` is best-effort, not a hard guarantee.
- * We still fail fast on malformed schemas, but parse/shape mismatches are
+ * We still fail fast on malformed schemas by compiling them up front, but parse/shape mismatches are
  * surfaced via the `finish` payload so `StructuredGenerationTask` can apply
  * its normal retry/repair loop around the provider response.
  */
@@ -53,7 +53,7 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   StructuredGenerationTaskInput,
   StructuredGenerationTaskOutput,
   WebBrowserModelConfig
-> = async (input, _model, signal, emit, outputSchema, _sessionId) => {
+> = async (input, _model, signal, emit, outputSchema) => {
   const factory = getApi(
     "LanguageModel",
     getChromeGlobal<typeof LanguageModel>("LanguageModel")
@@ -65,7 +65,7 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
     throw new PermanentJobError("WebBrowser_StructuredGeneration: outputSchema is required");
   }
 
-  // Compile validator up-front so a bad schema fails fast (cheap, ahead of
+  // Compile the schema up-front so a bad schema fails fast (cheap, ahead of
   // any provider work). Re-thrown as PermanentJobError so the surrounding
   // retry loop doesn't waste attempts on a malformed schema.
   try {

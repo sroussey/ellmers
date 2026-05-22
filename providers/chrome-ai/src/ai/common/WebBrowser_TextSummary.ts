@@ -36,11 +36,7 @@ export const WebBrowser_TextSummary: AiProviderRunFn<
   });
   try {
     const stream = summarizer.summarizeStreaming(input.text, { signal });
-    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
+    for await (const e of snapshotStreamToTextDeltas<TextSummaryTaskOutput>(stream, "text")) {
       emit(e);
     }
   } finally {

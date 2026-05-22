@@ -135,8 +135,7 @@ export function createDownloadMonitor<Output>(
  */
 export async function* snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
-  port: string,
-  _buildFallbackOutput: (text: string) => Output
+  port: string
 ): AsyncIterable<StreamEvent<Output>> {
   const reader = stream.getReader();
   let previousSnapshot = "";

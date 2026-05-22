@@ -182,13 +182,9 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
   });
   try {
     const stream = session.promptStreaming(promptText, { signal });
-    // Forward text-delta and snapshot events; swallow the inner `finish`
-    // because we need to emit a composite finish below (text + toolCalls).
-    for await (const e of snapshotStreamToTextDeltas<ToolCallingTaskOutput>(
-      stream,
-      "text",
-      (text) => ({ text, toolCalls: [] })
-    )) {
+    // Forward text-delta events; swallow the inner `finish` because we need
+    // to emit a composite finish below (text + toolCalls).
+    for await (const e of snapshotStreamToTextDeltas<ToolCallingTaskOutput>(stream, "text")) {
       if (e.type === "finish") continue;
       emit(e);
     }

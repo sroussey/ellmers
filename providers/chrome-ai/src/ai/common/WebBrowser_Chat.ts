@@ -90,11 +90,7 @@ export const WebBrowser_Chat: AiProviderRunFn<
   let cacheWritten = false;
   try {
     const stream = session.promptStreaming(promptText, { signal });
-    for await (const e of snapshotStreamToTextDeltas<AiChatProviderOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
+    for await (const e of snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text")) {
       emit(e);
     }
     if (sessionId !== undefined) {

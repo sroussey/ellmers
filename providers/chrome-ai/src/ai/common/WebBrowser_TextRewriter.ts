@@ -36,11 +36,7 @@ export const WebBrowser_TextRewriter: AiProviderRunFn<
       signal,
       context: input.prompt,
     });
-    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(
-      stream,
-      "text",
-      (text) => ({ text })
-    )) {
+    for await (const e of snapshotStreamToTextDeltas<TextRewriterTaskOutput>(stream, "text")) {
       emit(e);
     }
   } finally {
