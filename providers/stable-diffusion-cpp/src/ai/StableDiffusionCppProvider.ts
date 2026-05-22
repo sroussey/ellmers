@@ -16,7 +16,7 @@ import type {
 } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
 import { pngBytesToImageValue } from "@workglow/ai/provider-utils";
-import type { IBackendsTransport } from "@workglow/ai/backends-transport";
+import type { IBackendsTransport } from "@workglow/ai/provider-utils";
 import { LOCAL_STABLE_DIFFUSION_CPP } from "./common/StableDiffusionCpp_Constants";
 
 export interface IStableDiffusionCppProviderOptions {

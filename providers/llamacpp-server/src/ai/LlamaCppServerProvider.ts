@@ -15,7 +15,7 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
-import type { IBackendsTransport } from "@workglow/ai/backends-transport";
+import type { IBackendsTransport } from "@workglow/ai/provider-utils";
 import { LOCAL_LLAMACPP_SERVER } from "./common/LlamaCppServer_Constants";
 
 export interface ILlamaCppServerProviderOptions {

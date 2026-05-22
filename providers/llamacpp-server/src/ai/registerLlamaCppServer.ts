@@ -6,7 +6,7 @@
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
-import type { IBackendsTransport } from "@workglow/ai/backends-transport";
+import type { IBackendsTransport } from "@workglow/ai/provider-utils";
 import { LlamaCppServerProvider } from "./LlamaCppServerProvider";
 
 export interface IRegisterLlamaCppServerOptions extends AiProviderRegisterOptions {
