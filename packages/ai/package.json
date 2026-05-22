@@ -52,6 +52,9 @@
     "./provider-utils": {
       "types": "./dist/provider-utils.d.ts",
       "import": "./dist/provider-utils.js"
+    },
+    "./backends-transport": {
+      "types": "./src/transport/IBackendsTransport.ts"
     }
   },
   "sideEffects": false,
