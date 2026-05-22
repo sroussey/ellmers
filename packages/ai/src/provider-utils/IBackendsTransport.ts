@@ -23,8 +23,12 @@ export interface IEnsureRunningRequest {
   readonly backend: string;
   /** Absolute path to the model file. */
   readonly modelPath: string;
-  /** Runtime options forwarded to the backend process. */
-  readonly opts: { readonly ctx: number };
+  /**
+   * Backend-specific runtime options forwarded to the broker as opaque JSON.
+   * llamacpp uses `{ ctx: number }`; sd-cpp omits it; future backends define
+   * their own schema.
+   */
+  readonly opts: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -40,7 +44,10 @@ export interface IRunningHandle {
   /**
    * Decrements the broker's refcount for this handle. The backend may shut
    * down after the broker's idle timeout if refcount reaches zero.
-   * Fire-and-forget — no ack is awaited from the broker.
+   *
+   * The returned promise resolves once the release message has been posted
+   * to the port; the broker does not acknowledge. Errors posting (e.g. port
+   * closed) reject.
    */
   readonly release: () => Promise<void>;
 }
@@ -70,7 +77,7 @@ export interface IBackendsTransport {
   /**
    * Acquire (or share) a running backend. Resolves once the backend is healthy.
    *
-   * Multiple callers requesting the same `(backend, modelPath, opts.ctx)` triple
+   * Multiple callers requesting the same `(backend, modelPath, opts)` triple
    * will share one process via the broker's refcounting. `release()` on the
    * returned handle decrements the refcount.
    */
@@ -79,9 +86,11 @@ export interface IBackendsTransport {
   /**
    * Subscribe to status updates for a backend.
    *
-   * The callback is called immediately (on the next port message) and on every
-   * subsequent status change. Subscriptions persist across port reconnects
-   * (utility crash + restart).
+   * The callback fires on every subsequent broker `status` event; callers
+   * wanting an initial snapshot must invoke `list()`. Subscriptions persist
+   * across port reconnects. Implementations MUST be idempotent: calling the
+   * returned unsubscribe twice is a no-op; subscribing the same callback
+   * twice is allowed and de-duplicated.
    *
    * @returns An unsubscribe function. Call it to stop receiving updates.
    */
@@ -95,4 +104,18 @@ export interface IBackendsTransport {
    * `total` may be 0 if the content-length is unknown.
    */
   install(backend: string, onProgress?: (bytes: number, total: number) => void): Promise<void>;
+
+  /**
+   * Fire-and-forget request for the broker to broadcast a `status`
+   * event for every backend in its registry. Resolves once the request
+   * has been posted (the broker does not send a discrete reply).
+   */
+  list(): Promise<void>;
+
+  /**
+   * Removes the backend's installed binary. In v1 the broker rejects
+   * this with an error; callers should handle the rejection. Future
+   * versions may implement teardown semantics.
+   */
+  uninstall(backend: string): Promise<void>;
 }

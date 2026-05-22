@@ -109,7 +109,7 @@ function createStableDiffusionCppImageGenerateRunFn(
       handle = await options.transport.ensureRunning({
         backend: "stable-diffusion-cpp",
         modelPath: model.model_id,
-        opts: { ctx: 0 },
+        opts: {},
       });
       baseUrl = handle.url.replace(/\/$/, "");
     }
