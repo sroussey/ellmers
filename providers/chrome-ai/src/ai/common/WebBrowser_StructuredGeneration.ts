@@ -66,8 +66,9 @@ export const WebBrowser_StructuredGeneration: AiProviderRunFn<
   }
 
   // Compile the schema up-front so a bad schema fails fast (cheap, ahead of
-  // any provider work). Re-thrown as PermanentJobError so the surrounding
-  // retry loop doesn't waste attempts on a malformed schema.
+  // any provider work). We intentionally don't retain the validator here:
+  // `StructuredGenerationTask` re-validates `finish.data.object` downstream
+  // and drives the retry/repair loop from that result.
   try {
     compileSchema(schema as JsonSchema);
   } catch (err) {

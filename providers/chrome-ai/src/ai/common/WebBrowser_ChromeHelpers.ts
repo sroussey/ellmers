@@ -138,19 +138,19 @@ export async function* snapshotStreamToTextDeltas<Output>(
   port: string
 ): AsyncIterable<StreamEvent<Output>> {
   const reader = stream.getReader();
-  let previousSnapshot = "";
+  let accumulatedText = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value.startsWith(previousSnapshot)) {
-        const delta = value.slice(previousSnapshot.length);
-        previousSnapshot = value;
+      if (value.startsWith(accumulatedText)) {
+        const delta = value.slice(accumulatedText.length);
+        accumulatedText = value;
         if (delta) {
           yield { type: "text-delta", port, textDelta: delta };
         }
       } else {
-        previousSnapshot += value;
+        accumulatedText += value;
         yield { type: "text-delta", port, textDelta: value };
       }
     }
