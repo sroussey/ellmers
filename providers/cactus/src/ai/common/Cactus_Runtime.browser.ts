@@ -32,6 +32,46 @@ export interface CactusModelCacheInfo {
   readonly file_sizes: Record<string, number> | null;
 }
 
+// ============================================================================
+// Path-safety allowlists (defense-in-depth, mirror of Cactus_Runtime.ts)
+//
+// The browser variant does not touch the filesystem, but applying the same
+// validation keeps both code paths in sync, hardens cache-key inputs, and
+// silences static analyzers that flag any use of user-supplied identifiers
+// in URL/path-shaped strings.
+//
+// TODO: lift these helpers into a shared module if/when a third caller
+// appears. Duplicated for now to avoid churn during the active PR.
+// ============================================================================
+
+const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+
+function assertSafeModelId(model_id: string): void {
+  if (typeof model_id !== "string" || !MODEL_ID_RE.test(model_id)) {
+    throw new Error(
+      `Invalid Cactus model_id ${JSON.stringify(model_id)}: ` +
+        `must match ${MODEL_ID_RE} (alphanumeric, underscore, hyphen; 1-64 chars).`
+    );
+  }
+}
+
+function assertSafeFilename(filename: string): void {
+  if (
+    typeof filename !== "string" ||
+    filename.length === 0 ||
+    filename.length > 255 ||
+    filename === "." ||
+    filename === ".." ||
+    !FILENAME_RE.test(filename)
+  ) {
+    throw new Error(
+      `Invalid Cactus asset filename ${JSON.stringify(filename)}: ` +
+        `must match ${FILENAME_RE} (no path separators, no '..').`
+    );
+  }
+}
+
 let _sdk: NeedleSdkModule | undefined;
 let _sdkInitPromise: Promise<NeedleSdkModule> | undefined;
 
@@ -89,6 +129,7 @@ async function fetchAssetBytesBrowser(
   url: string,
   spec: CactusAssetSpec
 ): Promise<Uint8Array> {
+  assertSafeFilename(spec.filename);
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
@@ -137,6 +178,7 @@ export async function fetchAssetBytes(
   specOrFilename: CactusAssetSpec | string
 ): Promise<Uint8Array> {
   const model_id = model.provider_config.model_id;
+  assertSafeModelId(model_id);
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
   const spec = resolveAssetSpec(entry, specOrFilename);

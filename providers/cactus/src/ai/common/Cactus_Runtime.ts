@@ -28,6 +28,46 @@ export interface CactusModelCacheInfo {
   readonly file_sizes: Record<string, number> | null;
 }
 
+// ============================================================================
+// Path-safety allowlists (defense-in-depth)
+//
+// `model_id` originates from user-supplied `provider_config.model_id` and
+// `filename` originates from the (effectively trusted) catalog. The catalog
+// lookup in `getCactusCatalogEntry` already restricts `model_id` to known
+// values, but static analyzers (CodeQL) cannot see through that lookup, so
+// we re-enforce explicit character allowlists at every filesystem entry
+// point. Both regexes reject path separators, `..`, NUL, and any other
+// shell/path-special characters.
+// ============================================================================
+
+const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+
+function assertSafeModelId(model_id: string): void {
+  if (typeof model_id !== "string" || !MODEL_ID_RE.test(model_id)) {
+    throw new Error(
+      `Invalid Cactus model_id ${JSON.stringify(model_id)}: ` +
+        `must match ${MODEL_ID_RE} (alphanumeric, underscore, hyphen; 1-64 chars).`
+    );
+  }
+}
+
+function assertSafeFilename(filename: string): void {
+  if (
+    typeof filename !== "string" ||
+    filename.length === 0 ||
+    filename.length > 255 ||
+    filename === "." ||
+    filename === ".." ||
+    !FILENAME_RE.test(filename)
+  ) {
+    throw new Error(
+      `Invalid Cactus asset filename ${JSON.stringify(filename)}: ` +
+        `must match ${FILENAME_RE} (no path separators, no '..').`
+    );
+  }
+}
+
 let _sdk: NeedleSdkModule | undefined;
 let _sdkInitPromise: Promise<NeedleSdkModule> | undefined;
 
@@ -74,6 +114,7 @@ function modelsDirOf(model: CactusModelConfig): string {
 }
 
 function resolveModelDir(models_dir: string, model_id: string): string {
+  assertSafeModelId(model_id);
   return models_dir.startsWith("~/")
     ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
     : path.resolve(models_dir, model_id);
@@ -109,6 +150,7 @@ async function getNodeAssetCacheInfo(
   const resolvedDir = resolveModelDir(modelsDirOf(model), entry.model_id);
   const stats = await Promise.all(
     filenames.map(async (filename) => {
+      assertSafeFilename(filename);
       try {
         const stat = await fs.stat(path.join(resolvedDir, filename));
         return { filename, size: stat.size, cached: true };
@@ -204,6 +246,8 @@ async function fetchAssetBytesNode(
   model_id: string,
   spec: CactusAssetSpec
 ): Promise<Uint8Array> {
+  assertSafeModelId(model_id);
+  assertSafeFilename(spec.filename);
   const resolvedDir = resolveModelDir(models_dir, model_id);
   const filePath = path.join(resolvedDir, spec.filename);
   try {
@@ -435,6 +479,7 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
 
 async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): Promise<void> {
   if (hasBrowserCacheStorage()) return;
+  assertSafeModelId(model_id);
   const models_dir = modelsDirOf(model);
   const resolvedDir = resolveModelDir(models_dir, model_id);
   await fs.rm(resolvedDir, { recursive: true, force: true });
