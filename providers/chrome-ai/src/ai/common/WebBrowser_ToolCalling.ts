@@ -11,11 +11,14 @@ import type {
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
 } from "@workglow/ai";
-import { buildToolDescription, filterValidToolCalls } from "@workglow/ai";
+import {
+  buildToolDescription,
+  compileToolValidators,
+  filterValidToolCalls,
+  sanitizeToolArgs,
+  validateToolCallArgs,
+} from "@workglow/ai";
 import { uuid4 } from "@workglow/util";
-import type { JsonSchema, SchemaNode } from "@workglow/util/schema";
-import { compileSchema } from "@workglow/util/schema";
-import { getLogger } from "@workglow/util/worker";
 
 import {
   buildInitialPromptsFromHistory,
@@ -30,32 +33,6 @@ import {
   snapshotStreamToTextDeltas,
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
-
-const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-/**
- * Recursively rebuild a model-supplied JSON value, dropping any
- * `__proto__`, `constructor`, or `prototype` keys at every depth.
- * Returns a plain object (Object.prototype), never inheriting from a
- * tainted source. Used to sanitize tool-call arguments captured from
- * Chrome's LanguageModel before validation and propagation.
- *
- * Tool input schemas frequently set `additionalProperties: true` (or
- * omit it entirely), so a hallucinated `__proto__` key would otherwise
- * pass JSON-schema validation and leak into downstream consumers — a
- * classic prototype-pollution vector. Sanitization must happen BEFORE
- * validation so the validator sees the clean object.
- */
-function sanitizeToolArgs(value: unknown): unknown {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(sanitizeToolArgs);
-  const out: Record<string, unknown> = {};
-  for (const k of Object.keys(value as Record<string, unknown>)) {
-    if (FORBIDDEN_KEYS.has(k)) continue;
-    out[k] = sanitizeToolArgs((value as Record<string, unknown>)[k]);
-  }
-  return out;
-}
 
 function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
   if (typeof prompt === "string") return prompt;
@@ -162,20 +139,7 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
   // Compile validators once per tool. A bad schema downgrades that tool
   // to name-only validation rather than failing the whole run — the
   // existing `filterValidToolCalls` name check is still applied below.
-  const validators = new Map<string, SchemaNode | null>();
-  for (const td of input.tools) {
-    try {
-      validators.set(td.name, compileSchema(td.inputSchema as JsonSchema));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      getLogger().warn(
-        `WebBrowser_ToolCalling: tool "${td.name}" has invalid inputSchema, ` +
-          `falling back to name-only validation — ${msg}`,
-        { toolName: td.name }
-      );
-      validators.set(td.name, null);
-    }
-  }
+  const validators = compileToolValidators(input.tools);
 
   // `toolChoice: "none"` → omit tools entirely so the model can't call any.
   // Specific tool-name choices aren't expressible in Chrome's surface; we
@@ -213,32 +177,13 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
   });
   try {
     const stream = session.promptStreaming(promptText, { signal });
-    // Forward text-delta events; swallow the inner `finish` because we need
-    // to emit a composite finish below (text + toolCalls).
-    for await (const e of snapshotStreamToTextDeltas<ToolCallingTaskOutput>(stream, "text")) {
-      if (e.type === "finish") continue;
-      emit(e);
-    }
+    // The helper emits text-delta only; we emit the composite finish below
+    // (text + toolCalls) after validating the captured calls.
+    await snapshotStreamToTextDeltas<ToolCallingTaskOutput>(stream, "text", emit);
 
     // Validate each captured call's `input` against its tool's compiled
-    // schema. Calls with no compiled validator (schema compile failed)
-    // skip this step and rely on the name-only check below.
-    const argValidated = capturedCalls.filter((tc) => {
-      const v = validators.get(tc.name);
-      if (!v) return true;
-      const result = v.validate(tc.input);
-      if (result.valid) return true;
-      const firstError = result.errors[0];
-      const detail = firstError?.message ?? "unknown validation error";
-      getLogger().warn(
-        `WebBrowser_ToolCalling: dropping call to "${tc.name}" — args fail inputSchema (${detail})`,
-        { callId: tc.id, toolName: tc.name }
-      );
-      return false;
-    });
-
-    // Defence in depth against hallucinated tool names — same shape as
-    // OpenAI/Anthropic tool-calling run-fns.
+    // schema, then apply name-only defence in depth.
+    const argValidated = validateToolCallArgs(capturedCalls, validators);
     const validated = filterValidToolCalls(argValidated, input.tools);
     if (validated.length > 0) {
       emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });

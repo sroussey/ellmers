@@ -53,14 +53,15 @@ export const OpenAI_ToolCalling_Stream: AiProviderRunFn<
     { signal }
   );
 
-  for await (const event of accumulateOpenAIStream(stream)) {
+  await accumulateOpenAIStream(stream, (event) => {
     if (event.type === "object-delta" && event.port === "toolCalls") {
       const validated = filterValidToolCalls(event.objectDelta as ToolCalls, input.tools);
       if (validated.length > 0) {
         emit({ type: "object-delta", port: "toolCalls", objectDelta: validated });
       }
-      continue;
+      return;
     }
     emit(event);
-  }
+  });
+  emit({ type: "finish", data: { text: "", toolCalls: [] } as ToolCallingTaskOutput });
 };

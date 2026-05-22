@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { SchemaNode } from "@workglow/util/schema";
+import { compileSchema } from "@workglow/util/schema";
 import type { JsonSchema } from "@workglow/util/worker";
 import { getLogger } from "@workglow/util/worker";
 
@@ -100,6 +102,82 @@ export function filterValidToolCalls(
       return true;
     }
     getLogger().warn(`Filtered out tool call with unknown name "${tc.name ?? "(missing)"}"`, {
+      callId: tc.id,
+      toolName: tc.name,
+    });
+    return false;
+  });
+}
+
+const FORBIDDEN_TOOL_ARG_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Recursively rebuild a model-supplied JSON value, dropping any
+ * `__proto__`, `constructor`, or `prototype` keys at every depth.
+ * Returns a plain object (Object.prototype), never inheriting from a
+ * tainted source. Use this on tool-call arguments captured from any LLM
+ * before validation and propagation.
+ *
+ * Tool input schemas frequently set `additionalProperties: true` (or
+ * omit it entirely), so a hallucinated `__proto__` key would otherwise
+ * pass JSON-schema validation and leak into downstream consumers — a
+ * classic prototype-pollution vector. Sanitization must happen BEFORE
+ * validation so the validator sees the clean object.
+ */
+export function sanitizeToolArgs(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeToolArgs);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(value as Record<string, unknown>)) {
+    if (FORBIDDEN_TOOL_ARG_KEYS.has(k)) continue;
+    out[k] = sanitizeToolArgs((value as Record<string, unknown>)[k]);
+  }
+  return out;
+}
+
+/**
+ * Compiles each tool's `inputSchema` into a validator. A tool whose schema
+ * fails to compile maps to `null`, signalling that downstream code should
+ * fall back to name-only validation rather than failing the whole run.
+ */
+export function compileToolValidators(
+  tools: ReadonlyArray<ToolDefinition>
+): Map<string, SchemaNode | null> {
+  const validators = new Map<string, SchemaNode | null>();
+  for (const td of tools) {
+    try {
+      validators.set(td.name, compileSchema(td.inputSchema));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      getLogger().warn(
+        `Tool "${td.name}" has invalid inputSchema, ` +
+          `falling back to name-only validation — ${msg}`,
+        { toolName: td.name }
+      );
+      validators.set(td.name, null);
+    }
+  }
+  return validators;
+}
+
+/**
+ * Filter tool calls whose `input` doesn't match the tool's compiled
+ * `inputSchema`. Tools without a compiled validator (compile failed,
+ * or absent from the map) pass through — callers should still apply
+ * {@link filterValidToolCalls} for name-only defence in depth.
+ */
+export function validateToolCallArgs(
+  toolCalls: ToolCalls,
+  validators: ReadonlyMap<string, SchemaNode | null>
+): ToolCalls {
+  return toolCalls.filter((tc) => {
+    const v = validators.get(tc.name);
+    if (!v) return true;
+    const result = v.validate(tc.input);
+    if (result.valid) return true;
+    const firstError = result.errors[0];
+    const detail = firstError?.message ?? "unknown validation error";
+    getLogger().warn(`Dropping call to "${tc.name}" — args fail inputSchema (${detail})`, {
       callId: tc.id,
       toolName: tc.name,
     });

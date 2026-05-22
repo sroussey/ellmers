@@ -1221,10 +1221,12 @@ describe("WebBrowser_ToolCalling sanitizes captured args", () => {
 // snapshotStreamToTextDeltas reset semantics (HIGH-3)
 // --------------------------------------------------------------------------
 
-/** Drain an async iterable of stream events into an array. */
-async function drain<T>(it: AsyncIterable<T>): Promise<T[]> {
+/** Collect events emitted by an emit-callback helper into an array. */
+async function collect<T>(run: (emit: (event: T) => void) => Promise<void>): Promise<T[]> {
   const out: T[] = [];
-  for await (const e of it) out.push(e);
+  await run((event) => {
+    out.push(event);
+  });
   return out;
 }
 
@@ -1240,8 +1242,12 @@ function streamOf(values: readonly string[]): ReadableStream<string> {
 
 describe("snapshotStreamToTextDeltas", () => {
   it("emits incremental deltas on prefix-extending snapshots", async () => {
-    const events = await drain(
-      chromeHelpers.snapshotStreamToTextDeltas(streamOf(["hel", "hello", "hello world"]), "text")
+    const events = await collect((emit) =>
+      chromeHelpers.snapshotStreamToTextDeltas(
+        streamOf(["hel", "hello", "hello world"]),
+        "text",
+        emit
+      )
     );
     const deltas = events
       .filter((e) => (e as { type: string }).type === "text-delta")
@@ -1250,8 +1256,12 @@ describe("snapshotStreamToTextDeltas", () => {
   });
 
   it("resets on a non-prefix snapshot", async () => {
-    const events = await drain(
-      chromeHelpers.snapshotStreamToTextDeltas(streamOf(["hello world", "hello sailor"]), "text")
+    const events = await collect((emit) =>
+      chromeHelpers.snapshotStreamToTextDeltas(
+        streamOf(["hello world", "hello sailor"]),
+        "text",
+        emit
+      )
     );
     const deltas = events
       .filter((e) => (e as { type: string }).type === "text-delta")
@@ -1264,8 +1274,8 @@ describe("snapshotStreamToTextDeltas", () => {
   });
 
   it("does not emit an empty delta on identical snapshots", async () => {
-    const events = await drain(
-      chromeHelpers.snapshotStreamToTextDeltas(streamOf(["hi", "hi"]), "text")
+    const events = await collect((emit) =>
+      chromeHelpers.snapshotStreamToTextDeltas(streamOf(["hi", "hi"]), "text", emit)
     );
     const deltas = events.filter((e) => (e as { type: string }).type === "text-delta");
     expect(deltas).toHaveLength(1);

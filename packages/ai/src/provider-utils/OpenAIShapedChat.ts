@@ -127,21 +127,22 @@ interface ToolCallAccumulatorEntry {
 /**
  * Adapt an OpenAI-shape streaming response (each chunk has
  * `choices[0].delta.{content?, tool_calls?[]}`) to workglow stream events.
- *
- * Yields:
+ * Forwards events via the `emit` callback:
  *  - `text-delta` for each non-empty `delta.content`.
  *  - `object-delta` (single-element array) per tool-call delta with the latest
  *    parsed input. The downstream `StreamProcessor` upserts by `id`.
- *  - `finish` with structural defaults (`{ text: "", toolCalls: [] }`) once the
- *    stream ends. The defaults are minimal scaffolding so the final output
- *    always satisfies {@link ToolCallingTaskOutput} even when the model
- *    streams only `tool_calls` (no `content` deltas) — the consumer's
- *    `StreamProcessor` overrides any port for which deltas were accumulated.
+ *
+ * The caller is responsible for emitting its own `finish` event after this
+ * returns — most callers will use structural defaults like
+ * `{ text: "", toolCalls: [] }` so the final output satisfies
+ * {@link ToolCallingTaskOutput} even when the model streams only
+ * `tool_calls` (no `content` deltas).
  */
-export async function* accumulateOpenAIStream(
+export async function accumulateOpenAIStream(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  stream: AsyncIterable<any>
-): AsyncGenerator<StreamEvent<ToolCallingTaskOutput>, void, unknown> {
+  stream: AsyncIterable<any>,
+  emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
+): Promise<void> {
   const toolCallAccumulator = new Map<number, ToolCallAccumulatorEntry>();
 
   for await (const chunk of stream) {
@@ -150,7 +151,7 @@ export async function* accumulateOpenAIStream(
 
     const contentDelta: string = choice.delta?.content ?? "";
     if (contentDelta) {
-      yield { type: "text-delta", port: "text", textDelta: contentDelta };
+      emit({ type: "text-delta", port: "text", textDelta: contentDelta });
     }
 
     const tcDeltas = choice.delta?.tool_calls;
@@ -173,16 +174,11 @@ export async function* accumulateOpenAIStream(
       // StreamProcessor's id-based upsert.
       const stableId = acc.id || `call_${idx}`;
 
-      yield {
+      emit({
         type: "object-delta",
         port: "toolCalls",
         objectDelta: [{ id: stableId, name: acc.name, input: parseToolArgs(acc.arguments) }],
-      };
+      });
     }
   }
-
-  yield {
-    type: "finish",
-    data: { text: "", toolCalls: [] } as ToolCallingTaskOutput,
-  };
 }

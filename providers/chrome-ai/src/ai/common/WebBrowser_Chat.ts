@@ -88,9 +88,8 @@ export const WebBrowser_Chat: AiProviderRunFn<
     // internal history so the next call's "prior count" is
     // `messages.length + 1`.
     const stream = session.promptStreaming(promptText, { signal });
-    for await (const e of snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text")) {
-      emit(e);
-    }
+    await snapshotStreamToTextDeltas<AiChatProviderOutput>(stream, "text", emit);
+    emit({ type: "finish", data: {} as AiChatProviderOutput });
     if (sessionId !== undefined) {
       // After a successful prompt the session contains everything in
       // `messages` plus one assistant turn. Ownership of `session` transfers

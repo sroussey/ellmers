@@ -256,8 +256,8 @@ export async function queryWebBrowserModelStatus(
 
 /**
  * Chrome streaming APIs return progressive full-text snapshots. This helper
- * converts them to append-mode text-delta events by diffing successive
- * snapshots.
+ * converts them to append-mode `text-delta` events by diffing successive
+ * snapshots and forwarding each delta to `emit`.
  *
  * **Reset semantics**: most snapshots are prefix-extensions of the previous
  * one (the model is appending). When a snapshot is NOT a prefix extension
@@ -268,12 +268,15 @@ export async function queryWebBrowserModelStatus(
  * reset boundary; use {@link snapshotStreamToSnapshots} if you need
  * explicit replace-mode events.
  *
- * Identical consecutive snapshots emit no delta.
+ * Identical consecutive snapshots emit no delta. The caller is responsible
+ * for emitting its own `finish` event after this returns — this helper
+ * never emits `finish`.
  */
-export async function* snapshotStreamToTextDeltas<Output>(
+export async function snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
-  port: string
-): AsyncIterable<StreamEvent<Output>> {
+  port: string,
+  emit: (event: StreamEvent<Output>) => void
+): Promise<void> {
   const reader = stream.getReader();
   let accumulatedText = "";
   try {
@@ -284,7 +287,7 @@ export async function* snapshotStreamToTextDeltas<Output>(
         const delta = value.slice(accumulatedText.length);
         accumulatedText = value;
         if (delta) {
-          yield { type: "text-delta", port, textDelta: delta };
+          emit({ type: "text-delta", port, textDelta: delta });
         }
       } else {
         // Self-correction snapshot: Chrome replaced (not extended) prior text.
@@ -293,31 +296,32 @@ export async function* snapshotStreamToTextDeltas<Output>(
         // treat any subsequent non-prefix delta as a reset boundary; use
         // `snapshotStreamToSnapshots` if you need replace-mode semantics.
         accumulatedText = value;
-        yield { type: "text-delta", port, textDelta: value };
+        emit({ type: "text-delta", port, textDelta: value });
       }
     }
   } finally {
     reader.releaseLock();
   }
-  yield { type: "finish", data: {} as Output };
 }
 
 /**
- * Chrome streaming APIs return progressive full-text snapshots. Yields replace-mode snapshot events.
+ * Chrome streaming APIs return progressive full-text snapshots. Forwards
+ * each snapshot as a replace-mode `snapshot` event via `emit`. The caller
+ * is responsible for emitting its own `finish` event after this returns.
  */
-export async function* snapshotStreamToSnapshots<Output>(
+export async function snapshotStreamToSnapshots<Output>(
   stream: ReadableStream<string>,
-  buildOutput: (text: string) => Output
-): AsyncIterable<StreamEvent<Output>> {
+  buildOutput: (text: string) => Output,
+  emit: (event: StreamEvent<Output>) => void
+): Promise<void> {
   const reader = stream.getReader();
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      yield { type: "snapshot", data: buildOutput(value) };
+      emit({ type: "snapshot", data: buildOutput(value) });
     }
   } finally {
     reader.releaseLock();
   }
-  yield { type: "finish", data: {} as Output };
 }
