@@ -55,6 +55,11 @@ export interface CactusModelCacheInfo {
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+// Most filesystems (ext4, APFS, NTFS) cap a single path component at 255
+// bytes. The Node atomic-write path writes to `${filename}.tmp` (4 chars)
+// before renaming, so the source filename must leave room for that suffix.
+// Apply the same limit in the browser variant for cross-platform parity.
+const MAX_FILENAME_LEN = 251;
 
 function assertSafeModelId(model_id: string): void {
   if (typeof model_id !== "string" || !MODEL_ID_RE.test(model_id)) {
@@ -69,14 +74,15 @@ function assertSafeFilename(filename: string): void {
   if (
     typeof filename !== "string" ||
     filename.length === 0 ||
-    filename.length > 255 ||
+    filename.length > MAX_FILENAME_LEN ||
     filename === "." ||
     filename === ".." ||
     !FILENAME_RE.test(filename)
   ) {
     throw new Error(
       `Invalid Cactus asset filename ${JSON.stringify(filename)}: ` +
-        `must match ${FILENAME_RE} (no path separators, no '..').`
+        `must match ${FILENAME_RE} (no path separators, no '..'), 1-${MAX_FILENAME_LEN} chars ` +
+        `(reserves 4 chars for the '.tmp' suffix used by atomic writes).`
     );
   }
 }
