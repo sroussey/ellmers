@@ -517,6 +517,30 @@
         "@workglow/util": "workspace:*",
       },
     },
+    "providers/llamacpp-server": {
+      "name": "@workglow/llamacpp-server",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "providers/mlx": {
+      "name": "@workglow/mlx",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "providers/node-llama-cpp": {
       "name": "@workglow/node-llama-cpp",
       "version": "0.3.1",
@@ -642,6 +666,18 @@
         "better-sqlite3",
       ],
     },
+    "providers/stable-diffusion-cpp": {
+      "name": "@workglow/stable-diffusion-cpp",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "providers/supabase": {
       "name": "@workglow/supabase",
       "version": "0.3.1",
@@ -685,11 +721,11 @@
     },
   },
   "trustedDependencies": [
-    "node-llama-cpp",
-    "better-sqlite3",
     "protobufjs",
+    "better-sqlite3",
     "sharp",
     "onnxruntime-node",
+    "node-llama-cpp",
   ],
   "catalog": {
     "@anthropic-ai/sdk": "^0.97.1",
@@ -1376,7 +1412,11 @@
 
     "@workglow/knowledge-base": ["@workglow/knowledge-base@workspace:packages/knowledge-base"],
 
+    "@workglow/llamacpp-server": ["@workglow/llamacpp-server@workspace:providers/llamacpp-server"],
+
     "@workglow/mcp": ["@workglow/mcp@workspace:packages/mcp"],
+
+    "@workglow/mlx": ["@workglow/mlx@workspace:providers/mlx"],
 
     "@workglow/node-llama-cpp": ["@workglow/node-llama-cpp@workspace:providers/node-llama-cpp"],
 
@@ -1389,6 +1429,8 @@
     "@workglow/postgres": ["@workglow/postgres@workspace:providers/postgres"],
 
     "@workglow/sqlite": ["@workglow/sqlite@workspace:providers/sqlite"],
+
+    "@workglow/stable-diffusion-cpp": ["@workglow/stable-diffusion-cpp@workspace:providers/stable-diffusion-cpp"],
 
     "@workglow/storage": ["@workglow/storage@workspace:packages/storage"],
 

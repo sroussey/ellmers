@@ -15,7 +15,7 @@ import type {
   TextGenerationTaskOutput,
 } from "@workglow/ai";
 import { AiProvider } from "@workglow/ai";
-import type { IBackendsTransport } from "@workglow/ai/provider-utils";
+import type { IBackendsTransport, IRunningHandle } from "@workglow/ai/provider-utils";
 import { LOCAL_LLAMACPP_SERVER } from "./common/LlamaCppServer_Constants";
 
 export interface ILlamaCppServerProviderOptions {
@@ -39,9 +39,6 @@ export class LlamaCppServerProvider extends AiProvider {
   readonly isLocal = true;
   readonly supportsBrowser = false;
 
-  readonly #transport: IBackendsTransport;
-  readonly #externalUrl: string | undefined;
-
   constructor(options: ILlamaCppServerProviderOptions) {
     const runFns: readonly AiProviderRunFnRegistration<
       TextGenerationTaskInput,
@@ -64,8 +61,6 @@ export class LlamaCppServerProvider extends AiProvider {
     > = {};
 
     super(runFns, previewTasks);
-    this.#transport = options.transport;
-    this.#externalUrl = options.externalUrl;
   }
 
   override inferCapabilities(model: ModelRecord): readonly Capability[] {
@@ -122,7 +117,7 @@ function createLlamaCppServerTextGenerationStream(
 
     // Acquire base URL — either from external override or via transport.
     let baseUrl: string;
-    let handle: { release: () => Promise<void> } | undefined;
+    let handle: IRunningHandle | undefined;
 
     if (options.externalUrl) {
       baseUrl = options.externalUrl.replace(/\/$/, "");
