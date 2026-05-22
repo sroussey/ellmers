@@ -135,6 +135,18 @@ async function fetchAssetBytesBrowser(
   if (hit) {
     const bytes = new Uint8Array(await hit.arrayBuffer());
     try {
+      // Cheap pre-check: a wrong-size cached entry cannot match the catalog.
+      // Throwing CactusIntegrityError here flows through the same catch
+      // branch that deletes the cache entry and falls through to refetch —
+      // so size and hash mismatches are handled uniformly.
+      if (spec.size > 0 && bytes.byteLength !== spec.size) {
+        throw new CactusIntegrityError({
+          url,
+          filename: spec.filename,
+          expected: `${spec.size} bytes`,
+          actual: `${bytes.byteLength} bytes`,
+        });
+      }
       await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
       return bytes;
     } catch (err) {
