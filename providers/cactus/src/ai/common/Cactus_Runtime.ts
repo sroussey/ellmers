@@ -7,10 +7,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
+import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
+  assetSpecsOf,
   cactusAssetUrl,
-  getCactusCatalogEntry,
+  type CactusAssetSpec,
   type CactusCatalogEntry,
+  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 
@@ -22,6 +25,57 @@ type NeedleEngine = NonNullable<ReturnType<NeedleSdkModule["NeedleWasm"]["load"]
 export interface CactusModelCacheInfo {
   readonly allCached: boolean;
   readonly file_sizes: Record<string, number> | null;
+}
+
+// ============================================================================
+// Path-safety (defense-in-depth + CodeQL-recognized inline sanitizer)
+//
+// `model_id` originates from user-supplied `provider_config.model_id` and
+// `filename` originates from the (effectively trusted) catalog. The catalog
+// lookup in `getCactusCatalogEntry` already restricts `model_id` to known
+// values, but static analyzers cannot see through that lookup.
+//
+// Two layers of defense are applied at every filesystem entry point:
+//
+//   1. Character allowlists (`assertSafeModelId`, `assertSafeFilename`)
+//      reject separators, `..`, NUL, and any shell/path-special characters
+//      at the boundary. Fast-fail on malformed input.
+//
+//   2. An inline `path.resolve` + `startsWith` containment check is
+//      duplicated immediately before every `fs.*` call. CodeQL's
+//      `js/path-injection` query does NOT trace through user-defined
+//      helper functions, so the sanitizer pattern must appear in the
+//      same function scope as the filesystem call. The cost of the
+//      duplication is a few string comparisons; the benefit is that the
+//      analyzer sees every fs call as locally sanitized.
+// ============================================================================
+
+const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+
+function assertSafeModelId(model_id: string): void {
+  if (typeof model_id !== "string" || !MODEL_ID_RE.test(model_id)) {
+    throw new Error(
+      `Invalid Cactus model_id ${JSON.stringify(model_id)}: ` +
+        `must match ${MODEL_ID_RE} (alphanumeric, underscore, hyphen; 1-64 chars).`
+    );
+  }
+}
+
+function assertSafeFilename(filename: string): void {
+  if (
+    typeof filename !== "string" ||
+    filename.length === 0 ||
+    filename.length > 255 ||
+    filename === "." ||
+    filename === ".." ||
+    !FILENAME_RE.test(filename)
+  ) {
+    throw new Error(
+      `Invalid Cactus asset filename ${JSON.stringify(filename)}: ` +
+        `must match ${FILENAME_RE} (no path separators, no '..').`
+    );
+  }
 }
 
 let _sdk: NeedleSdkModule | undefined;
@@ -69,14 +123,8 @@ function modelsDirOf(model: CactusModelConfig): string {
   return model.provider_config.models_dir ?? CACTUS_DEFAULT_MODELS_DIR;
 }
 
-function resolveModelDir(models_dir: string, model_id: string): string {
-  return models_dir.startsWith("~/")
-    ? path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2), model_id)
-    : path.resolve(models_dir, model_id);
-}
-
 function assetFilenames(entry: CactusCatalogEntry): string[] {
-  return [entry.assets.weights, entry.assets.vocab, entry.assets.config];
+  return assetSpecsOf(entry).map((s) => s.filename);
 }
 
 async function getRemoteAssetSize(
@@ -102,11 +150,33 @@ async function getNodeAssetCacheInfo(
   signal: AbortSignal | undefined
 ): Promise<CactusModelCacheInfo> {
   const filenames = assetFilenames(entry);
-  const resolvedDir = resolveModelDir(modelsDirOf(model), entry.model_id);
+  const models_dir = modelsDirOf(model);
+  const model_id = entry.model_id;
+  assertSafeModelId(model_id);
+  // Compute the resolved model dir inline so CodeQL's js/path-injection
+  // query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
   const stats = await Promise.all(
     filenames.map(async (filename) => {
+      assertSafeFilename(filename);
+      // Inline sanitizer at the fs call site.
+      const target = path.resolve(resolvedDir, filename);
+      if (target !== resolvedDir && !target.startsWith(resolvedDir + path.sep)) {
+        return { filename, size: undefined, cached: false };
+      }
       try {
-        const stat = await fs.stat(path.join(resolvedDir, filename));
+        const stat = await fs.stat(target);
         return { filename, size: stat.size, cached: true };
       } catch {
         return { filename, size: undefined, cached: false };
@@ -146,56 +216,200 @@ async function getNodeAssetCacheInfo(
   };
 }
 
-async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
+async function fetchAssetBytesBrowser(
+  url: string,
+  spec: CactusAssetSpec
+): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
   if (hit) {
-    return new Uint8Array(await hit.arrayBuffer());
+    const bytes = new Uint8Array(await hit.arrayBuffer());
+    try {
+      await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+      return bytes;
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        // Cached bytes are corrupt / stale — evict and refetch.
+        try {
+          await cache.delete(url);
+        } catch {
+          /* best effort */
+        }
+      } else {
+        throw err;
+      }
+    }
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
-  // Clone first — Response bodies can only be consumed once.
-  await cache.put(url, resp.clone());
-  return new Uint8Array(await resp.arrayBuffer());
+  const contentType = resp.headers.get("content-type") ?? "application/octet-stream";
+  const ab = await resp.arrayBuffer();
+  const bytes = new Uint8Array(ab);
+  if (spec.size > 0 && bytes.byteLength !== spec.size) {
+    throw new CactusIntegrityError({
+      url,
+      filename: spec.filename,
+      expected: `${spec.size} bytes`,
+      actual: `${bytes.byteLength} bytes`,
+    });
+  }
+  // Verify BEFORE storing — never persist unverified bytes to the cache.
+  await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+  const headers = new Headers({
+    "content-type": contentType,
+    "content-length": String(bytes.byteLength),
+  });
+  await cache.put(url, new Response(bytes, { headers }));
+  return bytes;
 }
 
 async function fetchAssetBytesNode(
   url: string,
   models_dir: string,
   model_id: string,
-  filename: string
+  spec: CactusAssetSpec
 ): Promise<Uint8Array> {
-  const resolvedDir = resolveModelDir(models_dir, model_id);
-  const filePath = path.join(resolvedDir, filename);
+  assertSafeModelId(model_id);
+  assertSafeFilename(spec.filename);
+  // Compute the resolved model dir inline so CodeQL's js/path-injection
+  // query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
+  // Used for the error-context URL only — not for any fs.* call (those
+  // recompute path.resolve locally so CodeQL sees the inline sanitizer).
+  const filePath = path.resolve(resolvedDir, spec.filename);
+  if (filePath !== resolvedDir && !filePath.startsWith(resolvedDir + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(filePath)} is not within ${JSON.stringify(resolvedDir)}`
+    );
+  }
   try {
-    const buf = await fs.readFile(filePath);
-    return new Uint8Array(buf);
-  } catch {
-    // fall through to fetch
+    // Re-resolve at the call site so CodeQL sees the sanitizer locally.
+    const readPath = path.resolve(resolvedDir, spec.filename);
+    if (readPath !== resolvedDir && !readPath.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    const buf = await fs.readFile(readPath);
+    const bytes = new Uint8Array(buf);
+    try {
+      await verifySha256(bytes, spec.sha256, { url: `file:${filePath}`, filename: spec.filename });
+      return bytes;
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        // On-disk asset is corrupt; evict and fall through to network.
+        const unlinkPath = path.resolve(resolvedDir, spec.filename);
+        if (unlinkPath !== resolvedDir && !unlinkPath.startsWith(resolvedDir + path.sep)) {
+          throw new Error(
+            `Path escape detected: ${JSON.stringify(unlinkPath)} is not within ${JSON.stringify(resolvedDir)}`
+          );
+        }
+        await fs.unlink(unlinkPath).catch(() => {});
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    // ENOENT or sibling read errors fall through to fetch.
+    if (err instanceof CactusIntegrityError) {
+      throw err; // unreachable, handled above
+    }
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
-  await fs.mkdir(resolvedDir, { recursive: true });
-  const tmpPath = `${filePath}.tmp`;
-  await fs.writeFile(tmpPath, bytes);
-  await fs.rename(tmpPath, filePath);
+  if (spec.size > 0 && bytes.byteLength !== spec.size) {
+    throw new CactusIntegrityError({
+      url,
+      filename: spec.filename,
+      expected: `${spec.size} bytes`,
+      actual: `${bytes.byteLength} bytes`,
+    });
+  }
+  // Verify BEFORE writing the tmp file — never atomically promote unverified bytes.
+  await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+  // Inline sanitizer for the mkdir target.
+  const mkdirTarget = path.resolve(safeRoot, model_id);
+  if (mkdirTarget !== safeRoot && !mkdirTarget.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(mkdirTarget)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
+  await fs.mkdir(mkdirTarget, { recursive: true });
+  // Atomic write: write to a sibling `.tmp` path, then rename. Each fs
+  // call below recomputes its path via path.resolve so CodeQL sees the
+  // inline sanitizer at every call site.
+  try {
+    const writeTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (writeTarget !== resolvedDir && !writeTarget.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(writeTarget)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    await fs.writeFile(writeTarget, bytes);
+    const renameFrom = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (renameFrom !== resolvedDir && !renameFrom.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(renameFrom)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    const renameTo = path.resolve(resolvedDir, spec.filename);
+    if (renameTo !== resolvedDir && !renameTo.startsWith(resolvedDir + path.sep)) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(renameTo)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
+    await fs.rename(renameFrom, renameTo);
+  } catch (err) {
+    const cleanupTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
+    if (cleanupTarget !== resolvedDir && !cleanupTarget.startsWith(resolvedDir + path.sep)) {
+      throw err;
+    }
+    await fs.unlink(cleanupTarget).catch(() => {});
+    throw err;
+  }
   return bytes;
 }
 
 export async function fetchAssetBytes(
   model: CactusModelConfig,
-  filename: string
+  specOrFilename: CactusAssetSpec | string
 ): Promise<Uint8Array> {
   const model_id = model.provider_config.model_id;
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
-  const url = cactusAssetUrl(entry, filename);
+  const spec = resolveAssetSpec(entry, specOrFilename);
+  const url = cactusAssetUrl(entry, spec.filename);
   if (hasBrowserCacheStorage()) {
-    return fetchAssetBytesBrowser(url);
+    return fetchAssetBytesBrowser(url, spec);
   }
-  return fetchAssetBytesNode(url, modelsDirOf(model), model_id, filename);
+  return fetchAssetBytesNode(url, modelsDirOf(model), model_id, spec);
+}
+
+function resolveAssetSpec(
+  entry: CactusCatalogEntry,
+  specOrFilename: CactusAssetSpec | string
+): CactusAssetSpec {
+  if (typeof specOrFilename !== "string") return specOrFilename;
+  const found = assetSpecsOf(entry).find((s) => s.filename === specOrFilename);
+  if (!found) {
+    throw new Error(
+      `No asset spec for filename ${JSON.stringify(specOrFilename)} in catalog entry ${entry.model_id}`
+    );
+  }
+  return found;
 }
 
 // ============================================================================
@@ -345,7 +559,7 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
   if (!hasBrowserCacheStorage()) return;
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
-  for (const filename of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
+  for (const filename of assetFilenames(entry)) {
     const url = cactusAssetUrl(entry, filename);
     try {
       await cache.delete(url);
@@ -357,8 +571,22 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
 
 async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): Promise<void> {
   if (hasBrowserCacheStorage()) return;
+  assertSafeModelId(model_id);
   const models_dir = modelsDirOf(model);
-  const resolvedDir = resolveModelDir(models_dir, model_id);
+  // Compute the resolved model dir inline so CodeQL's js/path-injection
+  // query can trace the sanitizer locally.
+  const safeRoot = models_dir.startsWith("~/")
+    ? path.resolve(
+        process.env.HOME ?? process.env.USERPROFILE ?? ".",
+        models_dir.slice(2)
+      )
+    : path.resolve(models_dir);
+  const resolvedDir = path.resolve(safeRoot, model_id);
+  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
+    throw new Error(
+      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+    );
+  }
   await fs.rm(resolvedDir, { recursive: true, force: true });
 }
 
