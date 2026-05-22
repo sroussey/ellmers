@@ -9,7 +9,8 @@ import type {
   ModelDownloadTaskRunInput,
   ModelDownloadTaskRunOutput,
 } from "@workglow/ai";
-import { getCactusCatalogEntry } from "./Cactus_ModelCatalog";
+import { CactusIntegrityError } from "./Cactus_Integrity";
+import { assetSpecsOf, getCactusCatalogEntry } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 import { fetchAssetBytes, markModelCached } from "./Cactus_Runtime";
 
@@ -23,14 +24,25 @@ export const Cactus_Download: AiProviderRunFn<
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
-  const assets = [entry.assets.weights, entry.assets.vocab, entry.assets.config];
-  for (let i = 0; i < assets.length; i++) {
+  const specs = assetSpecsOf(entry);
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i];
     emit({
       type: "phase",
-      message: `Downloading ${assets[i]}`,
-      progress: Math.round(((i + 0.5) / assets.length) * 99),
+      message: `Downloading ${spec.filename}`,
+      progress: Math.round(((i + 0.5) / specs.length) * 99),
     });
-    await fetchAssetBytes(model, assets[i]);
+    try {
+      await fetchAssetBytes(model, spec);
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        emit({
+          type: "phase",
+          message: `Integrity check failed for ${spec.filename}: expected sha256 ${err.expected}, got ${err.actual}`,
+        });
+      }
+      throw err;
+    }
   }
   markModelCached(model_id);
   emit({ type: "finish", data: { model: input.model! } });

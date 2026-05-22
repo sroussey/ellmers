@@ -7,10 +7,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
+import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
+  assetSpecsOf,
   cactusAssetUrl,
-  getCactusCatalogEntry,
+  type CactusAssetSpec,
   type CactusCatalogEntry,
+  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 import {
@@ -84,7 +87,7 @@ function resolveModelDir(models_dir: string, model_id: string): string {
 }
 
 function assetFilenames(entry: CactusCatalogEntry): string[] {
-  return [entry.assets.weights, entry.assets.vocab, entry.assets.config];
+  return assetSpecsOf(entry).map((s) => s.filename);
 }
 
 async function getRemoteAssetSize(
@@ -154,56 +157,134 @@ async function getNodeAssetCacheInfo(
   };
 }
 
-async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
+async function fetchAssetBytesBrowser(
+  url: string,
+  spec: CactusAssetSpec
+): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
   if (hit) {
-    return new Uint8Array(await hit.arrayBuffer());
+    const bytes = new Uint8Array(await hit.arrayBuffer());
+    try {
+      await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+      return bytes;
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        // Cached bytes are corrupt / stale — evict and refetch.
+        try {
+          await cache.delete(url);
+        } catch {
+          /* best effort */
+        }
+      } else {
+        throw err;
+      }
+    }
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
-  // Clone first — Response bodies can only be consumed once.
-  await cache.put(url, resp.clone());
-  return new Uint8Array(await resp.arrayBuffer());
+  const contentType = resp.headers.get("content-type") ?? "application/octet-stream";
+  const ab = await resp.arrayBuffer();
+  const bytes = new Uint8Array(ab);
+  if (spec.size > 0 && bytes.byteLength !== spec.size) {
+    throw new CactusIntegrityError({
+      url,
+      filename: spec.filename,
+      expected: `${spec.size} bytes`,
+      actual: `${bytes.byteLength} bytes`,
+    });
+  }
+  // Verify BEFORE storing — never persist unverified bytes to the cache.
+  await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
+  const headers = new Headers({
+    "content-type": contentType,
+    "content-length": String(bytes.byteLength),
+  });
+  await cache.put(url, new Response(bytes, { headers }));
+  return bytes;
 }
 
 async function fetchAssetBytesNode(
   url: string,
   models_dir: string,
   model_id: string,
-  filename: string
+  spec: CactusAssetSpec
 ): Promise<Uint8Array> {
   const resolvedDir = resolveModelDir(models_dir, model_id);
-  const filePath = path.join(resolvedDir, filename);
+  const filePath = path.join(resolvedDir, spec.filename);
   try {
     const buf = await fs.readFile(filePath);
-    return new Uint8Array(buf);
-  } catch {
-    // fall through to fetch
+    const bytes = new Uint8Array(buf);
+    try {
+      await verifySha256(bytes, spec.sha256, { url: `file:${filePath}`, filename: spec.filename });
+      return bytes;
+    } catch (err) {
+      if (err instanceof CactusIntegrityError) {
+        // On-disk asset is corrupt; evict and fall through to network.
+        await fs.unlink(filePath).catch(() => {});
+      } else {
+        throw err;
+      }
+    }
+  } catch (err) {
+    // ENOENT or sibling read errors fall through to fetch.
+    if (err instanceof CactusIntegrityError) {
+      throw err; // unreachable, handled above
+    }
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
+  if (spec.size > 0 && bytes.byteLength !== spec.size) {
+    throw new CactusIntegrityError({
+      url,
+      filename: spec.filename,
+      expected: `${spec.size} bytes`,
+      actual: `${bytes.byteLength} bytes`,
+    });
+  }
+  // Verify BEFORE writing the tmp file — never atomically promote unverified bytes.
+  await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
   await fs.mkdir(resolvedDir, { recursive: true });
   const tmpPath = `${filePath}.tmp`;
-  await fs.writeFile(tmpPath, bytes);
-  await fs.rename(tmpPath, filePath);
+  try {
+    await fs.writeFile(tmpPath, bytes);
+    await fs.rename(tmpPath, filePath);
+  } catch (err) {
+    await fs.unlink(tmpPath).catch(() => {});
+    throw err;
+  }
   return bytes;
 }
 
 export async function fetchAssetBytes(
   model: CactusModelConfig,
-  filename: string
+  specOrFilename: CactusAssetSpec | string
 ): Promise<Uint8Array> {
   const model_id = model.provider_config.model_id;
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
-  const url = cactusAssetUrl(entry, filename);
+  const spec = resolveAssetSpec(entry, specOrFilename);
+  const url = cactusAssetUrl(entry, spec.filename);
   if (hasBrowserCacheStorage()) {
-    return fetchAssetBytesBrowser(url);
+    return fetchAssetBytesBrowser(url, spec);
   }
-  return fetchAssetBytesNode(url, modelsDirOf(model), model_id, filename);
+  return fetchAssetBytesNode(url, modelsDirOf(model), model_id, spec);
+}
+
+function resolveAssetSpec(
+  entry: CactusCatalogEntry,
+  specOrFilename: CactusAssetSpec | string
+): CactusAssetSpec {
+  if (typeof specOrFilename !== "string") return specOrFilename;
+  const found = assetSpecsOf(entry).find((s) => s.filename === specOrFilename);
+  if (!found) {
+    throw new Error(
+      `No asset spec for filename ${JSON.stringify(specOrFilename)} in catalog entry ${entry.model_id}`
+    );
+  }
+  return found;
 }
 
 // ============================================================================
@@ -349,7 +430,7 @@ async function removeBrowserCacheEntries(entry: CactusCatalogEntry): Promise<voi
   if (!hasBrowserCacheStorage()) return;
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
-  for (const filename of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
+  for (const filename of assetFilenames(entry)) {
     const url = cactusAssetUrl(entry, filename);
     try {
       await cache.delete(url);
