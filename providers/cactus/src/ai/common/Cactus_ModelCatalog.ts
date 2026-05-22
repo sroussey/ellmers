@@ -10,6 +10,7 @@ import {
   CACTUS_DEFAULT_REVISION,
   CACTUS_NEEDLE_26M,
 } from "./Cactus_Constants";
+import { CACTUS_HASH_PLACEHOLDER } from "./Cactus_Integrity";
 
 /**
  * A single asset file in a Cactus model catalog entry.
@@ -20,7 +21,14 @@ import {
  */
 export interface CactusAssetSpec {
   readonly filename: string;
-  /** Lowercase hex SHA-256, exactly 64 characters. */
+  /**
+   * Lowercase hex SHA-256, exactly 64 characters.
+   *
+   * The literal string `"TODO_FILL_AT_RELEASE"` is accepted as a placeholder
+   * during pre-release development; in that case `verifySha256` skips the
+   * check and logs a one-time warning. The placeholder MUST be replaced
+   * with a real hash before a tagged release.
+   */
   readonly sha256: string;
   /** Expected byte length — used as a cheap pre-check before hashing. */
   readonly size: number;
@@ -43,8 +51,10 @@ export interface CactusCatalogEntry {
 /**
  * Asserts that `s` is a lowercase hex SHA-256 (64 hex chars).
  *
- * Used at catalog load time to surface malformed entries before any
- * verification call sees them.
+ * Invoked at module-load time on every non-placeholder catalog entry (see
+ * the bottom of this file) so malformed hashes surface immediately as an
+ * import-time error rather than the first time `verifySha256` runs against
+ * fetched bytes.
  */
 export function assertHexSha256(s: string, ctxLabel?: string): asserts s is string {
   if (typeof s !== "string" || s.length !== 64 || !/^[0-9a-f]{64}$/.test(s)) {
@@ -70,17 +80,17 @@ export const CACTUS_CATALOG: readonly CactusCatalogEntry[] = [
       // a clear warning is logged so this can never silently ship to release.
       weights: {
         filename: "needle.safetensors",
-        sha256: "TODO_FILL_AT_RELEASE",
+        sha256: CACTUS_HASH_PLACEHOLDER,
         size: 0,
       },
       vocab: {
         filename: "vocab.txt",
-        sha256: "TODO_FILL_AT_RELEASE",
+        sha256: CACTUS_HASH_PLACEHOLDER,
         size: 0,
       },
       config: {
         filename: "config.json",
-        sha256: "TODO_FILL_AT_RELEASE",
+        sha256: CACTUS_HASH_PLACEHOLDER,
         size: 0,
       },
     },
@@ -104,4 +114,19 @@ export function cactusAssetUrl(
   const filename =
     typeof filenameOrSpec === "string" ? filenameOrSpec : filenameOrSpec.filename;
   return `https://huggingface.co/${entry.hf_repo}/resolve/${entry.revision}/${filename}`;
+}
+
+// ============================================================================
+// Module-load invariant: every non-placeholder catalog entry has a valid
+// 64-char lowercase hex SHA-256. Catches catalog-author bugs immediately.
+//
+// Placeholder entries are intentionally skipped — `verifySha256` warns and
+// no-ops on them during pre-release development.
+// ============================================================================
+for (const entry of CACTUS_CATALOG) {
+  for (const asset of assetSpecsOf(entry)) {
+    if (asset.sha256 !== CACTUS_HASH_PLACEHOLDER) {
+      assertHexSha256(asset.sha256, `${entry.model_id}/${asset.filename}`);
+    }
+  }
 }
