@@ -22,6 +22,7 @@ import {
   findLastUserIndex,
   messageText,
 } from "./common/WebBrowser_ChatHistory";
+import { snapshotStreamToTextDeltas } from "./common/WebBrowser_ChromeHelpers";
 import {
   WEB_BROWSER_RUN_FNS,
   WebBrowser_TextGeneration_Unified,
@@ -56,6 +57,9 @@ export const _testOnly = {
     messageText,
     findLastUserIndex,
     buildInitialPromptsFromHistory,
+  },
+  chromeHelpers: {
+    snapshotStreamToTextDeltas,
   },
   probe: {
     probeWebBrowserCapabilities,

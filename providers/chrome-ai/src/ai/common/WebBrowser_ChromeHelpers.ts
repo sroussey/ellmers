@@ -131,7 +131,19 @@ export function createDownloadMonitor<Output>(
 
 /**
  * Chrome streaming APIs return progressive full-text snapshots. This helper
- * converts them to append-mode text-delta events by diffing successive snapshots.
+ * converts them to append-mode text-delta events by diffing successive
+ * snapshots.
+ *
+ * **Reset semantics**: most snapshots are prefix-extensions of the previous
+ * one (the model is appending). When a snapshot is NOT a prefix extension
+ * (a self-correction: Chrome replaced rather than extended prior text), the
+ * accumulator is RESET to the new snapshot and the full new snapshot is
+ * emitted as a single delta. Consumers that reconstruct full text by
+ * concatenating successive deltas should treat a non-prefix delta as a
+ * reset boundary; use {@link snapshotStreamToSnapshots} if you need
+ * explicit replace-mode events.
+ *
+ * Identical consecutive snapshots emit no delta.
  */
 export async function* snapshotStreamToTextDeltas<Output>(
   stream: ReadableStream<string>,
@@ -150,7 +162,12 @@ export async function* snapshotStreamToTextDeltas<Output>(
           yield { type: "text-delta", port, textDelta: delta };
         }
       } else {
-        accumulatedText += value;
+        // Self-correction snapshot: Chrome replaced (not extended) prior text.
+        // Reset the accumulator and surface the full new snapshot as the
+        // delta. Consumers reconstructing full text by concatenation should
+        // treat any subsequent non-prefix delta as a reset boundary; use
+        // `snapshotStreamToSnapshots` if you need replace-mode semantics.
+        accumulatedText = value;
         yield { type: "text-delta", port, textDelta: value };
       }
     }
