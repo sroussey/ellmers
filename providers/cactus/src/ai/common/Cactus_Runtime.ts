@@ -41,13 +41,16 @@ export interface CactusModelCacheInfo {
 //      reject separators, `..`, NUL, and any shell/path-special characters
 //      at the boundary. Fast-fail on malformed input.
 //
-//   2. An inline `path.resolve` + `startsWith` containment check is
+//   2. An inline `path.resolve` + `path.relative` containment check is
 //      duplicated immediately before every `fs.*` call. CodeQL's
 //      `js/path-injection` query does NOT trace through user-defined
 //      helper functions, so the sanitizer pattern must appear in the
-//      same function scope as the filesystem call. The cost of the
-//      duplication is a few string comparisons; the benefit is that the
-//      analyzer sees every fs call as locally sanitized.
+//      same function scope as the filesystem call. The `path.relative`
+//      shape is the canonical form CodeQL recognizes and is root-safe
+//      (a `startsWith(root + path.sep)` check breaks when `root` is "/"
+//      on POSIX or a drive root like "C:\\" on Windows because the
+//      concatenated separator produces "//" / "C:\\\\" that no child
+//      can match).
 // ============================================================================
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -162,17 +165,21 @@ async function getNodeAssetCacheInfo(
       )
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
-  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
-    throw new Error(
-      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
-    );
+  {
+    const rel = path.relative(safeRoot, resolvedDir);
+    if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+      );
+    }
   }
   const stats = await Promise.all(
     filenames.map(async (filename) => {
       assertSafeFilename(filename);
       // Inline sanitizer at the fs call site.
       const target = path.resolve(resolvedDir, filename);
-      if (target !== resolvedDir && !target.startsWith(resolvedDir + path.sep)) {
+      const rel = path.relative(resolvedDir, target);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
         return { filename, size: undefined, cached: false };
       }
       try {
@@ -281,26 +288,35 @@ async function fetchAssetBytesNode(
       )
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
-  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
-    throw new Error(
-      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
-    );
+  {
+    const rel = path.relative(safeRoot, resolvedDir);
+    if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+      );
+    }
   }
   // Used for the error-context URL only — not for any fs.* call (those
   // recompute path.resolve locally so CodeQL sees the inline sanitizer).
   const filePath = path.resolve(resolvedDir, spec.filename);
-  if (filePath !== resolvedDir && !filePath.startsWith(resolvedDir + path.sep)) {
-    throw new Error(
-      `Path escape detected: ${JSON.stringify(filePath)} is not within ${JSON.stringify(resolvedDir)}`
-    );
+  {
+    const rel = path.relative(resolvedDir, filePath);
+    if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(filePath)} is not within ${JSON.stringify(resolvedDir)}`
+      );
+    }
   }
   try {
     // Re-resolve at the call site so CodeQL sees the sanitizer locally.
     const readPath = path.resolve(resolvedDir, spec.filename);
-    if (readPath !== resolvedDir && !readPath.startsWith(resolvedDir + path.sep)) {
-      throw new Error(
-        `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(resolvedDir)}`
-      );
+    {
+      const rel = path.relative(resolvedDir, readPath);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(resolvedDir)}`
+        );
+      }
     }
     const buf = await fs.readFile(readPath);
     const bytes = new Uint8Array(buf);
@@ -311,7 +327,8 @@ async function fetchAssetBytesNode(
       if (err instanceof CactusIntegrityError) {
         // On-disk asset is corrupt; evict and fall through to network.
         const unlinkPath = path.resolve(resolvedDir, spec.filename);
-        if (unlinkPath !== resolvedDir && !unlinkPath.startsWith(resolvedDir + path.sep)) {
+        const rel = path.relative(resolvedDir, unlinkPath);
+        if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
           throw new Error(
             `Path escape detected: ${JSON.stringify(unlinkPath)} is not within ${JSON.stringify(resolvedDir)}`
           );
@@ -342,10 +359,13 @@ async function fetchAssetBytesNode(
   await verifySha256(bytes, spec.sha256, { url, filename: spec.filename });
   // Inline sanitizer for the mkdir target.
   const mkdirTarget = path.resolve(safeRoot, model_id);
-  if (mkdirTarget !== safeRoot && !mkdirTarget.startsWith(safeRoot + path.sep)) {
-    throw new Error(
-      `Path escape detected: ${JSON.stringify(mkdirTarget)} is not within ${JSON.stringify(safeRoot)}`
-    );
+  {
+    const rel = path.relative(safeRoot, mkdirTarget);
+    if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(mkdirTarget)} is not within ${JSON.stringify(safeRoot)}`
+      );
+    }
   }
   await fs.mkdir(mkdirTarget, { recursive: true });
   // Atomic write: write to a sibling `.tmp` path, then rename. Each fs
@@ -353,29 +373,41 @@ async function fetchAssetBytesNode(
   // inline sanitizer at every call site.
   try {
     const writeTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
-    if (writeTarget !== resolvedDir && !writeTarget.startsWith(resolvedDir + path.sep)) {
-      throw new Error(
-        `Path escape detected: ${JSON.stringify(writeTarget)} is not within ${JSON.stringify(resolvedDir)}`
-      );
+    {
+      const rel = path.relative(resolvedDir, writeTarget);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(writeTarget)} is not within ${JSON.stringify(resolvedDir)}`
+        );
+      }
     }
     await fs.writeFile(writeTarget, bytes);
     const renameFrom = path.resolve(resolvedDir, `${spec.filename}.tmp`);
-    if (renameFrom !== resolvedDir && !renameFrom.startsWith(resolvedDir + path.sep)) {
-      throw new Error(
-        `Path escape detected: ${JSON.stringify(renameFrom)} is not within ${JSON.stringify(resolvedDir)}`
-      );
+    {
+      const rel = path.relative(resolvedDir, renameFrom);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(renameFrom)} is not within ${JSON.stringify(resolvedDir)}`
+        );
+      }
     }
     const renameTo = path.resolve(resolvedDir, spec.filename);
-    if (renameTo !== resolvedDir && !renameTo.startsWith(resolvedDir + path.sep)) {
-      throw new Error(
-        `Path escape detected: ${JSON.stringify(renameTo)} is not within ${JSON.stringify(resolvedDir)}`
-      );
+    {
+      const rel = path.relative(resolvedDir, renameTo);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(renameTo)} is not within ${JSON.stringify(resolvedDir)}`
+        );
+      }
     }
     await fs.rename(renameFrom, renameTo);
   } catch (err) {
     const cleanupTarget = path.resolve(resolvedDir, `${spec.filename}.tmp`);
-    if (cleanupTarget !== resolvedDir && !cleanupTarget.startsWith(resolvedDir + path.sep)) {
-      throw err;
+    {
+      const rel = path.relative(resolvedDir, cleanupTarget);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw err;
+      }
     }
     await fs.unlink(cleanupTarget).catch(() => {});
     throw err;
@@ -582,10 +614,13 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
       )
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
-  if (resolvedDir !== safeRoot && !resolvedDir.startsWith(safeRoot + path.sep)) {
-    throw new Error(
-      `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
-    );
+  {
+    const rel = path.relative(safeRoot, resolvedDir);
+    if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+      throw new Error(
+        `Path escape detected: ${JSON.stringify(resolvedDir)} is not within ${JSON.stringify(safeRoot)}`
+      );
+    }
   }
   await fs.rm(resolvedDir, { recursive: true, force: true });
 }
