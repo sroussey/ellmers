@@ -6,7 +6,7 @@
 
 import { createServiceToken, globalServiceRegistry } from "../di";
 import { getLogger } from "../logging";
-import { scrubStack } from "./scrubStack";
+import { scrubStack, stackScrubRoots } from "./scrubStack";
 
 export class WorkerManager {
   private workers: Map<string, Worker> = new Map();
@@ -278,10 +278,7 @@ export class WorkerManager {
             // before handing the rehydrated Error to the caller.
             const scrubbedStack =
               typeof data === "object" && data !== null && typeof data.stack === "string"
-                ? scrubStack(
-                    data.stack,
-                    [typeof process !== "undefined" ? process.cwd() : ""].filter(Boolean)
-                  )
+                ? scrubStack(data.stack, stackScrubRoots())
                 : undefined;
             const err =
               typeof data === "object" && data !== null

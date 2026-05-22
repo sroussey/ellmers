@@ -27,3 +27,19 @@ export function scrubStack(
   }
   return out;
 }
+
+/**
+ * Filesystem roots for {@link scrubStack}. Node/Bun return `process.cwd()`; browser
+ * workers often define `process` without `cwd`, so this returns `[]` there.
+ */
+export function stackScrubRoots(): readonly string[] {
+  try {
+    if (typeof process !== "undefined" && typeof process.cwd === "function") {
+      const cwd = process.cwd();
+      return cwd ? [cwd] : [];
+    }
+  } catch {
+    // ignore — unavailable in some worker runtimes
+  }
+  return [];
+}

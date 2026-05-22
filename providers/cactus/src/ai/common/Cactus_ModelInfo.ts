@@ -7,20 +7,21 @@
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import { getCactusCatalogEntry } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
-import { isModelCached, isModelLoaded } from "./Cactus_Runtime";
+import { getCactusModelCacheInfo, isModelCached, isModelLoaded } from "./Cactus_Runtime";
 
 export const Cactus_ModelInfo: AiProviderRunFn<
   ModelInfoTaskInput,
   ModelInfoTaskOutput,
   CactusModelConfig
-> = async (input, model, _signal, emit) => {
+> = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for ModelInfoTask.");
   const model_id = model.provider_config.model_id;
   const entry = getCactusCatalogEntry(model_id);
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
 
   const is_loaded = isModelLoaded(model_id);
-  const is_cached = isModelCached(model_id);
+  const cacheInfo = await getCactusModelCacheInfo(model, entry, input.detail, signal);
+  const is_cached = is_loaded || isModelCached(model_id) || cacheInfo.allCached;
 
   emit({
     type: "finish",
@@ -32,7 +33,7 @@ export const Cactus_ModelInfo: AiProviderRunFn<
       supports_node: true,
       is_cached,
       is_loaded,
-      file_sizes: null,
+      file_sizes: cacheInfo.file_sizes,
     },
   });
 };

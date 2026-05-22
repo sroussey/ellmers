@@ -23,6 +23,11 @@ type NeedleSdkModule = typeof import("needle-rs");
 // Recover the instance type from the static `load` method's non-undefined return.
 type NeedleEngine = NonNullable<ReturnType<NeedleSdkModule["NeedleWasm"]["load"]>>;
 
+export interface CactusModelCacheInfo {
+  readonly allCached: boolean;
+  readonly file_sizes: Record<string, number> | null;
+}
+
 let _sdk: NeedleSdkModule | undefined;
 let _sdkInitPromise: Promise<NeedleSdkModule> | undefined;
 
@@ -55,6 +60,26 @@ export function getCactusSdk(): NeedleSdkModule {
 // ============================================================================
 // Asset fetch + cache (browser-only: Cache Storage API)
 // ============================================================================
+
+function assetFilenames(entry: CactusCatalogEntry): string[] {
+  return [entry.assets.weights, entry.assets.vocab, entry.assets.config];
+}
+
+async function getRemoteAssetSize(
+  url: string,
+  signal: AbortSignal | undefined
+): Promise<number | undefined> {
+  try {
+    const response = await fetch(url, { method: "HEAD", signal });
+    if (!response.ok) return undefined;
+    const contentLength = response.headers.get("content-length");
+    if (!contentLength) return undefined;
+    const size = Number(contentLength);
+    return Number.isFinite(size) ? size : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 async function fetchAssetBytesBrowser(url: string): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
@@ -148,6 +173,61 @@ export function markModelCached(model_id: string): void {
 /** Returns true if the model's assets have been downloaded or the engine is currently loaded. */
 export function isModelCached(model_id: string): boolean {
   return cactusEngines.has(model_id) || cactusCachedModelIds.has(model_id);
+}
+
+export async function getCactusModelCacheInfo(
+  _model: CactusModelConfig,
+  entry: CactusCatalogEntry,
+  detail: string | undefined,
+  signal: AbortSignal | undefined
+): Promise<CactusModelCacheInfo> {
+  const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
+  const cache = await cachesApi.open(CACTUS_CACHE_NAME);
+  const filenames = assetFilenames(entry);
+  const cacheHits = await Promise.all(
+    filenames.map(async (filename) => {
+      const url = cactusAssetUrl(entry, filename);
+      const hit = await cache.match(url);
+      return { filename, url, hit };
+    })
+  );
+  const allCached = cacheHits.every(({ hit }) => Boolean(hit));
+
+  if (detail === "files") {
+    return {
+      allCached,
+      file_sizes: Object.fromEntries(filenames.map((filename) => [filename, 0])),
+    };
+  }
+
+  if (detail !== "files_with_metadata") {
+    return { allCached, file_sizes: null };
+  }
+
+  const file_sizes: Record<string, number> = {};
+  await Promise.all(
+    cacheHits.map(async ({ filename, url, hit }) => {
+      if (hit) {
+        const contentLength = hit.headers.get("content-length");
+        const contentLengthSize = contentLength ? Number(contentLength) : undefined;
+        if (contentLengthSize !== undefined && Number.isFinite(contentLengthSize)) {
+          file_sizes[filename] = contentLengthSize;
+        } else {
+          file_sizes[filename] = (await hit.clone().arrayBuffer()).byteLength;
+        }
+        return;
+      }
+      const remoteSize = await getRemoteAssetSize(url, signal);
+      if (remoteSize !== undefined) {
+        file_sizes[filename] = remoteSize;
+      }
+    })
+  );
+
+  return {
+    allCached,
+    file_sizes: Object.keys(file_sizes).length > 0 ? file_sizes : null,
+  };
 }
 
 // ============================================================================

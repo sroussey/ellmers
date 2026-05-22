@@ -5,7 +5,7 @@
  */
 
 import { createServiceToken } from "../di";
-import { scrubStack } from "./scrubStack";
+import { scrubStack, stackScrubRoots } from "./scrubStack";
 
 /** Service token for the platform-specific WorkerServer instance. */
 export const WORKER_SERVER = createServiceToken<WorkerServerBase>("worker.server");
@@ -209,7 +209,7 @@ export class WorkerServerBase {
     // via WORKGLOW_INCLUDE_STACKS=1. Without this, build-server / container
     // / customer-deployment roots leaked through every UI that rendered
     // the rejected promise.
-    const roots = [typeof process !== "undefined" ? process.cwd() : ""].filter(Boolean);
+    const roots = stackScrubRoots();
     const includeStack =
       typeof process === "undefined" ||
       process.env?.NODE_ENV !== "production" ||
