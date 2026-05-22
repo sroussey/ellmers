@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+
+### Features
+
+#### cactus
+
+- add browser-specific AI provider classes and registration functions
+
 ## 0.3.3
 
 ### Refactors
