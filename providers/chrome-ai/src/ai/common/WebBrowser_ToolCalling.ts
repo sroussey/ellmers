@@ -31,6 +31,32 @@ import {
 } from "./WebBrowser_ChromeHelpers";
 import type { WebBrowserModelConfig } from "./WebBrowser_ModelSchema";
 
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Recursively rebuild a model-supplied JSON value, dropping any
+ * `__proto__`, `constructor`, or `prototype` keys at every depth.
+ * Returns a plain object (Object.prototype), never inheriting from a
+ * tainted source. Used to sanitize tool-call arguments captured from
+ * Chrome's LanguageModel before validation and propagation.
+ *
+ * Tool input schemas frequently set `additionalProperties: true` (or
+ * omit it entirely), so a hallucinated `__proto__` key would otherwise
+ * pass JSON-schema validation and leak into downstream consumers — a
+ * classic prototype-pollution vector. Sanitization must happen BEFORE
+ * validation so the validator sees the clean object.
+ */
+function sanitizeToolArgs(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeToolArgs);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(value as Record<string, unknown>)) {
+    if (FORBIDDEN_KEYS.has(k)) continue;
+    out[k] = sanitizeToolArgs((value as Record<string, unknown>)[k]);
+  }
+  return out;
+}
+
 function flattenPrompt(prompt: ToolCallingTaskInput["prompt"]): string {
   if (typeof prompt === "string") return prompt;
   if (!Array.isArray(prompt)) return "";
@@ -119,6 +145,9 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
  * drop+log calls that fail. Tools whose `inputSchema` fails to compile
  * fall through to name-only validation (same as today's behavior) with
  * a single warning so a malformed schema doesn't crash the run.
+ *
+ * Captured args are also passed through {@link sanitizeToolArgs} before
+ * validation to scrub `__proto__` / `constructor` / `prototype` keys.
  */
 export const WebBrowser_ToolCalling: AiProviderRunFn<
   ToolCallingTaskInput,
@@ -166,7 +195,12 @@ export const WebBrowser_ToolCalling: AiProviderRunFn<
             // — the surrounding `promptStreaming` will throw on its next
             // read and the finally below will tear down the session.
             if (signal?.aborted) return "";
-            const callInput = (args[0] ?? {}) as Record<string, unknown>;
+            const raw = (args[0] ?? {}) as Record<string, unknown>;
+            // Sanitize BEFORE validation so the validator sees a clean,
+            // Object.prototype-only object. Tool schemas without
+            // `additionalProperties: false` would otherwise let prototype-
+            // pollution payloads pass through.
+            const callInput = sanitizeToolArgs(raw) as Record<string, unknown>;
             capturedCalls.push({ id: uuid4(), name: td.name, input: callInput });
             return "";
           },
