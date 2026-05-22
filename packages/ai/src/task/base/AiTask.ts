@@ -24,6 +24,7 @@ import {
   TaskConfigurationError,
   TaskError,
   TaskInput,
+  TaskRegistry,
   hasStructuredOutput,
 } from "@workglow/task-graph";
 import type { ServiceRegistry } from "@workglow/util";
@@ -43,6 +44,47 @@ function schemaFormat(schema: JsonSchema): string | undefined {
   return typeof schema === "object" && schema !== null && "format" in schema
     ? schema.format
     : undefined;
+}
+
+function modelSemanticFromPropertySchema(schema: JsonSchema): string | undefined {
+  const direct = schemaFormat(schema);
+  if (direct === "model" || direct?.startsWith("model:")) {
+    return direct;
+  }
+  if (typeof schema === "object" && schema !== null) {
+    const branches =
+      ("oneOf" in schema && Array.isArray(schema.oneOf) ? schema.oneOf : undefined) ??
+      ("anyOf" in schema && Array.isArray(schema.anyOf) ? schema.anyOf : undefined);
+    if (branches) {
+      for (const branch of branches) {
+        const semantic = modelSemanticFromPropertySchema(branch as JsonSchema);
+        if (semantic) return semantic;
+      }
+    }
+  }
+  return undefined;
+}
+
+function requiresForModelProperty(
+  propertySchema: JsonSchema,
+  hostTaskClass: typeof AiTask
+): readonly Capability[] {
+  const semantic = modelSemanticFromPropertySchema(propertySchema);
+  if (semantic?.startsWith("model:")) {
+    const referencedTaskType = semantic.slice("model:".length);
+    const ctor = TaskRegistry.all.get(referencedTaskType) as typeof AiTask | undefined;
+    if (ctor) {
+      return ctor.requires;
+    }
+  }
+  return hostTaskClass.requires;
+}
+
+function modelMeetsRequires(model: ModelConfig, requires: readonly Capability[]): boolean {
+  if (requires.length === 0) return true;
+  const capabilities = model.capabilities as readonly string[] | undefined;
+  if (!Array.isArray(capabilities) || capabilities.length === 0) return true;
+  return requires.every((r) => capabilities.includes(r));
 }
 
 const aiTaskConfigSchema = {
@@ -359,22 +401,24 @@ export class AiTask<
 
     const modelTaskProperties = Object.entries<JsonSchema>(
       (inputSchema.properties || {}) as Record<string, JsonSchema>
-    ).filter(([key, schema]) => schemaFormat(schema)?.startsWith("model:"));
+    ).filter(([, schema]) => modelSemanticFromPropertySchema(schema)?.startsWith("model:"));
 
-    for (const [key] of modelTaskProperties) {
+    const hostTaskClass = this.constructor as typeof AiTask;
+
+    for (const [key, propertySchema] of modelTaskProperties) {
       const model = input[key];
       if (typeof model === "object" && model !== null) {
-        const taskClass = this.constructor as typeof AiTask;
-        const requires = taskClass.requires;
+        const requires = requiresForModelProperty(propertySchema, hostTaskClass);
         const capabilities = (model as ModelConfig).capabilities as string[] | undefined;
-        if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
-          if (!requires.every((r) => capabilities.includes(r))) {
-            const modelId = (model as ModelConfig).model_id ?? "(inline config)";
-            throw new TaskConfigurationError(
-              `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${this.type}'. ` +
-                `Requires: [${requires.join(", ")}]; model has: [${capabilities.join(", ")}]`
-            );
-          }
+        if (!modelMeetsRequires(model as ModelConfig, requires)) {
+          const modelId = (model as ModelConfig).model_id ?? "(inline config)";
+          const semantic = modelSemanticFromPropertySchema(propertySchema);
+          const referencedTaskType =
+            semantic?.startsWith("model:") === true ? semantic.slice("model:".length) : this.type;
+          throw new TaskConfigurationError(
+            `AiTask: Model "${modelId}" for '${key}' is not compatible with task '${referencedTaskType}'. ` +
+              `Requires: [${requires.join(", ")}]; model has: [${capabilities?.join(", ") ?? ""}]`
+          );
         }
       } else if (model !== undefined && model !== null) {
         throw new TaskConfigurationError(
@@ -411,32 +455,23 @@ export class AiTask<
     }
     const modelTaskProperties = Object.entries<JsonSchema>(
       (inputSchema.properties || {}) as Record<string, JsonSchema>
-    ).filter(([key, schema]) => schemaFormat(schema)?.startsWith("model:"));
+    ).filter(([, schema]) => modelSemanticFromPropertySchema(schema)?.startsWith("model:"));
     if (modelTaskProperties.length > 0) {
       const modelRepo = registry.get<ModelRepository>(MODEL_REPOSITORY);
+      const hostTaskClass = this.constructor as typeof AiTask;
 
-      // Fetch models for this task type from the repository associated with the given registry.
-      // Note: we intentionally avoid using a shared cache here to prevent mixing results
-      // from different ServiceRegistry / ModelRepository instances.
-      const taskModels: ModelConfig[] = (await modelRepo.findModelsByTask(this.type)) ?? [];
-
-      for (const [key] of modelTaskProperties) {
+      for (const [key, propertySchema] of modelTaskProperties) {
         const requestedModel = input[key];
+        const requires = requiresForModelProperty(propertySchema, hostTaskClass);
 
         if (typeof requestedModel === "string") {
-          const found = taskModels?.find((m) => m.model_id === requestedModel);
-          if (!found) {
+          const found = await modelRepo.findByName(requestedModel);
+          if (!found || !modelMeetsRequires(found, requires)) {
             (input as any)[key] = undefined;
           }
         } else if (typeof requestedModel === "object" && requestedModel !== null) {
-          const model = requestedModel as ModelConfig;
-          const taskClass = this.constructor as typeof AiTask;
-          const requires = taskClass.requires;
-          const capabilities = model.capabilities as string[] | undefined;
-          if (requires.length > 0 && Array.isArray(capabilities) && capabilities.length > 0) {
-            if (!requires.every((r) => capabilities.includes(r))) {
-              (input as any)[key] = undefined;
-            }
+          if (!modelMeetsRequires(requestedModel as ModelConfig, requires)) {
+            (input as any)[key] = undefined;
           }
         }
       }
