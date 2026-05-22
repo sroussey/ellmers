@@ -43,8 +43,16 @@ export class CactusIntegrityError extends Error {
 }
 
 export async function sha256Hex(bytes: Uint8Array | ArrayBuffer): Promise<string> {
-  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", input);
+  // Copy into a fresh ArrayBuffer so we hand crypto.subtle.digest a concrete
+  // `BufferSource` whose backing buffer is `ArrayBuffer` (not `ArrayBufferLike`).
+  // The recent lib.dom tightening on Uint8Array's default generic argument made
+  // the previous `new Uint8Array(bytes)` path no longer assignable to digest's
+  // parameter type.
+  const src =
+    bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+  const buf = new ArrayBuffer(src.byteLength);
+  new Uint8Array(buf).set(src);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", buf);
   const view = new Uint8Array(digest);
   let s = "";
   for (let i = 0; i < view.length; i++) {

@@ -38,9 +38,12 @@ export const Cactus_Download: AiProviderRunFn<
       // Surface whatever the integrity layer phrased — it knows whether the
       // mismatch was a SHA-256 digest or a byte-length pre-check, and the
       // error message is already shaped correctly for both.
+      // StreamPhase.progress is required (number | undefined); pass undefined
+      // on the error path because there is no meaningful percentage to report.
       emit({
         type: "phase",
         message: err instanceof CactusIntegrityError ? err.message : String(err),
+        progress: undefined,
       });
       throw err;
     }
