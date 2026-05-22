@@ -1,0 +1,69 @@
+{
+  "name": "@workglow/stable-diffusion-server",
+  "type": "module",
+  "sideEffects": false,
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/workglow-dev/libs.git",
+    "directory": "providers/stable-diffusion-server"
+  },
+  "description": "Local sd.cpp HTTP client for an external or embedded stable-diffusion.cpp server",
+  "scripts": {
+    "watch": "concurrently -c 'auto' 'bun:watch-*'",
+    "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
+    "watch-types": "tsc --watch --preserveWatchOutput",
+    "build-package": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",
+    "build-js": "bun run build-code",
+    "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
+    "build-code": "bun build --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/ai.ts ./src/ai-runtime.ts",
+    "build-types": "rm -f tsconfig.tsbuildinfo && tsgo",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "exports": {
+    "./ai": {
+      "types": "./dist/ai.d.ts",
+      "import": "./dist/ai.js"
+    },
+    "./ai-runtime": {
+      "types": "./dist/ai-runtime.d.ts",
+      "import": "./dist/ai-runtime.js"
+    }
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@workglow/ai": "workspace:*",
+    "@workglow/job-queue": "workspace:*",
+    "@workglow/storage": "workspace:*",
+    "@workglow/task-graph": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@workglow/ai": {
+      "optional": false
+    },
+    "@workglow/job-queue": {
+      "optional": false
+    },
+    "@workglow/storage": {
+      "optional": false
+    },
+    "@workglow/task-graph": {
+      "optional": false
+    },
+    "@workglow/util": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@workglow/ai": "workspace:*",
+    "@workglow/util": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "src/**/*.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
