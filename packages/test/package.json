@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-sqs": "^3.1052.0",
-    "@cloudflare/workers-types": "^4.20260521.1",
+    "@cloudflare/workers-types": "^4.20260522.1",
     "@electric-sql/pglite": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
