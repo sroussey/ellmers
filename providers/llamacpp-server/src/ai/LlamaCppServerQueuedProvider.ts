@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { Capability, ModelRecord } from "@workglow/ai";
+import { AiProvider } from "@workglow/ai";
 import { createCloudProviderClass } from "@workglow/ai/provider-utils";
-import type { Capability, ModelRecord } from "@workglow/ai/worker";
-import { AiProvider } from "@workglow/ai/worker";
 import {
   inferLlamaCppServerCapabilities,
   llamaCppServerWorkerRunFnSpecs,
@@ -14,18 +14,8 @@ import {
 import { LOCAL_LLAMACPP_SERVER } from "./common/LlamaCppServer_Constants";
 import type { LlamaCppServerModelConfig } from "./common/LlamaCppServer_ModelSchema";
 
-/**
- * Worker-server registration shell for llamacpp-server. Imports `AiProvider`
- * from `@workglow/ai/worker` so the worker module graph stays self-contained.
- *
- * Both transport and externalUrl modes are supported. The `IBackendsTransport`
- * is constructed inside the worker runtime by the caller (e.g.,
- * `MessagePortBackendsTransport` in the Builder's worker renderer) and held
- * by closure inside the run-fns — no port transfer across the worker
- * boundary. Worker registration is the primary production path; inline
- * registration (`LlamaCppServerQueuedProvider`) is primarily a testing seam.
- */
-export class LlamaCppServerProvider extends createCloudProviderClass<LlamaCppServerModelConfig>(
+/** Main-thread registration (inline or worker-backed). */
+export class LlamaCppServerQueuedProvider extends createCloudProviderClass<LlamaCppServerModelConfig>(
   AiProvider,
   {
     name: LOCAL_LLAMACPP_SERVER,

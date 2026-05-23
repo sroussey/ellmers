@@ -5,23 +5,20 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import type { IBackendsTransport } from "@workglow/ai/provider-utils";
-import { registerProviderInline } from "@workglow/ai/provider-utils";
-import { LlamaCppServerProvider } from "./LlamaCppServerProvider";
+import { registerProviderWithWorker } from "@workglow/ai/provider-utils";
+import { LlamaCppServerQueuedProvider } from "./LlamaCppServerQueuedProvider";
 
-export interface IRegisterLlamaCppServerOptions extends AiProviderRegisterOptions {
-  readonly transport: IBackendsTransport;
-  readonly externalUrl?: string;
-  readonly defaultCtx?: number;
-}
-
+/**
+ * Main-thread worker-backed registration. The provider proxy lives on the
+ * main thread and forwards jobs to the worker, which holds the real run-fns.
+ *
+ * Use {@link registerLlamaCppServerInline} for transport mode (broker
+ * acquisition).
+ */
 export async function registerLlamaCppServer(
-  options: IRegisterLlamaCppServerOptions
+  options: AiProviderRegisterOptions & {
+    worker: Worker | (() => Worker);
+  }
 ): Promise<void> {
-  const { transport, externalUrl, defaultCtx, ...registerOptions } = options;
-  await registerProviderInline(
-    new LlamaCppServerProvider({ transport, externalUrl, defaultCtx }),
-    "LlamaCppServer",
-    registerOptions
-  );
+  await registerProviderWithWorker(new LlamaCppServerQueuedProvider(), "LlamaCppServer", options);
 }

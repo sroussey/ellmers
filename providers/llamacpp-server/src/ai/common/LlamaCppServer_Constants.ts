@@ -5,3 +5,6 @@
  */
 
 export const LOCAL_LLAMACPP_SERVER = "LOCAL_LLAMACPP_SERVER";
+
+/** Default llama-server context length when no per-request or per-model override is set. */
+export const LLAMACPP_SERVER_DEFAULT_CTX = 4096;
