@@ -15,9 +15,9 @@ import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
   assetSpecsOf,
   cactusAssetUrl,
+  getCactusCatalogEntry,
   type CactusAssetSpec,
   type CactusCatalogEntry,
-  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 
@@ -131,8 +131,15 @@ async function getRemoteAssetSize(
 
 async function fetchAssetBytesBrowser(
   url: string,
+  model_id: string,
   spec: CactusAssetSpec
 ): Promise<Uint8Array> {
+  // Defense-in-depth: validate model_id at every cache call site (not only
+  // at the public entry). Mirrors `fetchAssetBytesNode`, which re-asserts
+  // `assertSafeModelId` even though `fetchAssetBytes` already calls it. A
+  // future refactor that bypasses the public entry must not be able to slip
+  // a hostile model_id past this check.
+  assertSafeModelId(model_id);
   assertSafeFilename(spec.filename);
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
@@ -199,7 +206,7 @@ export async function fetchAssetBytes(
   if (!entry) throw new Error(`Unknown Cactus model_id: ${model_id}`);
   const spec = resolveAssetSpec(entry, specOrFilename);
   const url = cactusAssetUrl(entry, spec.filename);
-  return fetchAssetBytesBrowser(url, spec);
+  return fetchAssetBytesBrowser(url, model_id, spec);
 }
 
 function resolveAssetSpec(
