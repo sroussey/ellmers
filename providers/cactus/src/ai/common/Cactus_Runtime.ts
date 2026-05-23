@@ -11,9 +11,9 @@ import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
   assetSpecsOf,
   cactusAssetUrl,
+  getCactusCatalogEntry,
   type CactusAssetSpec,
   type CactusCatalogEntry,
-  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 
@@ -165,10 +165,7 @@ async function getNodeAssetCacheInfo(
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {
@@ -229,10 +226,7 @@ async function getNodeAssetCacheInfo(
   };
 }
 
-async function fetchAssetBytesBrowser(
-  url: string,
-  spec: CactusAssetSpec
-): Promise<Uint8Array> {
+async function fetchAssetBytesBrowser(url: string, spec: CactusAssetSpec): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
@@ -288,10 +282,7 @@ async function fetchAssetBytesNode(
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {
@@ -357,10 +348,24 @@ async function fetchAssetBytesNode(
       }
     }
   } catch (err) {
-    // ENOENT or sibling read errors fall through to fetch.
+    // Only ENOENT (cache miss) should fall through to the network refetch.
+    // A `CactusIntegrityError` re-throws as today — except it's actually
+    // handled by the inner catch above (which unlinks and falls through to
+    // network), so it never reaches here in practice. Any *other* fs error
+    // (EACCES, EIO, EISDIR, EMFILE, …) means we couldn't authoritatively
+    // determine cache contents; silently refetching would mask real
+    // filesystem problems. Wrap with a clear message and rethrow so the
+    // caller sees the underlying cause.
     if (err instanceof CactusIntegrityError) {
       throw err; // unreachable, handled above
     }
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") {
+      throw new Error(`Cactus cache read failed for ${spec.filename} (code=${code ?? "unknown"})`, {
+        cause: err,
+      });
+    }
+    // ENOENT — file not cached; fall through to network.
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
@@ -626,10 +631,7 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {
