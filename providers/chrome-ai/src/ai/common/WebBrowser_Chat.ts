@@ -55,6 +55,7 @@ import {
   getChromeSession,
   getWebBrowserModelKey,
   setChromeSession,
+  touchWebBrowserSession,
 } from "./WebBrowser_Sessions";
 
 export const WebBrowser_Chat: AiProviderRunFn<
@@ -109,7 +110,15 @@ export const WebBrowser_Chat: AiProviderRunFn<
 
   let deltaEmitted = false;
   const trackingEmit = (event: Parameters<typeof emit>[0]): void => {
-    if (event.type === "text-delta") deltaEmitted = true;
+    if (event.type === "text-delta") {
+      deltaEmitted = true;
+      // Defer idle eviction during long-running multi-turn streams. Without
+      // this, a single prompt that takes >30 minutes to finish streaming
+      // would have its cached session destroyed mid-flight by the idle
+      // timer. Touch on every delta to keep the session alive as long as
+      // the model is actively producing output.
+      if (sessionId !== undefined) touchWebBrowserSession(sessionId);
+    }
     emit(event);
   };
 
