@@ -26,7 +26,7 @@
  *     the 30-minute mark.
  */
 
-import type { ChatMessage } from "@workglow/ai";
+import type { AiChatProviderInput, ChatMessage } from "@workglow/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { advanceFakeTimers } from "../helpers/advanceFakeTimers";
@@ -131,8 +131,11 @@ describe("WebBrowser_Chat idle-touch on text-delta", () => {
       const turn: ChatMessage[] = [userMsg("write me a long answer please")];
 
       // Drive the run-fn concurrently with our chunk pumping.
+      // Cast: the run-fn only reads input.messages (and optionally input.temperature)
+      // at runtime; AiChatProviderInput requires model+prompt at the schema layer,
+      // which the dispatcher provides but is irrelevant for this unit test.
       const runP = WebBrowser_Chat(
-        { messages: turn },
+        { messages: turn } as unknown as AiChatProviderInput,
         undefined,
         new AbortController().signal,
         emit,
@@ -214,7 +217,7 @@ describe("WebBrowser_Chat idle-touch on text-delta", () => {
     try {
       const emit = vi.fn();
       await WebBrowser_Chat(
-        { messages: [userMsg("hi")] },
+        { messages: [userMsg("hi")] } as unknown as AiChatProviderInput,
         undefined,
         new AbortController().signal,
         emit,
