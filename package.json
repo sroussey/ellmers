@@ -92,7 +92,7 @@
     "@types/node": "^24.12.4",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
-    "@typescript/native-preview": "=7.0.0-dev.20260521.1",
+    "@typescript/native-preview": "=7.0.0-dev.20260523.1",
     "@vitest/coverage-v8": "^4.1.7",
     "@vitest/ui": "4.1.7",
     "bunset": "^1.0.12",
