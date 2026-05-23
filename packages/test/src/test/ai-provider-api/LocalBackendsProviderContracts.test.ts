@@ -19,7 +19,10 @@ import type {
 } from "@workglow/ai/provider-utils";
 import { pngBytesToImageValue } from "@workglow/ai/provider-utils";
 import { LOCAL_LLAMACPP_SERVER, registerLlamaCppServerInline } from "@workglow/llamacpp-server/ai";
-import { StableDiffusionCppProvider } from "@workglow/stable-diffusion-server/ai";
+import {
+  LOCAL_STABLE_DIFFUSION_CPP,
+  registerStableDiffusionCppInline,
+} from "@workglow/stable-diffusion-server/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@workglow/ai/provider-utils", async (importOriginal) => {
@@ -167,10 +170,11 @@ describe("local backend provider stream contracts", () => {
 
   it("stable-diffusion emits the generated image as a snapshot before finish", async () => {
     const { release, transport } = createTransportStub();
-    const provider = new StableDiffusionCppProvider({ transport });
-    await provider.register();
+    await registerStableDiffusionCppInline({ transport });
 
-    const runFn = getAiProviderRegistry().getRunFnFor(provider.name, ["image.generation"]);
+    const runFn = getAiProviderRegistry().getRunFnFor(LOCAL_STABLE_DIFFUSION_CPP, [
+      "image.generation",
+    ]);
     expect(runFn).toBeDefined();
 
     globalThis.fetch = vi.fn(
@@ -188,7 +192,11 @@ describe("local backend provider stream contracts", () => {
     const events = await runProviderStream(
       runFn!,
       { prompt: "draw a cat" },
-      { model_id: "/models/stable-diffusion.gguf" }
+      {
+        model_id: "sd-test",
+        provider: LOCAL_STABLE_DIFFUSION_CPP,
+        provider_config: { model_path: "/models/stable-diffusion.gguf" },
+      }
     );
 
     expect(events).toEqual([

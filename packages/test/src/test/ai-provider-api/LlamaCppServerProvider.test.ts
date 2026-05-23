@@ -129,7 +129,7 @@ describe("LlamaCppServer transport-mode run-fn (parity across inline + worker)",
     const release = vi.fn().mockResolvedValue(undefined);
     const transport = fakeTransport();
     transport.ensureRunning.mockResolvedValue({
-      url: "http://broker:9999",
+      url: "http://127.0.0.1:9999",
       release,
     } as IRunningHandle);
 
@@ -166,7 +166,7 @@ describe("LlamaCppServer transport-mode run-fn (parity across inline + worker)",
       opts: { ctx: 4096 },
     });
     const fetchedUrl = String(fetchSpy.mock.calls[0]![0]);
-    expect(fetchedUrl).toBe("http://broker:9999/v1/chat/completions");
+    expect(fetchedUrl).toBe("http://127.0.0.1:9999/v1/chat/completions");
     expect(release).toHaveBeenCalledTimes(1);
     fetchSpy.mockRestore();
   });

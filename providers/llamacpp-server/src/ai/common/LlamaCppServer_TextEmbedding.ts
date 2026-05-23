@@ -9,7 +9,11 @@ import type {
   TextEmbeddingTaskInput,
   TextEmbeddingTaskOutput,
 } from "@workglow/ai";
-import { acquireBaseUrl, type ILlamaCppServerProviderOptions } from "./LlamaCppServer_Client";
+import {
+  acquireBaseUrl,
+  buildServerUrl,
+  type ILlamaCppServerProviderOptions,
+} from "./LlamaCppServer_Client";
 import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
 import { getLlamaCppServerModelName } from "./LlamaCppServer_ModelUtil";
 
@@ -32,7 +36,7 @@ export function createLlamaCppServerTextEmbeddingStream(
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
-      const response = await fetch(`${baseUrl}/v1/embeddings`, {
+      const response = await fetch(buildServerUrl(baseUrl, "/v1/embeddings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,

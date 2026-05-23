@@ -7,6 +7,7 @@
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
 import {
   acquireBaseUrl,
+  buildServerUrl,
   type IStableDiffusionCppProviderOptions,
 } from "./StableDiffusionCpp_Client";
 import type { StableDiffusionCppModelConfig } from "./StableDiffusionCpp_ModelSchema";
@@ -26,7 +27,7 @@ export function createStableDiffusionCppModelInfoRunFn(
     try {
       const { baseUrl, release } = await acquire(model, opts);
       try {
-        const res = await fetch(`${baseUrl}/v1/models`, { signal });
+        const res = await fetch(buildServerUrl(baseUrl, "/v1/models"), { signal });
         if (res.ok) {
           const body = (await res.json()) as { data?: Array<{ id?: string }> };
           is_loaded = !!body.data?.some((m) => m.id === expectedName);

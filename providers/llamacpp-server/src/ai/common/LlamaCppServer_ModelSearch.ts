@@ -6,7 +6,11 @@
 
 import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
 import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
-import type { ILlamaCppServerProviderOptions } from "./LlamaCppServer_Client";
+import {
+  buildServerUrl,
+  normalizeServerBaseUrl,
+  type ILlamaCppServerProviderOptions,
+} from "./LlamaCppServer_Client";
 import { LOCAL_LLAMACPP_SERVER } from "./LlamaCppServer_Constants";
 import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
 
@@ -24,9 +28,9 @@ export function createLlamaCppServerModelSearchStream(
       emit({ type: "finish", data: { results: [] } });
       return;
     }
-    const baseUrl = opts.externalUrl.replace(/\/+$/, "");
     try {
-      const res = await fetch(`${baseUrl}/v1/models`, { signal });
+      const baseUrl = normalizeServerBaseUrl(opts.externalUrl);
+      const res = await fetch(buildServerUrl(baseUrl, "/v1/models"), { signal });
       if (!res.ok) {
         emit({ type: "finish", data: { results: [] } });
         return;

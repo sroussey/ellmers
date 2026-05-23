@@ -17,7 +17,7 @@ describe("createLlamaCppServerModelInfoStream", () => {
     const emit = (e: any) => events.push(e);
     await fn(
       { detail: "dimensions", model: "m" } as any,
-      { provider_config: { base_url: "http://x:8080", native_dimensions: 768 } } as any,
+      { provider_config: { base_url: "http://localhost:8080", native_dimensions: 768 } } as any,
       undefined as any,
       emit
     );
@@ -39,7 +39,7 @@ describe("createLlamaCppServerModelInfoStream", () => {
     const emit = (e: any) => events.push(e);
     await fn(
       { detail: "dimensions", model: "m" } as any,
-      { provider_config: { base_url: "http://x:8080" } } as any,
+      { provider_config: { base_url: "http://localhost:8080" } } as any,
       undefined as any,
       emit
     );
@@ -55,7 +55,7 @@ describe("createLlamaCppServerModelInfoStream", () => {
     const emit = (e: any) => events.push(e);
     await fn(
       { model: "m" } as any,
-      { provider_config: { base_url: "http://x:8080", model_name: "m" } } as any,
+      { provider_config: { base_url: "http://localhost:8080", model_name: "m" } } as any,
       undefined as any,
       emit
     );
@@ -69,7 +69,7 @@ describe("createLlamaCppServerModelInfoStream", () => {
     const emit = (e: any) => events.push(e);
     await fn(
       { model: "m" } as any,
-      { provider_config: { base_url: "http://x:8080", model_name: "m" } } as any,
+      { provider_config: { base_url: "http://localhost:8080", model_name: "m" } } as any,
       undefined as any,
       emit
     );

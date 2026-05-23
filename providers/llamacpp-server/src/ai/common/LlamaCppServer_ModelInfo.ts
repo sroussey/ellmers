@@ -5,7 +5,11 @@
  */
 
 import type { AiProviderRunFn, ModelInfoTaskInput, ModelInfoTaskOutput } from "@workglow/ai";
-import { acquireBaseUrl, type ILlamaCppServerProviderOptions } from "./LlamaCppServer_Client";
+import {
+  acquireBaseUrl,
+  buildServerUrl,
+  type ILlamaCppServerProviderOptions,
+} from "./LlamaCppServer_Client";
 import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
 import { getLlamaCppServerModelName } from "./LlamaCppServer_ModelUtil";
 
@@ -26,7 +30,7 @@ export function createLlamaCppServerModelInfoStream(
         try {
           const { baseUrl, release } = await acquire(model, opts);
           try {
-            const res = await fetch(`${baseUrl}/props`, { signal });
+            const res = await fetch(buildServerUrl(baseUrl, "/props"), { signal });
             if (res.ok) {
               const props = (await res.json()) as {
                 default_generation_settings?: { n_embd?: number };
@@ -64,7 +68,7 @@ export function createLlamaCppServerModelInfoStream(
     try {
       const { baseUrl, release } = await acquire(model, opts);
       try {
-        const res = await fetch(`${baseUrl}/v1/models`, { signal });
+        const res = await fetch(buildServerUrl(baseUrl, "/v1/models"), { signal });
         if (res.ok) {
           const body = (await res.json()) as { data?: Array<{ id?: string }> };
           is_loaded = !!body.data?.some((m) => m.id === expectedName);

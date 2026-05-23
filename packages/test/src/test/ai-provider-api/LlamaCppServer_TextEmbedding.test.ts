@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => vi.restoreAllMocks());
 
-const model = { provider_config: { base_url: "http://x:8080", model_name: "emb" } } as any;
+const model = { provider_config: { base_url: "http://localhost:8080", model_name: "emb" } } as any;
 
 describe("createLlamaCppServerTextEmbeddingStream", () => {
   it("returns a single Float32Array for string input", async () => {

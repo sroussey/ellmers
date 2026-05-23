@@ -21,7 +21,7 @@ function sseChunks(chunks: object[]): Response {
 
 afterEach(() => vi.restoreAllMocks());
 
-const model = { provider_config: { base_url: "http://x:8080", model_name: "m" } } as any;
+const model = { provider_config: { base_url: "http://localhost:8080", model_name: "m" } } as any;
 const TOOLS = [
   {
     name: "add",

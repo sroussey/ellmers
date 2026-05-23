@@ -12,6 +12,7 @@ import type {
 import { pngBytesToImageValue } from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
+  buildServerUrl,
   decodeBase64Png,
   type IStableDiffusionCppProviderOptions,
 } from "./StableDiffusionCpp_Client";
@@ -37,8 +38,9 @@ export function createStableDiffusionCppImageGenerateRunFn(
   return async (input, model, signal, emit) => {
     signal?.throwIfAborted?.();
 
-    const endpoint =
-      model?.provider_config?.endpoint ?? opts.endpoint ?? STABLE_DIFFUSION_CPP_DEFAULT_ENDPOINT;
+    const endpoint = resolveEndpoint(
+      model?.provider_config?.endpoint ?? opts.endpoint ?? STABLE_DIFFUSION_CPP_DEFAULT_ENDPOINT
+    );
     const modelName = getStableDiffusionCppModelName(model);
 
     const body = JSON.stringify({
@@ -49,7 +51,7 @@ export function createStableDiffusionCppImageGenerateRunFn(
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
-      const response = await fetch(`${baseUrl}${endpoint}`, {
+      const response = await fetch(buildServerUrl(baseUrl, endpoint), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
@@ -74,4 +76,11 @@ export function createStableDiffusionCppImageGenerateRunFn(
       await release();
     }
   };
+}
+
+function resolveEndpoint(endpoint: string): "/txt2img" | "/v1/images/generations" {
+  if (endpoint === "/txt2img" || endpoint === "/v1/images/generations") {
+    return endpoint;
+  }
+  throw new Error(`StableDiffusionCpp: unsupported image-generation endpoint ${endpoint}`);
 }

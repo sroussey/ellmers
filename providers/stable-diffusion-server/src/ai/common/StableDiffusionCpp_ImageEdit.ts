@@ -8,6 +8,7 @@ import type { AiProviderRunFn, ImageEditTaskInput, ImageEditTaskOutput } from "@
 import { imageValueToPngBytes, pngBytesToImageValue } from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
+  buildServerUrl,
   decodeBase64Png,
   encodeBytesToBase64,
   type IStableDiffusionCppProviderOptions,
@@ -47,7 +48,7 @@ export function createStableDiffusionCppImageEditRunFn(
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
-      const response = await fetch(`${baseUrl}/img2img`, {
+      const response = await fetch(buildServerUrl(baseUrl, "/img2img"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,

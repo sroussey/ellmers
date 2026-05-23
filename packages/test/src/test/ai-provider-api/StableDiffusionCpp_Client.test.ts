@@ -5,7 +5,11 @@
  */
 
 import type { IBackendsTransport, IRunningHandle } from "@workglow/ai/provider-utils";
-import { acquireBaseUrl } from "@workglow/llamacpp-server/ai-runtime";
+import {
+  acquireBaseUrl,
+  decodeBase64Png,
+  encodeBytesToBase64,
+} from "@workglow/stable-diffusion-server/ai-runtime";
 import { describe, expect, it, vi } from "vitest";
 
 function fakeTransport(): IBackendsTransport & {
@@ -50,35 +54,17 @@ describe("acquireBaseUrl precedence", () => {
       url: "http://127.0.0.1:9999/",
       release,
     } as IRunningHandle);
-    const result = await acquireBaseUrl(
-      { provider_config: { model_path: "/abs/m.gguf", ctx: 8192 } } as any,
-      { transport, defaultCtx: 4096 }
-    );
+    const result = await acquireBaseUrl({ provider_config: { model_path: "/abs/m.gguf" } } as any, {
+      transport,
+    });
     expect(transport.ensureRunning).toHaveBeenCalledWith({
-      backend: "llamacpp-server",
+      backend: "stable-diffusion-server",
       modelPath: "/abs/m.gguf",
-      opts: { ctx: 8192 },
+      opts: {},
     });
     expect(result.baseUrl).toBe("http://127.0.0.1:9999");
     await result.release();
     expect(release).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses defaultCtx when model has no ctx override", async () => {
-    const transport = fakeTransport();
-    transport.ensureRunning.mockResolvedValue({
-      url: "http://127.0.0.1:9999",
-      release: vi.fn(),
-    } as IRunningHandle);
-    await acquireBaseUrl({ provider_config: { model_path: "/abs/m.gguf" } } as any, {
-      transport,
-      defaultCtx: 12345,
-    });
-    expect(transport.ensureRunning).toHaveBeenCalledWith({
-      backend: "llamacpp-server",
-      modelPath: "/abs/m.gguf",
-      opts: { ctx: 12345 },
-    });
   });
 
   it("throws when transport mode is selected but model_path is missing", async () => {
@@ -106,5 +92,20 @@ describe("acquireBaseUrl precedence", () => {
     await expect(acquireBaseUrl({ provider_config: {} } as any, {})).rejects.toThrow(
       /no base URL source/
     );
+  });
+});
+
+describe("decodeBase64Png / encodeBytesToBase64 roundtrip", () => {
+  it("decode then encode produces the same string for small payloads", () => {
+    const original = btoa("hello PNG bytes");
+    const bytes = decodeBase64Png(original);
+    expect(encodeBytesToBase64(bytes)).toBe(original);
+  });
+
+  it("handles binary bytes (high values)", () => {
+    const bytes = new Uint8Array([0, 1, 254, 255, 128, 64]);
+    const b64 = encodeBytesToBase64(bytes);
+    const decoded = decodeBase64Png(b64);
+    expect(Array.from(decoded)).toEqual(Array.from(bytes));
   });
 });

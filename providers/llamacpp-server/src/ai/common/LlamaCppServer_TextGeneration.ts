@@ -11,6 +11,7 @@ import type {
 } from "@workglow/ai";
 import {
   acquireBaseUrl,
+  buildServerUrl,
   readChatCompletionDeltas,
   type ILlamaCppServerProviderOptions,
 } from "./LlamaCppServer_Client";
@@ -77,7 +78,7 @@ export function createLlamaCppServerTextGenerationStream(
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      const response = await fetch(buildServerUrl(baseUrl, "/v1/chat/completions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,

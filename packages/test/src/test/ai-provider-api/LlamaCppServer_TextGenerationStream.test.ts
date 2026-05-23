@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("createLlamaCppServerTextGenerationStream", () => {
-  const model = { provider_config: { base_url: "http://x:8080", model_name: "m" } } as any;
+  const model = { provider_config: { base_url: "http://localhost:8080", model_name: "m" } } as any;
 
   it("yields text-delta events for each delta line and a final finish", async () => {
     const fetchSpy = vi
@@ -41,7 +41,7 @@ describe("createLlamaCppServerTextGenerationStream", () => {
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url] = fetchSpy.mock.calls[0]!;
-    expect(String(url)).toBe("http://x:8080/v1/chat/completions");
+    expect(String(url)).toBe("http://localhost:8080/v1/chat/completions");
     expect(events.filter((e) => e.type === "text-delta").map((e) => e.textDelta)).toEqual([
       "Hel",
       "lo",

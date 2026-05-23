@@ -6,7 +6,11 @@
 
 import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
 import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
-import type { IStableDiffusionCppProviderOptions } from "./StableDiffusionCpp_Client";
+import {
+  buildServerUrl,
+  normalizeServerBaseUrl,
+  type IStableDiffusionCppProviderOptions,
+} from "./StableDiffusionCpp_Client";
 import { LOCAL_STABLE_DIFFUSION_CPP } from "./StableDiffusionCpp_Constants";
 import type { StableDiffusionCppModelConfig } from "./StableDiffusionCpp_ModelSchema";
 
@@ -19,9 +23,9 @@ export function createStableDiffusionCppModelSearchRunFn(
       emit({ type: "finish", data: { results: [] } });
       return;
     }
-    const baseUrl = opts.externalUrl.replace(/\/+$/, "");
     try {
-      const res = await fetch(`${baseUrl}/v1/models`, { signal });
+      const baseUrl = normalizeServerBaseUrl(opts.externalUrl);
+      const res = await fetch(buildServerUrl(baseUrl, "/v1/models"), { signal });
       if (!res.ok) {
         emit({ type: "finish", data: { results: [] } });
         return;
