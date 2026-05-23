@@ -350,13 +350,27 @@ async function fetchAssetBytesNode(
       }
     }
   } catch (err) {
-    // ENOENT or sibling read errors fall through to fetch.
+    // Only ENOENT (cache miss) should fall through to the network refetch.
+    // A `CactusIntegrityError` re-throws as today — except it's actually
+    // handled by the inner catch above (which unlinks and falls through to
+    // network), so it never reaches here in practice. Any *other* fs error
+    // (EACCES, EIO, EISDIR, EMFILE, …) means we couldn't authoritatively
+    // determine cache contents; silently refetching would mask real
+    // filesystem problems. Wrap with a clear message and rethrow so the
+    // caller sees the underlying cause.
     if (err instanceof CactusIntegrityError) {
       throw err; // unreachable, handled above
     }
     if (!isRecoverableCacheReadError(err)) {
       throw err;
     }
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") {
+      throw new Error(`Cactus cache read failed for ${spec.filename} (code=${code ?? "unknown"})`, {
+        cause: err,
+      });
+    }
+    // ENOENT — file not cached; fall through to network.
   }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Cactus asset fetch failed (${resp.status}) for ${url}`);
