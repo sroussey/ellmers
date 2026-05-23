@@ -1,0 +1,96 @@
+/**
+ * @license
+ * Copyright 2026 Steven Roussey <sroussey@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Module-load guards for `CACTUS_CATALOG`:
+ *
+ *   1. Without `CACTUS_REQUIRE_REAL_HASHES`, the catalog loads even when
+ *      placeholder hashes are present — developer-friendly default during
+ *      pre-release iteration.
+ *   2. With `CACTUS_REQUIRE_REAL_HASHES=1`, the module load throws if ANY
+ *      asset is still on the `CACTUS_HASH_PLACEHOLDER` sentinel or has a
+ *      non-positive `size`. This is the gate release tooling can flip on
+ *      before publishing.
+ *
+ * The test temporarily mutates the catalog source through Bun's `import()`
+ * resolver. We avoid `vi.mock` because mocking the module from outside while
+ * also exercising its module-load side effects is brittle across runners;
+ * instead we drive the assertions by directly invoking the same validation
+ * predicate (`CATALOG_HAS_PLACEHOLDERS`) and by spawning a child process
+ * with the env var set so the import-time throw is observable.
+ */
+
+import { _testOnly, CACTUS_CATALOG, CATALOG_HAS_PLACEHOLDERS } from "@workglow/cactus/ai";
+import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const { CACTUS_HASH_PLACEHOLDER } = _testOnly;
+
+describe("Cactus_ModelCatalog module-load guards", () => {
+  it("loads cleanly without CACTUS_REQUIRE_REAL_HASHES (dev-friendly default)", () => {
+    // Reaching this line at all means the module loaded — the test imports
+    // the catalog at the top of the file. The catalog must be non-empty and
+    // every entry must have all three asset specs.
+    expect(CACTUS_CATALOG.length).toBeGreaterThan(0);
+    for (const entry of CACTUS_CATALOG) {
+      expect(entry.assets.weights).toBeDefined();
+      expect(entry.assets.vocab).toBeDefined();
+      expect(entry.assets.config).toBeDefined();
+    }
+  });
+
+  it("exports CATALOG_HAS_PLACEHOLDERS that reflects current catalog state", () => {
+    // The boolean is computed at module load. With real hashes populated it
+    // must be `false`; if any asset still uses the placeholder OR has a
+    // non-positive size, it must be `true`.
+    let expected = false;
+    for (const entry of CACTUS_CATALOG) {
+      for (const asset of [entry.assets.weights, entry.assets.vocab, entry.assets.config]) {
+        if (asset.sha256 === CACTUS_HASH_PLACEHOLDER || asset.size <= 0) {
+          expected = true;
+        }
+      }
+    }
+    expect(CATALOG_HAS_PLACEHOLDERS).toBe(expected);
+  });
+
+  it("CACTUS_REQUIRE_REAL_HASHES=1 throws when a placeholder is present", () => {
+    // Spawn a child process that:
+    //   - injects a stubbed Cactus_Integrity that exposes the placeholder
+    //     under the constant the catalog imports, then
+    //   - injects a temporary catalog source whose first asset's sha256 is
+    //     the placeholder and size=0, then
+    //   - imports the module under CACTUS_REQUIRE_REAL_HASHES=1.
+    // We assert the child exits non-zero. To avoid file mutation in the
+    // working tree, we use a TS evaluator script that constructs the
+    // placeholder situation inline by re-importing the constants and
+    // running the guard predicate directly.
+    const here = dirname(fileURLToPath(import.meta.url));
+    const evaluator = resolve(here, "../helpers/cactus-placeholder-guard-runner.ts");
+    const result = spawnSync("bun", [evaluator], {
+      env: { ...process.env, CACTUS_REQUIRE_REAL_HASHES: "1" },
+      encoding: "utf8",
+    });
+    // Either the catalog actually throws at import time (real placeholders
+    // present in CACTUS_CATALOG), or the runner forces a placeholder and
+    // re-runs the guard logic itself. Either way the runner exits non-zero
+    // when the guard would reject.
+    expect(result.status).not.toBe(0);
+    expect((result.stderr ?? "") + (result.stdout ?? "")).toMatch(/placeholder|non-positive size/i);
+  });
+
+  it("Without CACTUS_REQUIRE_REAL_HASHES the guard runner exits 0", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const evaluator = resolve(here, "../helpers/cactus-placeholder-guard-runner.ts");
+    const env = { ...process.env };
+    delete env.CACTUS_REQUIRE_REAL_HASHES;
+    delete env.NODE_ENV;
+    const result = spawnSync("bun", [evaluator], { env, encoding: "utf8" });
+    expect(result.status).toBe(0);
+  });
+});

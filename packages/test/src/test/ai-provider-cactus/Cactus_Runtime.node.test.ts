@@ -60,6 +60,13 @@ describe("fetchAssetBytesNode — cache-read error handling", () => {
 
   it("ENOENT (no cached file) falls through to network", async () => {
     // No file in `dir/needle-26m/vocab.txt` — fs.readFile rejects with ENOENT.
+    // Now that the catalog ships real hashes + sizes, the post-network
+    // integrity check WILL reject a small synthetic body. That's fine for
+    // this branch's assertion: we only need to confirm the ENOENT path
+    // proceeded as far as the network call. The integrity rejection AFTER
+    // that proves the ENOENT branch ran (otherwise we'd have hit the new
+    // wrapped "Cactus cache read failed" error instead, and fetch would
+    // never have been called).
     const payload = new Uint8Array([1, 2, 3, 4, 5]);
     const fetchSpy = vi.fn(async () => {
       return new Response(payload, {
@@ -69,9 +76,9 @@ describe("fetchAssetBytesNode — cache-read error handling", () => {
     });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    const bytes = await fetchAssetBytes(makeModelConfig(dir), "vocab.txt");
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
+    await expect(fetchAssetBytes(makeModelConfig(dir), "vocab.txt")).rejects.toThrow(
+      /Integrity check failed/
+    );
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 

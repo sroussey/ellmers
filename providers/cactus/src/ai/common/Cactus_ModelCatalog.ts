@@ -74,24 +74,25 @@ export const CACTUS_CATALOG: readonly CactusCatalogEntry[] = [
     hf_repo: CACTUS_DEFAULT_HF_REPO,
     revision: CACTUS_DEFAULT_REVISION,
     assets: {
-      // MAINTAINER: replace with sha256 of the asset at the pinned revision;
-      // see providers/cactus/scripts/hash-catalog.ts (planned follow-up).
-      // Verification is skipped while the value is the literal placeholder, but
-      // a clear warning is logged so this can never silently ship to release.
+      // MAINTAINER: regenerate hashes after bumping `revision` by running
+      //   bun run --filter @workglow/cactus hash-catalog -- --write
+      // The script fetches each asset URL, computes sha256, and rewrites
+      // these blocks in place. Production / CACTUS_REQUIRE_REAL_HASHES=1
+      // refuse to load the catalog while any value is still the placeholder.
       weights: {
         filename: "needle.safetensors",
-        sha256: CACTUS_HASH_PLACEHOLDER,
-        size: 0,
+        sha256: "87bbc354a99d26bf3763a845fbaf7118bd1e42aa9f675f1422fb79cde5ae0f4d",
+        size: 22259039,
       },
       vocab: {
         filename: "vocab.txt",
-        sha256: CACTUS_HASH_PLACEHOLDER,
-        size: 0,
+        sha256: "37643f32cb6ee4c636be3098a044c32d652d902553bf84e734bfdd56fb34b43b",
+        size: 122132,
       },
       config: {
         filename: "config.json",
-        sha256: CACTUS_HASH_PLACEHOLDER,
-        size: 0,
+        sha256: "57adb8eebbabf2bf514d13ed695e9572efcddc0cd251bcfc166c01f0c7b01440",
+        size: 320,
       },
     },
     capabilities: ["tool-use"],
@@ -111,22 +112,72 @@ export function cactusAssetUrl(
   entry: CactusCatalogEntry,
   filenameOrSpec: string | CactusAssetSpec
 ): string {
-  const filename =
-    typeof filenameOrSpec === "string" ? filenameOrSpec : filenameOrSpec.filename;
+  const filename = typeof filenameOrSpec === "string" ? filenameOrSpec : filenameOrSpec.filename;
   return `https://huggingface.co/${entry.hf_repo}/resolve/${entry.revision}/${filename}`;
 }
 
 // ============================================================================
-// Module-load invariant: every non-placeholder catalog entry has a valid
-// 64-char lowercase hex SHA-256. Catches catalog-author bugs immediately.
+// Module-load invariants
 //
-// Placeholder entries are intentionally skipped — `verifySha256` warns and
-// no-ops on them during pre-release development.
+//   1. Every non-placeholder catalog entry has a valid 64-char lowercase hex
+//      SHA-256. Catches catalog-author typos immediately at import time.
+//   2. In production (or when CACTUS_REQUIRE_REAL_HASHES=1 is set
+//      explicitly), reject any placeholder hash or zero-sized asset. Dev
+//      and test runs stay permissive so contributors can iterate before
+//      the real hashes have been populated.
+//
+// `CATALOG_HAS_PLACEHOLDERS` is exported so tooling (release gates, CI
+// pre-flight checks) can opt-in to the same assertion without re-reading
+// the catalog.
 // ============================================================================
+function detectCatalogPlaceholders(): boolean {
+  for (const entry of CACTUS_CATALOG) {
+    for (const asset of assetSpecsOf(entry)) {
+      if (asset.sha256 === CACTUS_HASH_PLACEHOLDER || asset.size <= 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * `true` when at least one catalog entry still uses the
+ * `CACTUS_HASH_PLACEHOLDER` sentinel or has a non-positive `size`. Computed
+ * once at module load. Release tooling can assert `!CATALOG_HAS_PLACEHOLDERS`
+ * before publishing a tag.
+ */
+export const CATALOG_HAS_PLACEHOLDERS: boolean = detectCatalogPlaceholders();
+
 for (const entry of CACTUS_CATALOG) {
   for (const asset of assetSpecsOf(entry)) {
     if (asset.sha256 !== CACTUS_HASH_PLACEHOLDER) {
       assertHexSha256(asset.sha256, `${entry.model_id}/${asset.filename}`);
+    }
+  }
+}
+
+// Production guard. Read the env vars defensively — `process` may not exist
+// in pure-browser runtimes, and we don't want the module to crash there.
+const _env: Record<string, string | undefined> =
+  typeof process !== "undefined" && process.env ? process.env : {};
+if (_env.NODE_ENV === "production" || _env.CACTUS_REQUIRE_REAL_HASHES === "1") {
+  for (const entry of CACTUS_CATALOG) {
+    for (const asset of assetSpecsOf(entry)) {
+      if (asset.sha256 === CACTUS_HASH_PLACEHOLDER) {
+        throw new Error(
+          `Cactus catalog entry ${entry.model_id}/${asset.filename} ` +
+            `still uses the SHA-256 placeholder; populate with ` +
+            `providers/cactus/scripts/hash-catalog.ts before publishing.`
+        );
+      }
+      if (asset.size <= 0) {
+        throw new Error(
+          `Cactus catalog entry ${entry.model_id}/${asset.filename} ` +
+            `has non-positive size (${asset.size}); populate with ` +
+            `providers/cactus/scripts/hash-catalog.ts before publishing.`
+        );
+      }
     }
   }
 }
