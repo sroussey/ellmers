@@ -5,24 +5,24 @@
  */
 
 import type { AiProviderRegisterOptions } from "@workglow/ai";
-import type { IBackendsTransport } from "@workglow/ai/provider-utils";
-import { registerProviderInline } from "@workglow/ai/provider-utils";
-import type { StableDiffusionCppEndpoint } from "./StableDiffusionCppProvider";
-import { StableDiffusionCppProvider } from "./StableDiffusionCppProvider";
+import { registerProviderWithWorker } from "@workglow/ai/provider-utils";
+import { StableDiffusionCppQueuedProvider } from "./StableDiffusionCppQueuedProvider";
 
-export interface IRegisterStableDiffusionCppOptions extends AiProviderRegisterOptions {
-  readonly transport: IBackendsTransport;
-  readonly externalUrl?: string;
-  readonly endpoint?: StableDiffusionCppEndpoint;
-}
-
+/**
+ * Main-thread worker-backed registration. The provider proxy lives on the
+ * main thread and forwards jobs to the worker, which holds the real run-fns.
+ *
+ * Use {@link registerStableDiffusionCppInline} for transport mode within a
+ * single thread.
+ */
 export async function registerStableDiffusionCpp(
-  options: IRegisterStableDiffusionCppOptions
+  options: AiProviderRegisterOptions & {
+    worker: Worker | (() => Worker);
+  }
 ): Promise<void> {
-  const { transport, externalUrl, endpoint, ...registerOptions } = options;
-  await registerProviderInline(
-    new StableDiffusionCppProvider({ transport, externalUrl, endpoint }),
+  await registerProviderWithWorker(
+    new StableDiffusionCppQueuedProvider(),
     "StableDiffusionCpp",
-    registerOptions
+    options
   );
 }

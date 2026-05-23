@@ -6,4 +6,11 @@
 
 // organize-imports-ignore
 
-export * from "./registerStableDiffusionCpp";
+export * from "./common/StableDiffusionCpp_Client";
+export * from "./common/StableDiffusionCpp_ImageGenerate";
+export * from "./common/StableDiffusionCpp_ImageEdit";
+export * from "./common/StableDiffusionCpp_ModelInfo";
+export * from "./common/StableDiffusionCpp_ModelSearch";
+export * from "./common/StableDiffusionCpp_JobRunFns";
+export * from "./registerStableDiffusionCppInline";
+export * from "./registerStableDiffusionCppWorker";
