@@ -35,7 +35,7 @@ export function createLlamaCppServerModelSearchStream(
       const results = (body.data ?? []).map((m) => ({
         id: m.id,
         label: m.id,
-        description: "llama-server loaded model",
+        description: m.id,
         record: {
           model_id: m.id,
           provider: LOCAL_LLAMACPP_SERVER,

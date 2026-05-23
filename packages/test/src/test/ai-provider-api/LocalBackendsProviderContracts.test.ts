@@ -18,7 +18,7 @@ import type {
   IRunningHandle,
 } from "@workglow/ai/provider-utils";
 import { pngBytesToImageValue } from "@workglow/ai/provider-utils";
-import { LlamaCppServerProvider } from "@workglow/llamacpp-server/ai";
+import { LOCAL_LLAMACPP_SERVER, registerLlamaCppServerInline } from "@workglow/llamacpp-server/ai";
 import { StableDiffusionCppProvider } from "@workglow/stable-diffusion-server/ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -109,10 +109,9 @@ describe("local backend provider stream contracts", () => {
 
   it("llama.cpp stops after [DONE] even if the server keeps the stream open", async () => {
     const { release, transport } = createTransportStub();
-    const provider = new LlamaCppServerProvider({ transport });
-    await provider.register();
+    await registerLlamaCppServerInline({ transport });
 
-    const runFn = getAiProviderRegistry().getRunFnFor(provider.name, ["text.generation"]);
+    const runFn = getAiProviderRegistry().getRunFnFor(LOCAL_LLAMACPP_SERVER, ["text.generation"]);
     expect(runFn).toBeDefined();
 
     const payload = new TextEncoder().encode(
@@ -144,13 +143,18 @@ describe("local backend provider stream contracts", () => {
         ({
           ok: true,
           body: { getReader: () => reader },
+          text: async (): Promise<string> => "",
         }) as unknown as Response
     ) as unknown as typeof fetch;
 
     const events = await runProviderStream(
       runFn!,
       { prompt: "hello" },
-      { model_id: "/models/llama.gguf" }
+      {
+        model_id: "llama-test",
+        provider: LOCAL_LLAMACPP_SERVER,
+        provider_config: { model_path: "/models/llama.gguf" },
+      }
     );
 
     expect(events).toEqual([
