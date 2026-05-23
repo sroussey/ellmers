@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CACTUS_CACHE_NAME, CACTUS_DEFAULT_MODELS_DIR } from "./Cactus_Constants";
@@ -11,9 +12,9 @@ import { CactusIntegrityError, verifySha256 } from "./Cactus_Integrity";
 import {
   assetSpecsOf,
   cactusAssetUrl,
+  getCactusCatalogEntry,
   type CactusAssetSpec,
   type CactusCatalogEntry,
-  getCactusCatalogEntry,
 } from "./Cactus_ModelCatalog";
 import type { CactusModelConfig } from "./Cactus_ModelSchema";
 
@@ -26,32 +27,6 @@ export interface CactusModelCacheInfo {
   readonly allCached: boolean;
   readonly file_sizes: Record<string, number> | null;
 }
-
-// ============================================================================
-// Path-safety (defense-in-depth + CodeQL-recognized inline sanitizer)
-//
-// `model_id` originates from user-supplied `provider_config.model_id` and
-// `filename` originates from the (effectively trusted) catalog. The catalog
-// lookup in `getCactusCatalogEntry` already restricts `model_id` to known
-// values, but static analyzers cannot see through that lookup.
-//
-// Two layers of defense are applied at every filesystem entry point:
-//
-//   1. Character allowlists (`assertSafeModelId`, `assertSafeFilename`)
-//      reject separators, `..`, NUL, and any shell/path-special characters
-//      at the boundary. Fast-fail on malformed input.
-//
-//   2. An inline `path.resolve` + `path.relative` containment check is
-//      duplicated immediately before every `fs.*` call. CodeQL's
-//      `js/path-injection` query does NOT trace through user-defined
-//      helper functions, so the sanitizer pattern must appear in the
-//      same function scope as the filesystem call. The `path.relative`
-//      shape is the canonical form CodeQL recognizes and is root-safe
-//      (a `startsWith(root + path.sep)` check breaks when `root` is "/"
-//      on POSIX or a drive root like "C:\\" on Windows because the
-//      concatenated separator produces "//" / "C:\\\\" that no child
-//      can match).
-// ============================================================================
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
@@ -85,6 +60,14 @@ function assertSafeFilename(filename: string): void {
         `(reserves 4 chars for the '.tmp' suffix used by atomic writes).`
     );
   }
+}
+
+function isRecoverableCacheReadError(err: unknown): boolean {
+  if (!err || typeof err !== "object" || !("code" in err)) {
+    return false;
+  }
+  const code = (err as { readonly code?: unknown }).code;
+  return code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR";
 }
 
 let _sdk: NeedleSdkModule | undefined;
@@ -165,10 +148,7 @@ async function getNodeAssetCacheInfo(
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {
@@ -229,10 +209,7 @@ async function getNodeAssetCacheInfo(
   };
 }
 
-async function fetchAssetBytesBrowser(
-  url: string,
-  spec: CactusAssetSpec
-): Promise<Uint8Array> {
+async function fetchAssetBytesBrowser(url: string, spec: CactusAssetSpec): Promise<Uint8Array> {
   const cachesApi = (globalThis as unknown as { caches: CacheStorage }).caches;
   const cache = await cachesApi.open(CACTUS_CACHE_NAME);
   const hit = await cache.match(url);
@@ -288,10 +265,7 @@ async function fetchAssetBytesNode(
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {
@@ -315,12 +289,31 @@ async function fetchAssetBytesNode(
   }
   try {
     // Re-resolve at the call site so CodeQL sees the sanitizer locally.
-    const readPath = path.resolve(resolvedDir, spec.filename);
+    const requestedReadPath = path.resolve(resolvedDir, spec.filename);
     {
-      const rel = path.relative(resolvedDir, readPath);
+      const rel = path.relative(resolvedDir, requestedReadPath);
       if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
         throw new Error(
-          `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(resolvedDir)}`
+          `Path escape detected: ${JSON.stringify(requestedReadPath)} is not within ${JSON.stringify(resolvedDir)}`
+        );
+      }
+    }
+    const realSafeRoot = realpathSync(safeRoot);
+    const realResolvedDir = realpathSync(resolvedDir);
+    {
+      const rel = path.relative(realSafeRoot, realResolvedDir);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(realResolvedDir)} is not within ${JSON.stringify(realSafeRoot)}`
+        );
+      }
+    }
+    const readPath = realpathSync(path.resolve(realResolvedDir, spec.filename));
+    {
+      const rel = path.relative(realResolvedDir, readPath);
+      if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
+        throw new Error(
+          `Path escape detected: ${JSON.stringify(readPath)} is not within ${JSON.stringify(realResolvedDir)}`
         );
       }
     }
@@ -360,6 +353,9 @@ async function fetchAssetBytesNode(
     // ENOENT or sibling read errors fall through to fetch.
     if (err instanceof CactusIntegrityError) {
       throw err; // unreachable, handled above
+    }
+    if (!isRecoverableCacheReadError(err)) {
+      throw err;
     }
   }
   const resp = await fetch(url);
@@ -626,10 +622,7 @@ async function removeNodeCacheDir(model: CactusModelConfig, model_id: string): P
   // Compute the resolved model dir inline so CodeQL's js/path-injection
   // query can trace the sanitizer locally.
   const safeRoot = models_dir.startsWith("~/")
-    ? path.resolve(
-        process.env.HOME ?? process.env.USERPROFILE ?? ".",
-        models_dir.slice(2)
-      )
+    ? path.resolve(process.env.HOME ?? process.env.USERPROFILE ?? ".", models_dir.slice(2))
     : path.resolve(models_dir);
   const resolvedDir = path.resolve(safeRoot, model_id);
   {

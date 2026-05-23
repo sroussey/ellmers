@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,12 +15,78 @@ export type EditInEditorResult =
   | { readonly status: "unchanged" }
   | { readonly status: "editor_error"; readonly message: string };
 
+export interface ParsedEditorCommand {
+  readonly executable: string;
+  readonly args: readonly string[];
+}
+
 /**
  * Shell command prefix for opening a file (same precedence as git: GIT_EDITOR, VISUAL, EDITOR).
  */
 export function getEditorCommand(): string {
   const fallback = process.platform === "win32" ? "notepad" : "vi";
   return process.env.GIT_EDITOR ?? process.env.VISUAL ?? process.env.EDITOR ?? fallback;
+}
+
+export function parseEditorCommand(command: string): ParsedEditorCommand {
+  const parts: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | undefined;
+  const trimmed = command.trim();
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i];
+    const next = trimmed[i + 1];
+
+    if (
+      char === "\\" &&
+      next &&
+      (/\s/.test(next) || next === "\\" || next === "'" || next === '"')
+    ) {
+      current += next;
+      i++;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = undefined;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (quote) {
+    throw new Error("Editor command contains an unterminated quoted string");
+  }
+
+  if (current.length > 0) {
+    parts.push(current);
+  }
+
+  const [executable, ...args] = parts;
+  if (!executable) {
+    throw new Error("Editor command is empty");
+  }
+
+  return { executable, args };
 }
 
 /**
@@ -35,10 +101,22 @@ export function editStringInExternalEditor(
   const file = join(dir, tempBasename);
   writeFileSync(file, initialContent, "utf-8");
 
-  const shell = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "/bin/sh";
   try {
-    const cmd = `${getEditorCommand()} ${JSON.stringify(file)}`;
-    execSync(cmd, { stdio: "inherit", shell });
+    const editor = parseEditorCommand(getEditorCommand());
+    const result = spawnSync(editor.executable, [...editor.args, file], {
+      stdio: "inherit",
+      shell: false,
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(
+        result.signal
+          ? `Editor exited after signal ${result.signal}`
+          : `Editor exited with status ${result.status ?? "unknown"}`
+      );
+    }
   } catch (e) {
     try {
       rmSync(dir, { recursive: true, force: true });
