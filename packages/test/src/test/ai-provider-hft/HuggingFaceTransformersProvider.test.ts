@@ -10,13 +10,10 @@ import {
   pipelineToTaskTypes,
   taskTypeToPipelines,
 } from "@workglow/ai/provider-utils";
-import {
-  HuggingFaceTransformersQueuedProvider,
-  _testOnly,
-} from "@workglow/huggingface-transformers/ai";
+import { _testOnly } from "@workglow/huggingface-transformers/ai";
 import { describe, expect, it } from "vitest";
 
-const { HFT_RUN_FN_SPECS, HFT_RUN_FNS } = _testOnly;
+const { HuggingFaceTransformersQueuedProvider, HFT_RUN_FN_SPECS, HFT_RUN_FNS } = _testOnly;
 
 function model(
   model_id: string,

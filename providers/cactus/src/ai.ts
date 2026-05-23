@@ -16,7 +16,6 @@ export * from "./ai/common/Cactus_ModelSchema";
 // on one would not see writes from the other. Import runtime state from
 // `@workglow/cactus/ai-runtime` instead.
 export * from "./ai/CactusProvider";
-export * from "./ai/CactusQueuedProvider";
 export * from "./ai/registerCactus";
 
 import { CactusQueuedProvider } from "./ai/CactusQueuedProvider";
