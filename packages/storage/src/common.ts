@@ -28,6 +28,7 @@ export {
   MAX_CURSOR_LENGTH,
 } from "./tabular/Cursor";
 export type { PageCursor } from "./tabular/Cursor";
+export * from "./tabular/HttpTabularProxyStorage";
 export * from "./tabular/HuggingFaceTabularStorage";
 export * from "./tabular/InMemoryTabularMigrationApplier";
 export * from "./tabular/InMemoryTabularStorage";
