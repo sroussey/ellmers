@@ -46,7 +46,7 @@ export interface HttpTabularProxyOptions<
     | keyof Schema["properties"]
     | readonly (keyof Schema["properties"])[]
   )[];
-  /** Optional base path. Defaults to `/api/storage`. Must NOT have a trailing slash. */
+  /** Optional base path. Defaults to `/api/storage`. Trailing slashes are stripped. */
   readonly basePath?: string;
   /** Forwarded to BaseTabularStorage. Defaults to "if-missing". */
   readonly clientProvidedKeys?: ClientProvidedKeysOption;
@@ -67,6 +67,12 @@ function trimTrailingSlashes(value: string): string {
  * Transport is the fetch impl's concern — this class doesn't know whether the
  * request crosses a socket (dev), a `MessageChannelMain` port (Electron prod),
  * or runs in-process against `app.fetch` (tests / web mode).
+ *
+ * Wire format is JSON: values must be JSON-serialisable. Schemas using
+ * `Uint8Array` (blob) or `bigint` columns are NOT supported through this
+ * proxy — those types don't round-trip through `JSON.stringify`/`res.json()`.
+ * Add a field-aware (de)serializer here if a binary-valued schema ever needs
+ * to go over the proxy.
  */
 export class HttpTabularProxyStorage<
   Schema extends DataPortSchemaObject,
@@ -145,7 +151,8 @@ export class HttpTabularProxyStorage<
 
   async delete(key: PrimaryKey | Entity): Promise<void> {
     await this.call<{ ok: true }>("delete", { key });
-    this.events.emit("delete", key as keyof Entity);
+    const { key: normalizedKey } = this.separateKeyValueFromCombined(key as Entity);
+    this.events.emit("delete", normalizedKey as keyof Entity);
   }
 
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
@@ -224,6 +231,8 @@ export class HttpTabularProxyStorage<
     criteria: SearchCriteria<Entity>,
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
+    this.validateSelect(options);
+    this.validateQueryParams(criteria, options);
     const { entities } = await this.call<{ entities: Pick<Entity, K>[] }>("queryIndex", {
       criteria,
       options,
