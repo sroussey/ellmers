@@ -301,13 +301,16 @@
         "@workglow/javascript": "workspace:*",
         "@workglow/job-queue": "workspace:*",
         "@workglow/knowledge-base": "workspace:*",
+        "@workglow/llamacpp-server": "workspace:*",
         "@workglow/mcp": "workspace:*",
+        "@workglow/mlx": "workspace:*",
         "@workglow/node-llama-cpp": "workspace:*",
         "@workglow/ollama": "workspace:*",
         "@workglow/openai": "workspace:*",
         "@workglow/playwright": "workspace:*",
         "@workglow/postgres": "workspace:*",
         "@workglow/sqlite": "workspace:*",
+        "@workglow/stable-diffusion-server": "workspace:*",
         "@workglow/storage": "workspace:*",
         "@workglow/supabase": "workspace:*",
         "@workglow/task-graph": "workspace:*",
@@ -541,6 +544,36 @@
         "@workglow/util": "workspace:*",
       },
     },
+    "providers/llamacpp-server": {
+      "name": "@workglow/llamacpp-server",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
+    "providers/mlx": {
+      "name": "@workglow/mlx",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+    },
     "providers/node-llama-cpp": {
       "name": "@workglow/node-llama-cpp",
       "version": "0.3.5",
@@ -665,6 +698,21 @@
         "@sqliteai/sqlite-vector",
         "better-sqlite3",
       ],
+    },
+    "providers/stable-diffusion-server": {
+      "name": "@workglow/stable-diffusion-server",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
+      "peerDependencies": {
+        "@workglow/ai": "workspace:*",
+        "@workglow/job-queue": "workspace:*",
+        "@workglow/storage": "workspace:*",
+        "@workglow/task-graph": "workspace:*",
+        "@workglow/util": "workspace:*",
+      },
     },
     "providers/supabase": {
       "name": "@workglow/supabase",
@@ -1405,7 +1453,11 @@
 
     "@workglow/knowledge-base": ["@workglow/knowledge-base@workspace:packages/knowledge-base"],
 
+    "@workglow/llamacpp-server": ["@workglow/llamacpp-server@workspace:providers/llamacpp-server"],
+
     "@workglow/mcp": ["@workglow/mcp@workspace:packages/mcp"],
+
+    "@workglow/mlx": ["@workglow/mlx@workspace:providers/mlx"],
 
     "@workglow/node-llama-cpp": ["@workglow/node-llama-cpp@workspace:providers/node-llama-cpp"],
 
@@ -1418,6 +1470,8 @@
     "@workglow/postgres": ["@workglow/postgres@workspace:providers/postgres"],
 
     "@workglow/sqlite": ["@workglow/sqlite@workspace:providers/sqlite"],
+
+    "@workglow/stable-diffusion-server": ["@workglow/stable-diffusion-server@workspace:providers/stable-diffusion-server"],
 
     "@workglow/storage": ["@workglow/storage@workspace:packages/storage"],
 

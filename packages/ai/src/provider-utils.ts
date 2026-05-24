@@ -23,3 +23,4 @@ export * from "./provider-utils/imageOutputHelpers";
 export * from "./provider-utils/BaseCloudProvider";
 export * from "./provider-utils/CloudProviderClient";
 export * from "./provider-utils/OpenAIShapedChat";
+export * from "./provider-utils/IBackendsTransport";
