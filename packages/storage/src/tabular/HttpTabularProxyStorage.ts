@@ -104,38 +104,75 @@ export class HttpTabularProxyStorage<
     return (await res.json()) as T;
   }
 
-  // Method implementations land in later tasks.
+  async put(value: InsertType): Promise<Entity> {
+    const { entity } = await this.call<{ entity: Entity }>("put", { value });
+    this.events.emit("put", entity);
+    return entity;
+  }
 
-  put(_value: InsertType): Promise<Entity> {
-    throw new Error("Not implemented");
+  async putBulk(values: InsertType[]): Promise<Entity[]> {
+    if (values.length === 0) return [];
+    const { entities } = await this.call<{ entities: Entity[] }>("putBulk", { values });
+    for (const entity of entities) this.events.emit("put", entity);
+    return entities;
   }
-  putBulk(_values: InsertType[]): Promise<Entity[]> {
-    throw new Error("Not implemented");
+
+  async get(key: PrimaryKey): Promise<Entity | undefined> {
+    const { entity } = await this.call<{ entity: Entity | null }>("get", { key });
+    const result = entity ?? undefined;
+    this.events.emit("get", key, result);
+    return result;
   }
-  get(_key: PrimaryKey): Promise<Entity | undefined> {
-    throw new Error("Not implemented");
+
+  async delete(key: PrimaryKey | Entity): Promise<void> {
+    await this.call<{ ok: true }>("delete", { key });
+    this.events.emit("delete", key as never);
   }
-  delete(_key: PrimaryKey | Entity): Promise<void> {
-    throw new Error("Not implemented");
+
+  override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
+    if (keys.length === 0) return [];
+    const { entities } = await this.call<{ entities: Entity[] }>("getBulk", { keys });
+    this.events.emit("getBulk", keys, entities);
+    return entities;
   }
-  getAll(_options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    throw new Error("Not implemented");
-  }
-  deleteAll(): Promise<void> {
-    throw new Error("Not implemented");
-  }
-  size(): Promise<number> {
-    throw new Error("Not implemented");
-  }
-  deleteSearch(_criteria: DeleteSearchCriteria<Entity>): Promise<void> {
-    throw new Error("Not implemented");
-  }
-  query(
-    _criteria: SearchCriteria<Entity>,
-    _options?: QueryOptions<Entity>
+
+  async query(
+    criteria: SearchCriteria<Entity>,
+    options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
-    throw new Error("Not implemented");
+    const { entities } = await this.call<{ entities: Entity[] | null }>("query", {
+      criteria,
+      options,
+    });
+    const result = entities ?? undefined;
+    this.events.emit("query", criteria as Partial<Entity>, result);
+    return result;
   }
+
+  async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
+    const { entities } = await this.call<{ entities: Entity[] | null }>("getAll", { options });
+    return entities ?? undefined;
+  }
+
+  async size(): Promise<number> {
+    const { size } = await this.call<{ size: number }>("size", {});
+    return size;
+  }
+
+  override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    const { count } = await this.call<{ count: number }>("count", { criteria });
+    return count;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.call<{ ok: true }>("deleteAll", {});
+    this.events.emit("clearall");
+  }
+
+  async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
+    await this.call<{ ok: true }>("deleteSearch", { criteria });
+  }
+
   getOffsetPage(_offset: number, _limit: number): Promise<Entity[] | undefined> {
     throw new Error("Not implemented");
   }
