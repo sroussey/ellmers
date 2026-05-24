@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6
+
+### Chores
+
+- update deps, turn off preview libs for now
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1053.0
+
 ## 0.3.5
 
 ## 0.3.4

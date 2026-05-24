@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.6
+
+### Bug Fixes
+
+#### cactus,chrome-ai
+
+- security and correctness fixes from review (#531)
+
 ## 0.3.5
 
 ### Features

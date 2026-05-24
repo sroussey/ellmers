@@ -1,5 +1,13 @@
 # @workglow/cli
 
+## 0.3.6
+
+### Refactors
+
+#### cli
+
+- replace execSync with spawnSync for editor command execution and add command parsing functionality
+
 ## 0.3.5
 
 ## 0.3.4

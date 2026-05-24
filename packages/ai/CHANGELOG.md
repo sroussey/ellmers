@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.3.6
+
+### Features
+
+#### ai
+
+- IBackendsTransport interface + provider package scaffolding
+
 ## 0.3.5
 
 ### Features

@@ -1,5 +1,43 @@
 # @workglow/test
 
+## 0.3.6
+
+### Features
+
+#### ai
+
+- IBackendsTransport interface + provider package scaffolding
+
+#### cactus
+
+- SHA-256 integrity verification for fetched model assets (#530)
+
+### Bug Fixes
+
+#### cactus,chrome-ai
+
+- security and correctness fixes from review (#531)
+
+### Tests
+
+#### stable-diffusion-server
+
+- full unit and integration test suite
+
+#### llamacpp-server
+
+- full unit and integration test suite
+
+### Chores
+
+- update deps, turn off preview libs for now
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1053.0
+- `@cloudflare/workers-types`: ^4.20260523.1
+- `miniflare`: ^4.20260521.0
+
 ## 0.3.5
 
 ### Features

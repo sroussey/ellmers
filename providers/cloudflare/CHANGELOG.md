@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6
+
+### Chores
+
+- update deps, turn off preview libs for now
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260523.1
+
 ## 0.3.5
 
 ### Chores

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.6
+
+### Features
+
+#### cactus
+
+- SHA-256 integrity verification for fetched model assets (#530)
+
+### Bug Fixes
+
+#### cactus,chrome-ai
+
+- security and correctness fixes from review (#531)
+
+### Refactors
+
+#### cli
+
+- replace execSync with spawnSync for editor command execution and add command parsing functionality
+
 ## 0.3.5
 
 ### Features

@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.3.6
+
 ## 0.3.5
 
 ### Bug Fixes

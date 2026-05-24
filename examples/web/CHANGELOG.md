@@ -1,5 +1,15 @@
 # @workglow/web
 
+## 0.3.6
+
+### Chores
+
+- update deps, turn off preview libs for now
+
+### Updated Dependencies
+
+- `react-resizable-panels`: ^4.11.2
+
 ## 0.3.5
 
 ## 0.3.4
