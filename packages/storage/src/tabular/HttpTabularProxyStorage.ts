@@ -36,7 +36,7 @@ export interface HttpTabularProxyOptions<
   readonly table: string;
   readonly schema: Schema;
   readonly primaryKey: PrimaryKeyNames;
-  readonly secondaryKeys?: readonly (
+  readonly indexes?: readonly (
     | keyof Schema["properties"]
     | readonly (keyof Schema["properties"])[]
   )[];
@@ -67,11 +67,8 @@ export class HttpTabularProxyStorage<
   protected readonly basePath: string;
 
   constructor(opts: HttpTabularProxyOptions<Schema, PrimaryKeyNames>) {
-    const secondaryKeys = (opts.secondaryKeys ?? []) as readonly (
-      | keyof Entity
-      | readonly (keyof Entity)[]
-    )[];
-    super(opts.schema, opts.primaryKey, secondaryKeys, opts.clientProvidedKeys ?? "if-missing");
+    const indexes = (opts.indexes ?? []) as readonly (keyof Entity | readonly (keyof Entity)[])[];
+    super(opts.schema, opts.primaryKey, indexes, opts.clientProvidedKeys ?? "if-missing");
     this.fetchImpl = opts.fetch;
     this.table = opts.table;
     this.basePath = (opts.basePath ?? "/api/storage").replace(/\/+$/, "");
