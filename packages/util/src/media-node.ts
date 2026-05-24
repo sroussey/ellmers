@@ -13,12 +13,7 @@ export { registerImageDefaults } from "./media/imageHydrationResolver";
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";
 export { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "./media/encode";
-export {
-  _resetFilterRegistryForTests,
-  applyFilter,
-  hasFilterOp,
-  registerFilterOp,
-} from "./media/filterRegistry";
+export { applyFilter, hasFilterOp, registerFilterOp } from "./media/filterRegistry";
 export type { FilterOpFn } from "./media/filterRegistry";
 export {
   getGpuImageFactory,
@@ -61,7 +56,6 @@ export type { RawPixelBuffer, RgbaPixelBuffer } from "./media/rawPixelBuffer";
 export async function getGpuDevice(): Promise<null> {
   return null;
 }
-export function resetGpuDeviceForTests(): void {}
 export {
   createShaderCache,
   getShaderCache,
@@ -69,11 +63,7 @@ export {
   VERTEX_PRELUDE,
 } from "./media/shaderRegistry.browser";
 export type { ShaderCache } from "./media/shaderRegistry.browser";
-export {
-  createTexturePool,
-  getTexturePool,
-  resetTexturePoolForTests,
-} from "./media/texturePool.browser";
+export { createTexturePool, getTexturePool } from "./media/texturePool.browser";
 export type { TexturePool, TexturePoolOptions } from "./media/texturePool.browser";
 // WebGpuImage is browser-only at runtime; type-only re-export lets
 // browser-targeted filter files (*.webgpu.ts) type-check under node tsc.
@@ -90,8 +80,19 @@ export type {
 } from "./media/sharpImage.server";
 export type { ApplyParams, WebGpuImage } from "./media/webGpuImage.browser";
 
+import { _resetFilterRegistryForTests } from "./media/filterRegistry";
 import { registerGpuImageFactory as _registerGpuImageFactory } from "./media/gpuImage";
 import type { ImageValue as _ImageValue } from "./media/imageValue";
 import { SharpImage as _SharpImage } from "./media/sharpImage.server";
+import { resetTexturePoolForTests } from "./media/texturePool.browser";
 
 _registerGpuImageFactory("from", (value: _ImageValue) => _SharpImage.from(value));
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  _resetFilterRegistryForTests,
+  resetGpuDeviceForTests: (): void => {},
+  resetTexturePoolForTests,
+} as const;

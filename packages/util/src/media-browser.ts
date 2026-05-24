@@ -19,14 +19,9 @@ export { registerImageDefaults } from "./media/imageHydrationResolver";
 export * from "./media/color";
 export { CpuImage } from "./media/cpuImage";
 export { rawPixelBufferToBlob, rawPixelBufferToDataUri } from "./media/encode";
-export {
-  _resetFilterRegistryForTests,
-  applyFilter,
-  hasFilterOp,
-  registerFilterOp,
-} from "./media/filterRegistry";
+export { applyFilter, hasFilterOp, registerFilterOp } from "./media/filterRegistry";
 export type { FilterOpFn } from "./media/filterRegistry";
-export { getGpuDevice, resetGpuDeviceForTests } from "./media/gpuDevice.browser";
+export { getGpuDevice } from "./media/gpuDevice.browser";
 export {
   getGpuImageFactory,
   GpuImage as GpuImageFactory,
@@ -72,11 +67,7 @@ export {
   VERTEX_PRELUDE,
 } from "./media/shaderRegistry.browser";
 export type { ShaderCache } from "./media/shaderRegistry.browser";
-export {
-  createTexturePool,
-  getTexturePool,
-  resetTexturePoolForTests,
-} from "./media/texturePool.browser";
+export { createTexturePool, getTexturePool } from "./media/texturePool.browser";
 export type { TexturePool, TexturePoolOptions } from "./media/texturePool.browser";
 export { WebGpuImage } from "./media/webGpuImage.browser";
 export type { ApplyParams } from "./media/webGpuImage.browser";
@@ -101,3 +92,16 @@ async function _preferGpu(value: _ImageValue) {
 }
 
 _registerGpuImageFactory("from", _preferGpu);
+
+import { _resetFilterRegistryForTests } from "./media/filterRegistry";
+import { resetGpuDeviceForTests } from "./media/gpuDevice.browser";
+import { resetTexturePoolForTests } from "./media/texturePool.browser";
+
+/**
+ * @internal Symbols exported only for use by `@workglow/test`. Not part of the stable public API.
+ */
+export const _testOnly = {
+  _resetFilterRegistryForTests,
+  resetGpuDeviceForTests,
+  resetTexturePoolForTests,
+} as const;

@@ -5,8 +5,10 @@
  */
 
 import type { ModelRecord } from "@workglow/ai/worker";
-import { CactusQueuedProvider } from "@workglow/cactus/ai";
+import { _testOnly } from "@workglow/cactus/ai";
 import { describe, expect, it } from "vitest";
+
+const { CactusQueuedProvider } = _testOnly;
 
 function model(): ModelRecord {
   return {

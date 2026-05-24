@@ -4,15 +4,16 @@
  * All Rights Reserved
  */
 import {
+  _testOnly,
   getGpuDevice,
   imageValueFromBitmap,
   PASSTHROUGH_SHADER_SRC,
-  resetGpuDeviceForTests,
-  resetTexturePoolForTests,
   type ApplyParams,
   type WebGpuImage as WebGpuImageType,
 } from "@workglow/util/media";
 import { beforeEach, describe, expect, test } from "vitest";
+
+const { resetGpuDeviceForTests, resetTexturePoolForTests } = _testOnly;
 
 const isBrowser = typeof window !== "undefined";
 

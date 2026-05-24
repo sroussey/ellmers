@@ -88,12 +88,7 @@ export * from "./task/vector/VectorSubtractTask";
 export * from "./task/vector/VectorSumTask";
 export * from "./util/SafeFetch";
 export * from "./util/UrlClassifier";
-export {
-  _resetFilterRegistryForTests,
-  applyFilter,
-  hasFilterOp,
-  registerFilterOp,
-} from "@workglow/util/media";
+export { applyFilter, hasFilterOp, registerFilterOp } from "@workglow/util/media";
 export type { FilterOpFn } from "@workglow/util/media";
 
 import { TaskRegistry } from "@workglow/task-graph";
