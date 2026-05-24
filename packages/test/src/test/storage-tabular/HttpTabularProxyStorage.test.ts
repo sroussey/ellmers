@@ -73,6 +73,22 @@ function makeFakeServer<Schema extends typeof TestSchema, PK extends typeof Test
           await storage.deleteSearch(body.criteria);
           return new Response(JSON.stringify({ ok: true }), { status: 200 });
         }
+        case "getOffsetPage": {
+          const entities = await storage.getOffsetPage(body.offset, body.limit);
+          return new Response(JSON.stringify({ entities: entities ?? null }), { status: 200 });
+        }
+        case "getPage": {
+          const page = await storage.getPage(body.request);
+          return new Response(JSON.stringify({ page }), { status: 200 });
+        }
+        case "queryPage": {
+          const page = await storage.queryPage(body.criteria, body.request);
+          return new Response(JSON.stringify({ page }), { status: 200 });
+        }
+        case "queryIndex": {
+          const entities = await storage.queryIndex(body.criteria, body.options);
+          return new Response(JSON.stringify({ entities }), { status: 200 });
+        }
         default:
           return new Response(JSON.stringify({ error: `unknown op ${op}` }), { status: 404 });
       }
@@ -328,4 +344,199 @@ describe("HttpTabularProxyStorage — count/size/delete bulk", () => {
     expect(await backing.size()).toBe(1);
     expect(await backing.get({ id: "b" })).toBeDefined();
   });
+});
+
+describe("HttpTabularProxyStorage — pagination", () => {
+  it("getOffsetPage returns a slice", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey
+    );
+    for (const id of ["a", "b", "c", "d"]) {
+      await backing.put({ id, name: id, value: id.charCodeAt(0) });
+    }
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: makeFakeServer(backing),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    const page = await proxy.getOffsetPage(1, 2);
+    expect(page).toHaveLength(2);
+  });
+
+  it("getPage paginates with a cursor", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey
+    );
+    for (const id of ["a", "b", "c"]) {
+      await backing.put({ id, name: id, value: id.charCodeAt(0) });
+    }
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: makeFakeServer(backing),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    const first = await proxy.getPage({ limit: 2 });
+    expect(first.items).toHaveLength(2);
+    expect(first.nextCursor).toBeDefined();
+    const second = await proxy.getPage({ limit: 2, cursor: first.nextCursor });
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeUndefined();
+  });
+});
+
+describe("HttpTabularProxyStorage — queryIndex/withTransaction/lifecycle", () => {
+  it("queryIndex forwards select projection", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey,
+      [["name"]]
+    );
+    await backing.put({ id: "a", name: "alpha", value: 1 });
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: makeFakeServer(backing),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    const result = await proxy.queryIndex({ name: "alpha" }, { select: ["id", "name"] });
+    expect(result).toEqual([{ id: "a", name: "alpha" }]);
+  });
+
+  it("withTransaction runs the callback (no rollback)", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey
+    );
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: makeFakeServer(backing),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    let ran = false;
+    const result = await proxy.withTransaction(async (tx) => {
+      ran = true;
+      expect(tx).toBe(proxy);
+      return 42;
+    });
+    expect(ran).toBe(true);
+    expect(result).toBe(42);
+  });
+
+  it("setupDatabase and destroy are no-ops", async () => {
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: async () => new Response("", { status: 500 }),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    await expect(proxy.setupDatabase()).resolves.toBeUndefined();
+    expect(() => proxy.destroy()).not.toThrow();
+  });
+});
+
+describe("HttpTabularProxyStorage — subscribeToChanges", () => {
+  it("polls and emits INSERT for new rows", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey
+    );
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: makeFakeServer(backing),
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+
+    const events: string[] = [];
+    const unsubscribe = proxy.subscribeToChanges(
+      (change) => {
+        events.push(`${change.type}:${change.new?.id ?? change.old?.id}`);
+      },
+      { pollingIntervalMs: 30 }
+    );
+
+    await new Promise((r) => setTimeout(r, 60));
+    await backing.put({ id: "new1", name: "n", value: 0 });
+    await new Promise((r) => setTimeout(r, 80));
+
+    unsubscribe();
+    expect(events).toContain("INSERT:new1");
+  });
+
+  it("unsubscribe stops polling", async () => {
+    const fetchCounts = { calls: 0 };
+    const fetchImpl = async () => {
+      fetchCounts.calls++;
+      return new Response(JSON.stringify({ entities: [] }), { status: 200 });
+    };
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: fetchImpl,
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+    });
+    const unsubscribe = proxy.subscribeToChanges(() => {}, { pollingIntervalMs: 20 });
+    await new Promise((r) => setTimeout(r, 60));
+    const after = fetchCounts.calls;
+    unsubscribe();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(fetchCounts.calls).toBe(after);
+  });
+});
+
+import {
+  AllTypesPrimaryKeyNames,
+  AllTypesSchema,
+  CompoundPrimaryKeyNames,
+  CompoundSchema,
+  runGenericTabularStorageTests,
+  SearchPrimaryKeyNames,
+  SearchSchema,
+} from "./genericTabularStorageTests";
+
+describe("HttpTabularProxyStorage — generic contract (CompoundSchema/SearchSchema/AllTypesSchema)", () => {
+  const makeCompound = async () => {
+    const backing = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    return new HttpTabularProxyStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>({
+      fetch: makeFakeServer(backing as never),
+      table: "compound",
+      schema: CompoundSchema,
+      primaryKey: CompoundPrimaryKeyNames,
+    });
+  };
+  const makeSearch = async () => {
+    const backing = new InMemoryTabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>(
+      SearchSchema,
+      SearchPrimaryKeyNames,
+      ["category", ["category", "subcategory"], ["subcategory", "category"], "value"]
+    );
+    return new HttpTabularProxyStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>({
+      fetch: makeFakeServer(backing as never),
+      table: "search",
+      schema: SearchSchema,
+      primaryKey: SearchPrimaryKeyNames,
+      indexes: ["category", ["category", "subcategory"], ["subcategory", "category"], "value"],
+    });
+  };
+  const makeAllTypes = async () => {
+    const backing = new InMemoryTabularStorage<
+      typeof AllTypesSchema,
+      typeof AllTypesPrimaryKeyNames
+    >(AllTypesSchema, AllTypesPrimaryKeyNames);
+    return new HttpTabularProxyStorage<typeof AllTypesSchema, typeof AllTypesPrimaryKeyNames>({
+      fetch: makeFakeServer(backing as never),
+      table: "alltypes",
+      schema: AllTypesSchema,
+      primaryKey: AllTypesPrimaryKeyNames,
+    });
+  };
+  runGenericTabularStorageTests(makeCompound, makeSearch, makeAllTypes);
 });
