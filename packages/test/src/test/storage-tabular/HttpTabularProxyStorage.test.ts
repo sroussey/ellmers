@@ -468,6 +468,81 @@ describe("HttpTabularProxyStorage — subscribeToChanges", () => {
     expect(events).toContain("INSERT:new1");
   });
 
+  it("compound-key collision: two rows whose naive join(|) keys match are both reported as INSERT", async () => {
+    // {name:"x|y", type:"z"} and {name:"x", type:"y|z"} both produce "x|y|z" under naive join("|").
+    // With fingerprinting they must produce distinct map keys, so neither row shadows the other.
+    const backing = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+
+    const proxy = new HttpTabularProxyStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >({
+      fetch: makeFakeServer(backing as never),
+      table: "compound",
+      schema: CompoundSchema,
+      primaryKey: CompoundPrimaryKeyNames,
+    });
+
+    // Seed both colliding rows before subscribing so both are seen as INSERT on first diff.
+    await backing.put({ name: "x|y", type: "z", option: "o1", success: true });
+    await backing.put({ name: "x", type: "y|z", option: "o2", success: false });
+
+    const inserts: string[] = [];
+    const unsubscribe = proxy.subscribeToChanges(
+      (change) => {
+        if (change.type === "INSERT") {
+          inserts.push(
+            `${(change.new as { name: string }).name}|${(change.new as { type: string }).type}`
+          );
+        }
+      },
+      { pollingIntervalMs: 30 }
+    );
+
+    await new Promise((r) => setTimeout(r, 120));
+    unsubscribe();
+
+    // Both distinct rows must be reported — if one shadowed the other only one INSERT fires.
+    expect(inserts).toContain("x|y|z");
+    expect(inserts).toContain("x|y|z");
+    // More specific assertion: both composite identifiers present
+    expect(inserts.some((s) => s === "x|y|z")).toBe(true);
+    // The two rows have DIFFERENT composite keys under fingerprinting:
+    // row1 -> name="x|y", type="z"  ->  identifier "x|y|z"  (name + "|" + type)
+    // row2 -> name="x",   type="y|z" -> identifier "x|y|z"  (same string! that's the bug)
+    // So we assert by checking both rows' `option` values are seen:
+    const options = inserts.map((_, i) => i); // placeholder — we check via a second listener
+    // Re-run with a fresh proxy to collect full entity payloads
+    const proxy2 = new HttpTabularProxyStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >({
+      fetch: makeFakeServer(backing as never),
+      table: "compound",
+      schema: CompoundSchema,
+      primaryKey: CompoundPrimaryKeyNames,
+    });
+    const insertedOptions: string[] = [];
+    const unsub2 = proxy2.subscribeToChanges(
+      (change) => {
+        if (change.type === "INSERT") {
+          insertedOptions.push((change.new as { option: string }).option);
+        }
+      },
+      { pollingIntervalMs: 30 }
+    );
+    await new Promise((r) => setTimeout(r, 120));
+    unsub2();
+    proxy2.destroy();
+
+    // With correct fingerprinting BOTH rows must appear; with naive join only one would.
+    expect(insertedOptions).toContain("o1");
+    expect(insertedOptions).toContain("o2");
+  });
+
   it("unsubscribe stops polling", async () => {
     const fetchCounts = { calls: 0 };
     const fetchImpl = async () => {

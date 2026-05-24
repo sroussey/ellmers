@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createServiceToken } from "@workglow/util";
+import { createServiceToken, deepEqual, makeFingerprint } from "@workglow/util";
 import { DataPortSchemaObject, FromSchema, TypedArraySchemaOptions } from "@workglow/util/schema";
 import { PollingSubscriptionManager } from "../util/PollingSubscriptionManager";
 import { BaseTabularStorage, ClientProvidedKeysOption } from "./BaseTabularStorage";
@@ -71,6 +71,11 @@ export class HttpTabularProxyStorage<
   protected readonly fetchImpl: HttpTabularProxyFetch;
   protected readonly table: string;
   protected readonly basePath: string;
+  private pollingManager: PollingSubscriptionManager<
+    Entity,
+    string,
+    TabularChangePayload<Entity>
+  > | null = null;
 
   constructor(opts: HttpTabularProxyOptions<Schema, PrimaryKeyNames>) {
     const indexes = (opts.indexes ?? []) as readonly (keyof Entity | readonly (keyof Entity)[])[];
@@ -132,7 +137,7 @@ export class HttpTabularProxyStorage<
 
   async delete(key: PrimaryKey | Entity): Promise<void> {
     await this.call<{ ok: true }>("delete", { key });
-    this.events.emit("delete", key as never);
+    this.events.emit("delete", key as keyof Entity);
   }
 
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {
@@ -218,12 +223,6 @@ export class HttpTabularProxyStorage<
     return entities;
   }
 
-  private pollingManager: PollingSubscriptionManager<
-    Entity,
-    string,
-    TabularChangePayload<Entity>
-  > | null = null;
-
   override subscribeToChanges(
     callback: (change: TabularChangePayload<Entity>) => void,
     options?: TabularSubscribeOptions
@@ -238,15 +237,13 @@ export class HttpTabularProxyStorage<
           const rows = (await this.getAll()) ?? [];
           const map = new Map<string, Entity>();
           for (const row of rows) {
-            const pk = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
-            const key = pk
-              .map((c) => String((row as Record<string, unknown>)[c as string]))
-              .join("|");
-            map.set(key, row);
+            const { key } = this.separateKeyValueFromCombined(row);
+            const fingerprint = await makeFingerprint(key);
+            map.set(fingerprint, row);
           }
           return map;
         },
-        (a, b) => JSON.stringify(a) === JSON.stringify(b),
+        (a, b) => deepEqual(a, b),
         {
           insert: (item) => ({ type: "INSERT", new: item }),
           update: (oldItem, newItem) => ({ type: "UPDATE", old: oldItem, new: newItem }),
