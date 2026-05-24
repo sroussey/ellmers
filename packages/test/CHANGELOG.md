@@ -1,5 +1,19 @@
 # @workglow/test
 
+## 0.3.7
+
+### Features
+
+#### storage
+
+- add HttpTabularProxyStorage for remote table operations (#534)
+
+### Bug Fixes
+
+#### ai,llamacpp-server,stable-diffusion-server
+
+- strict local-only URL allow-list (sec) (#533)
+
 ## 0.3.6
 
 ### Features

@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.3.7
+
+### Bug Fixes
+
+#### ai,llamacpp-server,stable-diffusion-server
+
+- strict local-only URL allow-list (sec) (#533)
+
 ## 0.3.6
 
 ### Features

@@ -13,7 +13,6 @@
  * live in `packages/ai/src/provider-utils/localUrl.ts`.
  */
 
-import { describe, expect, it } from "vitest";
 import {
   isLocalHostname,
   isLocalIpv4,
@@ -21,6 +20,7 @@ import {
   normalizeLocalHttpUrl,
   parseIpv6,
 } from "@workglow/ai/provider-utils";
+import { describe, expect, it } from "vitest";
 
 describe("isLocalIpv4", () => {
   it("accepts loopback, RFC 1918 and link-local ranges", () => {
@@ -272,9 +272,9 @@ describe("normalizeLocalHttpUrl — error labels", () => {
     expect(() => normalizeLocalHttpUrl("http://attacker.localhost/", "LlamaCppServer")).toThrow(
       /LlamaCppServer/
     );
-    expect(() =>
-      normalizeLocalHttpUrl("http://attacker.localhost/", "StableDiffusionCpp")
-    ).toThrow(/StableDiffusionCpp/);
+    expect(() => normalizeLocalHttpUrl("http://attacker.localhost/", "StableDiffusionCpp")).toThrow(
+      /StableDiffusionCpp/
+    );
   });
 
   it("includes the provider label in errors for invalid URLs", () => {
@@ -292,8 +292,8 @@ describe("normalizeLocalHttpUrl — error labels", () => {
     // StableDiffusionCpp_Client.test.ts:80) assert this regex shape against
     // the error message thrown by `acquireBaseUrl`. Pin it here too so a
     // future wording refactor cannot silently break them again.
-    expect(() =>
-      normalizeLocalHttpUrl("https://example.com:8080/", "LlamaCppServer")
-    ).toThrow(/local HTTP/);
+    expect(() => normalizeLocalHttpUrl("https://example.com:8080/", "LlamaCppServer")).toThrow(
+      /local HTTP/
+    );
   });
 });

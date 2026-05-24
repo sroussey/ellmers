@@ -48,8 +48,7 @@ export async function sha256Hex(bytes: Uint8Array | ArrayBuffer): Promise<string
   // The recent lib.dom tightening on Uint8Array's default generic argument made
   // the previous `new Uint8Array(bytes)` path no longer assignable to digest's
   // parameter type.
-  const src =
-    bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+  const src = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
   const buf = new ArrayBuffer(src.byteLength);
   new Uint8Array(buf).set(src);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", buf);
@@ -102,9 +101,7 @@ export async function verifySha256(
   }
   const expectedLc = expected.toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(expectedLc)) {
-    throw new Error(
-      `Invalid catalog SHA-256 for ${ctx.filename}: contains non-hex characters`
-    );
+    throw new Error(`Invalid catalog SHA-256 for ${ctx.filename}: contains non-hex characters`);
   }
   const actual = await sha256Hex(bytes);
   if (actual !== expectedLc) {

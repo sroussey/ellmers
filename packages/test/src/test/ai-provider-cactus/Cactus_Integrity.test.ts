@@ -81,9 +81,7 @@ describe("verifySha256", () => {
 
   it("throws plain Error when expected hash contains non-hex characters", async () => {
     const bad = "z" + "a".repeat(63);
-    await expect(verifySha256(asciiBytes("abc"), bad, ctx)).rejects.toThrow(
-      /non-hex characters/
-    );
+    await expect(verifySha256(asciiBytes("abc"), bad, ctx)).rejects.toThrow(/non-hex characters/);
   });
 
   it("skips verification when expected is the placeholder sentinel", async () => {

@@ -260,9 +260,7 @@ export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
   // past `isLocalHostname`.
   const rawHost = extractRawHost(rawUrl);
   if (rawHost === null || !isLocalHostname(rawHost)) {
-    throw new Error(
-      `${label}: base URL must target a local HTTP(S) server (got: ${rawUrl}).`
-    );
+    throw new Error(`${label}: base URL must target a local HTTP(S) server (got: ${rawUrl}).`);
   }
 
   // Strip trailing slashes from the path (but keep a single "/" — handled by

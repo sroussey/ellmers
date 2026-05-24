@@ -70,7 +70,5 @@ const mlxNotAvailableRunFn: AiProviderRunFn<
   TextGenerationTaskOutput,
   ModelConfig
 > = async (_input, _model, _signal, _emit) => {
-  throw new Error(
-    "MLX provider not available: Python runtime not bundled in v1; see roadmap."
-  );
+  throw new Error("MLX provider not available: Python runtime not bundled in v1; see roadmap.");
 };

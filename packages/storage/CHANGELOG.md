@@ -1,5 +1,13 @@
 # @workglow/storage
 
+## 0.3.7
+
+### Features
+
+#### storage
+
+- add HttpTabularProxyStorage for remote table operations (#534)
+
 ## 0.3.6
 
 ## 0.3.5
