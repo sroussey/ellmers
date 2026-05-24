@@ -214,7 +214,9 @@ export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
   // the canonical output below.
   const bareHostname = stripIpv6Brackets(url.hostname);
   if (!isLocalHostname(bareHostname)) {
-    throw new Error(`${label}: refusing non-local base URL ${rawUrl}`);
+    throw new Error(
+      `${label}: base URL must target a local HTTP(S) server (got: ${rawUrl}).`
+    );
   }
 
   // Strip trailing slashes from the path (but keep a single "/" — handled by
