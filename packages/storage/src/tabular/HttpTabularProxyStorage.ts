@@ -52,6 +52,14 @@ export interface HttpTabularProxyOptions<
   readonly clientProvidedKeys?: ClientProvidedKeysOption;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
 /**
  * Storage adapter that forwards every {@link ITabularStorage} operation as
  * `POST {basePath}/{table}/{op}` through an injected fetch impl.
@@ -82,7 +90,7 @@ export class HttpTabularProxyStorage<
     super(opts.schema, opts.primaryKey, indexes, opts.clientProvidedKeys ?? "if-missing");
     this.fetchImpl = opts.fetch;
     this.table = opts.table;
-    this.basePath = (opts.basePath ?? "/api/storage").replace(/\/+$/, "");
+    this.basePath = trimTrailingSlashes(opts.basePath ?? "/api/storage");
   }
 
   /**

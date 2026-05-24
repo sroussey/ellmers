@@ -5,7 +5,11 @@
  */
 
 import type { AnyTabularStorage } from "@workglow/storage";
-import { HttpTabularProxyStorage, InMemoryTabularStorage } from "@workglow/storage";
+import {
+  CoveringIndexMissingError,
+  HttpTabularProxyStorage,
+  InMemoryTabularStorage,
+} from "@workglow/storage";
 import { describe, expect, it } from "vitest";
 
 const TestSchema = {
@@ -19,6 +23,13 @@ const TestSchema = {
   additionalProperties: false,
 } as const;
 const TestPrimaryKey = ["id"] as const;
+
+function toPublicErrorMessage(error: unknown): string {
+  if (error instanceof CoveringIndexMissingError) {
+    return "CoveringIndexMissingError";
+  }
+  return "internal server error";
+}
 
 // Loosely typed so the helper isn't re-instantiated against each caller's
 // concrete Schema/PK generics — that deep instantiation tripped TS2589.
@@ -97,8 +108,7 @@ function makeFakeServer(
           return new Response(JSON.stringify({ error: `unknown op ${op}` }), { status: 404 });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(JSON.stringify({ error: message }), { status: 500 });
+      return new Response(JSON.stringify({ error: toPublicErrorMessage(err) }), { status: 500 });
     }
   };
 }
@@ -176,6 +186,41 @@ describe("HttpTabularProxyStorage — put/get/delete", () => {
       primaryKey: TestPrimaryKey,
     });
     await expect(proxy.put({ id: "a", name: "x", value: 1 })).rejects.toThrow(/boom/);
+  });
+
+  it("fake server hides internal exception messages", async () => {
+    const backing = new InMemoryTabularStorage<typeof TestSchema, typeof TestPrimaryKey>(
+      TestSchema,
+      TestPrimaryKey
+    );
+    const fetchImpl = makeFakeServer(backing);
+
+    const res = await fetchImpl("/api/storage/things/getPage", {
+      method: "POST",
+      body: JSON.stringify({ request: { limit: 0 } }),
+    });
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "internal server error" });
+  });
+
+  it("strips trailing slashes from the base path", async () => {
+    let requestedPath = "";
+    const fetchImpl = async (path: string) => {
+      requestedPath = path;
+      return new Response(JSON.stringify({ size: 0 }), { status: 200 });
+    };
+    const proxy = new HttpTabularProxyStorage<typeof TestSchema, typeof TestPrimaryKey>({
+      fetch: fetchImpl,
+      table: "things",
+      schema: TestSchema,
+      primaryKey: TestPrimaryKey,
+      basePath: "/api/storage///",
+    });
+
+    await proxy.size();
+
+    expect(requestedPath).toBe("/api/storage/things/size");
   });
 });
 
