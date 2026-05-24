@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { AnyTabularStorage } from "@workglow/storage";
 import { HttpTabularProxyStorage, InMemoryTabularStorage } from "@workglow/storage";
 import { describe, expect, it } from "vitest";
 
@@ -19,8 +20,11 @@ const TestSchema = {
 } as const;
 const TestPrimaryKey = ["id"] as const;
 
-function makeFakeServer<Schema extends typeof TestSchema, PK extends typeof TestPrimaryKey>(
-  storage: InMemoryTabularStorage<Schema, PK>
+// Loosely typed so the helper isn't re-instantiated against each caller's
+// concrete Schema/PK generics — that deep instantiation tripped TS2589.
+// AnyTabularStorage is the permissive supertype every backend satisfies.
+function makeFakeServer(
+  storage: AnyTabularStorage
 ): (path: string, init?: RequestInit) => Promise<Response> {
   return async (path: string, init?: RequestInit) => {
     const match = /^\/api\/storage\/([^/]+)\/([^/]+)$/.exec(path);
@@ -480,53 +484,21 @@ describe("HttpTabularProxyStorage — subscribeToChanges", () => {
       typeof CompoundSchema,
       typeof CompoundPrimaryKeyNames
     >({
-      fetch: makeFakeServer(backing as never),
+      fetch: makeFakeServer(backing),
       table: "compound",
       schema: CompoundSchema,
       primaryKey: CompoundPrimaryKeyNames,
     });
 
-    // Seed both colliding rows before subscribing so both are seen as INSERT on first diff.
+    // Seed both colliding rows before subscribing so both surface as INSERT on the first diff.
     await backing.put({ name: "x|y", type: "z", option: "o1", success: true });
     await backing.put({ name: "x", type: "y|z", option: "o2", success: false });
 
-    const inserts: string[] = [];
-    const unsubscribe = proxy.subscribeToChanges(
-      (change) => {
-        if (change.type === "INSERT") {
-          inserts.push(
-            `${(change.new as { name: string }).name}|${(change.new as { type: string }).type}`
-          );
-        }
-      },
-      { pollingIntervalMs: 30 }
-    );
-
-    await new Promise((r) => setTimeout(r, 120));
-    unsubscribe();
-
-    // Both distinct rows must be reported — if one shadowed the other only one INSERT fires.
-    expect(inserts).toContain("x|y|z");
-    expect(inserts).toContain("x|y|z");
-    // More specific assertion: both composite identifiers present
-    expect(inserts.some((s) => s === "x|y|z")).toBe(true);
-    // The two rows have DIFFERENT composite keys under fingerprinting:
-    // row1 -> name="x|y", type="z"  ->  identifier "x|y|z"  (name + "|" + type)
-    // row2 -> name="x",   type="y|z" -> identifier "x|y|z"  (same string! that's the bug)
-    // So we assert by checking both rows' `option` values are seen:
-    const options = inserts.map((_, i) => i); // placeholder — we check via a second listener
-    // Re-run with a fresh proxy to collect full entity payloads
-    const proxy2 = new HttpTabularProxyStorage<
-      typeof CompoundSchema,
-      typeof CompoundPrimaryKeyNames
-    >({
-      fetch: makeFakeServer(backing as never),
-      table: "compound",
-      schema: CompoundSchema,
-      primaryKey: CompoundPrimaryKeyNames,
-    });
+    // Both rows' name|type joins are the identical string "x|y|z", so we distinguish them
+    // by their unique `option` value. With fingerprinted keys both appear; with a naive
+    // join("|") key one row would shadow the other and only one INSERT would fire.
     const insertedOptions: string[] = [];
-    const unsub2 = proxy2.subscribeToChanges(
+    const unsubscribe = proxy.subscribeToChanges(
       (change) => {
         if (change.type === "INSERT") {
           insertedOptions.push((change.new as { option: string }).option);
@@ -534,11 +506,11 @@ describe("HttpTabularProxyStorage — subscribeToChanges", () => {
       },
       { pollingIntervalMs: 30 }
     );
-    await new Promise((r) => setTimeout(r, 120));
-    unsub2();
-    proxy2.destroy();
 
-    // With correct fingerprinting BOTH rows must appear; with naive join only one would.
+    await new Promise((r) => setTimeout(r, 120));
+    unsubscribe();
+    proxy.destroy();
+
     expect(insertedOptions).toContain("o1");
     expect(insertedOptions).toContain("o2");
   });
