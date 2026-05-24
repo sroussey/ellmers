@@ -14,6 +14,11 @@
  *  - No substring/prefix heuristics that can be DNS-rebound or spoofed
  *    (`attacker.localhost`, IPv6 strings that merely start with "fc"/"fd",
  *     `localhost.attacker.com`, percent-encoded forms, IDN, underscores …).
+ *  - No WHATWG URL canonicalization of the host before validation — the
+ *    URL parser silently rewrites non-standard IPv4 spellings
+ *    (`0x7f.0.0.1`, `2130706433`, `010.0.0.1`) to canonical dotted-quads,
+ *    which would defeat the strict-literal grammar below. We extract the
+ *    host from the raw URL string and validate THAT literal.
  *  - Hostname grammar is shrunk to forms that cannot be rebound:
  *      * literal `localhost`
  *      * IPv4 literals in loopback / RFC 1918 / link-local ranges
@@ -28,6 +33,12 @@
  * binary representation. Returns `null` on any malformed input, on
  * zone-identifier suffixes (`%eth0` etc.), or on IPv4-suffix forms that
  * are not cleanly recognisable.
+ *
+ * The `::` compression must actually compress one or more zero groups —
+ * inputs like `fc00:0:0:0:0:0:0::1` (8 explicit groups *and* a `::`) are
+ * structurally invalid and are rejected even though the byte representation
+ * they’d round to is otherwise local. Strictness here is defence in depth
+ * against any downstream parser that takes a different view of `::`.
  */
 export function parseIpv6(host: string): Uint8Array | null {
   if (typeof host !== "string" || host.length === 0) return null;
@@ -65,7 +76,10 @@ export function parseIpv6(host: string): Uint8Array | null {
     const rightGroups = right === "" ? [] : right.split(":");
     const totalSlots = ipv4Tail ? 6 : 8;
     const fill = totalSlots - leftGroups.length - rightGroups.length;
-    if (fill < 0) return null;
+    // `::` MUST compress at least one zero group — reject `fill <= 0` so
+    // inputs like `fc00:0:0:0:0:0:0::1` (no compression actually needed)
+    // do not slip through.
+    if (fill <= 0) return null;
     groups = [...leftGroups, ...Array(fill).fill("0"), ...rightGroups];
   }
 
@@ -176,11 +190,41 @@ export function isLocalHostname(host: string): boolean {
   if (lower === "localhost") return true;
   // Strict character class — closes *.localhost, percent-encoded forms,
   // IDN, underscores, and any other DNS-rebindable name. Only IPv4 dotted-
-  // quad and IPv6 hex/colon grammars survive this gate.
+  // quad and IPv6 hex/colon grammars survive this gate. In particular,
+  // 'x' is NOT in the class, so `0x7f.0.0.1` is rejected here before the
+  // IPv4 parser ever sees it.
   if (!/^[0-9a-f:.]+$/.test(lower)) return false;
   if (lower.includes(":")) return isLocalIpv6(lower);
   if (lower.includes(".")) return isLocalIpv4(lower);
+  // Single-token unsigned-integer forms like `2130706433` (canonicalised
+  // by WHATWG to 127.0.0.1) are also rejected here — they pass the char
+  // class but contain neither `:` nor `.` and so reach this final
+  // `return false`.
   return false;
+}
+
+/**
+ * Extract the literal host substring from `rawUrl` BEFORE the WHATWG URL
+ * parser canonicalises it. Returns the host as it appeared in the source
+ * (case preserved, brackets stripped for IPv6), or `null` if the URL does
+ * not match the basic `scheme://[user[:pw]@]host[:port][/...]` grammar.
+ *
+ * This is deliberately separate from `new URL().hostname` because the
+ * WHATWG parser rewrites:
+ *   - `0x7f.0.0.1`  →  `127.0.0.1`
+ *   - `2130706433`  →  `127.0.0.1`
+ *   - `010.0.0.1`   →  `10.0.0.1` (in lenient runtimes)
+ * and any of those rewrites would silently bypass
+ * {@link isLocalHostname}'s strict-literal grammar.
+ */
+function extractRawHost(rawUrl: string): string | null {
+  const m = rawUrl.match(/^[A-Za-z][A-Za-z0-9+.\-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/);
+  if (m === null) return null;
+  let host = m[1] ?? "";
+  if (host.startsWith("[") && host.endsWith("]")) {
+    host = host.slice(1, -1);
+  }
+  return host;
 }
 
 /**
@@ -192,7 +236,8 @@ export function isLocalHostname(host: string): boolean {
  * (e.g. `"LlamaCppServer"`) so callers don't need to wrap.
  *
  * @throws Error if the URL is malformed, not http(s), carries credentials,
- *         or targets a non-local hostname.
+ *         or targets a non-local hostname (including non-literal IPv4
+ *         spellings that WHATWG would canonicalise to a local literal).
  */
 export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
   let url: URL;
@@ -209,11 +254,12 @@ export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
     throw new Error(`${label}: base URL must not include credentials.`);
   }
 
-  // `URL.hostname` keeps brackets for IPv6 in some runtimes and drops them in
-  // others — strip defensively before checking the literal, then restore for
-  // the canonical output below.
-  const bareHostname = stripIpv6Brackets(url.hostname);
-  if (!isLocalHostname(bareHostname)) {
+  // Validate the LITERAL host from rawUrl, not `url.hostname` — the
+  // WHATWG parser rewrites non-standard IPv4 spellings (hex, decimal,
+  // leading-zero octets) into canonical dotted-quads that would slip
+  // past `isLocalHostname`.
+  const rawHost = extractRawHost(rawUrl);
+  if (rawHost === null || !isLocalHostname(rawHost)) {
     throw new Error(
       `${label}: base URL must target a local HTTP(S) server (got: ${rawUrl}).`
     );
@@ -227,15 +273,9 @@ export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
   }
   const pathname = url.pathname.slice(0, pathnameEnd);
 
-  const hostForOutput = bareHostname.includes(":") ? `[${bareHostname}]` : bareHostname;
+  const lowerHost = rawHost.toLowerCase();
+  const hostForOutput = lowerHost.includes(":") ? `[${lowerHost}]` : lowerHost;
   const portSuffix = url.port ? `:${url.port}` : "";
   const origin = `${url.protocol}//${hostForOutput}${portSuffix}`;
   return pathname === "/" ? origin : `${origin}${pathname}`;
-}
-
-function stripIpv6Brackets(hostname: string): string {
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    return hostname.slice(1, -1);
-  }
-  return hostname;
 }
