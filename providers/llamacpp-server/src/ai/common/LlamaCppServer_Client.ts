@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IBackendsTransport, IRunningHandle } from "@workglow/ai/provider-utils";
+import {
+  type IBackendsTransport,
+  type IRunningHandle,
+  normalizeLocalHttpUrl,
+} from "@workglow/ai/provider-utils";
 import { LLAMACPP_SERVER_DEFAULT_CTX } from "./LlamaCppServer_Constants";
 import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
 
@@ -74,94 +78,21 @@ export async function acquireBaseUrl(
   );
 }
 
+/**
+ * Thin wrapper around the shared {@link normalizeLocalHttpUrl} helper.
+ *
+ * Local-only validation lives in `@workglow/ai/provider-utils` so the
+ * llama-server and stable-diffusion-server providers share one strict
+ * allow-list and one canonicalisation policy.
+ */
 export function normalizeServerBaseUrl(rawUrl: string): string {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error("LlamaCppServer: base URL must be a valid local HTTP(S) URL.");
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("LlamaCppServer: base URL must be a valid local HTTP(S) URL.");
-  }
-  if (url.username || url.password) {
-    throw new Error("LlamaCppServer: base URL must not include credentials.");
-  }
-  if (!isLocalHostname(url.hostname)) {
-    throw new Error("LlamaCppServer: base URL must target a local HTTP(S) server.");
-  }
-
-  url.hash = "";
-  url.search = "";
-  let pathnameEnd = url.pathname.length;
-  while (pathnameEnd > 1 && url.pathname.charCodeAt(pathnameEnd - 1) === 47) {
-    pathnameEnd--;
-  }
-  const pathname = url.pathname.slice(0, pathnameEnd);
-  return pathname === "/" ? url.origin : `${url.origin}${pathname}`;
+  return normalizeLocalHttpUrl(rawUrl, "LlamaCppServer");
 }
 
 export function buildServerUrl(baseUrl: string, endpoint: `/${string}`): string {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const path = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
   return new URL(path, base).toString();
-}
-
-function isLocalHostname(hostname: string): boolean {
-  const host = removeIpv6Brackets(hostname.toLowerCase());
-  if (host === "localhost" || host.endsWith(".localhost")) {
-    return true;
-  }
-  return isLocalIpv4(host) || isLocalIpv6(host);
-}
-
-function removeIpv6Brackets(hostname: string): string {
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    return hostname.slice(1, -1);
-  }
-  return hostname;
-}
-
-function isLocalIpv4(hostname: string): boolean {
-  const parts = hostname.split(".");
-  if (parts.length !== 4) {
-    return false;
-  }
-  const octets: number[] = [];
-  for (const part of parts) {
-    if (part.length === 0) {
-      return false;
-    }
-    for (const char of part) {
-      if (char < "0" || char > "9") {
-        return false;
-      }
-    }
-    const octet = Number(part);
-    if (!Number.isInteger(octet) || octet < 0 || octet > 255) {
-      return false;
-    }
-    octets.push(octet);
-  }
-
-  const [first, second] = octets;
-  return (
-    first === 10 ||
-    first === 127 ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    (first === 169 && second === 254)
-  );
-}
-
-function isLocalIpv6(hostname: string): boolean {
-  return (
-    hostname === "::1" ||
-    hostname.startsWith("fc") ||
-    hostname.startsWith("fd") ||
-    hostname.startsWith("fe80:")
-  );
 }
 
 const noopRelease = async (): Promise<void> => {};
