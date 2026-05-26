@@ -5,7 +5,7 @@
  */
 
 import type { AiProviderRunFn, ModelSearchTaskInput, ModelSearchTaskOutput } from "@workglow/ai";
-import { filterModelSearchResultsByQuery } from "@workglow/ai/provider-utils";
+import { filterModelSearchResultsByQuery, localOnlyFetch } from "@workglow/ai/provider-utils";
 import {
   buildServerUrl,
   normalizeServerBaseUrl,
@@ -30,7 +30,11 @@ export function createLlamaCppServerModelSearchStream(
     }
     try {
       const baseUrl = normalizeServerBaseUrl(opts.externalUrl);
-      const res = await fetch(buildServerUrl(baseUrl, "/v1/models"), { signal });
+      const res = await localOnlyFetch(
+        buildServerUrl(baseUrl, "/v1/models"),
+        { signal },
+        "LlamaCppServer"
+      );
       if (!res.ok) {
         emit({ type: "finish", data: { results: [] } });
         return;

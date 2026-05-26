@@ -9,7 +9,7 @@ import type {
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
 } from "@workglow/ai";
-import { pngBytesToImageValue } from "@workglow/ai/provider-utils";
+import { localOnlyFetch, pngBytesToImageValue } from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -51,12 +51,16 @@ export function createStableDiffusionCppImageGenerateRunFn(
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
-      const response = await fetch(buildServerUrl(baseUrl, endpoint), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal,
-      });
+      const response = await localOnlyFetch(
+        buildServerUrl(baseUrl, endpoint),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal,
+        },
+        "StableDiffusionCpp"
+      );
       if (!response.ok) {
         const text = await response.text().catch(() => "(no body)");
         throw new Error(

@@ -5,7 +5,11 @@
  */
 
 import type { AiProviderRunFn, ImageEditTaskInput, ImageEditTaskOutput } from "@workglow/ai";
-import { imageValueToPngBytes, pngBytesToImageValue } from "@workglow/ai/provider-utils";
+import {
+  imageValueToPngBytes,
+  localOnlyFetch,
+  pngBytesToImageValue,
+} from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -48,12 +52,16 @@ export function createStableDiffusionCppImageEditRunFn(
     const { baseUrl, release } = await acquire(model, opts);
     try {
       signal?.throwIfAborted?.();
-      const response = await fetch(buildServerUrl(baseUrl, "/img2img"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal,
-      });
+      const response = await localOnlyFetch(
+        buildServerUrl(baseUrl, "/img2img"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal,
+        },
+        "StableDiffusionCpp"
+      );
       if (!response.ok) {
         const text = await response.text().catch(() => "(no body)");
         throw new Error(
