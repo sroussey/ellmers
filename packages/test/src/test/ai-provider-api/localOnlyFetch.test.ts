@@ -73,8 +73,11 @@ describe("localOnlyFetch", () => {
     calls = [];
   });
 
-  it("refuses a redirect to a non-local host (cloud metadata) after one fetch", async () => {
-    stubFetch([redirect("http://169.254.169.254/latest/meta-data/")]);
+  it("refuses a redirect to a non-local public host after one fetch", async () => {
+    // 203.0.113.10 is RFC 5737 TEST-NET-3 documentation space — unambiguously
+    // non-local (unlike 169.254.0.0/16, which the allow-list treats as
+    // in-scope link-local), so the redirect must be rejected, not followed.
+    stubFetch([redirect("http://203.0.113.10/latest/meta-data/")]);
     await expect(
       localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
     ).rejects.toThrow(/non-local host/);
