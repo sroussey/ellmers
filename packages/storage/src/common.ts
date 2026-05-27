@@ -59,3 +59,4 @@ export * from "./text/index";
 
 export * from "./credentials/EncryptedKvCredentialStore";
 export * from "./credentials/LazyEncryptedCredentialStore";
+export * from "./credentials/SecretVault";
