@@ -22,6 +22,7 @@ export interface CloudProviderMetadata {
   readonly displayName: string;
   readonly isLocal?: boolean;
   readonly supportsBrowser?: boolean;
+  readonly supportsServer?: boolean;
 }
 
 /**
@@ -55,6 +56,7 @@ export function createCloudProviderClass<TModelConfig extends ModelConfig>(
     readonly displayName = meta.displayName;
     readonly isLocal = meta.isLocal ?? false;
     readonly supportsBrowser = meta.supportsBrowser ?? true;
+    readonly supportsServer = meta.supportsServer ?? true;
   }
   return CloudProvider as unknown as new (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,5 +68,6 @@ export function createCloudProviderClass<TModelConfig extends ModelConfig>(
     readonly displayName: string;
     readonly isLocal: boolean;
     readonly supportsBrowser: boolean;
+    readonly supportsServer: boolean;
   };
 }

@@ -122,6 +122,15 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
   abstract readonly supportsBrowser: boolean;
 
   /**
+   * Whether this provider can run server-side (a Bun/Node host process).
+   * Orthogonal to {@link isLocal}: a provider can be local (Ollama) yet
+   * server-capable. builder maps `supportsBrowser` / `supportsServer` /
+   * `isLocal` onto its own `browser | desktop | cloud` deployment taxonomy;
+   * libs deliberately does not know those host names.
+   */
+  abstract readonly supportsServer: boolean;
+
+  /**
    * Promise+emit capability-set run-fn registrations injected via the constructor.
    * Required for inline and worker-server registration. Not needed for worker-mode
    * registration on the main thread (proxies are derived from {@link workerRunFnSpecs}).
@@ -153,6 +162,16 @@ export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig>
    */
   inferCapabilities(model: ModelRecord): readonly Capability[] {
     return (model.capabilities as readonly Capability[] | undefined) ?? [];
+  }
+
+  /**
+   * Runtime availability probe for environment-dependent providers (e.g. Chrome
+   * AI, which needs `window.ai`). Returns `true` by default; providers whose
+   * reachability depends on the host environment override it. Replaces the
+   * renderer's ad-hoc `isChromeBuiltinAiAvailable` call as the uniform check.
+   */
+  async isAvailable(): Promise<boolean> {
+    return true;
   }
 
   /**
