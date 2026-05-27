@@ -7,7 +7,7 @@
 import {
   type IBackendsTransport,
   type IRunningHandle,
-  normalizeLocalHttpUrl,
+  normalizeLoopbackHttpUrl,
 } from "@workglow/ai/provider-utils";
 import { LLAMACPP_SERVER_DEFAULT_CTX } from "./LlamaCppServer_Constants";
 import type { LlamaCppServerModelConfig } from "./LlamaCppServer_ModelSchema";
@@ -79,14 +79,17 @@ export async function acquireBaseUrl(
 }
 
 /**
- * Thin wrapper around the shared {@link normalizeLocalHttpUrl} helper.
+ * Thin wrapper around the shared {@link normalizeLoopbackHttpUrl} helper.
  *
  * Local-only validation lives in `@workglow/ai/provider-utils` so the
  * llama-server and stable-diffusion-server providers share one strict
- * allow-list and one canonicalisation policy.
+ * allow-list and one canonicalisation policy. The LOOPBACK-ONLY variant is
+ * used so an RFC 1918 / link-local base (e.g. `http://10.0.0.5:9000`) is
+ * rejected at config time with a clear message rather than failing silently
+ * later at request time.
  */
 export function normalizeServerBaseUrl(rawUrl: string): string {
-  return normalizeLocalHttpUrl(rawUrl, "LlamaCppServer");
+  return normalizeLoopbackHttpUrl(rawUrl, "LlamaCppServer");
 }
 
 export function buildServerUrl(baseUrl: string, endpoint: `/${string}`): string {

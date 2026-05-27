@@ -271,9 +271,9 @@ function isLoopbackIpv6(host: string): boolean {
  * Everything else — RFC 1918, link-local (incl. the `169.254.169.254`
  * cloud-metadata IP), ULA, public, `*.localhost`, IDN, percent-encoded,
  * and unsigned-integer IPv4 spellings — returns false. This is intentionally
- * narrower than {@link isLocalHostname}: it is the initial-URL and
- * redirect-hop gate used by `localOnlyFetch` to close the link-local
- * metadata SSRF vector.
+ * narrower than {@link isLocalHostname}: it is the initial-URL gate used by
+ * `localOnlyFetch` and (via {@link normalizeLoopbackHttpUrl}) the base-URL
+ * gate that closes the link-local metadata SSRF vector.
  *
  * IPv6 literals must be passed WITHOUT surrounding brackets.
  */
@@ -331,15 +331,49 @@ export function extractRawHost(rawUrl: string): string | null {
  *         spellings that WHATWG would canonicalise to a local literal).
  */
 export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
+  return normalizeHttpUrl(rawUrl, label, isLocalHostname, "local");
+}
+
+/**
+ * Loopback-only twin of {@link normalizeLocalHttpUrl}: identical parsing,
+ * credential, scheme and canonicalisation logic, but the raw host literal is
+ * validated with {@link isLoopbackHostname} instead of {@link isLocalHostname}.
+ *
+ * This rejects RFC 1918, link-local (incl. the `169.254.169.254`
+ * cloud-metadata IP), and ULA bases at CONFIG time with a clear message,
+ * rather than letting them silently fail later at request time. Provider
+ * base-URL normalizers use this so a base like `http://10.0.0.5:9000` is
+ * refused up front.
+ *
+ * @throws Error if the URL is malformed, not http(s), carries credentials,
+ *         or targets a non-loopback hostname (including non-literal IPv4
+ *         spellings that WHATWG would canonicalise to a loopback literal).
+ */
+export function normalizeLoopbackHttpUrl(rawUrl: string, label: string): string {
+  return normalizeHttpUrl(rawUrl, label, isLoopbackHostname, "loopback");
+}
+
+/**
+ * Shared implementation behind {@link normalizeLocalHttpUrl} and
+ * {@link normalizeLoopbackHttpUrl}. The only difference between the two is the
+ * host predicate (`isLocalHostname` vs `isLoopbackHostname`) and the word used
+ * in the thrown message.
+ */
+function normalizeHttpUrl(
+  rawUrl: string,
+  label: string,
+  isAllowedHost: (host: string) => boolean,
+  policyWord: "local" | "loopback",
+): string {
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
-    throw new Error(`${label}: base URL must be a valid local HTTP(S) URL.`);
+    throw new Error(`${label}: base URL must be a valid ${policyWord} HTTP(S) URL.`);
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`${label}: base URL must be a valid local HTTP(S) URL.`);
+    throw new Error(`${label}: base URL must be a valid ${policyWord} HTTP(S) URL.`);
   }
   if (url.username || url.password) {
     throw new Error(`${label}: base URL must not include credentials.`);
@@ -348,10 +382,12 @@ export function normalizeLocalHttpUrl(rawUrl: string, label: string): string {
   // Validate the LITERAL host from rawUrl, not `url.hostname` — the
   // WHATWG parser rewrites non-standard IPv4 spellings (hex, decimal,
   // leading-zero octets) into canonical dotted-quads that would slip
-  // past `isLocalHostname`.
+  // past the strict-literal host predicate.
   const rawHost = extractRawHost(rawUrl);
-  if (rawHost === null || !isLocalHostname(rawHost)) {
-    throw new Error(`${label}: base URL must target a local HTTP(S) server (got: ${rawUrl}).`);
+  if (rawHost === null || !isAllowedHost(rawHost)) {
+    throw new Error(
+      `${label}: base URL must target a ${policyWord} HTTP(S) server (got: ${rawUrl}).`
+    );
   }
 
   // Strip trailing slashes from the path (but keep a single "/" — handled by

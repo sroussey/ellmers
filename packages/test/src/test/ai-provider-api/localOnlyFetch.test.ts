@@ -12,13 +12,13 @@
  * directories under `packages/test/src/test`). The helper itself lives in
  * `packages/ai/src/provider-utils/localOnlyFetch.ts`.
  *
- * These tests stub the global `fetch` with a queue of `Response` objects and
- * assert the STRICT LOOPBACK-ONLY policy: the initial URL is validated before
- * any network call, and each standard 3xx `Location` is re-validated and must
- * be loopback before being followed. The local AI servers run on localhost
- * ONLY by design, so RFC 1918 and link-local (incl. the 169.254.169.254
- * cloud-metadata IP) are rejected — closing the redirect-based SSRF bypass
- * that base-URL-only validation left open.
+ * These tests stub the global `fetch` and assert the STRICT LOOPBACK-ONLY
+ * policy: the initial URL is validated before any network call, and the
+ * request is issued with `redirect: "error"` so ANY redirect from the local
+ * backend is rejected outright (never followed). On-host AI backends never
+ * legitimately redirect, so this closes the redirect-based SSRF bypass that
+ * base-URL-only validation left open — uniformly across Node/undici, Bun,
+ * and the browser.
  */
 
 import { localOnlyFetch } from "@workglow/ai/provider-utils";
@@ -36,7 +36,8 @@ let calls: RecordedCall[];
 
 /**
  * Install a stub `fetch` that returns the queued responses in order. Each
- * call records the requested URL so tests can assert the exact hop count.
+ * call records the requested URL and redirect mode so tests can assert the
+ * exact call shape.
  */
 function stubFetch(responses: Response[]): void {
   let i = 0;
@@ -54,20 +55,20 @@ function stubFetch(responses: Response[]): void {
   }) as typeof fetch;
 }
 
-/** Build a 3xx redirect response pointing at `location`. */
-function redirect(location: string, status = 302): Response {
-  return new Response(null, {
-    status,
-    headers: { location },
-  });
-}
-
-/** Build a response with an explicit status carrying a `Location` header. */
-function statusWithLocation(status: number, location: string): Response {
-  return new Response(null, {
-    status,
-    headers: { location },
-  });
+/**
+ * Install a stub `fetch` that REJECTS with `err` — used to simulate the
+ * rejection a real runtime throws under `redirect: "error"` when the server
+ * responds with a 3xx redirect.
+ */
+function stubFetchReject(err: Error): void {
+  calls = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({
+      url: String(input),
+      redirect: init?.redirect,
+    });
+    return Promise.reject(err);
+  }) as typeof fetch;
 }
 
 /** Build a terminal 200 response carrying `body`. */
@@ -84,72 +85,7 @@ describe("localOnlyFetch", () => {
     calls = [];
   });
 
-  it("refuses a redirect to the cloud-metadata link-local IP after one fetch", async () => {
-    // 169.254.169.254 is the cloud-metadata address. The broad "local"
-    // allow-list treats 169.254.0.0/16 as in-scope link-local, which is
-    // exactly the SSRF vector this wrapper closes — under the loopback-only
-    // policy it must be rejected, not followed.
-    stubFetch([redirect("http://169.254.169.254/latest/meta-data/")]);
-    await expect(
-      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host/);
-    expect(calls).toHaveLength(1);
-  });
-
-  it("refuses a redirect to a non-local public host after one fetch", async () => {
-    // 203.0.113.10 is RFC 5737 TEST-NET-3 documentation space — unambiguously
-    // non-local, so the redirect must be rejected, not followed.
-    stubFetch([redirect("http://203.0.113.10/latest/meta-data/")]);
-    await expect(
-      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host/);
-    expect(calls).toHaveLength(1);
-  });
-
-  it("refuses a redirect to an RFC 1918 private host after one fetch", async () => {
-    // 10.0.0.5 is RFC 1918 private space — "local" under the broad allow-list
-    // but NOT loopback. Proves the policy is loopback-only, not merely
-    // "non-public".
-    stubFetch([redirect("http://10.0.0.5/internal")]);
-    await expect(
-      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host/);
-    expect(calls).toHaveLength(1);
-  });
-
-  it("refuses a redirect to an external host", async () => {
-    stubFetch([redirect("https://evil.example.com/steal")]);
-    await expect(
-      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host/);
-    expect(calls).toHaveLength(1);
-  });
-
-  it("follows a redirect to another loopback host and returns the final body", async () => {
-    stubFetch([redirect("http://127.0.0.1:9000/v1/models"), ok("final-body")]);
-    const res = await localOnlyFetch(
-      "http://localhost:8080/v1/models",
-      undefined,
-      "TestProvider"
-    );
-    expect(await res.text()).toBe("final-body");
-    expect(calls).toHaveLength(2);
-    expect(calls[1].url).toBe("http://127.0.0.1:9000/v1/models");
-  });
-
-  it("follows a relative Location resolved against a loopback base", async () => {
-    stubFetch([redirect("/v1/models"), ok("relative-body")]);
-    const res = await localOnlyFetch(
-      "http://127.0.0.1:9000/props",
-      undefined,
-      "TestProvider"
-    );
-    expect(await res.text()).toBe("relative-body");
-    expect(calls).toHaveLength(2);
-    expect(calls[1].url).toBe("http://127.0.0.1:9000/v1/models");
-  });
-
-  it("returns a non-redirect 200 unchanged with exactly one fetch", async () => {
+  it("issues the request with redirect: \"error\" and returns a 200 unchanged", async () => {
     stubFetch([ok("plain-body")]);
     const res = await localOnlyFetch(
       "http://127.0.0.1:9000/v1/models",
@@ -158,38 +94,54 @@ describe("localOnlyFetch", () => {
     );
     expect(await res.text()).toBe("plain-body");
     expect(calls).toHaveLength(1);
-    expect(calls[0].redirect).toBe("manual");
+    expect(calls[0].redirect).toBe("error");
   });
 
-  it("does not follow a 300/304 carrying a Location header (non-standard redirect codes)", async () => {
-    // 300 Multiple Choices and 304 Not Modified are 3xx but are NOT standard
-    // redirect codes; even with a Location they are returned unchanged. The
-    // Location target here is non-loopback to prove it is never followed.
-    stubFetch([statusWithLocation(300, "http://169.254.169.254/")]);
-    const res = await localOnlyFetch(
-      "http://127.0.0.1:9000/v1/models",
-      undefined,
-      "TestProvider"
-    );
-    expect(res.status).toBe(300);
+  it("throws a labeled redirect error when fetch rejects (simulating redirect: \"error\")", async () => {
+    // Under `redirect: "error"` a real runtime rejects the promise when the
+    // server responds with a 3xx. The exact error differs across runtimes, so
+    // we match on the well-known "redirect" message fragment.
+    stubFetchReject(new TypeError("fetch failed: unexpected redirect"));
+    await expect(
+      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
+    ).rejects.toThrow(/TestProvider: refusing redirect from local backend/);
     expect(calls).toHaveLength(1);
+    expect(calls[0].redirect).toBe("error");
+  });
 
-    stubFetch([statusWithLocation(304, "http://203.0.113.10/")]);
-    const res2 = await localOnlyFetch(
-      "http://127.0.0.1:9000/v1/models",
-      undefined,
-      "TestProvider"
-    );
-    expect(res2.status).toBe(304);
+  it("passes an AbortError through unchanged", async () => {
+    const abort = new DOMException("The operation was aborted.", "AbortError");
+    stubFetchReject(abort);
+    await expect(
+      localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider")
+    ).rejects.toBe(abort);
     expect(calls).toHaveLength(1);
+    expect(calls[0].redirect).toBe("error");
   });
 
   it("rejects a non-loopback initial URL before issuing any fetch", async () => {
-    // Queue a response that must never be consumed — validation happens
-    // before the first network call, so zero fetches are issued.
+    // 169.254.169.254 is the cloud-metadata address — "local" under the broad
+    // allow-list but NOT loopback. Queue a response that must never be
+    // consumed: validation happens before the first network call.
     stubFetch([ok("should-not-be-reached")]);
     await expect(
       localOnlyFetch("http://169.254.169.254/latest/meta-data/", undefined, "TestProvider")
+    ).rejects.toThrow(/non-loopback host/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects an RFC 1918 initial URL before issuing any fetch", async () => {
+    stubFetch([ok("should-not-be-reached")]);
+    await expect(
+      localOnlyFetch("http://10.0.0.5/internal", undefined, "TestProvider")
+    ).rejects.toThrow(/non-loopback host/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects an external initial URL before issuing any fetch", async () => {
+    stubFetch([ok("should-not-be-reached")]);
+    await expect(
+      localOnlyFetch("https://evil.example.com/steal", undefined, "TestProvider")
     ).rejects.toThrow(/non-loopback host/);
     expect(calls).toHaveLength(0);
   });
@@ -208,24 +160,5 @@ describe("localOnlyFetch", () => {
       localOnlyFetch("file:///etc/passwd", undefined, "TestProvider")
     ).rejects.toThrow(/non-HTTP\(S\)/);
     expect(calls).toHaveLength(0);
-  });
-
-  it("throws after more than 5 chained loopback redirects", async () => {
-    // Queue 6 redirects: hops 0..5 (six fetches) all return a redirect, so the
-    // loop exhausts MAX_REDIRECTS (5) and throws on the count guard. All
-    // targets are loopback so the only failure mode is the redirect-count
-    // guard. (A 7th response is never reached and is intentionally omitted.)
-    stubFetch([
-      redirect("http://127.0.0.1:9000/a"),
-      redirect("http://127.0.0.1:9000/b"),
-      redirect("http://127.0.0.1:9000/c"),
-      redirect("http://127.0.0.1:9000/d"),
-      redirect("http://127.0.0.1:9000/e"),
-      redirect("http://127.0.0.1:9000/f"),
-    ]);
-    await expect(
-      localOnlyFetch("http://127.0.0.1:9000/start", undefined, "TestProvider")
-    ).rejects.toThrow(/too many redirects/);
-    expect(calls).toHaveLength(6);
   });
 });
