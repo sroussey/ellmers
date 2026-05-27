@@ -92,6 +92,22 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   }
 
   /**
+   * Chrome Built-in AI is only reachable when the browser exposes at least one
+   * of its API globals. Mirrors the renderer's former `isChromeBuiltinAiAvailable`
+   * synchronous check, now surfaced through the uniform provider probe.
+   */
+  override async isAvailable(): Promise<boolean> {
+    const g = globalThis as Record<string, unknown>;
+    return (
+      typeof g.LanguageModel !== "undefined" ||
+      typeof g.Summarizer !== "undefined" ||
+      typeof g.Translator !== "undefined" ||
+      typeof g.Rewriter !== "undefined" ||
+      typeof g.LanguageDetector !== "undefined"
+    );
+  }
+
+  /**
    * Releases any cached Chrome `LanguageModel` session for the given id.
    * `AiChatTask` registers this via `ResourceScope` so multi-turn chat
    * sessions are torn down when the owning run completes.
