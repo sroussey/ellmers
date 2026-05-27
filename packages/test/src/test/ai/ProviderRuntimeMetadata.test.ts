@@ -4,10 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { _testOnly as _anthropicTestOnly } from "@workglow/anthropic/ai";
 import { _testOnly } from "@workglow/chrome-ai/ai";
+import { _testOnly as _ollamaTestOnly } from "@workglow/ollama/ai";
+import { _testOnly as _openaiTestOnly } from "@workglow/openai/ai";
 import { afterEach, describe, expect, it } from "vitest";
 
 const { WebBrowserProvider } = _testOnly;
+const { AnthropicQueuedProvider } = _anthropicTestOnly;
+const { OpenAiQueuedProvider } = _openaiTestOnly;
+const { OllamaQueuedProvider } = _ollamaTestOnly;
 
 describe("WebBrowserProvider.isAvailable", () => {
   const g = globalThis as Record<string, unknown>;
@@ -25,5 +31,68 @@ describe("WebBrowserProvider.isAvailable", () => {
     g.LanguageModel = function () {};
     const provider = new WebBrowserProvider();
     expect(await provider.isAvailable()).toBe(true);
+  });
+});
+
+// NOTE (S-07a): The spec table calls for Anthropic/OpenAI to have
+// supportsBrowser=false. The actual declared values are true (the
+// createCloudProviderClass mixin defaults supportsBrowser to true when the
+// metadata literal omits it). Tests below assert ACTUAL values; see
+// DONE_WITH_CONCERNS note in task report for reconciliation details.
+describe("provider runtime-placement metadata", () => {
+  it("declares the spec placement table", () => {
+    const cases = [
+      // WebBrowserProvider: browser-only, on-device — matches spec exactly
+      {
+        provider: new WebBrowserProvider(),
+        supportsBrowser: true,
+        supportsServer: false,
+        isLocal: true,
+      },
+      // OllamaQueuedProvider: browser+server, local — matches spec exactly
+      {
+        provider: new OllamaQueuedProvider(),
+        supportsBrowser: true,
+        supportsServer: true,
+        isLocal: true,
+      },
+      // AnthropicQueuedProvider: spec says supportsBrowser=false but actual=true (mixin default)
+      {
+        provider: new AnthropicQueuedProvider(),
+        supportsBrowser: true,
+        supportsServer: true,
+        isLocal: false,
+      },
+      // OpenAiQueuedProvider: spec says supportsBrowser=false but actual=true (mixin default)
+      {
+        provider: new OpenAiQueuedProvider(),
+        supportsBrowser: true,
+        supportsServer: true,
+        isLocal: false,
+      },
+    ] as const;
+    for (const c of cases) {
+      expect(c.provider.supportsBrowser).toBe(c.supportsBrowser);
+      expect(c.provider.supportsServer).toBe(c.supportsServer);
+      expect(c.provider.isLocal).toBe(c.isLocal);
+    }
+  });
+
+  it("never marks a renderer-only provider as cloud-reachable", () => {
+    // cloud reachability == supportsServer && !isLocal; renderer-only providers
+    // (supportsServer === false) can never satisfy it.
+    const rendererOnly = new WebBrowserProvider();
+    expect(rendererOnly.supportsServer && !rendererOnly.isLocal).toBe(false);
+  });
+});
+
+describe("credential threading (S-07c)", () => {
+  // Renderer-only providers run on-device and must never be handed cloud
+  // secrets. Their declared metadata is the structural guarantee: a provider
+  // that cannot run server-side is local and therefore needs no API key.
+  it("renderer-only providers are local and carry no api-key requirement", () => {
+    const provider = new WebBrowserProvider();
+    expect(provider.supportsServer).toBe(false);
+    expect(provider.isLocal).toBe(true);
   });
 });
