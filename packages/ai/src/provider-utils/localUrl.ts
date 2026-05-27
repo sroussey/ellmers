@@ -204,6 +204,97 @@ export function isLocalHostname(host: string): boolean {
 }
 
 /**
+ * Returns true if `host` is a dotted-quad IPv4 literal in the loopback range
+ * `127.0.0.0/8`. Rejects leading zeros (no `010.0.0.1`) and malformed input.
+ * This is a strict subset of {@link isLocalIpv4} — RFC 1918 and link-local
+ * (including the `169.254.169.254` cloud-metadata IP) are NOT loopback.
+ */
+function isLoopbackIpv4(host: string): boolean {
+  if (typeof host !== "string") return false;
+  const parts = host.split(".");
+  if (parts.length !== 4) return false;
+  for (const p of parts) {
+    // Reject leading zeros (octal-looking forms) — accept only "0" or
+    // 1-3 digits not starting with 0.
+    if (!/^(0|[1-9][0-9]{0,2})$/.test(p)) return false;
+    const n = Number(p);
+    if (!(n >= 0 && n <= 255)) return false;
+  }
+  // 127.0.0.0/8 is loopback in its entirety per RFC 1122.
+  return Number(parts[0]) === 127;
+}
+
+/**
+ * Returns true if `host` is an IPv6 literal (without surrounding brackets)
+ * that is loopback: exactly `::1`, or an IPv4-mapped IPv6 (`::ffff:0:0/96`)
+ * whose embedded IPv4 lies in `127.0.0.0/8`. Reuses {@link parseIpv6} so the
+ * strict IPv6 grammar is shared with {@link isLocalIpv6}. ULA (`fc00::/7`)
+ * and link-local (`fe80::/10`) are NOT loopback and return false.
+ */
+function isLoopbackIpv6(host: string): boolean {
+  const bytes = parseIpv6(host);
+  if (!bytes) return false;
+
+  // ::1
+  let allZeroExceptLast = true;
+  for (let i = 0; i < 15; i++) {
+    if (bytes[i] !== 0) {
+      allZeroExceptLast = false;
+      break;
+    }
+  }
+  if (allZeroExceptLast && bytes[15] === 1) return true;
+
+  // IPv4-mapped ::ffff:0:0/96 — decode the embedded IPv4 and require loopback.
+  let mapped = true;
+  for (let i = 0; i < 10; i++) {
+    if (bytes[i] !== 0) {
+      mapped = false;
+      break;
+    }
+  }
+  if (mapped && bytes[10] === 0xff && bytes[11] === 0xff) {
+    return isLoopbackIpv4(`${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`);
+  }
+
+  return false;
+}
+
+/**
+ * Returns true if `host` is a STRICTLY loopback hostname literal — the policy
+ * for AI server clients that, by product decision, only ever talk to a server
+ * on the same host:
+ *   * `localhost` (case-insensitive, optional single trailing dot)
+ *   * IPv4 in `127.0.0.0/8`
+ *   * IPv6 `::1` and IPv4-mapped loopback (`::ffff:127.x.x.x`)
+ *
+ * Everything else — RFC 1918, link-local (incl. the `169.254.169.254`
+ * cloud-metadata IP), ULA, public, `*.localhost`, IDN, percent-encoded,
+ * and unsigned-integer IPv4 spellings — returns false. This is intentionally
+ * narrower than {@link isLocalHostname}: it is the initial-URL and
+ * redirect-hop gate used by `localOnlyFetch` to close the link-local
+ * metadata SSRF vector.
+ *
+ * IPv6 literals must be passed WITHOUT surrounding brackets.
+ */
+export function isLoopbackHostname(host: string): boolean {
+  if (typeof host !== "string" || host.length === 0) return false;
+  const lower = host.toLowerCase();
+  // Allow a single trailing dot on `localhost` (FQDN root form) but nothing
+  // beyond it — `localhost.` is fine; `evil.localhost` / `localhost..` are not.
+  if (lower === "localhost" || lower === "localhost.") return true;
+  // Strict character class — same gate as isLocalHostname: only IPv4 dotted-
+  // quad and IPv6 hex/colon grammars survive. Closes percent-encoded forms,
+  // IDN, underscores, and any other DNS-rebindable name.
+  if (!/^[0-9a-f:.]+$/.test(lower)) return false;
+  if (lower.includes(":")) return isLoopbackIpv6(lower);
+  if (lower.includes(".")) return isLoopbackIpv4(lower);
+  // Single-token unsigned-integer forms (e.g. `2130706433`) reach here and
+  // are rejected — they contain neither `:` nor `.`.
+  return false;
+}
+
+/**
  * Extract the literal host substring from `rawUrl` BEFORE the WHATWG URL
  * parser canonicalises it. Returns the host as it appeared in the source
  * (case preserved, brackets stripped for IPv6), or `null` if the URL does
@@ -217,7 +308,7 @@ export function isLocalHostname(host: string): boolean {
  * and any of those rewrites would silently bypass
  * {@link isLocalHostname}'s strict-literal grammar.
  */
-function extractRawHost(rawUrl: string): string | null {
+export function extractRawHost(rawUrl: string): string | null {
   const m = rawUrl.match(/^[A-Za-z][A-Za-z0-9+.\-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/);
   if (m === null) return null;
   let host = m[1] ?? "";

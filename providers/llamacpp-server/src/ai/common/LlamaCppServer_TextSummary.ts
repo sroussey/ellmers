@@ -5,6 +5,7 @@
  */
 
 import type { AiProviderRunFn, TextSummaryTaskInput, TextSummaryTaskOutput } from "@workglow/ai";
+import { localOnlyFetch } from "@workglow/ai/provider-utils";
 import {
   acquireBaseUrl,
   buildServerUrl,
@@ -32,12 +33,16 @@ export function createLlamaCppServerTextSummaryStream(
     });
     const { baseUrl, release } = await acquire(model, opts);
     try {
-      const response = await fetch(buildServerUrl(baseUrl, "/v1/chat/completions"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal,
-      });
+      const response = await localOnlyFetch(
+        buildServerUrl(baseUrl, "/v1/chat/completions"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal,
+        },
+        "LlamaCppServer"
+      );
       if (!response.ok) {
         const text = await response.text().catch(() => "(no body)");
         throw new Error(
