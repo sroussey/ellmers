@@ -26,6 +26,7 @@ export class LlamaCppProvider extends AiProvider<LlamaCppModelConfig> {
   readonly displayName = "Local llama.cpp";
   readonly isLocal = true;
   readonly supportsBrowser = false;
+  readonly supportsServer = true;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<

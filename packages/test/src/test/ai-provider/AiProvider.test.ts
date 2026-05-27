@@ -48,6 +48,7 @@ class TestProvider extends AiProvider {
   readonly displayName = "Test AI Provider";
   readonly isLocal = false;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   public initializeCalled = false;
   public initializeOptions: AiProviderRegisterContext | null = null;
@@ -73,6 +74,7 @@ class TestQueuedProvider extends QueuedAiProvider {
   readonly displayName = "Test AI Provider";
   readonly isLocal = false;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);
@@ -86,6 +88,7 @@ class StaticTaskTypesProvider extends AiProvider {
   readonly displayName = "Static Task Types";
   readonly isLocal = false;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   constructor(fns?: readonly AiProviderRunFnRegistration[]) {
     super(fns);

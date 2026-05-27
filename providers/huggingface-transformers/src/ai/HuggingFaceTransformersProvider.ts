@@ -29,6 +29,7 @@ export class HuggingFaceTransformersProvider extends AiProvider<HfTransformersOn
   readonly displayName = "Hugging Face Transformers (ONNX)";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<

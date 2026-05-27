@@ -66,6 +66,7 @@ export class HuggingFaceTransformersQueuedProvider extends QueuedAiProvider<HfTr
   readonly displayName = "Hugging Face Transformers (ONNX)";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   private cpuStrategy: IAiExecutionStrategy | undefined;
 

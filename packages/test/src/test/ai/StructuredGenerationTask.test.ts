@@ -60,6 +60,7 @@ class FakeStructuredProvider extends AiProvider {
   override readonly displayName = "Fake Structured";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
+  override readonly supportsServer = true;
 
   constructor(runFns?: readonly AiProviderRunFnRegistration<any, any, ModelConfig>[]) {
     super(runFns);

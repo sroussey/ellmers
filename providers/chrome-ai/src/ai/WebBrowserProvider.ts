@@ -37,6 +37,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly displayName = "Chrome Built-in AI";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = false;
 
   /**
    * Result of {@link probeWebBrowserCapabilities}. Until the probe resolves

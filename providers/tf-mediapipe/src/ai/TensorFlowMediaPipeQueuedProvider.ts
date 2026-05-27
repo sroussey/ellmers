@@ -21,6 +21,7 @@ export class TensorFlowMediaPipeQueuedProvider extends AiProvider<TFMPModelConfi
   readonly displayName = "TensorFlow MediaPipe";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = false;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<

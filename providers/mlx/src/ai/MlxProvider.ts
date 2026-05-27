@@ -31,6 +31,7 @@ export class MlxProvider extends AiProvider {
   readonly displayName = "Local MLX (Apple Silicon)";
   readonly isLocal = true;
   readonly supportsBrowser = false;
+  readonly supportsServer = true;
 
   constructor() {
     const runFns: readonly AiProviderRunFnRegistration<
