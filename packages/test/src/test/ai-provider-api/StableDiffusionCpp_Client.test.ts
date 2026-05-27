@@ -77,7 +77,7 @@ describe("acquireBaseUrl precedence", () => {
   it("rejects public model URLs before requests can use them", async () => {
     await expect(
       acquireBaseUrl({ provider_config: { base_url: "https://example.com:8080/" } } as any, {})
-    ).rejects.toThrow(/local HTTP/);
+    ).rejects.toThrow(/loopback HTTP/);
   });
 
   it("normalizes slash-heavy local URLs", async () => {
