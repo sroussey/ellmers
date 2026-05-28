@@ -137,15 +137,44 @@ export class ServerCredentialStore implements ICredentialStore {
         }
         throw vaultError;
       }
-      // Commit: clear the pending flag.
-      await this.metadata.put(id, { ...baseRow, pending: false });
+      // Commit: clear the pending flag. If THIS write fails after a successful
+      // vault write, the row stays `pending: true` (invisible to readers) while
+      // the vault still holds bytes — same orphan failure mode as the rollback
+      // path above. Persist a sticky orphan marker (best-effort) and throw a
+      // wrapped error so the inconsistency is discoverable. We do NOT roll the
+      // vault back: a future retry may recover by re-running the commit-step
+      // metadata write.
+      try {
+        await this.metadata.put(id, { ...baseRow, pending: false });
+      } catch (commitError) {
+        try {
+          await this.metadata.put(id, {
+            ...baseRow,
+            pending: true,
+            orphanedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Nothing more we can do.
+        }
+        throw new Error(
+          `ServerCredentialStore.put: vault write succeeded but metadata commit failed for vault id ${id}; row left as orphan marker`,
+          { cause: commitError }
+        );
+      }
       return;
     }
 
-    // Update is not atomic; concurrent get() may observe either old or new
-    // value but never a torn read. We overwrite the vault first; if the
-    // metadata update then fails we rethrow without rolling the vault back
-    // because the prior metadata row still points at the same vault id.
+    // Update is not atomic across the (vault, metadata) pair. We overwrite the
+    // vault first, then the metadata row. A concurrent get() between the two
+    // writes sees the OLD metadata row (non-pending, so visible) but the NEW
+    // vault value — a stale-metadata window for (updatedAt, expiresAt, label,
+    // provider), not a torn vault read (each vault.setSecret is atomic at the
+    // vault layer). We do NOT roll the vault back if the metadata update
+    // throws: the prior metadata row still points at the same vault id, so
+    // subsequent reads return the new value (alongside stale metadata) instead
+    // of going missing. Closing this window cleanly requires versioned vault
+    // ids (e.g., `${prefix}${key}#${version}`) so the old metadata keeps
+    // pointing at the old vault entry; tracked as a follow-up.
     await this.vault.setSecret(id, value);
     await this.metadata.put(id, baseRow);
   }
