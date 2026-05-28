@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.9
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1055.0
+
 ## 0.3.8
 
 ## 0.3.7

@@ -1,5 +1,11 @@
 # @workglow/storage
 
+## 0.3.9
+
+### Chores
+
+- update deps
+
 ## 0.3.8
 
 ### Features
