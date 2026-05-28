@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.8
+
+### Bug Fixes
+
+- close redirect-based SSRF bypass in local provider fetches (sec) (#536)
+
 ## 0.3.7
 
 ### Bug Fixes

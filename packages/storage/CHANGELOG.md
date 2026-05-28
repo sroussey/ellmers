@@ -1,5 +1,11 @@
 # @workglow/storage
 
+## 0.3.8
+
+### Features
+
+- add ServerCredentialStore for server-side credential management (#539)
+
 ## 0.3.7
 
 ### Features

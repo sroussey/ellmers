@@ -1,5 +1,15 @@
 # @workglow/test
 
+## 0.3.8
+
+### Features
+
+- add provider runtime metadata: supportsServer and isAvailable() (#538)
+
+### Bug Fixes
+
+- close redirect-based SSRF bypass in local provider fetches (sec) (#536)
+
 ## 0.3.7
 
 ### Features
