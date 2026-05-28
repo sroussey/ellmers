@@ -114,8 +114,9 @@ describe("ServerCredentialStore", () => {
     expect(remaining).toHaveLength(0);
   });
 
-  it("put-then-get during in-flight put returns either prior committed value or undefined, never torn", async () => {
-    // A vault whose setSecret blocks until we explicitly resolve it.
+  it("update-in-flight: a concurrent get() returns the prior committed value (never the not-yet-committed new value, never undefined)", async () => {
+    // A vault whose setSecret blocks until we explicitly resolve it, but only
+    // for ids that already have a value (i.e., updates, not the initial seed).
     const map = new Map<string, string>();
     let releaseSet: (() => void) | undefined;
     const blockedSet = new Promise<void>((resolve) => {
@@ -123,7 +124,9 @@ describe("ServerCredentialStore", () => {
     });
     const vault: SecretVault = {
       async setSecret(id, v) {
-        // First put commits synchronously; subsequent puts block on the gate.
+        // First put commits synchronously; subsequent puts block on the gate
+        // BEFORE writing the map, so map still holds the prior value while
+        // the in-flight put is suspended.
         if (map.has(id)) {
           await blockedSet;
         }
@@ -144,17 +147,19 @@ describe("ServerCredentialStore", () => {
       projectId: "p1",
     });
 
-    // Seed a prior committed value.
+    // Seed a prior committed value (this is now an existing-row update on the
+    // second put — metadata is non-pending so get() must succeed).
     await store.put("k", "v1");
 
     // Start a second put without awaiting; it will block inside setSecret.
     const inflight = store.put("k", "v2");
 
-    // While the second put is in flight, get() must return the prior
-    // committed value or undefined — never the not-yet-committed "v2".
+    // While the update is in flight, get() must return the OLD vault value
+    // (metadata is committed and non-pending; vault.setSecret hasn't yet
+    // written the new value because it's blocked on the gate). Critically:
+    // not the new value, and not undefined.
     const observed = await store.get("k");
-    expect(observed === "v1" || observed === undefined).toBe(true);
-    expect(observed).not.toBe("v2");
+    expect(observed).toBe("v1");
 
     // Release the gate and let the in-flight put finish.
     releaseSet!();
@@ -162,9 +167,10 @@ describe("ServerCredentialStore", () => {
     expect(await store.get("k")).toBe("v2");
   });
 
-  it("new-entry put: metadata write fails — vault is rolled back", async () => {
+  it("new-entry put: metadata write fails — vault is never touched", async () => {
     const vault = makeVault();
     const deleteSpy = vi.spyOn(vault, "deleteSecret");
+    const setSpy = vi.spyOn(vault, "setSecret");
     // Failing metadata: every put() rejects. get/getAll/delete still work.
     const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
     const meta: IKvStorage<string, CredentialMetadataRow> = Object.create(inner);
@@ -183,13 +189,11 @@ describe("ServerCredentialStore", () => {
     });
 
     await expect(store.put("k", "v")).rejects.toThrow();
-    // Vault must have been rolled back (no value remains for the id).
+    // Vault must hold no value (the implementation writes metadata first, so
+    // a metadata.put failure on a NEW entry never reaches vault.setSecret).
     expect(await vault.getSecret("u1/p1/k")).toBeUndefined();
-    // Defensive: the rollback path went through vault.deleteSecret OR the
-    // vault was never written (depending on which write failed first).
-    // The current implementation writes metadata first, so vault is never
-    // touched if metadata.put throws — accept either outcome.
-    expect(deleteSpy.mock.calls.length >= 0).toBe(true);
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
   });
 
   it("new-entry put: metadata write fails AND vault rollback fails — throws wrapped error and leaves orphan marker", async () => {
@@ -234,6 +238,52 @@ describe("ServerCredentialStore", () => {
     expect((caught as Error & { cause?: unknown }).cause).toBeInstanceOf(Error);
     expect(((caught as Error & { cause?: Error }).cause as Error).message).toBe("vault boom");
 
+    const row = await inner.get("u1/p1/k");
+    expect(row).toBeDefined();
+    expect(row!.pending).toBe(true);
+    expect(typeof row!.orphanedAt).toBe("string");
+    expect(row!.orphanedAt!.length).toBeGreaterThan(0);
+  });
+
+  it("new-entry put: commit-step metadata write fails — vault retained, orphan marker persisted, wrapped error thrown", async () => {
+    // First metadata.put (pending:true) succeeds; vault.setSecret succeeds;
+    // second metadata.put (commit pending:false) throws; third metadata.put
+    // (orphan marker) succeeds.
+    const vault = makeVault();
+    const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
+    let putCount = 0;
+    const meta: IKvStorage<string, CredentialMetadataRow> = Object.create(inner);
+    meta.put = vi.fn(async (key: string, value: CredentialMetadataRow) => {
+      putCount++;
+      if (putCount === 2) throw new Error("commit boom");
+      return inner.put(key, value);
+    }) as typeof inner.put;
+    meta.get = (key) => inner.get(key);
+    meta.getAll = () => inner.getAll();
+    meta.delete = (key) => inner.delete(key);
+
+    const store = new ServerCredentialStore({
+      vault,
+      metadata: meta,
+      userId: "u1",
+      projectId: "p1",
+    });
+
+    let caught: unknown;
+    try {
+      await store.put("k", "v");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("commit failed");
+    expect((caught as Error).message).toContain("u1/p1/k");
+    expect((caught as Error & { cause?: unknown }).cause).toBeInstanceOf(Error);
+    expect(((caught as Error & { cause?: Error }).cause as Error).message).toBe("commit boom");
+
+    // Vault still holds the bytes — commit-step failures do not roll back.
+    expect(await vault.getSecret("u1/p1/k")).toBe("v");
+    // Metadata row is a sticky orphan marker.
     const row = await inner.get("u1/p1/k");
     expect(row).toBeDefined();
     expect(row!.pending).toBe(true);
