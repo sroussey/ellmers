@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { InMemoryKvStorage } from "../kv/InMemoryKvStorage";
+import type { IKvStorage } from "../kv/IKvStorage";
 import { ServerCredentialStore, type CredentialMetadataRow } from "./ServerCredentialStore";
 import type { SecretVault } from "./SecretVault";
 
@@ -19,7 +20,7 @@ function makeVault(): SecretVault {
 }
 
 function makeStore() {
-  const meta = new InMemoryKvStorage<string, CredentialMetadataRow>();
+  const meta: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
   const vault = makeVault();
   const store = new ServerCredentialStore({ vault, metadata: meta, userId: "u1", projectId: "p1" });
   return { store, meta, vault };
@@ -74,7 +75,7 @@ describe("ServerCredentialStore", () => {
   });
 
   it("isolates by project scope", async () => {
-    const meta = new InMemoryKvStorage<string, CredentialMetadataRow>();
+    const meta: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
     const vault = makeVault();
     const p1 = new ServerCredentialStore({ vault, metadata: meta, userId: "u1", projectId: "p1" });
     const p2 = new ServerCredentialStore({ vault, metadata: meta, userId: "u1", projectId: "p2" });
@@ -86,7 +87,7 @@ describe("ServerCredentialStore", () => {
   });
 
   it("isolates by user scope", async () => {
-    const meta = new InMemoryKvStorage<string, CredentialMetadataRow>();
+    const meta: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
     const vault = makeVault();
     const u1 = new ServerCredentialStore({ vault, metadata: meta, userId: "u1", projectId: "p1" });
     const u2 = new ServerCredentialStore({ vault, metadata: meta, userId: "u2", projectId: "p1" });
