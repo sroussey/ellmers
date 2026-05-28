@@ -23,6 +23,7 @@ export class CactusQueuedProvider extends QueuedAiProvider<CactusModelConfig> {
   readonly displayName = "Cactus (Needle)";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<

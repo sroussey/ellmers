@@ -26,6 +26,7 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
   readonly displayName = "Local llama.cpp";
   readonly isLocal = true;
   readonly supportsBrowser = false;
+  readonly supportsServer = true;
 
   constructor(
     promiseRunFns?: readonly AiProviderRunFnRegistration<

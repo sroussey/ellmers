@@ -100,6 +100,7 @@ class FakeChatKbProvider extends AiProvider {
   override readonly displayName = "Fake Chat KB";
   override readonly isLocal = true;
   override readonly supportsBrowser = false;
+  override readonly supportsServer = true;
 
   constructor(promiseRunFns?: readonly AiProviderRunFnRegistration[]) {
     super(promiseRunFns);

@@ -37,6 +37,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
   readonly displayName = "Chrome Built-in AI";
   readonly isLocal = true;
   readonly supportsBrowser = true;
+  readonly supportsServer = false;
 
   /**
    * Result of {@link probeWebBrowserCapabilities}. Until the probe resolves
@@ -88,6 +89,22 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
 
   protected override workerRunFnSpecs(): readonly { serves: readonly Capability[] }[] {
     return webBrowserWorkerRunFnSpecs();
+  }
+
+  /**
+   * Chrome Built-in AI is only reachable when the browser exposes at least one
+   * of its API globals. Mirrors the renderer's former `isChromeBuiltinAiAvailable`
+   * synchronous check, now surfaced through the uniform provider probe.
+   */
+  override async isAvailable(): Promise<boolean> {
+    const g = globalThis as Record<string, unknown>;
+    return (
+      typeof g.LanguageModel !== "undefined" ||
+      typeof g.Summarizer !== "undefined" ||
+      typeof g.Translator !== "undefined" ||
+      typeof g.Rewriter !== "undefined" ||
+      typeof g.LanguageDetector !== "undefined"
+    );
   }
 
   /**

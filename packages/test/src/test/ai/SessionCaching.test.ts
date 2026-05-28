@@ -389,6 +389,7 @@ describe("SessionCaching", () => {
       readonly displayName = "Test";
       readonly isLocal = true;
       readonly supportsBrowser = true;
+      readonly supportsServer = true;
 
       constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
         super(runFns);
@@ -422,6 +423,7 @@ describe("SessionCaching", () => {
       readonly displayName = "Test";
       readonly isLocal = true;
       readonly supportsBrowser = true;
+      readonly supportsServer = true;
 
       constructor(runFns?: readonly AiProviderRunFnRegistration[]) {
         super(runFns);

@@ -46,6 +46,7 @@ class TestProvider extends AiProvider {
   readonly displayName = "Test Provider";
   readonly isLocal = false;
   readonly supportsBrowser = true;
+  readonly supportsServer = true;
 
   constructor(name: string, runFns: readonly AiProviderRunFnRegistration[]) {
     super(runFns);
