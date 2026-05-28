@@ -91,7 +91,18 @@ export class ServerCredentialStore implements ICredentialStore {
       updatedAt: now,
       expiresAt: options?.expiresAt ? options.expiresAt.toISOString() : existing?.expiresAt,
     };
-    await this.metadata.put(id, row);
+    try {
+      await this.metadata.put(id, row);
+    } catch (err) {
+      // get()/has() gate on the metadata row, so a written secret with no
+      // metadata is unreachable and orphaned. For a brand-new entry, roll the
+      // vault back; for an update, leave the prior secret (metadata still
+      // points at it).
+      if (!existing) {
+        await this.vault.deleteSecret(id).catch(() => undefined);
+      }
+      throw err;
+    }
   }
 
   async delete(key: string): Promise<boolean> {
