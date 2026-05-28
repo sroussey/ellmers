@@ -84,4 +84,26 @@ describe("ServerCredentialStore", () => {
     expect(await p2.get("k")).toBe("v2");
     expect(await p1.keys()).toEqual(["k"]);
   });
+
+  it("isolates by user scope", async () => {
+    const meta = new InMemoryKvStorage<string, CredentialMetadataRow>();
+    const vault = makeVault();
+    const u1 = new ServerCredentialStore({ vault, metadata: meta, userId: "u1", projectId: "p1" });
+    const u2 = new ServerCredentialStore({ vault, metadata: meta, userId: "u2", projectId: "p1" });
+    await u1.put("k", "v1");
+    await u2.put("k", "v2");
+    expect(await u1.get("k")).toBe("v1");
+    expect(await u2.get("k")).toBe("v2");
+    expect(await u1.keys()).toEqual(["k"]);
+    expect(await u1.listMetadata()).toHaveLength(1);
+  });
+
+  it("deleteAll clears expired entries too", async () => {
+    const { store, meta } = makeStore();
+    await store.put("live", "v");
+    await store.put("dead", "v", { expiresAt: new Date(Date.now() - 1000) });
+    await store.deleteAll();
+    const remaining = (await meta.getAll()) ?? [];
+    expect(remaining).toHaveLength(0);
+  });
 });

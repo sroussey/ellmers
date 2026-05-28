@@ -98,8 +98,8 @@ export class ServerCredentialStore implements ICredentialStore {
     const id = this.vaultId(key);
     const existed = (await this.metadata.get(id)) !== undefined;
     if (existed) {
-      await this.metadata.delete(id);
       await this.vault.deleteSecret(id);
+      await this.metadata.delete(id);
     }
     return existed;
   }
@@ -118,9 +118,23 @@ export class ServerCredentialStore implements ICredentialStore {
     return (await this.listMetadata()).map((m) => m.key);
   }
 
+  /** Vault ids of every row in this scope, ignoring expiry. */
+  private async scopedIds(): Promise<string[]> {
+    const all = await this.metadata.getAll();
+    if (!all) return [];
+    const ids: string[] = [];
+    for (const entry of all) {
+      if (entry.value.userId === this.userId && entry.value.projectId === this.projectId) {
+        ids.push(entry.key);
+      }
+    }
+    return ids;
+  }
+
   async deleteAll(): Promise<void> {
-    for (const m of await this.listMetadata()) {
-      await this.delete(m.key);
+    for (const id of await this.scopedIds()) {
+      await this.vault.deleteSecret(id);
+      await this.metadata.delete(id);
     }
   }
 
