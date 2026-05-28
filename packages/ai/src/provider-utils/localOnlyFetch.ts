@@ -70,7 +70,7 @@ function assertLoopbackTarget(url: URL, label: string, context: "initial URL" | 
 export async function localOnlyFetch(
   input: string,
   init?: RequestInit,
-  label = "localOnlyFetch",
+  label = "localOnlyFetch"
 ): Promise<Response> {
   // Defensively validate the initial URL BEFORE issuing any request. A bad
   // initial URL must throw before fetch is ever called (zero network calls).

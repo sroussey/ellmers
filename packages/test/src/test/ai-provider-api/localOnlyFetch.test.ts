@@ -127,11 +127,7 @@ describe("localOnlyFetch", () => {
 
   it("follows a redirect to another loopback host and returns the final body", async () => {
     stubFetch([redirect("http://127.0.0.1:9000/v1/models"), ok("final-body")]);
-    const res = await localOnlyFetch(
-      "http://localhost:8080/v1/models",
-      undefined,
-      "TestProvider"
-    );
+    const res = await localOnlyFetch("http://localhost:8080/v1/models", undefined, "TestProvider");
     expect(await res.text()).toBe("final-body");
     expect(calls).toHaveLength(2);
     expect(calls[1].url).toBe("http://127.0.0.1:9000/v1/models");
@@ -139,11 +135,7 @@ describe("localOnlyFetch", () => {
 
   it("follows a relative Location resolved against a loopback base", async () => {
     stubFetch([redirect("/v1/models"), ok("relative-body")]);
-    const res = await localOnlyFetch(
-      "http://127.0.0.1:9000/props",
-      undefined,
-      "TestProvider"
-    );
+    const res = await localOnlyFetch("http://127.0.0.1:9000/props", undefined, "TestProvider");
     expect(await res.text()).toBe("relative-body");
     expect(calls).toHaveLength(2);
     expect(calls[1].url).toBe("http://127.0.0.1:9000/v1/models");
@@ -151,11 +143,7 @@ describe("localOnlyFetch", () => {
 
   it("returns a non-redirect 200 unchanged with exactly one fetch", async () => {
     stubFetch([ok("plain-body")]);
-    const res = await localOnlyFetch(
-      "http://127.0.0.1:9000/v1/models",
-      undefined,
-      "TestProvider"
-    );
+    const res = await localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider");
     expect(await res.text()).toBe("plain-body");
     expect(calls).toHaveLength(1);
     expect(calls[0].redirect).toBe("manual");
@@ -166,20 +154,12 @@ describe("localOnlyFetch", () => {
     // redirect codes; even with a Location they are returned unchanged. The
     // Location target here is non-loopback to prove it is never followed.
     stubFetch([statusWithLocation(300, "http://169.254.169.254/")]);
-    const res = await localOnlyFetch(
-      "http://127.0.0.1:9000/v1/models",
-      undefined,
-      "TestProvider"
-    );
+    const res = await localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider");
     expect(res.status).toBe(300);
     expect(calls).toHaveLength(1);
 
     stubFetch([statusWithLocation(304, "http://203.0.113.10/")]);
-    const res2 = await localOnlyFetch(
-      "http://127.0.0.1:9000/v1/models",
-      undefined,
-      "TestProvider"
-    );
+    const res2 = await localOnlyFetch("http://127.0.0.1:9000/v1/models", undefined, "TestProvider");
     expect(res2.status).toBe(304);
     expect(calls).toHaveLength(1);
   });
@@ -204,9 +184,9 @@ describe("localOnlyFetch", () => {
 
   it("rejects a non-HTTP(S) initial URL before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(
-      localOnlyFetch("file:///etc/passwd", undefined, "TestProvider")
-    ).rejects.toThrow(/non-HTTP\(S\)/);
+    await expect(localOnlyFetch("file:///etc/passwd", undefined, "TestProvider")).rejects.toThrow(
+      /non-HTTP\(S\)/
+    );
     expect(calls).toHaveLength(0);
   });
 

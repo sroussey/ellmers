@@ -5,17 +5,23 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { InMemoryKvStorage } from "../kv/InMemoryKvStorage";
 import type { IKvStorage } from "../kv/IKvStorage";
-import { ServerCredentialStore, type CredentialMetadataRow } from "./ServerCredentialStore";
+import { InMemoryKvStorage } from "../kv/InMemoryKvStorage";
 import type { SecretVault } from "./SecretVault";
+import { ServerCredentialStore, type CredentialMetadataRow } from "./ServerCredentialStore";
 
 function makeVault(): SecretVault {
   const map = new Map<string, string>();
   return {
-    async setSecret(id, v) { map.set(id, v); },
-    async getSecret(id) { return map.get(id); },
-    async deleteSecret(id) { map.delete(id); },
+    async setSecret(id, v) {
+      map.set(id, v);
+    },
+    async getSecret(id) {
+      return map.get(id);
+    },
+    async deleteSecret(id) {
+      map.delete(id);
+    },
   };
 }
 
