@@ -57,32 +57,6 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Gets the SQL column type for a prefix column (Supabase supports UUID natively)
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "UUID" : "INTEGER";
-  }
-
-  /**
-   * Builds the prefix columns SQL for CREATE TABLE
-   */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
-      this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n      ") + ",\n      "
-    );
-  }
-
-  /**
-   * Builds prefix column names for use in queries
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
-  }
-
-  /**
    * Applies prefix filters to a Supabase query builder
    */
   private applyPrefixFilters<T>(query: T): T {
@@ -157,87 +131,25 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Schema setup for Supabase queues.
-   *
-   * Supabase exposes the SQL surface via a side-installed `exec_sql` RPC
-   * rather than the `pg.Pool` shape the {@link PostgresMigrationRunner} is
-   * built against, so this storage doesn't share the runner's bookkeeping
-   * table — it runs idempotent CREATE-IF-NOT-EXISTS statements directly via
-   * the RPC. {@link getMigrations} returns an empty array for the same
-   * reason.
+   * Verifies the Supabase queue table exists. The schema (table, enum,
+   * indexes) is owned by Supabase migrations — see the matching DDL in the
+   * Postgres provider for the canonical definition. This used to run
+   * `CREATE TABLE IF NOT EXISTS` through a side-installed `exec_sql` RPC,
+   * which required granting arbitrary-SQL execute to ordinary roles
+   * (privilege escalation) and shipped DDL in browser bundles. Verify-only.
    */
   public async migrate(): Promise<void> {
-    // Note: For Supabase, table creation should typically be done through migrations
-    // This setup assumes the table already exists or uses exec_sql RPC function.
-    // ABORTING is included in the enum for backward compatibility with existing data,
-    // but the application no longer writes that value.
-    const enumValues = [...Object.values(JobStatus), "ABORTING"]
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .map((v) => `'${v}'`)
-      .join(",");
-    const createTypeSql = `CREATE TYPE job_status AS ENUM (${enumValues})`;
-
-    const { error: typeError } = await this.client.rpc("exec_sql", { query: createTypeSql });
-    // Ignore error if type already exists (code 42710)
-    if (typeError && typeError.code !== "42710") {
-      throw typeError;
+    const { error } = await this.client
+      .from(this.tableName)
+      .select("*", { head: true, count: "exact" })
+      .limit(0);
+    if (!error) return;
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      throw new Error(
+        `Supabase queue table "${this.tableName}" is missing. Run Supabase migrations to create the queue schema (table + job_status enum + indexes) before initializing the queue. (PostgREST: ${error.code} ${error.message})`
+      );
     }
-
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
-
-    const createTableSql = `
-    CREATE TABLE IF NOT EXISTS ${this.tableName} (
-      id SERIAL NOT NULL,
-      ${prefixColumnsSql}fingerprint text NOT NULL,
-      queue text NOT NULL,
-      job_run_id text NOT NULL,
-      status job_status NOT NULL default 'PENDING',
-      input jsonb NOT NULL,
-      output jsonb,
-      attempts integer default 0,
-      max_attempts integer default 10,
-      visible_at timestamp with time zone DEFAULT now(),
-      last_attempted_at timestamp with time zone,
-      created_at timestamp with time zone DEFAULT now(),
-      deadline_at timestamp with time zone,
-      completed_at timestamp with time zone,
-      error text,
-      error_code text,
-      progress real DEFAULT 0,
-      progress_message text DEFAULT '',
-      progress_details jsonb,
-      lease_owner text,
-      abort_requested_at timestamp with time zone,
-      lease_expires_at timestamp with time zone
-    )`;
-
-    const { error: tableError } = await this.client.rpc("exec_sql", { query: createTableSql });
-    if (tableError) {
-      // Ignore error if table already exists (code 42P07)
-      if (tableError.code !== "42P07") {
-        throw tableError;
-      }
-    }
-
-    // Create indexes with prefix columns prepended
-    const indexes = [
-      `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
-      `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
-      `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
-      // H2: UNIQUE so concurrent inserts for the same active (queue,
-      // fingerprint) race to the DB and resolve via 23505 unique_violation.
-      // Supabase shares this DDL pattern with the Postgres provider.
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
-    ];
-
-    for (const indexSql of indexes) {
-      await this.client.rpc("exec_sql", { query: indexSql });
-      // Ignore index creation errors
-    }
+    throw error;
   }
 
   /** Supabase queue runs DDL via `exec_sql`, not via the migration runner. */

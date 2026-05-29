@@ -61,6 +61,17 @@ export const SUPABASE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>
 );
 
 /**
+ * True when a PostgREST error indicates the referenced relation does not exist.
+ * Covers both the Postgres SQLSTATE (`42P01`) and PostgREST's schema-cache
+ * variant (`PGRST205`) used when the table simply isn't exposed.
+ */
+function isMissingRelationError(error: { code?: string; message?: string }): boolean {
+  if (error.code === "42P01" || error.code === "PGRST205") return true;
+  const msg = error.message ?? "";
+  return msg.includes("does not exist") || msg.includes("could not find the table");
+}
+
+/**
  * A Supabase-based tabular repository implementation that extends BaseSqlTabularStorage.
  * This class provides persistent storage for data in a Supabase database,
  * making it suitable for multi-user scenarios.
@@ -107,63 +118,25 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Initializes the database table with the required schema.
-   * Creates the table if it doesn't exist with primary key and value columns.
-   * Must be called before using any other methods.
+   * Verifies the backing Supabase table exists. The schema (table, columns,
+   * indexes) is owned by Supabase migrations, not the client — shipping DDL
+   * in a browser bundle would require granting `exec_sql`-style admin RPCs
+   * to anon/authenticated roles, which is a privilege-escalation primitive
+   * and incompatible with RLS. This method now does a cheap HEAD probe and
+   * throws a clear error if the table is missing.
    */
   public override async setupDatabase(): Promise<void> {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS "${this.table}" (
-        ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
-        PRIMARY KEY (${this.primaryKeyColumnList()}) 
-      )
-    `;
-    const { error } = await this.client.rpc("exec_sql", { query: sql });
-    if (error && !error.message.includes("already exists")) {
-      throw error;
+    const { error } = await this.client
+      .from(this.table)
+      .select("*", { head: true, count: "exact" })
+      .limit(0);
+    if (!error) return;
+    if (isMissingRelationError(error)) {
+      throw new Error(
+        `Supabase table "${this.table}" is missing. Schema is owned by Supabase migrations — run them against this project before initializing the storage. (PostgREST: ${error.code ?? "?"} ${error.message})`
+      );
     }
-
-    // Get primary key columns to avoid creating redundant indexes
-    const pkColumns = this.primaryKeyColumns();
-
-    // Track created indexes to avoid duplicates and redundant indexes
-    const createdIndexes = new Set<string>();
-
-    for (const columns of this.indexes) {
-      // Skip if this is just the primary key or a prefix of it
-      if (columns.length <= pkColumns.length) {
-        // @ts-ignore
-        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
-        if (isPkPrefix) continue;
-      }
-
-      // Create index name and column list
-      const indexName = `${this.table}_${columns.join("_")}`;
-      const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
-
-      // Skip if we've already created this index or if it's redundant
-      const columnKey = columns.join(",");
-      if (createdIndexes.has(columnKey)) continue;
-
-      // Check if this index would be redundant with an existing one
-      const isRedundant = Array.from(createdIndexes).some((existing) => {
-        const existingCols = existing.split(",");
-        return (
-          existingCols.length >= columns.length &&
-          columns.every((col, idx) => col === existingCols[idx])
-        );
-      });
-
-      if (!isRedundant) {
-        const indexSql = `CREATE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`;
-        const { error: indexError } = await this.client.rpc("exec_sql", { query: indexSql });
-        if (indexError && !indexError.message.includes("already exists")) {
-          // Index creation errors are not critical, log and continue
-          console.warn(`Failed to create index ${indexName}:`, indexError);
-        }
-        createdIndexes.add(columnKey);
-      }
-    }
+    throw error;
   }
 
   /**
