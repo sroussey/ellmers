@@ -47,12 +47,35 @@ describe("ServerCredentialStore", () => {
     expect(await store.keys()).toEqual(["openai"]);
   });
 
-  it("delete removes both secret and metadata", async () => {
-    const { store, vault } = makeStore();
+  it("delete removes both secret and metadata (metadata BEFORE vault)", async () => {
+    const { store, meta, vault } = makeStore();
     await store.put("openai", "sk-123");
+
+    // Record the order of side-effecting calls during delete only.
+    const order: string[] = [];
+    const metaDeleteSpy = vi.spyOn(meta, "delete").mockImplementation(async (k) => {
+      order.push(`meta.delete:${String(k)}`);
+      // Fall through to the real delete by calling the prototype's method on the
+      // underlying instance. We rebind through Object.getPrototypeOf since the
+      // spy replaces the own-property.
+      return InMemoryKvStorage.prototype.delete.call(meta, k);
+    });
+    const vaultDeleteSpy = vi.spyOn(vault, "deleteSecret").mockImplementation(async (id) => {
+      order.push(`vault.deleteSecret:${id}`);
+    });
+
     expect(await store.delete("openai")).toBe(true);
+
+    // Metadata must be deleted strictly before the vault.
+    expect(order).toEqual(["meta.delete:u1/p1/openai", "vault.deleteSecret:u1/p1/openai"]);
+    expect(metaDeleteSpy).toHaveBeenCalledTimes(1);
+    expect(vaultDeleteSpy).toHaveBeenCalledTimes(1);
+
     expect(await store.get("openai")).toBeUndefined();
-    expect(await vault.getSecret("u1/p1/openai")).toBeUndefined();
+    // vault.deleteSecret was mocked above (no-op for the real map); restore and
+    // assert the second delete is a clean miss.
+    vaultDeleteSpy.mockRestore();
+    metaDeleteSpy.mockRestore();
     expect(await store.delete("openai")).toBe(false);
   });
 
@@ -196,7 +219,7 @@ describe("ServerCredentialStore", () => {
     expect(deleteSpy).not.toHaveBeenCalled();
   });
 
-  it("new-entry put: metadata write fails AND vault rollback fails — throws wrapped error and leaves orphan marker", async () => {
+  it("new-entry put: metadata write fails AND vault rollback fails — throws wrapped error and leaves orphan marker with orphanReason vault-write-failed", async () => {
     // Vault.setSecret throws to trigger rollback; metadata.delete also throws
     // so the rollback path persists an orphan marker.
     const vault: SecretVault = {
@@ -243,9 +266,10 @@ describe("ServerCredentialStore", () => {
     expect(row!.pending).toBe(true);
     expect(typeof row!.orphanedAt).toBe("string");
     expect(row!.orphanedAt!.length).toBeGreaterThan(0);
+    expect(row!.orphanReason).toBe("vault-write-failed");
   });
 
-  it("new-entry put: commit-step metadata write fails — vault retained, orphan marker persisted, wrapped error thrown", async () => {
+  it("new-entry put: commit-step metadata write fails — vault retained, orphan marker persisted with orphanReason metadata-commit-failed, wrapped error thrown", async () => {
     // First metadata.put (pending:true) succeeds; vault.setSecret succeeds;
     // second metadata.put (commit pending:false) throws; third metadata.put
     // (orphan marker) succeeds.
@@ -283,12 +307,201 @@ describe("ServerCredentialStore", () => {
 
     // Vault still holds the bytes — commit-step failures do not roll back.
     expect(await vault.getSecret("u1/p1/k")).toBe("v");
-    // Metadata row is a sticky orphan marker.
+    // Metadata row is a sticky orphan marker tagged with the commit-failure reason.
     const row = await inner.get("u1/p1/k");
     expect(row).toBeDefined();
     expect(row!.pending).toBe(true);
     expect(typeof row!.orphanedAt).toBe("string");
     expect(row!.orphanedAt!.length).toBeGreaterThan(0);
+    expect(row!.orphanReason).toBe("metadata-commit-failed");
+  });
+
+  it("delete(): vault delete fails after metadata delete — sticky orphan marker written with orphanReason vault-delete-failed, get/has/keys report absent, error thrown wraps vault cause", async () => {
+    // Seed via the normal path, then swap vault.deleteSecret to throw.
+    const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
+    const map = new Map<string, string>();
+    const vault: SecretVault = {
+      async setSecret(id, v) {
+        map.set(id, v);
+      },
+      async getSecret(id) {
+        return map.get(id);
+      },
+      async deleteSecret(id) {
+        // Default: real behaviour. Swapped below before invoking delete.
+        map.delete(id);
+      },
+    };
+    const store = new ServerCredentialStore({
+      vault,
+      metadata: inner,
+      userId: "u1",
+      projectId: "p1",
+    });
+    await store.put("k", "v");
+
+    // Replace vault.deleteSecret with a throwing implementation.
+    vault.deleteSecret = vi.fn(async () => {
+      throw new Error("vault delete boom");
+    });
+
+    let caught: unknown;
+    try {
+      await store.delete("k");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("metadata removed but vault delete failed");
+    expect((caught as Error).message).toContain("u1/p1/k");
+    expect((caught as Error & { cause?: unknown }).cause).toBeInstanceOf(Error);
+    expect(((caught as Error & { cause?: Error }).cause as Error).message).toBe(
+      "vault delete boom"
+    );
+
+    // Orphan marker exists, with the right discriminator and pending:true.
+    const row = await inner.get("u1/p1/k");
+    expect(row).toBeDefined();
+    expect(row!.pending).toBe(true);
+    expect(row!.orphanReason).toBe("vault-delete-failed");
+    expect(typeof row!.orphanedAt).toBe("string");
+    expect(row!.orphanedAt!.length).toBeGreaterThan(0);
+
+    // Readers report the key as absent despite the marker row existing.
+    expect(await store.get("k")).toBeUndefined();
+    expect(await store.has("k")).toBe(false);
+    expect(await store.keys()).toEqual([]);
+    expect(await store.listMetadata()).toEqual([]);
+  });
+
+  it("delete(): metadata delete fails — row remains readable, vault untouched, error propagates", async () => {
+    const vault = makeVault();
+    const vaultDeleteSpy = vi.spyOn(vault, "deleteSecret");
+
+    const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
+    const meta: IKvStorage<string, CredentialMetadataRow> = Object.create(inner);
+    // Seed via the inner first by routing put/get/getAll/delete through. We
+    // need delete to fail ONLY after the seed put has committed.
+    let deleteShouldFail = false;
+    meta.put = (key, value) => inner.put(key, value);
+    meta.get = (key) => inner.get(key);
+    meta.getAll = () => inner.getAll();
+    meta.delete = vi.fn(async (key: string) => {
+      if (deleteShouldFail) throw new Error("metadata delete boom");
+      return inner.delete(key);
+    }) as typeof inner.delete;
+
+    const store = new ServerCredentialStore({
+      vault,
+      metadata: meta,
+      userId: "u1",
+      projectId: "p1",
+    });
+
+    await store.put("k", "v");
+    // Now arm the failure for the upcoming delete.
+    deleteShouldFail = true;
+    vaultDeleteSpy.mockClear();
+
+    await expect(store.delete("k")).rejects.toThrow("metadata delete boom");
+
+    // Vault must not have been touched — metadata-first ordering means a
+    // metadata.delete failure aborts before vault.deleteSecret runs.
+    expect(vaultDeleteSpy).not.toHaveBeenCalled();
+
+    // The row is still readable: the seeded value is intact.
+    deleteShouldFail = false; // allow subsequent reads via underlying delete if needed
+    expect(await store.get("k")).toBe("v");
+    expect(await store.has("k")).toBe(true);
+    expect(await vault.getSecret("u1/p1/k")).toBe("v");
+  });
+
+  it("deleteAll(): one id's vault delete fails — other ids complete, failing id has orphan marker, AggregateError thrown with that cause", async () => {
+    const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
+    const map = new Map<string, string>();
+    const vault: SecretVault = {
+      async setSecret(id, v) {
+        map.set(id, v);
+      },
+      async getSecret(id) {
+        return map.get(id);
+      },
+      async deleteSecret(id) {
+        map.delete(id);
+      },
+    };
+    const store = new ServerCredentialStore({
+      vault,
+      metadata: inner,
+      userId: "u1",
+      projectId: "p1",
+    });
+
+    await store.put("a", "1");
+    await store.put("bad", "2");
+    await store.put("c", "3");
+
+    // Make vault.deleteSecret fail for "bad" only.
+    vault.deleteSecret = vi.fn(async (id: string) => {
+      if (id === "u1/p1/bad") throw new Error("vault delete boom for bad");
+      map.delete(id);
+    });
+
+    let caught: unknown;
+    try {
+      await store.deleteAll();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(AggregateError);
+    const agg = caught as AggregateError;
+    expect(agg.message).toContain("orphan markers persisted");
+    expect(agg.errors).toHaveLength(1);
+    const inner0 = agg.errors[0] as Error;
+    expect(inner0).toBeInstanceOf(Error);
+    expect(inner0.message).toContain("metadata removed but vault delete failed");
+    expect((inner0 as Error & { cause?: Error }).cause?.message).toBe(
+      "vault delete boom for bad"
+    );
+
+    // The "good" ids are fully gone (metadata + vault).
+    expect(await inner.get("u1/p1/a")).toBeUndefined();
+    expect(await inner.get("u1/p1/c")).toBeUndefined();
+    expect(map.has("u1/p1/a")).toBe(false);
+    expect(map.has("u1/p1/c")).toBe(false);
+
+    // The "bad" id has a sticky orphan marker.
+    const badRow = await inner.get("u1/p1/bad");
+    expect(badRow).toBeDefined();
+    expect(badRow!.pending).toBe(true);
+    expect(badRow!.orphanReason).toBe("vault-delete-failed");
+
+    // Readers report no surviving keys (orphan marker is invisible).
+    expect(await store.keys()).toEqual([]);
+  });
+
+  it("legacy orphan row without orphanReason is still invisible to readers", async () => {
+    // Simulate persisted state from before the orphanReason discriminator
+    // shipped: an orphan marker with orphanedAt but no orphanReason.
+    const { store, meta } = makeStore();
+    await meta.put("u1/p1/legacy", {
+      userId: "u1",
+      projectId: "p1",
+      key: "legacy",
+      label: undefined,
+      provider: undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      expiresAt: undefined,
+      pending: true,
+      orphanedAt: new Date().toISOString(),
+      // orphanReason intentionally omitted (legacy row).
+    });
+
+    expect(await store.get("legacy")).toBeUndefined();
+    expect(await store.has("legacy")).toBe(false);
+    expect(await store.listMetadata()).toEqual([]);
+    expect(await store.keys()).toEqual([]);
   });
 
   it("pending row is invisible to get/has/listMetadata/keys", async () => {
