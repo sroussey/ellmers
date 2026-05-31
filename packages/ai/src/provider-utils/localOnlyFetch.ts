@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isLoopbackHostname } from "./localUrl";
+import { extractRawHost, isLoopbackHostname } from "./localUrl";
 
 const MAX_REDIRECTS = 5;
 
@@ -37,16 +37,34 @@ function isRedirectResponse(res: Response): boolean {
  * host (`localhost`, `127.0.0.0/8`, `::1`, or IPv4-mapped loopback). Throws a
  * generic, label-prefixed Error otherwise. `context` distinguishes the
  * initial URL from a redirect in the message.
+ *
+ * `rawHost`, when supplied, is the host substring extracted from the raw URL
+ * source BEFORE WHATWG canonicalisation (see `extractRawHost`). It is used
+ * for the loopback-literal check instead of `url.hostname` so non-standard
+ * IPv4 spellings — `0x7f.0.0.1` (hex), `2130706433` (uint32), `010.0.0.1`
+ * (lenient octal) — that the URL parser silently rewrites to `127.0.0.1`
+ * cannot bypass the gate. Callers pass `rawHost` for the initial URL (where
+ * the raw form is available) and omit it for redirect targets (where only
+ * the canonicalised URL exists; the canonical-hostname check there is still
+ * a tightening over no check at all).
  */
-function assertLoopbackTarget(url: URL, label: string, context: "initial URL" | "redirect"): void {
+function assertLoopbackTarget(
+  url: URL,
+  label: string,
+  context: "initial URL" | "redirect",
+  rawHost?: string | null | undefined
+): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`${label}: refusing ${context} to non-HTTP(S) URL.`);
   }
   if (url.username || url.password) {
     throw new Error(`${label}: refusing ${context} with credentials.`);
   }
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (!isLoopbackHostname(host)) {
+  const hostForCheck =
+    rawHost !== undefined && rawHost !== null
+      ? rawHost.replace(/^\[|\]$/g, "")
+      : url.hostname.replace(/^\[|\]$/g, "");
+  if (!isLoopbackHostname(hostForCheck)) {
     throw new Error(`${label}: refusing ${context} to non-loopback host (${url.href}).`);
   }
 }
@@ -80,7 +98,16 @@ export async function localOnlyFetch(
   } catch {
     throw new Error(`${label}: invalid initial URL.`);
   }
-  assertLoopbackTarget(initialUrl, label, "initial URL");
+  // Use the RAW host from the source string (not `initialUrl.hostname`) so
+  // WHATWG canonicalisation of non-standard IPv4 spellings — `0x7f.0.0.1`,
+  // `2130706433`, lenient `010.0.0.1` — cannot silently bypass the loopback
+  // gate by being rewritten to `127.0.0.1`. Sibling `normalizeLocalHttpUrl`
+  // closed the same bypass class; this mirrors it for `localOnlyFetch`.
+  const rawHost = extractRawHost(input);
+  if (rawHost === null) {
+    throw new Error(`${label}: invalid initial URL.`);
+  }
+  assertLoopbackTarget(initialUrl, label, "initial URL", rawHost);
 
   let current = initialUrl.href;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
