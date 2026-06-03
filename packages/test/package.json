@@ -23,8 +23,8 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1055.0",
-    "@cloudflare/workers-types": "^4.20260528.1",
+    "@aws-sdk/client-sqs": "^3.1060.0",
+    "@cloudflare/workers-types": "^4.20260603.1",
     "@electric-sql/pglite": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
@@ -65,10 +65,10 @@
     "@workglow/util": "workspace:*",
     "aws-sdk-client-mock": "^4.0.0",
     "fake-indexeddb": "^6.2.4",
-    "miniflare": "^4.20260526.0",
+    "miniflare": "^4.20260601.0",
     "node-llama-cpp": "catalog:",
     "pg": "catalog:",
     "playwright": "catalog:",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.8"
   }
 }
