@@ -47,16 +47,16 @@ function isRedirectResponse(res: Response): boolean {
  * `rawHost` for the initial URL (where the raw form is available) and omit
  * it for redirect targets (where only the canonicalised URL exists; the
  * canonical-hostname check there is still a tightening over no check at
- * all). When `rawHost` is `null` (extractRawHost failed) or `undefined`,
- * we fall back to `url.hostname` — the protocol/credential checks that
- * fire earlier in this function will catch genuinely malformed URLs
+ * all). When `rawHost` is `null` (extractRawHost failed) or omitted, we
+ * fall back to `url.hostname` — the protocol/credential checks that fire
+ * earlier in this function will catch genuinely malformed URLs
  * (e.g. `file:///...`) with the correct error message first.
  */
 function assertLoopbackTarget(
   url: URL,
   label: string,
   context: "initial URL" | "redirect",
-  rawHost?: string | null | undefined
+  rawHost?: string | null
 ): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(`${label}: refusing ${context} to non-HTTP(S) URL.`);
@@ -68,7 +68,14 @@ function assertLoopbackTarget(
     ? rawHost.replace(/^\[|\]$/g, "")
     : url.hostname.replace(/^\[|\]$/g, "");
   if (!isLoopbackHostname(hostForCheck)) {
-    throw new Error(`${label}: refusing ${context} to non-loopback host (${url.href}).`);
+    // Surface the host we actually rejected so logs match the rejection
+    // reason. For non-standard IPv4 spellings like `0x7f.0.0.1`, `url.href`
+    // has already been canonicalised to `http://127.0.0.1/` which would
+    // make the message read as if loopback were rejected; include the raw
+    // host in quotes too so the literal that failed the gate is visible.
+    throw new Error(
+      `${label}: refusing ${context} to non-loopback host "${hostForCheck}" (${url.href}).`
+    );
   }
 }
 
