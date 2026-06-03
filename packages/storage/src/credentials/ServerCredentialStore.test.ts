@@ -391,14 +391,19 @@ describe("ServerCredentialStore", () => {
   // API surface (put/get/delete/has) and the constructor.
   // ---------------------------------------------------------------------------
 
-  it("rejects a key containing a slash with TypeError (closes scope-escape via vault id)", async () => {
+  it("invalid key: put throws TypeError; get/has/delete report absence", async () => {
+    // `put` is the only path that can persist a colliding vault id, so it
+    // throws to surface the programmer error loudly. `get`/`has`/`delete` are
+    // ICredentialStore contract methods that MUST return undefined/false on
+    // missing keys — throwing on every invalid lookup breaks substitutability
+    // with the other credential stores (`InMemoryCredentialStore`,
+    // `EncryptedKvCredentialStore`).
     const { store } = makeStore();
-    // A slash would synthesise `u1/p1/../../other-user/other-project/leaked`
-    // and collide with a vault id outside this scope.
-    await expect(store.put("../../u2/p1/leak", "v")).rejects.toBeInstanceOf(TypeError);
-    await expect(store.get("../../u2/p1/leak")).rejects.toBeInstanceOf(TypeError);
-    await expect(store.delete("../../u2/p1/leak")).rejects.toBeInstanceOf(TypeError);
-    await expect(store.has("../../u2/p1/leak")).rejects.toBeInstanceOf(TypeError);
+    const bad = "../../u2/p1/leak";
+    await expect(store.put(bad, "v")).rejects.toBeInstanceOf(TypeError);
+    expect(await store.get(bad)).toBeUndefined();
+    expect(await store.has(bad)).toBe(false);
+    expect(await store.delete(bad)).toBe(false);
   });
 
   it("rejects an empty key with TypeError", async () => {
@@ -742,5 +747,146 @@ describe("ServerCredentialStore", () => {
     expect(await store.has("legacy")).toBe(false);
     expect(await store.listMetadata()).toEqual([]);
     expect(await store.keys()).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // deleteAll must actually clear pending/orphan rows
+  //
+  // Regression: the original PR #543 routed deleteAll through deleteById, which
+  // short-circuits on pending rows. That meant orphan markers (the very rows
+  // operators need to clean up) and in-flight new-entry pending rows were
+  // silently skipped — no public API could ever clear them. deleteAll now
+  // routes through forceDeleteById, which bypasses the pending-skip.
+  // ---------------------------------------------------------------------------
+
+  it("deleteAll clears sticky orphan markers", async () => {
+    const { store, meta } = makeStore();
+    // Seed a sticky orphan marker directly.
+    await meta.put("u1/p1/orphan", {
+      userId: "u1",
+      projectId: "p1",
+      key: "orphan",
+      label: undefined,
+      provider: undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      expiresAt: undefined,
+      pending: true,
+      orphanedAt: new Date().toISOString(),
+      orphanReason: "vault-delete-failed",
+    });
+    // Also seed a normal committed row alongside.
+    await store.put("normal", "v");
+
+    await store.deleteAll();
+
+    const remaining = (await meta.getAll()) ?? [];
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("deleteAll drops pending in-flight new-entry rows", async () => {
+    const { store, meta } = makeStore();
+    // Seed a row that looks like an in-flight new-entry put() (pending: true
+    // but no orphan markers).
+    await meta.put("u1/p1/inflight", {
+      userId: "u1",
+      projectId: "p1",
+      key: "inflight",
+      label: undefined,
+      provider: undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      expiresAt: undefined,
+      pending: true,
+    });
+
+    await store.deleteAll();
+
+    const remaining = (await meta.getAll()) ?? [];
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("deleteAll surfaces vault delete failures as AggregateError", async () => {
+    // Mock vault.deleteSecret to reject once; assert the AggregateError carries
+    // the wrapped error with the original vault error in its cause chain.
+    const inner: IKvStorage<string, CredentialMetadataRow> = new InMemoryKvStorage();
+    const seedMap = new Map<string, string>();
+    const vaultError = new Error("vault delete boom");
+    let failOnce = true;
+    const vault: SecretVault = {
+      async setSecret(id, v) {
+        seedMap.set(id, v);
+      },
+      async getSecret(id) {
+        return seedMap.get(id);
+      },
+      async deleteSecret(id) {
+        if (failOnce) {
+          failOnce = false;
+          throw vaultError;
+        }
+        seedMap.delete(id);
+      },
+    };
+
+    const store = new ServerCredentialStore({
+      vault,
+      metadata: inner,
+      userId: "u1",
+      projectId: "p1",
+    });
+    await store.put("k", "v");
+
+    let caught: unknown;
+    try {
+      await store.deleteAll();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(AggregateError);
+    const errors = (caught as AggregateError).errors;
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error & { cause?: unknown }).cause).toBe(vaultError);
+  });
+
+  // ---------------------------------------------------------------------------
+  // SAFE_SEGMENT widening: keys with `.` and `:` round-trip
+  //
+  // Natural credential names like "openai.prod" (provider.environment) and
+  // "scope:billing" (oauth-style colon-namespaced) used to be rejected by the
+  // original `^[A-Za-z0-9_-]{1,128}$` grammar. The wider grammar still rejects
+  // path separators and whitespace, so the key-injection class stays closed.
+  // ---------------------------------------------------------------------------
+
+  it("M1: keys with dots and colons round-trip", async () => {
+    const { store } = makeStore();
+    await store.put("openai.prod", "sk");
+    await store.put("scope:billing", "x");
+    expect(await store.get("openai.prod")).toBe("sk");
+    expect(await store.get("scope:billing")).toBe("x");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Invalid-key short-circuit must not touch metadata or vault
+  //
+  // The ICredentialStore contract returns undefined/false for missing/invalid
+  // keys. The implementation must short-circuit BEFORE any KV or vault hop so
+  // a malicious key cannot trigger spurious storage reads.
+  // ---------------------------------------------------------------------------
+
+  it("invalid key short-circuits do not touch metadata or vault", async () => {
+    const { store, meta, vault } = makeStore();
+    const metaGetSpy = vi.spyOn(meta, "get");
+    const vaultGetSpy = vi.spyOn(vault, "getSecret");
+    const vaultDeleteSpy = vi.spyOn(vault, "deleteSecret");
+
+    const bad = "a/b";
+    expect(await store.get(bad)).toBeUndefined();
+    expect(await store.has(bad)).toBe(false);
+    expect(await store.delete(bad)).toBe(false);
+
+    expect(metaGetSpy).not.toHaveBeenCalled();
+    expect(vaultGetSpy).not.toHaveBeenCalled();
+    expect(vaultDeleteSpy).not.toHaveBeenCalled();
   });
 });
