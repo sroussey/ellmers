@@ -13,6 +13,7 @@ import type { JobStorageFormat, QueueChangePayload } from "../queue-storage/IQue
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import type { DeadLetter } from "./DeadLetter";
 import { Job, JobClass } from "./Job";
+import type { StreamEventLike } from "./JobQueueEventListeners";
 import { JobQueueClient } from "./JobQueueClient";
 import { JobQueueWorker } from "./JobQueueWorker";
 import { storageToClass } from "./JobStorageConverters";
@@ -49,6 +50,7 @@ export type JobQueueServerEventListeners<Input, Output> = {
     message: string,
     details: Record<string, unknown> | null
   ) => void;
+  job_stream: (queueName: string, jobId: unknown, event: StreamEventLike) => void;
 };
 
 export type JobQueueServerEvents = keyof JobQueueServerEventListeners<unknown, unknown>;
@@ -479,6 +481,11 @@ export class JobQueueServer<
       this.forwardToClients("handleJobProgress", jobId, progress, message, details);
     });
 
+    worker.on("job_stream", (jobId, event) => {
+      this.events.emit("job_stream", this.queueName, jobId, event);
+      this.forwardToClients("handleJobStream", jobId, event);
+    });
+
     return worker;
   }
 
@@ -501,6 +508,11 @@ export class JobQueueServer<
     progress: number,
     message: string,
     details: Record<string, unknown> | null
+  ): void;
+  protected forwardToClients(
+    method: "handleJobStream",
+    jobId: unknown,
+    event: StreamEventLike
   ): void;
   protected forwardToClients(method: string, ...args: unknown[]): void {
     for (const client of this.clients) {

@@ -6,7 +6,7 @@
 
 import { JobStatus } from "../queue-storage/IQueueStorage";
 import { JobError } from "./JobError";
-import type { JobProgressListener } from "./JobQueueEventListeners";
+import type { JobProgressListener, StreamEventLike } from "./JobQueueEventListeners";
 
 export { JobStatus };
 
@@ -20,6 +20,12 @@ export interface IJobExecuteContext {
     message?: string,
     details?: Record<string, any> | null
   ) => Promise<void>;
+  /**
+   * OPTIONAL. Present only when the worker's transport can deliver stream
+   * events. Jobs MUST NOT retain references to chunk buffers after calling
+   * this (buffers may be transferred across a worker boundary and detached).
+   */
+  emitStreamEvent?: (event: StreamEventLike) => void;
 }
 
 /**

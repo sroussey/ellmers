@@ -25,6 +25,7 @@ export type JobQueueEventListeners<Input, Output> = {
     message: string,
     details: Record<string, any> | null
   ) => void;
+  job_stream: (queueName: string, jobId: unknown, event: StreamEventLike) => void;
 };
 
 export type JobQueueEvents = keyof JobQueueEventListeners<any, any>;
@@ -46,3 +47,16 @@ export type JobProgressListener = (
   message: string,
   details: Record<string, any> | null
 ) => void;
+
+/**
+ * Minimal structural shape of a stream event crossing the job-queue boundary.
+ *
+ * `@workglow/job-queue` sits below `@workglow/task-graph` in the dependency
+ * graph, so it cannot import task-graph's `StreamEvent`. This structural type
+ * captures just what the queue plumbing needs; task-graph's `StreamEvent` is
+ * assignable to it, so real stream producers interoperate transparently.
+ */
+export type StreamEventLike = { type: string; port?: string; [k: string]: unknown };
+
+/** Listener for cross-process stream events emitted by an executing job. */
+export type JobStreamListener = (event: StreamEventLike) => void;
