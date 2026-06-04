@@ -26,3 +26,4 @@ export * from "./document/DocumentSchema";
 export * from "./document/DocumentStorageSchema";
 export * from "./document/slugify";
 export * from "./document/StructuralParser";
+export * from "./document/renderMarkdown";
