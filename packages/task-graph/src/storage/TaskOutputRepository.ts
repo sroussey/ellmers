@@ -5,6 +5,7 @@
  */
 
 import { createServiceToken, EventEmitter, EventParameters } from "@workglow/util";
+import type { CacheRef } from "../cache/CacheRef";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 
 export const TASK_OUTPUT_REPOSITORY = createServiceToken<TaskOutputRepository>(
@@ -78,6 +79,51 @@ export abstract class TaskOutputRepository {
     output: TaskOutput,
     createdAt?: Date // for testing purposes
   ): Promise<void>;
+
+  /**
+   * OPTIONAL streaming sink. Implementations that can ingest a byte stream
+   * without materializing the full payload (e.g. a file-backed cache) declare
+   * this method; the runner pipes `binary-delta` chunks straight to it. The
+   * default base class does NOT implement it — call `supportsStreaming()` to
+   * branch. `metadata` carries side-band data (e.g. HTTP response headers).
+   *
+   * Returns a {@link CacheRef} that the runner places into `Output` at the
+   * binary port slot when the reference threshold is met. The `$ref` string is
+   * opaque; only this repository (and any wrapping namespacer like
+   * {@link RunPrivateCacheRepo}) needs to know how to decode it via
+   * {@link getOutputByRef} / {@link getOutputStreamByRef}.
+   *
+   * Implementations that provide `saveOutputStream` MUST also provide
+   * `getOutputByRef` (and ideally `getOutputStreamByRef`); a ref written by
+   * one without a paired reader is unresolvable.
+   */
+  saveOutputStream?(
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef>;
+
+  /**
+   * OPTIONAL reader counterpart of {@link saveOutputStream}. Resolves a
+   * {@link CacheRef} previously produced by `saveOutputStream` to a `Blob`.
+   * Returns `undefined` on cache miss (TTL expiry, manual clear). The runner
+   * never calls this directly; consumers calling `JobHandle.result()` or
+   * `resolveOutput` reach it through the resolver layer.
+   */
+  getOutputByRef?(ref: CacheRef): Promise<Blob | undefined>;
+
+  /**
+   * OPTIONAL streaming reader counterpart of {@link saveOutputStream}. Returns
+   * an async iterable of bytes for the referenced entry, or `undefined` when
+   * the entry is absent or this backing does not support streaming retrieval.
+   */
+  getOutputStreamByRef?(ref: CacheRef): AsyncIterable<Uint8Array> | undefined;
+
+  /** True when this repository implements `saveOutputStream`. */
+  supportsStreaming(): boolean {
+    return typeof this.saveOutputStream === "function";
+  }
 
   abstract getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
 

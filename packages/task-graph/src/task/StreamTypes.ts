@@ -12,12 +12,13 @@ import type { DataPortSchema, JsonSchema } from "@workglow/util/schema";
  * - `append`: Each chunk is a delta (e.g., a new token).
  * - `replace`: Each chunk is a corrected/revised snapshot of the complete output so far.
  * - `object`: Each chunk is a progressively more complete partial object snapshot.
+ * - `binary`: Each chunk is an ordered byte slice; consumer concatenates into a Blob/ArrayBuffer.
  * - `mixed`: Multiple ports use different stream modes (e.g., append + object).
  *
  * Declared per-port via the `x-stream` schema extension property.
  * Absent `x-stream` = `"none"`.
  */
-export type StreamMode = "none" | "append" | "replace" | "object" | "mixed";
+export type StreamMode = "none" | "append" | "replace" | "object" | "binary" | "mixed";
 
 /**
  * Append mode: delta chunk (consumer accumulates).
@@ -43,6 +44,18 @@ export type StreamObjectDelta = {
   type: "object-delta";
   port: string;
   objectDelta: Record<string, unknown> | unknown[];
+};
+
+/**
+ * Binary mode: an ordered, append-only chunk of bytes (consumer concatenates).
+ * `port` identifies which output port this delta belongs to. Chunks are
+ * materialized on `finish` into a `Blob` or `ArrayBuffer` per the port's
+ * schema `format` (see `materializeBinary`).
+ */
+export type StreamBinaryDelta = {
+  type: "binary-delta";
+  port: string;
+  binaryDelta: Uint8Array;
 };
 
 /**
@@ -210,6 +223,7 @@ export type StreamPhase = {
 export type StreamEvent<Output = Record<string, any>> =
   | StreamTextDelta
   | StreamObjectDelta
+  | StreamBinaryDelta
   | StreamSnapshot<Output>
   | StreamFinish<Output>
   | StreamError
@@ -233,7 +247,8 @@ export function getPortStreamMode(schema: DataPortSchema | JsonSchema, portId: s
   const prop = (schema.properties as Record<string, any>)?.[portId];
   if (!prop || typeof prop === "boolean") return "none";
   const xStream = prop["x-stream"];
-  if (xStream === "append" || xStream === "replace" || xStream === "object") return xStream;
+  if (xStream === "append" || xStream === "replace" || xStream === "object" || xStream === "binary")
+    return xStream;
   return "none";
 }
 
@@ -254,7 +269,12 @@ export function getStreamingPorts(
   for (const [name, prop] of Object.entries(props)) {
     if (!prop || typeof prop === "boolean") continue;
     const xStream = (prop as any)["x-stream"];
-    if (xStream === "append" || xStream === "replace" || xStream === "object") {
+    if (
+      xStream === "append" ||
+      xStream === "replace" ||
+      xStream === "object" ||
+      xStream === "binary"
+    ) {
       result.push({ port: name, mode: xStream });
     }
   }
@@ -356,6 +376,69 @@ export function getObjectPortId(schema: DataPortSchema): string | undefined {
     if ((prop as any)["x-stream"] === "object") return name;
   }
   return undefined;
+}
+
+/**
+ * Returns the port ID (property name) of the first output port that declares
+ * `x-stream: "binary"`, or `undefined` if no such port exists.
+ *
+ * @param schema - The task's output DataPortSchema
+ * @returns The port name with binary streaming, or undefined
+ */
+export function getBinaryPortId(schema: DataPortSchema): string | undefined {
+  if (typeof schema === "boolean") return undefined;
+  const props = schema.properties;
+  if (!props) return undefined;
+
+  for (const [name, prop] of Object.entries(props)) {
+    if (!prop || typeof prop === "boolean") continue;
+    if ((prop as any)["x-stream"] === "binary") return name;
+  }
+  return undefined;
+}
+
+/**
+ * Reads the `format` annotation of a single output port from the task's output
+ * schema. Used to decide whether accumulated binary chunks materialize into a
+ * `Blob` (`format: "blob"` or absent) or an `ArrayBuffer` (`format: "binary"`).
+ */
+export function getBinaryPortFormat(schema: DataPortSchema, port: string): string | undefined {
+  if (typeof schema === "boolean") return undefined;
+  const prop = (schema.properties as Record<string, any>)?.[port];
+  if (!prop || typeof prop === "boolean") return undefined;
+  return prop.format as string | undefined;
+}
+
+/**
+ * Materializes ordered binary chunks into the value type declared by the
+ * output port's schema `format`:
+ *  - `"binary"`  → `ArrayBuffer`
+ *  - `"blob"` (or absent) → `Blob` (the default)
+ *
+ * Chunks are concatenated in arrival order. Callers MUST pass chunks in the
+ * order they were emitted.
+ *
+ * @param chunks - Ordered binary chunks to concatenate
+ * @param format - The output port's schema `format` (e.g. `"binary"` or `"blob"`)
+ * @returns The materialized `Blob` or `ArrayBuffer`
+ */
+export function materializeBinary(
+  chunks: readonly Uint8Array[],
+  format: string | undefined
+): Blob | ArrayBuffer {
+  if (format === "blob" || format === undefined) {
+    return new Blob(chunks as unknown as BlobPart[]);
+  }
+  // format === "binary" (and any other non-blob value) → ArrayBuffer
+  let total = 0;
+  for (const c of chunks) total += c.byteLength;
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return merged.buffer;
 }
 
 /**
