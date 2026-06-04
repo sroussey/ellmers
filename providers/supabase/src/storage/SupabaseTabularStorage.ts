@@ -36,6 +36,7 @@ import {
   JsonSchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 /**
  * Quotes a value for inclusion in a PostgREST filter expression.
@@ -107,45 +108,78 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Initializes the database table with the required schema.
-   * Creates the table if it doesn't exist with primary key and value columns.
-   * Must be called before using any other methods.
+   * Verifies the backing Supabase table exists. Production schema (tables,
+   * indexes) should be owned by Supabase migrations. When the table is
+   * missing we optionally bootstrap via an `exec_sql` RPC if the project
+   * exposes one (local dev / PGlite test mock) — ordinary anon/publishable
+   * clients must not rely on that path in production.
    */
   public override async setupDatabase(): Promise<void> {
+    const probeError = await this.probeTableExists();
+    if (!probeError) return;
+
+    if (isMissingRelationError(probeError)) {
+      const bootstrapped = await this.tryBootstrapTableViaExecSql();
+      if (bootstrapped) {
+        const afterBootstrap = await this.probeTableExists();
+        if (!afterBootstrap) return;
+        if (isMissingRelationError(afterBootstrap)) {
+          throw this.missingTableError(afterBootstrap);
+        }
+        throw afterBootstrap;
+      }
+      throw this.missingTableError(probeError);
+    }
+    throw probeError;
+  }
+
+  private missingTableError(error: { code?: string; message?: string }): Error {
+    return new Error(
+      `Supabase table "${this.table}" is missing. Schema is owned by Supabase migrations — run them against this project before initializing the storage. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeTableExists(): Promise<{ code?: string; message?: string } | null> {
+    const { error } = await this.client
+      .from(this.table)
+      .select("*", { head: true, count: "exact" })
+      .limit(0);
+    return error ?? null;
+  }
+
+  /**
+   * Creates the table and secondary indexes when `exec_sql` is available.
+   * Returns true if bootstrap was attempted (even when DDL was already applied).
+   */
+  private async tryBootstrapTableViaExecSql(): Promise<boolean> {
     const sql = `
       CREATE TABLE IF NOT EXISTS "${this.table}" (
         ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
-        PRIMARY KEY (${this.primaryKeyColumnList()}) 
+        PRIMARY KEY (${this.primaryKeyColumnList()})
       )
     `;
     const { error } = await this.client.rpc("exec_sql", { query: sql });
-    if (error && !error.message.includes("already exists")) {
-      throw error;
+    if (error) {
+      if (isExecSqlUnavailable(error)) return false;
+      if (error.code !== "42P07" && !error.message?.includes("already exists")) {
+        throw error;
+      }
     }
 
-    // Get primary key columns to avoid creating redundant indexes
-    const pkColumns = this.primaryKeyColumns();
-
-    // Track created indexes to avoid duplicates and redundant indexes
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
     const createdIndexes = new Set<string>();
 
     for (const columns of this.indexes) {
-      // Skip if this is just the primary key or a prefix of it
       if (columns.length <= pkColumns.length) {
-        // @ts-ignore
         const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
         if (isPkPrefix) continue;
       }
 
-      // Create index name and column list
       const indexName = `${this.table}_${columns.join("_")}`;
       const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
-
-      // Skip if we've already created this index or if it's redundant
       const columnKey = columns.join(",");
       if (createdIndexes.has(columnKey)) continue;
 
-      // Check if this index would be redundant with an existing one
       const isRedundant = Array.from(createdIndexes).some((existing) => {
         const existingCols = existing.split(",");
         return (
@@ -157,13 +191,14 @@ export class SupabaseTabularStorage<
       if (!isRedundant) {
         const indexSql = `CREATE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`;
         const { error: indexError } = await this.client.rpc("exec_sql", { query: indexSql });
-        if (indexError && !indexError.message.includes("already exists")) {
-          // Index creation errors are not critical, log and continue
+        if (indexError && !indexError.message?.includes("already exists")) {
           console.warn(`Failed to create index ${indexName}:`, indexError);
         }
         createdIndexes.add(columnKey);
       }
     }
+
+    return true;
   }
 
   /**

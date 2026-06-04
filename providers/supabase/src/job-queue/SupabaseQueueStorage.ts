@@ -15,8 +15,15 @@ import type {
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
 import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
-import { PollingSubscriptionManager } from "@workglow/storage";
+import {
+  buildPrefixColumnsSql,
+  getPrefixIndexPrefix,
+  getPrefixIndexSuffix,
+  PollingSubscriptionManager,
+  PostgresDialect,
+} from "@workglow/storage";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 export const SUPABASE_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.supabase"
@@ -54,32 +61,6 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     } else {
       this.tableName = "job_queue";
     }
-  }
-
-  /**
-   * Gets the SQL column type for a prefix column (Supabase supports UUID natively)
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "UUID" : "INTEGER";
-  }
-
-  /**
-   * Builds the prefix columns SQL for CREATE TABLE
-   */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
-      this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n      ") + ",\n      "
-    );
-  }
-
-  /**
-   * Builds prefix column names for use in queries
-   */
-  private getPrefixColumnNames(): string[] {
-    return this.prefixes.map((p) => p.name);
   }
 
   /**
@@ -157,20 +138,44 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Schema setup for Supabase queues.
-   *
-   * Supabase exposes the SQL surface via a side-installed `exec_sql` RPC
-   * rather than the `pg.Pool` shape the {@link PostgresMigrationRunner} is
-   * built against, so this storage doesn't share the runner's bookkeeping
-   * table — it runs idempotent CREATE-IF-NOT-EXISTS statements directly via
-   * the RPC. {@link getMigrations} returns an empty array for the same
-   * reason.
+   * Verifies the Supabase queue table exists. Production schema should come
+   * from Supabase migrations; when the table is missing we optionally bootstrap
+   * via `exec_sql` if the project exposes that RPC (PGlite test mock / local dev).
    */
   public async migrate(): Promise<void> {
-    // Note: For Supabase, table creation should typically be done through migrations
-    // This setup assumes the table already exists or uses exec_sql RPC function.
-    // ABORTING is included in the enum for backward compatibility with existing data,
-    // but the application no longer writes that value.
+    const probeError = await this.probeQueueTable();
+    if (!probeError) return;
+
+    if (isMissingRelationError(probeError)) {
+      const bootstrapped = await this.tryBootstrapQueueViaExecSql();
+      if (bootstrapped) {
+        const after = await this.probeQueueTable();
+        if (!after) return;
+        if (isMissingRelationError(after)) {
+          throw this.missingQueueTableError(after);
+        }
+        throw after;
+      }
+      throw this.missingQueueTableError(probeError);
+    }
+    throw probeError;
+  }
+
+  private missingQueueTableError(error: { code?: string; message?: string }): Error {
+    return new Error(
+      `Supabase queue table "${this.tableName}" is missing. Run Supabase migrations to create the queue schema (table + job_status enum + indexes) before initializing the queue. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeQueueTable(): Promise<{ code?: string; message?: string } | null> {
+    const { error } = await this.client
+      .from(this.tableName)
+      .select("*", { head: true, count: "exact" })
+      .limit(0);
+    return error ?? null;
+  }
+
+  private async tryBootstrapQueueViaExecSql(): Promise<boolean> {
     const enumValues = [...Object.values(JobStatus), "ABORTING"]
       .filter((v, i, a) => a.indexOf(v) === i)
       .map((v) => `'${v}'`)
@@ -178,16 +183,19 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
     const createTypeSql = `CREATE TYPE job_status AS ENUM (${enumValues})`;
 
     const { error: typeError } = await this.client.rpc("exec_sql", { query: createTypeSql });
-    // Ignore error if type already exists (code 42710)
-    if (typeError && typeError.code !== "42710") {
-      throw typeError;
+    if (typeError) {
+      if (typeError.code === "42710") {
+        // type already exists
+      } else if (isExecSqlUnavailable(typeError)) {
+        return false;
+      } else {
+        throw typeError;
+      }
     }
 
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
+    const prefixColumnsSql = buildPrefixColumnsSql(PostgresDialect, this.prefixes);
+    const prefixIndexPrefix = getPrefixIndexPrefix(this.prefixes);
+    const indexSuffix = getPrefixIndexSuffix(this.prefixes);
 
     const createTableSql = `
     CREATE TABLE IF NOT EXISTS ${this.tableName} (
@@ -217,27 +225,28 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
 
     const { error: tableError } = await this.client.rpc("exec_sql", { query: createTableSql });
     if (tableError) {
-      // Ignore error if table already exists (code 42P07)
-      if (tableError.code !== "42P07") {
+      if (isExecSqlUnavailable(tableError)) return false;
+      if (tableError.code !== "42P07" && !tableError.message?.includes("already exists")) {
         throw tableError;
       }
     }
 
-    // Create indexes with prefix columns prepended
     const indexes = [
       `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
       `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
-      // H2: UNIQUE so concurrent inserts for the same active (queue,
-      // fingerprint) race to the DB and resolve via 23505 unique_violation.
-      // Supabase shares this DDL pattern with the Postgres provider.
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
     ];
 
     for (const indexSql of indexes) {
-      await this.client.rpc("exec_sql", { query: indexSql });
-      // Ignore index creation errors
+      const { error: idxError } = await this.client.rpc("exec_sql", { query: indexSql });
+      if (!idxError) continue;
+      if (isExecSqlUnavailable(idxError)) return false;
+      if (idxError.code === "42P07" || idxError.message?.includes("already exists")) continue;
+      throw idxError;
     }
+
+    return true;
   }
 
   /** Supabase queue runs DDL via `exec_sql`, not via the migration runner. */

@@ -1,5 +1,32 @@
 # @workglow/test
 
+## 0.3.11
+
+### Bug Fixes
+
+#### storage,ai
+
+- SQL operator allow-list + baseURL validation + credential-store passphrase sentinel (#546)
+
+## 0.3.10
+
+### Bug Fixes
+
+#### ai
+
+- close WHATWG canonicalisation bypass in localOnlyFetch (sec) (#542)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1060.0
+- `@cloudflare/workers-types`: ^4.20260603.1
+- `miniflare`: ^4.20260601.0
+- `vitest`: ^4.1.8
+
 ## 0.3.9
 
 ### Chores

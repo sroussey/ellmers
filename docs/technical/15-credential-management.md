@@ -202,7 +202,7 @@ import { LazyEncryptedCredentialStore } from "@workglow/storage";
 const lazy = new LazyEncryptedCredentialStore(kvStorage);
 await lazy.get("key"); // undefined (locked)
 
-lazy.unlock("user-passphrase");
+await lazy.unlock("user-passphrase");
 await lazy.get("key"); // decrypted value
 
 lazy.lock(); // discards inner store and derived key cache

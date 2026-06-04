@@ -1,5 +1,21 @@
 # @workglow/web
 
+## 0.3.11
+
+## 0.3.10
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@xyflow/react`: ^12.11.0
+- `react`: ^19.2.7
+- `react-dom`: ^19.2.7
+- `@types/react`: ^19.2.16
+- `vite`: ^8.0.16
+
 ## 0.3.9
 
 ## 0.3.8

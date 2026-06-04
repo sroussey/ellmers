@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.11
+
+### Bug Fixes
+
+#### storage,ai
+
+- SQL operator allow-list + baseURL validation + credential-store passphrase sentinel (#546)
+
+## 0.3.10
+
 ## 0.3.9
 
 ## 0.3.8

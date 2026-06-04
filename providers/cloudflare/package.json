@@ -1,7 +1,7 @@
 {
   "name": "@workglow/cloudflare",
   "type": "module",
-  "version": "0.3.9",
+  "version": "0.3.11",
   "private": true,
   "repository": {
     "type": "git",
@@ -30,7 +30,7 @@
     }
   },
   "peerDependencies": {
-    "@cloudflare/workers-types": "^4.20260528.1",
+    "@cloudflare/workers-types": "^4.20260603.1",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },
@@ -43,7 +43,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260528.1",
+    "@cloudflare/workers-types": "^4.20260603.1",
     "@workglow/job-queue": "workspace:*",
     "@workglow/util": "workspace:*"
   },

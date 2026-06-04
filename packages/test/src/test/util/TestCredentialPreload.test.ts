@@ -17,7 +17,7 @@ interface TestCredentialsModule {
   buildCredentialStore: (
     passphrase: string | undefined,
     secretsDir?: string
-  ) => { readonly encrypted: { put(k: string, v: string): Promise<void> } };
+  ) => Promise<{ readonly encrypted: { put(k: string, v: string): Promise<void> } }>;
   CREDENTIAL_TO_ENV: Readonly<Record<string, string>>;
   installAndHydrate: (
     passphrase: string | undefined,
@@ -65,7 +65,7 @@ describe("installAndHydrate", () => {
 
   it("decrypts and hydrates env vars under the correct passphrase", async () => {
     const passphrase = "correct-horse-battery-staple";
-    const { encrypted } = buildCredentialStore(passphrase, secretsDir);
+    const { encrypted } = await buildCredentialStore(passphrase, secretsDir);
     await encrypted.put("anthropic-api-key", "sk-ant-test");
     await encrypted.put("openai-api-key", "sk-oai-test");
 
@@ -78,7 +78,7 @@ describe("installAndHydrate", () => {
 
   it("does not overwrite env vars already set in the shell", async () => {
     const passphrase = "p";
-    const { encrypted } = buildCredentialStore(passphrase, secretsDir);
+    const { encrypted } = await buildCredentialStore(passphrase, secretsDir);
     await encrypted.put("anthropic-api-key", "sk-ant-from-store");
     process.env.ANTHROPIC_API_KEY = "sk-ant-from-shell";
 
@@ -89,7 +89,7 @@ describe("installAndHydrate", () => {
   });
 
   it("leaves env untouched when the passphrase is wrong", async () => {
-    const { encrypted } = buildCredentialStore("real-passphrase", secretsDir);
+    const { encrypted } = await buildCredentialStore("real-passphrase", secretsDir);
     await encrypted.put("anthropic-api-key", "sk-ant-test");
 
     const result = await installAndHydrate("wrong-passphrase", secretsDir);

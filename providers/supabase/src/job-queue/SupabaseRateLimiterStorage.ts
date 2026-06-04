@@ -11,7 +11,16 @@ import type {
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import {
+  buildPrefixColumnsSql,
+  getPrefixColumnNames,
+  getPrefixIndexPrefix,
+  getPrefixIndexSuffix,
+  PostgresDialect,
+  prefixColumnType,
+} from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 export const SUPABASE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.supabase"
@@ -46,25 +55,6 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
   }
 
   /**
-   * Gets the SQL column type for a prefix column (Supabase supports UUID natively).
-   */
-  private getPrefixColumnType(type: PrefixColumn["type"]): string {
-    return type === "uuid" ? "UUID" : "INTEGER";
-  }
-
-  /**
-   * Builds the prefix columns SQL for CREATE TABLE.
-   */
-  private buildPrefixColumnsSql(): string {
-    if (this.prefixes.length === 0) return "";
-    return (
-      this.prefixes
-        .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)} NOT NULL`)
-        .join(",\n        ") + ",\n        "
-    );
-  }
-
-  /**
    * Builds prefix column names for use in queries.
    */
   private getPrefixColumnNames(): string[] {
@@ -94,18 +84,61 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
   }
 
   /**
-   * Schema setup for Supabase rate-limiter. See
-   * {@link SupabaseQueueStorage.migrate} for why this storage doesn't share
-   * the {@link PostgresMigrationRunner} bookkeeping table.
+   * Verifies rate-limiter tables exist. Production schema should come from
+   * migrations; when tables are missing we optionally bootstrap via `exec_sql`
+   * (PGlite test mock / local dev with that RPC installed).
    */
   public async migrate(): Promise<void> {
-    const prefixColumnsSql = this.buildPrefixColumnsSql();
-    const prefixColumnNames = this.getPrefixColumnNames();
-    const prefixIndexPrefix =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const indexSuffix = prefixColumnNames.length > 0 ? "_" + prefixColumnNames.join("_") : "";
+    const missing = await this.probeRateLimiterTables();
+    if (missing.length === 0) return;
 
-    // Create execution tracking table
+    const bootstrapped = await this.tryBootstrapRateLimiterViaExecSql();
+    if (bootstrapped) {
+      const stillMissing = await this.probeRateLimiterTables();
+      if (stillMissing.length === 0) return;
+      throw this.missingRateLimiterTableError(stillMissing[0]!);
+    }
+
+    throw this.missingRateLimiterTableError(missing[0]!);
+  }
+
+  private missingRateLimiterTableError(error: {
+    table: string;
+    code?: string;
+    message?: string;
+  }): Error {
+    return new Error(
+      `Supabase rate-limiter table "${error.table}" is missing. Run Supabase migrations to create the rate-limiter schema (tables + ${this.atomicReserveFunctionName()} function) before initializing the limiter. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeRateLimiterTables(): Promise<
+    Array<{ table: string; code?: string; message?: string }>
+  > {
+    const missing: Array<{ table: string; code?: string; message?: string }> = [];
+    for (const table of [this.executionTableName, this.nextAvailableTableName]) {
+      const { error } = await this.client
+        .from(table)
+        .select("*", { head: true, count: "exact" })
+        .limit(0);
+      if (!error) continue;
+      if (isMissingRelationError(error)) {
+        missing.push({ table, code: error.code, message: error.message });
+        continue;
+      }
+      throw error;
+    }
+    return missing;
+  }
+
+  private async tryBootstrapRateLimiterViaExecSql(): Promise<boolean> {
+    const prefixColumnsSql = buildPrefixColumnsSql(PostgresDialect, this.prefixes);
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
+    const prefixIndexPrefix = getPrefixIndexPrefix(this.prefixes);
+    const indexSuffix = getPrefixIndexSuffix(this.prefixes);
+    const primaryKeyColumns =
+      prefixColumnNames.length > 0 ? `${prefixColumnNames.join(", ")}, queue_name` : "queue_name";
+
     const createExecTableSql = `
       CREATE TABLE IF NOT EXISTS ${this.executionTableName} (
         id SERIAL PRIMARY KEY,
@@ -117,22 +150,27 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     const { error: execTableError } = await this.client.rpc("exec_sql", {
       query: createExecTableSql,
     });
-    if (execTableError && execTableError.code !== "42P07") {
-      throw execTableError;
+    if (execTableError) {
+      if (isExecSqlUnavailable(execTableError)) return false;
+      if (execTableError.code !== "42P07" && !execTableError.message?.includes("already exists")) {
+        throw execTableError;
+      }
     }
 
-    // Create index on execution table
     const createExecIndexSql = `
       CREATE INDEX IF NOT EXISTS rate_limit_exec_queue${indexSuffix}_idx 
         ON ${this.executionTableName} (${prefixIndexPrefix}queue_name, executed_at)
     `;
-    await this.client.rpc("exec_sql", { query: createExecIndexSql });
+    const { error: execIndexError } = await this.client.rpc("exec_sql", {
+      query: createExecIndexSql,
+    });
+    if (execIndexError) {
+      if (isExecSqlUnavailable(execIndexError)) return false;
+      if (execIndexError.code !== "42P07" && !execIndexError.message?.includes("already exists")) {
+        throw execIndexError;
+      }
+    }
 
-    // Build primary key columns
-    const primaryKeyColumns =
-      prefixColumnNames.length > 0 ? `${prefixColumnNames.join(", ")}, queue_name` : "queue_name";
-
-    // Create next available table
     const createNextTableSql = `
       CREATE TABLE IF NOT EXISTS ${this.nextAvailableTableName} (
         ${prefixColumnsSql}queue_name TEXT NOT NULL,
@@ -144,17 +182,16 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     const { error: nextTableError } = await this.client.rpc("exec_sql", {
       query: createNextTableSql,
     });
-    if (nextTableError && nextTableError.code !== "42P07") {
-      throw nextTableError;
+    if (nextTableError) {
+      if (isExecSqlUnavailable(nextTableError)) return false;
+      if (nextTableError.code !== "42P07" && !nextTableError.message?.includes("already exists")) {
+        throw nextTableError;
+      }
     }
 
-    // Install the atomic reserve function. The function takes the queue name,
-    // window-start cutoff, and max executions; returns true iff a row was
-    // inserted. Advisory xact lock keyed on (table, prefixes, queue) ensures
-    // concurrent acquirers serialize without contending on unrelated buckets.
     const fnName = this.atomicReserveFunctionName();
     const prefixSig = this.prefixes
-      .map((p) => `${p.name} ${this.getPrefixColumnType(p.type)}`)
+      .map((p) => `${p.name} ${prefixColumnType(PostgresDialect, p.type)}`)
       .join(", ");
     const prefixSigPrefix = prefixSig ? prefixSig + ", " : "";
     const prefixWhere =
@@ -197,8 +234,11 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     `;
     const { error: fnError } = await this.client.rpc("exec_sql", { query: createFnSql });
     if (fnError) {
+      if (isExecSqlUnavailable(fnError)) return false;
       throw fnError;
     }
+
+    return true;
   }
 
   /** Supabase rate-limiter runs DDL via `exec_sql`, not via the migration runner. */

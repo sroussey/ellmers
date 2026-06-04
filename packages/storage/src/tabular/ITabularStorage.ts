@@ -74,6 +74,21 @@ export type JSONValue =
 export type SearchOperator = "=" | "<" | "<=" | ">" | ">=";
 
 /**
+ * Closed allow-list of SQL comparison operators that can be interpolated
+ * into a WHERE clause. This is the single source of truth: if
+ * {@link SearchOperator} changes, this constant and {@link SEARCH_OPERATOR_SET}
+ * must update in lockstep so SQL builders cannot accidentally accept a value
+ * outside the union (defense in depth at the JSON trust boundary used by
+ * HTTP-proxied storage backends).
+ */
+export const ALLOWED_SEARCH_OPERATORS = ["=", "<", "<=", ">", ">="] as const;
+
+/**
+ * Set form of {@link ALLOWED_SEARCH_OPERATORS} for O(1) membership checks.
+ */
+export const SEARCH_OPERATOR_SET: ReadonlySet<SearchOperator> = new Set(ALLOWED_SEARCH_OPERATORS);
+
+/**
  * A search condition with a value and comparison operator
  */
 export interface SearchCondition<T> {
@@ -179,16 +194,18 @@ export interface Page<Entity> {
 }
 
 /**
- * Type guard to check if a value is a SearchCondition
+ * Type guard to check if a value is a SearchCondition.
+ *
+ * Verifies the operator is a member of {@link ALLOWED_SEARCH_OPERATORS} so a
+ * forged criterion (e.g. one decoded from JSON at an HTTP boundary) cannot
+ * smuggle an arbitrary string into SQL via {@link buildSearchWhere}.
  */
 export function isSearchCondition<T>(value: unknown): value is SearchCondition<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "value" in value &&
-    "operator" in value &&
-    typeof (value as SearchCondition<T>).operator === "string"
-  );
+  if (typeof value !== "object" || value === null) return false;
+  if (!("value" in value) || !("operator" in value)) return false;
+  const operator = (value as SearchCondition<T>).operator;
+  if (typeof operator !== "string") return false;
+  return SEARCH_OPERATOR_SET.has(operator as SearchOperator);
 }
 
 /**
