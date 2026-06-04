@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.10
+
+### Features
+
+#### supabase
+
+- introduce error handling functions for PostgREST interactions
+
+### Refactors
+
+#### supabase
+
+- streamline table existence checks in SupabaseQueueStorage, SupabaseRateLimiterStorage, and SupabaseTabularStorage
+
 ## 0.3.9
 
 ## 0.3.8

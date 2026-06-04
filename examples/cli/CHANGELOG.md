@@ -1,5 +1,18 @@
 # @workglow/cli
 
+## 0.3.10
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `commander`: ^15.0.0
+- `ink`: ^7.0.5
+- `react`: ^19.2.7
+- `@types/react`: ^19.2.16
+
 ## 0.3.9
 
 ### Chores

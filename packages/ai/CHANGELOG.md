@@ -1,5 +1,13 @@
 # @workglow/ai
 
+## 0.3.10
+
+### Bug Fixes
+
+#### ai
+
+- close WHATWG canonicalisation bypass in localOnlyFetch (sec) (#542)
+
 ## 0.3.9
 
 ### Chores

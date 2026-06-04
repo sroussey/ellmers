@@ -1,5 +1,14 @@
 # @workglow/storage
 
+## 0.3.10
+
+### Bug Fixes
+
+#### storage
+
+- restore ICredentialStore contract on ServerCredentialStore (sec) (#544)
+- ServerCredentialStore put-race + vault orphan on rollback failure (sec) (#540)
+
 ## 0.3.9
 
 ### Chores
