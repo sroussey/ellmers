@@ -27,3 +27,4 @@ export * from "./document/DocumentStorageSchema";
 export * from "./document/slugify";
 export * from "./document/StructuralParser";
 export * from "./document/renderMarkdown";
+export * from "./document/buildDocumentTree";
