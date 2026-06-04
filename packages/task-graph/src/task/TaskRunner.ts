@@ -13,7 +13,12 @@ import {
   SpanStatusCode,
 } from "@workglow/util";
 import type { CacheRegistry } from "../cache";
-import { CACHE_REGISTRY, DefaultCacheRegistry, RunPrivateCacheRepo } from "../cache";
+import {
+  CACHE_REGISTRY,
+  DefaultCacheRegistry,
+  resolveReferenceThreshold,
+  RunPrivateCacheRepo,
+} from "../cache";
 import { TASK_OUTPUT_REPOSITORY, TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { Taskish } from "../task-graph/Conversions";
 import { ensureTask } from "../task-graph/Conversions";
@@ -248,6 +253,23 @@ export class TaskRunner<
         );
 
         if (outputs === undefined) {
+          // Build per-port binary-stream sinks when the cache supports
+          // streaming and the schema has a binary port. The sinks always run
+          // (memory-bounded write to cache); the runtime threshold controls
+          // whether the resulting CacheRef SURVIVES in Output or gets
+          // rehydrated to an inline Blob/ArrayBuffer below.
+          const referenceThresholdBytes = resolveReferenceThreshold(
+            config.referenceThresholdBytes ?? this.task.runConfig.referenceThresholdBytes
+          );
+          const binaryRefSinks = isStreamable
+            ? this.cacheCoordinator.getBinaryRefSinksByPolicy(
+                keyInputs,
+                this.cacheRegistry,
+                policy,
+                this.task.outputSchema()
+              )
+            : undefined;
+
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
@@ -255,8 +277,23 @@ export class TaskRunner<
                 inputStreams: this.inputStreams,
                 onProgress: this.handleProgress.bind(this),
                 own: this.own,
+                binaryRefSinks,
               })
             : await this.executeTask(inputs, ctx);
+
+          // Rehydrate refs whose committed size is below the configured
+          // threshold so callers see inline bytes for small outputs (threshold
+          // default = 64 KiB). Refs at/above threshold survive. threshold = 0
+          // forces every ref to survive regardless of size.
+          if (outputs !== undefined && binaryRefSinks !== undefined) {
+            outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
+              outputs as Output,
+              this.cacheRegistry,
+              policy,
+              this.task.outputSchema(),
+              referenceThresholdBytes
+            );
+          }
 
           await this.cacheCoordinator.saveByPolicy(
             keyInputs,
