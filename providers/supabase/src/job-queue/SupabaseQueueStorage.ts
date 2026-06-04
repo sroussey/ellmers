@@ -15,8 +15,15 @@ import type {
   QueueSubscribeOptions,
 } from "@workglow/job-queue";
 import { JobStatus, validateLeaseMs } from "@workglow/job-queue";
-import { PollingSubscriptionManager } from "@workglow/storage";
+import {
+  buildPrefixColumnsSql,
+  getPrefixIndexPrefix,
+  getPrefixIndexSuffix,
+  PollingSubscriptionManager,
+  PostgresDialect,
+} from "@workglow/storage";
 import { createServiceToken, deepEqual, makeFingerprint, uuid4 } from "@workglow/util";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 export const SUPABASE_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, any>>(
   "jobqueue.storage.supabase"
@@ -131,25 +138,115 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
   }
 
   /**
-   * Verifies the Supabase queue table exists. The schema (table, enum,
-   * indexes) is owned by Supabase migrations — see the matching DDL in the
-   * Postgres provider for the canonical definition. This used to run
-   * `CREATE TABLE IF NOT EXISTS` through a side-installed `exec_sql` RPC,
-   * which required granting arbitrary-SQL execute to ordinary roles
-   * (privilege escalation) and shipped DDL in browser bundles. Verify-only.
+   * Verifies the Supabase queue table exists. Production schema should come
+   * from Supabase migrations; when the table is missing we optionally bootstrap
+   * via `exec_sql` if the project exposes that RPC (PGlite test mock / local dev).
    */
   public async migrate(): Promise<void> {
+    const probeError = await this.probeQueueTable();
+    if (!probeError) return;
+
+    if (isMissingRelationError(probeError)) {
+      const bootstrapped = await this.tryBootstrapQueueViaExecSql();
+      if (bootstrapped) {
+        const after = await this.probeQueueTable();
+        if (!after) return;
+        if (isMissingRelationError(after)) {
+          throw this.missingQueueTableError(after);
+        }
+        throw after;
+      }
+      throw this.missingQueueTableError(probeError);
+    }
+    throw probeError;
+  }
+
+  private missingQueueTableError(error: { code?: string; message?: string }): Error {
+    return new Error(
+      `Supabase queue table "${this.tableName}" is missing. Run Supabase migrations to create the queue schema (table + job_status enum + indexes) before initializing the queue. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeQueueTable(): Promise<{ code?: string; message?: string } | null> {
     const { error } = await this.client
       .from(this.tableName)
       .select("*", { head: true, count: "exact" })
       .limit(0);
-    if (!error) return;
-    if (error.code === "42P01" || error.code === "PGRST205") {
-      throw new Error(
-        `Supabase queue table "${this.tableName}" is missing. Run Supabase migrations to create the queue schema (table + job_status enum + indexes) before initializing the queue. (PostgREST: ${error.code} ${error.message})`
-      );
+    return error ?? null;
+  }
+
+  private async tryBootstrapQueueViaExecSql(): Promise<boolean> {
+    const enumValues = [...Object.values(JobStatus), "ABORTING"]
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .map((v) => `'${v}'`)
+      .join(",");
+    const createTypeSql = `CREATE TYPE job_status AS ENUM (${enumValues})`;
+
+    const { error: typeError } = await this.client.rpc("exec_sql", { query: createTypeSql });
+    if (typeError) {
+      if (typeError.code === "42710") {
+        // type already exists
+      } else if (isExecSqlUnavailable(typeError)) {
+        return false;
+      } else {
+        throw typeError;
+      }
     }
-    throw error;
+
+    const prefixColumnsSql = buildPrefixColumnsSql(PostgresDialect, this.prefixes);
+    const prefixIndexPrefix = getPrefixIndexPrefix(this.prefixes);
+    const indexSuffix = getPrefixIndexSuffix(this.prefixes);
+
+    const createTableSql = `
+    CREATE TABLE IF NOT EXISTS ${this.tableName} (
+      id SERIAL NOT NULL,
+      ${prefixColumnsSql}fingerprint text NOT NULL,
+      queue text NOT NULL,
+      job_run_id text NOT NULL,
+      status job_status NOT NULL default 'PENDING',
+      input jsonb NOT NULL,
+      output jsonb,
+      attempts integer default 0,
+      max_attempts integer default 10,
+      visible_at timestamp with time zone DEFAULT now(),
+      last_attempted_at timestamp with time zone,
+      created_at timestamp with time zone DEFAULT now(),
+      deadline_at timestamp with time zone,
+      completed_at timestamp with time zone,
+      error text,
+      error_code text,
+      progress real DEFAULT 0,
+      progress_message text DEFAULT '',
+      progress_details jsonb,
+      lease_owner text,
+      abort_requested_at timestamp with time zone,
+      lease_expires_at timestamp with time zone
+    )`;
+
+    const { error: tableError } = await this.client.rpc("exec_sql", { query: createTableSql });
+    if (tableError) {
+      if (isExecSqlUnavailable(tableError)) return false;
+      if (tableError.code !== "42P07" && !tableError.message?.includes("already exists")) {
+        throw tableError;
+      }
+    }
+
+    const indexes = [
+      `CREATE INDEX IF NOT EXISTS job_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}id, status, visible_at)`,
+      `CREATE INDEX IF NOT EXISTS job_queue_fetcher${indexSuffix}_idx ON ${this.tableName} (${prefixIndexPrefix}queue, status, visible_at)`,
+      `CREATE INDEX IF NOT EXISTS jobs_fingerprint${indexSuffix}_unique_idx ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint, status)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_fingerprint_active ON ${this.tableName} (${prefixIndexPrefix}queue, fingerprint) WHERE status IN ('PENDING','PROCESSING')`,
+    ];
+
+    for (const indexSql of indexes) {
+      const { error: idxError } = await this.client.rpc("exec_sql", { query: indexSql });
+      if (!idxError) continue;
+      if (isExecSqlUnavailable(idxError)) return false;
+      if (idxError.code === "42P07" || idxError.message?.includes("already exists")) continue;
+      throw idxError;
+    }
+
+    return true;
   }
 
   /** Supabase queue runs DDL via `exec_sql`, not via the migration runner. */

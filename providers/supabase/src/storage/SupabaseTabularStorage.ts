@@ -36,6 +36,7 @@ import {
   JsonSchema,
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 /**
  * Quotes a value for inclusion in a PostgREST filter expression.
@@ -59,17 +60,6 @@ function escapePostgrest(value: string | number | boolean | null): string {
 export const SUPABASE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.supabase"
 );
-
-/**
- * True when a PostgREST error indicates the referenced relation does not exist.
- * Covers both the Postgres SQLSTATE (`42P01`) and PostgREST's schema-cache
- * variant (`PGRST205`) used when the table simply isn't exposed.
- */
-function isMissingRelationError(error: { code?: string; message?: string }): boolean {
-  if (error.code === "42P01" || error.code === "PGRST205") return true;
-  const msg = error.message ?? "";
-  return msg.includes("does not exist") || msg.includes("could not find the table");
-}
 
 /**
  * A Supabase-based tabular repository implementation that extends BaseSqlTabularStorage.
@@ -118,25 +108,97 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Verifies the backing Supabase table exists. The schema (table, columns,
-   * indexes) is owned by Supabase migrations, not the client — shipping DDL
-   * in a browser bundle would require granting `exec_sql`-style admin RPCs
-   * to anon/authenticated roles, which is a privilege-escalation primitive
-   * and incompatible with RLS. This method now does a cheap HEAD probe and
-   * throws a clear error if the table is missing.
+   * Verifies the backing Supabase table exists. Production schema (tables,
+   * indexes) should be owned by Supabase migrations. When the table is
+   * missing we optionally bootstrap via an `exec_sql` RPC if the project
+   * exposes one (local dev / PGlite test mock) — ordinary anon/publishable
+   * clients must not rely on that path in production.
    */
   public override async setupDatabase(): Promise<void> {
+    const probeError = await this.probeTableExists();
+    if (!probeError) return;
+
+    if (isMissingRelationError(probeError)) {
+      const bootstrapped = await this.tryBootstrapTableViaExecSql();
+      if (bootstrapped) {
+        const afterBootstrap = await this.probeTableExists();
+        if (!afterBootstrap) return;
+        if (isMissingRelationError(afterBootstrap)) {
+          throw this.missingTableError(afterBootstrap);
+        }
+        throw afterBootstrap;
+      }
+      throw this.missingTableError(probeError);
+    }
+    throw probeError;
+  }
+
+  private missingTableError(error: { code?: string; message?: string }): Error {
+    return new Error(
+      `Supabase table "${this.table}" is missing. Schema is owned by Supabase migrations — run them against this project before initializing the storage. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeTableExists(): Promise<{ code?: string; message?: string } | null> {
     const { error } = await this.client
       .from(this.table)
       .select("*", { head: true, count: "exact" })
       .limit(0);
-    if (!error) return;
-    if (isMissingRelationError(error)) {
-      throw new Error(
-        `Supabase table "${this.table}" is missing. Schema is owned by Supabase migrations — run them against this project before initializing the storage. (PostgREST: ${error.code ?? "?"} ${error.message})`
-      );
+    return error ?? null;
+  }
+
+  /**
+   * Creates the table and secondary indexes when `exec_sql` is available.
+   * Returns true if bootstrap was attempted (even when DDL was already applied).
+   */
+  private async tryBootstrapTableViaExecSql(): Promise<boolean> {
+    const sql = `
+      CREATE TABLE IF NOT EXISTS "${this.table}" (
+        ${this.constructPrimaryKeyColumns('"')} ${this.constructValueColumns('"')},
+        PRIMARY KEY (${this.primaryKeyColumnList()})
+      )
+    `;
+    const { error } = await this.client.rpc("exec_sql", { query: sql });
+    if (error) {
+      if (isExecSqlUnavailable(error)) return false;
+      if (error.code !== "42P07" && !error.message?.includes("already exists")) {
+        throw error;
+      }
     }
-    throw error;
+
+    const pkColumns = this.primaryKeyColumns() as unknown as Array<keyof Entity>;
+    const createdIndexes = new Set<string>();
+
+    for (const columns of this.indexes) {
+      if (columns.length <= pkColumns.length) {
+        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
+        if (isPkPrefix) continue;
+      }
+
+      const indexName = `${this.table}_${columns.join("_")}`;
+      const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
+      const columnKey = columns.join(",");
+      if (createdIndexes.has(columnKey)) continue;
+
+      const isRedundant = Array.from(createdIndexes).some((existing) => {
+        const existingCols = existing.split(",");
+        return (
+          existingCols.length >= columns.length &&
+          columns.every((col, idx) => col === existingCols[idx])
+        );
+      });
+
+      if (!isRedundant) {
+        const indexSql = `CREATE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`;
+        const { error: indexError } = await this.client.rpc("exec_sql", { query: indexSql });
+        if (indexError && !indexError.message?.includes("already exists")) {
+          console.warn(`Failed to create index ${indexName}:`, indexError);
+        }
+        createdIndexes.add(columnKey);
+      }
+    }
+
+    return true;
   }
 
   /**

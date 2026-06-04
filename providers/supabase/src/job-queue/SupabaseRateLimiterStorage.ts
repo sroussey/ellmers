@@ -11,7 +11,16 @@ import type {
   RateLimiterStorageOptions,
   RateLimiterStorageScope,
 } from "@workglow/job-queue";
+import {
+  buildPrefixColumnsSql,
+  getPrefixColumnNames,
+  getPrefixIndexPrefix,
+  getPrefixIndexSuffix,
+  PostgresDialect,
+  prefixColumnType,
+} from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
+import { isExecSqlUnavailable, isMissingRelationError } from "../supabasePostgrest";
 
 export const SUPABASE_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterStorage>(
   "ratelimiter.storage.supabase"
@@ -75,28 +84,161 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
   }
 
   /**
-   * Verifies the Supabase rate-limiter tables exist. The schema — both
-   * tables, the execution-table index, and the `atomic_reserve_*` plpgsql
-   * function — is owned by Supabase migrations. Installing a
-   * `CREATE OR REPLACE FUNCTION` from the client required an `exec_sql`
-   * admin RPC, which is a privilege-escalation primitive incompatible with
-   * RLS. Function presence is implicitly checked the first time `acquire()`
-   * issues the RPC; this method fails fast if the backing tables are missing.
+   * Verifies rate-limiter tables exist. Production schema should come from
+   * migrations; when tables are missing we optionally bootstrap via `exec_sql`
+   * (PGlite test mock / local dev with that RPC installed).
    */
   public async migrate(): Promise<void> {
+    const missing = await this.probeRateLimiterTables();
+    if (missing.length === 0) return;
+
+    const bootstrapped = await this.tryBootstrapRateLimiterViaExecSql();
+    if (bootstrapped) {
+      const stillMissing = await this.probeRateLimiterTables();
+      if (stillMissing.length === 0) return;
+      throw this.missingRateLimiterTableError(stillMissing[0]!);
+    }
+
+    throw this.missingRateLimiterTableError(missing[0]!);
+  }
+
+  private missingRateLimiterTableError(error: {
+    table: string;
+    code?: string;
+    message?: string;
+  }): Error {
+    return new Error(
+      `Supabase rate-limiter table "${error.table}" is missing. Run Supabase migrations to create the rate-limiter schema (tables + ${this.atomicReserveFunctionName()} function) before initializing the limiter. (PostgREST: ${error.code ?? "?"} ${error.message})`
+    );
+  }
+
+  private async probeRateLimiterTables(): Promise<
+    Array<{ table: string; code?: string; message?: string }>
+  > {
+    const missing: Array<{ table: string; code?: string; message?: string }> = [];
     for (const table of [this.executionTableName, this.nextAvailableTableName]) {
       const { error } = await this.client
         .from(table)
         .select("*", { head: true, count: "exact" })
         .limit(0);
       if (!error) continue;
-      if (error.code === "42P01" || error.code === "PGRST205") {
-        throw new Error(
-          `Supabase rate-limiter table "${table}" is missing. Run Supabase migrations to create the rate-limiter schema (tables + ${this.atomicReserveFunctionName()} function) before initializing the limiter. (PostgREST: ${error.code} ${error.message})`
-        );
+      if (isMissingRelationError(error)) {
+        missing.push({ table, code: error.code, message: error.message });
+        continue;
       }
       throw error;
     }
+    return missing;
+  }
+
+  private async tryBootstrapRateLimiterViaExecSql(): Promise<boolean> {
+    const prefixColumnsSql = buildPrefixColumnsSql(PostgresDialect, this.prefixes);
+    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
+    const prefixIndexPrefix = getPrefixIndexPrefix(this.prefixes);
+    const indexSuffix = getPrefixIndexSuffix(this.prefixes);
+    const primaryKeyColumns =
+      prefixColumnNames.length > 0 ? `${prefixColumnNames.join(", ")}, queue_name` : "queue_name";
+
+    const createExecTableSql = `
+      CREATE TABLE IF NOT EXISTS ${this.executionTableName} (
+        id SERIAL PRIMARY KEY,
+        ${prefixColumnsSql}queue_name TEXT NOT NULL,
+        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `;
+
+    const { error: execTableError } = await this.client.rpc("exec_sql", {
+      query: createExecTableSql,
+    });
+    if (execTableError) {
+      if (isExecSqlUnavailable(execTableError)) return false;
+      if (execTableError.code !== "42P07" && !execTableError.message?.includes("already exists")) {
+        throw execTableError;
+      }
+    }
+
+    const createExecIndexSql = `
+      CREATE INDEX IF NOT EXISTS rate_limit_exec_queue${indexSuffix}_idx 
+        ON ${this.executionTableName} (${prefixIndexPrefix}queue_name, executed_at)
+    `;
+    const { error: execIndexError } = await this.client.rpc("exec_sql", {
+      query: createExecIndexSql,
+    });
+    if (execIndexError) {
+      if (isExecSqlUnavailable(execIndexError)) return false;
+      if (execIndexError.code !== "42P07" && !execIndexError.message?.includes("already exists")) {
+        throw execIndexError;
+      }
+    }
+
+    const createNextTableSql = `
+      CREATE TABLE IF NOT EXISTS ${this.nextAvailableTableName} (
+        ${prefixColumnsSql}queue_name TEXT NOT NULL,
+        next_available_at TIMESTAMP WITH TIME ZONE,
+        PRIMARY KEY (${primaryKeyColumns})
+      )
+    `;
+
+    const { error: nextTableError } = await this.client.rpc("exec_sql", {
+      query: createNextTableSql,
+    });
+    if (nextTableError) {
+      if (isExecSqlUnavailable(nextTableError)) return false;
+      if (nextTableError.code !== "42P07" && !nextTableError.message?.includes("already exists")) {
+        throw nextTableError;
+      }
+    }
+
+    const fnName = this.atomicReserveFunctionName();
+    const prefixSig = this.prefixes
+      .map((p) => `${p.name} ${prefixColumnType(PostgresDialect, p.type)}`)
+      .join(", ");
+    const prefixSigPrefix = prefixSig ? prefixSig + ", " : "";
+    const prefixWhere =
+      this.prefixes.length > 0
+        ? " AND " + this.prefixes.map((p) => `${p.name} = _${p.name}`).join(" AND ")
+        : "";
+    const prefixInsertCols =
+      this.prefixes.length > 0 ? this.prefixes.map((p) => p.name).join(", ") + ", " : "";
+    const prefixInsertVals =
+      this.prefixes.length > 0 ? this.prefixes.map((p) => `_${p.name}`).join(", ") + ", " : "";
+    const lockKeyParts = [
+      `'${this.executionTableName}'`,
+      ...this.prefixes.map((p) => `_${p.name}::text`),
+      `_queue_name::text`,
+    ];
+    const lockKeyExpr = `hashtextextended(${lockKeyParts.join(" || '|' || ")}, 0)`;
+
+    const createFnSql = `
+      CREATE OR REPLACE FUNCTION ${fnName}(
+        ${prefixSigPrefix}_queue_name TEXT, _window_start TIMESTAMPTZ, _max_exec INT
+      ) RETURNS BIGINT AS $fn$
+      DECLARE
+        _count INT;
+        _next TIMESTAMPTZ;
+        _new_id BIGINT;
+      BEGIN
+        PERFORM pg_advisory_xact_lock(${lockKeyExpr});
+        SELECT COUNT(*) INTO _count FROM ${this.executionTableName}
+          WHERE queue_name = _queue_name AND executed_at > _window_start${prefixWhere};
+        IF _count >= _max_exec THEN RETURN NULL; END IF;
+        SELECT next_available_at INTO _next FROM ${this.nextAvailableTableName}
+          WHERE queue_name = _queue_name${prefixWhere};
+        IF _next IS NOT NULL AND _next > NOW() THEN RETURN NULL; END IF;
+        INSERT INTO ${this.executionTableName} (${prefixInsertCols}queue_name)
+          VALUES (${prefixInsertVals}_queue_name)
+          RETURNING id INTO _new_id;
+        RETURN _new_id;
+      END;
+      $fn$ LANGUAGE plpgsql;
+    `;
+    const { error: fnError } = await this.client.rpc("exec_sql", { query: createFnSql });
+    if (fnError) {
+      if (isExecSqlUnavailable(fnError)) return false;
+      throw fnError;
+    }
+
+    return true;
   }
 
   /** Supabase rate-limiter runs DDL via `exec_sql`, not via the migration runner. */
