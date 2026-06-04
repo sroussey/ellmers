@@ -15,6 +15,9 @@ export const NodeKind = {
   PARAGRAPH: "paragraph",
   SENTENCE: "sentence",
   TOPIC: "topic",
+  TABLE: "table",
+  LIST: "list",
+  IMAGE: "image",
 } as const;
 
 export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind];
@@ -261,6 +264,107 @@ export const TopicNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+/** Schema for a single table cell. */
+export const TableCellSchema = {
+  type: "object",
+  properties: {
+    text: { type: "string", title: "Text", description: "Cell text" },
+    colspan: { type: "integer", title: "Colspan", description: "Columns spanned" },
+    rowspan: { type: "integer", title: "Rowspan", description: "Rows spanned" },
+    isHeader: { type: "boolean", title: "Is Header", description: "Header cell" },
+    numeric: { type: "number", title: "Numeric", description: "Parsed numeric value if any" },
+  },
+  required: ["text", "colspan", "rowspan", "isHeader"],
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+/** Schema for table node. */
+export const TableNodeSchema = {
+  type: "object",
+  properties: {
+    ...DocumentNodeBaseSchema.properties,
+    kind: {
+      type: "string",
+      const: NodeKind.TABLE,
+      title: "Kind",
+      description: "Node type discriminator",
+    },
+    caption: { type: "string", title: "Caption", description: "Table caption" },
+    columnCount: {
+      type: "integer",
+      title: "Column Count",
+      description: "Columns after colspan expansion",
+    },
+    headerRows: {
+      type: "array",
+      items: { type: "array", items: TableCellSchema },
+      title: "Header Rows",
+      description: "Leading header rows",
+    },
+    rows: {
+      type: "array",
+      items: { type: "array", items: TableCellSchema },
+      title: "Rows",
+      description: "Body rows",
+    },
+    stitchedFrom: {
+      type: "integer",
+      minimum: 1,
+      title: "Stitched From",
+      description: "Page fragments merged (1 = none)",
+    },
+  },
+  required: [
+    ...DocumentNodeBaseSchema.required,
+    "columnCount",
+    "headerRows",
+    "rows",
+    "stitchedFrom",
+  ],
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+/** Schema for list node. */
+export const ListNodeSchema = {
+  type: "object",
+  properties: {
+    ...DocumentNodeBaseSchema.properties,
+    kind: {
+      type: "string",
+      const: NodeKind.LIST,
+      title: "Kind",
+      description: "Node type discriminator",
+    },
+    ordered: { type: "boolean", title: "Ordered", description: "Ordered vs unordered" },
+    items: {
+      type: "array",
+      items: { type: "string" },
+      title: "Items",
+      description: "List item texts",
+    },
+  },
+  required: [...DocumentNodeBaseSchema.required, "ordered", "items"],
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+/** Schema for image node. */
+export const ImageNodeSchema = {
+  type: "object",
+  properties: {
+    ...DocumentNodeBaseSchema.properties,
+    kind: {
+      type: "string",
+      const: NodeKind.IMAGE,
+      title: "Kind",
+      description: "Node type discriminator",
+    },
+    src: { type: "string", title: "Src", description: "Image href (EDGAR-relative)" },
+    alt: { type: "string", title: "Alt", description: "Alt text" },
+  },
+  required: [...DocumentNodeBaseSchema.required, "src"],
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
 /**
  * Schema for document root node
  */
@@ -347,6 +451,39 @@ export interface TopicNode extends DocumentNodeBase {
   readonly children: DocumentNode[];
 }
 
+/** A single cell in a table node. */
+export interface TableCell {
+  readonly text: string;
+  readonly colspan: number;
+  readonly rowspan: number;
+  readonly isHeader: boolean;
+  readonly numeric: number | undefined;
+}
+
+/** Table node (leaf). Structured grid + GFM rendering in `text`. */
+export interface TableNode extends DocumentNodeBase {
+  readonly kind: typeof NodeKind.TABLE;
+  readonly caption: string | undefined;
+  readonly columnCount: number;
+  readonly headerRows: TableCell[][];
+  readonly rows: TableCell[][];
+  readonly stitchedFrom: number;
+}
+
+/** List node (leaf). */
+export interface ListNode extends DocumentNodeBase {
+  readonly kind: typeof NodeKind.LIST;
+  readonly ordered: boolean;
+  readonly items: string[];
+}
+
+/** Image node (leaf). */
+export interface ImageNode extends DocumentNodeBase {
+  readonly kind: typeof NodeKind.IMAGE;
+  readonly src: string;
+  readonly alt: string | undefined;
+}
+
 /**
  * Discriminated union of all document node types
  */
@@ -355,7 +492,10 @@ export type DocumentNode =
   | SectionNode
   | ParagraphNode
   | SentenceNode
-  | TopicNode;
+  | TopicNode
+  | TableNode
+  | ListNode
+  | ImageNode;
 
 // =============================================================================
 // Token Budget
