@@ -264,11 +264,16 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   /**
-   * Internal delete by already-resolved vault id. Centralises the
-   * metadata-first ordering, the orphan-marker logic, and the put/delete
-   * race protection so {@link delete} and {@link deleteAll} share one
-   * code path. `key` is passed through only for the human-readable error
-   * message; the id is the source of truth.
+   * Internal delete by already-resolved vault id used by {@link delete}.
+   * Centralises the metadata-first ordering, the orphan-marker logic, and
+   * the put/delete race protection. `key` is passed through only for the
+   * human-readable error message; the id is the source of truth.
+   *
+   * NOTE: {@link deleteAll} deliberately does NOT route through this path
+   * because the pending-row short-circuit below would skip sticky orphan
+   * markers — defeating the purpose of a scope-wide wipe. {@link deleteAll}
+   * uses {@link forceDeleteById} instead, which shares the metadata-first
+   * ordering and orphan-marker rewrite but omits the pending guard.
    *
    * Ordering rationale:
    *   1. If the row is pending (mid-flight put OR an existing orphan
@@ -379,7 +384,7 @@ export class ServerCredentialStore implements ICredentialStore {
    * to clear sticky orphan markers (rows where the original `delete` failed
    * its vault hop and reinstated a `pending: true` marker) as well as
    * still-in-flight pending new-entry rows. Routing `deleteAll` through
-   * `deleteByid` would silently skip both — there would be no public API that
+   * {@link deleteById} would silently skip both — there would be no public API that
    * could clear an orphan, defeating the purpose of writing the marker in the
    * first place. The metadata-first ordering and orphan-marker rewrite on
    * vault-delete failure are preserved.
