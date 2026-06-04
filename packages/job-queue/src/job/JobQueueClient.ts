@@ -26,6 +26,8 @@ import {
   JobQueueEventListeners,
   JobQueueEventParameters,
   JobQueueEvents,
+  JobStreamListener,
+  type StreamEventLike,
 } from "./JobQueueEventListeners";
 import type { JobQueueServer } from "./JobQueueServer";
 import { storageToClass } from "./JobStorageConverters";
@@ -38,6 +40,12 @@ export interface JobHandle<Output> {
   waitFor(): Promise<Output>;
   abort(): Promise<void>;
   onProgress(callback: JobProgressListener): () => void;
+  /**
+   * OPTIONAL — present only when this handle's transport can deliver stream
+   * events (a same-process server-attached queue). Absent on storage-only
+   * backends; callers branch on `typeof handle.onStream === "function"`.
+   */
+  onStream?(callback: JobStreamListener): () => void;
 }
 
 /**
@@ -77,6 +85,11 @@ export class JobQueueClient<Input, Output> {
    * Map of job IDs to their progress listeners
    */
   protected readonly jobProgressListeners: Map<unknown, Set<JobProgressListener>> = new Map();
+
+  /**
+   * Map of job IDs to their stream listeners
+   */
+  protected readonly jobStreamListeners: Map<unknown, Set<JobStreamListener>> = new Map();
 
   /**
    * Last known progress state for each job
@@ -431,6 +444,27 @@ export class JobQueueClient<Input, Output> {
     };
   }
 
+  /**
+   * Subscribe to stream events for a specific job
+   */
+  public onJobStream(jobId: unknown, listener: JobStreamListener): () => void {
+    if (!this.jobStreamListeners.has(jobId)) {
+      this.jobStreamListeners.set(jobId, new Set());
+    }
+    const listeners = this.jobStreamListeners.get(jobId)!;
+    listeners.add(listener);
+
+    return () => {
+      const listeners = this.jobStreamListeners.get(jobId);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          this.jobStreamListeners.delete(jobId);
+        }
+      }
+    };
+  }
+
   // ========================================================================
   // Event handling
   // ========================================================================
@@ -564,23 +598,54 @@ export class JobQueueClient<Input, Output> {
     }
   }
 
+  /**
+   * Called by server when a job emits a stream event. Listener throws are
+   * isolated per-listener — one misbehaving subscriber does not interrupt
+   * delivery to the rest or abort the dispatch itself.
+   * @internal
+   */
+  public handleJobStream(jobId: unknown, event: StreamEventLike): void {
+    this.events.emit("job_stream", this.queueName, jobId, event);
+
+    const listeners = this.jobStreamListeners.get(jobId);
+    if (!listeners) return;
+    for (const listener of listeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        getLogger().error("JobHandle.onStream listener threw", {
+          jobId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   // ========================================================================
   // Private helpers
   // ========================================================================
 
   private createJobHandle(id: unknown): JobHandle<Output> {
-    return {
+    const handle: JobHandle<Output> = {
       id,
       waitFor: () => this.waitFor(id),
       abort: () => this.abort(id),
       onProgress: (callback: JobProgressListener) => this.onJobProgress(id, callback),
     };
+    // Stream delivery requires a same-process server-attached transport — the
+    // same signal `connect()` uses. Storage-only backends omit `onStream`, so
+    // callers branch on `typeof handle.onStream === "function"`.
+    if (this.server) {
+      handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
+    }
+    return handle;
   }
 
   private cleanupJob(jobId: unknown): void {
     this.activeJobPromises.delete(jobId);
     this.lastKnownProgress.delete(jobId);
     this.jobProgressListeners.delete(jobId);
+    this.jobStreamListeners.delete(jobId);
   }
 
   private handleStorageChange(change: QueueChangePayload<Input, Output>): void {

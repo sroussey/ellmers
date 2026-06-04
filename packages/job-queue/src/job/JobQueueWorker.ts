@@ -32,7 +32,8 @@ import {
   RetryableJobError,
 } from "./JobError";
 import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
-import { storageToClass } from "./JobStorageConverters";
+import type { StreamEventLike } from "./JobQueueEventListeners";
+import { classToStorage, storageToClass } from "./JobStorageConverters";
 
 /**
  * Minimum interval between {@link JobQueueWorker.processJobs} loop-error logs.
@@ -57,6 +58,7 @@ export type JobQueueWorkerEventListeners<Input, Output> = {
     message: string,
     details: Record<string, unknown> | null
   ) => void;
+  job_stream: (jobId: unknown, event: StreamEventLike) => void;
   worker_start: () => void;
   worker_stop: () => void;
 };
@@ -863,6 +865,7 @@ export class JobQueueWorker<
     return await job.execute(job.input, {
       signal,
       updateProgress: this.updateProgress.bind(this, job.id),
+      emitStreamEvent: (event) => this.emitStreamEvent(job.id, event),
     });
   }
 
@@ -882,6 +885,17 @@ export class JobQueueWorker<
   ): Promise<void> {
     progress = Math.max(0, Math.min(100, progress));
     this.events.emit("job_progress", jobId, progress, message, details);
+  }
+
+  /**
+   * Emit a cross-process stream event for a job.
+   *
+   * Mirrors {@link updateProgress}: stream events are delivered in-memory via
+   * the `job_stream` event and forwarded by an attached `JobQueueServer` to
+   * subscribed clients. Storage is not touched.
+   */
+  protected emitStreamEvent(jobId: unknown, event: StreamEventLike): void {
+    this.events.emit("job_stream", jobId, event);
   }
 
   /** Internal — resolve the active claim for a job id, throw if missing. */
