@@ -71,12 +71,14 @@ export function buildDocumentTree(title: string, blocks: FlatBlock[]): DocumentR
       top().children.push(section);
       stack.push(section);
     } else {
-      const node = block.node as DocumentNode & {
-        range: { startOffset: number; endOffset: number };
-      };
       const startOffset = offset;
-      offset += node.text.length;
-      node.range = { startOffset, endOffset: offset };
+      offset += block.node.text.length;
+      // Shallow-copy so we never mutate the caller's node; the tree owns a copy
+      // carrying the computed running-offset range.
+      const node = {
+        ...block.node,
+        range: { startOffset, endOffset: offset },
+      } as DocumentNode;
       top().children.push(node);
     }
   }

@@ -165,7 +165,11 @@ export const DocumentNodeSchema = {
     },
   },
   required: [...DocumentNodeBaseSchema.required],
-  additionalProperties: false,
+  // Generic union approximation used to validate heterogeneous children. Each
+  // node kind (section/table/list/image/...) carries kind-specific fields, so
+  // extra properties are permitted here; the TypeScript discriminated union is
+  // the precise contract.
+  additionalProperties: true,
 } as const satisfies DataPortSchema;
 
 /**
@@ -269,8 +273,8 @@ export const TableCellSchema = {
   type: "object",
   properties: {
     text: { type: "string", title: "Text", description: "Cell text" },
-    colspan: { type: "integer", title: "Colspan", description: "Columns spanned" },
-    rowspan: { type: "integer", title: "Rowspan", description: "Rows spanned" },
+    colspan: { type: "integer", minimum: 1, title: "Colspan", description: "Columns spanned" },
+    rowspan: { type: "integer", minimum: 1, title: "Rowspan", description: "Rows spanned" },
     isHeader: { type: "boolean", title: "Is Header", description: "Header cell" },
     numeric: { type: "number", title: "Numeric", description: "Parsed numeric value if any" },
   },
@@ -292,8 +296,9 @@ export const TableNodeSchema = {
     caption: { type: "string", title: "Caption", description: "Table caption" },
     columnCount: {
       type: "integer",
+      minimum: 0,
       title: "Column Count",
-      description: "Columns after colspan expansion",
+      description: "Columns after colspan expansion (0 = empty table)",
     },
     headerRows: {
       type: "array",

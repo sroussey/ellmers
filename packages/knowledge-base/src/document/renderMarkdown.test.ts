@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { describe, expect, it } from "vitest";
-import type { DocumentRootNode } from "./DocumentSchema";
+import type { DocumentNode, DocumentRootNode } from "./DocumentSchema";
 import { NodeKind } from "./DocumentSchema";
 import { renderMarkdown } from "./renderMarkdown";
 
@@ -29,7 +29,7 @@ describe("renderMarkdown", () => {
       rows: [[cell("a\\b|c")]],
       stitchedFrom: 1,
     } as const;
-    const md = renderMarkdown(table as unknown as DocumentRootNode);
+    const md = renderMarkdown(table as unknown as DocumentNode);
     // backslash escaped first (\\) then pipe (\|), so no ambiguous sequence
     expect(md).toContain("a\\\\b\\|c");
   });
@@ -123,6 +123,6 @@ describe("renderMarkdown", () => {
       rows: [],
       stitchedFrom: 1,
     } as const;
-    expect(renderMarkdown(table as unknown as DocumentRootNode)).toBe("");
+    expect(renderMarkdown(table as unknown as DocumentNode)).toBe("");
   });
 });

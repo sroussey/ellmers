@@ -14,7 +14,11 @@ function escapeCell(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
 }
 
-/** Expand a possibly-ragged row to exactly `columnCount` cells, honoring colspan. */
+/**
+ * Expand a possibly-ragged row to exactly `columnCount` cells, honoring colspan.
+ * Rowspan is assumed already materialized into rows by the producer (each spanned
+ * cell repeated per row), so it is not re-expanded here.
+ */
 function flattenRow(row: TableCell[], columnCount: number): string[] {
   const out: string[] = [];
   for (const c of row) {
@@ -44,7 +48,12 @@ function renderTable(node: TableNode): string {
   return lines.join("\n");
 }
 
-/** Render a document node (and its subtree) to GFM markdown. Inverse of StructuralParser. */
+/**
+ * Render a document node (and its subtree) to GFM markdown: section headings,
+ * paragraphs, GFM pipe tables, lists, and images. (Approximately the inverse of
+ * StructuralParser's markdown parsing, which today covers only headings and
+ * paragraphs — this renderer additionally emits tables/lists/images.)
+ */
 export function renderMarkdown(node: DocumentNode): string {
   switch (node.kind) {
     case NodeKind.TABLE:
