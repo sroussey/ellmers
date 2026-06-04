@@ -7,6 +7,7 @@
 import {
   type DeleteSearchCriteria,
   isSearchCondition,
+  SEARCH_OPERATOR_SET,
   type SearchOperator,
   type ValueOptionType,
 } from "../tabular/ITabularStorage";
@@ -59,6 +60,15 @@ export function buildSearchWhere<Entity>(
       value = criterion.value as Entity[keyof Entity];
     } else {
       value = criterion as Entity[keyof Entity];
+    }
+
+    // Defense-in-depth: `isSearchCondition` already gates `operator` to the
+    // allow-list, but this is the spot where the operator is interpolated
+    // raw into SQL, so re-verify here. Unreachable from typed callers; this
+    // catches `as unknown as` bypasses and any future refactor that loosens
+    // `isSearchCondition` before the operator reaches the builder.
+    if (!SEARCH_OPERATOR_SET.has(operator)) {
+      throw new Error(`Unsupported SearchCondition operator: ${String(operator)}`);
     }
 
     conditions.push(
