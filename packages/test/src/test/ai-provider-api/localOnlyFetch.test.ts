@@ -190,38 +190,34 @@ describe("localOnlyFetch", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects an initial URL with a hex IPv4 spelling that WHATWG would canonicalise to 127.0.0.1", async () => {
-    // `0x7f.0.0.1` is the hex form of `127.0.0.1`. The WHATWG URL parser
-    // silently rewrites it on `new URL(...)`, so validating `url.hostname`
-    // would let it through; validating the LITERAL host extracted from the
-    // raw input rejects it as a non-loopback host. Zero fetches must be
-    // issued — the response queued here must never be consumed.
+  // Regression coverage for the WHATWG-canonicalisation SSRF bypass: the URL
+  // parser silently rewrites non-standard IPv4 spellings to `127.0.0.1`, so
+  // validating `new URL(input).hostname` would let these slip past the
+  // loopback gate. The fix validates the RAW host extracted from the source
+  // string instead. Each spelling is asserted to reject AND to issue zero
+  // fetches — mirrors the existing "rejects a non-loopback initial URL
+  // before issuing any fetch" shape.
+  it("rejects a hex-octet IPv4 initial URL (0x7f.0.0.1) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(localOnlyFetch("http://0x7f.0.0.1/", undefined, "TestProvider")).rejects.toThrow(
-      /non-loopback host|invalid initial URL/
-    );
+    await expect(
+      localOnlyFetch("http://0x7f.0.0.1/", undefined, "TestProvider")
+    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects an initial URL with a single-integer IPv4 spelling that WHATWG would canonicalise to 127.0.0.1", async () => {
-    // `2130706433` is the unsigned 32-bit integer form of `127.0.0.1`.
-    // `extractRawHost` exposes the literal, which fails the strict-literal
-    // grammar in `isLoopbackHostname` (no `.` or `:` in the token).
+  it("rejects a uint32 IPv4 initial URL (2130706433) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(localOnlyFetch("http://2130706433/", undefined, "TestProvider")).rejects.toThrow(
-      /non-loopback host|invalid initial URL/
-    );
+    await expect(
+      localOnlyFetch("http://2130706433/", undefined, "TestProvider")
+    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects an initial URL with a leading-zero (octal-looking) IPv4 spelling", async () => {
-    // `010.0.0.1` decodes (in lenient parsers) to `8.0.0.1`, which is public.
-    // Strict-literal validation rejects the leading zero before any canon-
-    // icalisation happens.
+  it("rejects a leading-zero octal-looking IPv4 initial URL (010.0.0.1) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(localOnlyFetch("http://010.0.0.1/", undefined, "TestProvider")).rejects.toThrow(
-      /non-loopback host|invalid initial URL/
-    );
+    await expect(
+      localOnlyFetch("http://010.0.0.1/", undefined, "TestProvider")
+    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
     expect(calls).toHaveLength(0);
   });
 
@@ -248,9 +244,9 @@ describe("localOnlyFetch", () => {
   it("follows a redirect whose Location uses a hex IPv4 spelling — the canonical form is loopback", async () => {
     // The Location header carries `http://0x7f.0.0.1/`. When the redirect
     // path resolves it via `new URL(location, current)`, WHATWG canonical-
-    // ises the host to `127.0.0.1`. `extractRawHost(next.href)` therefore
-    // returns `127.0.0.1` — a true loopback literal — and the redirect is
-    // accepted. The security goal (do not leave the loopback host) holds:
+    // ises the host to `127.0.0.1`. The redirect target's canonical hostname
+    // is therefore `127.0.0.1` — a true loopback literal — and the redirect
+    // is accepted. The security goal (do not leave the loopback host) holds:
     // the final destination IS 127.0.0.1.
     //
     // This pins current behaviour. If a future change validates redirect
@@ -268,6 +264,7 @@ describe("localOnlyFetch", () => {
     expect(await res.text()).toBe("ipv6-redirect-body");
     expect(calls).toHaveLength(2);
   });
+
 
   it("throws after more than 5 chained loopback redirects", async () => {
     // Queue 6 redirects: hops 0..5 (six fetches) all return a redirect, so the

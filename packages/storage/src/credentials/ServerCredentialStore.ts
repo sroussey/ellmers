@@ -81,7 +81,7 @@ export class ServerCredentialStore implements ICredentialStore {
    * vault id. The bounds are also chosen so the joined vault id stays well
    * under common KV/file-system key-length limits.
    */
-  private static readonly SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,128}$/;
+  private static readonly SAFE_SEGMENT = /^[A-Za-z0-9._:-]{1,128}$/;
 
   private readonly vault: SecretVault;
   private readonly metadata: IKvStorage<string, CredentialMetadataRow>;
@@ -111,16 +111,31 @@ export class ServerCredentialStore implements ICredentialStore {
 
   /**
    * Build the prefixed vault id for `key`. Re-validates `key` against the
-   * SAFE_SEGMENT grammar on every call: callers are external code paths
-   * (`get`/`put`/`delete`/`has`) that may receive `key` from request input,
-   * so rejecting unsafe characters here closes the key-injection class
-   * (slashes, control characters, oversized values).
+   * SAFE_SEGMENT grammar on every call: `put` is the only public path that
+   * routes through here (it must throw loudly so a programmer error cannot
+   * silently persist a colliding vault id). Reader methods (`get`/`has`/
+   * `delete`) short-circuit via {@link isSafeKey} instead so they keep the
+   * `ICredentialStore` contract of returning `undefined`/`false` for invalid
+   * keys, preserving substitutability with the other stores.
    */
   private vaultId(key: string): string {
     if (!ServerCredentialStore.SAFE_SEGMENT.test(key)) {
       throw new TypeError("ServerCredentialStore: invalid key");
     }
     return `${this.prefix}${key}`;
+  }
+
+  /**
+   * Non-throwing key predicate used by readers (`get`/`has`/`delete`). The
+   * `ICredentialStore` contract documents these methods as returning
+   * `undefined`/`false` for absent or invalid keys; throwing on every invalid
+   * lookup breaks substitutability with the other credential stores
+   * (`InMemoryCredentialStore`, `EncryptedKvCredentialStore`). `put` keeps
+   * routing through {@link vaultId} so a malicious key cannot persist a
+   * colliding vault id.
+   */
+  private isSafeKey(key: string): boolean {
+    return ServerCredentialStore.SAFE_SEGMENT.test(key);
   }
 
   /**
@@ -141,7 +156,8 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   async get(key: string): Promise<string | undefined> {
-    const id = this.vaultId(key);
+    if (!this.isSafeKey(key)) return undefined;
+    const id = `${this.prefix}${key}`;
     const row = await this.metadata.get(id);
     if (!row) return undefined;
     if (this.isPending(row)) return undefined;
@@ -250,36 +266,35 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   /**
-   * Internal delete by already-resolved vault id. Centralises the
-   * metadata-first ordering, the orphan-marker logic, and the put/delete
-   * race protection so {@link delete} and {@link deleteAll} share one
-   * code path. `key` is passed through only for the human-readable error
-   * message; the id is the source of truth.
+   * Internal delete by already-resolved vault id, shared by {@link delete}
+   * (via {@link deleteById}) and {@link deleteAll} (via {@link forceDeleteById}).
+   * Centralises the metadata-first ordering and the orphan-marker rewrite so
+   * the two callers cannot drift out of sync.
+   *
+   * `op` is interpolated into the error message ("delete" vs "deleteAll")
+   * so operators can tell which public method observed the failure.
    *
    * Ordering rationale:
-   *   1. If the row is pending (mid-flight put OR an existing orphan
-   *      marker) we MUST NOT touch the vault — a concurrent new-entry
-   *      put() that has written its pending metadata row but not yet
-   *      written the vault would otherwise see its vault entry deleted
-   *      out from under it, leaving an orphan. Returning false here
-   *      makes delete() idempotent against pending rows and closes the
-   *      orphan-overwrite race.
-   *   2. Delete metadata FIRST. If that throws, the vault is untouched
+   *   1. Delete metadata FIRST. If that throws, the vault is untouched
    *      and the row stays visible — readers continue to get the secret,
-   *      same as before the call. If it succeeds and the vault delete
-   *      then fails we reinstate a pending+orphaned metadata row so
-   *      readers see absence (correct) while a sticky marker remains
-   *      for operator reconciliation.
+   *      same as before the call.
+   *   2. If the vault delete then fails we reinstate a pending+orphaned
+   *      metadata row so readers see absence (correct) while a sticky
+   *      marker remains for operator reconciliation. If the marker write
+   *      itself fails, the row is fully unrecoverable from the store's
+   *      perspective — surface that clearly in the error message so an
+   *      operator knows whether they have a metadata trail to follow.
+   *
+   * Pending-row policy lives in the callers: {@link deleteById} short-circuits
+   * to avoid the put/delete race, while {@link forceDeleteById} is the wipe
+   * path that must clear sticky orphan markers and in-flight pending rows.
    */
-  private async deleteById(id: string, key: string): Promise<boolean> {
-    const existing = await this.metadata.get(id);
-    if (existing === undefined) return false;
-    // Pending rows are either an in-flight new-entry put() or a sticky orphan
-    // marker; in both cases the vault state is something only the owning
-    // operation should mutate. Returning false here is the close for both the
-    // orphan-overwrite hazard and the put/delete race.
-    if (this.isPending(existing)) return false;
-
+  private async commitDelete(
+    id: string,
+    key: string,
+    existing: CredentialMetadataRow,
+    op: "delete" | "deleteAll"
+  ): Promise<true> {
     // Metadata first: a throw here leaves the row intact and the vault
     // untouched, which is the safe failure mode (still readable, no half-state).
     await this.metadata.delete(id);
@@ -287,13 +302,6 @@ export class ServerCredentialStore implements ICredentialStore {
     try {
       await this.vault.deleteSecret(id);
     } catch (vaultError) {
-      // Metadata is already gone; readers now see absence (correct from their
-      // point of view) but the vault still holds bytes for this id. Reinstate
-      // a pending orphan marker so the row is invisible to readers AND
-      // discoverable by operator reconciliation. If the marker write itself
-      // fails, the row is fully unrecoverable from the store's perspective —
-      // surface that clearly in the error message so an operator knows whether
-      // they have a metadata trail to follow.
       let markerWritten = false;
       try {
         await this.metadata.put(id, {
@@ -307,7 +315,7 @@ export class ServerCredentialStore implements ICredentialStore {
         // Best effort only; fall through to surface the original vault error.
       }
       throw new Error(
-        "ServerCredentialStore.delete: metadata removed but vault delete failed for key " +
+        `ServerCredentialStore.${op}: metadata removed but vault delete failed for key ` +
           key +
           (markerWritten ? "; orphan marker persisted" : "; orphan marker also failed to persist"),
         { cause: vaultError }
@@ -316,12 +324,31 @@ export class ServerCredentialStore implements ICredentialStore {
     return true;
   }
 
+  /**
+   * Internal delete used by {@link delete}. Short-circuits on pending rows:
+   * a pending row is either an in-flight new-entry put() or a sticky orphan
+   * marker, and in both cases the vault state is something only the owning
+   * operation should mutate. Returning false here is the close for both the
+   * orphan-overwrite hazard and the put/delete race.
+   *
+   * {@link deleteAll} deliberately does NOT route through this path — it uses
+   * {@link forceDeleteById} so a scope-wide wipe actually clears those rows.
+   */
+  private async deleteById(id: string, key: string): Promise<boolean> {
+    const existing = await this.metadata.get(id);
+    if (existing === undefined) return false;
+    if (this.isPending(existing)) return false;
+    return this.commitDelete(id, key, existing, "delete");
+  }
+
   async delete(key: string): Promise<boolean> {
-    return this.deleteById(this.vaultId(key), key);
+    if (!this.isSafeKey(key)) return false;
+    return this.deleteById(`${this.prefix}${key}`, key);
   }
 
   async has(key: string): Promise<boolean> {
-    const row = await this.metadata.get(this.vaultId(key));
+    if (!this.isSafeKey(key)) return false;
+    const row = await this.metadata.get(`${this.prefix}${key}`);
     if (!row) return false;
     if (this.isPending(row)) return false;
     if (this.isExpired(row)) {
@@ -357,15 +384,33 @@ export class ServerCredentialStore implements ICredentialStore {
     return ids;
   }
 
+  /**
+   * Variant of {@link deleteById} that does NOT short-circuit on pending rows.
+   * `deleteAll` is an operator-level "wipe scope" operation whose whole job is
+   * to clear sticky orphan markers (rows where the original `delete` failed
+   * its vault hop and reinstated a `pending: true` marker) as well as
+   * still-in-flight pending new-entry rows. Routing `deleteAll` through
+   * {@link deleteById} would silently skip both — there would be no public API
+   * that could clear an orphan, defeating the purpose of writing the marker in
+   * the first place. The metadata-first ordering and orphan-marker rewrite on
+   * vault-delete failure are preserved via the shared {@link commitDelete}.
+   */
+  private async forceDeleteById(id: string, key: string): Promise<boolean> {
+    const existing = await this.metadata.get(id);
+    if (existing === undefined) return false;
+    return this.commitDelete(id, key, existing, "deleteAll");
+  }
+
   async deleteAll(): Promise<void> {
-    // Delegate each row to deleteById so the metadata-first ordering and
-    // orphan-marker logic stay in one place. Collect per-row failures and
-    // re-throw as an AggregateError so a single bad row does not silently
-    // skip the rest of the scope, and so the caller can see every failure.
+    // Route through forceDeleteById so sticky orphan markers and in-flight
+    // pending rows are actually wiped — the single-key `deleteById` skips
+    // pending rows on purpose (orphan-overwrite / put/delete race), but a
+    // scope-wide wipe MUST clear them. Collect per-row failures and re-throw
+    // as an AggregateError so a single bad row does not silently mask the rest.
     const errors: unknown[] = [];
     for (const id of await this.scopedIds()) {
       try {
-        await this.deleteById(id, this.unscopedKey(id));
+        await this.forceDeleteById(id, this.unscopedKey(id));
       } catch (error) {
         errors.push(error);
       }
