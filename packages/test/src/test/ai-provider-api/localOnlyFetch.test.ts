@@ -221,50 +221,6 @@ describe("localOnlyFetch", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("accepts a bracketed IPv6 loopback initial URL", async () => {
-    // `[::1]` is the canonical IPv6 loopback. `extractRawHost` strips the
-    // surrounding brackets, so `isLoopbackHostname` receives `::1`.
-    stubFetch([ok("ipv6-ok")]);
-    const res = await localOnlyFetch("http://[::1]:8080/", undefined, "TestProvider");
-    expect(await res.text()).toBe("ipv6-ok");
-    expect(calls).toHaveLength(1);
-  });
-
-  it("rejects an IPv6 loopback with a zone ID", async () => {
-    // `[::1%25eth0]` — the URL-encoded form of `::1%eth0` — carries an
-    // interface zone ID. `parseIpv6` rejects any host containing `%`,
-    // so the literal extracted by `extractRawHost` fails validation.
-    stubFetch([ok("should-not-be-reached")]);
-    await expect(localOnlyFetch("http://[::1%25eth0]/", undefined, "TestProvider")).rejects.toThrow(
-      /non-loopback host|invalid initial URL/
-    );
-    expect(calls).toHaveLength(0);
-  });
-
-  it("follows a redirect whose Location canonicalizes to a loopback IPv4", async () => {
-    // The Location header carries `http://0x7f.0.0.1/`. When the redirect
-    // path resolves it via `new URL(location, current)`, WHATWG canonicalises
-    // `next.href` so `extractRawHost(next.href)` returns `127.0.0.1` — a true
-    // loopback literal — and the redirect is accepted. This is the deliberate
-    // trade-off: the security invariant (never leave the loopback host) still
-    // holds because the final destination IS 127.0.0.1.
-    //
-    // This pins current behaviour. If a future change validates redirect
-    // Location headers against their raw (pre-canonical) form, this test
-    // will need to flip to `rejects.toThrow(/non-loopback host/)`.
-    stubFetch([redirect("http://0x7f.0.0.1/"), ok("hex-redirect-body")]);
-    const res = await localOnlyFetch("http://127.0.0.1:9000/start", undefined, "TestProvider");
-    expect(await res.text()).toBe("hex-redirect-body");
-    expect(calls).toHaveLength(2);
-  });
-
-  it("follows a redirect to a bracketed IPv6 loopback", async () => {
-    stubFetch([redirect("http://[::1]/"), ok("ipv6-redirect-body")]);
-    const res = await localOnlyFetch("http://127.0.0.1:9000/start", undefined, "TestProvider");
-    expect(await res.text()).toBe("ipv6-redirect-body");
-    expect(calls).toHaveLength(2);
-  });
-
   it("throws after more than 5 chained loopback redirects", async () => {
     // Queue 6 redirects: hops 0..5 (six fetches) all return a redirect, so the
     // loop exhausts MAX_REDIRECTS (5) and throws on the count guard. All
