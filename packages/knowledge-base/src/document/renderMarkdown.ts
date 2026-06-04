@@ -23,6 +23,9 @@ function flattenRow(row: TableCell[], columnCount: number): string[] {
 }
 
 function renderTable(node: TableNode): string {
+  // A table with no real columns (e.g. an all-empty layout/spacer table whose
+  // columns were all pruned) renders to nothing rather than a phantom `| |` grid.
+  if (node.columnCount < 1) return "";
   const cols = Math.max(1, node.columnCount);
   const headerCells =
     node.headerRows.length > 0

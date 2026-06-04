@@ -93,4 +93,19 @@ describe("renderMarkdown", () => {
     expect(md).toContain("1. x");
     expect(md).toContain("2. y");
   });
+
+  it("renders a column-less (all-empty) table as empty, not a phantom grid", () => {
+    const table = {
+      nodeId: "t0",
+      kind: NodeKind.TABLE,
+      range: { startOffset: 0, endOffset: 0 },
+      text: "",
+      caption: undefined,
+      columnCount: 0,
+      headerRows: [],
+      rows: [],
+      stitchedFrom: 1,
+    } as const;
+    expect(renderMarkdown(table as unknown as DocumentRootNode)).toBe("");
+  });
 });
