@@ -358,7 +358,7 @@ export const ImageNodeSchema = {
       title: "Kind",
       description: "Node type discriminator",
     },
-    src: { type: "string", title: "Src", description: "Image href (EDGAR-relative)" },
+    src: { type: "string", title: "Src", description: "Image source href" },
     alt: { type: "string", title: "Alt", description: "Alt text" },
   },
   required: [...DocumentNodeBaseSchema.required, "src"],

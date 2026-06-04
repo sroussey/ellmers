@@ -17,6 +17,23 @@ const cell = (text: string, isHeader = false) => ({
 });
 
 describe("renderMarkdown", () => {
+  it("escapes backslashes and pipes in table cells", () => {
+    const table = {
+      nodeId: "t",
+      kind: NodeKind.TABLE,
+      range: { startOffset: 0, endOffset: 0 },
+      text: "",
+      caption: undefined,
+      columnCount: 1,
+      headerRows: [],
+      rows: [[cell("a\\b|c")]],
+      stitchedFrom: 1,
+    } as const;
+    const md = renderMarkdown(table as unknown as DocumentRootNode);
+    // backslash escaped first (\\) then pipe (\|), so no ambiguous sequence
+    expect(md).toContain("a\\\\b\\|c");
+  });
+
   it("renders sections as headings and a table as a GFM pipe table", () => {
     const root: DocumentRootNode = {
       nodeId: "r",

@@ -8,7 +8,10 @@ import type { DocumentNode, TableCell, TableNode } from "./DocumentSchema";
 import { NodeKind } from "./DocumentSchema";
 
 function escapeCell(text: string): string {
-  return text.replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
+  // Escape backslashes first so an existing `\` cannot combine with the pipe
+  // escape below to form an ambiguous sequence, then escape pipes and flatten
+  // newlines for GFM table cells.
+  return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
 }
 
 /** Expand a possibly-ragged row to exactly `columnCount` cells, honoring colspan. */
