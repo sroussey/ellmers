@@ -8,12 +8,9 @@ import type { ChunkRecord } from "../chunk/ChunkSchema";
 import type { DocumentMetadata, DocumentNode } from "./DocumentSchema";
 
 /**
- * Document represents a hierarchical document with chunks
- *
- * Key features:
- * - Single source-of-truth tree structure (root node)
- * - Single set of chunks
- * - Separate persistence for document structure vs vectors
+ * Hierarchical document: a single source-of-truth tree (`root`) plus the
+ * flat list of chunks derived from it. Structure and vectors are persisted
+ * separately by the {@link KnowledgeBase}.
  */
 export class Document {
   public doc_id: string | undefined;
@@ -33,37 +30,22 @@ export class Document {
     this.chunks = chunks || [];
   }
 
-  /**
-   * Set chunks for the document
-   */
   setChunks(chunks: ChunkRecord[]): void {
     this.chunks = chunks;
   }
 
-  /**
-   * Get all chunks
-   */
   getChunks(): ChunkRecord[] {
     return this.chunks;
   }
 
-  /**
-   * Set the document ID
-   */
   setDocId(doc_id: string): void {
     this.doc_id = doc_id;
   }
 
-  /**
-   * Find chunks by nodeId
-   */
   findChunksByNodeId(nodeId: string): ChunkRecord[] {
     return this.chunks.filter((chunk) => chunk.nodePath.includes(nodeId));
   }
 
-  /**
-   * Serialize to JSON
-   */
   toJSON(): {
     metadata: DocumentMetadata;
     root: DocumentNode;
@@ -76,9 +58,6 @@ export class Document {
     };
   }
 
-  /**
-   * Deserialize from JSON
-   */
   static fromJSON(json: string, doc_id?: string): Document {
     const obj = JSON.parse(json);
     if (!obj || typeof obj !== "object") {

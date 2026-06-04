@@ -196,7 +196,6 @@ export class McpPromptGetTask extends Task<
         ],
       });
     }
-    // sse and streamable-http transports require network access
     return mergeEntitlements(base, {
       entitlements: [
         { id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" },
@@ -266,7 +265,6 @@ export class McpPromptGetTask extends Task<
               ...(arg.description ? { description: arg.description } : {}),
             };
           }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           this.config.inputSchema = {
             type: "object",
             properties,

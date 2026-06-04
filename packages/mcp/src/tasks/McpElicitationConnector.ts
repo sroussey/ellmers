@@ -8,18 +8,18 @@ import type { Server } from "@modelcontextprotocol/sdk/server";
 import type { ElicitRequestFormParams, ElicitResult } from "@modelcontextprotocol/sdk/types";
 import type { IHumanConnector, IHumanRequest, IHumanResponse } from "@workglow/util";
 
-/**
- * Converts a workglow DataPortSchema to MCP's flat requestedSchema format.
- *
- * MCP elicitation supports only a restricted subset of JSON Schema:
- * flat object with top-level properties only, no nesting.
- */
 function defaultAbortError(): Error {
   const err = new Error("The operation was aborted");
   err.name = "AbortError";
   return err;
 }
 
+/**
+ * Converts a workglow DataPortSchema to MCP's flat requestedSchema format.
+ *
+ * MCP elicitation supports only a restricted subset of JSON Schema:
+ * flat object with top-level properties only, no nesting.
+ */
 function toMcpRequestedSchema(
   schema: Record<string, unknown>
 ): ElicitRequestFormParams["requestedSchema"] {

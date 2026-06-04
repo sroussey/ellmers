@@ -20,21 +20,17 @@ const CF_MAX_DELAY_SECONDS = 12 * 60 * 60;
 /**
  * Backoff applied to `visible_at` when an enqueue throws transiently. Keeps
  * the row PENDING so a subsequent producer retry / poll picks it up again
- * instead of marking it FAILED on the first network blip. See H4.
+ * instead of marking it FAILED on the first network blip.
  */
 const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
 
 /**
- * H5: clamp the defer interval to the original `delaySeconds` floor so a row
+ * Clamp the defer interval to the original `delaySeconds` floor so a row
  * with a legitimate large delay (e.g. 1h scheduled work) is NOT pulled
  * forward to now + 30s by a producer-side blip. Returns the maximum of the
  * original delay and the producer-retry backoff so:
  *   - delaySeconds = 0   → wait 30s before next producer attempt
  *   - delaySeconds = 3600 → wait 3600s (the original schedule)
- *
- * TODO: full exponential backoff requires a new enqueue_defer_attempts field;
- * see follow-up issue. Today's mitigation just prevents the bug where a
- * scheduled row is silently re-delivered ahead of schedule.
  */
 function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
   const original = originalDelaySeconds != null ? originalDelaySeconds * 1000 : 0;
@@ -60,7 +56,7 @@ async function markEnqueueDeferredManyFallback<Input, Output>(
 }
 
 /**
- * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
+ * Module-level dedupe set for the InMemoryJobStore-pairing warning.
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
  */
@@ -88,7 +84,7 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // H3: warn loudly (once per store) when paired with InMemoryJobStore.
+    // Warn loudly (once per store) when paired with InMemoryJobStore.
     // CFQ delivers to a Worker invocation — across invocations, an in-memory
     // store loses partial-failure rows entirely.
     const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
@@ -131,10 +127,10 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
       );
       return id;
     } catch (err) {
-      // H4: a producer-side throw is transient — leave the row PENDING so a
+      // A producer-side throw is transient — leave the row PENDING so a
       // retry or a polling consumer can pick it back up. We shift visible_at
       // forward and stamp error_code; status/attempts are untouched.
-      // H5: clamp to the original delaySeconds floor so a scheduled row is
+      // Clamp to the original delaySeconds floor so a scheduled row is
       // not pulled forward by the producer-retry backoff.
       await this.jobStore.markEnqueueDeferred(id, {
         visible_at: new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds)),
@@ -148,7 +144,7 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     bodies: readonly JobStorageFormat<Input, Output>[],
     opts: SendOptions = {}
   ): Promise<readonly MessageId[]> {
-    // H3: applying a single fingerprint to a whole batch is almost always a
+    // Applying a single fingerprint to a whole batch is almost always a
     // bug — every body would dedup against the first row, returning the same
     // id for distinct payloads. Force callers that want fingerprint-based
     // dedup to use per-body send() instead.
@@ -157,10 +153,10 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
         "sendBatch does not accept a single fingerprint applied to all bodies; use send() per body for fingerprinted dedup"
       );
     }
-    // H6: mirror the send() check before the jobStore.create loop. Without
+    // Mirror the send() check before the jobStore.create loop. Without
     // this, an over-limit delaySeconds would create N PENDING rows and only
     // fail at the queue.sendBatch boundary — leaving the rows stranded via
-    // the H4 defer path even though the call was structurally invalid.
+    // the defer path even though the call was structurally invalid.
     if (opts.delaySeconds != null && opts.delaySeconds > CF_MAX_DELAY_SECONDS) {
       throw new RangeError(
         `Cloudflare Queues sendBatch delaySeconds=${opts.delaySeconds} exceeds the 12h maximum (${CF_MAX_DELAY_SECONDS}s)`
@@ -180,14 +176,13 @@ export class CloudflareMessageQueue<Input, Output> implements IMessageQueue<
     try {
       await this.queue.sendBatch(messages);
     } catch (err) {
-      // H4: transient — keep every row PENDING with visible_at pushed forward
+      // Transient — keep every row PENDING with visible_at pushed forward
       // and error_code set. Re-throw so the caller sees the failure. Prefer
       // the batched many-variant when the IJobStore exposes it (WrappedJobStore
       // ships a Promise.allSettled default; native SQL backends can override
       // with a single bulk UPDATE). Fall back to a per-id allSettled fan-out
       // for bare IJobStore impls (e.g. InMemoryJobStore in tests) that don't
-      // implement the optional method.
-      // H5: clamp to the original delaySeconds floor.
+      // implement the optional method. Clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };
       const deferResult = this.jobStore.markEnqueueDeferredMany

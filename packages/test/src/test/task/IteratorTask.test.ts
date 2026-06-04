@@ -35,10 +35,6 @@ interface ArrayInput extends TaskInput {
   items: number[];
 }
 
-// ============================================================================
-// IteratorTask Base Class Tests
-// ============================================================================
-
 describe("IteratorTask", () => {
   let logger = getTestingLogger();
   setLogger(logger);
@@ -75,10 +71,6 @@ describe("IteratorTask", () => {
       });
 
       test("should support combined batchSize and concurrencyLimit", () => {
-        // When both are set:
-        // - Items are grouped into batches of batchSize
-        // - Items within each batch run fully in parallel
-        // - Batches run with concurrencyLimit parallelism
         const task = new TestIteratorTask<ArrayInput>({
           concurrencyLimit: 2,
           batchSize: 5,
@@ -162,7 +154,6 @@ describe("IteratorTask", () => {
         const task = new MapTask({ maxIterations: "unbounded" });
         const schema = task.outputSchema();
 
-        // Without template graph, should return static schema
         expect(typeof schema).toBe("object");
       });
     });
@@ -506,7 +497,6 @@ describe("IteratorTask", () => {
       expect(mapTask).toBeInstanceOf(MapTask);
       expect(mapTask.preserveOrder).toBe(true);
 
-      // Verify template graph
       const templateGraph = mapTask.subGraph;
       expect(templateGraph).toBeDefined();
       expect(templateGraph?.getTasks()).toHaveLength(1);
@@ -560,7 +550,6 @@ describe("IteratorTask", () => {
       expect(whileTask.condition).toBe(condition);
       expect(whileTask.maxIterations).toBe(20);
 
-      // Verify subgraph
       expect(whileTask.hasChildren()).toBe(true);
       expect(whileTask.subGraph.getTasks()).toHaveLength(1);
     });
@@ -757,16 +746,13 @@ describe("IteratorTask", () => {
       const mapTask = workflow.graph.getTasks()[0] as MapTask;
       const templateTasks = mapTask.subGraph?.getTasks() ?? [];
 
-      // Tasks should have auto-generated UUID IDs
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       expect(templateTasks[0].id).toMatch(uuidRegex);
       expect(templateTasks[1].id).toMatch(uuidRegex);
-      // IDs should be unique
       expect(templateTasks[0].id).not.toBe(templateTasks[1].id);
     });
 
     test("template graph dataflows should be created between tasks with matching ports", () => {
-      // Create tasks with compatible output->input port names
       interface CompatibleInput extends TaskInput {
         readonly result: number;
       }
@@ -826,7 +812,6 @@ describe("IteratorTask", () => {
       const templateGraph = mapTask.subGraph;
       const dataflows = templateGraph?.getDataflows() ?? [];
 
-      // Should have a dataflow connecting the two tasks via matching 'result' port
       expect(dataflows.length).toBeGreaterThan(0);
       expect(dataflows[0].sourceTaskPortId).toBe("result");
       expect(dataflows[0].targetTaskPortId).toBe("result");

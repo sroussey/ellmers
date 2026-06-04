@@ -51,9 +51,6 @@ const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView>
   Uint16Array,
 };
 
-// SqliteTabularStorage is a key-value store that uses SQLite as the backend for
-// in app data.
-
 /**
  * A SQLite-based key-value repository implementation.
  * @template Schema - The schema definition for the entity

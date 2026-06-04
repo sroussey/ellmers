@@ -15,9 +15,6 @@ import { getLogger, TypedArray } from "@workglow/util/worker";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-/**
- * Core implementation for image embedding using Hugging Face Transformers.
- */
 export const HFT_ImageEmbedding: AiProviderRunFn<
   ImageEmbeddingTaskInput,
   ImageEmbeddingTaskOutput,

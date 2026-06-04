@@ -361,10 +361,6 @@ export class KnowledgeBase {
     }
   }
 
-  // ===========================================================================
-  // Strategy installation
-  // ===========================================================================
-
   /**
    * Install (or replace) the AI strategy used by `upsert`/`delete`/`search`.
    *
@@ -407,10 +403,6 @@ export class KnowledgeBase {
     return this.aiStrategy;
   }
 
-  // ===========================================================================
-  // Public RAG API — strategy-driven
-  // ===========================================================================
-
   /**
    * Ingest a document end-to-end: chunk + embed + write. Delegates to the
    * installed strategy.
@@ -451,15 +443,11 @@ export class KnowledgeBase {
     return strategy.search(this, query, options, runConfig);
   }
 
-  // ===========================================================================
-  // Strategy-facing building blocks
-  //
-  // These methods are public so strategies (and subclasses like
-  // `ScopedKnowledgeBase`) can call them, but application code should go
-  // through `upsert` / `delete` / `search` above. The contract: every one
-  // of these goes through virtual dispatch, so a subclass can intercept
-  // any of them without the strategy knowing.
-  // ===========================================================================
+  // Strategy-facing building blocks. Public so strategies (and subclasses
+  // like `ScopedKnowledgeBase`) can call them, but application code should go
+  // through `upsert` / `delete` / `search` above. Every one of these goes
+  // through virtual dispatch so a subclass can intercept any of them without
+  // the strategy knowing.
 
   /**
    * Store a document JSON record. Does NOT chunk or embed; the strategy
@@ -503,8 +491,6 @@ export class KnowledgeBase {
     return entities.map((e: DocumentStorageEntity) => e.doc_id);
   }
 
-  // ----- chunks -----
-
   async upsertChunk(chunk: InsertChunkVectorEntity): Promise<ChunkVectorEntity> {
     const expected = this.getVectorDimensions();
     if (expected > 0 && chunk.vector.length !== expected) {
@@ -544,8 +530,6 @@ export class KnowledgeBase {
     const results = await this.chunkStorage.query({ doc_id });
     return (results ?? []) as ChunkVectorEntity[];
   }
-
-  // ----- vector retrieval -----
 
   async similaritySearch(
     query: TypedArray,
@@ -693,10 +677,6 @@ export class KnowledgeBase {
     return this.textIndex !== undefined;
   }
 
-  // ===========================================================================
-  // Tree traversal helpers (unchanged)
-  // ===========================================================================
-
   async getNode(doc_id: string, nodeId: string): Promise<DocumentNode | undefined> {
     const doc = await this.getDocument(doc_id);
     if (!doc) return undefined;
@@ -755,10 +735,6 @@ export class KnowledgeBase {
 
     return ancestors;
   }
-
-  // ===========================================================================
-  // Lifecycle / accessors
-  // ===========================================================================
 
   /** Underlying chunk store; for maintenance and inspection. */
   get vectorStorage(): ChunkVectorStorage {

@@ -50,7 +50,6 @@ export class TelemetryKvStorage<
     return this.inner.getObjectAsIdString(object);
   }
 
-  // Event delegation — no telemetry needed
   on<Event extends KvEventName>(name: Event, fn: KvEventListener<Event, Key, Value, Combined>) {
     this.inner.on(name, fn);
   }

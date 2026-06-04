@@ -7,10 +7,7 @@
 import type { DataPortSchema, FromSchema, JsonSchema } from "@workglow/util/schema";
 import { EntitySchema } from "../document/DocumentSchema";
 
-/**
- * Schema for a unified chunk record.
- * Replaces ChunkNode, ChunkMetadata, and EnrichedChunkMetadata with a single flat type.
- */
+/** Flat, JSON-schema description of a single chunk row. */
 export const ChunkRecordSchema = () =>
   ({
     type: "object",
@@ -81,9 +78,6 @@ export const ChunkRecordSchema = () =>
 
 export type ChunkRecord = FromSchema<ReturnType<typeof ChunkRecordSchema>>;
 
-/**
- * Schema for chunk record array (for use in task schemas)
- */
 export const ChunkRecordArraySchema = {
   type: "array",
   items: ChunkRecordSchema(),

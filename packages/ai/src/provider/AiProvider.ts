@@ -107,18 +107,12 @@ export interface AiProviderRegisterContext extends AiProviderRegisterOptions {
  * ```
  */
 export abstract class AiProvider<TModelConfig extends ModelConfig = ModelConfig> {
-  /** Unique provider identifier (e.g., "HF_TRANSFORMERS_ONNX") */
   abstract readonly name: string;
 
-  /**
-   * Human-readable label for the provider (UI, JSON Schema `x-ui-enum-labels`, etc.).
-   */
   abstract readonly displayName: string;
 
-  /** Whether this provider runs models locally (on the same machine). */
   abstract readonly isLocal: boolean;
 
-  /** Whether this provider can run in a browser environment. */
   abstract readonly supportsBrowser: boolean;
 
   /**

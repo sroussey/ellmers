@@ -56,9 +56,6 @@ export type TextQuestionAnswerTaskInput = FromSchema<typeof TextQuestionAnswerIn
 export type TextQuestionAnswerTaskOutput = FromSchema<typeof TextQuestionAnswerOutputSchema>;
 export type TextQuestionAnswerTaskConfig = TaskConfig<TextQuestionAnswerTaskInput>;
 
-/**
- * This is a special case of text generation that takes a context and a question
- */
 export class TextQuestionAnswerTask extends StreamingAiTask<
   TextQuestionAnswerTaskInput,
   TextQuestionAnswerTaskOutput,
@@ -82,12 +79,6 @@ export class TextQuestionAnswerTask extends StreamingAiTask<
   }
 }
 
-/**
- * Convenience function to run text question answer tasks.
- * Creates and executes a TextQuestionAnswerCompoundTask with the provided input.
- * @param input The input parameters for text question answer (context, question, and model)
- * @returns Promise resolving to the generated answer(s)
- */
 export const textQuestionAnswer = (
   input: TextQuestionAnswerTaskInput,
   config?: TextQuestionAnswerTaskConfig,

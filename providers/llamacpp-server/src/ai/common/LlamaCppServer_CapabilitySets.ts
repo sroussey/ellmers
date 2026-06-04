@@ -26,7 +26,7 @@ export const LLAMACPP_SERVER_TEXT_EMBEDDING = ["text.embedding"] as const satisf
 export const LLAMACPP_SERVER_MODEL_SEARCH = ["model.search"] as const satisfies Capability[];
 export const LLAMACPP_SERVER_MODEL_INFO = ["model.info"] as const satisfies Capability[];
 
-/** Aggregated list — for `workerRunFnSpecs()` derivation. Order MUST match `LLAMACPP_SERVER_RUN_FNS`. */
+/** Aggregated list — for `workerRunFnSpecs()` derivation. */
 export const LLAMACPP_SERVER_CAPABILITY_SETS = [
   LLAMACPP_SERVER_TEXT_GENERATION,
   LLAMACPP_SERVER_TOOL_USE,

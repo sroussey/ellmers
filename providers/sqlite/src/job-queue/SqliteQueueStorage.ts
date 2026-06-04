@@ -168,7 +168,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
         job.created_at
       ) as { id: string } | undefined;
     } catch (err) {
-      // H2: race-safety for fingerprint dedup. With the v5 UNIQUE partial
+      // Race-safety for fingerprint dedup. With the UNIQUE partial
       // index in place, two concurrent inserts for the same (queue,
       // fingerprint) where one row is PENDING/PROCESSING raise a
       // SQLITE_CONSTRAINT_UNIQUE error. We resolve the race by returning the
@@ -235,7 +235,7 @@ export class SqliteQueueStorage<Input, Output> implements IQueueStorage<Input, O
     status: JobStatus = JobStatus.PENDING,
     num: number = 100
   ): Promise<Array<JobStorageFormat<Input, Output>>> {
-    num = Math.max(1, Math.min(10000, Math.floor(Number(num) || 100))); // Validate and clamp to safe range
+    num = Math.max(1, Math.min(10000, Math.floor(Number(num) || 100)));
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();
 

@@ -59,9 +59,6 @@ async function rawImageToImageValue(image: RawImage): Promise<ImageValue> {
   return imageValueFromBuffer(Buffer.from(rgba), "raw-rgba", raw.width, raw.height);
 }
 
-/**
- * Core implementation for image segmentation using Hugging Face Transformers.
- */
 export const HFT_ImageSegmentation: AiProviderRunFn<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,

@@ -12,18 +12,10 @@ import type { GraphAsTaskConfig } from "./GraphAsTask";
 import { GraphAsTask, graphAsTaskConfigSchema } from "./GraphAsTask";
 import type { TaskInput, TaskOutput, TaskTypeName } from "./TaskTypes";
 
-// ============================================================================
-// Types and Interfaces
-// ============================================================================
-
 /**
  * Execution mode for the fallback task.
- *
- * - `"task"`: Each task in the subgraph is an independent alternative.
- *   They are tried sequentially until one succeeds.
- *
- * - `"data"`: The subgraph contains a template workflow that is executed
- *   multiple times with different input overrides from the `alternatives` array.
+ * - `"task"`: each task in the subgraph is an independent alternative tried sequentially.
+ * - `"data"`: the subgraph is a template workflow re-run with each entry in `alternatives`.
  */
 export type FallbackMode = "task" | "data";
 
@@ -37,10 +29,6 @@ export const fallbackTaskConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Configuration type for FallbackTask.
- * Extends GraphAsTaskConfig with fallback-specific options.
- */
 export type FallbackTaskConfig<Input extends TaskInput = TaskInput> = GraphAsTaskConfig<Input> & {
   /**
    * The fallback execution mode.
@@ -67,60 +55,13 @@ export type FallbackTaskConfig<Input extends TaskInput = TaskInput> = GraphAsTas
   readonly alternatives?: Record<string, unknown>[];
 };
 
-// ============================================================================
-// FallbackTask Class
-// ============================================================================
-
 /**
- * A task that tries multiple alternatives and returns the first successful result.
+ * Tries multiple alternatives and returns the first successful result.
  *
- * FallbackTask provides resilient execution by automatically falling back to
- * alternative strategies when one fails. This is essential for production AI
- * workflows where provider availability is unpredictable.
- *
- * ## Execution Modes
- *
- * ### Task Mode (`fallbackMode: "task"`)
- * Each task added to the subgraph is an independent alternative. They are
- * tried sequentially in insertion order. The first successful result is
- * returned and remaining alternatives are skipped.
- *
- * ```typescript
- * // Via Workflow API:
- * workflow
- *   .fallback()
- *   .notifySlack({ channel: "#alerts", message: "Hello" })
- *   .notifyEmail({ to: "admin@example.com", subject: "Alert" })
- *   .notifySms({ phone: "+1234567890", message: "Alert" })
- *   .endFallback();
- * ```
- *
- * ### Data Mode (`fallbackMode: "data"`)
- * The subgraph contains a template workflow that is executed multiple times,
- * each time with different input data merged from the `alternatives` array.
- *
- * ```typescript
- * // Via Workflow API:
- * workflow
- *   .fallbackWith([
- *     { model: "openai:gpt-4" },
- *     { model: "anthropic:claude-sonnet-4-20250514" },
- *     { model: "onnx:Xenova/LaMini-Flan-T5-783M:q8" },
- *   ])
- *   .textGeneration({ prompt: "Hello" })
- *   .endFallbackWith();
- * ```
- *
- * ## Error Handling
- *
- * If all alternatives fail, a `TaskFailedError` is thrown with a message
- * that includes all individual error messages. Each attempt's error is
- * collected and reported for debugging.
- *
- * ## Output
- *
- * The output is the result from whichever alternative succeeded first.
- * The output schema matches the inner tasks' output schema.
+ * In task mode each child is an independent alternative tried sequentially;
+ * in data mode the subgraph is a template re-run with each entry in
+ * `alternatives` merged into the input. If all alternatives fail a
+ * `TaskFailedError` aggregating each attempt's error is thrown.
  */
 export class FallbackTask<
   Input extends TaskInput = TaskInput,
@@ -136,7 +77,6 @@ export class FallbackTask<
   public static override title: string = "Fallback";
   public static override description: string = "Try alternatives until one succeeds";
 
-  /** FallbackTask has dynamic schemas based on the subgraph structure. */
   public static override hasDynamicSchemas: boolean = true;
 
   public static override configSchema(): DataPortSchema {

@@ -113,15 +113,15 @@ function buildToolCallPrompt(input: ToolCallingTaskInput): {
  * would double-feed tool results once the orchestrator also supplies them via
  * `messages`.
  *
- * ## Argument validation (H3)
+ * ## Argument validation
  *
  * Chrome calls `execute` with `(args)` where `args[0]` is whatever the
  * model produced. The model can hallucinate fields that don't match the
  * tool's `inputSchema`. We compile each tool's schema once, validate the
  * captured arguments before passing them to `filterValidToolCalls`, and
  * drop+log calls that fail. Tools whose `inputSchema` fails to compile
- * fall through to name-only validation (same as today's behavior) with
- * a single warning so a malformed schema doesn't crash the run.
+ * fall through to name-only validation with a single warning so a
+ * malformed schema doesn't crash the run.
  *
  * Captured args are also passed through {@link sanitizeToolArgs} before
  * validation to scrub `__proto__` / `constructor` / `prototype` keys.

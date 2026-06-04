@@ -144,7 +144,6 @@ export class TelemetryTabularStorage<
     );
   }
 
-  // Forwarded directly (async generators, not worth tracing)
   records(pageSize?: number): AsyncGenerator<Entity, void, undefined> {
     return this.inner.records(pageSize);
   }
@@ -206,7 +205,6 @@ export class TelemetryTabularStorage<
     return this.inner[Symbol.asyncDispose]();
   }
 
-  // Event delegation — no telemetry needed
   on<Event extends TabularEventName>(
     name: Event,
     fn: TabularEventListener<Event, PrimaryKey, Entity>

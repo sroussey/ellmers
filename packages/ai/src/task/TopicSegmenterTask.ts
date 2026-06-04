@@ -159,9 +159,6 @@ export class TopicSegmenterTask extends Task<
     };
   }
 
-  /**
-   * Embedding-based segmentation using hashed token vectors and cosine similarity
-   */
   private embeddingSegmentation(
     text: string,
     minSegmentSize: number,
@@ -217,9 +214,6 @@ export class TopicSegmenterTask extends Task<
     return this.mergeSmallSegments(segments, minSegmentSize);
   }
 
-  /**
-   * Heuristic segmentation based on paragraph breaks and transition markers
-   */
   private heuristicSegmentation(
     text: string,
     minSegmentSize: number,
@@ -279,7 +273,7 @@ export class TopicSegmenterTask extends Task<
   }
 
   /**
-   * Create a hashed token embedding for fast similarity checks
+   * Hashed token embedding for fast similarity checks.
    */
   private embedParagraph(text: string, dimensions: number): { vector: Float32Array; norm: number } {
     const vector = new Float32Array(dimensions);
@@ -325,9 +319,6 @@ export class TopicSegmenterTask extends Task<
     return dot / (aNorm * bNorm);
   }
 
-  /**
-   * Split text into paragraphs with offsets
-   */
   private splitIntoParagraphs(text: string): Array<{ text: string; offset: number }> {
     const paragraphs: Array<{ text: string; offset: number }> = [];
     const splits = text.split(/\n\s*\n/);
@@ -345,9 +336,6 @@ export class TopicSegmenterTask extends Task<
     return paragraphs;
   }
 
-  /**
-   * Check if paragraph contains transition markers
-   */
   private hasTransitionMarker(text: string): boolean {
     const transitionMarkers = [
       /^(however|therefore|thus|consequently|in conclusion|in summary|furthermore|moreover|additionally|meanwhile|nevertheless|on the other hand)/i,
@@ -358,9 +346,6 @@ export class TopicSegmenterTask extends Task<
     return transitionMarkers.some((pattern) => pattern.test(text));
   }
 
-  /**
-   * Create a segment from paragraphs
-   */
   private createSegment(paragraphs: Array<{ text: string; offset: number }>): {
     text: string;
     startOffset: number;
@@ -374,9 +359,6 @@ export class TopicSegmenterTask extends Task<
     return { text, startOffset, endOffset };
   }
 
-  /**
-   * Merge segments that are too small
-   */
   private mergeSmallSegments(
     segments: Array<{ text: string; startOffset: number; endOffset: number }>,
     minSegmentSize: number

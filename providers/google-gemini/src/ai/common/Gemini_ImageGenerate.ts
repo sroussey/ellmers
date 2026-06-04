@@ -59,7 +59,6 @@ export const Gemini_ImageGenerate_Stream: AiProviderRunFn<
 
       const response = result.response;
 
-      // Check for safety blocks
       if (
         !response.candidates ||
         response.candidates.length === 0 ||
@@ -69,7 +68,6 @@ export const Gemini_ImageGenerate_Stream: AiProviderRunFn<
         throw new ImageGenerationContentPolicyError(modelIdOf(model), `Blocked: ${reason}`);
       }
 
-      // Find the inline image part
       const candidateParts = response.candidates[0]?.content?.parts ?? [];
       const imagePart = candidateParts.find(
         (p: any) => p.inlineData && p.inlineData.mimeType && p.inlineData.data

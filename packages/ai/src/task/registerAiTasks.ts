@@ -58,9 +58,10 @@ import { TopicSegmenterTask } from "./TopicSegmenterTask";
 import { VectorQuantizeTask } from "./VectorQuantizeTask";
 import { VectorSimilarityTask } from "./VectorSimilarityTask";
 
-// Register all AI tasks with the TaskRegistry.
-// Centralized registration ensures tasks are available for JSON deserialization
-// and prevents tree-shaking issues.
+/**
+ * Centralized registration ensures tasks are available for JSON deserialization
+ * and prevents tree-shaking issues.
+ */
 export const registerAiTasks = () => {
   const tasks = [
     AiChatTask,

@@ -61,9 +61,6 @@ export type ImageToTextTaskInput = WithImageValuePorts<
 export type ImageToTextTaskOutput = FromSchema<typeof ImageToTextOutputSchema>;
 export type ImageToTextTaskConfig = TaskConfig<ImageToTextTaskInput>;
 
-/**
- * Generates text descriptions from images using vision-language models
- */
 export class ImageToTextTask extends AiVisionTask<
   ImageToTextTaskInput,
   ImageToTextTaskOutput,
@@ -84,12 +81,6 @@ export class ImageToTextTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run image to text tasks.
- * Creates and executes an ImageToTextTask with the provided input.
- * @param input The input parameters for image to text (image and model)
- * @returns Promise resolving to the generated text description
- */
 export const imageToText = (
   input: ImageToTextTaskInput,
   config?: ImageToTextTaskConfig,

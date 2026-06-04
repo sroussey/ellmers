@@ -31,13 +31,11 @@ export type SplitTaskOutput = FromSchema<typeof outputSchema>;
 function fanoutToIndexedOutputs<Output extends SplitTaskOutput>(inputValue: unknown): Output {
   const output = {} as Output;
 
-  // Handle array input
   if (Array.isArray(inputValue)) {
     inputValue.forEach((item, index) => {
       (output as any)[`output_${index}`] = item;
     });
   } else {
-    // Handle single value as a single-element array
     (output as any).output_0 = inputValue;
   }
 
@@ -45,19 +43,8 @@ function fanoutToIndexedOutputs<Output extends SplitTaskOutput>(inputValue: unkn
 }
 
 /**
- * SplitTask takes an array or single value as input and creates
- * separate outputs for each element. Each output is named by its index (0, 1, 2, etc.).
- * Useful for workflows that need to process array elements in parallel branches.
- *
- * Features:
- * - Accepts both arrays and single values as input
- * - Creates one output per array element (output_0, output_1, etc.)
- * - Single values are treated as a single-element array
- * - Output count matches array length
- *
- * Example:
- * Input: { input: [1, 2, 3] }
- * Output: { output_0: 1, output_1: 2, output_2: 3 }
+ * Splits an array (or single value) input into one output per element, named
+ * `output_0`, `output_1`, ... Single values become a single-element output.
  */
 export class SplitTask<
   Input extends SplitTaskInput = SplitTaskInput,

@@ -6,9 +6,6 @@
  * Shared MCP authentication type definitions and JSON Schema.
  */
 
-/**
- * Supported MCP authentication types.
- */
 export const mcpAuthTypes = [
   "none",
   "bearer",
@@ -19,8 +16,6 @@ export const mcpAuthTypes = [
 ] as const;
 
 export type McpAuthType = (typeof mcpAuthTypes)[number];
-
-// ── Discriminated union on `type` ──────────────────────────────────────
 
 export interface McpAuthNone {
   readonly type: "none";
@@ -77,8 +72,7 @@ export type McpAuthConfig =
   | McpAuthStaticPrivateKeyJwt
   | McpAuthAuthorizationCode;
 
-// ── JSON Schema for auth config (discriminated union on auth_type) ─────
-
+/** JSON Schema for auth config (discriminated union on `auth_type`). */
 export const mcpAuthConfigSchema = {
   properties: {
     auth_type: {
@@ -211,9 +205,6 @@ export const mcpAuthConfigSchema = {
   ],
 } as const;
 
-/**
- * Runtime type guard for McpAuthType.
- */
 function isMcpAuthType(value: unknown): value is McpAuthType {
   return typeof value === "string" && (mcpAuthTypes as readonly string[]).includes(value);
 }

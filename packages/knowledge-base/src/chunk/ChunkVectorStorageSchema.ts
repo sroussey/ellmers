@@ -9,10 +9,6 @@ import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
 import type { ChunkRecord } from "./ChunkSchema";
 
-/**
- * Schema for chunk vector storage with typed metadata.
- * Replaces DocumentChunkSchema with ChunkRecord as the metadata type.
- */
 export const ChunkVectorStorageSchema = {
   type: "object",
   properties: {
@@ -60,9 +56,6 @@ export type InsertChunkVectorEntity<
 > = Omit<ChunkVectorEntity<Metadata, Vector>, "chunk_id"> &
   Partial<Pick<ChunkVectorEntity<Metadata, Vector>, "chunk_id">>;
 
-/**
- * Type for the primary key of chunk vectors
- */
 export type ChunkVectorKey = { chunk_id: string };
 
 export type ChunkVectorStorage = IVectorStorage<
@@ -94,9 +87,6 @@ export type ChunkVectorStorage = IVectorStorage<
  */
 export type ScoreType = "cosine" | "bm25" | "rrf" | "rerank";
 
-/**
- * Search result with score
- */
 export type ChunkSearchResult = ChunkVectorEntity & {
   score: number;
   scoreType?: ScoreType;

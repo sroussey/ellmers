@@ -17,10 +17,6 @@ import type { HumanResponseAction, IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector, uuid4 } from "@workglow/util";
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
-// ========================================================================
-// Schemas
-// ========================================================================
-
 const humanApprovalConfigSchema = {
   type: "object",
   properties: {
@@ -123,10 +119,6 @@ export type HumanApprovalTaskOutput = {
   readonly reason?: string;
 };
 
-// ========================================================================
-// HumanApprovalTask
-// ========================================================================
-
 /**
  * Convenience task for the common approve/deny pattern.
  *
@@ -201,9 +193,8 @@ export class HumanApprovalTask extends Task<
       throw err;
     }
 
-    // Map MCP actions to approval semantics:
-    // - "accept" with approved field from content
-    // - "decline" or "cancel" → approved = false
+    // Map MCP actions to approval semantics: "accept" with approved field from
+    // content; "decline" or "cancel" → approved = false.
     if (response.action === "accept" && response.content) {
       return {
         action: response.action,

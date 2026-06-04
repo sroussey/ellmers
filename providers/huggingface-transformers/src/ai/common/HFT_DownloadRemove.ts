@@ -69,10 +69,6 @@ async function deleteModelCacheFromFilesystem(model: HfTransformersOnnxModelConf
   });
 }
 
-/**
- * Core implementation for unloading a Hugging Face Transformers model.
- * This is shared between inline and worker implementations.
- */
 export const HFT_DownloadRemove: AiProviderRunFn<
   ModelDownloadRemoveTaskRunInput,
   ModelDownloadRemoveTaskRunOutput,

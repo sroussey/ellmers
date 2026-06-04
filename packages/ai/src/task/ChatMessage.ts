@@ -6,10 +6,6 @@
 
 import type { DataPortSchema } from "@workglow/util/schema";
 
-// ========================================================================
-// Canonical ContentBlock union
-// ========================================================================
-
 export type ContentBlockText = {
   readonly type: "text";
   readonly text: string;
@@ -53,20 +49,12 @@ export type ContentBlock =
   | ContentBlockToolUse
   | ContentBlockToolResult;
 
-// ========================================================================
-// Canonical ChatMessage
-// ========================================================================
-
 export type ChatRole = "user" | "assistant" | "tool" | "system";
 
 export interface ChatMessage {
   readonly role: ChatRole;
   readonly content: ReadonlyArray<ContentBlock>;
 }
-
-// ========================================================================
-// JSON Schemas (runtime validation + DataPort declarations)
-// ========================================================================
 
 const ContentBlockTextSchema = {
   type: "object",
@@ -149,10 +137,6 @@ export const ChatMessageSchema = {
   description: "A single chat message with role and structured content blocks",
 } as const satisfies DataPortSchema;
 
-// ========================================================================
-// Runtime type guards
-// ========================================================================
-
 export function isContentBlockInToolResultBody(
   value: unknown
 ): value is ContentBlockInToolResultBody {
@@ -208,10 +192,6 @@ export function isChatMessage(value: unknown): value is ChatMessage {
     v.role === "user" || v.role === "assistant" || v.role === "tool" || v.role === "system";
   return validRole && Array.isArray(v.content) && v.content.every(isContentBlock);
 }
-
-// ========================================================================
-// Convenience constructors
-// ========================================================================
 
 export function textMessage(role: ChatRole, text: string): ChatMessage {
   return { role, content: [{ type: "text", text }] };

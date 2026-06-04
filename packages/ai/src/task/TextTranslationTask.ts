@@ -65,9 +65,6 @@ export type TextTranslationTaskInput = FromSchema<typeof TextTranslationInputSch
 export type TextTranslationTaskOutput = FromSchema<typeof TextTranslationOutputSchema>;
 export type TextTranslationTaskConfig = TaskConfig<TextTranslationTaskInput>;
 
-/**
- * This translates text from one language to another
- */
 export class TextTranslationTask extends StreamingAiTask<
   TextTranslationTaskInput,
   TextTranslationTaskOutput,
@@ -89,12 +86,6 @@ export class TextTranslationTask extends StreamingAiTask<
   }
 }
 
-/**
- * Convenience function to run text translation tasks.
- * Creates and executes a TextTranslationCompoundTask with the provided input.
- * @param input The input parameters for text translation (text, model, source_lang, and target_lang)
- * @returns Promise resolving to the translated text output(s)
- */
 export const textTranslation = (
   input: TextTranslationTaskInput,
   config?: TextTranslationTaskConfig,

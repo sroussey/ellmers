@@ -162,13 +162,11 @@ async function fetchWithProgress(
   let receivedBytes = 0;
   const reader = response.body.getReader();
 
-  // Create a new ReadableStream that supports progress updates
   const stream = new ReadableStream({
     start(controller) {
       async function push() {
         try {
           while (true) {
-            // Check if the request was aborted
             if (options.signal?.aborted) {
               controller.error(createFetchUrlAbortedError());
               reader.cancel();
@@ -204,18 +202,11 @@ async function fetchWithProgress(
   });
 }
 
-/**
- * Extends the base Job class to provide custom execution functionality
- * through a provided function.
- */
 export class FetchUrlJob<
   Input extends FetchUrlTaskInput = FetchUrlTaskInput,
   Output = FetchUrlTaskOutput,
 > extends Job<Input, Output> {
   static readonly type: string = "FetchUrlJob";
-  /**
-   * Executes the job using the provided function.
-   */
   override async execute(input: Input, context: IJobExecuteContext): Promise<Output> {
     const classification = classifyUrl(input.url!);
     if (classification.kind === "invalid") {
@@ -263,7 +254,6 @@ export class FetchUrlJob<
     }
 
     if (response.ok) {
-      // Extract metadata from response
       const contentType = response.headers.get("content-type") ?? "";
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => {
@@ -275,7 +265,6 @@ export class FetchUrlJob<
         headers: responseHeaders,
       };
 
-      // Infer response type from response headers if not specified
       let resolvedResponseType = input.response_type;
       if (!resolvedResponseType) {
         if (contentType.includes("application/json")) {
@@ -291,7 +280,7 @@ export class FetchUrlJob<
         ) {
           resolvedResponseType = "blob";
         } else {
-          resolvedResponseType = "json"; // Default fallback
+          resolvedResponseType = "json";
         }
       }
       try {
@@ -346,9 +335,6 @@ export class FetchUrlJob<
   }
 }
 
-/**
- * FetchUrlTask provides a task for fetching data from a URL.
- */
 const fetchUrlTaskConfigSchema = {
   type: "object",
   properties: {
@@ -445,21 +431,16 @@ export class FetchUrlTask<
   }
 
   /**
-   * Override outputSchema to compute it dynamically based on the current response_type value.
-   * If response_type is null, all output types are available.
-   * If response_type is a specific value (e.g., "json"), only that output type is available.
+   * Computes output schema dynamically based on the current response_type:
+   * null → all output types available; specific value → only that output type.
    */
   public override outputSchema(): DataPortSchema {
-    // Get the current response_type value from runInputData (if set) or defaults
-    // runInputData takes precedence as it contains the most recent input values
     const responseType = this.runInputData?.response_type ?? this.defaults?.response_type ?? null;
 
-    // If response_type is null or undefined, return all output types (static schema)
     if (responseType === null || responseType === undefined) {
       return (this.constructor as typeof FetchUrlTask).outputSchema();
     }
 
-    // If response_type is a specific value, return only that output type
     const staticSchema = (this.constructor as typeof FetchUrlTask).outputSchema();
     if (typeof staticSchema === "boolean") {
       return staticSchema;
@@ -469,7 +450,6 @@ export class FetchUrlTask<
       return staticSchema;
     }
 
-    // Build properties object with only the selected response type
     const properties: Record<string, any> = {};
     if (responseType === "json" && staticSchema.properties.json) {
       properties.json = staticSchema.properties.json;
@@ -481,12 +461,10 @@ export class FetchUrlTask<
       properties.arraybuffer = staticSchema.properties.arraybuffer;
     }
 
-    // Always include metadata
     if (staticSchema.properties.metadata) {
       properties.metadata = staticSchema.properties.metadata;
     }
 
-    // If no properties were added (shouldn't happen with valid responseType), return static schema
     if (Object.keys(properties).length === 0) {
       return staticSchema;
     }
@@ -524,7 +502,6 @@ export class FetchUrlTask<
 
     try {
       if (queuePref === false) {
-        // Direct execution — create FetchUrlJob and run inline
         const job = new FetchUrlJob<FetchUrlTaskInput, Output>({ input: jobInput });
         cleanup = job.onJobProgress(
           (progress: number, message: string, details: Record<string, any> | null) => {
@@ -537,7 +514,6 @@ export class FetchUrlTask<
         });
       }
 
-      // Queued execution
       const queueName =
         typeof queuePref === "string" ? queuePref : await this.getDefaultQueueName(input);
 
@@ -557,7 +533,6 @@ export class FetchUrlTask<
         maxAttempts: 10,
       });
 
-      // Wire abort signal to queued job
       const onAbort = () => {
         handle.abort().catch((err) => {
           console.warn(`Failed to abort queued fetch job`, err);
@@ -629,32 +604,25 @@ export class FetchUrlTask<
   }
 
   /**
-   * Override setInput to detect when response_type changes and emit schemaChange event.
-   * This ensures that consumers of the task are notified when the output schema changes.
+   * Detects when response_type changes and emits schemaChange so consumers
+   * see the dynamic output schema update.
    */
   public override setInput(input: Partial<Input>): void {
-    // Only check for changes if response_type is being set
     if (!("response_type" in input)) {
       super.setInput(input);
       return;
     }
 
-    // Get the current response_type before updating
-    // Check runInputData first (most recent), then defaults, then null
     const getCurrentResponseType = () => {
       return this.runInputData?.response_type ?? this.defaults?.response_type ?? null;
     };
 
     const previousResponseType = getCurrentResponseType();
 
-    // Call parent to update the input
     super.setInput(input);
 
-    // Get the new response_type after updating (from runInputData, which is what setInput updates)
     const newResponseType = getCurrentResponseType();
 
-    // If response_type changed, emit schemaChange event
-    // Compare using strict equality (handles null/undefined correctly)
     if (previousResponseType !== newResponseType) {
       this.emitSchemaChange();
     }

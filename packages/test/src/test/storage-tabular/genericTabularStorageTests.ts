@@ -179,7 +179,6 @@ export function runGenericTabularStorageTests(
 
     it("should handle empty array in putBulk", async () => {
       await repository.putBulk([]);
-      // Should not throw an error
     });
 
     it("should return the entity from put()", async () => {
@@ -188,7 +187,6 @@ export function runGenericTabularStorageTests(
 
       const returned = await repository.put(entity);
 
-      // Verify returned entity matches what was stored
       expect(returned).toBeDefined();
       expect(returned.name).toEqual(entity.name);
       expect(returned.type).toEqual(entity.type);
@@ -201,17 +199,15 @@ export function runGenericTabularStorageTests(
       const entity1 = { ...key, option: "value1", success: true };
       const entity2 = { ...key, option: "value2", success: false };
 
-      // First insert
       const returned1 = await repository.put(entity1);
       expect(returned1.option).toEqual("value1");
       expect(!!returned1.success).toEqual(true);
 
-      // Update via upsert
+      // upsert overwrites
       const returned2 = await repository.put(entity2);
       expect(returned2.option).toEqual("value2");
       expect(!!returned2.success).toEqual(false);
 
-      // Verify database was updated
       const stored = await repository.get(key);
       expect(stored?.option).toEqual("value2");
       expect(!!stored?.success).toEqual(false);
@@ -226,7 +222,6 @@ export function runGenericTabularStorageTests(
 
       const returned = await repository.putBulk(entities);
 
-      // Verify returned array matches input
       expect(returned).toBeDefined();
       expect(returned.length).toEqual(3);
 
@@ -288,7 +283,6 @@ export function runGenericTabularStorageTests(
     });
   });
 
-  // Only run compound index tests if createCompoundRepository is provided
   if (createSearchableRepository) {
     describe("with searchable indexes", () => {
       let searchableRepo: ITabularStorage<typeof SearchSchema, typeof SearchPrimaryKeyNames>;
@@ -304,7 +298,6 @@ export function runGenericTabularStorageTests(
       });
 
       it("should store and search using compound indexes", async () => {
-        // Insert test data
         await searchableRepo.put({
           id: "1",
           category: "electronics",
@@ -329,12 +322,10 @@ export function runGenericTabularStorageTests(
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        // Test searching with single column
         const electronicsOnly = await searchableRepo.query({ category: "electronics" });
         expect(electronicsOnly?.length).toBe(2);
         expect(electronicsOnly?.map((item) => item.id).sort()).toEqual(["1", "2"]);
 
-        // Test searching with compound criteria
         const electronicsPhones = await searchableRepo.query({
           category: "electronics",
           subcategory: "phones",
@@ -342,7 +333,6 @@ export function runGenericTabularStorageTests(
         expect(electronicsPhones?.length).toBe(1);
         expect(electronicsPhones?.[0].id).toBe("1");
 
-        // Test searching with non-existent values
         const nonExistent = await searchableRepo.query({
           category: "electronics",
           subcategory: "tablets",
@@ -351,7 +341,6 @@ export function runGenericTabularStorageTests(
       });
 
       it("should handle searching with multiple criteria in different orders", async () => {
-        // Insert test data
         await searchableRepo.put({
           id: "1",
           category: "electronics",
@@ -369,7 +358,7 @@ export function runGenericTabularStorageTests(
           updatedAt: new Date().toISOString(),
         });
 
-        // Search with criteria in different orders should work the same
+        // Criteria order should not matter
         const search1 = await searchableRepo.query({
           category: "electronics",
           subcategory: "phones",
@@ -386,7 +375,6 @@ export function runGenericTabularStorageTests(
       });
 
       it("should handle partial matches with compound indexes", async () => {
-        // Insert test data
         await searchableRepo.put({
           id: "1",
           category: "electronics",
@@ -417,7 +405,6 @@ export function runGenericTabularStorageTests(
         expect(highValue?.length).toBe(1);
         expect(highValue?.[0].id).toBe("3");
 
-        // Search with multiple fields including a non-indexed one
         const expensivePhones = await searchableRepo.query({
           subcategory: "phones",
           value: 200,
@@ -441,13 +428,11 @@ export function runGenericTabularStorageTests(
       });
 
       it("should delete entries older than a specified date using createdAt", async () => {
-        // Create test data with different dates
         const now = new Date();
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
         const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
-        // Add test entries
         await repository.put({
           id: "1",
           category: "electronics",
@@ -481,25 +466,20 @@ export function runGenericTabularStorageTests(
           updatedAt: threeDaysAgo,
         });
 
-        // Verify all entries were added
         expect((await repository.getAll())?.length).toBe(4);
 
-        // Delete entries older than yesterday
         await repository.deleteSearch({ createdAt: { value: yesterday, operator: "<" } });
 
-        // Verify only entries from yesterday and today remain
         const remaining = await repository.getAll();
         expect(remaining?.length).toBe(2);
         expect(remaining?.map((item) => item.id).sort()).toEqual(["1", "2"]);
       });
 
       it("should delete entries older than a specified date using updatedAt", async () => {
-        // Create test data with different dates
         const now = new Date();
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
         const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
-        // Add test entries with mixed dates
         await repository.put({
           id: "1",
           category: "electronics",
@@ -533,20 +513,16 @@ export function runGenericTabularStorageTests(
           updatedAt: twoDaysAgo,
         });
 
-        // Verify all entries were added
         expect((await repository.getAll())?.length).toBe(4);
 
-        // Delete entries with updatedAt older than yesterday
         await repository.deleteSearch({ updatedAt: { value: yesterday, operator: "<" } });
 
-        // Verify only entries with recent updatedAt remain
         const remaining = await repository.getAll();
         expect(remaining?.length).toBe(2);
         expect(remaining?.map((item) => item.id).sort()).toEqual(["1", "2"]);
       });
 
       it("should handle empty repository gracefully", async () => {
-        // Verify repository is empty
         expect(await repository.getAll()).toBeUndefined();
 
         const result = await repository.deleteSearch({
@@ -556,11 +532,9 @@ export function runGenericTabularStorageTests(
       });
 
       it("should not delete entries when none are older than the specified date", async () => {
-        // Create test data with recent dates
         const now = new Date();
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-        // Add test entries
         await repository.put({
           id: "1",
           category: "electronics",
@@ -577,11 +551,9 @@ export function runGenericTabularStorageTests(
           createdAt: now.toISOString(),
           updatedAt: yesterday.toISOString(),
         });
-        // Try to delete entries older than 3 days ago
         const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
         await repository.deleteSearch({ createdAt: { value: threeDaysAgo, operator: "<" } });
 
-        // Verify all entries still exist
         const remaining = await repository.getAll();
         expect(remaining?.length).toBe(2);
       });

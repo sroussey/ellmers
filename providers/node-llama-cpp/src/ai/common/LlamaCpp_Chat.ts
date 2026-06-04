@@ -21,10 +21,6 @@ import {
   setLlamaCppSession,
 } from "./LlamaCpp_Runtime";
 
-// ============================================================================
-// Session helpers
-// ============================================================================
-
 async function getOrCreateChatSession(
   sessionId: string | undefined,
   model: LlamaCppModelConfig,
@@ -60,10 +56,6 @@ async function getOrCreateChatSession(
   return { session, sequence };
 }
 
-// ============================================================================
-// Message helper
-// ============================================================================
-
 function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role !== "user") continue;
@@ -75,10 +67,6 @@ function lastUserText(messages: ReadonlyArray<ChatMessage>): string {
   }
   return "";
 }
-
-// ============================================================================
-// Streaming run function
-// ============================================================================
 
 export const LlamaCpp_Chat_Stream: AiProviderRunFn<
   AiChatProviderInput,

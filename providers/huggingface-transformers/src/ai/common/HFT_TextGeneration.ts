@@ -54,9 +54,9 @@ export const HFT_TextGeneration: AiProviderRunFn<
     past_key_values = session.cache;
   }
 
-  // Use the chat-template format for instruction-tuned models (matches the
-  // non-streaming HFT_TextGeneration path). Passing a raw prompt string
-  // skips the chat template and most instruct models produce no output.
+  // Use the chat-template format for instruction-tuned models. Passing a raw
+  // prompt string skips the chat template and most instruct models produce no
+  // output.
   const messages: Message[] = [{ role: "user", content: input.prompt }];
 
   await generateText(messages, {

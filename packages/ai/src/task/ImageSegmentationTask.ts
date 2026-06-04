@@ -94,9 +94,6 @@ export type ImageSegmentationTaskOutput = {
 };
 export type ImageSegmentationTaskConfig = TaskConfig<ImageSegmentationTaskInput>;
 
-/**
- * Segments images into regions using computer vision models
- */
 export class ImageSegmentationTask extends AiVisionTask<
   ImageSegmentationTaskInput,
   ImageSegmentationTaskOutput,
@@ -117,12 +114,6 @@ export class ImageSegmentationTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run image segmentation tasks.
- * Creates and executes an ImageSegmentationTask with the provided input.
- * @param input The input parameters for image segmentation (image and model)
- * @returns Promise resolving to the segmentation masks with labels and scores
- */
 export const imageSegmentation = (
   input: ImageSegmentationTaskInput,
   config?: ImageSegmentationTaskConfig,

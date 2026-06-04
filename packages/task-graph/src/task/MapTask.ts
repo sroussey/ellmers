@@ -23,9 +23,6 @@ export const mapTaskConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Configuration for MapTask.
- */
 export type MapTaskConfig<Input extends TaskInput = TaskInput> = IteratorTaskConfig<Input> & {
   /**
    * Whether to preserve the order of results matching the input order.
@@ -68,14 +65,8 @@ export class MapTask<
     return mapTaskConfigSchema;
   }
 
-  /**
-   * MapTask always uses PROPERTY_ARRAY merge strategy to collect results.
-   */
   public static override readonly compoundMerge = PROPERTY_ARRAY;
 
-  /**
-   * Static input schema for MapTask.
-   */
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -84,9 +75,6 @@ export class MapTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Static output schema for MapTask.
-   */
   public static override outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -95,16 +83,10 @@ export class MapTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Whether to preserve order of results.
-   */
   public get preserveOrder(): boolean {
     return this.config.preserveOrder ?? true;
   }
 
-  /**
-   * Whether to flatten nested array results.
-   */
   public get flatten(): boolean {
     return this.config.flatten ?? false;
   }
@@ -121,9 +103,6 @@ export class MapTask<
     return this.preserveOrder;
   }
 
-  /**
-   * Returns the empty result for MapTask.
-   */
   public override getEmptyResult(): Output {
     const schema = this.outputSchema();
     if (typeof schema === "boolean") {
@@ -138,10 +117,7 @@ export class MapTask<
     return result as Output;
   }
 
-  /**
-   * Output schema for MapTask.
-   * Wraps inner workflow output properties in arrays.
-   */
+  /** Wraps inner workflow output properties in arrays. */
   public override outputSchema(): DataPortSchema {
     if (!this.hasChildren()) {
       return (this.constructor as typeof MapTask).outputSchema();

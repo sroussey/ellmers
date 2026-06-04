@@ -190,12 +190,6 @@ export class GestureRecognizerTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run gesture recognition tasks.
- * Creates and executes a GestureRecognizerTask with the provided input.
- * @param input The input parameters for gesture recognition (image, model, and optional configuration)
- * @returns Promise resolving to the detected gestures with landmarks and handedness
- */
 export const gestureRecognizer = (
   input: GestureRecognizerTaskInput,
   config?: GestureRecognizerTaskConfig,

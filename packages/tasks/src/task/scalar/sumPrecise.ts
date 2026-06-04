@@ -10,11 +10,6 @@ declare global {
   }
 }
 
-/**
- * Sums numbers with improved precision compared to naive summation.
- * Uses Math.sumPrecise when available (Firefox 137+, Safari 26.2+),
- * otherwise falls back to Kahan compensated summation.
- */
 function kahanSum(values: Iterable<number>): number {
   let sum = 0;
   let compensation = 0;
@@ -29,6 +24,11 @@ function kahanSum(values: Iterable<number>): number {
 
 const nativeSumPrecise = typeof Math.sumPrecise === "function" ? Math.sumPrecise : undefined;
 
+/**
+ * Sums numbers with improved precision compared to naive summation.
+ * Uses {@link Math.sumPrecise} when available (Firefox 137+, Safari 26.2+),
+ * otherwise falls back to Kahan compensated summation.
+ */
 export const sumPrecise: (values: Iterable<number>) => number = nativeSumPrecise
   ? nativeSumPrecise.bind(Math)
   : kahanSum;

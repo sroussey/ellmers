@@ -8,9 +8,6 @@ import { ITabularStorage } from "@workglow/storage";
 import type { DataPortSchemaObject, FromSchema } from "@workglow/util/schema";
 import { TypedArraySchemaOptions } from "@workglow/util/schema";
 
-/**
- * Schema for storing documents in tabular storage
- */
 export const DocumentStorageSchema = {
   type: "object",
   properties: {
@@ -41,9 +38,6 @@ export type DocumentStorageKey = typeof DocumentStorageKey;
 
 export type DocumentStorageEntity = FromSchema<DocumentStorageSchema, TypedArraySchemaOptions>;
 
-/**
- * Type for inserting documents - doc_id is optional (auto-generated)
- */
 export type InsertDocumentStorageEntity = Omit<DocumentStorageEntity, "doc_id"> &
   Partial<Pick<DocumentStorageEntity, "doc_id">>;
 

@@ -16,9 +16,6 @@ import { InMemoryTabularStorage } from "../tabular/InMemoryTabularStorage";
 import type { IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
 import { getMetadataProperty, getVectorProperty } from "./IVectorStorage";
 
-/**
- * Check if metadata matches filter
- */
 function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
   for (const [key, value] of Object.entries(filter)) {
     if (metadata[key as keyof Metadata] !== value) {
@@ -28,15 +25,7 @@ function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>):
   return true;
 }
 
-/**
- * In-memory document chunk vector repository implementation.
- * Extends InMemoryTabularStorage for storage.
- * Suitable for testing and small-scale browser applications.
- * Supports all vector types including quantized formats.
- *
- * @template Metadata - The metadata type for the document chunk
- * @template VectorCtor - Constructor for stored vectors (default {@link typeof Float32Array})
- */
+/** In-memory {@link IVectorStorage} on top of {@link InMemoryTabularStorage}. */
 export class InMemoryVectorStorage<
   Schema extends DataPortSchemaObject,
   PrimaryKeyNames extends ReadonlyArray<keyof Schema["properties"]>,
@@ -50,14 +39,6 @@ export class InMemoryVectorStorage<
   private vectorPropertyName: keyof Entity;
   private metadataPropertyName: keyof Entity | undefined;
 
-  /**
-   * Creates a new in-memory document chunk vector repository
-   * @param schema - The schema definition for the entity
-   * @param primaryKeyNames - Array of property names that form the primary key
-   * @param indexes - Array of columns or column arrays to make searchable
-   * @param dimensions - The number of dimensions of the vector
-   * @param _vectorCtor - TypedArray constructor (unused, for API compatibility)
-   */
   constructor(
     schema: Schema,
     primaryKeyNames: PrimaryKeyNames,
@@ -69,7 +50,6 @@ export class InMemoryVectorStorage<
 
     this.vectorDimensions = dimensions;
 
-    // Cache vector and metadata property names from schema
     const vectorProp = getVectorProperty(schema);
     if (!vectorProp) {
       throw new Error("Schema must have a property with type array and format TypedArray");
@@ -78,10 +58,6 @@ export class InMemoryVectorStorage<
     this.metadataPropertyName = getMetadataProperty(schema) as keyof Entity | undefined;
   }
 
-  /**
-   * Get the vector dimensions
-   * @returns The vector dimensions
-   */
   getVectorDimensions(): number {
     return this.vectorDimensions;
   }
@@ -101,15 +77,12 @@ export class InMemoryVectorStorage<
         ? (entity[this.metadataPropertyName] as Metadata)
         : ({} as Metadata);
 
-      // Apply filter if provided
       if (filter && !matchesFilter(metadata, filter)) {
         continue;
       }
 
-      // Calculate similarity
       const score = cosineSimilarity(query, vector);
 
-      // Apply threshold
       if (score < scoreThreshold) {
         continue;
       }
@@ -120,10 +93,7 @@ export class InMemoryVectorStorage<
       } as Entity & { score: number });
     }
 
-    // Sort by score descending and take top K
     results.sort((a, b) => b.score - a.score);
-    const topResults = results.slice(0, topK);
-
-    return topResults;
+    return results.slice(0, topK);
   }
 }

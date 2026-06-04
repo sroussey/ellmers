@@ -117,9 +117,8 @@ export const HFT_TextReranker: AiProviderRunFn<
   // We cast the *input parameter* shape (transformers.js types the pipeline
   // very loosely) but keep the return as `Promise<unknown>` so the guard at
   // `validateAndExtractRerankerScores` is the only path to a typed score.
-  // The original bug was casting the return to `Promise<Array<{ score }>>`,
-  // which erased the safety net and let a mismatched pipeline silently
-  // return garbage.
+  // Casting the return to a typed score shape would erase the safety net and
+  // let a mismatched pipeline silently return garbage.
   const callable = reranker as unknown as (
     inputs: ReadonlyArray<{ text: string; text_pair: string }>,
     options?: Record<string, unknown>

@@ -26,16 +26,10 @@ export const reduceTaskConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Configuration for ReduceTask.
- */
 export type ReduceTaskConfig<
   Input extends TaskInput = TaskInput,
   Accumulator = unknown,
 > = IteratorTaskConfig<Input> & {
-  /**
-   * The initial value for the accumulator.
-   */
   readonly initialValue?: Accumulator;
 };
 
@@ -67,9 +61,6 @@ export class ReduceTask<
     super(reduceConfig as Partial<Config>, runConfig);
   }
 
-  /**
-   * Gets the initial accumulator value.
-   */
   public get initialValue(): Output {
     return (this.config.initialValue ?? {}) as Output;
   }
@@ -104,9 +95,6 @@ export class ReduceTask<
     return this.getInitialAccumulator();
   }
 
-  /**
-   * Static input schema for ReduceTask.
-   */
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -115,9 +103,6 @@ export class ReduceTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Static output schema for ReduceTask.
-   */
   public static override outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -126,9 +111,6 @@ export class ReduceTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Instance output schema - returns the reduced output schema from ending nodes.
-   */
   public override outputSchema(): DataPortSchema {
     if (!this.hasChildren()) {
       return (this.constructor as typeof ReduceTask).outputSchema();

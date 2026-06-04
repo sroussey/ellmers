@@ -37,7 +37,9 @@ export interface CreateKnowledgeBaseOptions {
 }
 
 /**
- * Factory function to create a KnowledgeBase with minimal configuration.
+ * Factory that wires an in-memory document store and vector store into a
+ * fresh KnowledgeBase. The KB still needs an AI strategy installed before
+ * `upsert` / `search` will work.
  *
  * @example
  * ```typescript

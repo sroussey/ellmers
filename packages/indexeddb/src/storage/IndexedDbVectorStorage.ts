@@ -27,9 +27,6 @@ export const IDB_VECTOR_REPOSITORY = createServiceToken<AnyVectorStorage>(
   "storage.vectorRepository.indexedDb"
 );
 
-/**
- * Check if metadata matches filter
- */
 function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
   for (const [key, value] of Object.entries(filter)) {
     if (metadata[key as keyof Metadata] !== value) {
@@ -65,17 +62,6 @@ export class IndexedDbVectorStorage<
   private vectorPropertyName: keyof Entity;
   private metadataPropertyName: keyof Entity | undefined;
 
-  /**
-   * Creates a new IndexedDB vector storage
-   * @param table - The name of the IndexedDB store (defaults to 'vectors')
-   * @param schema - The schema definition for the entity
-   * @param primaryKeyNames - Array of property names that form the primary key
-   * @param indexes - Array of columns or column arrays to make searchable
-   * @param dimensions - The number of dimensions of the vector
-   * @param _vectorCtor - TypedArray constructor (unused, IndexedDB stores typed arrays natively)
-   * @param migrationOptions - Options for handling database schema migrations
-   * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
-   */
   constructor(
     table: string = "vectors",
     schema: Schema,
@@ -90,7 +76,6 @@ export class IndexedDbVectorStorage<
 
     this.vectorDimensions = dimensions;
 
-    // Cache vector and metadata property names from schema
     const vectorProp = getVectorProperty(schema);
     if (!vectorProp) {
       throw new Error("Schema must have a property with type array and format TypedArray");
@@ -99,10 +84,6 @@ export class IndexedDbVectorStorage<
     this.metadataPropertyName = getMetadataProperty(schema) as keyof Entity | undefined;
   }
 
-  /**
-   * Get the vector dimensions
-   * @returns The vector dimensions
-   */
   getVectorDimensions(): number {
     return this.vectorDimensions;
   }
@@ -117,21 +98,18 @@ export class IndexedDbVectorStorage<
     const allEntities = (await this.getAll()) || [];
 
     for (const entity of allEntities) {
-      // IndexedDB stores TypedArrays natively via structured clone (no deserialization needed)
+      // IndexedDB stores TypedArrays natively via structured clone
       const vector = entity[this.vectorPropertyName] as TypedArray;
       const metadata = this.metadataPropertyName
         ? (entity[this.metadataPropertyName] as Metadata)
         : ({} as Metadata);
 
-      // Apply filter if provided
       if (filter && !matchesFilter(metadata, filter)) {
         continue;
       }
 
-      // Calculate similarity
       const score = cosineSimilarity(query, vector);
 
-      // Apply threshold
       if (score < scoreThreshold) {
         continue;
       }
@@ -142,7 +120,6 @@ export class IndexedDbVectorStorage<
       } as Entity & { score: number });
     }
 
-    // Sort by score descending and take top K
     results.sort((a, b) => b.score - a.score);
     const topResults = results.slice(0, topK);
 

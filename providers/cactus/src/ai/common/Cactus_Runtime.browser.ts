@@ -38,9 +38,6 @@ export interface CactusModelCacheInfo {
 // validation keeps both code paths in sync, hardens cache-key inputs, and
 // silences static analyzers that flag any use of user-supplied identifiers
 // in URL/path-shaped strings.
-//
-// TODO: lift these helpers into a shared module if/when a third caller
-// appears. Duplicated for now to avoid churn during the active PR.
 // ============================================================================
 
 const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;

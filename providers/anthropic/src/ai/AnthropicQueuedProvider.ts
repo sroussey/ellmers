@@ -19,10 +19,7 @@ import type { AnthropicModelConfig } from "./common/Anthropic_ModelSchema";
  * (constructed with the run-fn registrations array) and worker-backed mode
  * (constructed empty so the base class registers worker proxies).
  *
- * **No queue is created** — Anthropic uses {@link DirectExecutionStrategy}.
- * The `Queued` suffix is a historical artefact from when each provider
- * paired with a per-provider {@link JobQueue}; the class name is retained
- * only to avoid churning every import site.
+ * No queue is created — Anthropic uses {@link DirectExecutionStrategy}.
  *
  * Note: Anthropic does not offer an embeddings API.
  */

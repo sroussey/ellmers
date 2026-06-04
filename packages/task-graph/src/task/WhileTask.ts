@@ -65,9 +65,6 @@ export const whileTaskConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Configuration for WhileTask.
- */
 export type WhileTaskConfig<
   Input extends TaskInput = TaskInput,
   Output extends TaskOutput = TaskOutput,
@@ -109,46 +106,9 @@ export type WhileTaskConfig<
 
 /**
  * WhileTask loops until a condition function returns false.
- *
- * This task is useful for:
- * - Iterative refinement processes
- * - Polling until a condition is met
- * - Convergence algorithms
- * - Retry logic with conditions
- *
- * ## Features
- *
- * - Loops until condition returns false
- * - Configurable maximum iterations (safety limit)
- * - Passes output from each iteration to the next
- * - Access to iteration count in condition function
- *
- * ## Usage
- *
- * ```typescript
- * // Refine until quality threshold
- * workflow
- *   .while({
- *     condition: (output, iteration) => output.quality < 0.9 && iteration < 10,
- *     maxIterations: 20
- *   })
- *     .refineResult()
- *     .evaluateQuality()
- *   .endWhile()
- *
- * // Retry until success
- * workflow
- *   .while({
- *     condition: (output) => !output.success,
- *     maxIterations: 5
- *   })
- *     .attemptOperation()
- *   .endWhile()
- * ```
- *
- * @template Input - The input type for the while task
- * @template Output - The output type for the while task
- * @template Config - The configuration type
+ * Used for iterative refinement, polling, convergence, or conditional retry.
+ * Output of each iteration is passed as input to the next when
+ * `chainIterations` is set; `maxIterations` caps total iterations.
  */
 export class WhileTask<
   Input extends TaskInput = TaskInput,
@@ -160,7 +120,6 @@ export class WhileTask<
   public static override title: string = "While Loop";
   public static override description: string = "Loops until a condition function returns false";
 
-  /** This task has dynamic schemas based on the inner workflow */
   public static override hasDynamicSchemas: boolean = true;
 
   public static override configSchema(): DataPortSchema {
@@ -188,9 +147,6 @@ export class WhileTask<
     return WHILE_CONTEXT_SCHEMA;
   }
 
-  /**
-   * Current iteration count during execution.
-   */
   protected _currentIteration: number = 0;
 
   public override canSerializeConfig(): boolean {
@@ -214,9 +170,6 @@ export class WhileTask<
   // Configuration Accessors
   // ========================================================================
 
-  /**
-   * Gets the condition function.
-   */
   public get condition(): WhileConditionFn<Output> | undefined {
     return this.config.condition;
   }
@@ -231,16 +184,10 @@ export class WhileTask<
     return resolveIterationBound(this.config.maxIterations);
   }
 
-  /**
-   * Whether to chain iteration outputs to inputs.
-   */
   public get chainIterations(): boolean {
     return this.config.chainIterations ?? true;
   }
 
-  /**
-   * Gets the current iteration count.
-   */
   public get currentIteration(): number {
     return this._currentIteration;
   }
@@ -249,9 +196,6 @@ export class WhileTask<
   // Execution
   // ========================================================================
 
-  /**
-   * Execute the while loop.
-   */
   /**
    * Builds a condition function from the serialized condition fields in config.
    */
@@ -621,10 +565,6 @@ export class WhileTask<
   // Schema Methods
   // ========================================================================
 
-  /**
-   * Instance method to get the iteration context schema.
-   * Can be overridden by subclasses to customize iteration context.
-   */
   public getIterationContextSchema(): DataPortSchema {
     return (this.constructor as typeof WhileTask).getIterationContextSchema();
   }
@@ -696,9 +636,6 @@ export class WhileTask<
     } as DataPortSchema;
   }
 
-  /**
-   * Static input schema for WhileTask.
-   */
   public static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -707,9 +644,6 @@ export class WhileTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Static output schema for WhileTask.
-   */
   public static override outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -724,9 +658,6 @@ export class WhileTask<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Instance output schema - returns final iteration output schema.
-   */
   public override outputSchema(): DataPortSchema {
     if (!this.hasChildren()) {
       return (this.constructor as typeof WhileTask).outputSchema();
@@ -780,28 +711,11 @@ declare module "../task-graph/Workflow" {
     /**
      * Starts a while loop that continues until a condition is false.
      * Use .endWhile() to close the loop and return to the parent workflow.
-     *
-     * @param config - Configuration for the while loop (must include condition)
-     * @returns A Workflow in loop builder mode for defining the loop body
-     *
-     * @example
-     * ```typescript
-     * workflow
-     *   .while({
-     *     condition: (output, iteration) => output.quality < 0.9,
-     *     maxIterations: 10
-     *   })
-     *     .refineResult()
-     *   .endWhile()
-     * ```
      */
     while: CreateLoopWorkflow<TaskInput, TaskOutput, WhileTaskConfig<TaskInput, any>>;
 
     /**
      * Ends the while loop and returns to the parent workflow.
-     * Only callable on workflows in loop builder mode.
-     *
-     * @returns The parent workflow
      */
     endWhile(): Workflow;
   }

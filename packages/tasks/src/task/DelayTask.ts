@@ -78,7 +78,7 @@ export class DelayTask<
   override async execute(input: Input, executeContext: IExecuteContext): Promise<Output> {
     const delay = this.config.delay ?? 1;
     if (delay > 100) {
-      const iterations = Math.min(100, Math.floor(delay / 16)); // 1/60fps is about 16ms
+      const iterations = Math.min(100, Math.floor(delay / 16));
       const chunkSize = delay / iterations;
       for (let i = 0; i < iterations; i++) {
         if (executeContext.signal.aborted) {
@@ -94,13 +94,6 @@ export class DelayTask<
   }
 }
 
-/**
- * DelayTask
- *
- * Delays the execution of a task for a specified amount of time
- *
- * @param config - Task configuration; use `config.delay` for the delay in milliseconds
- */
 export const delay = (input: DelayTaskInput, config: DelayTaskConfig = { delay: 1 }) => {
   const task = new DelayTask(config);
   return task.run(input);

@@ -15,12 +15,8 @@ export const FS_FOLDER_JSON_KV_REPOSITORY = createServiceToken<IKvStorage<string
 );
 
 /**
- * A key-value repository implementation that stores values as JSON files in a specified folder.
- * Uses a tabular repository abstraction for file-based persistence.
- *
- * @template Key - The type of the primary key
- * @template Value - The type of the value being stored
- * @template Combined - Combined type of Key & Value
+ * Key-value repository that stores values as JSON files in a folder, via
+ * {@link FsFolderTabularStorage}.
  */
 export class FsFolderJsonKvStorage extends KvViaTabularStorage {
   public tabularRepository: FsFolderTabularStorage<
@@ -28,9 +24,6 @@ export class FsFolderJsonKvStorage extends KvViaTabularStorage {
     typeof DefaultKeyValueKey
   >;
 
-  /**
-   * Creates a new KvStorage instance
-   */
   constructor(
     public folderPath: string,
     keySchema: JsonSchema = { type: "string" },

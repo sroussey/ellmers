@@ -6,15 +6,10 @@
 
 import { TypedArraySchema, type DataPortSchemaObject } from "@workglow/util/schema";
 
-/**
- * Default table names for shared-table mode.
- */
 export const SHARED_DOCUMENT_TABLE = "shared_documents";
 export const SHARED_CHUNK_TABLE = "shared_chunks";
 
-/**
- * Augmented document storage schema with kb_id column for shared-table mode.
- */
+/** Document storage schema with `kb_id` for shared-table mode. */
 export const SharedDocumentStorageSchema = {
   type: "object",
   properties: {
@@ -44,9 +39,7 @@ export const SharedDocumentStorageSchema = {
   additionalProperties: true,
 } as const satisfies DataPortSchemaObject;
 
-/**
- * Augmented chunk vector storage schema with kb_id column for shared-table mode.
- */
+/** Chunk vector schema with `kb_id` for shared-table mode. */
 export const SharedChunkVectorStorageSchema = {
   type: "object",
   properties: {
@@ -74,17 +67,11 @@ export type SharedDocumentPrimaryKey = typeof SharedDocumentPrimaryKey;
 export const SharedChunkPrimaryKey = ["kb_id", "chunk_id"] as const;
 export type SharedChunkPrimaryKey = typeof SharedChunkPrimaryKey;
 
-/**
- * Index definitions for efficient KB-scoped queries on shared document table.
- */
 export const SharedDocumentIndexes = [["kb_id"]] as const satisfies readonly (
   | keyof any
   | readonly (keyof any)[]
 )[];
 
-/**
- * Index definitions for efficient KB-scoped queries on shared chunk table.
- */
 export const SharedChunkIndexes = [["kb_id"], ["kb_id", "doc_id"]] as const satisfies readonly (
   | keyof any
   | readonly (keyof any)[]

@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * This file contains various task implementations used for testing the task graph
- * system. It includes basic task types, specialized testing tasks, and examples
- * of different task behaviors like error handling and progress reporting.
- */
-
 import type { CachePolicy } from "@workglow/task-graph";
 import {
   CreateWorkflow,
@@ -29,26 +23,16 @@ import {
 import { sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 
-/**
- * Standard input type for basic test tasks
- */
 export type TestIOTaskInput = {
   key: string;
 };
 
-/**
- * Standard output type for basic test tasks with flags for different run modes
- */
 export type TestIOTaskOutput = {
-  previewOnly: boolean; // Indicates if the result came from preview run
-  all: boolean; // Indicates if the result came from full run
-  key: string; // Echo of the input key
+  previewOnly: boolean;
+  all: boolean;
+  key: string;
 };
 
-/**
- * Basic implementation of a test task with both preview and full run modes
- * Used as a foundation for testing task execution and data flow
- */
 export class TestIOTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
   static override readonly type = "TestIOTask";
 
@@ -85,9 +69,7 @@ export class TestIOTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
   }
 
   /**
-   * Implementation of preview run mode
-   * if execute ran then there will be output data
-   * if not then we send the input data
+   * Preview: if execute ran there will be output data, otherwise return the input data.
    */
   override async executePreview(input: TestIOTaskInput): Promise<TestIOTaskOutput> {
     const output = this.runOutputData;
@@ -98,9 +80,6 @@ export class TestIOTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
     };
   }
 
-  /**
-   * Implementation of full run mode - returns complete results
-   */
   override async execute(
     _input: TestIOTaskInput,
     _context: IExecuteContext
@@ -109,30 +88,18 @@ export class TestIOTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
   }
 }
 
-// Define test types for more complex task implementations
-/**
- * Input type for processing string values
- */
 type SimpleProcessingInput = {
   value: string;
 };
 
-/**
- * Output type for processed string values with a status flag
- */
 type SimpleProcessingOutput = {
   processed: boolean;
   result: string;
 };
 
-/**
- * A more complex test task implementation that demonstrates
- * progress reporting and error simulation capabilities
- */
 export class SimpleProcessingTask extends Task<SimpleProcessingInput, SimpleProcessingOutput> {
   static override readonly type = "SimpleProcessingTask";
 
-  // Define input schema
   static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -147,7 +114,6 @@ export class SimpleProcessingTask extends Task<SimpleProcessingInput, SimpleProc
     } as const satisfies DataPortSchema;
   }
 
-  // Define output schema
   static override outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -165,44 +131,29 @@ export class SimpleProcessingTask extends Task<SimpleProcessingInput, SimpleProc
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Full implementation for processing input values
-   * Demonstrates progress reporting
-   */
   override async execute(
     input: SimpleProcessingInput,
     { updateProgress }: IExecuteContext
   ): Promise<SimpleProcessingOutput> {
     await updateProgress(0.5);
-    // Process the input value
     const result = `Processed: ${input.value}`;
     return { processed: true, result };
   }
 
-  /**
-   * Preview implementation for real-time feedback
-   */
   override async executePreview(input: SimpleProcessingInput) {
-    // For testing purposes, just return a different result
     const output = this.runOutputData;
     return { processed: output.processed ?? false, result: `Preview: ${input.value}` };
   }
 }
 
-// Constants for standard error messages
 export const FAILURE_MESSAGE = "Task failed intentionally" as const;
 export const ABORT_MESSAGE = "Task aborted intentionally" as const;
 
-/**
- * A task that always fails - useful for testing error handling
- * and recovery mechanisms in the task system
- */
 export class FailingTask extends Task {
   static override readonly type = "FailingTask";
   declare runInputData: { in: number };
   declare runOutputData: { out: number };
 
-  // Define input schema
   static override inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -217,7 +168,6 @@ export class FailingTask extends Task {
     } as const satisfies DataPortSchema;
   }
 
-  // Define output schema
   static override outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -231,14 +181,11 @@ export class FailingTask extends Task {
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Always throws an error to simulate task failure
-   */
   override async execute(
     input: TaskInput,
     executeContext: IExecuteContext
   ): Promise<{ out: number }> {
-    // Add a small delay to ensure abortion has time to take effect
+    // Delay so abort signal has time to take effect
     await sleep(5);
     if (executeContext.signal?.aborted) {
       throw new TaskAbortedError(ABORT_MESSAGE);
@@ -247,14 +194,9 @@ export class FailingTask extends Task {
   }
 }
 
-/**
- * Test task with configurable behavior for testing event handling,
- * progress reporting, and error conditions
- */
 export class EventTestTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
   static override readonly type = "EventTestTask";
 
-  // Control flags for testing different behaviors
   shouldThrowError = false;
   shouldEmitProgress = false;
   progressValue = 0.5;
@@ -291,9 +233,6 @@ export class EventTestTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Executes the task with configurable behavior for testing
-   */
   override async execute(
     input: TestIOTaskInput,
     { updateProgress, signal }: IExecuteContext
@@ -326,23 +265,14 @@ export class EventTestTask extends Task<TestIOTaskInput, TestIOTaskOutput> {
   }
 }
 
-/**
- * Input type for squaring a number
- */
 export type TestSquareTaskInput = {
   input: number;
 };
 
-/**
- * Output type for squared number
- */
 export type TestSquareTaskOutput = {
   output: number;
 };
 
-/**
- * Task that squares its input number
- */
 export class TestSquareTask extends Task<TestSquareTaskInput, TestSquareTaskOutput> {
   static override readonly type = "TestSquareTask";
 
@@ -372,18 +302,12 @@ export class TestSquareTask extends Task<TestSquareTaskInput, TestSquareTaskOutp
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Squares the input number (full run).
-   */
   override async execute(input: TestSquareTaskInput): Promise<TestSquareTaskOutput> {
     return {
       output: input.input * input.input,
     };
   }
 
-  /**
-   * Preview implementation that squares the input number
-   */
   override async executePreview(input: TestSquareTaskInput): Promise<TestSquareTaskOutput> {
     return {
       output: input.input * input.input,
@@ -392,8 +316,7 @@ export class TestSquareTask extends Task<TestSquareTaskInput, TestSquareTaskOutp
 }
 
 /**
- * Non-preview version of TestSquareTask
- * Only implements execute() for testing differences between preview and non-preview tasks
+ * Only implements execute() — tests differences between preview and non-preview tasks.
  */
 export class TestSquareNonPreviewTask extends Task<TestSquareTaskInput, TestSquareTaskOutput> {
   static override readonly type = "TestSquareNonPreviewTask";
@@ -424,31 +347,19 @@ export class TestSquareNonPreviewTask extends Task<TestSquareTaskInput, TestSqua
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Non-preview implementation that squares the input number
-   */
   override async execute(input: TestSquareTaskInput): Promise<TestSquareTaskOutput> {
     return { output: input.input * input.input };
   }
 }
 
-/**
- * Input type for doubling a number
- */
 export type TestDoubleTaskInput = {
   input: number;
 };
 
-/**
- * Output type for doubled number
- */
 export type TestDoubleTaskOutput = {
   output: number;
 };
 
-/**
- * Task that doubles its input number
- */
 export class TestDoubleTask extends Task<TestDoubleTaskInput, TestDoubleTaskOutput> {
   static override readonly type = "TestDoubleTask";
 
@@ -478,18 +389,12 @@ export class TestDoubleTask extends Task<TestDoubleTaskInput, TestDoubleTaskOutp
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Doubles the input number (full run).
-   */
   override async execute(input: TestDoubleTaskInput): Promise<TestDoubleTaskOutput> {
     return {
       output: input.input * 2,
     };
   }
 
-  /**
-   * Preview implementation that doubles the input number
-   */
   override async executePreview(input: TestDoubleTaskInput): Promise<TestDoubleTaskOutput> {
     return {
       output: input.input * 2,
@@ -497,10 +402,6 @@ export class TestDoubleTask extends Task<TestDoubleTaskInput, TestDoubleTaskOutp
   }
 }
 
-/**
- * Task that throws errors under specific conditions
- * Used for testing error handling in the task system
- */
 export class TestSquareErrorTask extends Task<TestSquareTaskInput, TestSquareTaskOutput> {
   static override readonly type = "TestSquareErrorTask";
 
@@ -545,9 +446,6 @@ export class TestSquareErrorTask extends Task<TestSquareTaskInput, TestSquareTas
   }
 }
 
-/**
- * Simple single task
- */
 export class TestSimpleTask extends Task<{ input: string }, { output: string }> {
   static override type = "TestSimpleTask";
 
@@ -582,9 +480,6 @@ export class TestSimpleTask extends Task<{ input: string }, { output: string }> 
   }
 }
 
-/**
- * Task that uses a custom output property name
- */
 export class TestOutputTask extends Task<{ input: string }, { customOutput: string }> {
   static override type = "TestOutputTask";
   declare runInputData: { input: string };
@@ -616,17 +511,11 @@ export class TestOutputTask extends Task<{ input: string }, { customOutput: stri
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Returns the input in a custom output property
-   */
   override async execute(input: TaskInput): Promise<any> {
     return { customOutput: (input as { input: string }).input };
   }
 }
 
-/**
- * Task that uses a custom input property name
- */
 export class TestInputTask extends Task<{ customInput: string }, { output: string }> {
   static override type = "TestInputTask";
   declare runInputData: { customInput: string };
@@ -658,23 +547,15 @@ export class TestInputTask extends Task<{ customInput: string }, { output: strin
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Returns the custom input in the output property
-   */
   override async execute(input: TaskInput): Promise<any> {
     return { output: (input as { customInput: string }).customInput };
   }
 }
 
-/**
- * Task that runs for a long time to test task abortion
- */
+/** Runs indefinitely until aborted — for testing task abortion. */
 export class LongRunningTask extends Task {
   static override type = "LongRunningTask";
 
-  /**
-   * Runs indefinitely until aborted
-   */
   override async execute(input: TaskInput, executeContext: IExecuteContext): Promise<any> {
     while (true) {
       if (executeContext.signal?.aborted) {
@@ -685,9 +566,6 @@ export class LongRunningTask extends Task {
   }
 }
 
-/**
- * Task that copies string input
- */
 export class StringTask extends Task<{ input: string }, { output: string }, TaskConfig> {
   static override type = "StringTask";
 
@@ -716,24 +594,15 @@ export class StringTask extends Task<{ input: string }, { output: string }, Task
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Returns the input string as output (full run).
-   */
   override async execute(input: { input: string }): Promise<{ output: string }> {
     return { output: input.input };
   }
 
-  /**
-   * Returns the input string as output
-   */
   override async executePreview(input: { input: string }): Promise<{ output: string }> {
     return { output: input.input };
   }
 }
 
-/**
- * Task that copies string input
- */
 export class NumberToStringTask extends Task<{ input: number }, { output: string }, TaskConfig> {
   static override type = "NumberToStringTask";
 
@@ -762,9 +631,6 @@ export class NumberToStringTask extends Task<{ input: number }, { output: string
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Returns the input string as output
-   */
   override async execute(
     input: { input: number },
     _context: IExecuteContext
@@ -773,9 +639,6 @@ export class NumberToStringTask extends Task<{ input: number }, { output: string
   }
 }
 
-/**
- * Task that processes number input
- */
 export class NumberTask extends Task<{ input: number }, { output: number }, TaskConfig> {
   static override type = "NumberTask";
 
@@ -805,9 +668,6 @@ export class NumberTask extends Task<{ input: number }, { output: number }, Task
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Returns the input number as output
-   */
   override async execute(
     input: { input: number },
     _context: IExecuteContext
@@ -816,24 +676,15 @@ export class NumberTask extends Task<{ input: number }, { output: number }, Task
   }
 }
 
-/**
- * Input type for adding two numbers
- */
 type TestAddTaskInput = {
   a: number;
   b: number;
 };
 
-/**
- * Output type for sum of two numbers
- */
 type TestAddTaskOutput = {
   output: number;
 };
 
-/**
- * Task that adds two numbers
- */
 export class TestAddTask extends Task<TestAddTaskInput, TestAddTaskOutput> {
   static override readonly type = "TestAddTask";
 
@@ -867,18 +718,12 @@ export class TestAddTask extends Task<TestAddTaskInput, TestAddTaskOutput> {
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Adds the two input numbers (full run).
-   */
   override async execute(input: TestAddTaskInput) {
     return {
       output: input.a + input.b,
     };
   }
 
-  /**
-   * Adds the two input numbers
-   */
   override async executePreview(input: TestAddTaskInput) {
     return {
       output: input.a + input.b,
@@ -886,10 +731,7 @@ export class TestAddTask extends Task<TestAddTaskInput, TestAddTaskOutput> {
   }
 }
 
-/**
- * Task that outputs a TypedArray with port name "vector" (singular)
- * Used for testing type-only matching with different port names
- */
+/** Outputs a TypedArray with port name "vector" (singular). */
 export class VectorOutputTask extends Task<{ text: string }, { vector: Float32Array }> {
   static override type = "VectorOutputTask";
 
@@ -926,10 +768,7 @@ export class VectorOutputTask extends Task<{ text: string }, { vector: Float32Ar
   }
 }
 
-/**
- * Task that accepts a TypedArray with port name "vectors" (plural)
- * Used for testing type-only matching with different port names
- */
+/** Accepts a TypedArray with port name "vectors" (plural). */
 export class VectorsInputTask extends Task<{ vectors: Float32Array }, { count: number }> {
   static override type = "VectorsInputTask";
 
@@ -1018,9 +857,6 @@ export class VectorOneOfOutputTask extends Task<{ text: string }, { embedding: F
   }
 }
 
-/**
- * Task that accepts a TypedArray wrapped in anyOf
- */
 export class VectorAnyOfInputTask extends Task<{ data: Float32Array }, { sum: number }> {
   static override type = "VectorAnyOfInputTask";
 
@@ -1069,9 +905,6 @@ export class VectorAnyOfInputTask extends Task<{ data: Float32Array }, { sum: nu
     return { sum: Array.from(input.data).reduce((a, b) => a + b, 0) };
   }
 }
-/**
- * Task that outputs only text - for testing multi-source matching
- */
 export class TextOutputTask extends Task<{ input: string }, { text: string }> {
   static override type = "TextOutputTask";
 
@@ -1106,9 +939,6 @@ export class TextOutputTask extends Task<{ input: string }, { text: string }> {
   }
 }
 
-/**
- * Task that outputs only a vector - for testing multi-source matching
- */
 export class VectorOutputOnlyTask extends Task<{ size: number }, { vector: Float32Array }> {
   static override type = "VectorOutputOnlyTask";
 
@@ -1146,9 +976,6 @@ export class VectorOutputOnlyTask extends Task<{ size: number }, { vector: Float
   }
 }
 
-/**
- * Task that requires both text and vector inputs - for testing multi-source matching
- */
 export class TextVectorInputTask extends Task<
   { text: string; vector: Float32Array },
   { result: string }
@@ -1197,9 +1024,6 @@ export class TextVectorInputTask extends Task<
   }
 }
 
-/**
- * Task that passes through a vector - for testing multi-hop matching
- */
 export class PassthroughVectorTask extends Task<
   { vector: Float32Array },
   { vector: Float32Array }
@@ -1241,14 +1065,9 @@ export class PassthroughVectorTask extends Task<
   }
 }
 
-// ============================================================================
-// Passthrough task with additionalProperties (like DebugLogTask)
-// ============================================================================
-
 /**
- * A test passthrough task that passes all inputs through to outputs unchanged.
- * Has additionalProperties: true and no named ports in its static schema,
- * mirroring DebugLogTask's behavior.
+ * Passthrough with additionalProperties: true and no named ports — mirrors
+ * DebugLogTask's behavior.
  */
 export class WildcardPassthroughTask extends Task {
   static override type = "WildcardPassthroughTask";
@@ -1276,13 +1095,6 @@ export class WildcardPassthroughTask extends Task {
   }
 }
 
-// ============================================================================
-// Consolidated test tasks from ConditionalTask, IteratorTask, etc.
-// ============================================================================
-
-/**
- * Simple task that processes a value input (from ConditionalTask tests)
- */
 export class ProcessValueTask extends Task<{ value: number }, { result: string }> {
   static override type = "ProcessValueTask";
   static override category = "Test";
@@ -1310,9 +1122,6 @@ export class ProcessValueTask extends Task<{ value: number }, { result: string }
   }
 }
 
-/**
- * Task that tracks if it was executed (from ConditionalTask tests)
- */
 export class TrackingTask extends Task<{ input: any }, { executed: boolean; input: any }> {
   static override type = "TrackingTask";
   static override category = "Test";
@@ -1345,9 +1154,6 @@ export class TrackingTask extends Task<{ input: any }, { executed: boolean; inpu
   }
 }
 
-/**
- * Task that doubles a number, output as "doubled" (from ConditionalTask tests)
- */
 export class DoubleToDoubledTask extends Task<{ value: number }, { doubled: number }> {
   static override type = "DoubleToDoubledTask";
   static override category = "Test";
@@ -1375,9 +1181,6 @@ export class DoubleToDoubledTask extends Task<{ value: number }, { doubled: numb
   }
 }
 
-/**
- * Task that halves a number (from ConditionalTask tests)
- */
 export class HalveTask extends Task<{ value: number }, { halved: number }> {
   static override type = "HalveTask";
   static override category = "Test";
@@ -1405,9 +1208,6 @@ export class HalveTask extends Task<{ value: number }, { halved: number }> {
   }
 }
 
-/**
- * Task that doubles a number, output as "result" (from IteratorTask tests)
- */
 export class DoubleToResultTask extends Task<{ value: number }, { result: number }> {
   static override type = "DoubleToResultTask";
 
@@ -1438,9 +1238,6 @@ export class DoubleToResultTask extends Task<{ value: number }, { result: number
   }
 }
 
-/**
- * Task that squares a number (from IteratorTask tests)
- */
 export class SquareTask extends Task<{ value: number }, { squared: number }> {
   static override type = "SquareTask";
 
@@ -1471,9 +1268,6 @@ export class SquareTask extends Task<{ value: number }, { squared: number }> {
   }
 }
 
-/**
- * Processes a single item by doubling it (from IteratorTask workflow tests)
- */
 export class ProcessItemTask extends Task<{ item: number }, { processed: number }> {
   static override type = "ProcessItemTask";
 
@@ -1504,9 +1298,7 @@ export class ProcessItemTask extends Task<{ item: number }, { processed: number 
   }
 }
 
-/**
- * Creates a mock embedding from text (from IteratorTask workflow tests)
- */
+/** Mock embedding from text. */
 export class TextEmbeddingTask extends Task<{ text: string }, { vector: readonly number[] }> {
   static override type = "TextEmbeddingTask";
 
@@ -1541,9 +1333,6 @@ export class TextEmbeddingTask extends Task<{ text: string }, { vector: readonly
   }
 }
 
-/**
- * Refines a value and calculates quality score (from IteratorTask workflow tests)
- */
 export class RefineTask extends Task<
   { value: number; quality?: number },
   { quality: number; value: number }
@@ -1586,9 +1375,6 @@ export class RefineTask extends Task<
   }
 }
 
-/**
- * Adds current item to accumulator sum (from IteratorTask workflow tests)
- */
 export class AddToSumTask extends Task<
   { accumulator: { sum: number }; currentItem: number; index: number },
   { sum: number }
@@ -1631,9 +1417,6 @@ export class AddToSumTask extends Task<
   }
 }
 
-/**
- * Processes a batch of items (from IteratorTask workflow tests)
- */
 export class BulkProcessTask extends Task<
   { items: readonly number[] },
   { results: readonly number[] }
@@ -1675,9 +1458,6 @@ export class BulkProcessTask extends Task<
   }
 }
 
-/**
- * Concrete implementation of IteratorTask for testing
- */
 export class TestIteratorTask<
   Input extends TaskInput = TaskInput,
   Output extends TaskOutput = TaskOutput,
@@ -1706,9 +1486,6 @@ export class TestIteratorTask<
   }
 }
 
-/**
- * Test task with defaults for TaskJSON tests
- */
 export class TestTaskWithDefaults extends Task<
   { value: number; multiplier?: number },
   { result: number }
@@ -1748,9 +1525,6 @@ export class TestTaskWithDefaults extends Task<
   }
 }
 
-/**
- * Test GraphAsTask for TaskJSON tests
- */
 export class TestGraphAsTask extends GraphAsTask<{ input: string }, { output: string }> {
   static override readonly type = "TestGraphAsTask";
   static override readonly category = "Test";
@@ -1778,9 +1552,7 @@ export class TestGraphAsTask extends GraphAsTask<{ input: string }, { output: st
   }
 }
 
-/**
- * Test task for smartClone - exposes private smartClone for testing
- */
+/** Exposes private smartClone for testing. */
 export class TestSmartCloneTask extends Task<{ data: any }, { result: any }> {
   static override readonly type = "TestSmartCloneTask";
   static override readonly category = "Test";
@@ -1853,9 +1625,6 @@ export class GraphAsTask_InputTask extends Task<Record<string, unknown>, Record<
   }
 }
 
-/**
- * ComputeTask that adds two numbers (from GraphAsTask tests)
- */
 export class GraphAsTask_ComputeTask extends Task<{ a: number; b: number }, { result: number }> {
   static override type = "GraphAsTask_ComputeTask";
   static override category = "Test";
@@ -1892,9 +1661,6 @@ export class GraphAsTask_ComputeTask extends Task<{ a: number; b: number }, { re
   }
 }
 
-/**
- * Custom GraphAsTask with explicit schemas for testing preview execution (from GraphAsTask tests)
- */
 export class TestGraphAsTask_AB extends GraphAsTask<{ a: number; b: number }, { result: number }> {
   static override type = "TestGraphAsTask_AB";
   static override category = "Test";
@@ -1930,9 +1696,6 @@ export class TestGraphAsTask_AB extends GraphAsTask<{ a: number; b: number }, { 
   }
 }
 
-/**
- * GraphAsTask with value passthrough for testing (from GraphAsTask tests)
- */
 export class TestGraphAsTask_Value extends GraphAsTask<{ value: string }, { value: string }> {
   static override type = "TestGraphAsTask_Value";
   static override category = "Test";
@@ -1967,9 +1730,6 @@ export class TestGraphAsTask_Value extends GraphAsTask<{ value: string }, { valu
   }
 }
 
-/**
- * Test tasks with specific input/output schemas for GraphAsTask tests.
- */
 export class GraphAsTask_TaskA extends Task {
   static override type = "GraphAsTask_TaskA";
   static override category = "Test";
@@ -2095,9 +1855,6 @@ export class GraphAsTask_TaskC extends Task {
   }
 }
 
-/**
- * OutputTask that passes through its input (from GraphAsTask tests)
- */
 export class GraphAsTask_OutputTask extends Task<Record<string, unknown>, Record<string, unknown>> {
   static override type = "GraphAsTask_OutputTask";
   static override category = "Test";
@@ -2423,14 +2180,8 @@ export class PlainStringConsumerTask extends Task<{ input: string }, { result: s
   }
 }
 
-/**
- * Pipeline tasks - value -> value for pipe() chaining (from Pipeline tests)
- */
 export type PipelineNumberIO = { value: number };
 
-/**
- * Doubles the value (value -> value for pipeline chaining)
- */
 export class PipelineDoubleTask extends Task<PipelineNumberIO, PipelineNumberIO> {
   static override type = "PipelineDoubleTask";
   static override category = "Math";
@@ -2454,9 +2205,6 @@ export class PipelineDoubleTask extends Task<PipelineNumberIO, PipelineNumberIO>
   }
 }
 
-/**
- * Adds 5 to the value (value -> value for pipeline chaining)
- */
 export class AddFiveTask extends Task<PipelineNumberIO, PipelineNumberIO> {
   static override type = "AddFiveTask";
   static override category = "Math";
@@ -2480,9 +2228,6 @@ export class AddFiveTask extends Task<PipelineNumberIO, PipelineNumberIO> {
   }
 }
 
-/**
- * Squares the value (value -> value for pipeline chaining)
- */
 export class PipelineSquareTask extends Task<PipelineNumberIO, PipelineNumberIO> {
   static override type = "PipelineSquareTask";
   static override category = "Math";
@@ -2506,9 +2251,6 @@ export class PipelineSquareTask extends Task<PipelineNumberIO, PipelineNumberIO>
   }
 }
 
-/**
- * A test task that creates other tasks during execution (from OwnTask tests)
- */
 export class TaskCreatorTask extends Task {
   static override type = "TaskCreatorTask";
   static override category = "Test";
@@ -2529,9 +2271,6 @@ export class TaskCreatorTask extends Task {
   }
 }
 
-/**
- * Module augmentation to register test task types in the workflow system
- */
 declare module "@workglow/task-graph" {
   interface Workflow {
     testSimple(input?: Partial<{ input: string }>, config?: Partial<TaskConfig>): this;
@@ -2575,7 +2314,6 @@ declare module "@workglow/task-graph" {
   }
 }
 
-// Register test tasks with the workflow system
 Workflow.prototype.testSimple = CreateWorkflow(TestSimpleTask);
 Workflow.prototype.testOutput = CreateWorkflow(TestOutputTask);
 Workflow.prototype.testInput = CreateWorkflow(TestInputTask);

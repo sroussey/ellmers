@@ -19,12 +19,11 @@ import {
   normalizeOutputMimeType,
 } from "./imageCodecLimits";
 
-/** Local copy of the deleted `@workglow/util/media#parseDataUri` helper. Kept
- *  inline so the codec doesn't depend on a util export that was removed when
- *  the boundary refactor migrated callers to `imageValueFromBuffer` / Buffer-
- *  based plumbing. The base64 capture group is used to estimate decoded bytes
- *  before allocation; the mime is read separately via `extractDataUriMimeType`
- *  since it's enforced against an allowlist. */
+/**
+ * Splits a `data:<mime>;base64,<payload>` URI. The base64 capture group is
+ * used to estimate decoded bytes before allocation; the mime is read separately
+ * via {@link extractDataUriMimeType} since it's enforced against an allowlist.
+ */
 function parseDataUri(dataUri: string): { mimeType: string; base64: string } {
   const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error("Invalid base64 data URI");

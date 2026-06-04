@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @description Base class for AI tasks that support streaming output.
- * Extends AiTask with executeStream() that yields StreamEvents from the provider.
- */
-
 import type { IExecuteContext, StreamEvent, TaskConfig, TaskOutput } from "@workglow/task-graph";
 import { getStreamingPorts, TaskConfigurationError } from "@workglow/task-graph";
 
@@ -93,7 +88,6 @@ export class StreamingAiTask<
     const jobInput = await this.getJobInput(input);
     const strategy = getAiProviderRegistry().getStrategy(model);
 
-    // Resolve the streaming port(s) from the output schema for wrapping.
     // Falls back to the first property in the output schema rather than
     // hardcoding "text", so non-text streaming tasks work correctly.
     const outSchema = this.outputSchema();
@@ -117,9 +111,7 @@ export class StreamingAiTask<
     yield { type: "phase", message: preparingLabel, progress: undefined } as StreamEvent<Output>;
 
     // Drive the strategy through `runWithIterable` so consumer abort
-    // propagates to the provider stream. The factory just forwards events
-    // into the queue verbatim; per-port wrapping happens on the consumer
-    // side below.
+    // propagates to the provider stream.
     const iterable = runWithIterable<Output>(
       strategy,
       jobInput,

@@ -19,14 +19,8 @@ export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterSt
   "ratelimiter.storage.indexedDb"
 );
 
-/**
- * Extended options for IndexedDB rate limiter storage including prefix support.
- */
 export interface IndexedDbRateLimiterStorageOptions extends RateLimiterStorageOptions {}
 
-/**
- * Execution record stored in IndexedDB.
- */
 interface ExecutionRecord {
   readonly id?: string;
   readonly queue_name: string;
@@ -34,9 +28,6 @@ interface ExecutionRecord {
   readonly [key: string]: unknown;
 }
 
-/**
- * Next available record stored in IndexedDB.
- */
 interface NextAvailableRecord {
   readonly queue_name: string;
   readonly next_available_at: string;
@@ -63,16 +54,13 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
   private nextAvailableDb: IDBDatabase | undefined;
   private readonly executionTableName: string;
   private readonly nextAvailableTableName: string;
-  /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
-  /** The prefix values for filtering */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
 
   constructor(options: IndexedDbRateLimiterStorageOptions = {}) {
     this.prefixes = options.prefixes ?? [];
     this.prefixValues = options.prefixValues ?? {};
 
-    // Generate table names based on prefix configuration
     if (this.prefixes.length > 0) {
       const prefixNames = this.prefixes.map((p) => p.name).join("_");
       this.executionTableName = `rate_limit_executions_${prefixNames}`;
@@ -83,16 +71,10 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     }
   }
 
-  /**
-   * Gets prefix column names for use in indexes.
-   */
   private getPrefixColumnNames(): string[] {
     return this.prefixes.map((p) => p.name);
   }
 
-  /**
-   * Checks if a record matches the current prefix values.
-   */
   private matchesPrefixes(record: Record<string, unknown>): boolean {
     for (const [key, value] of Object.entries(this.prefixValues)) {
       if (record[key] !== value) {
@@ -102,9 +84,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
     return true;
   }
 
-  /**
-   * Gets prefix values as an array in column order for index key construction.
-   */
   private getPrefixKeyValues(): Array<string | number> {
     return this.prefixes.map((p) => this.prefixValues[p.name]);
   }
@@ -279,7 +258,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       executed_at: new Date().toISOString(),
     };
 
-    // Add prefix values to the record
     for (const [key, value] of Object.entries(this.prefixValues)) {
       (record as Record<string, unknown>)[key] = value;
     }
@@ -356,7 +334,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       };
 
       tx.oncomplete = () => {
-        // Sort by executed_at ascending
         executions.sort();
         resolve(executions[offset]);
       };
@@ -399,12 +376,10 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       next_available_at: nextAvailableAt,
     };
 
-    // Add prefix values to the record
     for (const [k, value] of Object.entries(this.prefixValues)) {
       record[k] = value;
     }
 
-    // Set the key field
     (record as Record<string, unknown>)[
       this.getPrefixColumnNames().concat(["queue_name"]).join("_")
     ] = key;
@@ -418,7 +393,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
   }
 
   public async clear(queueName: string): Promise<void> {
-    // Clear executions
     const execDb = await this.getExecutionDb();
     const execTx = execDb.transaction(this.executionTableName, "readwrite");
     const execStore = execTx.objectStore(this.executionTableName);
@@ -448,7 +422,6 @@ export class IndexedDbRateLimiterStorage implements IRateLimiterStorage {
       request.onerror = () => reject(request.error);
     });
 
-    // Clear next available
     const nextDb = await this.getNextAvailableDb();
     const nextTx = nextDb.transaction(this.nextAvailableTableName, "readwrite");
     const nextStore = nextTx.objectStore(this.nextAvailableTableName);

@@ -160,7 +160,6 @@ export class Job<Input, Output> {
     this.progressMessage = message;
     this.progressDetails = details;
 
-    // Notify direct listeners
     for (const listener of this.progressListeners) {
       listener(progress, message, details);
     }

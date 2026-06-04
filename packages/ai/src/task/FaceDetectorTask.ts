@@ -174,12 +174,6 @@ export class FaceDetectorTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run face detection tasks.
- * Creates and executes a FaceDetectorTask with the provided input.
- * @param input The input parameters for face detection (image, model, and optional configuration)
- * @returns Promise resolving to the detected faces with bounding boxes and keypoints
- */
 export const faceDetector = (
   input: FaceDetectorTaskInput,
   config?: FaceDetectorTaskConfig,

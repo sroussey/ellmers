@@ -47,11 +47,6 @@ const outputSchema = {
 export type DebugLogTaskInput = FromSchema<typeof inputSchema>;
 export type DebugLogTaskOutput = FromSchema<typeof outputSchema>;
 
-/**
- * Logs the input at the configured level and returns a fresh output object
- * containing the same key/value pairs (passthrough). Pure helper so both
- * execute() and executePreview() can share behavior.
- */
 function logAndPassthrough<Output extends DebugLogTaskOutput>(
   input: DebugLogTaskInput,
   log_level: LogLevel
@@ -67,17 +62,6 @@ function logAndPassthrough<Output extends DebugLogTaskOutput>(
   return output;
 }
 
-/**
- * DebugLogTask provides console logging functionality as a task within the system.
- *
- * Features:
- * - Supports multiple log levels (info, warn, error, dir) via config
- * - Passes through all inputs as outputs unchanged
- * - Configurable logging format and depth
- *
- * This task is particularly useful for debugging task graphs and monitoring
- * data flow between tasks during development and testing.
- */
 export class DebugLogTask<
   Input extends DebugLogTaskInput = DebugLogTaskInput,
   Output extends DebugLogTaskOutput = DebugLogTaskOutput,

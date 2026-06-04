@@ -92,7 +92,6 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
     jobWithPrefixes.created_at = now;
     jobWithPrefixes.visible_at = now;
 
-    // Add prefix values to the job
     for (const [key, value] of Object.entries(this.prefixValues)) {
       jobWithPrefixes[key] = value;
     }
@@ -286,7 +285,6 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
       // immediately cancel the retry. Terminal statuses get a harmless
       // cleanup of the same field.
       jobWithPrefixes.abort_requested_at = null;
-      // Preserve prefix values from the existing job
       for (const [key, value] of Object.entries(this.prefixValues)) {
         jobWithPrefixes[key] = value;
       }
@@ -618,9 +616,7 @@ export class InMemoryQueueStorage<Input, Output> implements IQueueStorage<Input,
   ): () => void {
     const prefixFilter = options?.prefixFilter;
 
-    // Create a filtered callback wrapper
     const filteredCallback = (change: QueueChangePayload<Input, Output>) => {
-      // Check if either old or new job matches the filter
       const newMatches = change.new ? this.matchesPrefixFilter(change.new, prefixFilter) : false;
       const oldMatches = change.old ? this.matchesPrefixFilter(change.old, prefixFilter) : false;
 

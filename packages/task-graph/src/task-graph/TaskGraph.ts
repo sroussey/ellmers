@@ -128,10 +128,6 @@ export class TaskGraph implements ITaskGraph {
   /** Optional output cache to use for this task graph */
   public outputCache?: TaskOutputRepository;
 
-  /**
-   * Constructor for TaskGraph
-   * @param config Configuration for the task graph
-   */
   constructor({ outputCache, dag }: TaskGraphConstructorConfig = {}) {
     this.outputCache = outputCache;
     this._dag = dag || new TaskGraphDAG();
@@ -186,13 +182,6 @@ export class TaskGraph implements ITaskGraph {
     return this.runner.runGraphPreview<Output>(input, config);
   }
 
-  /**
-   * Merges the execute output to the run output
-   * @param results The execute output
-   * @param compoundMerge The compound merge strategy to use
-   * @returns The run output
-   */
-
   public mergeExecuteOutputsToRunOutput<
     ExecuteOutput extends TaskOutput,
     Merge extends CompoundMergeStrategy = CompoundMergeStrategy,
@@ -203,16 +192,10 @@ export class TaskGraph implements ITaskGraph {
     return this.runner.mergeExecuteOutputsToRunOutput(results, compoundMerge);
   }
 
-  /**
-   * Aborts the task graph
-   */
   public abort() {
     this.runner.abort();
   }
 
-  /**
-   * Disables the task graph
-   */
   public async disable() {
     await this.runner.disable();
   }
@@ -440,9 +423,6 @@ export class TaskGraph implements ITaskGraph {
   // Event handling
   // ========================================================================
 
-  /**
-   * Event emitter for task lifecycle events
-   */
   public get events(): EventEmitter<TaskGraphStatusListeners> {
     if (!this._events) {
       this._events = new EventEmitter<TaskGraphStatusListeners>();
@@ -739,11 +719,6 @@ export class TaskGraph implements ITaskGraph {
     }
   }
 
-  /**
-   * Emits an event for the specified event
-   * @param name - The event name to emit
-   * @param args - The arguments to pass to the event listener
-   */
   protected emit_local<Event extends TaskGraphStatusEvents>(
     name: Event,
     ...args: TaskGraphEventStatusParameters<Event>
@@ -751,11 +726,6 @@ export class TaskGraph implements ITaskGraph {
     return this.events?.emit(name, ...args);
   }
 
-  /**
-   * Emits an event for the specified event
-   * @param name - The event name to emit
-   * @param args - The arguments to pass to the event listener
-   */
   protected emit_dag<Event extends GraphEventDagEvents>(
     name: Event,
     ...args: GraphEventDagParameters<Event>

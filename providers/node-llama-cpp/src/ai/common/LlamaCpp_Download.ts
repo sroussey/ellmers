@@ -39,7 +39,6 @@ export const LlamaCpp_Download: AiProviderRunFn<
     }
   );
 
-  // Poll progress while download is in flight, emitting phase events.
   let settled = false;
   downloadPromise.finally(() => {
     settled = true;

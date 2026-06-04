@@ -45,10 +45,6 @@ export type TextSummaryTaskInput = FromSchema<typeof TextSummaryInputSchema>;
 export type TextSummaryTaskOutput = FromSchema<typeof TextSummaryOutputSchema>;
 export type TextSummaryTaskConfig = TaskConfig<TextSummaryTaskInput>;
 
-/**
- * This summarizes a piece of text
- */
-
 export class TextSummaryTask extends StreamingAiTask<
   TextSummaryTaskInput,
   TextSummaryTaskOutput,
@@ -70,12 +66,6 @@ export class TextSummaryTask extends StreamingAiTask<
   }
 }
 
-/**
- * Convenience function to run text summary tasks.
- * Creates and executes a text summary task with the provided input.
- * @param input The input parameters for text summary (text and model)
- * @returns Promise resolving to the summarized text output(s)
- */
 export const textSummary = async (
   input: TextSummaryTaskInput,
   config?: TextSummaryTaskConfig,

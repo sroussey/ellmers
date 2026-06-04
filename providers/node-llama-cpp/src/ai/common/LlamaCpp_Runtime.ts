@@ -53,10 +53,6 @@ export const llamaCppEmbeddingContexts = new Map<string, LlamaEmbeddingContext>(
 /** Maps model_url (or model_path when used as URI) to the actual downloaded filesystem path. */
 export const resolvedPaths = new Map<string, string>();
 
-// ============================================================================
-// Session cache for multi-turn conversations
-// ============================================================================
-
 export interface LlamaCppSessionState {
   mode: "prefix-rewind" | "progressive";
   sequence: any; // LlamaContextSequence

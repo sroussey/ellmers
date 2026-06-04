@@ -87,8 +87,6 @@ export function workerKeyForServes(serves: readonly Capability[]): string {
 
 /**
  * Registry that manages provider-specific task execution functions and job queues.
- * Handles the registration, retrieval, and execution of task processing functions
- * for different model providers and task types.
  */
 export class AiProviderRegistry {
   /**
@@ -106,10 +104,6 @@ export class AiProviderRegistry {
   private readonly strategyResolvers: Map<string, AiStrategyResolver> = new Map();
   private defaultStrategy: IAiExecutionStrategy | undefined;
 
-  /**
-   * Registers an AiProvider instance for lifecycle management and introspection.
-   * @param provider - The provider instance to register
-   */
   registerProvider(provider: AiProvider<any>): void {
     this.providers.set(provider.name, provider);
   }
@@ -117,7 +111,6 @@ export class AiProviderRegistry {
   /**
    * Removes a previously registered provider and all of its run/stream/preview functions.
    * Used for cleanup when provider initialization fails partway through.
-   * @param name - The provider name to unregister
    */
   unregisterProvider(name: string): void {
     this.providers.delete(name);
@@ -128,18 +121,10 @@ export class AiProviderRegistry {
     }
   }
 
-  /**
-   * Retrieves a registered AiProvider instance by name.
-   * @param name - The provider name (e.g., "HF_TRANSFORMERS_ONNX")
-   * @returns The provider instance, or undefined if not found
-   */
   getProvider(name: string): AiProvider<any> | undefined {
     return this.providers.get(name);
   }
 
-  /**
-   * Returns all registered AiProvider instances.
-   */
   getProviders(): Map<string, AiProvider<any>> {
     return new Map(this.providers);
   }
@@ -254,14 +239,10 @@ export class AiProviderRegistry {
 
   /**
    * Registers a worker-proxied run function under a capability-set.
-   * Stubbed in this commit; restored in plan Task 8 to delegate via
-   * `WorkerManager.callWorkerRunFunction` keyed by
-   * {@link workerKeyForServes}(serves).
-   *
-   * @param providerName - The provider name the proxy is registered under
-   * @param serves - The capability-set this proxy fulfils (must match the
-   *   worker-side registration's `serves` exactly so the deterministic
-   *   `workerKeyForServes` lookup resolves on both sides)
+   * Delegates via `WorkerManager.callWorkerRunFunction` keyed by
+   * {@link workerKeyForServes}(serves). `serves` must match the worker-side
+   * registration's `serves` exactly so the deterministic
+   * `workerKeyForServes` lookup resolves on both sides.
    */
   registerAsWorkerRunFn(providerName: string, serves: readonly Capability[]): void {
     const key = workerKeyForServes(serves);
@@ -378,9 +359,6 @@ export class AiProviderRegistry {
   }
 }
 
-/**
- * Service token for the AI provider registry.
- */
 export const AI_PROVIDER_REGISTRY = createServiceToken<AiProviderRegistry>("ai.provider.registry");
 
 /**
@@ -398,9 +376,6 @@ export function getAiProviderRegistry(
   return registry.get(AI_PROVIDER_REGISTRY);
 }
 
-/**
- * Replaces the AI provider registry on the given registry (defaults to global).
- */
 export function setAiProviderRegistry(
   pr: AiProviderRegistry,
   registry: ServiceRegistry = globalServiceRegistry
@@ -422,5 +397,4 @@ export function registerAiProviderDefaults(
   );
 }
 
-// Self-register on the global registry. Idempotent.
 registerAiProviderDefaults();

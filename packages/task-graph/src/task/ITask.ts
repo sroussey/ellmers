@@ -30,9 +30,6 @@ import type { JsonTaskItem, TaskGraphItemJson, TaskGraphJsonOptions } from "./Ta
 import { TaskRunner } from "./TaskRunner";
 import type { TaskConfig, TaskInput, TaskOutput, TaskStatus } from "./TaskTypes";
 
-/**
- * Context for task execution
- */
 export interface IExecuteContext {
   signal: AbortSignal;
   /**
@@ -82,14 +79,12 @@ export type IExecutePreviewContext = Pick<IExecuteContext, "own">;
 export interface IRunConfig {
   /**
    * Runner ID to use for job-queue-based tasks (e.g. AiTask).
-   * Previously lived in TaskConfig; moved here because it is a runtime concern.
    * The graph runner sets this on task.runConfig before each run.
    */
   runnerId?: string;
 
   /**
    * Output cache override for this run.
-   * Previously lived in TaskConfig; moved here because it is a runtime concern.
    *  - true  → use the globally registered TaskOutputRepository
    *  - false → disable caching for this run
    *  - TaskOutputRepository instance → use this specific repository
@@ -196,8 +191,7 @@ export interface ITaskStaticProperties {
 }
 
 /**
- * Interface for task execution logic
- * These methods define how tasks are executed and should be implemented by Task subclasses
+ * Interface for task execution logic — implemented by Task subclasses.
  */
 export interface ITaskExecution<
   Input extends TaskInput = TaskInput,
@@ -222,8 +216,7 @@ export interface ITaskExecution<
 }
 
 /**
- * Interface for task lifecycle management
- * These methods define how tasks are run and are usually delegated to a TaskRunner
+ * Interface for task lifecycle management — usually delegated to a TaskRunner.
  */
 export interface ITaskLifecycle<
   Input extends TaskInput,
@@ -237,9 +230,6 @@ export interface ITaskLifecycle<
   disable(): Promise<void>;
 }
 
-/**
- * Interface for task input/output operations
- */
 export interface ITaskIO<Input extends TaskInput> {
   defaults: Record<string, any>;
   runInputData: Record<string, any>;
@@ -273,9 +263,6 @@ export interface ITaskInternalGraph {
   regenerateGraph(): void;
 }
 
-/**
- * Interface for task event handling
- */
 export interface ITaskEvents {
   get events(): EventEmitter<TaskEventListeners>;
 
@@ -287,18 +274,12 @@ export interface ITaskEvents {
   subscribe<Event extends TaskEvents>(name: Event, fn: TaskEventListener<Event>): () => void;
 }
 
-/**
- * Interface for task serialization
- */
 export interface ITaskSerialization {
   toJSON(options?: TaskGraphJsonOptions): JsonTaskItem | TaskGraphItemJson;
   toDependencyJSON(options?: TaskGraphJsonOptions): JsonTaskItem;
   get id(): unknown;
 }
 
-/**
- * Interface for task configuration and state
- */
 export interface ITaskState<Config extends TaskConfig = TaskConfig> {
   readonly config: Config;
   get id(): unknown;
@@ -336,18 +317,12 @@ export interface IGraphAsTask<
   get compoundMerge(): CompoundMergeStrategy;
 }
 
-/**
- * Type for task constructor
- */
 type ITaskConstructorType<
   Input extends TaskInput,
   Output extends TaskOutput,
   Config extends TaskConfig,
 > = new (config: Config, runConfig?: Partial<IRunConfig>) => ITask<Input, Output, Config>;
 
-/**
- * Interface for task constructor with static properties
- */
 export type ITaskConstructor<
   Input extends TaskInput,
   Output extends TaskOutput,

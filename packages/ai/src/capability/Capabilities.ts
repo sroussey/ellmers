@@ -47,7 +47,6 @@ export const CAPABILITIES = {
   "model.count-tokens": "Tokenize input for cost / context calculation",
   "model.download-remove": "Uncache a model's weights from cache and disk",
   "model.download": "Fetch / cache a model's weights locally (lifecycle)",
-  // TODO:
   "model.dispose": "Dispose model-resident resources in memory",
 } as const;
 

@@ -5,14 +5,10 @@
  */
 
 /**
- * Explicit bootstrap entry point for the Workglow runtime.
- *
- * Replaces the prior pattern where importing `workglow` ran a number of
- * registrations as side effects (default storage, input resolvers, the
- * tslog logger, etc.). Consumers now call `bootstrapWorkglow()` once at
- * application startup to install those defaults onto the global registry,
- * or call `createOrchestrationContext()` to get an isolated registry —
- * useful for tests, multi-tenant servers, and embedded use.
+ * Explicit bootstrap entry point for the Workglow runtime. Call
+ * `bootstrapWorkglow()` once at application startup to install defaults onto
+ * the global registry, or `createOrchestrationContext()` for an isolated
+ * registry (tests, multi-tenant servers, embedded use).
  */
 
 import { registerAiProviderDefaults, registerModelDefaults } from "@workglow/ai";
@@ -36,9 +32,6 @@ import {
 import { registerImageDefaults } from "@workglow/util/media";
 import { registerWorkerManagerDefaults } from "@workglow/util/worker";
 
-/**
- * Options for `bootstrapWorkglow` and `createOrchestrationContext`.
- */
 export interface BootstrapOptions {
   /** Logger instance. Replaces the env-driven default. */
   readonly logger?: ILogger;

@@ -80,9 +80,6 @@ export type TextNamedEntityRecognitionTaskOutput = FromSchema<
 >;
 export type TextNamedEntityRecognitionTaskConfig = TaskConfig<TextNamedEntityRecognitionTaskInput>;
 
-/**
- * Extracts named entities from text using language models
- */
 export class TextNamedEntityRecognitionTask extends AiTask<
   TextNamedEntityRecognitionTaskInput,
   TextNamedEntityRecognitionTaskOutput,
@@ -102,12 +99,6 @@ export class TextNamedEntityRecognitionTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to run named entity recognition tasks.
- * Creates and executes a TextNamedEntityRecognitionTask with the provided input.
- * @param input The input parameters for named entity recognition (text and model)
- * @returns Promise resolving to the extracted named entities with types, scores, and text
- */
 export const textNamedEntityRecognition = (
   input: TextNamedEntityRecognitionTaskInput,
   config?: TextNamedEntityRecognitionTaskConfig,

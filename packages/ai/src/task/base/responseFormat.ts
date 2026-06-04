@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @description Helpers for composing response-format prompt addenda used by
- * chat-style AI tasks (e.g. AiChatTask, AiChatWithKbTask).
- */
-
 export type ResponseFormat = "text" | "markdown";
 
 /**

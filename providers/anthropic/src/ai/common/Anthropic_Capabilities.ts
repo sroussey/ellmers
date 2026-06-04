@@ -7,17 +7,11 @@
 import type { Capability, ModelRecord } from "@workglow/ai/worker";
 import { ANTHROPIC_CAPABILITY_SETS } from "./Anthropic_CapabilitySets";
 
-// ---------------------------------------------------------------------------
-// Worker-proxy spec list (derived from the single source of truth)
-// ---------------------------------------------------------------------------
-
 /**
  * Closed list of capability-set specs the Anthropic provider serves. Derived
- * from {@link ANTHROPIC_CAPABILITY_SETS} — do not edit here. Used by the
- * main-thread provider shells when registering worker-mode proxies (the
- * actual runFns live in {@link ANTHROPIC_RUN_FNS} on the worker side, but the
- * main thread still needs to know which `serves` sets to register so the
- * dispatcher can route requests to the worker proxy).
+ * from {@link ANTHROPIC_CAPABILITY_SETS}. Used by the main-thread provider
+ * shells when registering worker-mode proxies so the dispatcher can route
+ * requests to the worker proxy.
  */
 export const ANTHROPIC_RUN_FN_SPECS = ANTHROPIC_CAPABILITY_SETS.map((serves) => ({ serves }));
 

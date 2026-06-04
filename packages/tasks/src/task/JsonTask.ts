@@ -70,8 +70,8 @@ export class JsonTask<
   }
 
   /**
-   * Regenerates the entire task graph based on the current JSON input
-   * Creates task nodes and establishes data flow connections between them
+   * Regenerates the task subgraph from the current JSON input. Accepts either
+   * a graph-format `{ tasks, dataflows }` or a dependency-format array.
    */
   public override regenerateGraph() {
     if (!this.runInputData.json) return;
@@ -80,7 +80,6 @@ export class JsonTask<
       | JsonTaskItem[]
       | JsonTaskItem;
 
-    // Graph format: { tasks, dataflows } (e.g. from builder export)
     if (
       data &&
       typeof data === "object" &&
@@ -94,7 +93,6 @@ export class JsonTask<
       return;
     }
 
-    // Dependency format: array of JsonTaskItem (or single item)
     let jsonItems: JsonTaskItem[] = Array.isArray(data) ? data : [data as JsonTaskItem];
     this.subGraph = createGraphFromDependencyJSON(jsonItems, this.runConfig?.registry);
 
@@ -116,9 +114,6 @@ export class JsonTask<
   }
 }
 
-/**
- * Convenience function to create and run a JsonTask
- */
 export const json = (input: JsonTaskInput, config: TaskConfig = {}) => {
   return new JsonTask(config).run(input);
 };

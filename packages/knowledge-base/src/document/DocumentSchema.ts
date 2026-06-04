@@ -6,9 +6,6 @@
 
 import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
 
-/**
- * Node kind discriminator for hierarchical document structure
- */
 export const NodeKind = {
   DOCUMENT: "document",
   SECTION: "section",
@@ -22,13 +19,6 @@ export const NodeKind = {
 
 export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind];
 
-// =============================================================================
-// Schema Definitions
-// =============================================================================
-
-/**
- * Schema for source range of a node (character offsets)
- */
 export const NodeRangeSchema = {
   type: "object",
   properties: {
@@ -49,9 +39,6 @@ export const NodeRangeSchema = {
 
 export type NodeRange = FromSchema<typeof NodeRangeSchema>;
 
-/**
- * Schema for named entity extracted from text
- */
 export const EntitySchema = {
   type: "object",
   properties: {
@@ -77,9 +64,6 @@ export const EntitySchema = {
 
 export type Entity = FromSchema<typeof EntitySchema>;
 
-/**
- * Schema for enrichment data attached to a node
- */
 export const NodeEnrichmentSchema = {
   type: "object",
   properties: {
@@ -107,9 +91,9 @@ export const NodeEnrichmentSchema = {
 export type NodeEnrichment = FromSchema<typeof NodeEnrichmentSchema>;
 
 /**
- * Schema for base document node fields (used for runtime validation)
- * Note: Individual node types and DocumentNode union are defined as interfaces
- * below because FromSchema cannot properly infer recursive discriminated unions.
+ * Base node fields used for runtime validation. Concrete node types and the
+ * `DocumentNode` union are declared as interfaces below because `FromSchema`
+ * cannot infer recursive discriminated unions.
  */
 export const DocumentNodeBaseSchema = {
   type: "object",
@@ -138,9 +122,8 @@ export const DocumentNodeBaseSchema = {
 } as const satisfies DataPortSchema;
 
 /**
- * Schema for document node (generic, for runtime validation)
- * This is a simplified schema for task input/output validation.
- * The actual TypeScript types use a proper discriminated union.
+ * Simplified schema for task input/output validation only — the precise
+ * contract is the {@link DocumentNode} discriminated union.
  */
 export const DocumentNodeSchema = {
   type: "object",
@@ -172,9 +155,6 @@ export const DocumentNodeSchema = {
   additionalProperties: true,
 } as const satisfies DataPortSchema;
 
-/**
- * Schema for paragraph node
- */
 export const ParagraphNodeSchema = {
   type: "object",
   properties: {
@@ -190,9 +170,6 @@ export const ParagraphNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Schema for sentence node
- */
 export const SentenceNodeSchema = {
   type: "object",
   properties: {
@@ -208,9 +185,6 @@ export const SentenceNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Schema for section node
- */
 export const SectionNodeSchema = {
   type: "object",
   properties: {
@@ -244,9 +218,6 @@ export const SectionNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Schema for topic node
- */
 export const TopicNodeSchema = {
   type: "object",
   properties: {
@@ -370,9 +341,6 @@ export const ImageNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Schema for document root node
- */
 export const DocumentRootNodeSchema = {
   type: "object",
   properties: {
@@ -399,14 +367,6 @@ export const DocumentRootNodeSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-// =============================================================================
-// Manually-defined interfaces for recursive discriminated union types
-// These provide better TypeScript inference than FromSchema for recursive types
-// =============================================================================
-
-/**
- * Base document node fields
- */
 interface DocumentNodeBase {
   readonly nodeId: string;
   readonly kind: NodeKind;
@@ -415,18 +375,13 @@ interface DocumentNodeBase {
   readonly enrichment?: NodeEnrichment;
 }
 
-/**
- * Document root node
- */
 export interface DocumentRootNode extends DocumentNodeBase {
   readonly kind: typeof NodeKind.DOCUMENT;
   readonly title: string;
   readonly children: DocumentNode[];
 }
 
-/**
- * Section node (from markdown headers or structural divisions)
- */
+/** Section node (from markdown headers or structural divisions). */
 export interface SectionNode extends DocumentNodeBase {
   readonly kind: typeof NodeKind.SECTION;
   readonly level: number;
@@ -434,23 +389,16 @@ export interface SectionNode extends DocumentNodeBase {
   readonly children: DocumentNode[];
 }
 
-/**
- * Paragraph node
- */
 export interface ParagraphNode extends DocumentNodeBase {
   readonly kind: typeof NodeKind.PARAGRAPH;
 }
 
-/**
- * Sentence node (optional fine-grained segmentation)
- */
+/** Optional fine-grained segmentation below paragraph. */
 export interface SentenceNode extends DocumentNodeBase {
   readonly kind: typeof NodeKind.SENTENCE;
 }
 
-/**
- * Topic segment node (from TopicSegmenter)
- */
+/** Topic segment node produced by TopicSegmenter. */
 export interface TopicNode extends DocumentNodeBase {
   readonly kind: typeof NodeKind.TOPIC;
   readonly children: DocumentNode[];
@@ -489,9 +437,6 @@ export interface ImageNode extends DocumentNodeBase {
   readonly alt: string | undefined;
 }
 
-/**
- * Discriminated union of all document node types
- */
 export type DocumentNode =
   | DocumentRootNode
   | SectionNode
@@ -502,13 +447,6 @@ export type DocumentNode =
   | ListNode
   | ImageNode;
 
-// =============================================================================
-// Token Budget
-// =============================================================================
-
-/**
- * Schema for token budget configuration
- */
 export const TokenBudgetSchema = {
   type: "object",
   properties: {
@@ -534,13 +472,6 @@ export const TokenBudgetSchema = {
 
 export type TokenBudget = FromSchema<typeof TokenBudgetSchema>;
 
-// =============================================================================
-// Document Metadata
-// =============================================================================
-
-/**
- * Schema for document metadata
- */
 export const DocumentMetadataSchema = {
   type: "object",
   properties: {

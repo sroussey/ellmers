@@ -9,9 +9,9 @@ import type { DataPortSchemaObject, TypedArray } from "@workglow/util/schema";
 import { ScopedTabularStorage } from "./ScopedTabularStorage";
 
 /**
- * Wrapper extending `ScopedTabularStorage` that also implements `IVectorStorage`.
- * Delegates vector search methods to the inner shared vector storage,
- * post-filtering results by `kb_id`.
+ * Adds an `IVectorStorage` surface to {@link ScopedTabularStorage}. Inner
+ * vector results are post-filtered by `kb_id`, with overfetch sized by
+ * `overFetchMultiplier` so filtering rarely starves the result.
  */
 export class ScopedVectorStorage<
   Metadata extends Record<string, unknown> | undefined,

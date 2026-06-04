@@ -69,9 +69,6 @@ export function resolveIterationBound(bound: IterationBound): number {
   return bound === "unbounded" ? Number.POSITIVE_INFINITY : bound;
 }
 
-/**
- * Configuration for a single property in the iteration input schema.
- */
 export interface IterationPropertyConfig {
   /** The base schema for the property (without array wrapping) */
   readonly baseSchema: PropertySchema;
@@ -97,10 +94,6 @@ export const iteratorTaskConfigSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-/**
- * Configuration type for IteratorTask.
- * Extends GraphAsTaskConfig with iterator-specific options.
- */
 export type IteratorTaskConfig<Input extends TaskInput = TaskInput> = GraphAsTaskConfig<Input> & {
   /**
    * Maximum number of concurrent iteration workers
@@ -127,17 +120,11 @@ export type IteratorTaskConfig<Input extends TaskInput = TaskInput> = GraphAsTas
   readonly iterationInputConfig?: Record<string, IterationPropertyConfig>;
 };
 
-/**
- * Result of detecting the iterator port from the input schema.
- */
 interface IteratorPortInfo {
   readonly portName: string;
   readonly itemSchema: DataPortSchema;
 }
 
-/**
- * Result of analyzing input for iteration.
- */
 export interface IterationAnalysisResult {
   /** The number of iterations to perform */
   readonly iterationCount: number;
@@ -198,18 +185,13 @@ function inferIterationFromSchema(schema: DataPortSchema | undefined): boolean |
   return false;
 }
 
-/**
- * Creates a union type schema (T | T[]) for flexible iteration input.
- */
+/** Creates a union type schema (T | T[]) for flexible iteration input. */
 export function createFlexibleSchema(baseSchema: PropertySchema): PropertySchema {
   return {
     anyOf: [baseSchema, { type: "array", items: baseSchema }],
   } as PropertySchema;
 }
 
-/**
- * Creates an array schema from a base schema.
- */
 export function createArraySchema(baseSchema: PropertySchema): PropertySchema {
   return {
     type: "array",
@@ -268,9 +250,6 @@ export function extractBaseSchema(schema: PropertySchema): PropertySchema {
   return schema;
 }
 
-/**
- * Determines if a schema accepts arrays (is array type or has array in union).
- */
 export function schemaAcceptsArray(schema: DataPortSchema): boolean {
   if (typeof schema === "boolean") return false;
 
@@ -285,9 +264,6 @@ export function schemaAcceptsArray(schema: DataPortSchema): boolean {
   return false;
 }
 
-/**
- * Base class for iterator tasks that process collections of items.
- */
 export abstract class IteratorTask<
   Input extends TaskInput = TaskInput,
   Output extends TaskOutput = TaskOutput,
@@ -386,23 +362,15 @@ export abstract class IteratorTask<
     return true;
   }
 
-  /**
-   * Whether this iterator runs in reduce mode.
-   */
   public isReduceTask(): boolean {
     return false;
   }
 
-  /**
-   * Initial accumulator for reduce mode.
-   */
+  /** Initial accumulator for reduce mode. */
   public getInitialAccumulator(): Output {
     return {} as Output;
   }
 
-  /**
-   * Builds the per-iteration subgraph input.
-   */
   public buildIterationRunInput(
     analysis: IterationAnalysisResult,
     index: number,
@@ -417,9 +385,7 @@ export abstract class IteratorTask<
     };
   }
 
-  /**
-   * Updates the accumulator with one iteration result in reduce mode.
-   */
+  /** Updates the accumulator with one iteration result in reduce mode. */
   public mergeIterationIntoAccumulator(
     accumulator: Output,
     iterationResult: TaskOutput | undefined,
@@ -428,16 +394,12 @@ export abstract class IteratorTask<
     return (iterationResult ?? accumulator) as Output;
   }
 
-  /**
-   * Returns the result when there are no items to iterate.
-   */
+  /** Returns the result when there are no items to iterate. */
   public getEmptyResult(): Output {
     return {} as Output;
   }
 
-  /**
-   * Collects and merges results from all iterations.
-   */
+  /** Collects and merges results from all iterations. */
   public collectResults(results: TaskOutput[]): Output {
     if (results.length === 0) {
       return {} as Output;

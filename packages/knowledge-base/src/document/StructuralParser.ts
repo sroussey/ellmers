@@ -8,15 +8,11 @@ import { uuid4 } from "@workglow/util";
 import type { DocumentRootNode, ParagraphNode, SectionNode } from "./DocumentSchema";
 import { NodeKind } from "./DocumentSchema";
 
-/**
- * Parse markdown into a hierarchical DocumentNode tree
- */
 export class StructuralParser {
   /**
-   * Parse markdown text into a hierarchical document tree.
-   *
-   * Note: Offsets are measured in UTF-16 code units (consistent with
-   * `String.prototype.length` and `String.prototype.slice()`).
+   * Parse markdown text into a hierarchical document tree. Offsets are measured
+   * in UTF-16 code units (consistent with `String.prototype.length` and
+   * `String.prototype.slice()`).
    */
   static async parseMarkdown(
     doc_id: string,
@@ -63,9 +59,8 @@ export class StructuralParser {
     };
 
     for (const line of lines) {
-      const lineLength = line.length + 1; // +1 for newline
+      const lineLength = line.length + 1; // +1 for newline.
 
-      // Check if line is a header
       const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
       if (headerMatch) {
         await flushTextBuffer();
@@ -73,15 +68,14 @@ export class StructuralParser {
         const level = headerMatch[1].length;
         const headerTitle = headerMatch[2];
 
-        // Pop stack until we find appropriate parent — set endOffset to currentOffset
-        // (the start of this new header line) rather than text.length
+        // Pop sections until we find the right parent; close their ranges at
+        // the start of the new header (not text.length).
         while (
           currentParentStack.length > 1 &&
           currentParentStack[currentParentStack.length - 1].kind === NodeKind.SECTION &&
           (currentParentStack[currentParentStack.length - 1] as SectionNode).level >= level
         ) {
           const poppedSection = currentParentStack.pop() as SectionNode;
-          // Update endOffset of popped section to where the next section begins
           const updatedSection: SectionNode = {
             ...poppedSection,
             range: {
@@ -89,7 +83,6 @@ export class StructuralParser {
               endOffset: currentOffset,
             },
           };
-          // Replace in parent's children
           const parent = currentParentStack[currentParentStack.length - 1];
           parent.children[parent.children.length - 1] = updatedSection;
         }
@@ -102,7 +95,7 @@ export class StructuralParser {
           title: headerTitle,
           range: {
             startOffset: sectionStartOffset,
-            // Will be updated to the correct endOffset when popped or at end of parsing
+            // Patched to the real endOffset when popped or at end-of-parse.
             endOffset: text.length,
           },
           text: headerTitle,
@@ -112,7 +105,6 @@ export class StructuralParser {
         currentParentStack[currentParentStack.length - 1].children.push(section);
         currentParentStack.push(section);
       } else {
-        // Accumulate text
         if (textBuffer.length === 0) {
           textBufferStartOffset = currentOffset;
         }
@@ -124,7 +116,7 @@ export class StructuralParser {
 
     await flushTextBuffer();
 
-    // Close any remaining sections — final sections extend to the end of the text
+    // Close any remaining sections at end-of-document.
     while (currentParentStack.length > 1) {
       const section = currentParentStack.pop() as SectionNode;
       const updatedSection: SectionNode = {
@@ -141,10 +133,7 @@ export class StructuralParser {
     return root;
   }
 
-  /**
-   * Parse plain text into a hierarchical document tree
-   * Splits by double newlines to create paragraphs
-   */
+  /** Splits by blank lines to produce paragraph nodes. */
   static async parsePlainText(
     doc_id: string,
     text: string,
@@ -159,7 +148,6 @@ export class StructuralParser {
       children: [],
     };
 
-    // Split by double newlines to get paragraphs while tracking offsets
     const paragraphRegex = /\n\s*\n/g;
     let lastIndex = 0;
     let paragraphIndex = 0;
@@ -191,7 +179,6 @@ export class StructuralParser {
       lastIndex = paragraphRegex.lastIndex;
     }
 
-    // Handle trailing paragraph after the last double newline, if any
     if (lastIndex < text.length) {
       const rawParagraph = text.slice(lastIndex);
       const paragraphText = rawParagraph.trim();
@@ -217,9 +204,6 @@ export class StructuralParser {
     return root;
   }
 
-  /**
-   * Auto-detect format and parse
-   */
   static parse(
     doc_id: string,
     text: string,
@@ -232,12 +216,7 @@ export class StructuralParser {
     return this.parsePlainText(doc_id, text, title);
   }
 
-  /**
-   * Check if text contains markdown header patterns
-   * Looks for lines starting with 1-6 hash symbols followed by whitespace
-   */
   private static looksLikeMarkdown(text: string): boolean {
-    // Check for markdown header patterns: line starting with # followed by space
     return /^#{1,6}\s/m.test(text);
   }
 }

@@ -145,7 +145,6 @@ export class Container {
   createChildContainer(): Container {
     const child = new Container();
 
-    // Copy all registrations to the child
     this.factories.forEach((factory, token) => {
       child.factories.set(token, factory);
       if (this.singletons.has(token)) {
@@ -153,7 +152,6 @@ export class Container {
       }
     });
 
-    // Copy all singleton instances to the child
     this.services.forEach((service, token) => {
       if (this.singletons.has(token)) {
         child.services.set(token, service);

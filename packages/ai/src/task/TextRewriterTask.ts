@@ -50,9 +50,6 @@ export type TextRewriterTaskInput = FromSchema<typeof TextRewriterInputSchema>;
 export type TextRewriterTaskOutput = FromSchema<typeof TextRewriterOutputSchema>;
 export type TextRewriterTaskConfig = TaskConfig<TextRewriterTaskInput>;
 
-/**
- * This is a special case of text generation that takes a prompt and text to rewrite
- */
 export class TextRewriterTask extends StreamingAiTask<
   TextRewriterTaskInput,
   TextRewriterTaskOutput,
@@ -74,12 +71,6 @@ export class TextRewriterTask extends StreamingAiTask<
   }
 }
 
-/**
- * Convenience function to run text rewriter tasks.
- * Creates and executes a TextRewriterCompoundTask with the provided input.
- * @param input The input parameters for text rewriting (text, prompt, and model)
- * @returns Promise resolving to the rewritten text output(s)
- */
 export const textRewriter = (
   input: TextRewriterTaskInput,
   config?: TextRewriterTaskConfig,

@@ -164,9 +164,7 @@ export class EventEmitter<EventListenerTypes extends Record<string, (...args: an
     event: Event
   ): Promise<EmittedReturnType<EventListenerTypes, Event>> {
     return new Promise((resolve) => {
-      // Create an anonymous function that captures all arguments and passes them to resolve
       const listener = ((...args: any[]) => {
-        // Always resolve with the array of arguments (which may be empty)
         resolve(args as any);
       }) as EventListener<EventListenerTypes, Event>;
 

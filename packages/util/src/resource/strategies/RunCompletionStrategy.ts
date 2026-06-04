@@ -9,8 +9,7 @@ import type { ResourceScope } from "../ResourceScope";
 
 /**
  * Default strategy: dispose every registered resource when the owning run
- * completes (or when the scope itself is torn down). Preserves the
- * pre-strategy behaviour of `ResourceScope` byte-for-byte.
+ * completes (or when the scope itself is torn down).
  */
 export class RunCompletionStrategy implements IDisposeStrategy {
   onRegister(

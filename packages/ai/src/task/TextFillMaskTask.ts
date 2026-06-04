@@ -66,9 +66,6 @@ export type TextFillMaskTaskInput = FromSchema<typeof TextFillMaskInputSchema>;
 export type TextFillMaskTaskOutput = FromSchema<typeof TextFillMaskOutputSchema>;
 export type TextFillMaskTaskConfig = TaskConfig<TextFillMaskTaskInput>;
 
-/**
- * Fills masked tokens in text using language models
- */
 export class TextFillMaskTask extends AiTask<
   TextFillMaskTaskInput,
   TextFillMaskTaskOutput,
@@ -88,12 +85,6 @@ export class TextFillMaskTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to run fill mask tasks.
- * Creates and executes a TextFillMaskTask with the provided input.
- * @param input The input parameters for fill mask (text with mask token and model)
- * @returns Promise resolving to the predicted tokens with scores and complete sequences
- */
 export const textFillMask = (
   input: TextFillMaskTaskInput,
   config?: TextFillMaskTaskConfig,

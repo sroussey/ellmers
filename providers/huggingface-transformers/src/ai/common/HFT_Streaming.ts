@@ -24,9 +24,6 @@ export function createStreamingTextStreamer(
   });
 }
 
-/**
- * Create a text streamer for a given tokenizer and update progress function
- */
 export function createTextStreamer(
   tokenizer: any,
   updateProgress: (progress: number, message?: string, details?: any) => void,

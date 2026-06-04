@@ -31,7 +31,7 @@ export class InMemoryTabularMigrationApplier implements ITabularMigrationApplier
   ) {}
 
   async ensureBookkeeping(): Promise<void> {
-    // Default: nothing to persist; subclasses override to load.
+    // Subclasses with durable bookkeeping override to load from disk.
   }
 
   async appliedVersions(component: string): Promise<Set<number>> {
@@ -84,7 +84,5 @@ export class InMemoryTabularMigrationApplier implements ITabularMigrationApplier
   }
 
   /** Subclasses (e.g. FsFolder) override to flush bookkeeping to disk. */
-  protected async persist(): Promise<void> {
-    // no-op
-  }
+  protected async persist(): Promise<void> {}
 }

@@ -6,10 +6,6 @@ import { EventEmitter } from "../events/EventEmitter";
 import { NodeAlreadyExistsError, NodeDoesntExistError } from "./errors";
 
 /**
- * This is the default [[Graph.constructor | `nodeIdentity`]] function it is simply imported from [object-hash](https://www.npmjs.com/package/object-hash)
- */
-
-/**
  * # Graph
  *
  * A `Graph` is is a simple undirected graph. On it's own it isn't too useful but it forms the basic functionality for the [[`DirectedGraph`]] and [[`DirectedAcyclicGraph`]].
@@ -450,24 +446,20 @@ export class Graph<Node, Edge = true, NodeId = unknown, EdgeId = unknown> {
       throw new NodeDoesntExistError(nodeIdentity);
     }
 
-    // Find the index of the node in the adjacency matrix BEFORE deleting
+    // Capture index BEFORE deleting the node — needed to splice the matrix below.
     const nodeIndex = this.getNodeIndex(nodeIdentity);
 
-    // Remove the node from the nodes map and index map
     this.nodes.delete(nodeIdentity);
     this.nodeIndexMap.delete(nodeIdentity);
 
-    // Decrement indices for all nodes that came after the removed one
+    // Decrement indices for all nodes that came after the removed one.
     for (const [id, idx] of this.nodeIndexMap) {
       if (idx > nodeIndex) {
         this.nodeIndexMap.set(id, idx - 1);
       }
     }
 
-    // Remove the corresponding row from the adjacency matrix
     this.adjacency.splice(nodeIndex, 1);
-
-    // Remove the corresponding column from the adjacency matrix
     this.adjacency.forEach((row) => row.splice(nodeIndex, 1));
 
     this.emit("node-removed", nodeIdentity);

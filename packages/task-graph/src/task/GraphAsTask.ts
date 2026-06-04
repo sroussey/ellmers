@@ -67,8 +67,8 @@ export class GraphAsTask<
   // ========================================================================
 
   /**
-   * @param config Task configuration; `subGraph` is applied to this instance and stripped before validating config.
-   * @param runConfig Runtime configuration (forwarded to {@link Task}).
+   * `subGraph` is extracted from `config` and applied to the instance before
+   * validating the remainder of the config.
    */
   constructor(config: Partial<Config> = {}, runConfig: Partial<IRunConfig> = {}) {
     const { subGraph, ...rest } = config;
@@ -85,9 +85,6 @@ export class GraphAsTask<
 
   declare _runner: GraphAsTaskRunner<Input, Output, Config>;
 
-  /**
-   * Task runner for handling the task execution
-   */
   override get runner(): GraphAsTaskRunner<Input, Output, Config> {
     if (!this._runner) {
       this._runner = new GraphAsTaskRunner<Input, Output, Config>(this);
@@ -137,9 +134,6 @@ export class GraphAsTask<
   }
 
   protected _inputSchemaNode: SchemaNode | undefined;
-  /**
-   * Gets the compiled input schema
-   */
   protected override getInputSchemaNode(): SchemaNode {
     // every graph as task is different, so we need to compile the schema for each one
     if (!this._inputSchemaNode) {
@@ -162,11 +156,9 @@ export class GraphAsTask<
   }
 
   /**
-
-   * Override outputSchema to compute it dynamically from the subgraph at runtime
-   * The output schema depends on the compoundMerge strategy and the nodes at the last level
+   * Compute output schema dynamically from the subgraph. Depends on the
+   * compoundMerge strategy and the nodes at the last level.
    */
-
   public override outputSchema(): DataPortSchema {
     // If there's no subgraph or it has no children, fall back to the static schema
     if (!this.hasChildren()) {
@@ -177,7 +169,7 @@ export class GraphAsTask<
   }
 
   /**
-   * Override entitlements to aggregate from all tasks in the subgraph.
+   * Aggregates entitlements from all tasks in the subgraph.
    */
   public override entitlements(): TaskEntitlements {
     if (!this.hasChildren()) {
@@ -186,9 +178,6 @@ export class GraphAsTask<
     return computeGraphEntitlements(this.subGraph);
   }
 
-  /**
-   * Resets input data to defaults
-   */
   public override resetInputData(): void {
     super.resetInputData();
     if (this.hasChildren()) {
@@ -346,11 +335,9 @@ export class GraphAsTask<
   }
 
   /**
-   * Regenerates the subtask graph and emits a "regenerate" event
-   *
-   * Subclasses should override this method to implement the actual graph
-   * regeneration logic, but all they need to do is call this method to
-   * emit the "regenerate" event.
+   * Regenerates the subtask graph and emits a "regenerate" event.
+   * Subclasses override to implement actual regeneration logic; they only
+   * need to call this method to emit the event.
    */
   public override regenerateGraph(): void {
     this._inputSchemaNode = undefined;
@@ -373,10 +360,6 @@ export class GraphAsTask<
    * been assigned and loop forever.
    */
   private _subscribingEntitlements: boolean = false;
-
-  // ========================================================================
-  // SubGraph entitlement subscription
-  // ========================================================================
 
   /**
    * Subscribe to the subGraph's aggregated entitlement changes and forward
@@ -470,10 +453,6 @@ export class GraphAsTask<
   // Serialization methods
   // ========================================================================
 
-  /**
-   * Serializes the task and its subtasks into a format that can be stored
-   * @returns The serialized task and subtasks
-   */
   public override toJSON(options?: TaskGraphJsonOptions): TaskGraphItemJson {
     let json = super.toJSON(options);
     const hasChildren = this.hasChildren();
@@ -487,10 +466,6 @@ export class GraphAsTask<
     return json;
   }
 
-  /**
-   * Converts the task to a JSON format suitable for dependency tracking
-   * @returns The task and subtasks in JSON thats easier for humans to read
-   */
   public override toDependencyJSON(options?: TaskGraphJsonOptions): JsonTaskItem {
     const json = this.toJSON(options);
     if (this.hasChildren()) {

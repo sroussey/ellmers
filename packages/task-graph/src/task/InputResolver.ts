@@ -8,9 +8,6 @@ import type { ServiceRegistry } from "@workglow/util";
 import { getInputResolvers } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 
-/**
- * Configuration for the input resolver
- */
 export interface InputResolverConfig {
   readonly registry: ServiceRegistry;
 }

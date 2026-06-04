@@ -15,9 +15,6 @@ import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
 /**
- * Core implementation for text embedding using Hugging Face Transformers.
- * This is shared between inline and worker implementations.
- *
  * Model download progress (first-call cold start) is forwarded as `phase`
  * stream events via the `emit` callback passed to {@link getPipeline}; subsequent
  * calls are near-instant because the pipeline is cached.

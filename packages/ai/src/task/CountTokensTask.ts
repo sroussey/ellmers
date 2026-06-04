@@ -72,11 +72,6 @@ export class CountTokensTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to create and run a count tokens task.
- * @param input - Input containing text and model for token counting
- * @returns Promise resolving to the token count
- */
 export const countTokens = async (
   input: CountTokensTaskInput,
   config?: CountTokensTaskConfig,

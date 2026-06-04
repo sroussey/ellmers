@@ -12,10 +12,6 @@ import { getHftSession, getPipeline, loadTransformersSDK, setHftSession } from "
 import { createStreamingTextStreamer, createTextStreamer } from "./HFT_Streaming";
 import { buildHFTMessages } from "./HFT_ToolCalling";
 
-// ============================================================================
-// Shared turn implementation
-// ============================================================================
-
 /**
  * Execute one chat turn using the HuggingFace Transformers pipeline.
  *
@@ -141,10 +137,6 @@ async function generateTurn(
 
   return accumulated;
 }
-
-// ============================================================================
-// Provider run function
-// ============================================================================
 
 export const HFT_Chat: AiProviderRunFn<
   AiChatProviderInput,

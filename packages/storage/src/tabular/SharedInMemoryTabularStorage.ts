@@ -29,9 +29,6 @@ export const SHARED_IN_MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabular
 const SYNC_TIMEOUT = 1000;
 const MAX_PENDING_MESSAGES = 1000;
 
-/**
- * Message types for BroadcastChannel communication
- */
 type BroadcastMessage =
   | { type: "SYNC_REQUEST" }
   | { type: "SYNC_RESPONSE"; data: any[] }
@@ -42,12 +39,8 @@ type BroadcastMessage =
   | { type: "DELETE_SEARCH"; criteria: DeleteSearchCriteria<any> };
 
 /**
- * A tabular repository implementation that shares data across browser tabs/windows
- * using BroadcastChannel API. Uses InMemoryTabularStorage internally and
- * synchronizes changes across all instances.
- *
- * @template Schema - The schema definition for the entity using JSON Schema
- * @template PrimaryKeyNames - Array of property names that form the primary key
+ * Tabular repository that mirrors an internal `InMemoryTabularStorage` across
+ * browser tabs / windows via the BroadcastChannel API.
  */
 export class SharedInMemoryTabularStorage<
   Schema extends DataPortSchemaObject,
@@ -68,16 +61,6 @@ export class SharedInMemoryTabularStorage<
   private syncInProgress = false;
   private pendingMessages: BroadcastMessage[] = [];
 
-  /**
-   * Creates a new SharedInMemoryTabularStorage instance
-   * @param channelName - Unique name for the BroadcastChannel (defaults to "tabular_store")
-   * @param schema - Schema defining the structure of the entity
-   * @param primaryKeyNames - Array of property names that form the primary key
-   * @param indexes - Array of columns or column arrays to make searchable. Each string or single column creates a single-column index,
-   *                    while each array creates a compound index with columns in the specified order.
-   * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
-   * @param tabularMigrations - Optional declarative migrations to run on setup
-   */
   constructor(
     channelName: string = "tabular_store",
     schema: Schema,
@@ -102,16 +85,10 @@ export class SharedInMemoryTabularStorage<
     this.initializeBroadcastChannel();
   }
 
-  /**
-   * Checks if BroadcastChannel is available in the current environment
-   */
   private isBroadcastChannelAvailable(): boolean {
     return typeof BroadcastChannel !== "undefined";
   }
 
-  /**
-   * Initializes the BroadcastChannel and sets up message handlers
-   */
   private initializeBroadcastChannel(): void {
     if (!this.isBroadcastChannelAvailable()) {
       console.warn("BroadcastChannel is not available. Tab synchronization will not work.");
@@ -124,16 +101,12 @@ export class SharedInMemoryTabularStorage<
         this.handleBroadcastMessage(event.data);
       };
 
-      // Request sync from other tabs on initialization
       this.syncFromOtherTabs();
     } catch (error) {
       console.error("Failed to initialize BroadcastChannel:", error);
     }
   }
 
-  /**
-   * Sets up event forwarding from the internal InMemoryTabularStorage
-   */
   private setupEventForwarding(): void {
     this.inMemoryRepo.on("put", (entity) => {
       this.events.emit("put", entity);
@@ -152,12 +125,9 @@ export class SharedInMemoryTabularStorage<
     });
   }
 
-  /**
-   * Handles incoming BroadcastChannel messages
-   */
   private async handleBroadcastMessage(message: BroadcastMessage): Promise<void> {
     if (this.syncInProgress && message.type !== "SYNC_RESPONSE") {
-      // Queue messages during sync to replay after sync completes
+      // Queue messages during sync; we'll replay them after SYNC_RESPONSE.
       if (this.pendingMessages.length < MAX_PENDING_MESSAGES) {
         this.pendingMessages.push(message);
       }
@@ -166,7 +136,6 @@ export class SharedInMemoryTabularStorage<
 
     switch (message.type) {
       case "SYNC_REQUEST":
-        // Respond to sync request with current data
         const all = await this.inMemoryRepo.getAll();
         if (this.channel && all) {
           this.channel.postMessage({
@@ -177,7 +146,6 @@ export class SharedInMemoryTabularStorage<
         break;
 
       case "SYNC_RESPONSE":
-        // Copy data from the responding tab
         if (message.data && Array.isArray(message.data)) {
           await this.copyDataFromArray(message.data);
         }
@@ -186,36 +154,30 @@ export class SharedInMemoryTabularStorage<
         break;
 
       case "PUT":
-        // Apply put from another tab
         await this.inMemoryRepo.put(message.entity);
         break;
 
       case "PUT_BULK":
-        // Apply bulk put from another tab
         await this.inMemoryRepo.putBulk(message.entities);
         break;
 
       case "DELETE":
-        // Apply delete from another tab
         await this.inMemoryRepo.delete(message.key);
         break;
 
       case "DELETE_ALL":
-        // Apply deleteAll from another tab
         await this.inMemoryRepo.deleteAll();
         break;
 
       case "DELETE_SEARCH":
-        // Apply deleteSearch from another tab
         await this.inMemoryRepo.deleteSearch(message.criteria as DeleteSearchCriteria<Entity>);
         break;
     }
   }
 
   /**
-   * Drains pending messages that were queued during sync.
-   * Uses a while loop to handle messages that may be re-queued during draining
-   * (e.g., if a replayed message triggers a new sync cycle).
+   * The `while` loop covers the case where replaying a queued message triggers
+   * a new sync cycle that re-queues additional messages.
    */
   private async drainPendingMessages(): Promise<void> {
     while (!this.syncInProgress && this.pendingMessages.length > 0) {
@@ -230,16 +192,12 @@ export class SharedInMemoryTabularStorage<
     }
   }
 
-  /**
-   * Requests synchronization from other tabs
-   */
   private syncFromOtherTabs(): void {
     if (!this.channel) return;
 
     this.syncInProgress = true;
     this.channel.postMessage({ type: "SYNC_REQUEST" } as BroadcastMessage);
 
-    // Set a timeout to stop waiting for sync response
     setTimeout(() => {
       if (this.syncInProgress) {
         this.syncInProgress = false;
@@ -250,31 +208,18 @@ export class SharedInMemoryTabularStorage<
     }, SYNC_TIMEOUT);
   }
 
-  /**
-   * Copies data from an array of entities into the repository
-   */
   private async copyDataFromArray(entities: Entity[]): Promise<void> {
     if (entities.length === 0) return;
-
-    // Clear existing data
     await this.inMemoryRepo.deleteAll();
-
-    // Bulk insert the new data
     await this.inMemoryRepo.putBulk(entities);
   }
 
-  /**
-   * Broadcasts a message to other tabs
-   */
   private broadcast(message: BroadcastMessage): void {
     if (this.channel) {
       this.channel.postMessage(message);
     }
   }
 
-  /**
-   * Sets up the database for the repository (syncs from other tabs)
-   */
   public override async setupDatabase(): Promise<void> {
     if (this.isInitialized) return;
     this.isInitialized = true;
@@ -291,94 +236,45 @@ export class SharedInMemoryTabularStorage<
     );
   }
 
-  /**
-   * Stores a key-value pair in the repository
-   * @param value - The combined object to store
-   * @returns The stored entity
-   * @emits 'put' event with the stored entity when successful
-   */
   public async put(value: InsertType): Promise<Entity> {
     const result = await this.inMemoryRepo.put(value);
     this.broadcast({ type: "PUT", entity: result });
     return result;
   }
 
-  /**
-   * Stores multiple key-value pairs in the repository in a bulk operation
-   * @param values - Array of combined objects to store
-   * @returns Array of stored entities
-   * @emits 'put' event for each value stored
-   */
   public async putBulk(values: InsertType[]): Promise<Entity[]> {
     const result = await this.inMemoryRepo.putBulk(values);
     this.broadcast({ type: "PUT_BULK", entities: result });
     return result;
   }
 
-  /**
-   * Retrieves a value by its key
-   * @param key - The primary key object to look up
-   * @returns The value object if found, undefined otherwise
-   * @emits 'get' event with the fingerprint ID and value when found
-   */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     return await this.inMemoryRepo.get(key);
   }
 
-  /**
-   * Deletes an entry by its key
-   * @param value - The primary key object or entity of the entry to delete
-   * @emits 'delete' event with the fingerprint ID when successful
-   */
   async delete(value: PrimaryKey | Entity): Promise<void> {
     await this.inMemoryRepo.delete(value);
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     this.broadcast({ type: "DELETE", key });
   }
 
-  /**
-   * Removes all entries from the repository
-   * @emits 'clearall' event when successful
-   */
   async deleteAll(): Promise<void> {
     await this.inMemoryRepo.deleteAll();
     this.broadcast({ type: "DELETE_ALL" });
   }
 
-  /**
-   * Returns an array of all entries in the repository, with optional ordering, offset, and limit.
-   * @param options - Optional ordering, limit, and offset options
-   * @returns Array of all entries in the repository
-   */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
     return await this.inMemoryRepo.getAll(options);
   }
 
-  /**
-   * Returns the number of entries in the repository
-   * @returns The total count of stored entries
-   */
   async size(): Promise<number> {
     return await this.inMemoryRepo.size();
   }
 
-  /**
-   * Fetches a page of records from the repository.
-   * @param offset - Number of records to skip
-   * @param limit - Maximum number of records to return
-   * @returns Array of entities or undefined if no records found
-   */
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     return await this.inMemoryRepo.getOffsetPage(offset, limit);
   }
 
-  /**
-   * Queries entries matching the specified search criteria with optional ordering and limit.
-   *
-   * @param criteria - Object with column names as keys and values or SearchConditions
-   * @param options - Optional ordering and limit options
-   * @returns Array of matching entities or undefined if no matches found
-   */
   async query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
@@ -393,12 +289,6 @@ export class SharedInMemoryTabularStorage<
     return await this.inMemoryRepo.queryIndex(criteria, options);
   }
 
-  /**
-   * Deletes all entries matching the specified search criteria.
-   * Supports multiple columns with optional comparison operators.
-   *
-   * @param criteria - Object with column names as keys and values or SearchConditions
-   */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     await this.inMemoryRepo.deleteSearch(criteria);
     this.broadcast({
@@ -408,13 +298,8 @@ export class SharedInMemoryTabularStorage<
   }
 
   /**
-   * Subscribes to changes in the repository.
-   * Delegates to the internal InMemoryTabularStorage which monitors local changes.
-   * Changes from other tabs/windows are already propagated via BroadcastChannel.
-   *
-   * @param callback - Function called when a change occurs
-   * @param options - Optional subscription options (not used for in-memory)
-   * @returns Unsubscribe function
+   * Delegates to the internal InMemoryTabularStorage; cross-tab changes already
+   * land in that store via the BroadcastChannel handler.
    */
   public override subscribeToChanges(
     callback: (change: any) => void,
@@ -423,9 +308,6 @@ export class SharedInMemoryTabularStorage<
     return this.inMemoryRepo.subscribeToChanges(callback, options);
   }
 
-  /**
-   * Cleanup method to close the BroadcastChannel
-   */
   public override destroy(): void {
     if (this.channel) {
       this.channel.close();

@@ -164,12 +164,6 @@ export class HandLandmarkerTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run hand landmark detection tasks.
- * Creates and executes a HandLandmarkerTask with the provided input.
- * @param input The input parameters for hand landmark detection (image, model, and optional configuration)
- * @returns Promise resolving to the detected hand landmarks and handedness
- */
 export const handLandmarker = (
   input: HandLandmarkerTaskInput,
   config?: HandLandmarkerTaskConfig,

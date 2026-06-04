@@ -6,10 +6,7 @@
 
 import type { JsonSchema } from "@workglow/util/schema";
 
-/**
- * Creates a JSON schema for a tabular dataset input.
- * The schema accepts either a string ID (resolved from registry) or a direct dataset instance.
- */
+/** Accepts either a string ID (resolved from registry) or a direct instance. */
 export function TypeTabularStorage<O extends Record<string, unknown> = {}>(options: O = {} as O) {
   return {
     title: "Tabular Storage",
@@ -23,10 +20,7 @@ export function TypeTabularStorage<O extends Record<string, unknown> = {}>(optio
   } as const satisfies JsonSchema;
 }
 
-/**
- * Creates a JSON schema for a knowledge base input.
- * The schema accepts either a string ID (resolved from registry) or a direct KnowledgeBase instance.
- */
+/** Accepts either a string ID (resolved from registry) or a direct instance. */
 export function TypeKnowledgeBase<O extends Record<string, unknown> = {}>(options: O = {} as O) {
   return {
     title: "Knowledge Base",

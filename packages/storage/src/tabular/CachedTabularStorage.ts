@@ -27,12 +27,10 @@ export const CACHED_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
 );
 
 /**
- * A tabular repository wrapper that adds caching layer to a durable repository.
- * Uses InMemoryTabularStorage or SharedInMemoryTabularStorage as a cache
- * for faster access to frequently used data.
- *
- * @template Schema - The schema definition for the entity using JSON Schema
- * @template PrimaryKeyNames - Array of property names that form the primary key
+ * A tabular repository wrapper that fronts a durable repository with an
+ * in-memory cache (defaults to {@link InMemoryTabularStorage}). Durable is the
+ * source of truth; the cache is repopulated lazily and on subscribe-driven
+ * invalidation.
  */
 export class CachedTabularStorage<
   Schema extends DataPortSchemaObject,
@@ -51,17 +49,6 @@ export class CachedTabularStorage<
   private cacheInitialized = false;
   private cacheInitPromise: Promise<void> | null = null;
 
-  /**
-   * Creates a new CachedTabularStorage instance
-   * @param durable - The durable repository to use as the source of truth
-   * @param cache - Optional cache repository (InMemoryTabularStorage or SharedInMemoryTabularStorage).
-   *                 If not provided, a new InMemoryTabularStorage will be created.
-   * @param schema - Schema defining the structure of the entity
-   * @param primaryKeyNames - Array of property names that form the primary key
-   * @param indexes - Array of columns or column arrays to make searchable. Each string or single column creates a single-column index,
-   *                    while each array creates a compound index with columns in the specified order.
-   * @param clientProvidedKeys - How to handle client-provided values for auto-generated keys
-   */
   constructor(
     durable: ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>,
     cache?: ITabularStorage<Schema, PrimaryKeyNames, Entity, PrimaryKey>,
@@ -70,9 +57,8 @@ export class CachedTabularStorage<
     indexes?: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing"
   ) {
-    // Extract schema and primaryKeyNames from durable repository if not provided
-    // Note: This is a limitation - we can't always extract these from an interface
-    // So we require them to be provided or assume they match
+    // Schema and PK can't reliably be reflected off an arbitrary ITabularStorage,
+    // so callers must supply them and the wrapper trusts them to match `durable`.
     if (!schema || !primaryKeyNames) {
       throw new Error(
         "Schema and primaryKeyNames must be provided when creating CachedTabularStorage"
@@ -82,7 +68,6 @@ export class CachedTabularStorage<
     super(schema, primaryKeyNames, indexes || [], clientProvidedKeys);
     this.durable = durable;
 
-    // Create cache if not provided
     if (cache) {
       this.cache = cache;
     } else {
@@ -94,15 +79,10 @@ export class CachedTabularStorage<
       );
     }
 
-    // Forward events from both cache and durable
     this.setupEventForwarding();
   }
 
-  /**
-   * Sets up event forwarding from cache and durable repositories
-   */
   private setupEventForwarding(): void {
-    // Forward cache events
     this.cache.on("put", (entity) => {
       this.events.emit("put", entity);
     });
@@ -120,10 +100,7 @@ export class CachedTabularStorage<
     });
   }
 
-  /**
-   * Initializes the cache by loading all data from the durable repository.
-   * Uses a promise-based lock so concurrent callers await the same initialization.
-   */
+  /** Promise-based lock so concurrent callers share one initialization pass. */
   private async initializeCache(): Promise<void> {
     if (this.cacheInitialized) return;
 
@@ -140,7 +117,7 @@ export class CachedTabularStorage<
         this.cacheInitialized = true;
       } catch (error) {
         getLogger().warn("Failed to initialize cache from durable repository:", { error });
-        // Don't mark as initialized on error — allow retry on next access
+        // Don't mark as initialized on error — allow retry on next access.
       } finally {
         this.cacheInitPromise = null;
       }
@@ -149,107 +126,50 @@ export class CachedTabularStorage<
     return this.cacheInitPromise;
   }
 
-  /**
-   * Stores a key-value pair in both cache and durable repository
-   * @param value - The combined object to store
-   * @returns The stored entity
-   * @emits 'put' event with the stored entity when successful
-   */
   async put(value: InsertType): Promise<Entity> {
     await this.initializeCache();
-
-    // Write to durable first (source of truth)
     const result = await this.durable.put(value);
-
-    // Then update cache
     await this.cache.put(result);
-
     return result;
   }
 
-  /**
-   * Stores multiple key-value pairs in both cache and durable repository
-   * @param values - Array of combined objects to store
-   * @returns Array of stored entities
-   * @emits 'put' event for each value stored
-   */
   async putBulk(values: InsertType[]): Promise<Entity[]> {
     await this.initializeCache();
-
-    // Write to durable first (source of truth)
     const results = await this.durable.putBulk(values);
-
-    // Then update cache
     await this.cache.putBulk(results);
-
     return results;
   }
 
-  /**
-   * Retrieves a value by its key, checking cache first, then durable repository
-   * @param key - The primary key object to look up
-   * @returns The value object if found, undefined otherwise
-   * @emits 'get' event with the fingerprint ID and value when found
-   */
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     await this.initializeCache();
-
-    // Try cache first
     let result = await this.cache.get(key);
-
-    // If not in cache, get from durable and cache it
     if (result === undefined) {
       result = await this.durable.get(key);
       if (result) {
         await this.cache.put(result);
       }
     }
-
     return result;
   }
 
-  /**
-   * Deletes an entry from both cache and durable repository
-   * @param value - The primary key object or entity of the entry to delete
-   * @emits 'delete' event with the fingerprint ID when successful
-   */
   async delete(value: PrimaryKey | Entity): Promise<void> {
     await this.initializeCache();
-
-    // Delete from durable first (source of truth)
     await this.durable.delete(value);
-
-    // Then delete from cache
     await this.cache.delete(value);
   }
 
-  /**
-   * Removes all entries from both cache and durable repository
-   * @emits 'clearall' event when successful
-   */
   async deleteAll(): Promise<void> {
     await this.initializeCache();
-
-    // Delete from durable first (source of truth)
     await this.durable.deleteAll();
-
-    // Then delete from cache
     await this.cache.deleteAll();
   }
 
-  /**
-   * Returns an array of all entries in the repository, with optional ordering, offset, and limit.
-   * @param options - Optional ordering, limit, and offset options
-   * @returns Array of all entries in the repository
-   */
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
     this.validateGetAllOptions(options);
     await this.initializeCache();
 
-    // Try cache first (without options for population check)
     let results = await this.cache.getAll();
 
-    // If cache is empty, get from durable and populate cache
     if (!results || results.length === 0) {
       results = await this.durable.getAll();
       if (results && results.length > 0) {
@@ -257,7 +177,6 @@ export class CachedTabularStorage<
       }
     }
 
-    // If options provided, apply them via the cache
     if (options && results && results.length > 0) {
       return await this.cache.getAll(options);
     }
@@ -265,39 +184,18 @@ export class CachedTabularStorage<
     return results;
   }
 
-  /**
-   * Returns the number of entries in the repository
-   * @returns The total count of stored entries
-   */
   async size(): Promise<number> {
     await this.initializeCache();
-
-    // Get size from durable (source of truth)
+    // Source of truth is durable; cache may lag during invalidation.
     return await this.durable.size();
   }
 
-  /**
-   * Fetches a page of records from the repository.
-   * @param offset - Number of records to skip
-   * @param limit - Maximum number of records to return
-   * @returns Array of entities or undefined if no records found
-   */
   async getOffsetPage(offset: number, limit: number): Promise<Entity[] | undefined> {
     await this.initializeCache();
-
-    // Delegate to durable storage (source of truth) to avoid inconsistency
+    // Delegate to durable to avoid offset drift against a partially-warmed cache.
     return await this.durable.getOffsetPage(offset, limit);
   }
 
-  /**
-   * Queries entries matching the specified search criteria with optional ordering and limit.
-   * Delegates to the cache (which has all data after initialization) for best performance.
-   * Falls back to durable if cache returns no results.
-   *
-   * @param criteria - Object with column names as keys and values or SearchConditions
-   * @param options - Optional ordering and limit options
-   * @returns Array of matching entities or undefined if no matches found
-   */
   async query(
     criteria: SearchCriteria<Entity>,
     options?: QueryOptions<Entity>
@@ -314,19 +212,9 @@ export class CachedTabularStorage<
     return await this.cache.queryIndex(criteria, options);
   }
 
-  /**
-   * Deletes all entries matching the specified search criteria.
-   * Supports multiple columns with optional comparison operators.
-   *
-   * @param criteria - Object with column names as keys and values or SearchConditions
-   */
   async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     await this.initializeCache();
-
-    // Delete from durable first (source of truth)
     await this.durable.deleteSearch(criteria);
-
-    // Then delete from cache
     await this.cache.deleteSearch(criteria);
   }
 
@@ -371,17 +259,11 @@ export class CachedTabularStorage<
     }
   }
 
-  /**
-   * Invalidates the cache by clearing it and resetting initialization flag
-   */
   async invalidateCache(): Promise<void> {
     await this.cache.deleteAll();
     this.cacheInitialized = false;
   }
 
-  /**
-   * Refreshes the cache by reloading all data from the durable repository
-   */
   async refreshCache(): Promise<void> {
     await this.cache.deleteAll();
     this.cacheInitialized = false;
@@ -389,21 +271,14 @@ export class CachedTabularStorage<
   }
 
   /**
-   * Subscribes to changes in the repository.
-   * Delegates to the durable repository to detect changes (including from other sources).
-   * Also updates the cache when changes are detected.
-   *
-   * @param callback - Function called when a change occurs
-   * @param options - Optional subscription options (e.g., polling interval)
-   * @returns Unsubscribe function
+   * Subscribes to durable changes (including external ones) and keeps the
+   * cache in step before forwarding each change to `callback`.
    */
   override subscribeToChanges(
     callback: (change: any) => void,
     options?: TabularSubscribeOptions
   ): () => void {
-    // Subscribe to durable repository to detect all changes
     return this.durable.subscribeToChanges(async (change) => {
-      // Update cache based on the change
       if (change.type === "INSERT" || change.type === "UPDATE") {
         if (change.new) {
           await this.cache.put(change.new);
@@ -414,7 +289,6 @@ export class CachedTabularStorage<
         }
       }
 
-      // Forward the change to the callback
       callback(change);
     }, options);
   }
@@ -441,9 +315,6 @@ export class CachedTabularStorage<
     return inner.getMigrationApplier?.() ?? null;
   }
 
-  /**
-   * Destroys the durable and cache repositories.
-   */
   override destroy(): void {
     this.durable.destroy();
     this.cache.destroy();
