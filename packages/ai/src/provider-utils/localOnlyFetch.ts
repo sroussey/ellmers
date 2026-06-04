@@ -38,15 +38,19 @@ function isRedirectResponse(res: Response): boolean {
  * generic, label-prefixed Error otherwise. `context` distinguishes the
  * initial URL from a redirect in the message.
  *
- * `rawHost` is the LITERAL host extracted from the raw URL string via
- * {@link extractRawHost} BEFORE the WHATWG URL parser canonicalises it.
- * Validating the raw literal — not `url.hostname` — closes the bypass where
- * non-standard IPv4 spellings (`0x7f.0.0.1`, `2130706433`, `010.0.0.1`)
- * are silently rewritten by `new URL(...)` to a canonical loopback dotted-
- * quad and would otherwise slip past `isLoopbackHostname`. `extractRawHost`
- * already strips IPv6 surrounding brackets, so no further bracket stripping
- * is needed here. The fallback to `url.hostname` is defensive only and
- * should never be hit under the current call sites.
+ * `rawHost`, when supplied and non-null, is the host substring extracted
+ * from the raw URL source BEFORE WHATWG canonicalisation (see
+ * `extractRawHost`). It is used for the loopback-literal check instead of
+ * `url.hostname` so non-standard IPv4 spellings — `0x7f.0.0.1` (hex),
+ * `2130706433` (uint32), `010.0.0.1` (lenient octal) — that the URL parser
+ * silently rewrites to `127.0.0.1` cannot bypass the gate. Callers pass
+ * `rawHost` for the initial URL (where the raw form is available) and omit
+ * it for redirect targets (where only the canonicalised URL exists; the
+ * canonical-hostname check there is still a tightening over no check at
+ * all). When `rawHost` is `null` (extractRawHost failed) or omitted, we
+ * fall back to `url.hostname` — the protocol/credential checks that fire
+ * earlier in this function will catch genuinely malformed URLs
+ * (e.g. `file:///...`) with the correct error message first.
  */
 function assertLoopbackTarget(
   url: URL,
@@ -60,10 +64,18 @@ function assertLoopbackTarget(
   if (url.username || url.password) {
     throw new Error(`${label}: refusing ${context} with credentials.`);
   }
-  const host =
-    rawHost !== undefined && rawHost !== null ? rawHost : url.hostname.replace(/^\[|\]$/g, "");
-  if (!isLoopbackHostname(host)) {
-    throw new Error(`${label}: refusing ${context} to non-loopback host (${url.href}).`);
+  const hostForCheck = rawHost
+    ? rawHost.replace(/^\[|\]$/g, "")
+    : url.hostname.replace(/^\[|\]$/g, "");
+  if (!isLoopbackHostname(hostForCheck)) {
+    // Surface the host we actually rejected so logs match the rejection
+    // reason. For non-standard IPv4 spellings like `0x7f.0.0.1`, `url.href`
+    // has already been canonicalised to `http://127.0.0.1/` which would
+    // make the message read as if loopback were rejected; include the raw
+    // host in quotes too so the literal that failed the gate is visible.
+    throw new Error(
+      `${label}: refusing ${context} to non-loopback host "${hostForCheck}" (${url.href}).`
+    );
   }
 }
 
@@ -96,18 +108,17 @@ export async function localOnlyFetch(
   } catch {
     throw new Error(`${label}: invalid initial URL.`);
   }
-  // Extract the LITERAL host from the raw input — not `initialUrl.hostname` —
-  // so non-standard IPv4 spellings (`0x7f.0.0.1`, `2130706433`, `010.0.0.1`)
-  // that WHATWG canonicalises to a loopback dotted-quad are rejected by the
-  // strict-literal grammar in `isLoopbackHostname`. `extractRawHost` returns
-  // `null` for URLs that do not match the basic `scheme://host` grammar, such
-  // as `file:///path` (no host); those are NOT loopback HTTP targets, and
-  // assertLoopbackTarget will reject them on the protocol gate. Pass the raw
-  // host through so http(s) URLs use the strict-literal grammar; let null
-  // fall through (assertLoopbackTarget's protocol check fires first for
-  // non-http(s) URLs).
-  const initialRawHost = extractRawHost(input);
-  assertLoopbackTarget(initialUrl, label, "initial URL", initialRawHost);
+  // Pass the RAW host from the source string (not `initialUrl.hostname`) so
+  // WHATWG canonicalisation of non-standard IPv4 spellings — `0x7f.0.0.1`,
+  // `2130706433`, lenient `010.0.0.1` — cannot silently bypass the loopback
+  // gate by being rewritten to `127.0.0.1`. Sibling `normalizeLocalHttpUrl`
+  // closed the same bypass class; this mirrors it for `localOnlyFetch`.
+  // `extractRawHost` may return `null` for shapes without an extractable
+  // host (e.g. `file:///...`); `assertLoopbackTarget` falls back to
+  // `url.hostname` in that case and the earlier protocol check still fires
+  // the correct "non-HTTP(S)" error message.
+  const rawHost = extractRawHost(input);
+  assertLoopbackTarget(initialUrl, label, "initial URL", rawHost);
 
   let current = initialUrl.href;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -116,21 +127,7 @@ export async function localOnlyFetch(
     const location = res.headers.get("location");
     if (!location) return res;
     const next = new URL(location, current);
-    // We extract the raw host from `next.href`, which is the WHATWG-canonical
-    // serialisation of the redirect target. That means a Location header of
-    // `http://0x7f.0.0.1/` is observed here as `http://127.0.0.1/` — the hex
-    // spelling never reaches isLoopbackHostname, and the redirect is accepted
-    // because the destination is, after canonicalisation, a true loopback
-    // address. This is intentional: redirects are followed through WHATWG's
-    // canonical view of the URL, and the security goal (do not leave the
-    // loopback host) is upheld. The initial-URL gate above is the layer that
-    // rejects the raw non-standard spelling so a caller cannot smuggle a
-    // host that LOOKS like loopback but resolves elsewhere on rebinding.
-    const nextRawHost = extractRawHost(next.href);
-    if (nextRawHost === null) {
-      throw new Error(`${label}: refusing redirect to invalid URL.`);
-    }
-    assertLoopbackTarget(next, label, "redirect", nextRawHost);
+    assertLoopbackTarget(next, label, "redirect");
     current = next.href;
   }
   throw new Error(`${label}: too many redirects (> ${MAX_REDIRECTS}).`);
