@@ -83,13 +83,15 @@ export interface ValidateProviderBaseUrlArgs {
  * exfiltrate the key by pointing `base_url` at their own server. This
  * helper enforces two defenses before construction:
  *
- *   - The URL must parse and use HTTPS (HTTP is allowed only for
- *     `localhost` / `127.0.0.1`, where the request never leaves the
- *     machine and is presumed to be a local gateway).
+ *   - The URL must parse and use HTTPS (HTTP is allowed only for the
+ *     loopback hostnames `localhost` / `127.0.0.1` / `[::1]`, where the
+ *     request never leaves the machine and is presumed to be a local
+ *     gateway such as Ollama / LM Studio / vLLM).
  *   - The hostname must match an entry in {@link ValidateProviderBaseUrlArgs.allowHosts}
  *     by exact equality or by suffix (so subdomains of e.g. `openai.azure.com`
- *     are permitted), unless the model is explicitly flagged as
- *     `trustedBaseUrl`.
+ *     are permitted), unless the host is a loopback address (auto-allowed:
+ *     the user can't exfiltrate their own key to their own machine) or
+ *     the model is explicitly flagged as `trustedBaseUrl`.
  *
  * Returns the normalized string form. Returns `undefined` for an empty /
  * undefined input so the SDK falls back to its default base URL.
@@ -113,14 +115,14 @@ export function validateProviderBaseUrl(
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1";
+  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
     throw new Error(
       `${opts.providerLabel} provider base_url must use https:// (http:// allowed only for localhost): ${trimmed}`
     );
   }
 
-  if (opts.trustedBaseUrl) {
+  if (isLoopback || opts.trustedBaseUrl) {
     return parsed.toString();
   }
 

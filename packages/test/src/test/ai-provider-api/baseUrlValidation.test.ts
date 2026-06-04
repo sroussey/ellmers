@@ -83,28 +83,22 @@ describe("validateProviderBaseUrl (L-MAIN-02)", () => {
       ).toThrow(/https:\/\//);
     });
 
-    it("rejects http://localhost without trustedBaseUrl (host still not allow-listed)", () => {
-      expect(() => validateProviderBaseUrl("http://localhost:8080/v1", opts)).toThrow(
-        /not in the allow-list/
-      );
-    });
-
-    it("accepts http://localhost only with trustedBaseUrl", () => {
-      const result = validateProviderBaseUrl("http://localhost:8080/v1", {
-        ...opts,
-        trustedBaseUrl: true,
-      });
+    it("auto-allows http://localhost without trustedBaseUrl (local-gateway use)", () => {
+      const result = validateProviderBaseUrl("http://localhost:8080/v1", opts);
       expect(result).toBeDefined();
       expect(new URL(result!).hostname).toBe("localhost");
     });
 
-    it("accepts http://127.0.0.1 only with trustedBaseUrl", () => {
-      const result = validateProviderBaseUrl("http://127.0.0.1:8080/v1", {
-        ...opts,
-        trustedBaseUrl: true,
-      });
+    it("auto-allows http://127.0.0.1 without trustedBaseUrl", () => {
+      const result = validateProviderBaseUrl("http://127.0.0.1:8080/v1", opts);
       expect(result).toBeDefined();
       expect(new URL(result!).hostname).toBe("127.0.0.1");
+    });
+
+    it("auto-allows http://[::1] without trustedBaseUrl", () => {
+      const result = validateProviderBaseUrl("http://[::1]:8080/v1", opts);
+      expect(result).toBeDefined();
+      expect(new URL(result!).hostname).toBe("[::1]");
     });
   });
 
