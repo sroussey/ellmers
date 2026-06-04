@@ -34,6 +34,13 @@ export const AnthropicModelSchema = {
           type: "string",
           description: "Base URL for the Anthropic API (optional).",
         },
+        trustedBaseUrl: {
+          type: "boolean",
+          description:
+            "When true, accept a base_url whose hostname is not in the built-in allow-list. Use only for known-good custom enterprise gateways — otherwise an attacker can exfiltrate the API key by pointing base_url at their own server.",
+          default: false,
+          "x-ui-hidden": true,
+        },
         max_tokens: {
           type: "integer",
           description: "Default max tokens for responses. Anthropic requires this parameter.",

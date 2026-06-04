@@ -54,3 +54,86 @@ export function resolveApiKey(args: ResolveApiKeyArgs): string {
 export function isBrowserLike(): boolean {
   return typeof globalThis.document !== "undefined" || "WorkerGlobalScope" in globalThis;
 }
+
+export interface ValidateProviderBaseUrlArgs {
+  /** Discriminator used only for error messages. */
+  readonly vendor: "openai" | "anthropic";
+  /**
+   * Allow-list of acceptable hostnames or hostname suffixes. A hostname
+   * matches if it is equal to the entry or ends with the entry (so
+   * `.openai.azure.com` matches any subdomain of `openai.azure.com`).
+   */
+  readonly allowHosts: readonly string[];
+  /**
+   * When `true`, the caller has explicitly opted out of host validation
+   * (e.g. an enterprise gateway with a custom domain). The URL still has
+   * to parse and use a safe scheme.
+   */
+  readonly trustedBaseUrl?: boolean;
+  /** Human-friendly provider label used in error messages. */
+  readonly providerLabel: string;
+}
+
+/**
+ * Validate a provider `base_url` before handing it to the SDK.
+ *
+ * Cloud SDKs send the API key in `Authorization: Bearer` to whatever
+ * `baseURL` they are constructed with. In multi-tenant scenarios
+ * (marketplace model definitions, workflow imports) an attacker can
+ * exfiltrate the key by pointing `base_url` at their own server. This
+ * helper enforces two defenses before construction:
+ *
+ *   - The URL must parse and use HTTPS (HTTP is allowed only for
+ *     `localhost` / `127.0.0.1`, where the request never leaves the
+ *     machine and is presumed to be a local gateway).
+ *   - The hostname must match an entry in {@link ValidateProviderBaseUrlArgs.allowHosts}
+ *     by exact equality or by suffix (so subdomains of e.g. `openai.azure.com`
+ *     are permitted), unless the model is explicitly flagged as
+ *     `trustedBaseUrl`.
+ *
+ * Returns the normalized string form. Returns `undefined` for an empty /
+ * undefined input so the SDK falls back to its default base URL.
+ *
+ * @throws when the URL fails to parse, uses an unsafe scheme, or points
+ *   at a non-allow-listed host without `trustedBaseUrl`.
+ */
+export function validateProviderBaseUrl(
+  baseUrl: string | undefined,
+  opts: ValidateProviderBaseUrlArgs
+): string | undefined {
+  if (!baseUrl) return undefined;
+  const trimmed = baseUrl.trim();
+  if (trimmed === "") return undefined;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(`${opts.providerLabel} provider base_url is not a valid URL: ${trimmed}`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1";
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
+    throw new Error(
+      `${opts.providerLabel} provider base_url must use https:// (http:// allowed only for localhost): ${trimmed}`
+    );
+  }
+
+  if (opts.trustedBaseUrl) {
+    return parsed.toString();
+  }
+
+  const allowed = opts.allowHosts.some((host) => {
+    const lower = host.toLowerCase();
+    return hostname === lower || hostname.endsWith(lower);
+  });
+  if (!allowed) {
+    throw new Error(
+      `${opts.providerLabel} provider base_url host "${hostname}" is not in the allow-list. ` +
+        `Set provider_config.trustedBaseUrl = true to opt out of host validation for a known-good custom gateway.`
+    );
+  }
+
+  return parsed.toString();
+}
