@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
+import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
 import type { AnthropicModelConfig } from "./Anthropic_ModelSchema";
+
+/**
+ * Hostnames (or hostname suffixes) accepted for Anthropic `base_url` without
+ * the explicit `trustedBaseUrl` opt-out.
+ */
+export const ANTHROPIC_ALLOWED_HOSTS: readonly string[] = ["api.anthropic.com"];
 
 type AnthropicSDKModule = typeof import("@anthropic-ai/sdk");
 type AnthropicClientClass = AnthropicSDKModule["default"];
@@ -31,6 +37,12 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly max_tokens?: number;
+  /**
+   * When `true`, accept the `base_url` even if its hostname is not in
+   * {@link ANTHROPIC_ALLOWED_HOSTS}. Use only for known-good custom
+   * enterprise gateways. The URL still has to parse and use a safe scheme.
+   */
+  readonly trustedBaseUrl?: boolean;
 }
 
 export async function getClient(model: AnthropicModelConfig | undefined) {
@@ -41,10 +53,18 @@ export async function getClient(model: AnthropicModelConfig | undefined) {
     envVar: "ANTHROPIC_API_KEY",
     providerLabel: "Anthropic",
   });
+  // Throw before SDK construction on a rejected base_url so the API key is
+  // never sent to an unvalidated host.
+  const baseURL = validateProviderBaseUrl(config?.base_url, {
+    vendor: "anthropic",
+    allowHosts: ANTHROPIC_ALLOWED_HOSTS,
+    trustedBaseUrl: config?.trustedBaseUrl,
+    providerLabel: "Anthropic",
+  });
   try {
     return new Anthropic({
       apiKey,
-      baseURL: config?.base_url || undefined,
+      baseURL,
       dangerouslyAllowBrowser: isBrowserLike(),
     });
   } catch (err) {

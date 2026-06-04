@@ -35,13 +35,21 @@ export interface BuiltStore {
  * `secretsDir` defaults to the canonical {@link SECRETS_DIR}; tests can pass
  * a temp directory to exercise the store in isolation.
  */
-export function buildCredentialStore(
+export async function buildCredentialStore(
   passphrase: string | undefined,
   secretsDir: string = SECRETS_DIR
-): BuiltStore {
+): Promise<BuiltStore> {
   const kv = new FsFolderJsonKvStorage(secretsDir);
   const encrypted = new LazyEncryptedCredentialStore(kv);
-  if (passphrase) encrypted.unlock(passphrase);
+  if (passphrase) {
+    try {
+      await encrypted.unlock(passphrase);
+    } catch {
+      // Match prior best-effort behaviour: a wrong passphrase leaves the
+      // store locked and the caller logs a warning. (`installAndHydrate`
+      // and CLI subcommands both already gate on `encrypted.isUnlocked`.)
+    }
+  }
   return { encrypted, unlocked: encrypted.isUnlocked };
 }
 
@@ -69,7 +77,7 @@ export async function installAndHydrate(
 }> {
   if (!passphrase) return { unlocked: false, hydrated: [] };
 
-  const { encrypted } = buildCredentialStore(passphrase, secretsDir);
+  const { encrypted } = await buildCredentialStore(passphrase, secretsDir);
   if (!encrypted.isUnlocked) return { unlocked: false, hydrated: [] };
 
   // Decrypt into a temporary map first; only if every existing ciphertext

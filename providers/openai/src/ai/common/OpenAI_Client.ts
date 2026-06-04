@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isBrowserLike, resolveApiKey } from "@workglow/ai/provider-utils";
+import { isBrowserLike, resolveApiKey, validateProviderBaseUrl } from "@workglow/ai/provider-utils";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
+
+/**
+ * Hostnames (or hostname suffixes) accepted for OpenAI `base_url` without
+ * the explicit `trustedBaseUrl` opt-out. Includes Azure OpenAI tenants.
+ */
+export const OPENAI_ALLOWED_HOSTS: readonly string[] = ["api.openai.com", ".openai.azure.com"];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type OpenAIClientClass = new (config: any) => any;
@@ -30,6 +36,12 @@ interface ResolvedProviderConfig {
   readonly model_name?: string;
   readonly base_url?: string;
   readonly organization?: string;
+  /**
+   * When `true`, accept the `base_url` even if its hostname is not in
+   * {@link OPENAI_ALLOWED_HOSTS}. Use only for known-good custom enterprise
+   * gateways. The URL still has to parse and use a safe scheme.
+   */
+  readonly trustedBaseUrl?: boolean;
 }
 
 export async function getClient(model: OpenAiModelConfig | undefined) {
@@ -40,10 +52,18 @@ export async function getClient(model: OpenAiModelConfig | undefined) {
     envVar: "OPENAI_API_KEY",
     providerLabel: "OpenAI",
   });
+  // Throw before SDK construction on a rejected base_url so the API key is
+  // never sent to an unvalidated host.
+  const baseURL = validateProviderBaseUrl(config?.base_url, {
+    vendor: "openai",
+    allowHosts: OPENAI_ALLOWED_HOSTS,
+    trustedBaseUrl: config?.trustedBaseUrl,
+    providerLabel: "OpenAI",
+  });
   try {
     return new OpenAI({
       apiKey,
-      baseURL: config?.base_url || undefined,
+      baseURL,
       organization: config?.organization || undefined,
       dangerouslyAllowBrowser: isBrowserLike(),
     });

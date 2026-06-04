@@ -173,12 +173,12 @@ export async function ensureCredentialStoreUnlocked(): Promise<void> {
   // Try OTP cache first
   const cached = passphraseCache.retrieve();
   if (cached) {
-    lazyStore.unlock(cached);
+    await lazyStore.unlock(cached);
     return;
   }
 
   // Resolve from keyring / file / generate
   const passphrase = await resolvePassphraseFromKeyring();
   passphraseCache.store(passphrase);
-  lazyStore.unlock(passphrase);
+  await lazyStore.unlock(passphrase);
 }

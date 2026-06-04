@@ -34,6 +34,13 @@ export const OpenAiModelSchema = {
           description: "Base URL for the OpenAI API. Useful for Azure OpenAI or proxy servers.",
           default: "https://api.openai.com/v1",
         },
+        trustedBaseUrl: {
+          type: "boolean",
+          description:
+            "When true, accept a base_url whose hostname is not in the built-in allow-list. Use only for known-good custom enterprise gateways — otherwise an attacker can exfiltrate the API key by pointing base_url at their own server.",
+          default: false,
+          "x-ui-hidden": true,
+        },
         organization: {
           type: "string",
           description: "OpenAI organization ID (optional).",
