@@ -15,8 +15,11 @@
   any `base_url` whose hostname is not in the per-vendor allow-list
   (`api.openai.com`, `*.openai.azure.com` for OpenAI;
   `api.anthropic.com` for Anthropic) before constructing the SDK
-  client. Only HTTPS is permitted (HTTP is rejected outright, even for
-  loopback hosts, unless the explicit opt-out below is set).
+  client. HTTPS is required, except that loopback hostnames
+  (`localhost`, `127.0.0.1`, `[::1]`) auto-allow plain HTTP for the
+  canonical local-gateway scenario (Ollama / LM Studio / vLLM with
+  OpenAI shim) — the user cannot exfiltrate their own key to their
+  own machine.
 - Add `trustedBaseUrl` (boolean, default `false`, hidden in UI) to both
   provider config schemas. Operators can set it to allow a known-good
   enterprise gateway; the URL must still parse and use HTTPS.

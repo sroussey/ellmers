@@ -116,7 +116,7 @@ describe("PredicateBuilder operator allow-list (L-MAIN-01)", () => {
       expect(result.params).toEqual(["abc", "2025-01-01T00:00:00Z"]);
     });
 
-    it("throws on a forged operator that bypasses the type guard", () => {
+    it("treats a forged operator as a literal value (no SQL injection)", () => {
       // Simulate JSON arriving from an HTTP boundary that smuggles an
       // unsafe operator past the type system (e.g. `as unknown as`).
       // `isSearchCondition` rejects the forged criterion, so it is treated
