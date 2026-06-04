@@ -1,5 +1,13 @@
 # @workglow/storage
 
+## 0.3.11
+
+### Bug Fixes
+
+#### storage,ai
+
+- SQL operator allow-list + baseURL validation + credential-store passphrase sentinel (#546)
+
 ## 0.3.10
 
 ### Bug Fixes

@@ -1,5 +1,13 @@
 # @workglow/knowledge-base
 
+## 0.3.11
+
+### Features
+
+#### knowledge-base
+
+- add table/list/image document node kinds, renderMarkdown (#547)
+
 ## 0.3.10
 
 ## 0.3.9
