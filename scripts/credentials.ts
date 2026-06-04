@@ -149,14 +149,14 @@ async function cmdSet(key: string): Promise<void> {
   mkdirSync(SECRETS_DIR, { recursive: true });
   const value = await readSecretInteractive(`Enter value for "${key}" (input hidden): `);
   if (!value) fail("empty value");
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   await encrypted.put(key, value, { provider: providerForKey(key) });
   console.log(`stored "${key}"`);
 }
 
 async function cmdGet(key: string): Promise<void> {
   const passphrase = requirePassphrase();
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   const value = await encrypted.get(key);
   if (value === undefined) fail(`no such key: ${key}`);
   process.stdout.write(value);
@@ -165,7 +165,7 @@ async function cmdGet(key: string): Promise<void> {
 
 async function cmdList(): Promise<void> {
   const passphrase = requirePassphrase();
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   const keys = await encrypted.keys();
   if (keys.length === 0) {
     console.log("(no credentials stored)");
@@ -179,7 +179,7 @@ async function cmdList(): Promise<void> {
 
 async function cmdDelete(key: string): Promise<void> {
   const passphrase = requirePassphrase();
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   const ok = await encrypted.delete(key);
   console.log(ok ? `deleted "${key}"` : `no such key: ${key}`);
 }
@@ -187,7 +187,7 @@ async function cmdDelete(key: string): Promise<void> {
 async function cmdImportEnv(): Promise<void> {
   const passphrase = requirePassphrase();
   mkdirSync(SECRETS_DIR, { recursive: true });
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   const imported: string[] = [];
   for (const [credKey, envVar] of Object.entries(CREDENTIAL_TO_ENV)) {
     const v = process.env[envVar];
@@ -226,7 +226,7 @@ async function cmdImportDotEnv(file: string): Promise<void> {
   );
 
   mkdirSync(SECRETS_DIR, { recursive: true });
-  const { encrypted } = buildCredentialStore(passphrase);
+  const { encrypted } = await buildCredentialStore(passphrase);
   const imported: string[] = [];
   const skipped: string[] = [];
   for (const [envVar, value] of parsed) {
@@ -296,7 +296,7 @@ async function cmdRotate(): Promise<void> {
     }
   }
 
-  const { encrypted: oldStore } = buildCredentialStore(oldPassphrase);
+  const { encrypted: oldStore } = await buildCredentialStore(oldPassphrase);
   const keys = await oldStore.keys();
   if (keys.length === 0) {
     console.log("(no credentials stored — nothing to rotate)");
@@ -329,7 +329,7 @@ async function cmdRotate(): Promise<void> {
       copyFileSync(join(SECRETS_DIR, file), join(stagingDir, file));
     }
   }
-  const { encrypted: newStore } = buildCredentialStore(newPassphrase, stagingDir);
+  const { encrypted: newStore } = await buildCredentialStore(newPassphrase, stagingDir);
   for (const [k, v] of decrypted) {
     await newStore.put(k, v, { provider: providerForKey(k) });
   }
@@ -350,7 +350,7 @@ async function cmdRotate(): Promise<void> {
  * Returns false if any decryption fails or the store is empty.
  */
 async function canDecryptStore(dir: string, passphrase: string): Promise<boolean> {
-  const { encrypted } = buildCredentialStore(passphrase, dir);
+  const { encrypted } = await buildCredentialStore(passphrase, dir);
   const keys = await encrypted.keys();
   if (keys.length === 0) return false;
   for (const k of keys) {
