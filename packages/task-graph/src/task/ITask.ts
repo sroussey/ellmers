@@ -110,6 +110,22 @@ export interface IRunConfig {
   shouldAccumulate?: boolean;
 
   /**
+   * Threshold (in bytes) at which a binary output port's value is replaced by
+   * a {@link CacheRef} in `Output` instead of being inlined. Below this size,
+   * the runner inlines the bytes; at or above, it emits a reference and the
+   * bytes live only in the cache backing.
+   *
+   * `0` forces a reference for every binary port regardless of size. Negative
+   * values and `undefined` fall back to
+   * {@link REFERENCE_THRESHOLD_BYTES_DEFAULT} (64 KB).
+   *
+   * Only applied when the cache backing implements `saveOutputStream` and the
+   * port carries binary stream events; otherwise the value is always inlined
+   * regardless of this setting.
+   */
+  referenceThresholdBytes?: number;
+
+  /**
    * Optional callback invoked whenever a task's progress changes during execution.
    * @param task - The task whose progress changed.
    * @param progress - 0..100 for measured progress, or `undefined` for indeterminate.

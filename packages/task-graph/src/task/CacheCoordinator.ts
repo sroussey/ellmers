@@ -5,10 +5,15 @@
  */
 
 import { getPortCodec } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
+import type { CacheRef } from "../cache/CacheRef";
+import { isCacheRef } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
+import type { BinaryRefSink } from "./StreamProcessor";
+import { getBinaryPortFormat, getBinaryPortId, getStreamingPorts } from "./StreamTypes";
 import type { ITask } from "./ITask";
 import type { StreamEvent } from "./StreamTypes";
 import { Task } from "./Task";
@@ -138,6 +143,23 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     );
   }
 
+  /**
+   * Streams output bytes straight to a stream-capable cache sink. Returns the
+   * {@link CacheRef} produced by the backing, or `undefined` when no cache is
+   * configured, the task is not cacheable, or the repository does not
+   * implement `saveOutputStream`.
+   */
+  async saveStream(
+    keyInputs: Input,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>,
+    outputCache: TaskOutputRepository | undefined
+  ): Promise<CacheRef | undefined> {
+    if (!outputCache || !this.task.cacheable) return undefined;
+    if (!outputCache.supportsStreaming()) return undefined;
+    return outputCache.saveOutputStream!(this.task.type, keyInputs, chunks, metadata);
+  }
+
   // ========================================================================
   // Policy-aware routing methods
   // ========================================================================
@@ -181,6 +203,100 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     policy: CachePolicy
   ): Promise<void> {
     return this.save(keyInputs, output, this.repoFor(registry, policy), policy);
+  }
+
+  /**
+   * Build the per-port `BinaryRefSink` map the runner passes to
+   * `StreamProcessor.run()` so binary streams pipe straight to the cache and
+   * `Output` carries a {@link CacheRef} at the port slot.
+   *
+   * Returns `undefined` when any of the conditions for the ref path are not
+   * met: no cache is configured by policy, the cache does not implement
+   * `saveOutputStream`, the task is not cacheable, or the output schema has
+   * no `x-stream: "binary"` port. v1 supports single-binary-port tasks only;
+   * tasks with multiple binary ports fall back to the accumulation path.
+   *
+   * The threshold ({@link IRunConfig.referenceThresholdBytes}) controls
+   * whether the ref *survives* in the final Output, not whether the sink
+   * runs: when total bytes streamed end up below the threshold, the runner
+   * rehydrates the ref to an inline `Blob`/`ArrayBuffer` via
+   * {@link hydrateRefsBelowThreshold}. Setting threshold to `0` forces
+   * every binary port to a ref regardless of size.
+   */
+  public getBinaryRefSinksByPolicy(
+    keyInputs: Input,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    outputSchema: DataPortSchema
+  ): ReadonlyMap<string, BinaryRefSink> | undefined {
+    if (!this.task.cacheable) return undefined;
+    const cache = this.repoFor(registry, policy);
+    if (!cache || !cache.supportsStreaming()) return undefined;
+    const port = getBinaryPortId(outputSchema);
+    if (port === undefined) return undefined;
+    const taskType = this.task.type;
+    const sink: BinaryRefSink = (chunks) =>
+      cache.saveOutputStream!(taskType, keyInputs, chunks, {});
+    return new Map([[port, sink]]);
+  }
+
+  /**
+   * Post-process the streaming task's `Output`: for every **binary streaming
+   * port** (per the schema) whose value is a {@link CacheRef} with
+   * `size < referenceThresholdBytes`, rehydrate the bytes via `getOutputByRef`
+   * and inline them as `Blob`/`ArrayBuffer` (per the port's `format`
+   * annotation). Refs at or above the threshold are left in place.
+   * `referenceThresholdBytes === 0` forces every ref to survive regardless of
+   * size.
+   *
+   * Restricted to schema-declared binary streaming ports so that legitimate
+   * non-binary fields that happen to carry a `{$ref: string}` shape (e.g. a
+   * JSON-Schema reference embedded in metadata) are not mistakenly resolved
+   * against the cache.
+   *
+   * Refs without a known `size` are kept as-is (the writer didn't measure;
+   * conservatively assume "large enough to keep as ref"). Backings that want
+   * threshold-based rehydration MUST populate `size` on the CacheRef they
+   * return from `saveOutputStream`.
+   */
+  public async hydrateRefsBelowThreshold(
+    output: Output,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    outputSchema: DataPortSchema,
+    referenceThresholdBytes: number
+  ): Promise<Output> {
+    if (referenceThresholdBytes === 0) return output;
+    if (output === null || typeof output !== "object") return output;
+    const cache = this.repoFor(registry, policy);
+    if (!cache || typeof cache.getOutputByRef !== "function") return output;
+
+    const binaryPorts = getStreamingPorts(outputSchema)
+      .filter((p) => p.mode === "binary")
+      .map((p) => p.port);
+    if (binaryPorts.length === 0) return output;
+
+    const source = output as Record<string, unknown>;
+    let out: Record<string, unknown> | undefined;
+    const rehydrations = await Promise.all(
+      binaryPorts.map(async (port) => {
+        const value = source[port];
+        if (!isCacheRef(value)) return undefined;
+        const size = value.size;
+        if (size === undefined || size >= referenceThresholdBytes) return undefined;
+        const blob = await cache.getOutputByRef!(value);
+        if (blob === undefined) return undefined;
+        const format = getBinaryPortFormat(outputSchema, port);
+        const inlined = format === "binary" ? await blob.arrayBuffer() : blob;
+        return { port, inlined };
+      })
+    );
+    for (const r of rehydrations) {
+      if (!r) continue;
+      out ??= { ...source };
+      out[r.port] = r.inlined;
+    }
+    return (out ?? source) as Output;
   }
 
   // ========================================================================

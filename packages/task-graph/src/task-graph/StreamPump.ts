@@ -193,6 +193,11 @@ export class StreamPump {
         registry: options.registry,
         resourceScope: options.resourceScope,
         runId: options.runId,
+        // Sinks are installed regardless of downstream needs: when both an
+        // accumulator and a router exist (downstream needs materialized + cache
+        // can stream), StreamProcessor tees — accumulator drives the enriched
+        // finish event for edge consumers; the router's CacheRef takes the
+        // port slot in finalOutput so the queue/cache row stays small.
       });
 
       await this.edgeMaterializer.pushOutputFromNodeToEdges(task, results);
@@ -229,7 +234,15 @@ export class StreamPump {
     outputCache: TaskOutputRepository | undefined,
     accumulateLeafOutputs: boolean
   ): boolean {
-    if (outputCache) return true;
+    if (outputCache) {
+      // Relaxation: when the cache can ingest a byte stream, the task streams
+      // ONLY binary, and no downstream edge needs the materialized value, the
+      // bytes are piped straight to the cache sink instead of being buffered
+      // into an enriched finish event. This is the memory win for large binary
+      // outputs (e.g. file/image producers).
+      if (StreamPump.canStreamBinaryToCache(this.graph, task, outputCache)) return false;
+      return true;
+    }
 
     const outEdges = this.graph.getTargetDataflows(task.id);
     if (outEdges.length === 0) return accumulateLeafOutputs;
@@ -254,6 +267,161 @@ export class StreamPump {
     }
 
     return false;
+  }
+
+  /**
+   * Decides whether a streaming task's binary output can be piped straight to a
+   * stream-capable cache sink (skipping in-memory accumulation). True when:
+   *
+   * 1. The cache reports `supportsStreaming()` (NOT a `typeof saveOutputStream`
+   *    duck-type — wrappers like `RunPrivateCacheRepo` always expose a concrete
+   *    `saveOutputStream` but their `supportsStreaming()` reflects the BACKING
+   *    repo, so the duck-type would falsely report `true` over a non-streaming
+   *    backing store).
+   * 2. The task's only streaming output port(s) are binary.
+   * 3. No downstream dataflow edge needs the materialized value (every consumer
+   *    accepts the raw binary stream, or there are no consumers).
+   *
+   * Exposed as a static (taking the graph explicitly) so the decision is
+   * unit-testable in isolation from a live run — mirroring
+   * {@link StreamPump.pipeBinaryToCache}.
+   */
+  static canStreamBinaryToCache(
+    graph: TaskGraph,
+    task: ITask,
+    outputCache: TaskOutputRepository | undefined
+  ): boolean {
+    // Defensive: a repository may not implement `supportsStreaming` (the base
+    // class does, but test doubles / partial mocks may not). Treat anything
+    // that cannot affirmatively report streaming support as non-streaming.
+    if (typeof outputCache?.supportsStreaming !== "function") return false;
+    if (!outputCache.supportsStreaming()) return false;
+
+    const outSchema = task.outputSchema();
+    const streamingPorts = getStreamingPorts(outSchema);
+    const binaryOnly =
+      streamingPorts.length > 0 && streamingPorts.every((p) => p.mode === "binary");
+    if (!binaryOnly) return false;
+
+    return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
+  }
+
+  /**
+   * Returns `true` when any outgoing dataflow edge from {@link task} has a
+   * target task whose input port can't consume the source's stream mode
+   * directly (per {@link edgeNeedsAccumulation}). Independent of the cache —
+   * used by the graph runner to decide whether to inhibit binary-stream sinks
+   * on the source task's runner (refs can't survive across an edge whose
+   * target expects a materialized value).
+   *
+   * Treats fan-out `*` edges as always-needs-materialized (conservative).
+   */
+  static anyConsumerNeedsMaterialized(graph: TaskGraph, task: ITask): boolean {
+    const outSchema = task.outputSchema();
+    const outEdges = graph.getTargetDataflows(task.id);
+    return outEdges.some((df) => {
+      if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return true;
+      const targetTask = graph.getTask(df.targetTaskId);
+      if (!targetTask) return false;
+      return edgeNeedsAccumulation(
+        outSchema,
+        df.sourceTaskPortId,
+        targetTask.inputSchema(),
+        df.targetTaskPortId
+      );
+    });
+  }
+
+  /**
+   * Drives a stream-capable cache sink from a streaming task's `binary-delta`
+   * events. Returns an `{ promise, detach }` pair: `promise` resolves once the
+   * cache's `saveOutputStream` has consumed every chunk (after the task emits
+   * `stream_end`); `detach` removes the listeners. The chunk iterable is fed by
+   * the task's `stream_chunk` events and closed on `stream_end`.
+   *
+   * Abort/error contract: `StreamProcessor` emits `stream_end` only on success
+   * (it throws on abort/error before emitting it). To avoid a hang + listener
+   * leak when the source task aborts or errors mid-stream, the iterable is also
+   * terminated by the task's `abort`/`error` events and by an optional
+   * `AbortSignal`. On any of those the
+   * iterable ends gracefully so the sink can finalize the bytes seen so far —
+   * the returned promise ALWAYS settles and `detach` ALWAYS runs.
+   *
+   * Exposed as a static so the assembly (binary-delta events → AsyncIterable →
+   * `saveOutputStream`) is unit-testable in isolation from a graph run.
+   */
+  static pipeBinaryToCache(
+    task: ITask,
+    binaryPortId: string | undefined,
+    sink: (chunks: AsyncIterable<Uint8Array>) => Promise<unknown>,
+    signal?: AbortSignal
+  ): { promise: Promise<void>; detach: () => void } {
+    const queue: Uint8Array[] = [];
+    let done = false;
+    let notify: (() => void) | undefined;
+
+    const wake = () => {
+      const n = notify;
+      notify = undefined;
+      n?.();
+    };
+
+    const onChunk = (event: StreamEvent) => {
+      if (event.type === "binary-delta") {
+        if (binaryPortId === undefined || event.port === binaryPortId) {
+          queue.push(event.binaryDelta);
+          wake();
+        }
+      }
+    };
+    const onEnd = () => {
+      done = true;
+      wake();
+    };
+    // Abort/error termination: StreamProcessor never emits `stream_end` on these
+    // paths, so without this the iterable would await forever. Terminate the
+    // iterable (don't throw) so the sink finalizes the bytes seen so far and the
+    // promise settles — the source's own abort/error already surfaces to the run.
+    const onTerminate = () => {
+      done = true;
+      wake();
+    };
+
+    task.on("stream_chunk", onChunk);
+    task.on("stream_end", onEnd);
+    task.on("abort", onTerminate);
+    task.on("error", onTerminate);
+    if (signal) {
+      if (signal.aborted) onTerminate();
+      else signal.addEventListener("abort", onTerminate);
+    }
+
+    const detach = () => {
+      task.off("stream_chunk", onChunk);
+      task.off("stream_end", onEnd);
+      task.off("abort", onTerminate);
+      task.off("error", onTerminate);
+      signal?.removeEventListener("abort", onTerminate);
+    };
+
+    async function* chunkIterable(): AsyncIterable<Uint8Array> {
+      while (true) {
+        while (queue.length > 0) {
+          yield queue.shift()!;
+        }
+        if (done) return;
+        await new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+      }
+    }
+
+    // Discard the sink's return value (helper signals completion only; callers
+    // wanting a CacheRef should hold the sink-returning promise themselves).
+    const promise = sink(chunkIterable())
+      .finally(detach)
+      .then(() => undefined);
+    return { promise, detach };
   }
 
   /**

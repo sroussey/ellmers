@@ -6,6 +6,7 @@
 
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
+import type { CacheRef } from "./CacheRef";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -43,6 +44,20 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     super({ outputCompression: backing.outputCompression });
     this.backing = backing;
     this.runId = runId;
+    // Mirror the backing's optional-method shape on this instance so callers
+    // probing `typeof repo.saveOutputStream === "function"` (or the
+    // getOutputByRef/getOutputStreamByRef siblings) see the true capability
+    // instead of the always-present wrapper override. Class methods live on
+    // the prototype; assigning `undefined` on the instance shadows them.
+    if (typeof backing.saveOutputStream !== "function") {
+      (this as { saveOutputStream?: unknown }).saveOutputStream = undefined;
+    }
+    if (typeof backing.getOutputByRef !== "function") {
+      (this as { getOutputByRef?: unknown }).getOutputByRef = undefined;
+    }
+    if (typeof backing.getOutputStreamByRef !== "function") {
+      (this as { getOutputStreamByRef?: unknown }).getOutputStreamByRef = undefined;
+    }
   }
 
   /**
@@ -84,6 +99,55 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     inputs: TaskInput
   ): Promise<TaskOutput | undefined> {
     return this.backing.getOutput(this.ns(cacheIdentity), inputs);
+  }
+
+  /**
+   * Forwards the streaming sink to the backing repository, applying the same
+   * `runId` namespacing as `saveOutput`. Only present in effect when the
+   * backing repo supports streaming; `supportsStreaming()` (below) reflects the
+   * backing repo so callers branch correctly before calling this.
+   *
+   * Returns whatever {@link CacheRef} the backing produced (already namespaced
+   * via the wrapped `taskType`). Resolvers calling `getOutputByRef` on this
+   * wrapper forward to the backing, which decodes its own `$ref`.
+   */
+  public override saveOutputStream(
+    taskType: string,
+    inputs: TaskInput,
+    chunks: AsyncIterable<Uint8Array>,
+    metadata: Record<string, unknown>
+  ): Promise<CacheRef> {
+    const fn = this.backing.saveOutputStream;
+    if (typeof fn !== "function") {
+      return Promise.reject(
+        new Error(
+          `RunPrivateCacheRepo: backing repository does not implement saveOutputStream. ` +
+            `Call supportsStreaming() before saveOutputStream.`
+        )
+      );
+    }
+    return fn.call(this.backing, this.ns(taskType), inputs, chunks, metadata);
+  }
+
+  /**
+   * Forwards by-ref retrieval to the backing repository. The `$ref` already
+   * encodes whatever the backing needs to locate the entry; no namespacing is
+   * re-applied here.
+   */
+  public override getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
+    if (typeof this.backing.getOutputByRef !== "function") return Promise.resolve(undefined);
+    return this.backing.getOutputByRef(ref);
+  }
+
+  /** Forwards streaming by-ref retrieval to the backing repository. */
+  public override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
+    if (typeof this.backing.getOutputStreamByRef !== "function") return undefined;
+    return this.backing.getOutputStreamByRef(ref);
+  }
+
+  /** Mirrors the backing repository's streaming capability. */
+  public override supportsStreaming(): boolean {
+    return this.backing.supportsStreaming();
   }
 
   /**
