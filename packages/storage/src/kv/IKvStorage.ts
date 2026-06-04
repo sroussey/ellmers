@@ -8,9 +8,6 @@ import { EventParameters } from "@workglow/util";
 import { DataPortSchemaObject } from "@workglow/util/schema";
 import { JSONValue } from "../tabular/ITabularStorage";
 
-/**
- * Default schema types for simple string row data
- */
 export const DefaultKeyValueSchema = {
   type: "object",
   properties: {
@@ -21,9 +18,6 @@ export const DefaultKeyValueSchema = {
 } as const satisfies DataPortSchemaObject;
 export const DefaultKeyValueKey = ["key"] as const;
 
-/**
- * Type definitions for kv repository events
- */
 export type KvEventListeners<Key, Value, Combined> = {
   put: (key: Key, value: Value) => void;
   get: (key: Key, value: Value | undefined) => void;
@@ -59,7 +53,6 @@ export interface IKvStorage<
   Value extends any = any,
   Combined = { key: Key; value: Value },
 > {
-  // Core methods
   put(key: Key, value: Value): Promise<void>;
   putBulk(items: Array<{ key: Key; value: Value }>): Promise<void>;
   get(key: Key): Promise<Value | undefined>;
@@ -78,7 +71,6 @@ export interface IKvStorage<
 
   getObjectAsIdString(object: JSONValue): Promise<string>;
 
-  // Event handling methods
   on<Event extends KvEventName>(
     name: Event,
     fn: KvEventListener<Event, Key, Value, Combined>

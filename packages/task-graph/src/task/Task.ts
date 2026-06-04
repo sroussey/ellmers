@@ -49,29 +49,14 @@ export class Task<
   // Static properties - should be overridden by subclasses
   // ========================================================================
 
-  /**
-   * The type identifier for this task class
-   */
   public static type: TaskTypeName = "Task";
 
-  /**
-   * The category this task belongs to
-   */
   public static category: string = "Hidden";
 
-  /**
-   * The title of this task
-   */
   public static title: string = "";
 
-  /**
-   * The description of this task
-   */
   public static description: string = "";
 
-  /**
-   * Whether this task has side effects
-   */
   public static cacheable: boolean = true;
 
   /**
@@ -140,9 +125,6 @@ export class Task<
     return EMPTY_ENTITLEMENTS;
   }
 
-  /**
-   * Input schema for this task
-   */
   public static inputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -151,9 +133,6 @@ export class Task<
     } as const satisfies DataPortSchema;
   }
 
-  /**
-   * Output schema for this task
-   */
   public static outputSchema(): DataPortSchema {
     return {
       type: "object",
@@ -215,15 +194,8 @@ export class Task<
    */
   public parentGraph?: TaskGraph;
 
-  /**
-   * Task runner for handling the task execution
-   */
   protected _runner: TaskRunner<Input, Output, Config> | undefined;
 
-  /**
-   * Gets the task runner instance
-   * Creates a new one if it doesn't exist
-   */
   public get runner(): TaskRunner<Input, Output, Config> {
     if (!this._runner) {
       this._runner = new TaskRunner<Input, Output, Config>(this);
@@ -245,28 +217,16 @@ export class Task<
   }
 
   /**
-   * Runs the task in preview mode
-   * Delegates to the task runner
-   *
-   * @param overrides Optional input overrides
-   * @returns The task output
+   * Runs the task in preview mode. Delegates to the task runner.
    */
   public async runPreview(overrides: Partial<Input> = {}): Promise<Output> {
     return this.runner.runPreview(overrides);
   }
 
-  /**
-   * Aborts task execution
-   * Delegates to the task runner
-   */
   public abort(): void {
     this.runner.abort();
   }
 
-  /**
-   * Disables task execution
-   * Delegates to the task runner
-   */
   public async disable(): Promise<void> {
     await this.runner.disable();
   }
@@ -275,23 +235,14 @@ export class Task<
   // Static to Instance conversion methods
   // ========================================================================
 
-  /**
-   * Gets input schema for this task
-   */
   public inputSchema(): DataPortSchema {
     return (this.constructor as typeof Task).inputSchema();
   }
 
-  /**
-   * Gets output schema for this task
-   */
   public outputSchema(): DataPortSchema {
     return (this.constructor as typeof Task).outputSchema();
   }
 
-  /**
-   * Gets config schema for this task
-   */
   public configSchema(): DataPortSchema {
     return (this.constructor as typeof Task).configSchema();
   }
@@ -430,9 +381,6 @@ export class Task<
   // Task state properties
   // ========================================================================
 
-  /**
-   * The configuration of the task
-   */
   config: Config;
 
   /**
@@ -441,9 +389,6 @@ export class Task<
    */
   readonly originalConfig: Readonly<Record<string, unknown>> | undefined;
 
-  /**
-   * Task id from config (read-only).
-   */
   public get id(): unknown {
     return this.config.id;
   }
@@ -454,9 +399,6 @@ export class Task<
    */
   runConfig: Partial<IRunConfig> = {};
 
-  /**
-   * Current status of the task
-   */
   status: TaskStatus = TaskStatus.PENDING;
 
   /**
@@ -465,29 +407,14 @@ export class Task<
    */
   progress: number | undefined = 0;
 
-  /**
-   * When the task was created
-   */
   createdAt: Date = new Date();
 
-  /**
-   * When the task started execution
-   */
   startedAt?: Date;
 
-  /**
-   * When the task completed execution
-   */
   completedAt?: Date;
 
-  /**
-   * Error that occurred during task execution, if any
-   */
   error?: TaskError;
 
-  /**
-   * Event emitter for task lifecycle events
-   */
   public get events(): EventEmitter<TaskEventListeners> {
     if (!this._events) {
       this._events = new EventEmitter<TaskEventListeners>();
@@ -503,19 +430,16 @@ export class Task<
    * @param runConfig Runtime configuration for the task
    */
   constructor(config: NoInfer<Partial<Config>> = {}, runConfig: NoInfer<Partial<IRunConfig>> = {}) {
-    // Extract caller-provided defaults from config
     const { defaults: callerDefaultInputs, ...restConfig } = config as Partial<Config> & {
       defaults?: Partial<Input>;
     };
 
-    // Initialize input defaults
     const inputDefaults = this.getDefaultInputsFromStaticInputDefinitions();
     const mergedDefaults = Object.assign(inputDefaults, callerDefaultInputs ?? {});
     // Strip symbol properties (like [$JSONSchema]) before storing defaults
     this.defaults = this.stripSymbols(mergedDefaults) as Record<string, any>;
     this.resetInputData();
 
-    // Setup configuration defaults (title comes from static class property as fallback)
     const title = (this.constructor as typeof Task).title || undefined;
     const baseConfig = Object.assign(
       {
@@ -535,7 +459,6 @@ export class Task<
       this.originalConfig = undefined;
     }
 
-    // Store runtime configuration
     this.runConfig = runConfig;
 
     // Reject input schemas that declare a `__cv` port: this name is reserved by
@@ -561,9 +484,6 @@ export class Task<
   // Input/Output handling
   // ========================================================================
 
-  /**
-   * Gets default input values from input schema
-   */
   getDefaultInputsFromStaticInputDefinitions(): Partial<Input> {
     const schema = this.inputSchema();
     if (typeof schema === "boolean") {
@@ -596,9 +516,6 @@ export class Task<
     }
   }
 
-  /**
-   * Resets input data to defaults
-   */
   public resetInputData(): void {
     this.runInputData = this.smartClone(this.defaults) as Record<string, any>;
   }
@@ -683,21 +600,11 @@ export class Task<
     }
   }
 
-  /**
-   * Sets the default input values for the task
-   *
-   * @param defaults The default input values to set
-   */
   public setDefaults(defaults: Partial<Input>): void {
     // Strip symbol properties (like [$JSONSchema]) before storing defaults
     this.defaults = this.stripSymbols(defaults) as Partial<Input>;
   }
 
-  /**
-   * Sets input values for the task
-   *
-   * @param input Input values to set
-   */
   public setInput(input: Partial<Input>): void {
     const schema = this.inputSchema();
     if (typeof schema === "boolean") {
@@ -712,7 +619,6 @@ export class Task<
     }
     const properties = schema.properties || {};
 
-    // Copy explicitly defined properties
     for (const [inputId, prop] of Object.entries(properties)) {
       if (input[inputId] !== undefined) {
         this.runInputData[inputId] = input[inputId];
@@ -835,9 +741,6 @@ export class Task<
   // Event handling methods
   // ========================================================================
 
-  /**
-   * Subscribes to an event
-   */
   public subscribe<Event extends TaskEvents>(
     name: Event,
     fn: TaskEventListener<Event>
@@ -845,23 +748,14 @@ export class Task<
     return this.events.subscribe(name, fn);
   }
 
-  /**
-   * Registers an event listener
-   */
   public on<Event extends TaskEvents>(name: Event, fn: TaskEventListener<Event>): void {
     this.events.on(name, fn);
   }
 
-  /**
-   * Removes an event listener
-   */
   public off<Event extends TaskEvents>(name: Event, fn: TaskEventListener<Event>): void {
     this.events.off(name, fn);
   }
 
-  /**
-   * Registers a one-time event listener
-   */
   public once<Event extends TaskEvents>(name: Event, fn: TaskEventListener<Event>): void {
     this.events.once(name, fn);
   }
@@ -873,9 +767,6 @@ export class Task<
     return this.events.waitOn(name) as Promise<TaskEventParameters<Event>>;
   }
 
-  /**
-   * Emits an event
-   */
   public emit<Event extends TaskEvents>(name: Event, ...args: TaskEventParameters<Event>): void {
     // Route through `events` so the emitter exists: `this._events?.emit` dropped progress when
     // nothing had accessed `task.events` yet (e.g. parent MapTask before CLI wired listeners).

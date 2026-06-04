@@ -21,10 +21,6 @@ import { StreamingAiTask } from "./base/StreamingAiTask";
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
 
-// ========================================================================
-// Schemas
-// ========================================================================
-
 const modelSchema = TypeModel("model:AiChatTask");
 
 /**
@@ -168,10 +164,6 @@ export interface AiChatProviderOutput {
   [key: string]: unknown;
 }
 
-// ========================================================================
-// Task class
-// ========================================================================
-
 export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutput> {
   public static override type = "AiChatTask";
   /** Capabilities required of the model; gated in {@link StreamingAiTask.executeStream}. */
@@ -212,7 +204,7 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     }
     // Delegate to base so timeoutMs, outputSchema, and any future base fields
     // are always populated. The base reads (input as any).sessionId and
-    // forwards it into jobInput.sessionId, so we inject the session id here.
+    // forwards it into jobInput.sessionId.
     return super.getJobInput({ ...input, sessionId: this._sessionId } as AiChatTaskInput & {
       sessionId: string;
     });
@@ -237,7 +229,6 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
 
     const connector = resolveHumanConnector(context);
 
-    // Build initial history.
     const history: ChatMessage[] = [];
     const addendum = buildResponseFormatAddendum(input.responseFormat);
     const composedSystemPrompt = [input.systemPrompt ?? "", addendum]
@@ -255,13 +246,12 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         : (input.prompt as ReadonlyArray<ContentBlock>);
     history.push({ role: "user", content: firstUserBlocks });
 
-    // Call getJobInput once before the loop to initialize _sessionId.
+    // Initialize _sessionId before the loop.
     const workingInput: AiChatTaskInput = { ...input, messages: history };
     await this.getJobInput(workingInput);
     const strategy = getAiProviderRegistry().getStrategy(model);
     const maxIterations = input.maxIterations ?? 100;
 
-    // Register session disposal so it's cleaned up at end of the resource scope.
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
@@ -289,7 +279,6 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
     } as StreamEvent<AiChatTaskOutput>;
 
     for (let turn = 0; turn < maxIterations; turn++) {
-      // Fresh job input per turn with current history snapshot.
       const perTurnInput: AiChatTaskInput = { ...input, messages: [...history] };
       const turnJobInput = await this.getJobInput(perTurnInput);
 
@@ -335,7 +324,6 @@ export class AiChatTask extends StreamingAiTask<AiChatTaskInput, AiChatTaskOutpu
         objectDelta: [assistantMsg],
       } as StreamEvent<AiChatTaskOutput>;
 
-      // Ask the human for the next turn.
       const request: IHumanRequest = {
         requestId: crypto.randomUUID(),
         targetHumanId: "default",

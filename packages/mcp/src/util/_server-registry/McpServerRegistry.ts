@@ -85,8 +85,6 @@ async function resolveServerFromRegistry(
   _format: string,
   registry: ServiceRegistry
 ): Promise<McpServerRecord> {
-  // Resolve from the supplied registry — the lazy-init in
-  // getGlobalMcpServers/Repository keeps scoped registries isolated.
   const servers = getGlobalMcpServers(registry);
   const entry = servers.get(id);
   if (entry) return entry.config;
@@ -108,8 +106,8 @@ function compactMcpServer(value: unknown): string | undefined {
 }
 
 /**
- * Registers the MCP server default factories and the "mcp-server" input resolver/compactor
- * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
+ * Registers the MCP server default factories and the "mcp-server" input
+ * resolver/compactor on the given registry.
  */
 export function registerMcpServerDefaults(registry: ServiceRegistry = globalServiceRegistry): void {
   registry.registerIfAbsent(MCP_SERVERS, (): Map<string, McpServerConnection> => new Map(), true);

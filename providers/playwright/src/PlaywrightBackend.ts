@@ -23,9 +23,7 @@ import type {
   WaitOptions,
 } from "@workglow/browser-control/task";
 
-// ---------------------------------------------------------------------------
-// Playwright types (not imported at module level — lazy optional dependency)
-// ---------------------------------------------------------------------------
+// Playwright is loaded lazily as an optional dependency.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLocator = any;
@@ -36,10 +34,6 @@ type AnyBrowserContext = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyBrowser = any;
 
-// ---------------------------------------------------------------------------
-// Lazy Playwright loader
-// ---------------------------------------------------------------------------
-
 let playwrightModule: typeof import("playwright");
 
 async function getPlaywright(): Promise<typeof import("playwright")> {
@@ -48,10 +42,6 @@ async function getPlaywright(): Promise<typeof import("playwright")> {
   }
   return playwrightModule;
 }
-
-// ---------------------------------------------------------------------------
-// ARIA snapshot parser
-// ---------------------------------------------------------------------------
 
 /**
  * Parse a single ARIA snapshot line.
@@ -71,18 +61,18 @@ interface ParsedAriaLine {
 }
 
 function parseAriaLine(line: string): ParsedAriaLine | null {
-  // Count leading spaces for indentation (2 spaces per level after the "- ")
+  // 2 spaces per indent level after the "- "
   const match = line.match(/^(\s*)-\s+(.*)$/);
   if (!match) return null;
 
   const indent = match[1].length;
   let rest = match[2].trim();
 
-  // Check if this node has children (trailing colon)
+  // Trailing colon marks a node with children.
   const hasChildren = rest.endsWith(":");
   if (hasChildren) rest = rest.slice(0, -1).trim();
 
-  // Extract attributes like [level=1] [checked=true]
+  // Extract bracketed attributes like [level=1] [checked=true]
   const attrs: Record<string, string> = {};
   rest = rest
     .replace(/\[([^\]]+)\]/g, (_m, attr: string) => {
@@ -96,7 +86,6 @@ function parseAriaLine(line: string): ParsedAriaLine | null {
     })
     .trim();
 
-  // Extract role and optional quoted name
   // e.g. `button "Sign In"` or `list` or `heading "Welcome"`
   const roleNameMatch = rest.match(/^(\S+)(?:\s+"((?:[^"\\]|\\.)*)")?/);
   if (!roleNameMatch) return null;
@@ -128,7 +117,6 @@ function parseAriaYaml(
 ): AccessibilityNode {
   const lines = yaml.split("\n");
 
-  // Stack of {node, indent} for building the tree
   const stack: Array<{ node: MutableAccessibilityNode; indent: number }> = [];
   let root: MutableAccessibilityNode | null = null;
 
@@ -140,7 +128,6 @@ function parseAriaYaml(
 
     const ref = `e${++refCounter.count}`;
 
-    // Build descriptor for this node
     const descriptor = buildDescriptor(parsed.role, parsed.name);
     refMap.set(ref, descriptor);
 
@@ -150,7 +137,6 @@ function parseAriaYaml(
       name: parsed.name,
     };
 
-    // Apply attributes
     if (parsed.attrs.level !== undefined) {
       node.level = parseInt(parsed.attrs.level, 10);
     }
@@ -178,7 +164,6 @@ function parseAriaYaml(
       node.children = [];
     }
 
-    // Pop stack elements that are at the same or deeper indentation
     while (stack.length > 0 && stack[stack.length - 1].indent >= parsed.indent) {
       stack.pop();
     }
@@ -195,7 +180,7 @@ function parseAriaYaml(
   }
 
   if (!root) {
-    // Return a synthetic root if parsing fails
+    // Synthetic root fallback when parsing fails.
     const ref = `e${++refCounter.count}`;
     refMap.set(ref, { kind: "css", selector: "body" });
     return { ref, role: "document", name: "" };
@@ -212,19 +197,11 @@ function buildDescriptor(role: string, name: string): Descriptor {
   return { kind: "role", role, name };
 }
 
-// ---------------------------------------------------------------------------
-// Structured element descriptor (replaces ad-hoc string encoding)
-// ---------------------------------------------------------------------------
-
 type Descriptor =
   | { readonly kind: "role"; readonly role: string; readonly name: string }
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "css"; readonly selector: string }
   | { readonly kind: "nth"; readonly inner: Descriptor; readonly index: number };
-
-// ---------------------------------------------------------------------------
-// PlaywrightBackend
-// ---------------------------------------------------------------------------
 
 export class PlaywrightBackend implements IBrowserContext {
   /**
@@ -234,7 +211,6 @@ export class PlaywrightBackend implements IBrowserContext {
    */
   constructor(private readonly sharedLocalBrowser?: AnyBrowser) {}
 
-  // Internal Playwright state
   private _browser: AnyBrowser | null = null;
   private _context: AnyBrowserContext | null = null;
   private _page: AnyPage | null = null;
@@ -242,7 +218,7 @@ export class PlaywrightBackend implements IBrowserContext {
   /** True when this backend launched Chromium locally (owns full process tree). */
   private _launchedLocalChromium = false;
 
-  // Stable per-page tab ids. Surviving across concurrent close.
+  // Stable per-page tab ids, surviving concurrent close.
   private _pageIds: WeakMap<AnyPage, string> = new WeakMap();
   private _pageIdSeq = 0;
   private idForPage(page: AnyPage): string {
@@ -254,24 +230,17 @@ export class PlaywrightBackend implements IBrowserContext {
     return id;
   }
 
-  // Ref management
   private _refMap = new Map<string, Descriptor>();
   private _refCounter = { count: 0 };
 
-  // Dialog handler
   private _dialogHandler: ((info: DialogInfo) => DialogAction | Promise<DialogAction>) | null =
     null;
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   async connect(options: BrowserConnectOptions = {}): Promise<void> {
     const pw = await getPlaywright();
     const { headless = true, cdpUrl, backend = "local" } = options;
 
     if (backend === "cloud" || cdpUrl) {
-      // Cloud / CDP mode
       if (this.sharedLocalBrowser) {
         throw new Error(
           "PlaywrightBackend: sharedLocalBrowser is only supported for local backend"
@@ -287,7 +256,6 @@ export class PlaywrightBackend implements IBrowserContext {
       const pages: AnyPage[] = this._context.pages();
       this._page = pages.length > 0 ? pages[0] : await this._context.newPage();
     } else {
-      // Local mode
       if (this.sharedLocalBrowser) {
         this._browser = this.sharedLocalBrowser;
         this._launchedLocalChromium = false;
@@ -303,7 +271,6 @@ export class PlaywrightBackend implements IBrowserContext {
       this._page = await this._context.newPage();
     }
 
-    // Wire dialog handler
     this._page.on("dialog", async (dialog: AnyPage) => {
       const info: DialogInfo = {
         type: dialog.type() as DialogInfo["type"],
@@ -322,7 +289,6 @@ export class PlaywrightBackend implements IBrowserContext {
           await dialog.dismiss();
         }
       } else {
-        // Default: auto-dismiss
         await dialog.dismiss();
       }
     });
@@ -373,10 +339,6 @@ export class PlaywrightBackend implements IBrowserContext {
     return this._connected;
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   private get page(): AnyPage {
     if (!this._page) throw new Error("PlaywrightBackend: not connected — call connect() first");
     return this._page;
@@ -411,10 +373,6 @@ export class PlaywrightBackend implements IBrowserContext {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Navigation
-  // ---------------------------------------------------------------------------
-
   async navigate(url: string, options: NavigateOptions = {}): Promise<void> {
     const { waitUntil = "load", timeout = 30_000 } = options;
     await this.page.goto(url, { waitUntil, timeout });
@@ -443,10 +401,6 @@ export class PlaywrightBackend implements IBrowserContext {
     return this.page.title();
   }
 
-  // ---------------------------------------------------------------------------
-  // Accessibility
-  // ---------------------------------------------------------------------------
-
   async snapshot(options: SnapshotOptions = {}): Promise<AccessibilityTree> {
     let locator: AnyLocator;
 
@@ -458,16 +412,11 @@ export class PlaywrightBackend implements IBrowserContext {
 
     const yaml: string = await locator.ariaSnapshot();
 
-    // Reset refs so snapshot refs are stable within a session
-    // (we keep the monotonic counter to avoid collisions with querySelector refs)
+    // Monotonic ref counter prevents collisions with querySelector refs.
     const root = parseAriaYaml(yaml, this._refCounter, this._refMap);
 
     return { root, yaml };
   }
-
-  // ---------------------------------------------------------------------------
-  // Element interaction (by ref)
-  // ---------------------------------------------------------------------------
 
   async click(ref: ElementRef, options: ClickOptions = {}): Promise<void> {
     const locator = this.resolveRef(ref);
@@ -502,10 +451,6 @@ export class PlaywrightBackend implements IBrowserContext {
     await locator.hover(...(timeout !== undefined ? [{ timeout }] : []));
   }
 
-  // ---------------------------------------------------------------------------
-  // Semantic interaction
-  // ---------------------------------------------------------------------------
-
   async clickByRole(role: AriaRole, name: string, options: ClickOptions = {}): Promise<void> {
     const { modifiers, button, clickCount, timeout } = options;
     await this.page.getByRole(role, { name }).click({
@@ -520,10 +465,6 @@ export class PlaywrightBackend implements IBrowserContext {
     const { timeout } = options;
     await this.page.getByLabel(label).fill(value, ...(timeout !== undefined ? [{ timeout }] : []));
   }
-
-  // ---------------------------------------------------------------------------
-  // Content extraction
-  // ---------------------------------------------------------------------------
 
   async content(): Promise<string> {
     return this.page.content();
@@ -543,10 +484,6 @@ export class PlaywrightBackend implements IBrowserContext {
     const locator = this.resolveRef(ref);
     return locator.getAttribute(name);
   }
-
-  // ---------------------------------------------------------------------------
-  // CSS selectors
-  // ---------------------------------------------------------------------------
 
   async querySelector(selector: string): Promise<ElementRef | null> {
     const locator = this.page.locator(selector);
@@ -572,17 +509,9 @@ export class PlaywrightBackend implements IBrowserContext {
     return refs;
   }
 
-  // ---------------------------------------------------------------------------
-  // JS evaluation
-  // ---------------------------------------------------------------------------
-
   async evaluate<T>(expression: string): Promise<T> {
     return this.page.evaluate(expression) as Promise<T>;
   }
-
-  // ---------------------------------------------------------------------------
-  // Capture
-  // ---------------------------------------------------------------------------
 
   async screenshot(options: ScreenshotOptions = {}): Promise<Buffer> {
     const { format = "png", quality, fullPage = false } = options;
@@ -596,10 +525,6 @@ export class PlaywrightBackend implements IBrowserContext {
     return this.page.screenshot(screenshotOptions) as Promise<Buffer>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Input
-  // ---------------------------------------------------------------------------
-
   async pressKey(key: string, _options: WaitOptions = {}): Promise<void> {
     await this.page.keyboard.press(key);
   }
@@ -610,7 +535,6 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async scroll(x: number, y: number, ref?: ElementRef): Promise<void> {
     if (ref) {
-      // Scroll within element using JavaScript
       const locator = this.resolveRef(ref);
       await locator.evaluate(
         (el: Element, args: { x: number; y: number }) => {
@@ -622,10 +546,6 @@ export class PlaywrightBackend implements IBrowserContext {
       await this.page.mouse.wheel(x, y);
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // File operations
-  // ---------------------------------------------------------------------------
 
   async uploadFile(ref: ElementRef, paths: string | readonly string[]): Promise<void> {
     const locator = this.resolveRef(ref);
@@ -652,17 +572,9 @@ export class PlaywrightBackend implements IBrowserContext {
     return { path, suggestedFilename };
   }
 
-  // ---------------------------------------------------------------------------
-  // Dialogs
-  // ---------------------------------------------------------------------------
-
   onDialog(handler: (info: DialogInfo) => DialogAction | Promise<DialogAction>): void {
     this._dialogHandler = handler;
   }
-
-  // ---------------------------------------------------------------------------
-  // Tabs
-  // ---------------------------------------------------------------------------
 
   async tabs(): Promise<readonly TabInfo[]> {
     const pages: AnyPage[] = this.context.pages();
@@ -705,16 +617,12 @@ export class PlaywrightBackend implements IBrowserContext {
     }
     await target.close();
 
-    // If we closed the active page, switch to the last remaining page
+    // If the closed page was active, fall back to the last remaining page.
     if (this._page === target) {
       const remaining: AnyPage[] = this.context.pages();
       this._page = remaining.length > 0 ? remaining[remaining.length - 1] : null;
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Wait
-  // ---------------------------------------------------------------------------
 
   async waitForNavigation(options: NavigateOptions = {}): Promise<void> {
     const { timeout } = options;
@@ -738,12 +646,7 @@ export class PlaywrightBackend implements IBrowserContext {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Optional capabilities
-  // ---------------------------------------------------------------------------
-  //
-  // networkRequests and consoleMessages are intentionally undefined: this
-  // backend does not implement them. The IBrowserContext contract is that
-  // optional methods are either fully implemented or undefined — never
-  // empty-stub functions that defeat feature detection.
+  // networkRequests and consoleMessages are intentionally undefined: the
+  // IBrowserContext contract requires optional methods to be either fully
+  // implemented or undefined — never empty stubs that defeat feature detection.
 }

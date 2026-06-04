@@ -9,8 +9,7 @@
  * and main-thread inline (`registerHuggingFaceTransformersInline`). Import from
  * `@workglow/huggingface-transformers/ai-runtime` only — not from the main `hf-transformers` barrel.
  *
- * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph; the latter
- * was emitted as bare re-exports with no bindings.
+ * Use `export *` (not `export { … } from "…"`) so the Bun bundler keeps the module graph.
  */
 
 // organize-imports-ignore

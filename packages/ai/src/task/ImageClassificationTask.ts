@@ -95,12 +95,6 @@ export class ImageClassificationTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run image classification tasks.
- * Creates and executes an ImageClassificationTask with the provided input.
- * @param input The input parameters for image classification (image, model, and optional categories)
- * @returns Promise resolving to the classification categories with scores
- */
 export const imageClassification = (
   input: ImageClassificationTaskInput,
   config?: ImageClassificationTaskConfig,

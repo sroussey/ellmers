@@ -32,21 +32,17 @@ const SQS_MAX_RECEIVE = 10;
 /**
  * Backoff applied to `visible_at` when an enqueue throws transiently. Keeps
  * the row PENDING so a subsequent producer retry / poll picks it up again
- * instead of marking it FAILED on the first network blip. See H4.
+ * instead of marking it FAILED on the first network blip.
  */
 const ENQUEUE_DEFER_BACKOFF_MS = 30_000;
 
 /**
- * H5: clamp the defer interval to the original `delaySeconds` floor so a row
+ * Clamp the defer interval to the original `delaySeconds` floor so a row
  * with a legitimate large delay (e.g. 1h scheduled work) is NOT pulled
  * forward to now + 30s by a producer-side blip. Returns the maximum of the
  * original delay and the producer-retry backoff so:
  *   - delaySeconds = 0   → wait 30s before next producer attempt
  *   - delaySeconds = 3600 → wait 3600s (the original schedule)
- *
- * TODO: full exponential backoff requires a new enqueue_defer_attempts field;
- * see follow-up issue. Today's mitigation just prevents the bug where a
- * scheduled row is silently re-delivered ahead of schedule.
  */
 function computeDeferDelayMs(originalDelaySeconds: number | undefined): number {
   const original = originalDelaySeconds != null ? originalDelaySeconds * 1000 : 0;
@@ -72,7 +68,7 @@ async function markEnqueueDeferredManyFallback<Input, Output>(
 }
 
 /**
- * Module-level dedupe set for the InMemoryJobStore-pairing warning (H3).
+ * Module-level dedupe set for the InMemoryJobStore-pairing warning.
  * WeakSet so we don't pin store instances in memory — the warning fires
  * once per process per store, then the store's lifecycle is unaffected.
  */
@@ -94,7 +90,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     this.queueName = opts.queueName;
     this.jobStore = opts.jobStore;
 
-    // H3: warn loudly (once per store) when paired with InMemoryJobStore.
+    // Warn loudly (once per store) when paired with InMemoryJobStore.
     // SQS at-least-once + an in-memory store means partial-failure rows
     // strand forever (no shared lease-expiry sweep across processes).
     const storeCtor = (opts.jobStore as unknown as { constructor?: { name?: string } })
@@ -140,10 +136,10 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       );
       return id;
     } catch (err) {
-      // H4: a producer-side throw is transient — leave the row PENDING so a
+      // A producer-side throw is transient — leave the row PENDING so a
       // retry or a polling consumer can pick it back up. We shift visible_at
       // forward and stamp error_code; status/attempts are untouched.
-      // H5: clamp to the original delaySeconds floor so a scheduled row is
+      // Clamp to the original delaySeconds floor so a scheduled row is
       // not pulled forward by the producer-retry backoff.
       await this.jobStore.markEnqueueDeferred(id, {
         visible_at: new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds)),
@@ -157,7 +153,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     bodies: readonly JobStorageFormat<Input, Output>[],
     opts: SendOptions = {}
   ): Promise<readonly MessageId[]> {
-    // H3: applying a single fingerprint to a whole batch is almost always a
+    // Applying a single fingerprint to a whole batch is almost always a
     // bug — every body would dedup against the first row, returning the same
     // id for distinct payloads. Force callers that want fingerprint-based
     // dedup to use per-body send() instead.
@@ -205,7 +201,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     }
 
     if (failures.length > 0) {
-      // H4: transient — keep every failed row PENDING with visible_at pushed
+      // Transient — keep every failed row PENDING with visible_at pushed
       // forward and error_code set, instead of FAILING (which would
       // permanently drop the work for any consumer that's polling for
       // PENDING). Successful rows in the batch keep their original PENDING +
@@ -214,8 +210,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
       // default; native SQL backends can override with a single bulk UPDATE).
       // Fall back to a per-id allSettled fan-out for bare IJobStore impls
       // (e.g. InMemoryJobStore in tests) that don't implement the optional
-      // method.
-      // H5: clamp to the original delaySeconds floor.
+      // method. Clamp to the original delaySeconds floor.
       const defer = new Date(Date.now() + computeDeferDelayMs(opts.delaySeconds));
       const failedIds = failures.map((f) => f.id);
       const deferOpts = { visible_at: defer, errorCode: "ENQUEUE_FAILED" };
@@ -251,7 +246,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
     const messages: SqsMessage[] = res.Messages ?? [];
     if (messages.length === 0) return [];
 
-    // H1: parse each envelope individually inside a try/catch so a single
+    // Parse each envelope individually inside a try/catch so a single
     // malformed body cannot poison the whole batch. Malformed messages get
     // best-effort DeleteMessage'd + warned and the loop continues with the
     // survivors. We log only the messageId + error.message (NEVER the body)
@@ -304,7 +299,7 @@ export class SqsMessageQueue<Input, Output> implements IMessageQueue<
         getLogger().warn(`[SqsMessageQueue] orphan message id=${entry.envelope.id} acked`);
         continue;
       }
-      // C2: SQS guarantees at-least-once delivery, so a successfully ack'd
+      // SQS guarantees at-least-once delivery, so a successfully ack'd
       // (COMPLETED/FAILED/DISABLED) row can still be redelivered while the
       // visibility window expires or after a network blip on DeleteMessage.
       // If we dispatch that claim through the worker, validateJobState throws

@@ -169,12 +169,6 @@ export class PoseLandmarkerTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run pose landmark detection tasks.
- * Creates and executes a PoseLandmarkerTask with the provided input.
- * @param input The input parameters for pose landmark detection (image, model, and optional configuration)
- * @returns Promise resolving to the detected pose landmarks and optional segmentation masks
- */
 export const poseLandmarker = (
   input: PoseLandmarkerTaskInput,
   config?: PoseLandmarkerTaskConfig,

@@ -40,7 +40,6 @@ export class WebGpuImage implements IGpuImage {
     if (!isBrowserImageValue(value)) {
       throw new Error("WebGpuImage.from: unrecognized ImageValue shape");
     }
-    // Now we know value is BrowserImageValue.
     const tex = getTexturePool(dev).acquire(value.width, value.height, TEX_FORMAT);
     dev.queue.copyExternalImageToTexture({ source: value.bitmap }, { texture: tex }, [
       value.width,

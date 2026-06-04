@@ -13,10 +13,6 @@ import {
 } from "@workglow/util";
 import { AnyTabularStorage } from "./ITabularStorage";
 
-/**
- * Service token for the tabular repository registry
- * Maps repository IDs to ITabularStorage instances
- */
 export const TABULAR_REPOSITORIES = createServiceToken<Map<string, AnyTabularStorage>>(
   "storage.tabular.repositories"
 );
@@ -34,9 +30,6 @@ export function getGlobalTabularRepositories(
   return registry.get(TABULAR_REPOSITORIES);
 }
 
-/**
- * Registers a tabular repository on the given registry by ID (defaults to global).
- */
 export function registerTabularRepository(
   id: string,
   repository: AnyTabularStorage,
@@ -46,10 +39,6 @@ export function registerTabularRepository(
   repos.set(id, repository);
 }
 
-/**
- * Gets a tabular repository by ID from the given registry (defaults to global).
- * @returns The repository instance or undefined if not found
- */
 export function getTabularRepository(
   id: string,
   registry: ServiceRegistry = globalServiceRegistry
@@ -103,5 +92,5 @@ export function registerTabularStorageDefaults(
   registerInputCompactor("storage:tabular", compactTabularRepository, registry);
 }
 
-// Self-register on the global registry. Idempotent.
+// Self-register on the global registry; idempotent.
 registerTabularStorageDefaults();

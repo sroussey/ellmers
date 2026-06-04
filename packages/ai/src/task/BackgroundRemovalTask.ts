@@ -46,9 +46,6 @@ export type BackgroundRemovalTaskInput = WithImageValuePorts<
 export type BackgroundRemovalTaskOutput = { image: ImageValue };
 export type BackgroundRemovalTaskConfig = TaskConfig<BackgroundRemovalTaskInput>;
 
-/**
- * Removes backgrounds from images using computer vision models
- */
 export class BackgroundRemovalTask extends AiVisionTask<
   BackgroundRemovalTaskInput,
   BackgroundRemovalTaskOutput,
@@ -71,12 +68,6 @@ export class BackgroundRemovalTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run background removal tasks.
- * Creates and executes a BackgroundRemovalTask with the provided input.
- * @param input The input parameters for background removal (image and model)
- * @returns Promise resolving to the image with transparent background
- */
 export const backgroundRemoval = (
   input: BackgroundRemovalTaskInput,
   config?: BackgroundRemovalTaskConfig,

@@ -49,7 +49,7 @@ import {
   TestSimpleTask,
   WildcardPassthroughTask,
 } from "../task/TestTasks";
-// Import to register vector test tasks with the workflow system
+// Import for module-augmentation side effects that register vector test tasks
 import { getTestingLogger } from "../../binding/TestingLogger";
 import "../task/TestTasks";
 
@@ -63,7 +63,6 @@ describe("Workflow", () => {
   let savedLogger: ReturnType<typeof getLogger>;
 
   beforeEach(() => {
-    // Create an isolated registry for each test
     const container = new Container();
     registry = new ServiceRegistry(container);
 
@@ -86,7 +85,6 @@ describe("Workflow", () => {
 
     it("should create a workflow with a repository", () => {
       expect(workflow).toBeInstanceOf(Workflow);
-      // Repository is private, so we can't directly test it
     });
   });
 

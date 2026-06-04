@@ -78,19 +78,8 @@ function unregisterTask(type: string): boolean {
  * It enables dynamic task instantiation and management across the application.
  */
 export const TaskRegistry = {
-  /**
-   * Map containing all registered task constructors
-   */
   all: taskConstructors,
-
-  /**
-   * Function to register new task types
-   */
   registerTask,
-
-  /**
-   * Function to remove a registered task type
-   */
   unregisterTask,
 };
 
@@ -105,17 +94,12 @@ export const TaskRegistry = {
 export const TASK_CONSTRUCTORS =
   createServiceToken<Map<string, AnyTaskConstructor>>("task.constructors");
 
-/**
- * Gets the global task constructors map.
- * @returns The registered task constructors map
- */
 export function getGlobalTaskConstructors(): Map<string, AnyTaskConstructor> {
   return globalServiceRegistry.get(TASK_CONSTRUCTORS);
 }
 
 /**
  * Sets the global task constructors map, replacing the default TaskRegistry-backed factory.
- * @param map The task constructors map to register
  */
 export function setGlobalTaskConstructors(map: Map<string, AnyTaskConstructor>): void {
   globalServiceRegistry.registerInstance(TASK_CONSTRUCTORS, map);

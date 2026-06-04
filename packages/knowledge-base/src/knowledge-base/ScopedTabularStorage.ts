@@ -269,7 +269,6 @@ export class ScopedTabularStorage<
     }
   }
 
-  // Events — scoped via local emitter; mutation methods emit here after inner ops
   on<Event extends TabularEventName>(
     name: Event,
     fn: TabularEventListener<Event, PrimaryKey, Entity>
@@ -366,20 +365,13 @@ export class ScopedTabularStorage<
       });
   }
 
-  // Lifecycle — no-op for shared storage
-  async setupDatabase(): Promise<void> {
-    // No-op: shared storage lifecycle is managed externally
-  }
+  // Shared storage's lifecycle is managed by whoever constructed it; the
+  // scoped wrapper is a thin view and owns no resources.
+  async setupDatabase(): Promise<void> {}
 
-  destroy(): void {
-    // No-op: shared storage lifecycle is managed externally
-  }
+  destroy(): void {}
 
-  [Symbol.dispose](): void {
-    // No-op
-  }
+  [Symbol.dispose](): void {}
 
-  async [Symbol.asyncDispose](): Promise<void> {
-    // No-op
-  }
+  async [Symbol.asyncDispose](): Promise<void> {}
 }

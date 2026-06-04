@@ -15,12 +15,7 @@ export const MEMORY_KV_REPOSITORY = createServiceToken<IKvStorage<string, any, a
 );
 
 /**
- * An in-memory key-value repository implementation for fast, ephemeral storage.
- * Uses a tabular repository abstraction for in-memory persistence.
- *
- * @template Key - The type of the primary key
- * @template Value - The type of the value being stored
- * @template Combined - Combined type of Key & Value
+ * In-memory key-value repository, backed by an `InMemoryTabularStorage`.
  */
 export class InMemoryKvStorage extends KvViaTabularStorage {
   public tabularRepository: InMemoryTabularStorage<
@@ -28,9 +23,6 @@ export class InMemoryKvStorage extends KvViaTabularStorage {
     typeof DefaultKeyValueKey
   >;
 
-  /**
-   * Creates a new KvStorage instance
-   */
   constructor(keySchema: JsonSchema = { type: "string" }, valueSchema: JsonSchema = {}) {
     super(keySchema, valueSchema);
     this.tabularRepository = new InMemoryTabularStorage(DefaultKeyValueSchema, DefaultKeyValueKey);

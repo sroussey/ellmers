@@ -29,45 +29,10 @@ export const TextLanguageDetectionInputSchema = {
       title: "Max Languages",
       description: "The maximum number of languages to return",
     },
-    // scoreThreshold: {
-    //   type: "number",
-    //   minimum: 0,
-    //   maximum: 1,
-    //   title: "Score Threshold",
-    //   description: "The score threshold for the languages to return",
-    //   "x-ui-group": "Configuration",
-    //   "x-ui-order": 1,
-    //   "x-ui-group-open": false,
-    // },
-    // allowList: {
-    //   type: "array",
-    //   items: {
-    //     type: "string",
-    //   },
-    //   title: "Allow List",
-    //   description: "The languages to allow (mutually exclusive with blockList)",
-    //   "x-ui-group": "Configuration",
-    //   "x-ui-order": 2,
-    //   "x-ui-group-open": false,
-    // },
-    // blockList: {
-    //   type: "array",
-    //   items: {
-    //     type: "string",
-    //   },
-    //   title: "Block List",
-    //   description: "The languages to block (mutually exclusive with allowList)",
-    //   "x-ui-group": "Configuration",
-    //   "x-ui-order": 3,
-    //   "x-ui-group-open": false,
-    // },
     model: modelSchema,
   },
   required: ["text", "model"],
   additionalProperties: false,
-  // not: {
-  //   required: ["allowList", "blockList"],
-  // },
 } as const satisfies DataPortSchema;
 
 export const TextLanguageDetectionOutputSchema = {
@@ -104,9 +69,6 @@ export type TextLanguageDetectionTaskInput = FromSchema<typeof TextLanguageDetec
 export type TextLanguageDetectionTaskOutput = FromSchema<typeof TextLanguageDetectionOutputSchema>;
 export type TextLanguageDetectionTaskConfig = TaskConfig<TextLanguageDetectionTaskInput>;
 
-/**
- * Detects the language of text using language models
- */
 export class TextLanguageDetectionTask extends AiTask<
   TextLanguageDetectionTaskInput,
   TextLanguageDetectionTaskOutput,
@@ -128,12 +90,6 @@ export class TextLanguageDetectionTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to run language detection tasks.
- * Creates and executes a TextLanguageDetectionTask with the provided input.
- * @param input The input parameters for language detection (text and model)
- * @returns Promise resolving to the languages with scores
- */
 export const textLanguageDetection = (
   input: TextLanguageDetectionTaskInput,
   config?: TextLanguageDetectionTaskConfig,

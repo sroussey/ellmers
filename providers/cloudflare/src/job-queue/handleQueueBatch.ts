@@ -53,7 +53,7 @@ export async function handleQueueBatch<Input, Output>(
       );
       continue;
     }
-    // C2: Cloudflare Queues is at-least-once, so a row that's already in a
+    // Cloudflare Queues is at-least-once, so a row that's already in a
     // terminal status (the original handler ran and ack'd, but the runtime
     // chose to redeliver anyway because of an at-least-once edge case or a
     // delayed ack visibility issue) must not flow into the worker — if it

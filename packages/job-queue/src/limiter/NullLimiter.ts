@@ -22,23 +22,15 @@ export class NullLimiter implements ILimiter {
     return NullLimiter.SENTINEL;
   }
 
-  async release(_token: unknown): Promise<void> {
-    // Do nothing
-  }
+  async release(_token: unknown): Promise<void> {}
 
-  async complete(_token: unknown): Promise<void> {
-    // Do nothing
-  }
+  async complete(_token: unknown): Promise<void> {}
 
   async getNextAvailableTime(): Promise<Date> {
     return new Date();
   }
 
-  async setNextAvailableTime(date: Date): Promise<void> {
-    // Do nothing
-  }
+  async setNextAvailableTime(date: Date): Promise<void> {}
 
-  async clear(): Promise<void> {
-    // Do nothing
-  }
+  async clear(): Promise<void> {}
 }

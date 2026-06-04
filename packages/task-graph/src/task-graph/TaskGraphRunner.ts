@@ -81,9 +81,6 @@ export type GraphResultMap<T> = {
   [PROPERTY_ARRAY]: PropertyArrayGraphResult<T>;
 };
 
-/**
- * Enum representing the possible compound merge strategies
- */
 export type CompoundMergeStrategy = typeof PROPERTY_ARRAY | typeof GRAPH_RESULT_ARRAY;
 
 export type GraphResult<
@@ -96,9 +93,6 @@ export type GraphResult<
  * Manages the execution of tasks in a task graph, including caching
  */
 export class TaskGraphRunner {
-  /**
-   * Whether the task graph is currently running
-   */
   protected running = false;
   /**
    * Whether the task graph is currently running in preview mode.
@@ -106,14 +100,8 @@ export class TaskGraphRunner {
    */
   protected previewRunning = false;
 
-  /**
-   * The task graph to run
-   */
   public readonly graph: TaskGraph;
 
-  /**
-   * Output cache repository
-   */
   protected outputCache?: TaskOutputRepository;
 
   /**
@@ -134,9 +122,7 @@ export class TaskGraphRunner {
    * Read by EdgeMaterializer via bracket access (`runner["registry"]`).
    */
   protected registry: ServiceRegistry = globalServiceRegistry;
-  /**
-   * Resource scope for this graph run
-   */
+
   protected resourceScope?: ResourceScope;
 
   /**
@@ -161,31 +147,15 @@ export class TaskGraphRunner {
   protected currentRunPrivate?: RunPrivateCacheRepo;
   protected baseRegistryForRun?: ServiceRegistry;
 
-  /**
-   * Edge materializer — owns dataflow read/write, transforms, and error-port routing.
-   */
   protected readonly edgeMaterializer: EdgeMaterializer;
 
-  /**
-   * Stream pump — owns streaming-input handoff, streaming task execution, and
-   * stream tee/fan-out to outgoing dataflow edges.
-   */
   protected readonly streamPump: StreamPump;
 
   /**
-   * Run-loop coordinator — owns the for-await loop body, status push, disabled
-   * cascade, progress aggregation, and graph-level timeout arm/clear.
    * Read by EdgeMaterializer via bracket access (`runner["runScheduler"]`).
    */
   protected readonly runScheduler: RunScheduler;
 
-  /**
-   * Constructor for TaskGraphRunner
-   * @param graph The task graph to run
-   * @param outputCache The task output repository to use for caching task outputs
-   * @param processScheduler The scheduler to use for task execution
-   * @param previewScheduler The scheduler to use for preview task execution
-   */
   constructor(
     graph: TaskGraph,
     outputCache?: TaskOutputRepository,
@@ -423,26 +393,17 @@ export class TaskGraphRunner {
     }
   }
 
-  /**
-   * Aborts the task graph execution
-   */
   public abort(): void {
     this.currentCtx?.abortController.abort();
   }
 
-  /**
-   * Disables the task graph execution
-   */
   public async disable(): Promise<void> {
     await this.handleDisable();
   }
 
   /**
-   * Adds input data to a task.
-   * Delegates to {@link Task.addInput} for the actual merging logic.
-   *
-   * @param task The task to add input data to
-   * @param overrides The input data to override (or add to if an array)
+   * Adds input data to a task. Delegates to {@link Task.addInput} for the
+   * actual merging logic.
    */
   public addInputData(task: ITask, overrides: Partial<TaskInput> | undefined): void {
     if (!overrides) return;
@@ -499,12 +460,6 @@ export class TaskGraphRunner {
     throw new TaskConfigurationError(`Unknown compound merge strategy: ${compoundMerge}`);
   }
 
-  /**
-   * Runs a task
-   * @param task The task to run
-   * @param input The input for the task
-   * @returns The output of the task
-   */
   protected async runTask<T>(task: ITask, input: TaskInput): Promise<GraphSingleTaskResult<T>> {
     const isStreamable = isTaskStreamable(task);
 
@@ -580,10 +535,7 @@ export class TaskGraphRunner {
     };
   }
 
-  /**
-   * Resets the task graph, recursively
-   * @param graph The task graph to reset
-   */
+  /** Resets the task graph, recursively. */
   public resetGraph(graph: TaskGraph, runnerId: string) {
     graph.getTasks().forEach((node) => {
       this.edgeMaterializer.resetTask(graph, node, runnerId);
@@ -637,10 +589,6 @@ export class TaskGraphRunner {
     });
   }
 
-  /**
-   * Handles the start of task graph execution
-   * @param parentSignal Optional abort signal from parent
-   */
   protected async handleStart(config?: TaskGraphRunConfig): Promise<void> {
     // Setup registry — create child from global if not provided
     if (config?.registry !== undefined) {
@@ -859,9 +807,6 @@ export class TaskGraphRunner {
     this.previewRunning = true;
   }
 
-  /**
-   * Clears the graph-level timeout timer if active.
-   */
   protected clearGraphTimeout(): void {
     if (this.currentCtx) {
       this.runScheduler.clearGraphTimeout(this.currentCtx);
@@ -891,9 +836,6 @@ export class TaskGraphRunner {
     this.previewRunning = false;
   }
 
-  /**
-   * Handles errors during task graph execution
-   */
   protected async handleError(error: TaskError): Promise<void> {
     this.clearGraphTimeout();
     await Promise.allSettled(
@@ -969,9 +911,6 @@ export class TaskGraphRunner {
     this.previewRunning = false;
   }
 
-  /**
-   * Handles task graph disabling
-   */
   protected async handleDisable(): Promise<void> {
     await Promise.allSettled(
       this.graph.getTasks().map(async (task: ITask) => {

@@ -19,10 +19,6 @@
 import { createFetchUrlJobError, FetchUrlErrorCode } from "../task/FetchUrlJobError";
 import { classifyUrl, urlMatchesScope } from "./UrlClassifier";
 
-// ========================================================================
-// Types
-// ========================================================================
-
 export interface SafeFetchOptions extends RequestInit {
   /**
    * When true, requests to private/loopback/link-local/metadata hosts are
@@ -50,10 +46,6 @@ export interface SafeFetchOptions extends RequestInit {
 }
 
 export type SafeFetchFn = (url: string, options: SafeFetchOptions) => Promise<Response>;
-
-// ========================================================================
-// Default browser implementation
-// ========================================================================
 
 const MAX_REDIRECT_HOPS = 20;
 
@@ -149,10 +141,6 @@ async function defaultSafeFetch(url: string, options: SafeFetchOptions): Promise
   );
 }
 
-// ========================================================================
-// Registration
-// ========================================================================
-
 let currentImpl: SafeFetchFn = defaultSafeFetch;
 
 /**
@@ -169,16 +157,11 @@ export function registerSafeFetch(fn: SafeFetchFn): SafeFetchFn {
   return previousImpl;
 }
 
-/**
- * Returns the currently registered SafeFetch implementation.
- */
 export function getSafeFetchImpl(): SafeFetchFn {
   return currentImpl;
 }
 
-/**
- * Restores the default browser-safe implementation.
- */
+/** Restores the default browser-safe implementation. */
 export function resetSafeFetch(): void {
   currentImpl = defaultSafeFetch;
 }

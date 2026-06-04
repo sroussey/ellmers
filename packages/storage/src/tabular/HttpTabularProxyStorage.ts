@@ -99,17 +99,11 @@ export class HttpTabularProxyStorage<
     this.basePath = trimTrailingSlashes(opts.basePath ?? "/api/storage");
   }
 
-  /**
-   * Build the URL for an operation under this table.
-   */
   protected url(op: string): string {
     return `${this.basePath}/${encodeURIComponent(this.table)}/${op}`;
   }
 
-  /**
-   * Send a POST with a JSON body. Throws on non-2xx, propagating the server's
-   * `{ error }` body when present.
-   */
+  /** Throws on non-2xx, propagating the server's `{ error }` body when present. */
   protected async call<T>(op: string, body: unknown): Promise<T> {
     const res = await this.fetchImpl(this.url(op), {
       method: "POST",

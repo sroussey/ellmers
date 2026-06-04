@@ -20,10 +20,7 @@ import type {
 import { CDPBrowserBackend } from "@workglow/browser-control/task";
 import { sleep } from "@workglow/util";
 
-// ---------------------------------------------------------------------------
-// Electron types (not imported at module level — lazy optional dependency)
-// ---------------------------------------------------------------------------
-
+// Electron types are accessed via lazy import (optional dependency).
 /** @type {import("electron").BrowserWindow} */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyBrowserWindow = any;
@@ -31,10 +28,6 @@ type AnyBrowserWindow = any;
 /** @type {import("electron").WebContents} */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyWebContents = any;
-
-// ---------------------------------------------------------------------------
-// Lazy Electron loader
-// ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let electronModule: Record<string, any> | null = null;
@@ -54,10 +47,6 @@ async function getElectron(): Promise<Record<string, any>> {
   return electronModule;
 }
 
-// ---------------------------------------------------------------------------
-// ElectronBackend
-// ---------------------------------------------------------------------------
-
 /**
  * IBrowserContext implementation using Electron's native webContents + CDP.
  *
@@ -68,23 +57,14 @@ async function getElectron(): Promise<Record<string, any>> {
  * scoped to projectId + profileName.
  */
 export class ElectronBackend extends CDPBrowserBackend implements IBrowserContext {
-  /** @type {AnyBrowserWindow} Electron BrowserWindow instance */
   private _window: AnyBrowserWindow | null = null;
-
-  /** @type {AnyWebContents} Electron webContents instance */
   private _webContents: AnyWebContents | null = null;
-
   private _connected = false;
 
-  // Dialog handler
   private _dialogHandler: ((info: DialogInfo) => DialogAction | Promise<DialogAction>) | null =
     null;
 
   protected readonly backendName = "ElectronBackend";
-
-  // ---------------------------------------------------------------------------
-  // CDP helper
-  // ---------------------------------------------------------------------------
 
   /**
    * Send a Chrome DevTools Protocol command via the Electron debugger.
@@ -98,17 +78,9 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return this._webContents.debugger.sendCommand(method, params);
   }
 
-  // ---------------------------------------------------------------------------
-  // evaluateInPage (abstract from CDPBrowserBackend)
-  // ---------------------------------------------------------------------------
-
   protected async evaluateInPage<T>(script: string): Promise<T> {
     return this.wc.executeJavaScript(script);
   }
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   async connect(options: BrowserConnectOptions = {}): Promise<void> {
     const electron = await getElectron();
@@ -132,17 +104,14 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
 
     this._webContents = this._window.webContents as AnyWebContents;
 
-    // Attach CDP debugger
     try {
       this._webContents.debugger.attach("1.3");
     } catch {
       // Already attached or version not supported — continue
     }
 
-    // Enable Accessibility domain
     await this.cdp("Accessibility.enable");
 
-    // Wire dialog handler
     this._webContents.on(
       "select-client-certificate",
       (_event: unknown, _url: unknown, _list: unknown, callback: (cert: unknown) => void) => {
@@ -182,20 +151,12 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return this._connected && this._window !== null && !this._window.isDestroyed();
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------------
-
   private get wc(): AnyWebContents {
     if (!this._webContents || !this._connected) {
       throw new Error("ElectronBackend: not connected — call connect() first");
     }
     return this._webContents;
   }
-
-  // ---------------------------------------------------------------------------
-  // Navigation
-  // ---------------------------------------------------------------------------
 
   async navigate(url: string, _options: NavigateOptions = {}): Promise<void> {
     await this.wc.loadURL(url);
@@ -224,25 +185,13 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return this.wc.getTitle();
   }
 
-  // ---------------------------------------------------------------------------
-  // Content extraction
-  // ---------------------------------------------------------------------------
-
   async content(): Promise<string> {
     return this.wc.executeJavaScript("document.documentElement.outerHTML") as Promise<string>;
   }
 
-  // ---------------------------------------------------------------------------
-  // JS evaluation
-  // ---------------------------------------------------------------------------
-
   async evaluate<T>(expression: string): Promise<T> {
     return this.wc.executeJavaScript(expression) as Promise<T>;
   }
-
-  // ---------------------------------------------------------------------------
-  // Capture
-  // ---------------------------------------------------------------------------
 
   async screenshot(options: ScreenshotOptions = {}): Promise<Buffer> {
     const { format = "png", quality } = options;
@@ -255,10 +204,6 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return image.toPNG() as Buffer;
   }
 
-  // ---------------------------------------------------------------------------
-  // File operations
-  // ---------------------------------------------------------------------------
-
   async download(
     trigger: () => Promise<void>,
     options: DownloadOptions = {}
@@ -267,7 +212,6 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     const downloadDir = os.tmpdir();
     const timeout = options.timeout ?? 30_000;
 
-    // Set up download behavior via CDP
     await this.cdp("Browser.setDownloadBehavior", {
       behavior: "allow",
       downloadPath: downloadDir,
@@ -276,7 +220,6 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     let downloadPath = "";
     let suggestedFilename = "";
 
-    // Listen for download completion.
     // Electron's will-download signature: (event, item, webContents)
     const downloadPromise = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -284,7 +227,6 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
       }, timeout);
 
       const handler = (_event: unknown, item: AnyWebContents, _webContents: unknown) => {
-        // item is a DownloadItem
         suggestedFilename = item.getFilename ? item.getFilename() : "download";
         item.once?.("done", (_e: unknown, state: string) => {
           clearTimeout(timer);
@@ -309,15 +251,10 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return { path: downloadPath, suggestedFilename };
   }
 
-  // ---------------------------------------------------------------------------
-  // Dialogs
-  // ---------------------------------------------------------------------------
-
   onDialog(handler: (info: DialogInfo) => DialogAction | Promise<DialogAction>): void {
     this._dialogHandler = handler;
 
-    // Use CDP Page.javascriptDialogOpening to intercept alert/confirm/prompt dialogs.
-    // This requires Page domain to be enabled.
+    // Intercept alert/confirm/prompt via CDP; requires Page domain enabled.
     void this.cdp("Page.enable").then(() => {
       this.wc.debugger.on(
         "message",
@@ -349,9 +286,7 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Tabs (simplified single-window model)
-  // ---------------------------------------------------------------------------
+  // Single-window model: tab APIs operate on the sole webContents.
 
   async tabs(): Promise<readonly TabInfo[]> {
     const url = this.wc.getURL();
@@ -359,9 +294,7 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     return [{ tabId: "0", url, title }];
   }
 
-  async switchTab(_tabId: string): Promise<void> {
-    // Single-window model: no-op
-  }
+  async switchTab(_tabId: string): Promise<void> {}
 
   async newTab(url?: string): Promise<TabInfo> {
     if (url) {
@@ -375,13 +308,8 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
   }
 
   async closeTab(_tabId: string): Promise<void> {
-    // Single-window model: closing the tab means closing the window
     await this.disconnect();
   }
-
-  // ---------------------------------------------------------------------------
-  // Wait
-  // ---------------------------------------------------------------------------
 
   async waitForNavigation(options: NavigateOptions = {}): Promise<void> {
     const timeout = options.timeout ?? 30_000;
@@ -430,12 +358,7 @@ export class ElectronBackend extends CDPBrowserBackend implements IBrowserContex
     throw new Error("ElectronBackend: waitForIdle timed out");
   }
 
-  // ---------------------------------------------------------------------------
-  // Optional capabilities
-  // ---------------------------------------------------------------------------
-  //
-  // networkRequests and consoleMessages are intentionally undefined: this
-  // backend does not implement them. The IBrowserContext contract is that
-  // optional methods are either fully implemented or undefined — never
-  // empty-stub functions that defeat feature detection.
+  // networkRequests and consoleMessages are intentionally undefined: the
+  // IBrowserContext contract requires optional methods to be either fully
+  // implemented or undefined — never empty stubs that defeat feature detection.
 }

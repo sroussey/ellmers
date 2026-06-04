@@ -4,10 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Production-ready IndexedDB table management with proper migration support.
-// Handles schema evolution without data loss by incrementally migrating the database
-// structure and transforming existing data as needed.
-
 import { deepEqual } from "@workglow/util";
 import { openIdb } from "./openIdb";
 
@@ -50,9 +46,6 @@ interface SchemaSnapshot {
 
 const METADATA_STORE_NAME = "__schema_metadata__";
 
-/**
- * Stores metadata about the database schema for migration tracking
- */
 async function saveSchemaMetadata(
   db: IDBDatabase,
   tableName: string,
@@ -68,7 +61,7 @@ async function saveSchemaMetadata(
       request.onerror = () => reject(request.error);
       transaction.onerror = () => reject(transaction.error);
     } catch (err) {
-      // Metadata store might not exist in old databases, that's OK
+      // Metadata store might not exist in old databases
       resolve();
     }
   });
@@ -82,9 +75,6 @@ function openIndexedDbTable(
   return openIdb(tableName, { version, onUpgradeNeeded: upgradeNeededCallback });
 }
 
-/**
- * Deletes an IndexedDB database completely
- */
 async function deleteIndexedDbTable(tableName: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const deleteRequest = indexedDB.deleteDatabase(tableName);
@@ -99,9 +89,6 @@ async function deleteIndexedDbTable(tableName: string): Promise<void> {
   });
 }
 
-/**
- * Compares two schema definitions to determine what changes are needed
- */
 interface SchemaDiff {
   indexesToAdd: ExpectedIndexDefinition[];
   indexesToRemove: string[];
@@ -123,7 +110,6 @@ function compareSchemas(
     needsObjectStoreRecreation: false,
   };
 
-  // Check primary key
   const actualKeyPath = store.keyPath;
   const normalizedExpected = Array.isArray(expectedPrimaryKey)
     ? expectedPrimaryKey
@@ -133,24 +119,21 @@ function compareSchemas(
   if (!deepEqual(normalizedExpected, normalizedActual)) {
     diff.primaryKeyChanged = true;
     diff.needsObjectStoreRecreation = true;
-    return diff; // If primary key changed, we need full recreation
+    return diff;
   }
 
-  // Build a map of existing indexes
   const existingIndexes = new Map<string, IDBIndex>();
   for (let i = 0; i < store.indexNames.length; i++) {
     const indexName = store.indexNames[i];
     existingIndexes.set(indexName, store.index(indexName));
   }
 
-  // Check for indexes to add or modify
   for (const expectedIdx of expectedIndexes) {
     const existingIdx = existingIndexes.get(expectedIdx.name);
 
     if (!existingIdx) {
       diff.indexesToAdd.push(expectedIdx);
     } else {
-      // Compare index properties
       const expectedKeyPath = Array.isArray(expectedIdx.keyPath)
         ? expectedIdx.keyPath
         : [expectedIdx.keyPath];
@@ -171,15 +154,11 @@ function compareSchemas(
     }
   }
 
-  // Remaining indexes should be removed
   diff.indexesToRemove = Array.from(existingIndexes.keys());
 
   return diff;
 }
 
-/**
- * Reads all data from a store
- */
 async function readAllData(store: IDBObjectStore): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const request = store.getAll();
@@ -188,9 +167,6 @@ async function readAllData(store: IDBObjectStore): Promise<any[]> {
   });
 }
 
-/**
- * Performs a non-destructive migration by adding/removing indexes
- */
 async function performIncrementalMigration(
   db: IDBDatabase,
   tableName: string,
@@ -211,13 +187,11 @@ async function performIncrementalMigration(
     const transaction = (event.target as IDBOpenDBRequest).transaction!;
     const store = transaction.objectStore(tableName);
 
-    // Remove outdated indexes
     for (const indexName of diff.indexesToRemove) {
       options.onMigrationProgress?.(`Removing index: ${indexName}`, 0.2);
       store.deleteIndex(indexName);
     }
 
-    // Remove and recreate modified indexes
     for (const indexDef of diff.indexesToModify) {
       options.onMigrationProgress?.(`Updating index: ${indexDef.name}`, 0.4);
       if (store.indexNames.contains(indexDef.name)) {
@@ -226,7 +200,6 @@ async function performIncrementalMigration(
       store.createIndex(indexDef.name, indexDef.keyPath, indexDef.options);
     }
 
-    // Add new indexes
     for (const indexDef of diff.indexesToAdd) {
       options.onMigrationProgress?.(`Adding index: ${indexDef.name}`, 0.6);
       store.createIndex(indexDef.name, indexDef.keyPath, indexDef.options);
@@ -236,10 +209,7 @@ async function performIncrementalMigration(
   });
 }
 
-/**
- * Performs a destructive migration by recreating the object store
- * This is needed when the primary key changes
- */
+/** Destructive migration by recreating the object store; needed when the primary key changes. */
 async function performDestructiveMigration(
   db: IDBDatabase,
   tableName: string,
@@ -264,7 +234,6 @@ async function performDestructiveMigration(
     0
   );
 
-  // Read all existing data
   let existingData: any[] = [];
   try {
     const transaction = db.transaction(tableName, "readonly");
@@ -280,7 +249,6 @@ async function performDestructiveMigration(
 
   db.close();
 
-  // Apply data transformer if provided
   if (options.dataTransformer && existingData.length > 0) {
     options.onMigrationProgress?.(`Transforming ${existingData.length} records...`, 0.4);
     try {
@@ -309,26 +277,21 @@ async function performDestructiveMigration(
     }
   }
 
-  // Open with new version and recreate object store
   options.onMigrationProgress?.(`Recreating object store...`, 0.75);
 
   const newDb = await openIndexedDbTable(tableName, newVersion, (event: IDBVersionChangeEvent) => {
     const db = (event.target as IDBOpenDBRequest).result;
 
-    // Delete old object store if it exists
     if (db.objectStoreNames.contains(tableName)) {
       db.deleteObjectStore(tableName);
     }
 
-    // Create new object store with new schema
     const store = db.createObjectStore(tableName, { keyPath: primaryKey, autoIncrement });
 
-    // Create indexes
     for (const idx of expectedIndexes) {
       store.createIndex(idx.name, idx.keyPath, idx.options);
     }
 
-    // Restore data
     if (existingData.length > 0) {
       options.onMigrationProgress?.(`Restoring ${existingData.length} records...`, 0.8);
 
@@ -347,9 +310,6 @@ async function performDestructiveMigration(
   return newDb;
 }
 
-/**
- * Creates a new database with the specified schema
- */
 async function createNewDatabase(
   tableName: string,
   primaryKey: string | string[],
@@ -362,10 +322,9 @@ async function createNewDatabase(
   // Delete existing database if it exists to avoid version conflicts
   try {
     await deleteIndexedDbTable(tableName);
-    // Wait a bit for deletion to complete
     await new Promise((resolve) => setTimeout(resolve, 50));
   } catch (err) {
-    // Ignore errors - database might not exist
+    // ignore — database might not exist
   }
 
   const version = 1;
@@ -373,21 +332,17 @@ async function createNewDatabase(
   const db = await openIndexedDbTable(tableName, version, (event: IDBVersionChangeEvent) => {
     const db = (event.target as IDBOpenDBRequest).result;
 
-    // Create metadata store
     if (!db.objectStoreNames.contains(METADATA_STORE_NAME)) {
       db.createObjectStore(METADATA_STORE_NAME, { keyPath: "tableName" });
     }
 
-    // Create main object store
     const store = db.createObjectStore(tableName, { keyPath: primaryKey, autoIncrement });
 
-    // Create indexes
     for (const idx of expectedIndexes) {
       store.createIndex(idx.name, idx.keyPath, idx.options);
     }
   });
 
-  // Save schema metadata
   const snapshot: SchemaSnapshot = {
     version: db.version,
     primaryKey,
@@ -415,22 +370,18 @@ export async function ensureIndexedDbTable(
   autoIncrement: boolean = false
 ): Promise<IDBDatabase> {
   try {
-    // Try to open existing database at current version (or create if doesn't exist)
     let db: IDBDatabase;
     let wasJustCreated = false;
     try {
-      // Open without version - this will open at current version if exists, or create at version 1 if doesn't exist
+      // Opens at current version if exists, else creates at version 1
       db = await openIndexedDbTable(tableName);
 
-      // Check if database was just created (version 1 and no object stores)
-      // This happens when indexedDB.open creates a new database without stores
+      // indexedDB.open creating a new DB without stores leaves it at version 1
       if (db.version === 1 && !db.objectStoreNames.contains(tableName)) {
         wasJustCreated = true;
         db.close();
       }
     } catch (err: any) {
-      // If opening fails, database might not exist or there's a version conflict
-      // Try to create it fresh
       options.onMigrationProgress?.(
         `Database ${tableName} does not exist or has version conflict, creating...`,
         0
@@ -444,38 +395,30 @@ export async function ensureIndexedDbTable(
       );
     }
 
-    // If database was just created, we need to create the stores
-    // We'll upgrade from version 1 to version 1 (which triggers onupgradeneeded with oldVersion=0)
-    // Actually, we need to explicitly create at version 1 with stores
+    // Delete the empty DB and recreate it at version 1 with stores
     if (wasJustCreated) {
       options.onMigrationProgress?.(`Creating new database: ${tableName}`, 0);
-      // Delete the empty database and create it properly at version 1
       try {
         await deleteIndexedDbTable(tableName);
         await new Promise((resolve) => setTimeout(resolve, 50));
       } catch (err) {
-        // Ignore errors
+        // ignore
       }
 
-      // Create at version 1 with stores
       db = await openIndexedDbTable(tableName, 1, (event: IDBVersionChangeEvent) => {
         const db = (event.target as IDBOpenDBRequest).result;
 
-        // Create metadata store
         if (!db.objectStoreNames.contains(METADATA_STORE_NAME)) {
           db.createObjectStore(METADATA_STORE_NAME, { keyPath: "tableName" });
         }
 
-        // Create main object store
         const store = db.createObjectStore(tableName, { keyPath: primaryKey, autoIncrement });
 
-        // Create indexes
         for (const idx of expectedIndexes) {
           store.createIndex(idx.name, idx.keyPath, idx.options);
         }
       });
 
-      // Save schema metadata
       const snapshot: SchemaSnapshot = {
         version: db.version,
         primaryKey,
@@ -489,7 +432,6 @@ export async function ensureIndexedDbTable(
       return db;
     }
 
-    // Ensure metadata store exists
     if (!db.objectStoreNames.contains(METADATA_STORE_NAME)) {
       const currentVersion = db.version;
       db.close();
@@ -506,9 +448,7 @@ export async function ensureIndexedDbTable(
       );
     }
 
-    // Check if table structure matches expected
     if (!db.objectStoreNames.contains(tableName)) {
-      // Object store doesn't exist, create it
       options.onMigrationProgress?.(`Object store ${tableName} does not exist, creating...`, 0);
       db.close();
       return await createNewDatabase(
@@ -520,7 +460,6 @@ export async function ensureIndexedDbTable(
       );
     }
 
-    // Compare schemas to determine what migration is needed
     const transaction = db.transaction(tableName, "readonly");
     const store = transaction.objectStore(tableName);
     const diff = compareSchemas(store, primaryKey, expectedIndexes);
@@ -530,7 +469,6 @@ export async function ensureIndexedDbTable(
       transaction.onerror = () => resolve();
     });
 
-    // Determine migration strategy
     const needsMigration =
       diff.indexesToAdd.length > 0 ||
       diff.indexesToRemove.length > 0 ||
@@ -538,10 +476,9 @@ export async function ensureIndexedDbTable(
       diff.needsObjectStoreRecreation;
 
     if (!needsMigration) {
-      // Schema matches, no migration needed
       options.onMigrationProgress?.(`Schema for ${tableName} is up to date`, 1.0);
 
-      // Update metadata anyway to keep timestamp current
+      // Update metadata to keep timestamp current
       const snapshot: SchemaSnapshot = {
         version: db.version,
         primaryKey,
@@ -553,7 +490,6 @@ export async function ensureIndexedDbTable(
       return db;
     }
 
-    // Perform appropriate migration
     if (diff.needsObjectStoreRecreation) {
       options.onMigrationProgress?.(
         `Schema change requires object store recreation for ${tableName}`,
@@ -572,7 +508,6 @@ export async function ensureIndexedDbTable(
       db = await performIncrementalMigration(db, tableName, diff, options);
     }
 
-    // Save updated metadata
     const snapshot: SchemaSnapshot = {
       version: db.version,
       primaryKey,
@@ -588,9 +523,6 @@ export async function ensureIndexedDbTable(
   }
 }
 
-/**
- * Utility function to delete a database (for testing or cleanup)
- */
 export async function dropIndexedDbTable(tableName: string): Promise<void> {
   return deleteIndexedDbTable(tableName);
 }

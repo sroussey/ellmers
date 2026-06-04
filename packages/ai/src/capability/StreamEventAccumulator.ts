@@ -11,8 +11,7 @@ const isNonEmptyObject = (v: unknown): v is Record<string, unknown> =>
 
 /**
  * Stateful accumulator that materialises a single output `T` from a sequence
- * of {@link StreamEvent}s. The semantics match the previous `collectStream`
- * exactly:
+ * of {@link StreamEvent}s.
  *
  * - `text-delta` per port → concatenated per port (`Map<port, string>`).
  * - `object-delta` non-array → replace semantics (each delta is a more

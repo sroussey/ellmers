@@ -14,16 +14,13 @@ import type {
 import { NodeKind } from "./DocumentSchema";
 
 /**
- * Approximate token counting (v1) -- ~4 characters per token.
- * Used as a fallback when no real tokenizer is available.
+ * Approximation: ~4 characters per token. Used when no real tokenizer is
+ * available.
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/**
- * Helper to check if a node has children
- */
 export function hasChildren(
   node: DocumentNode
 ): node is DocumentRootNode | SectionNode | TopicNode {
@@ -34,9 +31,6 @@ export function hasChildren(
   );
 }
 
-/**
- * Helper to get all children of a node
- */
 export function getChildren(node: DocumentNode): DocumentNode[] {
   if (hasChildren(node)) {
     return node.children;
@@ -44,12 +38,9 @@ export function getChildren(node: DocumentNode): DocumentNode[] {
   return [];
 }
 
-/** Maximum recursion depth for tree traversal to prevent stack overflow */
+/** Caps recursion depth to prevent stack overflow on pathological inputs. */
 const MAX_TRAVERSAL_DEPTH = 200;
 
-/**
- * Traverse document tree depth-first
- */
 export function* traverseDepthFirst(
   node: DocumentNode,
   depth: number = 0
@@ -65,9 +56,6 @@ export function* traverseDepthFirst(
   }
 }
 
-/**
- * Get node path from root to target node
- */
 export function getNodePath(root: DocumentNode, targetNodeId: string): string[] | undefined {
   const path: string[] = [];
 
@@ -93,13 +81,10 @@ export function getNodePath(root: DocumentNode, targetNodeId: string): string[] 
   return search(root, 0) ? path : undefined;
 }
 
-/**
- * Get document range for a node path
- */
 export function getDocumentRange(root: DocumentNode, nodePath: string[]): NodeRange {
   let currentNode = root as DocumentRootNode | SectionNode | TopicNode;
 
-  // Start from index 1 since nodePath[0] is the root
+  // nodePath[0] is the root itself, so start descending at index 1.
   for (let i = 1; i < nodePath.length; i++) {
     const targetId = nodePath[i];
     const children = currentNode.children;

@@ -61,11 +61,6 @@ const outputSchema = {
 
 export type LambdaTaskInput = Record<string, any>;
 export type LambdaTaskOutput = Record<string, any>;
-/**
- * LambdaTask provides a way to execute arbitrary functions within the task framework
- * It wraps a provided function and its input into a task that can be integrated
- * into task graphs and workflows
- */
 export class LambdaTask<
   Input extends TaskInput = LambdaTaskInput,
   Output extends TaskOutput = LambdaTaskOutput,
@@ -106,11 +101,6 @@ export class LambdaTask<
     return {} as Output;
   }
 
-  /**
-   * Executes the user-provided preview function with the given input. Returns
-   * undefined when no preview function was supplied in the config (the constructor
-   * already validated that at least one of execute / executePreview is present).
-   */
   override async executePreview(
     input: Input,
     context: IExecutePreviewContext
@@ -122,9 +112,6 @@ export class LambdaTask<
   }
 }
 
-/**
- * Convenience function to create and run a LambdaTask
- */
 export function lambda<I extends TaskInput, O extends TaskOutput>(
   fn: (input: I, context: IExecuteContext) => Promise<O>
 ): Promise<TaskOutput>;

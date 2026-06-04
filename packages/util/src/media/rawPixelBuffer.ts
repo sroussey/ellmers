@@ -5,8 +5,7 @@
  */
 import type { ImageChannels } from "./imageTypes";
 
-/** Internal pixel-buffer shape used by CPU filter ops and codec helpers.
- *  Replaces the old `ImageBinary` export — the boundary type is now `ImageValue`. */
+/** Internal pixel-buffer shape used by CPU filter ops and codec helpers. */
 export interface RawPixelBuffer {
   data: Uint8ClampedArray;
   width: number;

@@ -18,10 +18,6 @@ export class TaskError extends BaseError {
   }
 }
 
-/**
- * A task configuration error
- *
- */
 export class TaskConfigurationError extends TaskError {
   static override readonly type: string = "TaskConfigurationError";
   constructor(message: string) {
@@ -29,9 +25,6 @@ export class TaskConfigurationError extends TaskError {
   }
 }
 
-/**
- * A task workflow error
- */
 export class WorkflowError extends TaskError {
   static override readonly type: string = "WorkflowError";
   constructor(message: string) {
@@ -40,9 +33,7 @@ export class WorkflowError extends TaskError {
 }
 
 /**
- * A task error that is caused by a task being aborted
- *
- * Examples: task.abort() was called, or some other reason an abort signal was received
+ * A task error caused by a task being aborted (task.abort() or external signal).
  */
 export class TaskAbortedError extends TaskError {
   static override readonly type: string = "TaskAbortedError";
@@ -52,9 +43,7 @@ export class TaskAbortedError extends TaskError {
 }
 
 /**
- * A task error that is caused by a task exceeding its timeout
- *
- * Examples: task.runConfig.timeout exceeded during execution
+ * A task error caused by exceeding `runConfig.timeout`.
  */
 export class TaskTimeoutError extends TaskAbortedError {
   static override readonly type: string = "TaskTimeoutError";
@@ -80,11 +69,6 @@ export class TaskGraphTimeoutError extends TaskTimeoutError {
   }
 }
 
-/**
- * A task error that is caused by a task failing
- *
- * Examples: task.run() threw an error
- */
 export class TaskFailedError extends TaskError {
   static override readonly type: string = "TaskFailedError";
   constructor(message: string = "Task failed") {
@@ -106,9 +90,6 @@ export class JobTaskFailedError extends TaskFailedError {
   }
 }
 
-/**
- * A task error that is caused by an error converting JSON to a Task
- */
 export class TaskJSONError extends TaskError {
   static override readonly type: string = "TaskJSONError";
   constructor(message: string = "Error converting JSON to a Task") {
@@ -116,11 +97,6 @@ export class TaskJSONError extends TaskError {
   }
 }
 
-/**
- * A task error that is caused by invalid input data
- *
- * Examples: task.run() received invalid input data
- */
 export class TaskInvalidInputError extends TaskError {
   static override readonly type: string = "TaskInvalidInputError";
   constructor(message: string = "Invalid input data") {
@@ -128,9 +104,6 @@ export class TaskInvalidInputError extends TaskError {
   }
 }
 
-/**
- * Thrown when required entitlements are denied by the registered enforcer.
- */
 export class TaskEntitlementError extends TaskError {
   static override readonly type: string = "TaskEntitlementError";
   constructor(message: string = "Required entitlements denied") {

@@ -185,12 +185,6 @@ export class FaceLandmarkerTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run face landmark detection tasks.
- * Creates and executes a FaceLandmarkerTask with the provided input.
- * @param input The input parameters for face landmark detection (image, model, and optional configuration)
- * @returns Promise resolving to the detected facial landmarks, blendshapes, and transformation matrices
- */
 export const faceLandmarker = (
   input: FaceLandmarkerTaskInput,
   config?: FaceLandmarkerTaskConfig,

@@ -16,23 +16,11 @@
 import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import type { ToolCallingTaskInput } from "./ToolCallingTask";
 
-// ========================================================================
-// Internal helpers
-// ========================================================================
-
-/**
- * Extract the messages array from a ToolCallingTaskInput.
- * Returns undefined if no messages are present.
- */
 function getInputMessages(input: ToolCallingTaskInput): ReadonlyArray<ChatMessage> | undefined {
   const messages = input.messages;
   if (!messages || messages.length === 0) return undefined;
   return messages;
 }
-
-// ========================================================================
-// OpenAI-compatible format (OpenAI, HF Inference)
-// ========================================================================
 
 export interface OpenAICompatMessage {
   role: string;
@@ -157,10 +145,6 @@ export function toOpenAIMessages(input: ToolCallingTaskInput): OpenAICompatMessa
 
   return messages;
 }
-
-// ========================================================================
-// Text-flat format (Ollama, HF Transformers)
-// ========================================================================
 
 export interface TextFlatMessage {
   role: string;

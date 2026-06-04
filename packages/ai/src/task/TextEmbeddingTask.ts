@@ -83,11 +83,6 @@ export class TextEmbeddingTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to create and run a text embedding task.
- * @param input - Input containing text(s) and model(s) for embedding
- * @returns  Promise resolving to the generated embeddings
- */
 export const textEmbedding = async (
   input: TextEmbeddingTaskInput,
   config?: TextEmbeddingTaskConfig,

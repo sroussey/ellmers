@@ -45,7 +45,6 @@ export interface RenameOptions {
   readonly transforms?: ReadonlyArray<ITransformStep>;
 }
 
-// Event types
 export type WorkflowEventListeners = {
   changed: (id: unknown) => void;
   reset: () => void;
@@ -81,15 +80,6 @@ export class Workflow<
   Input extends DataPorts = DataPorts,
   Output extends DataPorts = DataPorts,
 > implements IWorkflow<Input, Output> {
-  /**
-   * Creates a new Workflow
-   *
-   * @param cache - Optional repository for task outputs
-   * @param parent - Optional parent workflow (for loop builder mode)
-   * @param iteratorTask - Optional iterator task being configured (for loop builder mode)
-   * @param registry - Optional service registry to use for this workflow run
-   * @returns A new Workflow instance
-   */
   constructor(
     cache?: TaskOutputRepository,
     parent?: Workflow,
@@ -110,7 +100,6 @@ export class Workflow<
     }
   }
 
-  // Private properties
   private _graph: TaskGraph;
   private _cache: WorkflowCacheAdapter;
   private _bridge?: WorkflowEventBridge;
@@ -149,9 +138,6 @@ export class Workflow<
     return this._builder.loopContext !== undefined;
   }
 
-  /**
-   * Event emitter for task graph events
-   */
   public readonly events = new EventEmitter<WorkflowEventListeners>();
 
   /**
@@ -172,13 +158,9 @@ export class Workflow<
       runConfig?: Partial<IRunConfig>
     ) {
       this._builder.addTaskWithAutoConnect<I, O, C>(taskClass, input, config, runConfig);
-      // Preserve input type from the start of the chain
-      // If this is the first task, set both input and output types
-      // Otherwise, only update the output type (input type is preserved from 'this')
       return this as any;
     };
 
-    // Copy metadata from the task class
     helper.type = (taskClass as unknown as { runtype?: string }).runtype ?? taskClass.type;
     helper.category = taskClass.category;
     helper.inputSchema = taskClass.inputSchema;
@@ -189,16 +171,10 @@ export class Workflow<
     return helper as CreateWorkflow<I, O, C>;
   }
 
-  /**
-   * Gets the current task graph
-   */
   public get graph(): TaskGraph {
     return this._graph;
   }
 
-  /**
-   * Sets a new task graph
-   */
   public set graph(value: TaskGraph) {
     this._builder.resetState();
     this._bridge?.detach();
@@ -207,16 +183,10 @@ export class Workflow<
     this.events.emit("reset");
   }
 
-  /**
-   * Gets the current error message
-   */
   public get error(): string {
     return this._builder.error;
   }
 
-  /**
-   * Event subscription methods
-   */
   public on<Event extends WorkflowEvents>(name: Event, fn: WorkflowEventListener<Event>): void {
     this.events.on(name, fn);
   }
@@ -235,18 +205,10 @@ export class Workflow<
     return this.events.waitOn(name) as Promise<WorkflowEventParameters<Event>>;
   }
 
-  /**
-   * Runs the task graph
-   *
-   * @param input - The input to the task graph
-   * @param config - Optional configuration for the workflow run
-   * @returns The output of the task graph
-   */
   public async run(
     input: Partial<Input> = {},
     config?: WorkflowRunConfig
   ): Promise<PropertyArrayGraphResult<Output>> {
-    // In loop builder mode, finalize template and delegate to parent
     const loopContext = this._builder.loopContext;
     if (loopContext) {
       loopContext.finalizeTemplate(this._graph);
@@ -288,11 +250,7 @@ export class Workflow<
     }
   }
 
-  /**
-   * Aborts the running task graph
-   */
   public async abort(): Promise<void> {
-    // In loop builder mode, delegate to parent
     const loopContext = this._builder.loopContext;
     if (loopContext) {
       return loopContext.parent.abort();
@@ -301,31 +259,17 @@ export class Workflow<
   }
 
   /**
-   * Removes the last task from the task graph
-   *
-   * @returns The current task graph workflow
+   * Removes the last task from the task graph.
    */
   public pop(): Workflow {
     this._builder.pop();
     return this;
   }
 
-  /**
-   * Converts the task graph to JSON
-   *
-   * @param options Options controlling serialization (e.g., boundary nodes)
-   * @returns The task graph as JSON
-   */
   public toJSON(options: TaskGraphJsonOptions = { withBoundaryNodes: true }): TaskGraphJson {
     return this._graph.toJSON(options);
   }
 
-  /**
-   * Converts the task graph to dependency JSON
-   *
-   * @param options Options controlling serialization (e.g., boundary nodes)
-   * @returns The task graph as dependency JSON
-   */
   public toDependencyJSON(
     options: TaskGraphJsonOptions = { withBoundaryNodes: true }
   ): JsonTaskItem[] {
@@ -340,8 +284,6 @@ export class Workflow<
     return computeGraphEntitlements(this._graph, options);
   }
 
-  // Replace both the instance and static pipe methods with properly typed versions
-  // Pipe method overloads
   public pipe<A extends DataPorts, B extends DataPorts>(fn1: Taskish<A, B>): IWorkflow<A, B>;
   public pipe<A extends DataPorts, B extends DataPorts, C extends DataPorts>(
     fn1: Taskish<A, B>,
@@ -382,7 +324,6 @@ export class Workflow<
     return pipe(args as any, this);
   }
 
-  // Static pipe method overloads
   public static pipe<A extends DataPorts, B extends DataPorts>(
     fn1: PipeFunction<A, B> | ITask<A, B>
   ): IWorkflow;
@@ -491,13 +432,7 @@ export class Workflow<
     return task;
   }
 
-  /**
-   * Resets the task graph workflow to its initial state
-   *
-   * @returns The current task graph workflow
-   */
   public reset(): Workflow {
-    // In loop builder mode, reset is not supported
     if (this._builder.loopContext) {
       throw new WorkflowError("Cannot reset a loop workflow. Call reset() on the parent workflow.");
     }
@@ -513,9 +448,6 @@ export class Workflow<
     return this;
   }
 
-  /**
-   * Connects outputs to inputs between tasks
-   */
   public connect(
     sourceTaskId: unknown,
     sourceTaskPortId: string,
@@ -610,9 +542,6 @@ export class Workflow<
     if (error) this._builder.setError(error);
   }
 
-  /**
-   * Options for auto-connect operation.
-   */
   public static readonly AutoConnectOptions: unique symbol = Symbol("AutoConnectOptions");
 
   /**
@@ -674,10 +603,8 @@ export class Workflow<
   }
 }
 
-// Module augmentation prototype assignments — placed here (not in WorkflowFactories.ts)
-// so they run after the Workflow class declaration. Static imports in ESM are
-// hoisted and evaluated depth-first, so a side-effect tail import would run
-// before the class binding initializes. Inline assignments here are safe because
-// the class is already fully initialized by this point.
+// Placed here (not in WorkflowFactories.ts) so they run after the Workflow class
+// declaration. Static imports in ESM are hoisted and evaluated depth-first, so a
+// side-effect tail import would run before the class binding initializes.
 Workflow.prototype.group = CreateLoopWorkflow(GraphAsTask);
 Workflow.prototype.endGroup = CreateEndLoopWorkflow("endGroup");

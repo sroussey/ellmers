@@ -11,9 +11,6 @@ import type { ImageValue } from "@workglow/util/media";
 import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
-/**
- * Core implementation for image to text using Hugging Face Transformers.
- */
 export const HFT_ImageToText: AiProviderRunFn<
   ImageToTextTaskInput,
   ImageToTextTaskOutput,

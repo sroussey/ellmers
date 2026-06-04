@@ -29,10 +29,6 @@ import { ChatMessageSchema, ContentBlockSchema } from "./ChatMessage";
 import { KbSearchTask } from "./KbSearchTask";
 import { TextEmbeddingTask } from "./TextEmbeddingTask";
 
-// ========================================================================
-// Public types
-// ========================================================================
-
 export interface ChatChunkReference {
   readonly kbId: string;
   readonly kbLabel: string;
@@ -48,10 +44,6 @@ export interface ChatChunkReference {
    */
   readonly index: number;
 }
-
-// ========================================================================
-// Schemas
-// ========================================================================
 
 const modelSchema = TypeModel("model:AiChatWithKbTask");
 
@@ -249,10 +241,6 @@ export const AiChatWithKbOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-// ========================================================================
-// Runtime types
-// ========================================================================
-
 export type AiChatWithKbTaskInput = Omit<
   FromSchema<typeof AiChatWithKbInputSchema>,
   "messages" | "noMatchReferences"
@@ -267,10 +255,6 @@ export type AiChatWithKbTaskOutput = Omit<
 > & {
   readonly references: readonly ChatChunkReference[];
 };
-
-// ========================================================================
-// Task class
-// ========================================================================
 
 export class AiChatWithKbTask extends StreamingAiTask<
   AiChatWithKbTaskInput,
@@ -336,7 +320,6 @@ export class AiChatWithKbTask extends StreamingAiTask<
 
     const embeddingModel = input.embeddingModel as ModelConfig | undefined;
 
-    // Build initial history.
     const history: ChatMessage[] = [];
     if (input.systemPrompt) {
       history.push({ role: "system", content: [{ type: "text", text: input.systemPrompt }] });
@@ -347,12 +330,11 @@ export class AiChatWithKbTask extends StreamingAiTask<
         : (input.prompt as ReadonlyArray<ContentBlock>);
     history.push({ role: "user", content: firstUserBlocks });
 
-    // Call getJobInput once before the loop to initialize _sessionId.
+    // Initialize _sessionId before the loop.
     const workingInput: AiChatWithKbTaskInput = { ...input, messages: history };
     await this.getJobInput(workingInput);
     const maxIterations = input.maxIterations ?? 100;
 
-    // Register session disposal so it's cleaned up at end of the resource scope.
     if (context.resourceScope && this._sessionId) {
       const sessionId = this._sessionId;
       context.resourceScope.register(`ai:session:${sessionId}`, async () => {
@@ -360,7 +342,6 @@ export class AiChatWithKbTask extends StreamingAiTask<
       });
     }
 
-    // Emit the initial messages as an object-delta.
     yield {
       type: "object-delta",
       port: "messages",
@@ -446,7 +427,6 @@ export class AiChatWithKbTask extends StreamingAiTask<
         );
       }
 
-      // Merge, threshold, sort, cap, and number the chunks.
       const allChunks = perKbResults
         .flatMap(({ kbId, kbLabel, kb, results }) =>
           results.filter((r) => r.score >= minScore).map((r) => ({ kbId, kbLabel, kb, r }))
@@ -596,7 +576,6 @@ export class AiChatWithKbTask extends StreamingAiTask<
         objectDelta: [assistantMsg],
       } as StreamEvent<AiChatWithKbTaskOutput>;
 
-      // Ask the human for the next turn.
       const request: IHumanRequest = {
         requestId: crypto.randomUUID(),
         targetHumanId: "default",

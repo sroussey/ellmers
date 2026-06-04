@@ -173,7 +173,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     try {
       result = (await this.db.query(sql, params)) as { rows: Array<{ id: unknown }> } | undefined;
     } catch (err) {
-      // H2: race-safety for fingerprint dedup. With the v4 UNIQUE partial
+      // Race-safety for fingerprint dedup. With the UNIQUE partial
       // index in place, two concurrent inserts for the same (queue,
       // fingerprint) where one row is PENDING/PROCESSING raise a 23505
       // unique_violation. We resolve the race by returning the winner's id
@@ -231,7 +231,7 @@ export class PostgresQueueStorage<Input, Output> implements IQueueStorage<Input,
     status: JobStatus = JobStatus.PENDING,
     num: number = 100
   ): Promise<Array<JobStorageFormat<Input, Output>>> {
-    num = Number(num) || 100; // TS does not validate, so ensure it is a number
+    num = Number(num) || 100;
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(4);
     const result = await this.db.query<
       JobStorageFormat<Input, Output>,

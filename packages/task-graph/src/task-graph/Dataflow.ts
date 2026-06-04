@@ -89,19 +89,12 @@ export class Dataflow {
     return this.latestSnapshot;
   }
 
-  /**
-   * Sets the active stream on this dataflow.
-   * @param stream The ReadableStream of StreamEvents from the upstream task
-   */
   public setStream(stream: ReadableStream<StreamEvent>): void {
     // New stream invalidates any prior peek.
     this.latestSnapshot = undefined;
     this.stream = stream;
   }
 
-  /**
-   * Gets the active stream from this dataflow, or undefined if not streaming.
-   */
   public getStream(): ReadableStream<StreamEvent> | undefined {
     return this.stream;
   }
@@ -260,9 +253,6 @@ export class Dataflow {
    */
   private _transforms: Array<ITransformStep> = [];
 
-  /**
-   * Returns the list of transform steps applied to this dataflow.
-   */
   getTransforms(): ReadonlyArray<ITransformStep> {
     return this._transforms;
   }
@@ -289,9 +279,6 @@ export class Dataflow {
     this.invalidateCompatibilityCache();
   }
 
-  /**
-   * Removes the transform step at the given index and invalidates the compatibility cache.
-   */
   removeTransform(index: number): void {
     this._transforms.splice(index, 1);
     this.invalidateCompatibilityCache();
@@ -434,9 +421,6 @@ export class Dataflow {
   // Event handling methods
   // ========================================================================
 
-  /**
-   * Event emitter for dataflow events
-   */
   public get events(): EventEmitter<DataflowEventListeners> {
     if (!this._events) {
       this._events = new EventEmitter<DataflowEventListeners>();
@@ -452,23 +436,14 @@ export class Dataflow {
     return this.events.subscribe(name, fn);
   }
 
-  /**
-   * Registers an event listener
-   */
   public on<Event extends DataflowEvents>(name: Event, fn: DataflowEventListener<Event>): void {
     this.events.on(name, fn);
   }
 
-  /**
-   * Removes an event listener
-   */
   public off<Event extends DataflowEvents>(name: Event, fn: DataflowEventListener<Event>): void {
     this.events.off(name, fn);
   }
 
-  /**
-   * Registers a one-time event listener
-   */
   public once<Event extends DataflowEvents>(name: Event, fn: DataflowEventListener<Event>): void {
     this.events.once(name, fn);
   }
@@ -482,9 +457,6 @@ export class Dataflow {
     return this.events.waitOn(name) as Promise<DataflowEventParameters<Event>>;
   }
 
-  /**
-   * Emits an event
-   */
   public emit<Event extends DataflowEvents>(
     name: Event,
     ...args: DataflowEventParameters<Event>
@@ -502,7 +474,6 @@ export class Dataflow {
  */
 export class DataflowArrow extends Dataflow {
   constructor(dataflow: DataflowIdType) {
-    // Parse the dataflow string using regex
     const pattern =
       /^([a-zA-Z0-9-]+?)\[([a-zA-Z0-9-]+?)\] ==> ([a-zA-Z0-9-]+?)\[([a-zA-Z0-9-]+?)\]$/;
     const match = dataflow.match(pattern);

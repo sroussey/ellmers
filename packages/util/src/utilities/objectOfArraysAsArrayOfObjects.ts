@@ -80,19 +80,14 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
   }
 
   function createCursor(): Cursor<T> {
-    // Determine the keys and the effective number of rows.
     let currentIndex = 0;
 
-    // The cursor object that will be updated for each row.
     const cursor = createRowProxy(0);
 
     const obj = {
       get length() {
         return data[keys[0]].length;
       },
-      /**
-       * Returns the next row via the cursor.
-       */
       next(): IteratorResult<T> {
         if (currentIndex < length) {
           cursor[indexSymbol] = currentIndex;
@@ -102,11 +97,7 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
           return { done: true, value: undefined as any };
         }
       },
-      /**
-       * Makes the object iterable.
-       */
       [Symbol.iterator](): Iterator<T> {
-        // Reset the cursor for a fresh iteration.
         currentIndex = 0;
         cursor[indexSymbol] = currentIndex;
         return obj;
@@ -115,7 +106,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
     return obj as Cursor<T>;
   }
 
-  // Helper: shallow equality comparison between two rows.
   function shallowEqual(index: number, row: T): boolean {
     for (const key of keys) {
       if (data[key][index] !== row[key]) return false;
@@ -125,19 +115,16 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
 
   return new Proxy([] as Array<T>, {
     get(target, prop, receiver) {
-      // Always return the current length dynamically.
       if (prop === "length") {
         return data[keys[0]].length;
       }
 
-      // Create a cursor iterator.
       if (prop === "cursor") {
         return function () {
           return createCursor();
         };
       }
 
-      // Override reverse to reverse the underlying arrays.
       if (prop === "reverse") {
         return function () {
           for (const key of keys) {
@@ -147,7 +134,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override push to add a new object to the underlying arrays.
       if (prop === "push") {
         return function (...args: T[]) {
           for (const item of args) {
@@ -159,13 +145,11 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override pop to remove the last row from the underlying arrays and return it.
       if (prop === "pop") {
         return function () {
           const len = data[keys[0]].length;
           if (len === 0) return undefined;
           const poppedRow = {} as T;
-          // Remove last element from each array and assemble the row to return.
           for (const key of keys) {
             poppedRow[key] = data[key].pop() as T[keyof T];
           }
@@ -173,10 +157,9 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override unshift to add a new row (or rows) at the beginning.
       if (prop === "unshift") {
         return function (...args: T[]) {
-          // To preserve order, iterate from the last argument to the first.
+          // Iterate from the last argument to the first to preserve order.
           for (let i = args.length - 1; i >= 0; i--) {
             const item = args[i];
             for (const key of keys) {
@@ -187,7 +170,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override shift to remove the first row from the underlying arrays and return it.
       if (prop === "shift") {
         return function () {
           if (data[keys[0]].length === 0) return undefined;
@@ -199,11 +181,9 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override splice to remove or replace elements at a specific index.
       if (prop === "splice") {
         return function (start: number, deleteCount?: number, ...items: T[]) {
           const len = data[keys[0]].length;
-          // Normalize start index.
           if (start < 0) {
             start = len + start;
             if (start < 0) start = 0;
@@ -211,7 +191,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
           if (deleteCount === undefined) {
             deleteCount = len - start;
           }
-          // For each key, perform splice and capture removed elements.
           const removedByKey: { [K in keyof T]: T[K][] } = {} as any;
           for (const key of keys) {
             removedByKey[key] = data[key].splice(
@@ -220,7 +199,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
               ...items.map((item) => item[key])
             );
           }
-          // Combine removed elements into an array of objects.
           const removed: T[] = [];
           for (let i = 0; i < deleteCount; i++) {
             const row = {} as T;
@@ -233,16 +211,10 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Override sort to sort the underlying arrays.
-      // TODO(str): This is a bit of a hack. We should probably use a more efficient
-      // way to do this.
       if (prop === "sort") {
         return function (compareFn?: (a: T, b: T) => number) {
-          // Build an array of rows.
           const rows = [...receiver];
-          // Sort rows.
           rows.sort(compareFn);
-          // Write back sorted rows.
           for (const key of keys) {
             data[key] = rows.map((row) => row[key]);
           }
@@ -250,7 +222,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Non-mutating Methods: now rewritten as follows.
       if (prop === "includes") {
         return function (searchElement: T, fromIndex?: number) {
           const len = data[keys[0]].length;
@@ -280,7 +251,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
       if (prop === "lastIndexOf") {
         return function (searchElement: T, fromIndex?: number) {
           const len = data[keys[0]].length;
-          // Default start index is the last element.
           let start = fromIndex ?? len - 1;
           if (start < 0) {
             start = len + start;
@@ -292,7 +262,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Non-mutating methods implemented via an array of object row proxies.
       if (prop === "forEach") {
         return function (callback: (value: T, index: number, array: T[]) => void, thisArg?: any) {
           return [...receiver].forEach(callback, thisArg);
@@ -344,7 +313,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // When a numeric index is accessed, build and return the corresponding row.
       if (typeof prop === "string" && !isNaN(Number(prop))) {
         const index = Number(prop);
         if (index < 0 || index >= data[keys[0]].length) {
@@ -353,7 +321,6 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         return createRowProxy(index);
       }
 
-      // Allow iteration over the rows.
       if (prop === Symbol.iterator) {
         return function* () {
           for (let i = 0; i < data[keys[0]].length; i++) {
@@ -362,21 +329,17 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
         };
       }
 
-      // Delegate any other property access.
       return Reflect.get(target, prop, receiver);
     },
     set(target, prop, value, receiver) {
-      // Intercept numeric index assignments.
       if (typeof prop === "string" && !isNaN(Number(prop))) {
         const index = Number(prop);
         if (index === data[keys[0]].length) {
-          // Appending a new row.
           for (const key of keys) {
             data[key].push(value[key]);
           }
           return true;
         } else if (index < data[keys[0]].length) {
-          // Updating an existing row.
           for (const key of keys) {
             if (value.hasOwnProperty(key)) {
               data[key][index] = value[key];
@@ -387,14 +350,11 @@ export function objectOfArraysAsArrayOfObjects<T extends Record<string, any>>(da
       }
       return Reflect.set(target, prop, value, receiver);
     },
-    // Intercept deletion of properties to remove a row from each underlying array.
     deleteProperty(target, prop) {
       if (typeof prop === "string" && !isNaN(Number(prop))) {
         const index = Number(prop);
         if (index >= 0 && index < data[keys[0]].length) {
-          // Remove the element at this index from every underlying array.
           for (const key of keys) {
-            // slice mutates the array in place
             data[key].splice(index, 1);
           }
           return true;

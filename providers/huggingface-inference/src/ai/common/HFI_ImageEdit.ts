@@ -72,7 +72,6 @@ export const HFI_ImageEdit_Stream: AiProviderRunFn<
       ...(input.providerOptions ?? {}),
     };
     if (input.mask) {
-      // Validator (Task 17) rejects masks on non-inpainting models before this code runs.
       const maskBlob = await gpuImageToBlob(input.mask as unknown as ImageValue | string);
       params.mask_image = maskBlob;
     }

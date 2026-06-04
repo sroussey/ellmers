@@ -19,10 +19,6 @@ import type {
 import { TelemetryTabularStorage } from "../tabular/TelemetryTabularStorage";
 import type { IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
 
-/**
- * Telemetry wrapper for any IVectorStorage implementation.
- * Extends TelemetryTabularStorage and adds spans for vector-specific operations.
- */
 export class TelemetryVectorStorage<
   Metadata extends Record<string, unknown> | undefined,
   Schema extends DataPortSchemaObject,

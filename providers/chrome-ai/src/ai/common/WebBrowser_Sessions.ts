@@ -63,9 +63,8 @@ export interface ChromeChatSessionState {
   readonly toolsFingerprint?: string;
   /**
    * Stable fingerprint of the filtered chat history replayed into the
-   * session. No longer used for the chat-cache reuse decision (replaced by
-   * `messageCount`), but kept optional to preserve the public shape in
-   * case another caller still passes it.
+   * session. Optional — chat-cache reuse keys off `messageCount`; this slot
+   * preserves the public shape for callers that still pass a fingerprint.
    */
   readonly historyFingerprint?: string;
 }

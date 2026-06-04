@@ -29,8 +29,6 @@ export const ImageValueSchemaDefault = {
     },
     {
       type: "object",
-      // properties: {},
-      // additionalProperties: true,
       format: "image",
     },
   ],

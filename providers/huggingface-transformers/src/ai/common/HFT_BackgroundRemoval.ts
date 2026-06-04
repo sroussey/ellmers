@@ -25,9 +25,6 @@ function rawImageToBase64Png(image: RawImage): string {
   return fn.call(image);
 }
 
-/**
- * Core implementation for background removal using Hugging Face Transformers.
- */
 export const HFT_BackgroundRemoval: AiProviderRunFn<
   BackgroundRemovalTaskInput,
   BackgroundRemovalTaskOutput,

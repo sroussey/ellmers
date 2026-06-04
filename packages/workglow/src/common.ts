@@ -28,7 +28,6 @@ export * from "@workglow/util/compress";
 export * from "./logging";
 export * from "./bootstrap";
 
-// Resolve _testOnly ambiguity: multiple sub-packages export _testOnly;
-// the workglow meta-package is not the right place to surface test internals.
-// Consumers should import _testOnly directly from the specific sub-package.
+// Multiple sub-packages export _testOnly; consumers should import it directly
+// from the specific sub-package.
 export { _testOnly } from "@workglow/ai";

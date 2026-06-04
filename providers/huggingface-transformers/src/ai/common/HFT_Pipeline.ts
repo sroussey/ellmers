@@ -96,10 +96,9 @@ function wrapAbortableResponse(response: Response, signal: AbortSignal | undefin
       : undefined;
   const sourceBody = response.body;
 
-  // Use pull-based reading to maintain backpressure. The previous start()-based
-  // loop eagerly drained the source into the internal queue without waiting for
-  // the consumer, which could buffer the entire response body in memory — a
-  // problem for large model files (hundreds of MB to several GB).
+  // Use pull-based reading to maintain backpressure: a start()-based eager
+  // drain would buffer the entire response body in memory, which is fatal for
+  // large model files (hundreds of MB to several GB).
   let reader: ReadableStreamDefaultReader<Uint8Array>;
   let abortHandler: (() => void) | undefined;
   let loaded = 0;
@@ -281,14 +280,6 @@ const IMAGE_PIPELINE_TYPES = new Set([
  */
 export const HFT_NULL_PROCESSOR_PREFIX = "HFT_NULL_PROCESSOR:";
 
-/**
- * Clear all cached pipelines. Best-effort calls `.dispose()` on each pipeline's
- * underlying ONNX model so its native (WASM) memory is released immediately —
- * dropping the JS reference alone leaks ONNX sessions, which accumulate across
- * test files and OOM-kill the next file's pipeline load. Any dispose Promise
- * is intentionally not awaited (synchronous API is required by the many
- * callers); native free happens synchronously inside dispose.
- */
 /**
  * Clear all cached pipelines. Best-effort awaits `model.dispose()` on each
  * pipeline so its ONNX sessions release their WASM memory before the cache

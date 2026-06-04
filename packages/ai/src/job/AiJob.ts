@@ -117,7 +117,6 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
             return m ? parseInt(m[1], 10) : undefined;
           })();
 
-  // Check for abort/cancellation
   if (err instanceof Error && err.name === "AbortError") {
     return new AbortSignalJobError(
       withJobErrorDiagnostics(`Provider call aborted for ${taskType} (${provider})`, err)
@@ -151,7 +150,6 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     return new RetryableJobError(withJobErrorDiagnostics(message, err));
   }
 
-  // Rate limiting (429) — retryable with backoff
   if (status === 429) {
     const retryAfterMatch = message.match(/retry.after[:\s]*(\d+)/i);
     const retryMs = retryAfterMatch ? parseInt(retryAfterMatch[1], 10) * 1000 : 30_000;
@@ -161,7 +159,6 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     );
   }
 
-  // Auth errors (401, 403) — permanent
   if (status === 401 || status === 403) {
     return new PermanentJobError(
       withJobErrorDiagnostics(
@@ -171,14 +168,12 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     );
   }
 
-  // Not found / invalid request (400, 404) — permanent
   if (status === 400 || status === 404) {
     return new PermanentJobError(
       withJobErrorDiagnostics(`Invalid request to ${provider} for ${taskType}: ${message}`, err)
     );
   }
 
-  // Server errors (500, 502, 503, 529) — retryable
   if (status && status >= 500) {
     return new RetryableJobError(
       withJobErrorDiagnostics(
@@ -188,7 +183,6 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     );
   }
 
-  // Network errors — retryable
   if (
     message.includes("ECONNREFUSED") ||
     message.includes("ECONNRESET") ||
@@ -202,23 +196,18 @@ export function classifyProviderError(err: unknown, taskType: string, provider: 
     );
   }
 
-  // Timeout errors — retryable
   if (message.includes("timed out") || message.includes("timeout")) {
     return new RetryableJobError(
       withJobErrorDiagnostics(`Timeout calling ${provider} for ${taskType}: ${message}`, err)
     );
   }
 
-  // Default: treat unknown errors as permanent to avoid infinite retries
+  // Default: treat unknown errors as permanent to avoid infinite retries.
   return new PermanentJobError(
     withJobErrorDiagnostics(`Provider ${provider} failed for ${taskType}: ${message}`, err)
   );
 }
 
-/**
- * Extends the base Job class to provide custom execution functionality
- * through a provided function.
- */
 export class AiJob<
   Input extends AiJobInput<TaskInput> = AiJobInput<TaskInput>,
   Output extends TaskOutput = TaskOutput,
@@ -238,7 +227,7 @@ export class AiJob<
    *
    * @override Deliberate signature deviation: adds `emit` param, returns `Promise<void>`.
    */
-  // @ts-expect-error — intentional signature change; see comment above.
+  // @ts-expect-error — intentional signature deviation; see JSDoc above.
   override async execute(
     input: Input,
     context: IJobExecuteContext,
@@ -291,8 +280,6 @@ export class AiJob<
     } finally {
       clearTimeout(timeoutHandle);
       context.signal.removeEventListener("abort", onParentAbort);
-      // Macrotask boundary so native finalizers (ONNX session memory, WASM
-      // handles) drain between calls. See spec §"yieldMacrotask".
       await yieldMacrotask();
     }
   }

@@ -241,19 +241,16 @@ export class JobQueueServer<
 
     this.running = false;
 
-    // Unsubscribe from storage changes
     if (this.storageUnsubscribe) {
       this.storageUnsubscribe();
       this.storageUnsubscribe = null;
     }
 
-    // Stop cleanup loop
     if (this.cleanupTimer) {
       clearTimeout(this.cleanupTimer);
       this.cleanupTimer = null;
     }
 
-    // Stop all workers
     await Promise.all(this.workers.map((worker) => worker.stop()));
 
     this.events.emit("server_stop", this.queueName);
@@ -288,7 +285,6 @@ export class JobQueueServer<
     const currentCount = this.workers.length;
 
     if (count > currentCount) {
-      // Add more workers
       for (let i = currentCount; i < count; i++) {
         const worker = this.createWorker();
         this.workers.push(worker);
@@ -297,7 +293,6 @@ export class JobQueueServer<
         }
       }
     } else if (count < currentCount) {
-      // Remove workers
       const toRemove = this.workers.splice(count);
       await Promise.all(toRemove.map((worker) => worker.stop()));
     }
@@ -555,20 +550,14 @@ export class JobQueueServer<
    */
   protected async cleanupJobs(): Promise<void> {
     try {
-      // The workers will handle the abort via their abort controllers
-      // We just need to ensure the jobs get marked as failed
-
-      // Delete completed jobs after TTL
       if (this.deleteAfterCompletionMs !== undefined && this.deleteAfterCompletionMs > 0) {
         await this.jobStore.deleteByStatusAndAge(JobStatus.COMPLETED, this.deleteAfterCompletionMs);
       }
 
-      // Delete failed jobs after TTL
       if (this.deleteAfterFailureMs !== undefined && this.deleteAfterFailureMs > 0) {
         await this.jobStore.deleteByStatusAndAge(JobStatus.FAILED, this.deleteAfterFailureMs);
       }
 
-      // Delete disabled jobs after TTL
       if (this.deleteAfterDisabledMs !== undefined && this.deleteAfterDisabledMs > 0) {
         await this.jobStore.deleteByStatusAndAge(JobStatus.DISABLED, this.deleteAfterDisabledMs);
       }

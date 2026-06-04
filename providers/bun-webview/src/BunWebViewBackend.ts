@@ -20,17 +20,10 @@ import type {
 import { CDPBrowserBackend } from "@workglow/browser-control/task";
 import { sleep } from "@workglow/util";
 
-// ---------------------------------------------------------------------------
-// Bun.WebView type (not imported — accessed via globalThis at runtime)
-// ---------------------------------------------------------------------------
-
+// Bun.WebView is accessed via globalThis at runtime
 /** @type {InstanceType<typeof Bun.WebView>} */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyWebView = any;
-
-// ---------------------------------------------------------------------------
-// BunWebViewBackend
-// ---------------------------------------------------------------------------
 
 /**
  * IBrowserContext implementation using Bun's built-in WebView API + CDP.
@@ -46,7 +39,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   private _wv: AnyWebView | null = null;
   private _connected = false;
 
-  // Dialog handler
   private _dialogHandler: ((info: DialogInfo) => DialogAction | Promise<DialogAction>) | null =
     null;
 
@@ -61,25 +53,13 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     super();
   }
 
-  // ---------------------------------------------------------------------------
-  // CDP helper
-  // ---------------------------------------------------------------------------
-
   protected async cdp(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     return this.wv.cdp(method, params);
   }
 
-  // ---------------------------------------------------------------------------
-  // evaluateInPage (abstract from CDPBrowserBackend)
-  // ---------------------------------------------------------------------------
-
   protected async evaluateInPage<T>(script: string): Promise<T> {
     return this.wv.evaluate(script) as Promise<T>;
   }
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   async connect(options: BrowserConnectOptions = {}): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,7 +82,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
     this._wv = new BunWebView(webViewOptions);
 
-    // Wait for the initial navigation to complete
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("BunWebViewBackend: initial navigation timed out"));
@@ -146,20 +125,12 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     return this._connected && this._wv !== null;
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal helpers
-  // ---------------------------------------------------------------------------
-
   private get wv(): AnyWebView {
     if (!this._wv || !this._connected) {
       throw new Error("BunWebViewBackend: not connected — call connect() first");
     }
     return this._wv;
   }
-
-  // ---------------------------------------------------------------------------
-  // Navigation
-  // ---------------------------------------------------------------------------
 
   async navigate(url: string, options: NavigateOptions = {}): Promise<void> {
     const timeout = options.timeout ?? 30_000;
@@ -209,25 +180,13 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     return this.wv.title;
   }
 
-  // ---------------------------------------------------------------------------
-  // Content extraction
-  // ---------------------------------------------------------------------------
-
   async content(): Promise<string> {
     return this.wv.evaluate("document.documentElement.outerHTML") as Promise<string>;
   }
 
-  // ---------------------------------------------------------------------------
-  // JS evaluation
-  // ---------------------------------------------------------------------------
-
   async evaluate<T>(expression: string): Promise<T> {
     return this.wv.evaluate(expression) as Promise<T>;
   }
-
-  // ---------------------------------------------------------------------------
-  // Capture
-  // ---------------------------------------------------------------------------
 
   async screenshot(options: ScreenshotOptions = {}): Promise<Buffer> {
     const { format = "png", quality } = options;
@@ -238,10 +197,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     }) as Promise<Buffer>;
   }
 
-  // ---------------------------------------------------------------------------
-  // Input (native WebView methods)
-  // ---------------------------------------------------------------------------
-
   override async pressKey(key: string, _options: WaitOptions = {}): Promise<void> {
     await this.wv.press(key);
   }
@@ -250,20 +205,12 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     await this.wv.type(text);
   }
 
-  // ---------------------------------------------------------------------------
-  // File operations
-  // ---------------------------------------------------------------------------
-
   async download(
     _trigger: () => Promise<void>,
     _options: DownloadOptions = {}
   ): Promise<DownloadResult> {
     throw new Error("BunWebViewBackend: download is not supported");
   }
-
-  // ---------------------------------------------------------------------------
-  // Dialogs
-  // ---------------------------------------------------------------------------
 
   onDialog(handler: (info: DialogInfo) => DialogAction | Promise<DialogAction>): void {
     this._dialogHandler = handler;
@@ -303,9 +250,7 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
       });
   }
 
-  // ---------------------------------------------------------------------------
-  // Tabs (single-view model)
-  // ---------------------------------------------------------------------------
+  // Single-view model: closing a tab closes the WebView.
 
   async tabs(): Promise<readonly TabInfo[]> {
     const url = this.wv.url;
@@ -313,9 +258,7 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     return [{ tabId: "0", url, title }];
   }
 
-  async switchTab(_tabId: string): Promise<void> {
-    // Single-view model: no-op
-  }
+  async switchTab(_tabId: string): Promise<void> {}
 
   async newTab(url?: string): Promise<TabInfo> {
     if (url) {
@@ -329,13 +272,8 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async closeTab(_tabId: string): Promise<void> {
-    // Single-view model: closing the tab means closing the WebView
     await this.disconnect();
   }
-
-  // ---------------------------------------------------------------------------
-  // Wait
-  // ---------------------------------------------------------------------------
 
   async waitForNavigation(options: NavigateOptions = {}): Promise<void> {
     const timeout = options.timeout ?? 30_000;
@@ -393,12 +331,7 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
     throw new Error("BunWebViewBackend: waitForIdle timed out");
   }
 
-  // ---------------------------------------------------------------------------
-  // Optional capabilities
-  // ---------------------------------------------------------------------------
-  //
-  // networkRequests and consoleMessages are intentionally undefined: this
-  // backend does not implement them. The IBrowserContext contract is that
-  // optional methods are either fully implemented or undefined — never
-  // empty-stub functions that defeat feature detection.
+  // networkRequests and consoleMessages are intentionally undefined: the
+  // IBrowserContext contract requires optional methods to be either fully
+  // implemented or undefined — never empty stubs that defeat feature detection.
 }

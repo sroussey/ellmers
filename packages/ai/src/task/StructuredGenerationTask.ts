@@ -162,8 +162,7 @@ export class StructuredGenerationTask extends StreamingAiTask<
     input: StructuredGenerationTaskInput,
     context: IExecuteContext
   ): AsyncIterable<StreamEvent<StructuredGenerationTaskOutput>> {
-    // Compile the target schema once; fail fast if it's malformed so we don't
-    // waste a provider round-trip.
+    // Fail fast if outputSchema is malformed so we don't waste a provider round-trip.
     let validator: SchemaNode;
     try {
       validator = compileSchema(input.outputSchema);
@@ -259,9 +258,6 @@ export class StructuredGenerationTask extends StreamingAiTask<
   }
 }
 
-/**
- * Task for generating structured JSON output using a language model
- */
 export const structuredGeneration = (
   input: StructuredGenerationTaskInput,
   config?: StructuredGenerationTaskConfig,

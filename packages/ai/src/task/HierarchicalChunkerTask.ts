@@ -397,9 +397,6 @@ export class HierarchicalChunkerTask extends Task<
     );
   }
 
-  /**
-   * Collect all text from a node and its descendants
-   */
   private collectAllText(node: DocumentNode): string {
     const texts: string[] = [];
 

@@ -29,19 +29,10 @@ export type MergeTaskInput = FromSchema<typeof inputSchema>;
 export type MergeTaskOutput = FromSchema<typeof outputSchema>;
 
 /**
- * MergeTask takes multiple inputs and merges them into a single array output.
- * Input properties are collected and sorted by key name to create a deterministic output order.
- * Useful for collecting results from parallel branches into a single array.
+ * Merges multiple input properties into a single array output. Properties are
+ * sorted by key name (natural numeric) for deterministic ordering.
  *
- * Features:
- * - Accepts any number of input properties (additionalProperties: true)
- * - Merges all input values into a single array output
- * - Sorts inputs by property name for consistent ordering
- * - Output is always an array
- *
- * Example:
- * Input: { input_0: "a", input_1: "b", input_2: "c" }
- * Output: { output: ["a", "b", "c"] }
+ * Example: `{ input_0: "a", input_1: "b" }` → `{ output: ["a", "b"] }`.
  */
 export class MergeTask<
   Input extends MergeTaskInput = MergeTaskInput,
@@ -63,12 +54,10 @@ export class MergeTask<
   }
 
   override async execute(input: Input, _context: IExecuteContext): Promise<Output> {
-    // Get all input keys and sort them for deterministic order
     const keys = Object.keys(input).sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true })
     );
 
-    // Collect values in sorted order
     const values = keys.map((key) => input[key]);
 
     return {

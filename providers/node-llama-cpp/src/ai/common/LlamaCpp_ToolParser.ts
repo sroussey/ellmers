@@ -14,10 +14,6 @@ import {
 } from "@workglow/ai/provider-utils";
 import type { LlamaCppModelConfig } from "./LlamaCpp_ModelSchema";
 
-// ============================================================================
-// Model text candidates
-// ============================================================================
-
 export function getModelTextCandidates(model: LlamaCppModelConfig): string[] {
   return [
     model.model_id,
@@ -42,10 +38,6 @@ export function hasToolCallMarkers(text: string): boolean {
   );
 }
 
-// ============================================================================
-// Qwen detection
-// ============================================================================
-
 export function detectQwenToolCallingVariation(
   model: LlamaCppModelConfig
 ): "3" | "3.5" | undefined {
@@ -65,10 +57,6 @@ export function detectQwenToolCallingVariation(
 
   return undefined;
 }
-
-// ============================================================================
-// Tool call extraction using shared parsers
-// ============================================================================
 
 export function extractToolCallsFromText(text: string, input: ToolCallingTaskInput): ToolCalls {
   // Try Liquid/LFM format: <|tool_call_start|>[func(args)]<|tool_call_end|> or [func(args)]

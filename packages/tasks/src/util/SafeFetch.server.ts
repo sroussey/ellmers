@@ -203,11 +203,10 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
     }
 
     if (!isRedirectStatus(response.status)) {
-      // Final response — close the dispatcher once the body is consumed.
+      // Pipe through a passthrough TransformStream so the dispatcher is
+      // closed once the body is fully consumed or cancelled.
       const body = response.body;
       if (body !== null) {
-        // Pipe the response body through a passthrough TransformStream.
-        // The dispatcher is closed once the body is fully consumed or cancelled.
         const { readable, writable } = new TransformStream();
         body.pipeTo(writable).finally(() => {
           closeAgent(dispatcher);
@@ -218,13 +217,11 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
           headers: response.headers,
         });
       }
-      // No body (e.g. HEAD response) — close dispatcher immediately.
       closeAgent(dispatcher);
       return response;
     }
 
     if (requestedRedirectMode === "manual") {
-      // Caller wants the raw redirect response; they own the dispatcher now.
       closeAgent(dispatcher);
       return response;
     }
@@ -257,6 +254,4 @@ export const serverSafeFetch: SafeFetchFn = async (url, options) => {
   );
 };
 
-// Register at module load — the Node/Bun entrypoint re-exports this file
-// which triggers registration.
 registerSafeFetch(serverSafeFetch);

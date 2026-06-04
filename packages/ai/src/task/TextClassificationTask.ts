@@ -105,12 +105,6 @@ export class TextClassificationTask extends AiTask<
   }
 }
 
-/**
- * Convenience function to run text classifier tasks.
- * Creates and executes a TextClassificationTask with the provided input.
- * @param input The input parameters for text classification (text and model)
- * @returns Promise resolving to the classification categories with scores
- */
 export const textClassification = (
   input: TextClassificationTaskInput,
   config?: TextClassificationTaskConfig,

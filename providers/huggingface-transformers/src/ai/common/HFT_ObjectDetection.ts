@@ -19,8 +19,8 @@ import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
 /**
- * Core implementation for object detection using Hugging Face Transformers.
- * Auto-selects between regular and zero-shot detection.
+ * Auto-selects between regular and zero-shot detection based on
+ * `provider_config.pipeline`.
  */
 export const HFT_ObjectDetection: AiProviderRunFn<
   ObjectDetectionTaskInput,

@@ -93,8 +93,7 @@ export class WebBrowserProvider extends AiProvider<WebBrowserModelConfig> {
 
   /**
    * Chrome Built-in AI is only reachable when the browser exposes at least one
-   * of its API globals. Mirrors the renderer's former `isChromeBuiltinAiAvailable`
-   * synchronous check, now surfaced through the uniform provider probe.
+   * of its API globals.
    */
   override async isAvailable(): Promise<boolean> {
     const g = globalThis as Record<string, unknown>;

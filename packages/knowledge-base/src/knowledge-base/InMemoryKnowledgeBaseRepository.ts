@@ -8,9 +8,6 @@ import { InMemoryTabularStorage } from "@workglow/storage";
 import { KnowledgeBaseRepository } from "./KnowledgeBaseRepository";
 import { KnowledgeBasePrimaryKeyNames, KnowledgeBaseRecordSchema } from "./KnowledgeBaseSchema";
 
-/**
- * In-memory implementation of a knowledge base repository.
- */
 export class InMemoryKnowledgeBaseRepository extends KnowledgeBaseRepository {
   constructor() {
     super(new InMemoryTabularStorage(KnowledgeBaseRecordSchema, KnowledgeBasePrimaryKeyNames));

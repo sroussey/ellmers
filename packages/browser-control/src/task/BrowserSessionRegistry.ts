@@ -10,19 +10,13 @@ import type { IBrowserContext } from "./IBrowserContext";
 const sessions = new Map<string, IBrowserContext>();
 
 export const BrowserSessionRegistry = {
-  /**
-   * Register a browser context and return a unique session ID.
-   */
   register(context: IBrowserContext): string {
     const id = uuid4();
     sessions.set(id, context);
     return id;
   },
 
-  /**
-   * Retrieve a registered browser context by session ID.
-   * Throws if the session does not exist or has been disconnected.
-   */
+  /** Throws if the session does not exist or has been disconnected. */
   get(sessionId: string): IBrowserContext {
     const context = sessions.get(sessionId);
     if (!context) {
@@ -35,32 +29,21 @@ export const BrowserSessionRegistry = {
     return context;
   },
 
-  /**
-   * Remove a session from the registry.
-   */
   unregister(sessionId: string): void {
     sessions.delete(sessionId);
   },
 
-  /**
-   * Returns true if a session with the given ID exists.
-   */
   has(sessionId: string): boolean {
     return sessions.has(sessionId);
   },
 
-  /**
-   * Disconnect all registered contexts using Promise.allSettled, then clear the registry.
-   */
   async disconnectAll(): Promise<void> {
     const disconnects = Array.from(sessions.values()).map((ctx) => ctx.disconnect());
     await Promise.allSettled(disconnects);
     sessions.clear();
   },
 
-  /**
-   * Clear all sessions without disconnecting (for tests).
-   */
+  /** Clear all sessions without disconnecting (for tests). */
   clear(): void {
     sessions.clear();
   },

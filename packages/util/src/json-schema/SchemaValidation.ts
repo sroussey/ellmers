@@ -122,7 +122,6 @@ function collectJsonSchemaErrors(
     return;
   }
 
-  // Validate type field
   if (schema.type !== undefined) {
     if (typeof schema.type === "string") {
       if (!VALID_JSON_SCHEMA_TYPES.has(schema.type)) {
@@ -143,11 +142,11 @@ function collectJsonSchemaErrors(
     }
   }
 
-  // Recurse into nested schemas
   if (schema.properties && typeof schema.properties === "object") {
     for (const [key, value] of Object.entries(schema.properties)) {
+      // Boolean schemas are valid in nested JSON Schema, only DataPortSchema top-level forbids them.
       if (typeof value === "boolean") {
-        continue; // boolean schemas are valid in nested JSON Schema
+        continue;
       }
       collectJsonSchemaErrors(value as JsonSchema, `${path}/properties/${key}`, errors);
     }
@@ -212,7 +211,6 @@ function collectFormatErrors(
     return;
   }
 
-  // Check format on this schema node
   const format = (schema as Record<string, unknown>).format;
   if (typeof format === "string" && !FORMAT_PATTERN.test(format)) {
     errors.push({
@@ -221,14 +219,12 @@ function collectFormatErrors(
     });
   }
 
-  // Recurse into properties
   if (schema.properties && typeof schema.properties === "object") {
     for (const [key, value] of Object.entries(schema.properties)) {
       collectFormatErrors(value as JsonSchema, `${path}/properties/${key}`, errors);
     }
   }
 
-  // Recurse into items
   if (schema.items && typeof schema.items === "object" && !Array.isArray(schema.items)) {
     collectFormatErrors(schema.items as JsonSchema, `${path}/items`, errors);
   }
@@ -239,7 +235,6 @@ function collectFormatErrors(
     }
   }
 
-  // Recurse into oneOf/anyOf/allOf
   for (const keyword of ["oneOf", "anyOf", "allOf"] as const) {
     const arr = (schema as Record<string, unknown>)[keyword];
     if (Array.isArray(arr)) {

@@ -35,7 +35,6 @@ export class FileLoaderTask extends BaseFileLoaderTask {
   ): Promise<FileLoaderTaskOutput> {
     let { url, format = "auto" } = input;
 
-    // Delegate HTTP/HTTPS URLs to parent class
     if (url.startsWith("http://") || url.startsWith("https://")) {
       return super.execute(input, context);
     }
@@ -45,7 +44,6 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
     await context.updateProgress(0, "Detecting file format");
 
-    // Handle file:// URLs by stripping the protocol
     if (url.startsWith("file://")) {
       url = url.slice(7);
     }
@@ -58,7 +56,6 @@ export class FileLoaderTask extends BaseFileLoaderTask {
     }
     await context.updateProgress(10, `Reading ${detectedFormat} file from filesystem`);
 
-    // Read file content based on format
     if (detectedFormat === "json") {
       const fileContent = await readFile(url, { encoding: "utf-8" });
       if (context.signal.aborted) {
@@ -246,5 +243,4 @@ declare module "@workglow/task-graph" {
   }
 }
 
-// Override fileLoader to use the server version that handles file:// URLs
 Workflow.prototype.fileLoader = CreateWorkflow(FileLoaderTask);

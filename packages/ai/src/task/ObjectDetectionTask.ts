@@ -116,12 +116,6 @@ export class ObjectDetectionTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run object detection tasks.
- * Creates and executes an ObjectDetectionTask with the provided input.
- * @param input The input parameters for object detection (image, model, and optional labels)
- * @returns Promise resolving to the detected objects with labels, scores, and bounding boxes
- */
 export const objectDetection = (
   input: ObjectDetectionTaskInput,
   config?: ObjectDetectionTaskConfig,

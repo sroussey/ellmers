@@ -22,10 +22,6 @@ import { WhileTaskConfig } from "./WhileTask";
 // ========================================================================
 // JSON Serialization Types
 // ========================================================================
-/**
- * Represents a single task item in the JSON configuration.
- * This structure defines how tasks should be configured in JSON format.
- */
 
 export type JsonTaskConfig = Omit<
   TaskConfig &
@@ -79,9 +75,6 @@ export type JsonTaskItem = {
   subtasks?: JsonTaskItem[];
 };
 
-/**
- * Represents a task graph item, which can be a task or a subgraph
- */
 export type TaskGraphItemJson = {
   id: unknown;
   type: string;
@@ -109,9 +102,6 @@ export interface TaskGraphJsonOptions {
   readonly withBoundaryNodes?: boolean;
 }
 
-/**
- * Options for deserializing tasks from JSON.
- */
 export interface TaskDeserializationOptions {
   /**
    * Optional allowlist of task type names. When provided, only task types

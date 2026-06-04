@@ -23,9 +23,6 @@ export const INDEXED_DB_QUEUE_STORAGE = createServiceToken<IQueueStorage<any, an
   "jobqueue.storage.indexedDb"
 );
 
-/**
- * Extended options for IndexedDB queue storage including prefix support.
- */
 export interface IndexedDbQueueStorageOptions extends QueueStorageOptions {
   /** Enable BroadcastChannel notifications (default: true) */
   readonly useBroadcastChannel?: boolean;
@@ -33,25 +30,17 @@ export interface IndexedDbQueueStorageOptions extends QueueStorageOptions {
   readonly backupPollingIntervalMs?: number;
 }
 
-/**
- * IndexedDB implementation of a job queue storage.
- * Provides storage and retrieval for job execution states using IndexedDB.
- */
 export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input, Output> {
   public readonly scope = "process" as const;
   private db: IDBDatabase | undefined;
   private readonly tableName: string;
-  /** The prefix column definitions */
   protected readonly prefixes: readonly PrefixColumn[];
-  /** The prefix values for filtering */
   protected readonly prefixValues: Readonly<Record<string, string | number>>;
-  /** Shared hybrid subscription manager */
   private hybridManager: HybridSubscriptionManager<
     JobStorageFormat<Input, Output>,
     unknown,
     QueueChangePayload<Input, Output>
   > | null = null;
-  /** Hybrid subscription options */
   private readonly hybridOptions: {
     readonly useBroadcastChannel: boolean;
     readonly backupPollingIntervalMs: number;
@@ -67,7 +56,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       useBroadcastChannel: options.useBroadcastChannel ?? true,
       backupPollingIntervalMs: options.backupPollingIntervalMs ?? 5000,
     };
-    // Generate table name based on prefix configuration to avoid conflicts
+    // Table name varies by prefix configuration to avoid conflicts
     if (this.prefixes.length > 0) {
       const prefixNames = this.prefixes.map((p) => p.name).join("_");
       this.tableName = `jobs_${prefixNames}`;
@@ -76,9 +65,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     }
   }
 
-  /**
-   * Checks if a job matches the current prefix values
-   */
   private matchesPrefixes(job: JobStorageFormat<Input, Output> & Record<string, unknown>): boolean {
     for (const [key, value] of Object.entries(this.prefixValues)) {
       if (job[key] !== value) {
@@ -88,9 +74,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     return true;
   }
 
-  /**
-   * Gets prefix values as an array in column order for index key construction
-   */
+  /** Prefix values as an array in column order for index key construction. */
   private getPrefixKeyValues(): Array<string | number> {
     return this.prefixes.map((p) => this.prefixValues[p.name]);
   }
@@ -133,11 +117,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     this.db = await openIdb(this.tableName);
   }
 
-  /**
-   * Adds a job to the queue.
-   * @param job - The job to add to the queue.
-   * @returns A promise that resolves to the job id.
-   */
   public async add(job: JobStorageFormat<Input, Output>): Promise<unknown> {
     const db = await this.getDb();
     const now = new Date().toISOString();
@@ -153,7 +132,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     jobWithPrefixes.created_at = now;
     jobWithPrefixes.visible_at = now;
 
-    // Add prefix values to the job
     for (const [key, value] of Object.entries(this.prefixValues)) {
       jobWithPrefixes[key] = value;
     }
@@ -164,9 +142,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     return new Promise((resolve, reject) => {
       const request = store.add(jobWithPrefixes);
 
-      // Don't resolve until transaction is complete
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
         resolve(jobWithPrefixes.id);
       };
@@ -175,11 +151,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Retrieves a job from the queue by its id.
-   * @param id - The id of the job to retrieve.
-   * @returns A promise that resolves to the job or undefined if the job is not found.
-   */
   async get(id: unknown): Promise<JobStorageFormat<Input, Output> | undefined> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readonly");
@@ -190,7 +161,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         const job = request.result as
           | (JobStorageFormat<Input, Output> & Record<string, unknown>)
           | undefined;
-        // Filter by queue name and prefix values to ensure job belongs to this queue
         if (job && job.queue === this.queueName && this.matchesPrefixes(job)) {
           resolve(job);
         } else {
@@ -202,12 +172,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Retrieves a slice of jobs from the queue.
-   * @param status - The status of the jobs to retrieve.
-   * @param num - The number of jobs to retrieve.
-   * @returns A promise that resolves to an array of jobs.
-   */
   public async peek(
     status: JobStatus = JobStatus.PENDING,
     num: number = 100
@@ -220,7 +184,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
     return new Promise((resolve, reject) => {
       const ret = new Map<unknown, JobStorageFormat<Input, Output>>();
-      // Create a key range for the compound index: from [prefixes..., queue, status, ""] to [prefixes..., queue, status, "\uffff"]
       const keyRange = IDBKeyRange.bound(
         [...prefixKeyValues, this.queueName, status, ""],
         [...prefixKeyValues, this.queueName, status, "\uffff"]
@@ -234,7 +197,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
           return;
         }
         const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
-        // Verify prefix match and use Map to ensure no duplicates by job ID
+        // Map keyed by id ensures no duplicates
         if (this.matchesPrefixes(job)) {
           ret.set(cursor.value.id, cursor.value);
         }
@@ -275,7 +238,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     const leaseExpiry = new Date(Date.now() + leaseMs).toISOString();
     const prefixKeyValues = this.getPrefixKeyValues();
 
-    // This ensures we can verify that we actually won the race to claim this job
+    // Used after the tx to verify we actually won the race to claim this job.
     const claimToken = workerId;
 
     const jobToReturn = await new Promise<JobStorageFormat<Input, Output> | undefined>(
@@ -310,7 +273,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
           }
         };
 
-        // First: look for a PENDING job ready to run
         const pendingIndex = store.index("queue_status_visible_at");
         const pendingRequest = pendingIndex.openCursor(
           IDBKeyRange.bound(
@@ -340,13 +302,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
             return;
           }
           tryClaimJob(job);
-          // Don't continue cursor — we attempted a claim
+          // Don't continue cursor — claim attempted
         };
 
         pendingRequest.onerror = () => reject(pendingRequest.error);
 
         const tryExpiredLeaseScan = () => {
-          // Scan PROCESSING jobs to find one with an expired lease
           const processingIndex = store.index("queue_status_visible_at");
           const processingRequest = processingIndex.openCursor(
             IDBKeyRange.bound(
@@ -369,19 +330,17 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
               cursor.continue();
               return;
             }
-            // Check for expired lease (null = expired per spec)
+            // null lease_expires_at = expired per spec
             if (job.lease_expires_at && job.lease_expires_at >= now) {
               cursor.continue();
               return;
             }
             tryClaimJob(job);
-            // Don't continue — attempted a claim
           };
 
           processingRequest.onerror = () => reject(processingRequest.error);
         };
 
-        // Wait for transaction to complete before resolving
         tx.oncomplete = () => {
           if (claimedJob) {
             this.hybridManager?.notifyLocalChange();
@@ -392,7 +351,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       }
     );
 
-    // If we didn't find any job to claim, return undefined
     if (!jobToReturn) {
       return undefined;
     }
@@ -433,10 +391,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     await this.put(job);
   }
 
-  /**
-   * Retrieves the number of jobs in the queue.
-   * Returns the count of jobs in the queue.
-   */
   public async size(status = JobStatus.PENDING): Promise<number> {
     const db = await this.getDb();
     const prefixKeyValues = this.getPrefixKeyValues();
@@ -453,9 +407,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Marks a job as complete with its output or error.
-   */
   public async complete(job: JobStorageFormat<Input, Output>): Promise<void> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readwrite");
@@ -467,7 +418,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         const existing = getReq.result as
           | (JobStorageFormat<Input, Output> & Record<string, unknown>)
           | undefined;
-        // Verify job belongs to this queue and matches prefixes
         if (!existing || existing.queue !== this.queueName || !this.matchesPrefixes(existing)) {
           reject(
             new Error(`Job ${job.id} not found or does not belong to queue ${this.queueName}`)
@@ -481,10 +431,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         // survive into the next retry and immediately cancel it.
         const jobAsRecord = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
         jobAsRecord.abort_requested_at = null;
-        // Ensure queue is set correctly
         job.queue = this.queueName;
 
-        // Ensure prefix values are preserved
         const jobWithPrefixes = jobAsRecord;
         for (const [key, value] of Object.entries(this.prefixValues)) {
           jobWithPrefixes[key] = value;
@@ -496,9 +444,7 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       };
       getReq.onerror = () => reject(getReq.error);
 
-      // Don't resolve until transaction is complete
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
         resolve();
       };
@@ -506,9 +452,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Releases a claimed job without consuming a retry attempt.
-   */
   public async releaseClaim(id: unknown): Promise<void> {
     const job = await this.get(id);
     if (!job) return;
@@ -570,9 +513,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Gets jobs by their run ID.
-   */
   public async getByRunId(job_run_id: string): Promise<JobStorageFormat<Input, Output>[]> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readonly");
@@ -584,7 +524,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
-        // Filter results to ensure they match prefixes
         const results = (request.result || []).filter(
           (job: JobStorageFormat<Input, Output> & Record<string, unknown>) =>
             this.matchesPrefixes(job)
@@ -656,9 +595,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Deletes all jobs from the queue.
-   */
   public async deleteAll(): Promise<void> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readwrite");
@@ -667,7 +603,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     const prefixKeyValues = this.getPrefixKeyValues();
 
     return new Promise((resolve, reject) => {
-      // Use a cursor to iterate through all jobs for this queue with prefix
       const keyRange = IDBKeyRange.bound(
         [...prefixKeyValues, this.queueName, ""],
         [...prefixKeyValues, this.queueName, "\uffff"]
@@ -678,14 +613,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
           const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
-          // Verify job belongs to this queue and matches prefixes before deleting
           if (job.queue === this.queueName && this.matchesPrefixes(job)) {
             const deleteRequest = cursor.delete();
             deleteRequest.onsuccess = () => {
               cursor.continue();
             };
             deleteRequest.onerror = () => {
-              // Continue even if delete fails
               cursor.continue();
             };
           } else {
@@ -695,7 +628,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       };
 
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
         resolve();
       };
@@ -704,9 +636,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Gets the output for a given input.
-   */
   public async outputForInput(input: Input): Promise<Output | null> {
     const fingerprint = await makeFingerprint(input);
     const db = await this.getDb();
@@ -737,9 +666,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Saves progress updates for a job.
-   */
   public async saveProgress(
     id: unknown,
     progress: number,
@@ -764,10 +690,8 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     const tx = db.transaction(this.tableName, "readwrite");
     const store = tx.objectStore(this.tableName);
 
-    // Ensure queue is set correctly
     job.queue = this.queueName;
 
-    // Ensure prefix values are preserved
     const jobWithPrefixes = job as JobStorageFormat<Input, Output> & Record<string, unknown>;
     for (const [key, value] of Object.entries(this.prefixValues)) {
       jobWithPrefixes[key] = value;
@@ -777,7 +701,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       const putReq = store.put(jobWithPrefixes);
       putReq.onerror = () => reject(putReq.error);
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
         resolve();
       };
@@ -785,9 +708,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Deletes a job by its ID.
-   */
   public async delete(id: unknown): Promise<void> {
     const job = await this.get(id);
     if (!job) return;
@@ -801,18 +721,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
       };
       tx.onerror = () => reject(tx.error);
     });
   }
 
-  /**
-   * Delete jobs with a specific status older than a cutoff date
-   * @param status - Status of jobs to delete
-   * @param olderThanMs - Delete jobs completed more than this many milliseconds ago
-   */
   public async deleteJobsByStatusAndAge(status: JobStatus, olderThanMs: number): Promise<void> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readwrite");
@@ -829,7 +743,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
           const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
-          // Verify job belongs to this queue, matches prefixes, and matches criteria
           if (
             job.queue === this.queueName &&
             this.matchesPrefixes(job) &&
@@ -844,7 +757,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       };
 
       tx.oncomplete = () => {
-        // Notify hybrid manager of local change
         this.hybridManager?.notifyLocalChange();
         resolve();
       };
@@ -853,12 +765,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Gets all jobs from the queue that match the current prefix values.
-   * Used internally for normal polling-based subscriptions (efficient - filters at DB level).
-   *
-   * @returns A promise that resolves to an array of jobs
-   */
   private async getAllJobs(): Promise<Array<JobStorageFormat<Input, Output>>> {
     const db = await this.getDb();
     const tx = db.transaction(this.tableName, "readonly");
@@ -868,7 +774,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
     return new Promise((resolve, reject) => {
       const jobs: Array<JobStorageFormat<Input, Output>> = [];
-      // Use a key range that covers all statuses for this queue with prefixes
       const keyRange = IDBKeyRange.bound(
         [...prefixKeyValues, this.queueName, ""],
         [...prefixKeyValues, this.queueName, "\uffff"]
@@ -892,13 +797,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Gets all jobs from the queue with a custom prefix filter.
-   * Used for subscriptions with custom prefix filters (filters at DB level where possible).
-   *
-   * @param prefixFilter - The prefix values to filter by (empty object = all jobs)
-   * @returns A promise that resolves to an array of jobs
-   */
   private async getAllJobsWithFilter(
     prefixFilter: Readonly<Record<string, string | number>>
   ): Promise<Array<JobStorageFormat<Input, Output>>> {
@@ -914,16 +812,13 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
           const job = cursor.value as JobStorageFormat<Input, Output> & Record<string, unknown>;
-          // Filter by queue name
           if (job.queue !== this.queueName) {
             cursor.continue();
             return;
           }
-          // If empty filter, include all jobs for this queue
           if (Object.keys(prefixFilter).length === 0) {
             jobs.push(job);
           } else {
-            // Check each filter value
             let matches = true;
             for (const [key, value] of Object.entries(prefixFilter)) {
               if (job[key] !== value) {
@@ -945,43 +840,32 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     });
   }
 
-  /**
-   * Checks if a prefix filter is custom (different from instance's prefixes).
-   */
   private isCustomPrefixFilter(prefixFilter?: Readonly<Record<string, string | number>>): boolean {
-    // No filter specified - use instance prefixes (not custom)
     if (prefixFilter === undefined) {
       return false;
     }
-    // Empty filter - receive all (custom)
     if (Object.keys(prefixFilter).length === 0) {
       return true;
     }
-    // Check if filter matches instance prefixes exactly
     const instanceKeys = Object.keys(this.prefixValues);
     const filterKeys = Object.keys(prefixFilter);
     if (instanceKeys.length !== filterKeys.length) {
-      return true; // Different number of keys = custom
+      return true;
     }
     for (const key of instanceKeys) {
       if (this.prefixValues[key] !== prefixFilter[key]) {
-        return true; // Different value = custom
+        return true;
       }
     }
-    return false; // Matches instance prefixes exactly
+    return false;
   }
 
-  /**
-   * Gets or creates the shared hybrid subscription manager for normal subscriptions.
-   * This ensures all normal subscriptions share a single manager.
-   */
   private getHybridManager(): HybridSubscriptionManager<
     JobStorageFormat<Input, Output>,
     unknown,
     QueueChangePayload<Input, Output>
   > {
     if (!this.hybridManager) {
-      // Generate unique channel name based on queue name and table name
       const channelName = `indexeddb-queue-${this.tableName}-${this.queueName}`;
 
       this.hybridManager = new HybridSubscriptionManager<
@@ -991,7 +875,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
       >(
         channelName,
         async () => {
-          // Fetch jobs with instance's prefix filter (efficient DB-level filtering)
           const jobs = await this.getAllJobs();
           return new Map(jobs.map((j) => [j.id, j]));
         },
@@ -1011,10 +894,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
     return this.hybridManager;
   }
 
-  /**
-   * Creates a dedicated polling subscription for custom prefix filters.
-   * This runs separately from the normal polling manager.
-   */
   private subscribeWithCustomPrefixFilter(
     callback: (change: QueueChangePayload<Input, Output>) => void,
     prefixFilter: Readonly<Record<string, string | number>>,
@@ -1030,7 +909,6 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
         if (cancelled) return;
         const currentMap = new Map(currentJobs.map((j) => [j.id, j]));
 
-        // Detect changes
         for (const [id, job] of currentMap) {
           const old = lastKnownJobs.get(id);
           if (!old) {
@@ -1048,12 +926,12 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
 
         lastKnownJobs = currentMap;
       } catch {
-        // Ignore polling errors
+        // ignore polling errors
       }
     };
 
     const intervalId = setInterval(poll, intervalMs);
-    poll(); // Initial poll
+    poll();
 
     return () => {
       cancelled = true;
@@ -1062,15 +940,9 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   }
 
   /**
-   * Subscribes to changes in the queue.
    * Uses polling since IndexedDB has no native cross-tab change notifications.
-   *
-   * Normal subscriptions (no custom prefix filter) share a single polling loop for efficiency.
-   * Custom prefix filter subscriptions get their own dedicated polling loop with DB-level filtering.
-   *
-   * @param callback - Function called when a change occurs
-   * @param options - Subscription options including polling interval and prefix filter
-   * @returns Unsubscribe function
+   * Normal subscriptions share a single polling loop; custom prefix filter
+   * subscriptions get a dedicated loop with DB-level filtering.
    */
   public subscribeToChanges(
     callback: (change: QueueChangePayload<Input, Output>) => void,
@@ -1078,20 +950,14 @@ export class IndexedDbQueueStorage<Input, Output> implements IQueueStorage<Input
   ): () => void {
     const intervalMs = options?.pollingIntervalMs ?? 1000;
 
-    // Check if this is a custom prefix filter subscription
     if (this.isCustomPrefixFilter(options?.prefixFilter)) {
-      // Custom prefix filter - use dedicated polling with DB-level filtering
       return this.subscribeWithCustomPrefixFilter(callback, options!.prefixFilter!, intervalMs);
     }
 
-    // Normal subscription - use shared hybrid manager (efficient)
     const manager = this.getHybridManager();
     return manager.subscribe(callback, { intervalMs });
   }
 
-  /**
-   * Cleanup method to destroy the hybrid manager
-   */
   destroy(): void {
     if (this.hybridManager) {
       this.hybridManager.destroy();

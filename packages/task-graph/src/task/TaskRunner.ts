@@ -52,15 +52,9 @@ export class TaskRunner<
   Output extends TaskOutput = TaskOutput,
   Config extends TaskConfig = TaskConfig,
 > implements ITaskRunner<Input, Output, Config> {
-  /**
-   * Whether the task is currently running
-   */
   protected running = false;
   protected previewRunning = false;
 
-  /**
-   * The task to run
-   */
   public readonly task: ITask<Input, Output, Config>;
 
   /**
@@ -97,14 +91,8 @@ export class TaskRunner<
    */
   protected readonly streamProcessor: StreamProcessor<Input, Output>;
 
-  /**
-   * The service registry for the task
-   */
   protected registry: ServiceRegistry = globalServiceRegistry;
 
-  /**
-   * Resource scope for this task run
-   */
   protected resourceScope?: ResourceScope;
 
   /**
@@ -137,10 +125,6 @@ export class TaskRunner<
    */
   private static __privateWithoutRunIdWarned = new Set<string>();
 
-  /**
-   * Constructor for TaskRunner
-   * @param task The task to run
-   */
   constructor(task: ITask<Input, Output, Config>) {
     this.task = task;
     this.own = this.own.bind(this);
@@ -153,12 +137,6 @@ export class TaskRunner<
   // Public methods
   // ========================================================================
 
-  /**
-   * Runs the task and returns the output
-   * @param overrides Optional input overrides
-   * @param config Optional configuration overrides
-   * @returns The task output
-   */
   async run(overrides: Partial<Input> = {}, config: IRunConfig = {}): Promise<Output> {
     // Reject concurrent run() on the same TaskRunner. Mirrors
     // TaskGraphRunner.handleStart's "Graph is already running" check.
@@ -334,11 +312,6 @@ export class TaskRunner<
     }
   }
 
-  /**
-   * Runs the task in preview mode
-   * @param overrides Optional input overrides
-   * @returns The task output
-   */
   public async runPreview(overrides: Partial<Input> = {}): Promise<Output> {
     if (this.task.status === TaskStatus.PROCESSING) {
       return this.task.runOutputData as Output;
@@ -530,9 +503,6 @@ export class TaskRunner<
     }
   }
 
-  /**
-   * Aborts task execution
-   */
   public abort(): void {
     this.currentCtx?.abortController.abort();
   }
@@ -572,9 +542,6 @@ export class TaskRunner<
     return i;
   }
 
-  /**
-   * Protected method to execute a task by delegating back to the task itself.
-   */
   protected async executeTask(input: Input, ctx: TaskRunContext): Promise<Output | undefined> {
     const result = await this.task.execute(input, {
       signal: ctx.abortController.signal,
@@ -587,9 +554,6 @@ export class TaskRunner<
     return result;
   }
 
-  /**
-   * Protected method for preview execution delegation
-   */
   protected async executeTaskPreview(
     input: Input,
     _ctx: TaskRunContext
@@ -916,11 +880,6 @@ export class TaskRunner<
     this.previewRunning = false;
   }
 
-  /**
-   * Handles task progress update
-   * @param progress Progress value (0-100), or `undefined` for indeterminate
-   * @param args Additional arguments
-   */
   protected async handleProgress(
     progress: number | undefined,
     message?: string,

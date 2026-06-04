@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @description Base class for AI tasks that delegate execution to a
- * provider-registered strategy (direct or queued).
- */
-
 import type {
   IExecuteContext,
   IExecutePreviewContext,
@@ -131,7 +126,7 @@ export class AiTask<
     const base: TaskEntitlement[] = [
       { id: Entitlements.AI_INFERENCE, reason: "Runs AI model inference" },
     ];
-    // Prefer runInputData.model (runtime) over defaults.model (construction-time)
+    // Prefer runInputData.model (runtime) over defaults.model (construction-time).
     const runModel = this.runInputData?.model;
     const modelId =
       typeof runModel === "string"
@@ -152,10 +147,6 @@ export class AiTask<
   public static override configSchema(): DataPortSchema {
     return aiTaskConfigSchema;
   }
-
-  // ========================================================================
-  // Execution
-  // ========================================================================
 
   /**
    * Throws TaskConfigurationError if the model lacks any capability listed in
@@ -186,7 +177,6 @@ export class AiTask<
       );
     }
 
-    // Strict gating: the model must declare every capability this task requires.
     this.gateOrThrow(model);
 
     const jobInput = await this.getJobInput(input);
@@ -271,8 +261,6 @@ export class AiTask<
           model.model_id;
         const resourceKey = `ai:${model.provider}:${modelPath}`;
         executeContext.resourceScope.register(resourceKey, async () => {
-          // Phase 6: run-fns now return Promise<void> and emit via the
-          // AiEmit callback. We don't care about events here, so use noopEmit.
           await disposeFn({ model } as TaskInput, model, AbortSignal.timeout(30_000), noopEmit);
         });
         executeContext.resourceScope.touch(resourceKey);
@@ -281,10 +269,6 @@ export class AiTask<
 
     return output;
   }
-
-  // ========================================================================
-  // Job creation
-  // ========================================================================
 
   /**
    * Get the input to submit to the job queue (or direct execution).
@@ -308,7 +292,6 @@ export class AiTask<
       jobInput.timeoutMs = taskTimeoutMs;
     }
 
-    // Attach structured output schema if the task declares it.
     const inputOutputSchema = input.outputSchema as DataPortSchema;
     if (
       inputOutputSchema &&
@@ -357,10 +340,6 @@ export class AiTask<
     return model?.provider;
   }
 
-  // ========================================================================
-  // Preview execution
-  // ========================================================================
-
   /**
    * Delegates to a provider-registered preview run function if one exists,
    * otherwise falls back to the default Task.executePreview().
@@ -382,10 +361,6 @@ export class AiTask<
     }
     return super.executePreview(input, context);
   }
-
-  // ========================================================================
-  // Validation
-  // ========================================================================
 
   /**
    * Validates that model inputs are valid ModelConfig objects.

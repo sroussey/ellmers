@@ -757,11 +757,11 @@
     },
   },
   "trustedDependencies": [
-    "node-llama-cpp",
-    "better-sqlite3",
     "protobufjs",
+    "better-sqlite3",
     "sharp",
     "onnxruntime-node",
+    "node-llama-cpp",
   ],
   "catalog": {
     "@anthropic-ai/sdk": "^0.100.1",

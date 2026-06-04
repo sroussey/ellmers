@@ -80,12 +80,6 @@ export class ImageEmbeddingTask extends AiVisionTask<
   }
 }
 
-/**
- * Convenience function to run image embedding tasks.
- * Creates and executes an ImageEmbeddingTask with the provided input.
- * @param input The input parameters for image embedding (image and model)
- * @returns Promise resolving to the image embedding vector
- */
 export const imageEmbedding = (
   input: ImageEmbeddingTaskInput,
   config?: ImageEmbeddingTaskConfig,

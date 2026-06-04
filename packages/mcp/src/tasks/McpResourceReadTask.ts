@@ -105,7 +105,6 @@ export class McpResourceReadTask extends Task<
         ],
       });
     }
-    // sse and streamable-http transports require network access
     return mergeEntitlements(base, {
       entitlements: [
         { id: Entitlements.NETWORK_HTTP, reason: "Connects to MCP server over HTTP" },

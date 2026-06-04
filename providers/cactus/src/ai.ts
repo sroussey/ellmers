@@ -51,7 +51,6 @@ export const _testOnly = {
   CACTUS_RUN_FNS,
   cactusEngines,
   cactusConfigJson,
-  // Integrity helpers (test-only):
   CACTUS_HASH_PLACEHOLDER,
   CactusIntegrityError,
   isHashPlaceholder,

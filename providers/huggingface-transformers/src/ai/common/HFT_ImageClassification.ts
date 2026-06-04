@@ -19,8 +19,8 @@ import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
 /**
- * Core implementation for image classification using Hugging Face Transformers.
- * Auto-selects between regular and zero-shot classification.
+ * Auto-selects between regular and zero-shot classification based on
+ * `provider_config.pipeline`.
  */
 export const HFT_ImageClassification: AiProviderRunFn<
   ImageClassificationTaskInput,

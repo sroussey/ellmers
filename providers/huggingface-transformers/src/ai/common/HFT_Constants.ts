@@ -12,7 +12,7 @@ export const HF_TRANSFORMERS_ONNX_CPU = `${HF_TRANSFORMERS_ONNX}_cpu`;
 export const HTF_CACHE_NAME = "transformers-cache";
 
 export type QuantizationDataType =
-  | "auto" // Auto-detect based on environment
+  | "auto"
   | "fp32"
   | "fp16"
   | "q8"
@@ -73,9 +73,7 @@ type VisionPipelineUseCase =
   | "depth-estimation" // https://huggingface.co/tasks/depth-estimation
   | "image-classification" // https://huggingface.co/tasks/image-classification
   | "image-to-image" // https://huggingface.co/tasks/image-to-image
-  // | "text-to-image" // https://huggingface.co/tasks/text-to-image
   | "image-to-text" // https://huggingface.co/tasks/image-to-text
-  // | "image-text-to-text" // https://huggingface.co/tasks/image-text-to-text
   | "object-detection" // https://huggingface.co/tasks/object-detection
   | "image-feature-extraction"; // https://huggingface.co/tasks/image-feature-extraction
 
@@ -85,9 +83,7 @@ const VisionPipelineUseCase = {
   "depth-estimation": "depth-estimation",
   "image-classification": "image-classification",
   "image-to-image": "image-to-image",
-  // "text-to-image": "text-to-image",
   "image-to-text": "image-to-text",
-  // "image-text-to-text": "image-text-to-text",
   "object-detection": "object-detection",
   "image-feature-extraction": "image-feature-extraction",
 } as const satisfies Record<VisionPipelineUseCase, VisionPipelineUseCase>;

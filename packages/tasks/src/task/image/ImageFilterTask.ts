@@ -26,10 +26,10 @@ export abstract class ImageFilterTask<
   protected abstract readonly filterName: string;
   protected abstract opParams(input: Input): P;
 
-  /** Override in subclasses with pixel-space params. Default is identity.
-   *  Always called before applyFilter; multiply-by-1 in run mode is a no-op.
-   *  Now called by both execute() and executePreview() since ImageValue
-   *  carries previewScale on the value, not the run mode. */
+  /**
+   * Override in subclasses to scale pixel-space params. Default is identity.
+   * Always called before applyFilter; multiply-by-1 in run mode is a no-op.
+   */
   protected scalePreviewParams(params: P, _scale: number): P {
     return params;
   }
@@ -50,12 +50,12 @@ export abstract class ImageFilterTask<
         const value = await out.toImageValue(previewScale);
         return { image: value } as Output;
       } catch (err) {
-        // toImageValue self-disposes on its happy path; this catches a throw
-        // before that disposal runs (e.g. a sync precondition failure).
+        // toImageValue self-disposes on success; this catches a throw before
+        // that disposal runs (e.g. a sync precondition failure).
         try {
           out.dispose();
         } catch {
-          // already disposed — fall through
+          // already disposed
         }
         throw err;
       }

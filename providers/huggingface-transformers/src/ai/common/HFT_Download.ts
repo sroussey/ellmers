@@ -14,13 +14,9 @@ import type { HfTransformersOnnxModelConfig } from "./HFT_ModelSchema";
 import { getPipeline } from "./HFT_Pipeline";
 
 /**
- * Core implementation for downloading and caching a Hugging Face Transformers model.
- * This is shared between inline and worker implementations.
- *
- * The download is the entire operation, so progress is forwarded via `phase`
- * stream events through the `emit` callback passed to {@link getPipeline}. The
- * {@link StreamProcessor} consumer translates each phase event into a task-level
- * progress callback.
+ * Progress is forwarded via `phase` stream events through the `emit` callback
+ * passed to {@link getPipeline}. The {@link StreamProcessor} consumer translates
+ * each phase event into a task-level progress callback.
  */
 export const HFT_Download: AiProviderRunFn<
   ModelDownloadTaskRunInput,

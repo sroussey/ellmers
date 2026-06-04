@@ -293,7 +293,7 @@ export class SupabaseQueueStorage<Input, Output> implements IQueueStorage<Input,
       .single();
 
     if (error) {
-      // H2: race-safety for fingerprint dedup. Supabase surfaces Postgres
+      // Race-safety for fingerprint dedup. Supabase surfaces Postgres
       // unique_violation as `code === "23505"` on the PostgREST error shape.
       // When the partial UNIQUE index on (queue, fingerprint) WHERE status
       // IN ('PENDING','PROCESSING') fires, resolve the race by returning

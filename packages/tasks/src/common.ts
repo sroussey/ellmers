@@ -11,7 +11,7 @@ import "./task/adaptive";
 
 // Register the FETCH_* error-code reconstructor as a module side-effect so
 // JobQueueClient can rebuild typed FetchUrl errors from persisted codes
-// without statically importing @workglow/tasks (cross-package coupling).
+// without statically importing @workglow/tasks.
 import { registerErrorCodeReconstructor } from "@workglow/job-queue";
 import { buildFetchUrlError } from "./task/FetchUrlJobError";
 registerErrorCodeReconstructor("FETCH_", buildFetchUrlError);
@@ -155,7 +155,6 @@ import { VectorScaleTask } from "./task/vector/VectorScaleTask";
 import { VectorSubtractTask } from "./task/vector/VectorSubtractTask";
 import { VectorSumTask } from "./task/vector/VectorSumTask";
 
-// Register all common tasks with the TaskRegistry.
 // Centralized registration ensures tasks are available for JSON deserialization
 // and prevents tree-shaking issues.
 export let registerCommonTasks = () => {

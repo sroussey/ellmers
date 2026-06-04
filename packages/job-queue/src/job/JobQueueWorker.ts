@@ -524,7 +524,6 @@ export class JobQueueWorker<
   protected async processJobs(): Promise<void> {
     while (this.running) {
       try {
-        // Check for aborting jobs
         await this.checkForAbortingJobs();
 
         // Claim first, then atomically reserve a limiter slot. Doing the claim
@@ -667,7 +666,6 @@ export class JobQueueWorker<
 
     const startTime = Date.now();
 
-    // Start telemetry span for job processing
     const telemetry = getTelemetryProvider();
     const span = telemetry.isEnabled
       ? telemetry.startSpan("workglow.job.process", {

@@ -108,9 +108,6 @@ export class TextGenerationTask extends StreamingAiTask<
   }
 }
 
-/**
- * Task for generating text using a language model
- */
 export const textGeneration = (
   input: TextGenerationTaskInput,
   config?: TextGenerationTaskConfig,

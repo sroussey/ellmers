@@ -14,10 +14,6 @@
 import { resourcePatternMatches } from "@workglow/task-graph";
 import ipaddr from "ipaddr.js";
 
-// ========================================================================
-// Types
-// ========================================================================
-
 export type UrlClassificationKind = "public" | "private" | "invalid";
 
 export interface UrlClassification {
@@ -29,10 +25,6 @@ export interface UrlClassification {
   /** Canonical dotted-quad IPv4 / RFC5952 IPv6 if the host is a literal IP. */
   readonly literalIp?: string;
 }
-
-// ========================================================================
-// Private hostname patterns
-// ========================================================================
 
 /** Hostnames that are always considered private regardless of DNS. */
 const PRIVATE_EXACT_HOSTS: ReadonlySet<string> = new Set([
@@ -95,10 +87,6 @@ const PRIVATE_IPV6_RANGES: ReadonlySet<string> = new Set([
   "orchid2", // 2001:20::/28
   "droneRemoteIdProtocolEntityTags", // 2001:30::/28
 ]);
-
-// ========================================================================
-// IPv4 multi-format parser
-// ========================================================================
 
 /**
  * Accepts an IPv4 literal in any of the legacy forms accepted by inet_aton
@@ -168,10 +156,6 @@ export function tryNormalizeIPv4(host: string): string | undefined {
   return `${o1}.${o2}.${o3}.${o4}`;
 }
 
-// ========================================================================
-// IP literal detection & classification
-// ========================================================================
-
 /**
  * Classifies a literal IP address (v4 or v6) as public or private.
  * Returns undefined if the address is not a valid IP literal.
@@ -223,10 +207,6 @@ export function classifyIpLiteral(
   return { kind: "public", canonical };
 }
 
-// ========================================================================
-// Hostname normalization
-// ========================================================================
-
 function normalizeHost(host: string): string {
   // Strip surrounding IPv6 brackets if present (defensive — URL.hostname
   // usually already strips them).
@@ -252,10 +232,6 @@ function matchesPrivateHostnamePattern(host: string): string | undefined {
   }
   return undefined;
 }
-
-// ========================================================================
-// Public API
-// ========================================================================
 
 /**
  * Statically classify a URL as public, private, or invalid.
@@ -288,7 +264,6 @@ export function classifyUrl(urlStr: string): UrlClassification {
     return { kind: "invalid", reason: "empty host" };
   }
 
-  // 1. Literal IP (v4 or v6)
   const ipClassification = classifyIpLiteral(host);
   if (ipClassification !== undefined) {
     return {
@@ -299,13 +274,11 @@ export function classifyUrl(urlStr: string): UrlClassification {
     };
   }
 
-  // 2. Well-known private hostnames / suffixes
   const hostnameReason = matchesPrivateHostnamePattern(host);
   if (hostnameReason !== undefined) {
     return { kind: "private", reason: hostnameReason, host };
   }
 
-  // 3. Default: public
   return { kind: "public", host };
 }
 

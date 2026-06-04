@@ -13,15 +13,14 @@
  * bootstrapWorkglow({ logger: new TsLogLogger() });
  * ```
  *
- * Use it when you want the historical "import workglow and go" ergonomics
- * without a separate startup call:
+ * Use it for "import workglow and go" ergonomics:
  *
  * ```ts
  * import "workglow/auto-bootstrap";
  * ```
  *
- * For library code, multi-tenant servers, tests, or any use case that needs
- * a configurable or isolated registry, prefer `bootstrapWorkglow()` /
+ * For library code, multi-tenant servers, tests, or any case needing a
+ * configurable or isolated registry, prefer `bootstrapWorkglow()` /
  * `createOrchestrationContext()` from `workglow/bootstrap`.
  */
 

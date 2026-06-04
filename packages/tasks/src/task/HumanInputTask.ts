@@ -23,10 +23,6 @@ import type {
 import { resolveHumanConnector, uuid4 } from "@workglow/util";
 import type { DataPortSchema, PropertySchema } from "@workglow/util/schema";
 
-// ========================================================================
-// Task config and schemas
-// ========================================================================
-
 const humanInputTaskConfigSchema = {
   type: "object",
   properties: {
@@ -141,10 +137,6 @@ export type HumanInputTaskOutput = {
   /** Additional response data (for elicit kind) */
   [key: string]: unknown;
 };
-
-// ========================================================================
-// HumanInputTask
-// ========================================================================
 
 /**
  * A task that sends an interaction to a human via an IHumanConnector.

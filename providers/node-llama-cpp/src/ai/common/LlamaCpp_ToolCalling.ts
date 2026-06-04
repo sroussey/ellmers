@@ -25,10 +25,6 @@ import {
 } from "./LlamaCpp_Runtime";
 import { extractToolCallsFromText } from "./LlamaCpp_ToolParser";
 
-// ============================================================================
-// System prompt
-// ============================================================================
-
 function buildSystemPrompt(input: ToolCallingTaskInput): string | undefined {
   const base = input.systemPrompt;
   if (input.toolChoice === "required") {
@@ -38,10 +34,6 @@ function buildSystemPrompt(input: ToolCallingTaskInput): string | undefined {
   }
   return base || undefined;
 }
-
-// ============================================================================
-// Message → ChatHistoryItem[] conversion
-// ============================================================================
 
 /**
  * Convert workglow messages to node-llama-cpp's `ChatHistoryItem[]`.
@@ -149,10 +141,6 @@ export function convertMessagesToChatHistory(
   return history;
 }
 
-// ============================================================================
-// ChatModelFunctions builder (schema only, no handlers)
-// ============================================================================
-
 function buildChatModelFunctions(
   tools: ReadonlyArray<ToolDefinition>
 ): Record<string, { description?: string; params?: any }> {
@@ -165,10 +153,6 @@ function buildChatModelFunctions(
   }
   return functions;
 }
-
-// ============================================================================
-// Prompt options
-// ============================================================================
 
 /**
  * Sampling options for {@link LlamaChat.generateResponse}.
@@ -192,10 +176,6 @@ function llamaCppChatGenerateOptions(
   return opts;
 }
 
-// ============================================================================
-// Extract tool calls from LlamaChat response
-// ============================================================================
-
 function extractNativeFunctionCalls(
   functionCalls: ReadonlyArray<{ functionName: string; params: any }> | undefined
 ): ToolCalls {
@@ -209,10 +189,6 @@ function extractNativeFunctionCalls(
     >,
   }));
 }
-
-// ============================================================================
-// Shared streaming helper
-// ============================================================================
 
 /**
  * Drives an async generation call that pushes text chunks via `onTextChunk`,
@@ -283,10 +259,6 @@ async function* streamTextChunks<T>(
   return { text: accumulatedText, result };
 }
 
-// ============================================================================
-// Streaming run function
-// ============================================================================
-
 export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -302,7 +274,6 @@ export const LlamaCpp_ToolCalling_Stream: AiProviderRunFn<
   const { LlamaChat } = getLlamaCppSdk();
   const systemPrompt = buildSystemPrompt(input);
 
-  // ---- Native function calling path via LlamaChat ----
   const llamaChat = new LlamaChat({
     contextSequence: sequence,
     ...llamaCppChatSessionConstructorSpread(model),

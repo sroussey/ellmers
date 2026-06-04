@@ -15,9 +15,6 @@ import { InMemoryModelRepository } from "./InMemoryModelRepository";
 import { ModelRepository } from "./ModelRepository";
 import type { ModelConfig } from "./ModelSchema";
 
-/**
- * Service token for the global model repository
- */
 export const MODEL_REPOSITORY = createServiceToken<ModelRepository>("model.repository");
 
 /**
@@ -36,9 +33,6 @@ export function getGlobalModelRepository(
   return registry.get(MODEL_REPOSITORY);
 }
 
-/**
- * Sets the model repository instance on the given registry (defaults to global).
- */
 export function setGlobalModelRepository(
   repository: ModelRepository,
   registry: ServiceRegistry = globalServiceRegistry
@@ -47,10 +41,9 @@ export function setGlobalModelRepository(
 }
 
 /**
- * Resolves a model ID to a ModelConfig from the repository.
- * Used by the input resolver system. Resolves from the supplied registry —
- * `getGlobalModelRepository` lazy-registers defaults on it if absent, so a
- * scoped registry stays isolated from the global model repository.
+ * Resolves from the supplied registry — `getGlobalModelRepository`
+ * lazy-registers defaults on it if absent, so a scoped registry stays
+ * isolated from the global model repository.
  */
 async function resolveModelFromRegistry(
   id: string,

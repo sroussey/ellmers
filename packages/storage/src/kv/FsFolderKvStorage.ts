@@ -16,21 +16,14 @@ export const FS_FOLDER_KV_REPOSITORY = createServiceToken<IKvStorage<string, any
 );
 
 /**
- * A key-value repository implementation that stores each value as a file in a specified folder.
- * Uses the file system for persistence, with each key mapped to a file path.
- *
- * @template Key - The type of the primary key
- * @template Value - The type of the value being stored
- * @template Combined - Combined type of Key & Value
+ * Key-value repository that stores each value as a file in a folder, using
+ * a caller-supplied `pathWriter` to map keys to relative paths.
  */
 export class FsFolderKvStorage<
   Key extends string = string,
   Value extends any = any,
   Combined = { key: Key; value: Value },
 > extends KvStorage<Key, Value, Combined> {
-  /**
-   * Creates a new KvStorage instance
-   */
   constructor(
     public folderPath: string,
     public pathWriter: (key: Key) => string,
@@ -40,28 +33,20 @@ export class FsFolderKvStorage<
     super(keySchema, valueSchema);
   }
 
-  /**
-   * Sets up the directory for the repository (creates directory)
-   */
   private async setupDirectory(): Promise<void> {
     try {
       await mkdir(this.folderPath, { recursive: true });
     } catch (error) {
-      // CI system sometimes has issues temporarily
+      // CI system sometimes has issues temporarily; retry once.
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
         await mkdir(this.folderPath, { recursive: true });
       } catch {
-        // Ignore error if directory already exists
+        // Ignore: directory likely already exists.
       }
     }
   }
 
-  /**
-   * Stores a row in the repository.
-   * @param key - The primary key
-   * @param value - The value to store
-   */
   public async put(key: Key, value: Value): Promise<void> {
     const localPath = path.join(this.folderPath, this.pathWriter(key).replaceAll("..", "_"));
 
@@ -77,7 +62,6 @@ export class FsFolderKvStorage<
     } else if (schemaType === "object") {
       content = JSON.stringify(value);
     } else if (typeof value === "object") {
-      // Handle 'json' type schema from tests
       content = JSON.stringify(value);
     } else {
       content = String(value);
@@ -88,19 +72,12 @@ export class FsFolderKvStorage<
     this.events.emit("put", key, value);
   }
 
-  /**
-   * Stores multiple rows in the repository in a bulk operation.
-   * @param items - Array of key-value pairs to store
-   */
   public async putBulk(items: Array<{ key: Key; value: Value }>): Promise<void> {
     await this.setupDirectory();
     await Promise.all(items.map(async ({ key, value }) => this.put(key, value)));
   }
 
-  /**
-   * Retrieves multiple values by their keys via parallel single-file reads.
-   * Missing keys are dropped from the result.
-   */
+  /** Parallel single-file reads; missing keys are dropped from the result. */
   public async getBulk(keys: readonly Key[]): Promise<Combined[]> {
     if (keys.length === 0) return [];
     const settled = await Promise.all(
@@ -115,13 +92,6 @@ export class FsFolderKvStorage<
     return combined;
   }
 
-  /**
-   * Retrieves a value by its key.
-   * This is a convenience method that automatically converts simple types to structured format if using default schema.
-   *
-   * @param key - Primary key to look up (basic key like default schema)
-   * @returns The stored value or undefined if not found
-   */
   public async get(key: Key): Promise<Value | undefined> {
     const localPath = path.join(this.folderPath, this.pathWriter(key).replaceAll("..", "_"));
     const typeDef = this.valueSchema;
@@ -149,7 +119,6 @@ export class FsFolderKvStorage<
           try {
             value = JSON.parse(content) as Value;
           } catch (e) {
-            // If JSON parsing fails, return as string
             value = content as unknown as Value;
           }
         } else {
@@ -167,37 +136,22 @@ export class FsFolderKvStorage<
     }
   }
 
-  /**
-   * Deletes a row from the repository.
-   * @param key - The primary key of the row to delete
-   */
   public async delete(key: Key): Promise<void> {
     const localPath = path.join(this.folderPath, this.pathWriter(key).replaceAll("..", "_"));
     await unlink(localPath);
     this.events.emit("delete", key);
   }
 
-  /**
-   * Retrieves all rows from the repository.
-   * @returns An array of all rows in the repository or undefined if empty
-   */
   public async getAll(): Promise<Combined[] | undefined> {
     throw new Error("Not implemented");
   }
 
-  /**
-   * Deletes all rows from the repository.
-   */
   public async deleteAll(): Promise<void> {
     const localPath = path.join(this.folderPath);
     await rm(localPath, { recursive: true, force: true });
     this.events.emit("deleteall");
   }
 
-  /**
-   * Retrieves the number of rows in the repository.
-   * @returns The number of rows in the repository
-   */
   public async size(): Promise<number> {
     throw new Error("Not implemented");
   }

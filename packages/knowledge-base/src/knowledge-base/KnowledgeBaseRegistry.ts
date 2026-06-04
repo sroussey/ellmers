@@ -18,16 +18,9 @@ import type { KnowledgeBaseRecord } from "./KnowledgeBaseSchema";
 import { knowledgeBaseTableNames } from "./KnowledgeBaseSchema";
 import { SHARED_CHUNK_TABLE, SHARED_DOCUMENT_TABLE } from "./SharedTableSchemas";
 
-/**
- * Service token for the knowledge base registry
- * Maps knowledge base IDs to KnowledgeBase instances
- */
 export const KNOWLEDGE_BASES =
   createServiceToken<Map<string, KnowledgeBase>>("knowledge-base.registry");
 
-/**
- * Service token for the knowledge base repository
- */
 export const KNOWLEDGE_BASE_REPOSITORY = createServiceToken<KnowledgeBaseRepository>(
   "knowledge-base.repository"
 );
@@ -47,10 +40,6 @@ export function getGlobalKnowledgeBases(
   return registry.get(KNOWLEDGE_BASES);
 }
 
-/**
- * Gets the knowledge base repository instance from the given registry (defaults to global).
- * Lazily registers defaults if absent.
- */
 export function getGlobalKnowledgeBaseRepository(
   registry: ServiceRegistry = globalServiceRegistry
 ): KnowledgeBaseRepository {
@@ -60,9 +49,6 @@ export function getGlobalKnowledgeBaseRepository(
   return registry.get(KNOWLEDGE_BASE_REPOSITORY);
 }
 
-/**
- * Sets the knowledge base repository instance on the given registry (defaults to global).
- */
 export function setGlobalKnowledgeBaseRepository(
   repository: KnowledgeBaseRepository,
   registry: ServiceRegistry = globalServiceRegistry
@@ -76,16 +62,11 @@ export interface RegisterKnowledgeBaseOptions {
 }
 
 /**
- * Per-ID promise chain that serializes register/unregister operations
- * on the same knowledge base ID, preventing Map/repo divergence
- * during async interleaving.
+ * Per-ID promise chain that serializes register/unregister operations on the
+ * same knowledge base ID to prevent Map/repo divergence under async interleaving.
  */
 const pendingOps = new Map<string, Promise<void>>();
 
-/**
- * Enqueues an async operation for the given ID so that concurrent
- * calls on the same ID execute sequentially.
- */
 function withIdLock(id: string, fn: () => Promise<void>): Promise<void> {
   const prev = pendingOps.get(id) ?? Promise.resolve();
   const next = prev.then(fn, fn);
@@ -100,11 +81,9 @@ function withIdLock(id: string, fn: () => Promise<void>): Promise<void> {
 }
 
 /**
- * Registers a knowledge base globally by ID.
- * Adds to both the live Map and the persistent repository.
- * Serialized per-ID to prevent Map/repo divergence on concurrent calls.
+ * Adds to both the live Map and the persistent repository. Serialized per-ID
+ * to prevent Map/repo divergence on concurrent calls.
  */
-
 export function registerKnowledgeBase(
   id: string,
   kb: KnowledgeBase,
@@ -129,20 +108,16 @@ export function registerKnowledgeBase(
       updated_at: now,
     };
 
-    // Write to persistent repository first so a failure doesn't leave stale in-memory state
+    // Write to persistent repository first so a failure doesn't leave stale
+    // in-memory state behind.
     const repo = getGlobalKnowledgeBaseRepository();
     await repo.addKnowledgeBase(record);
 
-    // Only add to live map after successful persistence
     kbs.set(id, kb);
   });
 }
 
-/**
- * Unregisters a knowledge base by ID.
- * Removes from both the persistent repository and the live Map.
- * Serialized per-ID to prevent Map/repo divergence on concurrent calls.
- */
+/** Serialized per-ID to prevent Map/repo divergence on concurrent calls. */
 export function unregisterKnowledgeBase(id: string): Promise<void> {
   return withIdLock(id, async () => {
     const repo = getGlobalKnowledgeBaseRepository();
@@ -153,12 +128,8 @@ export function unregisterKnowledgeBase(id: string): Promise<void> {
   });
 }
 
-/**
- * Deregisters a knowledge base by ID.
- * Removes from both the live Map and the persistent repository.
- */
 export async function deregisterKnowledgeBase(id: string): Promise<void> {
-  // Remove from persistent repository first so a failure doesn't leave stale in-memory state
+  // Repo-first so a failure can't leave stale in-memory state behind.
   const repo = getGlobalKnowledgeBaseRepository();
   await repo.removeKnowledgeBase(id);
 
@@ -166,17 +137,10 @@ export async function deregisterKnowledgeBase(id: string): Promise<void> {
   kbs.delete(id);
 }
 
-/**
- * Gets a knowledge base by ID from the global registry
- */
 export function getKnowledgeBase(id: string): KnowledgeBase | undefined {
   return getGlobalKnowledgeBases().get(id);
 }
 
-/**
- * Resolves a knowledge base ID from the registry.
- * Used by the input resolver system.
- */
 async function resolveKnowledgeBaseFromRegistry(
   id: string,
   _format: string,
@@ -205,10 +169,6 @@ function compactKnowledgeBase(
   return undefined;
 }
 
-/**
- * Registers the knowledge base default factories and the "knowledge-base" input resolver/compactor
- * on the given registry. Called by `bootstrapWorkglow` and `createOrchestrationContext`.
- */
 export function registerKnowledgeBaseDefaults(
   registry: ServiceRegistry = globalServiceRegistry
 ): void {
@@ -222,6 +182,5 @@ export function registerKnowledgeBaseDefaults(
   registerInputCompactor("knowledge-base", compactKnowledgeBase, registry);
 }
 
-// Self-register on the global registry. Idempotent — a no-op once
-// `bootstrapWorkglow()` (or another importer) has populated these tokens.
+// Self-register on the global registry; idempotent.
 registerKnowledgeBaseDefaults();

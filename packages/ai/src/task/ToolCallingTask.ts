@@ -19,10 +19,6 @@ import type { ChatMessage } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
 import type { ToolDefinition } from "./ToolCallingUtils";
 
-// ========================================================================
-// Utility: convert TaskRegistry entries to tool definitions
-// ========================================================================
-
 export interface ToolDefinitionWithTaskType extends ToolDefinition {
   /** The task type name this definition was generated from. */
   readonly taskType: string;
@@ -67,10 +63,6 @@ export function taskTypesToTools(
     };
   });
 }
-
-// ========================================================================
-// Schemas
-// ========================================================================
 
 export const ToolDefinitionSchema = {
   type: "object",
@@ -265,10 +257,6 @@ export type ToolCallingTaskInput = Omit<
 export type ToolCallingTaskOutput = FromSchema<typeof ToolCallingOutputSchema>;
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 
-// ========================================================================
-// Task class
-// ========================================================================
-
 export class ToolCallingTask extends StreamingAiTask<
   ToolCallingTaskInput,
   ToolCallingTaskOutput,
@@ -345,9 +333,6 @@ export class ToolCallingTask extends StreamingAiTask<
   }
 }
 
-/**
- * Convenience function to run a tool calling task.
- */
 export const toolCalling = (
   input: ToolCallingTaskInput,
   config?: ToolCallingTaskConfig,

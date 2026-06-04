@@ -238,9 +238,7 @@ export async function searchMcpRegistryPage(
   };
 }
 
-/**
- * Search the MCP registry for servers matching a query (first page only).
- */
+/** First-page convenience over {@link searchMcpRegistryPage}. */
 export async function searchMcpRegistry(
   query: string,
   signal?: AbortSignal
@@ -284,9 +282,6 @@ export class McpSearchTask extends Task<McpSearchTaskInput, McpSearchTaskOutput,
   }
 }
 
-/**
- * Search the MCP server registry.
- */
 export const mcpSearch = (input: McpSearchTaskInput, config?: TaskConfig) => {
   return new McpSearchTask(config).run(input);
 };

@@ -58,19 +58,11 @@ export class AiImageOutputTask<
    *  lifetime is JS GC — replacing the slot lets the prior become collectable. */
   protected _latestPartial: ImageValue | undefined = undefined;
 
-  // --------------------------------------------------------------------
-  // Cache policy: seed-aware
-  // --------------------------------------------------------------------
-
   public override getCachePolicy(inputs: Input): CachePolicy {
     const seed = (inputs as { seed?: number | null } | undefined)?.seed;
     if (seed === undefined || seed === null) return { kind: "private" };
     return { kind: "deterministic" };
   }
-
-  // --------------------------------------------------------------------
-  // Streaming accumulator
-  // --------------------------------------------------------------------
 
   /**
    * Called by executeStream() (or directly by tests) for each partial image
@@ -98,10 +90,6 @@ export class AiImageOutputTask<
   protected discardPartial(): void {
     this._latestPartial = undefined;
   }
-
-  // --------------------------------------------------------------------
-  // executeStream override
-  // --------------------------------------------------------------------
 
   /**
    * Wraps the StreamingAiTask stream to track partial images via ingestPartial,
@@ -145,10 +133,6 @@ export class AiImageOutputTask<
     }
   }
 
-  // --------------------------------------------------------------------
-  // Preview
-  // --------------------------------------------------------------------
-
   /**
    * Cheap UI preview path. NEVER calls the provider.
    * Order of preference:
@@ -171,10 +155,6 @@ export class AiImageOutputTask<
     return undefined;
   }
 
-  // --------------------------------------------------------------------
-  // Cleanup
-  // --------------------------------------------------------------------
-
   /**
    * Called by the runner on abort. Clears any retained partial.
    * Errors during executeStream are handled inline via the catch block.
@@ -182,10 +162,6 @@ export class AiImageOutputTask<
   async cleanup(): Promise<void> {
     this.discardPartial();
   }
-
-  // --------------------------------------------------------------------
-  // Validation hook
-  // --------------------------------------------------------------------
 
   /**
    * Hook for subclasses + providers to reject unsupported (model, input)

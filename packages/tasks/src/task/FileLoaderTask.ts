@@ -186,16 +186,10 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     };
   }
 
-  /**
-   * Parse JSON content
-   */
   protected parseJsonContent(content: string): unknown {
     return JSON.parse(content);
   }
 
-  /**
-   * Parse CSV content into array of objects
-   */
   protected async parseCsvContent(content: string): Promise<Array<Record<string, string>>> {
     try {
       const parse = await getPapaParse();
@@ -221,7 +215,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     readonly frontmatter: Record<string, unknown> | undefined;
     readonly body: string;
   } {
-    // Strip optional BOM and leading whitespace
     const trimmed = content.replace(/^\uFEFF/, "");
     if (!trimmed.startsWith("---\n") && !trimmed.startsWith("---\r\n")) {
       return { frontmatter: undefined, body: content };
@@ -234,7 +227,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     }
 
     const yamlBlock = trimmed.slice(firstDelimEnd, closingIdx);
-    // Body starts after the closing --- and its trailing newline
     const afterClosing = closingIdx + 4; // "\n---".length
     let bodyStart = afterClosing;
     if (trimmed[bodyStart] === "\r") bodyStart++;
@@ -245,9 +237,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     return { frontmatter, body };
   }
 
-  /**
-   * Lightweight line-based YAML parser for frontmatter key-value pairs.
-   */
   private parseSimpleYaml(yaml: string): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     const lines = yaml.split(/\r?\n/);
@@ -269,13 +258,12 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     if (index >= lines.length) return index + 1;
     const line = lines[index];
 
-    // Skip empty lines and comments
     if (line.trim() === "" || line.trim().startsWith("#")) {
       return index + 1;
     }
 
     const lineIndent = line.length - line.trimStart().length;
-    if (lineIndent < indent) return index; // Dedented, stop
+    if (lineIndent < indent) return index;
 
     const match = line.match(/^(\s*)([^:#]+?)\s*:\s*(.*)?$/);
     if (!match) return index + 1;
@@ -284,7 +272,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     const rawValue = (match[3] ?? "").trim();
 
     if (rawValue === "" || rawValue === "|" || rawValue === ">") {
-      // Check if next line is an array or nested object
       const nextIndex = index + 1;
       if (nextIndex < lines.length) {
         const nextLine = lines[nextIndex];
@@ -292,7 +279,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
         const nextIndent = nextLine.length - nextTrimmed.length;
 
         if (nextIndent > lineIndent && nextTrimmed.startsWith("- ")) {
-          // Array
           const arr: unknown[] = [];
           let j = nextIndex;
           while (j < lines.length) {
@@ -314,7 +300,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
           target[key] = arr;
           return j;
         } else if (nextIndent > lineIndent) {
-          // Nested object
           const nested: Record<string, unknown> = {};
           let j = nextIndex;
           while (j < lines.length) {
@@ -332,7 +317,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
           return j;
         }
       }
-      // Empty value
       target[key] = rawValue === "" ? null : rawValue;
       return index + 1;
     }
@@ -342,31 +326,22 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
   }
 
   private parseYamlValue(raw: string): unknown {
-    // Quoted strings
     if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
       return raw.slice(1, -1);
     }
-    // Booleans
     if (raw === "true" || raw === "True" || raw === "TRUE") return true;
     if (raw === "false" || raw === "False" || raw === "FALSE") return false;
-    // Null
     if (raw === "null" || raw === "~") return null;
-    // Numbers
     if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
-    // Inline arrays [a, b, c]
     if (raw.startsWith("[") && raw.endsWith("]")) {
       return raw
         .slice(1, -1)
         .split(",")
         .map((item) => this.parseYamlValue(item.trim()));
     }
-    // Plain string
     return raw;
   }
 
-  /**
-   * Parse the fetch response into typed outputs
-   */
   protected async parseResponse(
     response: FetchUrlTaskOutput,
     url: string,
@@ -495,13 +470,7 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     };
   }
 
-  /**
-   * Detect the appropriate response type for fetching based on the detected format
-   * @param detectedFormat - The detected format
-   * @returns The appropriate response type
-   */
   protected detectResponseType(detectedFormat: string): "text" | "json" | "blob" | "arraybuffer" {
-    // Determine appropriate response type for fetching
     let responseType: "text" | "json" | "blob" | "arraybuffer" = "text";
     if (detectedFormat === "json") {
       responseType = "json";
@@ -518,12 +487,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     return responseType;
   }
 
-  /**
-   *
-   * @param url - The URL to detect the format from
-   * @param format - The format (assuming "auto" if not provided)
-   * @returns
-   */
   protected detectFormat(
     url: string,
     format: "text" | "markdown" | "json" | "csv" | "pdf" | "image" | "html" | "auto"
@@ -549,9 +512,6 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     return format;
   }
 
-  /**
-   * Get image MIME type based on URL extension
-   */
   protected getImageMimeType(url: string): string {
     const urlLower = url.toLowerCase();
     if (urlLower.endsWith(".png")) return "image/png";
@@ -561,25 +521,19 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     if (urlLower.endsWith(".bmp")) return "image/bmp";
     if (urlLower.endsWith(".svg")) return "image/svg+xml";
     if (urlLower.endsWith(".ico")) return "image/x-icon";
-    return "image/jpeg"; // default
+    return "image/jpeg";
   }
 
-  /**
-   * Convert Blob to base64 data URL
-   */
   protected async blobToBase64DataURL(blob: Blob, mimeType: string): Promise<string> {
-    // For Node.js/Bun environments
     if (typeof Buffer !== "undefined") {
       const arrayBuffer = await blob.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       return `data:${mimeType};base64,${buffer.toString("base64")}`;
     }
 
-    // For browser environments
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        // If blob had no type, replace empty type with provided mimeType
         const result = reader.result as string;
         if (result.startsWith("data:;base64,")) {
           resolve(`data:${mimeType};base64,${result.substring(13)}`);
