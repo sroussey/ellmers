@@ -68,7 +68,7 @@
     "smol-toml": "^1.6.1"
   },
   "devDependencies": {
-    "@types/react": "^19.2.16"
+    "@types/react": "^19.2.17"
   },
   "publishConfig": {
     "access": "public"

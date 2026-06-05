@@ -23,8 +23,8 @@
     "test-concurrently": "bash -c 'cmds=(); for d in ./src/test/*/; do cmds+=(\"cd $d && bun test\"); done; concurrently \"${cmds[@]}\"'"
   },
   "devDependencies": {
-    "@aws-sdk/client-sqs": "^3.1061.0",
-    "@cloudflare/workers-types": "^4.20260604.1",
+    "@aws-sdk/client-sqs": "^3.1063.0",
+    "@cloudflare/workers-types": "^4.20260605.1",
     "@electric-sql/pglite": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
