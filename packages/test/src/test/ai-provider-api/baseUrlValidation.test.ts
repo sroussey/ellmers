@@ -100,6 +100,52 @@ describe("validateProviderBaseUrl (L-MAIN-02)", () => {
       expect(result).toBeDefined();
       expect(new URL(result!).hostname).toBe("[::1]");
     });
+
+    it("rejects evilapi.openai.com (label-boundary attack)", () => {
+      // An attacker host that ends in the legitimate host string but is not
+      // a true subdomain (no label boundary) must NOT pass.
+      expect(() => validateProviderBaseUrl("https://evilapi.openai.com/v1", opts)).toThrow(
+        /not in the allow-list/
+      );
+    });
+
+    it("rejects notapi.openai.com", () => {
+      expect(() => validateProviderBaseUrl("https://notapi.openai.com/v1", opts)).toThrow(
+        /not in the allow-list/
+      );
+    });
+
+    it("rejects maliciousapi.anthropic.com", () => {
+      const anthropicOpts = {
+        vendor: "anthropic" as const,
+        allowHosts: ANTHROPIC_ALLOWED_HOSTS,
+        providerLabel: "Anthropic",
+      };
+      expect(() =>
+        validateProviderBaseUrl("https://maliciousapi.anthropic.com/v1", anthropicOpts)
+      ).toThrow(/not in the allow-list/);
+    });
+
+    it("rejects api.openai.com.attacker.io", () => {
+      expect(() =>
+        validateProviderBaseUrl("https://api.openai.com.attacker.io/v1", opts)
+      ).toThrow(/not in the allow-list/);
+    });
+
+    it("still accepts api.openai.com exact", () => {
+      const result = validateProviderBaseUrl("https://api.openai.com/v1", opts);
+      expect(result).toBeDefined();
+      expect(new URL(result!).hostname).toBe("api.openai.com");
+    });
+
+    it("still accepts my-tenant.openai.azure.com", () => {
+      const result = validateProviderBaseUrl(
+        "https://my-tenant.openai.azure.com/openai/deployments",
+        opts
+      );
+      expect(result).toBeDefined();
+      expect(new URL(result!).hostname).toBe("my-tenant.openai.azure.com");
+    });
   });
 
   describe("anthropic vendor", () => {

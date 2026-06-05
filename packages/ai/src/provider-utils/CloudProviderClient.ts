@@ -59,9 +59,12 @@ export interface ValidateProviderBaseUrlArgs {
   /** Discriminator used only for error messages. */
   readonly vendor: "openai" | "anthropic";
   /**
-   * Allow-list of acceptable hostnames or hostname suffixes. A hostname
-   * matches if it is equal to the entry or ends with the entry (so
-   * `.openai.azure.com` matches any subdomain of `openai.azure.com`).
+   * Allow-list of acceptable hostnames or hostname suffixes. Matching is
+   * label-boundary: a hostname matches if it equals the entry, or if it ends
+   * with `"." + entry`. Entries may include a leading dot (e.g.
+   * `".openai.azure.com"`) to make the subdomain intent explicit — the dot
+   * is stripped before the boundary check, so any subdomain of
+   * `openai.azure.com` matches but `notopenai.azure.com` does not.
    */
   readonly allowHosts: readonly string[];
   /**
@@ -127,8 +130,12 @@ export function validateProviderBaseUrl(
   }
 
   const allowed = opts.allowHosts.some((host) => {
-    const lower = host.toLowerCase();
-    return hostname === lower || hostname.endsWith(lower);
+    // Strip a leading dot so allow-list entries like ".openai.azure.com"
+    // continue to denote "any subdomain of openai.azure.com" while we apply
+    // a strict label-boundary check against the normalized host.
+    const lower = host.toLowerCase().trim().replace(/^\./, "");
+    if (lower === "") return false;
+    return hostname === lower || hostname.endsWith("." + lower);
   });
   if (!allowed) {
     throw new Error(
