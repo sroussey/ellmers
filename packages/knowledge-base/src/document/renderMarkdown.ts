@@ -70,7 +70,13 @@ function escapeLinkDestination(url: string): string {
  * positions, where an unescaped `|` would prematurely close a cell.
  */
 function escapeInlineText(text: string): string {
-  const oneLine = text.replace(/[\r\n]+/g, " ").replace(/\|/g, "\\|");
+  // Escape backslashes first so a user-supplied `\` cannot combine with the
+  // pipe escape below into `\\|`, which markdown parses as literal-backslash
+  // plus unescaped pipe.
+  const oneLine = text
+    .replace(/\\/g, "\\\\")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\|/g, "\\|");
   // Escape a leading character that would start a new markdown block. We
   // anchor at start-of-string and cover the standard block starters:
   //   `#` (heading), `-`/`+`/`*` (list item / thematic break), `>` (quote),

@@ -248,5 +248,32 @@ describe("renderMarkdown", () => {
       // Pipe is escaped so the caption stays a single bold run.
       expect(md).toContain("**col1\\|col2**");
     });
+
+    it("escapes backslash before pipe in inline text (CodeQL #136)", () => {
+      // Input `\|` previously became `\\|` in output - which markdown parses
+      // as literal-backslash plus unescaped pipe, defeating the pipe escape.
+      // The backslash must be escaped to `\\` first so the pipe escape stands.
+      const root: DocumentRootNode = {
+        nodeId: "r",
+        kind: NodeKind.DOCUMENT,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "D",
+        title: "D",
+        children: [
+          {
+            nodeId: "l1",
+            kind: NodeKind.LIST,
+            range: { startOffset: 0, endOffset: 0 },
+            text: "",
+            ordered: false,
+            items: ["a\\|b"],
+          },
+        ],
+      };
+      const md = renderMarkdown(root);
+      // Expect `\\\\\\|` in source = `\\\|` in the rendered string = literal
+      // `\` followed by an escaped `|` in markdown parsing.
+      expect(md).toContain("- a\\\\\\|b");
+    });
   });
 });
