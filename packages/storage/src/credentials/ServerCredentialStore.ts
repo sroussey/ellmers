@@ -26,32 +26,27 @@ export interface CredentialMetadataRow {
    */
   readonly pending?: boolean;
   /**
-   * ISO timestamp written if a failure path persisted this row as a sticky
-   * orphan marker. The vault may still contain bytes for this id (or be
-   * missing bytes the metadata previously pointed at); operators should
-   * reconcile. Inspect {@link orphanReason} to learn which failure branch
-   * produced the marker.
+   * ISO timestamp written if the new-entry rollback path itself failed. The
+   * vault may still contain bytes for this id; operators should reconcile.
    */
   readonly orphanedAt?: string;
   /**
-   * Discriminator for which failure branch wrote this orphan marker:
-   * - "vault-write-failed":     put() new-entry rollback path; metadata row
-   *                             was written, vault.setSecret threw, and
-   *                             metadata.delete then also threw.
-   * - "metadata-commit-failed": put() new-entry commit path; vault.setSecret
-   *                             succeeded but the pending->committed metadata
-   *                             flip threw, so the vault holds bytes the
-   *                             metadata can no longer expose.
-   * - "vault-delete-failed":    delete() path; metadata.delete succeeded but
-   *                             vault.deleteSecret threw, so the vault may
-   *                             still hold bytes for a key no metadata row
-   *                             exposes — a best-effort marker is rewritten
-   *                             so operators can see the leak.
+   * Diagnostic discriminator written alongside `orphanedAt`. Identifies the
+   * failure path that produced the orphan marker so operators can pick a
+   * remediation strategy without re-running the original write:
+   *   - "vault-write-failed":     new-entry put, vault.setSecret threw and
+   *     metadata.delete also failed; vault may still hold bytes.
+   *   - "metadata-commit-failed": new-entry put, vault.setSecret succeeded
+   *     but the commit metadata.put (clearing `pending`) failed; vault holds
+   *     bytes that no committed row points at.
+   *   - "vault-delete-failed":    delete(), metadata.delete succeeded but
+   *     vault.deleteSecret failed; metadata row reinstated as pending so
+   *     readers see absence, vault holds orphan bytes.
    */
   readonly orphanReason?: "vault-write-failed" | "metadata-commit-failed" | "vault-delete-failed";
 }
 
-/** Reason discriminator persisted on a sticky orphan marker row. */
+/** Discriminator for the `orphanReason` field on {@link CredentialMetadataRow}. */
 export type OrphanReason = NonNullable<CredentialMetadataRow["orphanReason"]>;
 
 /** Metadata shape exposed to the API list route (no value). */
@@ -77,6 +72,17 @@ export interface ServerCredentialStoreOptions {
  * the process that owns the vault — never in the renderer.
  */
 export class ServerCredentialStore implements ICredentialStore {
+  /**
+   * Strict grammar for any segment that goes into the vault id
+   * (`${userId}/${projectId}/${key}`). Restricting to URL-safe-ish characters
+   * and capping length at 128 chars closes a key-injection class: without it,
+   * a key like `"../../other-user/other-project/leaked"` could be smuggled
+   * through, escape the project scope, and collide with another user's
+   * vault id. The bounds are also chosen so the joined vault id stays well
+   * under common KV/file-system key-length limits.
+   */
+  private static readonly SAFE_SEGMENT = /^[A-Za-z0-9._:-]{1,128}$/;
+
   private readonly vault: SecretVault;
   private readonly metadata: IKvStorage<string, CredentialMetadataRow>;
   private readonly userId: string;
@@ -84,6 +90,18 @@ export class ServerCredentialStore implements ICredentialStore {
   private readonly prefix: string;
 
   constructor(opts: ServerCredentialStoreOptions) {
+    // Validate scope segments BEFORE storing them. Once they are mixed into
+    // `this.prefix` and queried against `metadata.getAll()` they cannot be
+    // un-poisoned, so fail loudly at construction time. We use a TypeError
+    // (programmer-supplied data) and keep the message generic so the invalid
+    // value is not echoed back to a caller that may have come from an
+    // untrusted source.
+    if (
+      !ServerCredentialStore.SAFE_SEGMENT.test(opts.userId) ||
+      !ServerCredentialStore.SAFE_SEGMENT.test(opts.projectId)
+    ) {
+      throw new TypeError("ServerCredentialStore: invalid userId/projectId");
+    }
     this.vault = opts.vault;
     this.metadata = opts.metadata;
     this.userId = opts.userId;
@@ -91,8 +109,42 @@ export class ServerCredentialStore implements ICredentialStore {
     this.prefix = `${this.userId}/${this.projectId}/`;
   }
 
+  /**
+   * Build the prefixed vault id for `key`. Re-validates `key` against the
+   * SAFE_SEGMENT grammar on every call: `put` is the only public path that
+   * routes through here (it must throw loudly so a programmer error cannot
+   * silently persist a colliding vault id). Reader methods (`get`/`has`/
+   * `delete`) short-circuit via {@link isSafeKey} instead so they keep the
+   * `ICredentialStore` contract of returning `undefined`/`false` for invalid
+   * keys, preserving substitutability with the other stores.
+   */
   private vaultId(key: string): string {
+    if (!ServerCredentialStore.SAFE_SEGMENT.test(key)) {
+      throw new TypeError("ServerCredentialStore: invalid key");
+    }
     return `${this.prefix}${key}`;
+  }
+
+  /**
+   * Non-throwing key predicate used by readers (`get`/`has`/`delete`). The
+   * `ICredentialStore` contract documents these methods as returning
+   * `undefined`/`false` for absent or invalid keys; throwing on every invalid
+   * lookup breaks substitutability with the other credential stores
+   * (`InMemoryCredentialStore`, `EncryptedKvCredentialStore`). `put` keeps
+   * routing through {@link vaultId} so a malicious key cannot persist a
+   * colliding vault id.
+   */
+  private isSafeKey(key: string): boolean {
+    return ServerCredentialStore.SAFE_SEGMENT.test(key);
+  }
+
+  /**
+   * Inverse of {@link vaultId} for `deleteAll`: strips the user/project
+   * prefix to recover the original key. Only called on ids already
+   * confirmed in-scope by {@link scopedIds}.
+   */
+  private unscopedKey(id: string): string {
+    return id.slice(this.prefix.length);
   }
 
   private isExpired(row: CredentialMetadataRow): boolean {
@@ -104,17 +156,21 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   async get(key: string): Promise<string | undefined> {
-    const id = this.vaultId(key);
+    if (!this.isSafeKey(key)) return undefined;
+    const id = `${this.prefix}${key}`;
     const row = await this.metadata.get(id);
     if (!row) return undefined;
     if (this.isPending(row)) return undefined;
     if (this.isExpired(row)) {
-      // Self-eviction is best-effort: a delete() failure here must not turn
-      // a read miss into a thrown error for the caller.
+      // Best-effort self-eviction: a swallowed throw here keeps `get(key)` a
+      // pure read from the caller's perspective. Without the try/catch a
+      // transient KV or vault failure on eviction would surface as a thrown
+      // get() even though the row IS already absent (expired) — the next
+      // call to get/has will retry the eviction.
       try {
         await this.delete(key);
       } catch {
-        // Swallow — the row is already invisible (expired) to the caller.
+        // Swallow: the row is expired so we still report absence to the caller.
       }
       return undefined;
     }
@@ -210,77 +266,97 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   /**
-   * Metadata-first delete for a single id. Removes the metadata row before
-   * touching the vault, so a vault failure can never leave the row visible
-   * with its secret gone. On vault failure we best-effort rewrite the row as
-   * a sticky orphan marker (orphanReason: "vault-delete-failed") and throw a
-   * wrapped error — the row stays invisible to readers either way (orphan
-   * markers are `pending: true`), but operators can scan for the marker to
-   * reconcile leaked vault bytes.
+   * Internal delete by already-resolved vault id, shared by {@link delete}
+   * (via {@link deleteById}) and {@link deleteAll} (via {@link forceDeleteById}).
+   * Centralises the metadata-first ordering and the orphan-marker rewrite so
+   * the two callers cannot drift out of sync.
    *
-   * @returns true if the row existed at call time; false if it was already
-   * absent.
+   * `op` is interpolated into the error message ("delete" vs "deleteAll")
+   * so operators can tell which public method observed the failure.
+   *
+   * Ordering rationale:
+   *   1. Delete metadata FIRST. If that throws, the vault is untouched
+   *      and the row stays visible — readers continue to get the secret,
+   *      same as before the call.
+   *   2. If the vault delete then fails we reinstate a pending+orphaned
+   *      metadata row so readers see absence (correct) while a sticky
+   *      marker remains for operator reconciliation. If the marker write
+   *      itself fails, the row is fully unrecoverable from the store's
+   *      perspective — surface that clearly in the error message so an
+   *      operator knows whether they have a metadata trail to follow.
+   *
+   * Pending-row policy lives in the callers: {@link deleteById} short-circuits
+   * to avoid the put/delete race, while {@link forceDeleteById} is the wipe
+   * path that must clear sticky orphan markers and in-flight pending rows.
    */
-  private async deleteById(id: string, key: string): Promise<boolean> {
-    const existing = await this.metadata.get(id);
-    if (existing === undefined) return false;
-
-    // Metadata first: any failure here bubbles to the caller without touching
-    // the vault, preserving the (metadata, vault) pair in its prior state.
+  private async commitDelete(
+    id: string,
+    key: string,
+    existing: CredentialMetadataRow,
+    op: "delete" | "deleteAll"
+  ): Promise<true> {
+    // Metadata first: a throw here leaves the row intact and the vault
+    // untouched, which is the safe failure mode (still readable, no half-state).
     await this.metadata.delete(id);
 
     try {
       await this.vault.deleteSecret(id);
     } catch (vaultError) {
-      // Metadata is gone but vault bytes may remain. Persist a sticky orphan
-      // marker so operators can find and reconcile the leak. We rebuild the
-      // marker from the existing row's identifying fields rather than calling
-      // vaultId(key) directly (the id is already known) and pin pending:true
-      // so readers continue to see the row as absent.
+      let markerWritten = false;
       try {
         await this.metadata.put(id, {
-          userId: existing.userId,
-          projectId: existing.projectId,
-          key: existing.key,
-          label: existing.label,
-          provider: existing.provider,
-          createdAt: existing.createdAt,
-          updatedAt: existing.updatedAt,
-          expiresAt: existing.expiresAt,
+          ...existing,
           pending: true,
           orphanedAt: new Date().toISOString(),
           orphanReason: "vault-delete-failed",
         });
+        markerWritten = true;
       } catch {
-        // Swallow marker-write failure: the original vault error is more
-        // important to surface, and the metadata row is already absent.
+        // Best effort only; fall through to surface the original vault error.
       }
-      // Intentionally reference `key` in the message for operator clarity,
-      // even though the id is the canonical scoped identifier.
-      void key;
       throw new Error(
-        `ServerCredentialStore.delete: metadata removed but vault delete failed for vault id ${id}; orphan marker persisted`,
+        `ServerCredentialStore.${op}: metadata removed but vault delete failed for key ` +
+          key +
+          (markerWritten ? "; orphan marker persisted" : "; orphan marker also failed to persist"),
         { cause: vaultError }
       );
     }
-
     return true;
   }
 
+  /**
+   * Internal delete used by {@link delete}. Short-circuits on pending rows:
+   * a pending row is either an in-flight new-entry put() or a sticky orphan
+   * marker, and in both cases the vault state is something only the owning
+   * operation should mutate. Returning false here is the close for both the
+   * orphan-overwrite hazard and the put/delete race.
+   *
+   * {@link deleteAll} deliberately does NOT route through this path — it uses
+   * {@link forceDeleteById} so a scope-wide wipe actually clears those rows.
+   */
+  private async deleteById(id: string, key: string): Promise<boolean> {
+    const existing = await this.metadata.get(id);
+    if (existing === undefined) return false;
+    if (this.isPending(existing)) return false;
+    return this.commitDelete(id, key, existing, "delete");
+  }
+
   async delete(key: string): Promise<boolean> {
-    return this.deleteById(this.vaultId(key), key);
+    if (!this.isSafeKey(key)) return false;
+    return this.deleteById(`${this.prefix}${key}`, key);
   }
 
   async has(key: string): Promise<boolean> {
-    const row = await this.metadata.get(this.vaultId(key));
+    if (!this.isSafeKey(key)) return false;
+    const row = await this.metadata.get(`${this.prefix}${key}`);
     if (!row) return false;
     if (this.isPending(row)) return false;
     if (this.isExpired(row)) {
-      // Self-eviction is best-effort: see get() for rationale.
+      // Best-effort self-eviction; see {@link get} for rationale.
       try {
         await this.delete(key);
       } catch {
-        // Swallow — the row is already invisible (expired) to the caller.
+        // Swallow: the row is expired so we still report absence to the caller.
       }
       return false;
     }
@@ -309,30 +385,40 @@ export class ServerCredentialStore implements ICredentialStore {
   }
 
   /**
-   * Delete every row in this project scope. Uses the same metadata-first
-   * path as {@link delete}, so a vault failure on any individual id leaves a
-   * sticky orphan marker (orphanReason: "vault-delete-failed") rather than a
-   * visible row with no secret. Per-id failures are collected and surfaced as
-   * an AggregateError after attempting every id, so one bad entry can't
-   * abort cleanup of the rest.
+   * Variant of {@link deleteById} that does NOT short-circuit on pending rows.
+   * `deleteAll` is an operator-level "wipe scope" operation whose whole job is
+   * to clear sticky orphan markers (rows where the original `delete` failed
+   * its vault hop and reinstated a `pending: true` marker) as well as
+   * still-in-flight pending new-entry rows. Routing `deleteAll` through
+   * {@link deleteById} would silently skip both — there would be no public API
+   * that could clear an orphan, defeating the purpose of writing the marker in
+   * the first place. The metadata-first ordering and orphan-marker rewrite on
+   * vault-delete failure are preserved via the shared {@link commitDelete}.
    */
+  private async forceDeleteById(id: string, key: string): Promise<boolean> {
+    const existing = await this.metadata.get(id);
+    if (existing === undefined) return false;
+    return this.commitDelete(id, key, existing, "deleteAll");
+  }
+
   async deleteAll(): Promise<void> {
-    const ids = await this.scopedIds();
+    // Route through forceDeleteById so sticky orphan markers and in-flight
+    // pending rows are actually wiped — the single-key `deleteById` skips
+    // pending rows on purpose (orphan-overwrite / put/delete race), but a
+    // scope-wide wipe MUST clear them. Collect per-row failures and re-throw
+    // as an AggregateError so a single bad row does not silently mask the rest.
     const errors: unknown[] = [];
-    for (const id of ids) {
-      // We don't have the unscoped key here without parsing — strip the prefix
-      // so error messages and orphan markers carry the user-facing key.
-      const key = id.startsWith(this.prefix) ? id.slice(this.prefix.length) : id;
+    for (const id of await this.scopedIds()) {
       try {
-        await this.deleteById(id, key);
-      } catch (err) {
-        errors.push(err);
+        await this.forceDeleteById(id, this.unscopedKey(id));
+      } catch (error) {
+        errors.push(error);
       }
     }
     if (errors.length > 0) {
       throw new AggregateError(
         errors,
-        "ServerCredentialStore.deleteAll: one or more entries failed; orphan markers persisted"
+        "ServerCredentialStore.deleteAll: one or more entries failed"
       );
     }
   }
