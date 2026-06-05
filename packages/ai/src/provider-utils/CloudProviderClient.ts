@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isLoopbackHostname } from "./localUrl";
+
 /**
  * Shared cloud-provider client utilities: API-key resolution and browser-env
  * detection. Used by each provider's `*_Client.ts` so the same fallback chain
@@ -59,9 +61,12 @@ export interface ValidateProviderBaseUrlArgs {
   /** Discriminator used only for error messages. */
   readonly vendor: "openai" | "anthropic";
   /**
-   * Allow-list of acceptable hostnames or hostname suffixes. A hostname
-   * matches if it is equal to the entry or ends with the entry (so
-   * `.openai.azure.com` matches any subdomain of `openai.azure.com`).
+   * Allow-list of acceptable hostnames or hostname suffixes. Matching is
+   * label-boundary: a hostname matches if it equals the entry, or if it ends
+   * with `"." + entry`. Entries may include a leading dot (e.g.
+   * `".openai.azure.com"`) to make the subdomain intent explicit — the dot
+   * is stripped before the boundary check, so any subdomain of
+   * `openai.azure.com` matches but `notopenai.azure.com` does not.
    */
   readonly allowHosts: readonly string[];
   /**
@@ -115,7 +120,14 @@ export function validateProviderBaseUrl(
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  // For IPv6 literals, parsed.hostname comes back bracketed (e.g. "[::1]");
+  // isLoopbackHostname expects the bare form, so strip the brackets first.
+  // Delegating to the shared helper means we accept the full structurally-
+  // loopback grammar (::1, ::0001, ::ffff:127.x.x.x) instead of a hand-rolled
+  // three-literal whitelist that misses equivalent IPv6 spellings.
+  const bareHostname =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  const isLoopback = isLoopbackHostname(bareHostname);
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
     throw new Error(
       `${opts.providerLabel} provider base_url must use https:// (http:// allowed only for localhost): ${trimmed}`
@@ -127,8 +139,12 @@ export function validateProviderBaseUrl(
   }
 
   const allowed = opts.allowHosts.some((host) => {
-    const lower = host.toLowerCase();
-    return hostname === lower || hostname.endsWith(lower);
+    // Strip a leading dot so allow-list entries like ".openai.azure.com"
+    // continue to denote "any subdomain of openai.azure.com" while we apply
+    // a strict label-boundary check against the normalized host.
+    const lower = host.toLowerCase().trim().replace(/^\./, "");
+    if (lower === "") return false;
+    return hostname === lower || hostname.endsWith("." + lower);
   });
   if (!allowed) {
     throw new Error(
