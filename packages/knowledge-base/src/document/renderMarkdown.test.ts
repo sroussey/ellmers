@@ -125,4 +125,128 @@ describe("renderMarkdown", () => {
     } as const;
     expect(renderMarkdown(table as unknown as DocumentNode)).toBe("");
   });
+
+  describe("injection hardening", () => {
+    it("escapes image alt with closing bracket", () => {
+      // Attacker-supplied alt that tries to close the alt-text span and
+      // open a new bracketed group containing a javascript: URL. The
+      // brackets must be backslash-escaped so the original `![...]` stays
+      // a single image and no extra markdown groups are produced.
+      const img = {
+        nodeId: "i1",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "](javascript:alert(1)) ![](data:,)",
+        src: "https://example.com/safe.png",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      // The injected `]` must be escaped.
+      expect(md).toContain("\\]");
+      // The opening `[` in the injected `![]` payload must be escaped too.
+      expect(md).toContain("\\[");
+      // The src is unchanged (it was already safe).
+      expect(md).toContain("<https://example.com/safe.png>");
+    });
+
+    it("rejects image src with javascript: scheme", () => {
+      const img = {
+        nodeId: "i2",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "logo",
+        src: "javascript:alert(1)",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      // The destination must be neutralised; no `javascript:` survives.
+      expect(md.toLowerCase()).not.toContain("javascript:");
+      // The result is still a syntactically valid (empty-dest) image.
+      expect(md).toContain("![logo](<>)");
+    });
+
+    it("escapes list item that starts with #", () => {
+      const root: DocumentRootNode = {
+        nodeId: "r",
+        kind: NodeKind.DOCUMENT,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "D",
+        title: "D",
+        children: [
+          {
+            nodeId: "l1",
+            kind: NodeKind.LIST,
+            range: { startOffset: 0, endOffset: 0 },
+            text: "",
+            ordered: false,
+            items: ["# Injected heading"],
+          },
+        ],
+      };
+      const md = renderMarkdown(root);
+      // The list bullet stays, the `#` is escaped so it never starts a
+      // heading.
+      expect(md).toContain("- \\# Injected heading");
+    });
+
+    it("escapes list item containing newline + heading", () => {
+      const root: DocumentRootNode = {
+        nodeId: "r",
+        kind: NodeKind.DOCUMENT,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "D",
+        title: "D",
+        children: [
+          {
+            nodeId: "l1",
+            kind: NodeKind.LIST,
+            range: { startOffset: 0, endOffset: 0 },
+            text: "",
+            ordered: false,
+            items: ["safe text\n# Injected"],
+          },
+        ],
+      };
+      const md = renderMarkdown(root);
+      // The newline must be flattened so the list item stays a single line.
+      expect(md).not.toMatch(/safe text\n# Injected/);
+      // The full content lives in one bullet.
+      expect(md).toContain("- safe text # Injected");
+    });
+
+    it("escapes caption containing **bold**", () => {
+      const table = {
+        nodeId: "t",
+        kind: NodeKind.TABLE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        caption: "**bold**",
+        columnCount: 1,
+        headerRows: [],
+        rows: [[cell("x")]],
+        stitchedFrom: 1,
+      } as const;
+      const md = renderMarkdown(table as unknown as DocumentNode);
+      // Leading `*` is escaped so the caption does not turn into a list
+      // item or bold span at the start of the line.
+      expect(md).toContain("**\\**bold**");
+    });
+
+    it("escapes caption containing pipe", () => {
+      const table = {
+        nodeId: "t",
+        kind: NodeKind.TABLE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        caption: "col1|col2",
+        columnCount: 1,
+        headerRows: [],
+        rows: [[cell("x")]],
+        stitchedFrom: 1,
+      } as const;
+      const md = renderMarkdown(table as unknown as DocumentNode);
+      // Pipe is escaped so the caption stays a single bold run.
+      expect(md).toContain("**col1\\|col2**");
+    });
+  });
 });

@@ -15,6 +15,72 @@ function escapeCell(text: string): string {
 }
 
 /**
+ * Escape the visible text portion of a markdown image (`![...]`). Closing /
+ * opening square brackets would prematurely terminate or reopen the alt-text
+ * span, letting an attacker break out of the image and inject arbitrary
+ * markdown after it. Backslashes are escaped first so existing `\` cannot
+ * combine with a subsequent escape. Embedded newlines are flattened to a
+ * single space - an image label is a single inline run, so a raw `\n` would
+ * terminate the inline span and let following lines render as block content.
+ */
+function escapeLinkText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/[\r\n]+/g, " ");
+}
+
+// Built via RegExp constructor so the C0/DEL range is expressed as `\x00`
+// hex escapes in the string literal rather than as raw control bytes in
+// the regex literal source.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS_RE = new RegExp("[\\x00-\\x1f\\x7f]", "g");
+
+/**
+ * Encode a URL destination as an angle-bracket-wrapped markdown destination
+ * (`<...>`). Wrapping in `<...>` lets us safely carry characters that would
+ * otherwise break a bare `(...)` destination (spaces, parens). Inside the
+ * brackets we still must escape `>` (closes the destination), `\` (escape
+ * char), and any newline / control character (would terminate the destination
+ * and let following bytes render as block content). We also reject
+ * `javascript:` and `data:` schemes outright - these are the standard XSS
+ * vehicles for markdown image/link sources and have no legitimate use in our
+ * generated documents.
+ */
+function escapeLinkDestination(url: string): string {
+  if (/^\s*(javascript|data)\s*:/i.test(url)) {
+    return "<>";
+  }
+  // Escape `>` and `\` first, then strip C0/DEL control bytes (NUL, CR, LF,
+  // tab, etc.). Those would terminate the bracketed destination and have no
+  // legitimate meaning in a URL anyway.
+  const safe = url.replace(/\\/g, "\\\\").replace(/>/g, "\\>").replace(CONTROL_CHARS_RE, "");
+  return `<${safe}>`;
+}
+
+/**
+ * Escape attacker-controlled inline text that is rendered into a block
+ * position where a leading character could turn the line into a new block
+ * (heading, list item, blockquote, table row, fenced code, indented code).
+ * We replace embedded newlines with a single space first - a raw `\n`
+ * followed by `# ` or `- ` would start a new heading/list - then escape
+ * leading block-starter characters at the start of the resulting line.
+ * Pipes are also escaped because the same string flows into table-caption
+ * positions, where an unescaped `|` would prematurely close a cell.
+ */
+function escapeInlineText(text: string): string {
+  const oneLine = text.replace(/[\r\n]+/g, " ").replace(/\|/g, "\\|");
+  // Escape a leading character that would start a new markdown block. We
+  // anchor at start-of-string and cover the standard block starters:
+  //   `#` (heading), `-`/`+`/`*` (list item / thematic break), `>` (quote),
+  //   `|` (table), digit followed by `.` or `)` (ordered list start),
+  //   leading space (would render as indented code if 4+), `~` (fenced
+  //   code), backtick (fenced code / inline code).
+  return oneLine.replace(/^([#\-+*>|~` ]|\d+[.)])/, "\\$1");
+}
+
+/**
  * Expand a possibly-ragged row to exactly `columnCount` cells, honoring colspan.
  * Rowspan is assumed already materialized into rows by the producer (each spanned
  * cell repeated per row), so it is not re-expanded here.
@@ -39,7 +105,7 @@ function renderTable(node: TableNode): string {
       ? flattenRow(node.headerRows[0], cols)
       : Array.from({ length: cols }, () => "");
   const lines: string[] = [];
-  if (node.caption) lines.push(`**${node.caption}**`, "");
+  if (node.caption) lines.push(`**${escapeInlineText(node.caption)}**`, "");
   lines.push(`| ${headerCells.join(" | ")} |`);
   lines.push(`| ${Array.from({ length: cols }, () => "---").join(" | ")} |`);
   // Any header rows beyond the first render as body rows so no data is lost.
@@ -52,16 +118,19 @@ function renderTable(node: TableNode): string {
  * Render a document node (and its subtree) to GFM markdown: section headings,
  * paragraphs, GFM pipe tables, lists, and images. (Approximately the inverse of
  * StructuralParser's markdown parsing, which today covers only headings and
- * paragraphs — this renderer additionally emits tables/lists/images.)
+ * paragraphs - this renderer additionally emits tables/lists/images.)
  */
 export function renderMarkdown(node: DocumentNode): string {
   switch (node.kind) {
     case NodeKind.TABLE:
       return renderTable(node);
     case NodeKind.LIST:
-      return node.items.map((it, i) => (node.ordered ? `${i + 1}. ${it}` : `- ${it}`)).join("\n");
+      return node.items
+        .map((it) => escapeInlineText(it))
+        .map((it, i) => (node.ordered ? `${i + 1}. ${it}` : `- ${it}`))
+        .join("\n");
     case NodeKind.IMAGE:
-      return `![${node.alt ?? ""}](${node.src})`;
+      return `![${escapeLinkText(node.alt ?? "")}](${escapeLinkDestination(node.src)})`;
     case NodeKind.PARAGRAPH:
     case NodeKind.SENTENCE:
       return node.text;
