@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isLoopbackHostname } from "./localUrl";
+
 /**
  * Shared cloud-provider client utilities: API-key resolution and browser-env
  * detection. Used by each provider's `*_Client.ts` so the same fallback chain
@@ -118,7 +120,14 @@ export function validateProviderBaseUrl(
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+  // For IPv6 literals, parsed.hostname comes back bracketed (e.g. "[::1]");
+  // isLoopbackHostname expects the bare form, so strip the brackets first.
+  // Delegating to the shared helper means we accept the full structurally-
+  // loopback grammar (::1, ::0001, ::ffff:127.x.x.x) instead of a hand-rolled
+  // three-literal whitelist that misses equivalent IPv6 spellings.
+  const bareHostname =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  const isLoopback = isLoopbackHostname(bareHostname);
   if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
     throw new Error(
       `${opts.providerLabel} provider base_url must use https:// (http:// allowed only for localhost): ${trimmed}`

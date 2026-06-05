@@ -101,6 +101,29 @@ describe("validateProviderBaseUrl (L-MAIN-02)", () => {
       expect(new URL(result!).hostname).toBe("[::1]");
     });
 
+    it("auto-allows http://[::0001]:8080/v1", () => {
+      // Equivalent IPv6 loopback spelling (full-width form of ::1). The shared
+      // isLoopbackHostname helper accepts this; the old hand-rolled three-
+      // literal check did not.
+      const result = validateProviderBaseUrl("http://[::0001]:8080/v1", opts);
+      expect(result).toBeDefined();
+    });
+
+    it("auto-allows http://[::ffff:127.0.0.1]:8080/v1", () => {
+      // IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) — the embedded IPv4 lies
+      // in 127.0.0.0/8 so isLoopbackHostname accepts it.
+      const result = validateProviderBaseUrl("http://[::ffff:127.0.0.1]:8080/v1", opts);
+      expect(result).toBeDefined();
+    });
+
+    it("rejects http://[::ffff:8.8.8.8]:8080/v1", () => {
+      // IPv4-mapped IPv6 whose embedded IPv4 is NOT loopback (public 8.8.8.8).
+      // Must be rejected: HTTP is allowed only for the loopback policy.
+      expect(() =>
+        validateProviderBaseUrl("http://[::ffff:8.8.8.8]:8080/v1", opts)
+      ).toThrow(/https:\/\//);
+    });
+
     it("rejects evilapi.openai.com (label-boundary attack)", () => {
       // An attacker host that ends in the legitimate host string but is not
       // a true subdomain (no label boundary) must NOT pass.
