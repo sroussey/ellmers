@@ -119,9 +119,9 @@ describe("validateProviderBaseUrl (L-MAIN-02)", () => {
     it("rejects http://[::ffff:8.8.8.8]:8080/v1", () => {
       // IPv4-mapped IPv6 whose embedded IPv4 is NOT loopback (public 8.8.8.8).
       // Must be rejected: HTTP is allowed only for the loopback policy.
-      expect(() =>
-        validateProviderBaseUrl("http://[::ffff:8.8.8.8]:8080/v1", opts)
-      ).toThrow(/https:\/\//);
+      expect(() => validateProviderBaseUrl("http://[::ffff:8.8.8.8]:8080/v1", opts)).toThrow(
+        /https:\/\//
+      );
     });
 
     it("rejects evilapi.openai.com (label-boundary attack)", () => {
@@ -150,9 +150,9 @@ describe("validateProviderBaseUrl (L-MAIN-02)", () => {
     });
 
     it("rejects api.openai.com.attacker.io", () => {
-      expect(() =>
-        validateProviderBaseUrl("https://api.openai.com.attacker.io/v1", opts)
-      ).toThrow(/not in the allow-list/);
+      expect(() => validateProviderBaseUrl("https://api.openai.com.attacker.io/v1", opts)).toThrow(
+        /not in the allow-list/
+      );
     });
 
     it("still accepts api.openai.com exact", () => {
