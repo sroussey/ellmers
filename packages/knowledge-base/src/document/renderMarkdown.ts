@@ -49,13 +49,18 @@ const CONTROL_CHARS_RE = new RegExp("[\\x00-\\x1f\\x7f]", "g");
  * generated documents.
  */
 function escapeLinkDestination(url: string): string {
-  if (/^\s*(javascript|data)\s*:/i.test(url)) {
+  // Strip C0/DEL control bytes (NUL, CR, LF, tab, etc.) BEFORE testing for
+  // dangerous schemes. Otherwise an obfuscated input like `java\nscript:` or
+  // `ja\x00vascript:` would pass the scheme test (the bytes split the
+  // keyword), then have the control bytes stripped on the way out, emerging
+  // as a literal `javascript:` destination in the rendered markdown.
+  const stripped = url.replace(CONTROL_CHARS_RE, "");
+  if (/^\s*(javascript|data|vbscript)\s*:/i.test(stripped)) {
     return "<>";
   }
-  // Escape `>` and `\` first, then strip C0/DEL control bytes (NUL, CR, LF,
-  // tab, etc.). Those would terminate the bracketed destination and have no
-  // legitimate meaning in a URL anyway.
-  const safe = url.replace(/\\/g, "\\\\").replace(/>/g, "\\>").replace(CONTROL_CHARS_RE, "");
+  // Escape `>` and `\` so neither closes the bracketed destination nor
+  // introduces an unintended escape sequence inside it.
+  const safe = stripped.replace(/\\/g, "\\\\").replace(/>/g, "\\>");
   return `<${safe}>`;
 }
 

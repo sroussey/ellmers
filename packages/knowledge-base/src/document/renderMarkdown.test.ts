@@ -165,6 +165,65 @@ describe("renderMarkdown", () => {
       expect(md).toContain("![logo](<>)");
     });
 
+    it("rejects obfuscated dangerous scheme with embedded newline", () => {
+      // `java\nscript:` previously bypassed the scheme regex (the `\n`
+      // split the keyword), then the C0/DEL strip ran on output and
+      // collapsed it back to a literal `javascript:` destination.
+      const img = {
+        nodeId: "i3",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "logo",
+        src: "java\nscript:alert(1)",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      expect(md.toLowerCase()).not.toContain("javascript:");
+      expect(md).toContain("![logo](<>)");
+    });
+
+    it("rejects obfuscated dangerous scheme with embedded NUL", () => {
+      const img = {
+        nodeId: "i4",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "logo",
+        src: "ja\x00vascript:alert(1)",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      expect(md.toLowerCase()).not.toContain("javascript:");
+      expect(md).toContain("![logo](<>)");
+    });
+
+    it("rejects obfuscated dangerous scheme with embedded tab", () => {
+      const img = {
+        nodeId: "i5",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "logo",
+        src: "j\tavascript:alert(1)",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      expect(md.toLowerCase()).not.toContain("javascript:");
+      expect(md).toContain("![logo](<>)");
+    });
+
+    it("rejects vbscript: scheme", () => {
+      const img = {
+        nodeId: "i6",
+        kind: NodeKind.IMAGE,
+        range: { startOffset: 0, endOffset: 0 },
+        text: "",
+        alt: "logo",
+        src: "vbscript:msgbox(1)",
+      } as const;
+      const md = renderMarkdown(img as unknown as DocumentNode);
+      expect(md.toLowerCase()).not.toContain("vbscript:");
+      expect(md).toContain("![logo](<>)");
+    });
+
     it("escapes list item that starts with #", () => {
       const root: DocumentRootNode = {
         nodeId: "r",
