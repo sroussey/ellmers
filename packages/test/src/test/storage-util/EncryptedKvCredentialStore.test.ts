@@ -4,9 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { EncryptedKvCredentialStore, InMemoryKvStorage } from "@workglow/storage";
+import {
+  CREDSTORE_SENTINEL_KEY,
+  EncryptedKvCredentialStore,
+  InMemoryKvStorage,
+} from "@workglow/storage";
 import { setLogger } from "@workglow/util";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
 describe("EncryptedKvCredentialStore", () => {
@@ -107,5 +111,33 @@ describe("EncryptedKvCredentialStore", () => {
     const raw = await kv.get("key");
     expect(raw.label).toBe("My API Key");
     expect(raw.provider).toBe("openai");
+  });
+
+  describe("sentinel key write protection", () => {
+    it("put(CREDSTORE_SENTINEL_KEY, …) throws and leaves store unlockable", async () => {
+      // Seed a real sentinel under the store's actual passphrase so a
+      // subsequent verifyPassphrase() should return "match" unless an
+      // attacker has overwritten it.
+      await store.writeSentinel();
+      expect(await store.verifyPassphrase()).toBe("match");
+
+      // Attempt to overwrite the sentinel via the public put() surface — this
+      // is the exact attack the guard closes: a caller with a different
+      // passphrase that re-encrypts the sentinel under their own key would
+      // turn a future verifyPassphrase() into a false "match" and let them
+      // silently re-init the store.
+      await expect(store.put(CREDSTORE_SENTINEL_KEY, "anything")).rejects.toThrow(/sentinel/i);
+
+      // The original sentinel survives and the store stays unlockable.
+      expect(await store.verifyPassphrase()).toBe("match");
+    });
+
+    it("put rejects sentinel key before kv mutation", async () => {
+      const putSpy = vi.spyOn(kv, "put");
+      await expect(store.put(CREDSTORE_SENTINEL_KEY, "x")).rejects.toThrow(/sentinel/i);
+      // The guard must short-circuit BEFORE the KV write so an attacker
+      // controlling key + value cannot trigger spurious storage activity.
+      expect(putSpy).not.toHaveBeenCalled();
+    });
   });
 });

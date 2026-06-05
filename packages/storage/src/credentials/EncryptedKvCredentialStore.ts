@@ -138,6 +138,15 @@ export class EncryptedKvCredentialStore implements ICredentialStore {
   }
 
   async put(key: string, value: string, options?: CredentialPutOptions): Promise<void> {
+    // The sentinel row is written exclusively by {@link writeSentinel} (and
+    // overwritten by {@link deleteAll}). Allowing a caller to put() at this
+    // key would replace the marker with attacker-chosen ciphertext under the
+    // caller's passphrase and, on the next `verifyPassphrase()`, return
+    // "match" even though the stored credentials use a different key. Reject
+    // the write BEFORE touching the KV so the store stays unlockable.
+    if (key === CREDSTORE_SENTINEL_KEY) {
+      throw new Error("Cannot write to the reserved credential-store sentinel key.");
+    }
     const now = new Date();
     const existing = (await this.kv.get(key)) as StoredCredential | undefined;
 
