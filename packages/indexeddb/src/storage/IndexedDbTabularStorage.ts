@@ -470,7 +470,7 @@ export class IndexedDbTabularStorage<
       const request = store.delete(this.getIndexedKey(key));
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        this.events.emit("delete", key as keyof Entity);
+        this.events.emit("delete", key as Partial<Entity>);
         resolve();
       };
       transaction.oncomplete = () => {
@@ -742,7 +742,7 @@ export class IndexedDbTabularStorage<
         const store = transaction.objectStore(this.table);
 
         transaction.oncomplete = () => {
-          this.events.emit("delete", criteriaKeys[0] as keyof Entity);
+          this.events.emit("delete", this.deleteIdentity(criteria));
           this.hybridManager?.notifyLocalChange();
           resolve();
         };

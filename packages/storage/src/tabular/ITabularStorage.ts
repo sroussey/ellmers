@@ -17,7 +17,13 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
   get: (key: PrimaryKey, entity: Entity | undefined) => void;
   getBulk: (keys: readonly PrimaryKey[], entities: readonly Entity[]) => void;
   query: (key: Partial<Entity>, entities: Entity[] | undefined) => void;
-  delete: (key: keyof Entity) => void;
+  /**
+   * `key` identifies what was deleted, as a {@link Partial} of the entity: the
+   * primary key for a single delete, or the (owner-bearing) criteria / matched
+   * row for a bulk `deleteSearch`. It carries the scope columns so subscribers
+   * can filter and caches can invalidate without the backend reading the row.
+   */
+  delete: (key: Partial<Entity>) => void;
   clearall: () => void;
 };
 

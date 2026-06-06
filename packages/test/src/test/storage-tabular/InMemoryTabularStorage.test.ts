@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { InMemoryTabularStorage } from "@workglow/storage";
+import { InMemoryTabularStorage, type TabularChangePayload } from "@workglow/storage";
 import { setLogger } from "@workglow/util";
+import type { FromSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 import {
@@ -160,5 +161,63 @@ describe("InMemoryTabularStorage.queryIndex", () => {
     await expect(
       storage.queryIndex({ category: "a" }, { select: ["nonexistentCol"] as any })
     ).rejects.toThrow(/not in schema/);
+  });
+});
+
+describe("InMemoryTabularStorage delete change payloads", () => {
+  type Change = TabularChangePayload<FromSchema<typeof CompoundSchema>>;
+
+  it("emits the primary key as `old` on a keyed delete (no row read-back)", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    await storage.put({ name: "n1", type: "t1", option: "v1", success: true });
+
+    const changes: Change[] = [];
+    const unsubscribe = storage.subscribeToChanges((c) => changes.push(c));
+    await storage.delete({ name: "n1", type: "t1" });
+    unsubscribe();
+
+    const del = changes.find((c) => c.type === "DELETE");
+    expect(del).toBeDefined();
+    // Identity is the primary key, not the full (un-read) row.
+    expect(del?.old?.name).toBe("n1");
+    expect(del?.old?.type).toBe("t1");
+    expect(del?.old?.option).toBeUndefined();
+  });
+
+  it("includes each deleted row as `old` on deleteSearch", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    await storage.put({ name: "n1", type: "t1", option: "match", success: true });
+    await storage.put({ name: "n2", type: "t2", option: "other", success: false });
+
+    const changes: Change[] = [];
+    const unsubscribe = storage.subscribeToChanges((c) => changes.push(c));
+    await storage.deleteSearch({ option: "match" });
+    unsubscribe();
+
+    const deletes = changes.filter((c) => c.type === "DELETE");
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]?.old?.name).toBe("n1");
+    expect(deletes[0]?.old?.option).toBe("match");
+  });
+
+  it("deleteIdentity keeps plain criteria columns and drops search conditions", () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    // deleteIdentity is the protected helper backends use to emit a bulk
+    // delete's identity (the owner-bearing plain columns of the criteria).
+    const identity = (
+      storage as unknown as {
+        deleteIdentity(c: Record<string, unknown>): Record<string, unknown>;
+      }
+    ).deleteIdentity({ type: "t1", option: { value: "x", operator: ">" } });
+    expect(identity).toEqual({ type: "t1" });
   });
 });
