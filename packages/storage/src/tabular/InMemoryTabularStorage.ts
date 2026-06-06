@@ -144,7 +144,7 @@ export class InMemoryTabularStorage<
     // Capture the row before removing it so subscribers receive it as `old`.
     const existing = this.values.get(id);
     this.values.delete(id);
-    this.events.emit("delete", key as keyof Entity, existing);
+    this.events.emit("delete", key, existing);
   }
 
   async deleteAll(): Promise<void> {
@@ -251,7 +251,7 @@ export class InMemoryTabularStorage<
     for (const [id, entity] of entriesToDelete) {
       this.values.delete(id);
       const { key } = this.separateKeyValueFromCombined(entity);
-      this.events.emit("delete", key as keyof Entity, entity);
+      this.events.emit("delete", key, entity);
     }
   }
 
@@ -373,7 +373,7 @@ export class InMemoryTabularStorage<
       callback({ type: this._lastPutWasInsert ? "INSERT" : "UPDATE", new: entity });
     };
 
-    const handleDelete = (_key: keyof Entity, entity?: Entity) => {
+    const handleDelete = (_key: PrimaryKey | keyof Entity, entity?: Entity) => {
       callback({ type: "DELETE", old: entity });
     };
 

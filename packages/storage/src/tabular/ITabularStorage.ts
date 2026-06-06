@@ -17,9 +17,14 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
   get: (key: PrimaryKey, entity: Entity | undefined) => void;
   getBulk: (keys: readonly PrimaryKey[], entities: readonly Entity[]) => void;
   query: (key: Partial<Entity>, entities: Entity[] | undefined) => void;
-  /** `entity` is the deleted row when the backend can supply it (lets subscribers
-   *  scope-filter or invalidate caches on DELETE); omitted for keyed-only deletes. */
-  delete: (key: keyof Entity, entity?: Entity) => void;
+  /**
+   * `key` is the deleted row's primary key for single deletes; some backends'
+   * bulk `deleteSearch` emit a criteria column name (`keyof Entity`) instead,
+   * since a bulk delete has no single primary key — hence the union.
+   * `entity` is the deleted row when the backend can supply it (lets subscribers
+   * scope-filter or invalidate caches on DELETE); omitted for keyed-only deletes.
+   */
+  delete: (key: PrimaryKey | keyof Entity, entity?: Entity) => void;
   clearall: () => void;
 };
 
