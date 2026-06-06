@@ -17,7 +17,9 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
   get: (key: PrimaryKey, entity: Entity | undefined) => void;
   getBulk: (keys: readonly PrimaryKey[], entities: readonly Entity[]) => void;
   query: (key: Partial<Entity>, entities: Entity[] | undefined) => void;
-  delete: (key: keyof Entity) => void;
+  /** `entity` is the deleted row when the backend can supply it (lets subscribers
+   *  scope-filter or invalidate caches on DELETE); omitted for keyed-only deletes. */
+  delete: (key: keyof Entity, entity?: Entity) => void;
   clearall: () => void;
 };
 

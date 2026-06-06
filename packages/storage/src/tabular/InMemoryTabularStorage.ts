@@ -141,8 +141,10 @@ export class InMemoryTabularStorage<
   async delete(value: PrimaryKey | Entity): Promise<void> {
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const id = await makeFingerprint(key);
+    // Capture the row before removing it so subscribers receive it as `old`.
+    const existing = this.values.get(id);
     this.values.delete(id);
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as keyof Entity, existing);
   }
 
   async deleteAll(): Promise<void> {
@@ -249,7 +251,7 @@ export class InMemoryTabularStorage<
     for (const [id, entity] of entriesToDelete) {
       this.values.delete(id);
       const { key } = this.separateKeyValueFromCombined(entity);
-      this.events.emit("delete", key as keyof Entity);
+      this.events.emit("delete", key as keyof Entity, entity);
     }
   }
 
@@ -371,8 +373,8 @@ export class InMemoryTabularStorage<
       callback({ type: this._lastPutWasInsert ? "INSERT" : "UPDATE", new: entity });
     };
 
-    const handleDelete = (_key: keyof Entity) => {
-      callback({ type: "DELETE" });
+    const handleDelete = (_key: keyof Entity, entity?: Entity) => {
+      callback({ type: "DELETE", old: entity });
     };
 
     const handleClearAll = () => {
