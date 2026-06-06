@@ -1,5 +1,18 @@
 # @workglow/ai
 
+## 0.3.12
+
+### Bug Fixes
+
+#### ai
+
+- align IPv6 loopback check with isLoopbackHostname
+- label-boundary match on provider base-URL host allow-list
+
+### Chores
+
+- comment review pass across packages and providers
+
 ## 0.3.11
 
 ### Bug Fixes

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.12
+
+### Chores
+
+- update deps
+- comment review pass across packages and providers
+- update dependencies to latest versions
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260605.1
+
 ## 0.3.11
 
 ## 0.3.10

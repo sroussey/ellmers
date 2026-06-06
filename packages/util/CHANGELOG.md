@@ -1,5 +1,11 @@
 # @workglow/util
 
+## 0.3.12
+
+### Chores
+
+- comment review pass across packages and providers
+
 ## 0.3.11
 
 ## 0.3.10

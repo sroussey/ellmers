@@ -199,25 +199,25 @@ describe("localOnlyFetch", () => {
   // before issuing any fetch" shape.
   it("rejects a hex-octet IPv4 initial URL (0x7f.0.0.1) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(
-      localOnlyFetch("http://0x7f.0.0.1/", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
+    await expect(localOnlyFetch("http://0x7f.0.0.1/", undefined, "TestProvider")).rejects.toThrow(
+      /non-loopback host|invalid initial URL/
+    );
     expect(calls).toHaveLength(0);
   });
 
   it("rejects a uint32 IPv4 initial URL (2130706433) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(
-      localOnlyFetch("http://2130706433/", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
+    await expect(localOnlyFetch("http://2130706433/", undefined, "TestProvider")).rejects.toThrow(
+      /non-loopback host|invalid initial URL/
+    );
     expect(calls).toHaveLength(0);
   });
 
   it("rejects a leading-zero octal-looking IPv4 initial URL (010.0.0.1) before issuing any fetch", async () => {
     stubFetch([ok("should-not-be-reached")]);
-    await expect(
-      localOnlyFetch("http://010.0.0.1/", undefined, "TestProvider")
-    ).rejects.toThrow(/non-loopback host|invalid initial URL/);
+    await expect(localOnlyFetch("http://010.0.0.1/", undefined, "TestProvider")).rejects.toThrow(
+      /non-loopback host|invalid initial URL/
+    );
     expect(calls).toHaveLength(0);
   });
 

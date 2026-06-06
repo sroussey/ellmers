@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.12
+
+### Refactors
+
+- rework delete events
+
+### Chores
+
+- comment review pass across packages and providers
+
 ## 0.3.11
 
 ## 0.3.10

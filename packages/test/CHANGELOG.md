@@ -1,5 +1,46 @@
 # @workglow/test
 
+## 0.3.12
+
+### Bug Fixes
+
+#### storage
+
+- reject puts to credential-store sentinel key
+
+#### ai
+
+- align IPv6 loopback check with isLoopbackHostname
+- label-boundary match on provider base-URL host allow-list
+
+### Refactors
+
+- rework delete events
+
+### Style
+
+#### ai
+
+- apply prettier formatting to baseUrlValidation tests
+
+### Tests
+
+#### ai
+
+- add IPv6 + redirect-canonicalisation localOnlyFetch tests (#543)
+
+### Chores
+
+- update deps
+- comment review pass across packages and providers
+- update dependencies to latest versions
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1063.0
+- `@cloudflare/workers-types`: ^4.20260605.1
+- `miniflare`: ^4.20260603.0
+
 ## 0.3.11
 
 ### Bug Fixes

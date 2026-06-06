@@ -1,5 +1,21 @@
 # @workglow/storage
 
+## 0.3.12
+
+### Bug Fixes
+
+#### storage
+
+- reject puts to credential-store sentinel key
+
+### Refactors
+
+- rework delete events
+
+### Chores
+
+- comment review pass across packages and providers
+
 ## 0.3.11
 
 ### Bug Fixes

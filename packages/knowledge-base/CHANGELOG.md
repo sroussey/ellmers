@@ -1,5 +1,23 @@
 # @workglow/knowledge-base
 
+## 0.3.12
+
+### Bug Fixes
+
+#### knowledge-base
+
+- close obfuscated-scheme bypass in escapeLinkDestination
+- escape backslashes in escapeInlineText (CodeQL #136)
+- escape attacker-controlled fields in renderMarkdown
+
+### Refactors
+
+- rework delete events
+
+### Chores
+
+- comment review pass across packages and providers
+
 ## 0.3.11
 
 ### Features
