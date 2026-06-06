@@ -205,4 +205,19 @@ describe("InMemoryTabularStorage delete change payloads", () => {
     expect(deletes[0]?.old?.name).toBe("n1");
     expect(deletes[0]?.old?.option).toBe("match");
   });
+
+  it("deleteIdentity keeps plain criteria columns and drops search conditions", () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
+    // deleteIdentity is the protected helper backends use to emit a bulk
+    // delete's identity (the owner-bearing plain columns of the criteria).
+    const identity = (
+      storage as unknown as {
+        deleteIdentity(c: Record<string, unknown>): Record<string, unknown>;
+      }
+    ).deleteIdentity({ type: "t1", option: { value: "x", operator: ">" } });
+    expect(identity).toEqual({ type: "t1" });
+  });
 });
