@@ -141,10 +141,11 @@ export class InMemoryTabularStorage<
   async delete(value: PrimaryKey | Entity): Promise<void> {
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const id = await makeFingerprint(key);
-    // Capture the row before removing it so subscribers receive it as `old`.
-    const existing = this.values.get(id);
     this.values.delete(id);
-    this.events.emit("delete", key, existing);
+    // A keyed delete emits only the key. Bulk deleteSearch carries the matched
+    // row (it already has it in hand), and scoped callers delete via
+    // deleteSearch so the owner columns reach subscribers without a read-back.
+    this.events.emit("delete", key);
   }
 
   async deleteAll(): Promise<void> {

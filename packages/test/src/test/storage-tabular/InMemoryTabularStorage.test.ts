@@ -167,11 +167,11 @@ describe("InMemoryTabularStorage.queryIndex", () => {
 describe("InMemoryTabularStorage delete change payloads", () => {
   type Change = TabularChangePayload<FromSchema<typeof CompoundSchema>>;
 
-  it("includes the deleted row as `old` on a single delete", async () => {
-    const storage = new InMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
-      CompoundSchema,
-      CompoundPrimaryKeyNames
-    );
+  it("emits a keyed delete without `old` (no read-back of the row)", async () => {
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
     await storage.put({ name: "n1", type: "t1", option: "v1", success: true });
 
     const changes: Change[] = [];
@@ -181,15 +181,14 @@ describe("InMemoryTabularStorage delete change payloads", () => {
 
     const del = changes.find((c) => c.type === "DELETE");
     expect(del).toBeDefined();
-    expect(del?.old?.option).toBe("v1");
-    expect(del?.old?.name).toBe("n1");
+    expect(del?.old).toBeUndefined();
   });
 
   it("includes each deleted row as `old` on deleteSearch", async () => {
-    const storage = new InMemoryTabularStorage<typeof CompoundSchema, typeof CompoundPrimaryKeyNames>(
-      CompoundSchema,
-      CompoundPrimaryKeyNames
-    );
+    const storage = new InMemoryTabularStorage<
+      typeof CompoundSchema,
+      typeof CompoundPrimaryKeyNames
+    >(CompoundSchema, CompoundPrimaryKeyNames);
     await storage.put({ name: "n1", type: "t1", option: "match", success: true });
     await storage.put({ name: "n2", type: "t2", option: "other", success: false });
 
