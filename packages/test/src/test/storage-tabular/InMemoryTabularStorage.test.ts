@@ -167,7 +167,7 @@ describe("InMemoryTabularStorage.queryIndex", () => {
 describe("InMemoryTabularStorage delete change payloads", () => {
   type Change = TabularChangePayload<FromSchema<typeof CompoundSchema>>;
 
-  it("emits a keyed delete without `old` (no read-back of the row)", async () => {
+  it("emits the primary key as `old` on a keyed delete (no row read-back)", async () => {
     const storage = new InMemoryTabularStorage<
       typeof CompoundSchema,
       typeof CompoundPrimaryKeyNames
@@ -181,7 +181,10 @@ describe("InMemoryTabularStorage delete change payloads", () => {
 
     const del = changes.find((c) => c.type === "DELETE");
     expect(del).toBeDefined();
-    expect(del?.old).toBeUndefined();
+    // Identity is the primary key, not the full (un-read) row.
+    expect(del?.old?.name).toBe("n1");
+    expect(del?.old?.type).toBe("t1");
+    expect(del?.old?.option).toBeUndefined();
   });
 
   it("includes each deleted row as `old` on deleteSearch", async () => {

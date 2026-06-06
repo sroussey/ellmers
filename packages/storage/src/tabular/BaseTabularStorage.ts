@@ -867,6 +867,20 @@ export abstract class BaseTabularStorage<
     return columns;
   }
 
+  /**
+   * The identity emitted on the `delete` event for a bulk `deleteSearch`: the
+   * plain (operator-free) columns of the criteria — which include the owner /
+   * scope columns — as a `Partial<Entity>`. Search conditions are dropped since
+   * they don't identify a concrete value.
+   */
+  protected deleteIdentity(criteria: DeleteSearchCriteria<Entity>): Partial<Entity> {
+    const identity: Record<string, unknown> = {};
+    for (const [column, criterion] of Object.entries(criteria)) {
+      if (!isSearchCondition(criterion)) identity[column] = criterion;
+    }
+    return identity as Partial<Entity>;
+  }
+
   protected separateKeyValueFromCombined(obj: Entity): { value: Value; key: PrimaryKey } {
     if (obj === null) {
       console.warn("Key is null");

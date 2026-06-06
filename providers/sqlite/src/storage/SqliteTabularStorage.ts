@@ -953,7 +953,7 @@ export class SqliteTabularStorage<
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`);
     // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
     stmt.run(...(params as ValueOptionType[]));
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   /**
@@ -1196,7 +1196,7 @@ export class SqliteTabularStorage<
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClause}`);
     // @ts-ignore
     stmt.run(...params);
-    this.events.emit("delete", criteriaKeys[0] as keyof Entity);
+    this.events.emit("delete", this.deleteIdentity(criteria));
   }
 
   /**

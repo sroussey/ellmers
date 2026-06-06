@@ -146,7 +146,7 @@ export class HttpTabularProxyStorage<
   async delete(key: PrimaryKey | Entity): Promise<void> {
     await this.call<{ ok: true }>("delete", { key });
     const { key: normalizedKey } = this.separateKeyValueFromCombined(key as Entity);
-    this.events.emit("delete", normalizedKey as keyof Entity);
+    this.events.emit("delete", normalizedKey as Partial<Entity>);
   }
 
   override async getBulk(keys: readonly PrimaryKey[]): Promise<Entity[]> {

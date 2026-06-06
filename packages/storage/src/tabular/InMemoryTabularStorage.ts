@@ -145,7 +145,7 @@ export class InMemoryTabularStorage<
     // A keyed delete emits only the key. Bulk deleteSearch carries the matched
     // row (it already has it in hand), and scoped callers delete via
     // deleteSearch so the owner columns reach subscribers without a read-back.
-    this.events.emit("delete", key);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   async deleteAll(): Promise<void> {
@@ -251,8 +251,9 @@ export class InMemoryTabularStorage<
 
     for (const [id, entity] of entriesToDelete) {
       this.values.delete(id);
-      const { key } = this.separateKeyValueFromCombined(entity);
-      this.events.emit("delete", key, entity);
+      // Emit the matched row as the deleted identity (it carries the owner
+      // columns); InMemory already has it in hand, so this is not a read-back.
+      this.events.emit("delete", entity);
     }
   }
 
@@ -374,8 +375,8 @@ export class InMemoryTabularStorage<
       callback({ type: this._lastPutWasInsert ? "INSERT" : "UPDATE", new: entity });
     };
 
-    const handleDelete = (_key: PrimaryKey | keyof Entity, entity?: Entity) => {
-      callback({ type: "DELETE", old: entity });
+    const handleDelete = (key: Partial<Entity>) => {
+      callback({ type: "DELETE", old: key as Entity });
     };
 
     const handleClearAll = () => {

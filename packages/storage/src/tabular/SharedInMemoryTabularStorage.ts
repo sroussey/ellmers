@@ -117,8 +117,8 @@ export class SharedInMemoryTabularStorage<
     this.inMemoryRepo.on("query", (key, entities) => {
       this.events.emit("query", key, entities);
     });
-    this.inMemoryRepo.on("delete", (key, entity) => {
-      this.events.emit("delete", key, entity);
+    this.inMemoryRepo.on("delete", (key) => {
+      this.events.emit("delete", key);
     });
     this.inMemoryRepo.on("clearall", () => {
       this.events.emit("clearall");

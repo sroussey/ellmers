@@ -122,7 +122,7 @@ export class ScopedTabularStorage<
 
   async delete(key: PrimaryKey | Entity): Promise<void> {
     await this.inner.deleteSearch({ ...(key as any), kb_id: this.kbId } as any);
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {

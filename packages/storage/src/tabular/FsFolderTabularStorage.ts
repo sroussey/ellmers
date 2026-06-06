@@ -222,7 +222,7 @@ export class FsFolderTabularStorage<
     } catch (error) {
       console.error("Error deleting file", filePath, error);
     }
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   async getAll(): Promise<Entity[] | undefined> {

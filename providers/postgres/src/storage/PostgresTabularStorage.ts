@@ -1235,7 +1235,7 @@ export class PostgresTabularStorage<
 
     const params = this.getPrimaryKeyAsOrderedArray(key);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClauses}`, params);
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   /**
@@ -1492,7 +1492,7 @@ export class PostgresTabularStorage<
     const db = this.db;
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     await db.query(`DELETE FROM "${this.table}" WHERE ${whereClause}`, params);
-    this.events.emit("delete", criteriaKeys[0] as keyof Entity);
+    this.events.emit("delete", this.deleteIdentity(criteria));
   }
 
   /**

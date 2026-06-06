@@ -677,7 +677,7 @@ export class SupabaseTabularStorage<
     const { error } = await query;
 
     if (error) throw error;
-    this.events.emit("delete", key as keyof Entity);
+    this.events.emit("delete", key as Partial<Entity>);
   }
 
   /**
@@ -894,7 +894,7 @@ export class SupabaseTabularStorage<
     const { error } = await query;
 
     if (error) throw error;
-    this.events.emit("delete", criteriaKeys[0] as keyof Entity);
+    this.events.emit("delete", this.deleteIdentity(criteria));
   }
 
   /**

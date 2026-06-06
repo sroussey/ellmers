@@ -92,8 +92,8 @@ export class CachedTabularStorage<
     this.cache.on("query", (key, entities) => {
       this.events.emit("query", key, entities);
     });
-    this.cache.on("delete", (key, entity) => {
-      this.events.emit("delete", key, entity);
+    this.cache.on("delete", (key) => {
+      this.events.emit("delete", key);
     });
     this.cache.on("clearall", () => {
       this.events.emit("clearall");
