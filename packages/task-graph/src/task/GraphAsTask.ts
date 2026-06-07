@@ -8,6 +8,7 @@ import { getLogger } from "@workglow/util";
 import { CycleError } from "@workglow/util/graph";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
+import { registerGraphAsTaskCtor } from "../task-graph/Conversions";
 import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
 import { TaskGraph } from "../task-graph/TaskGraph";
@@ -477,6 +478,8 @@ export class GraphAsTask<
     return json;
   }
 }
+
+registerGraphAsTaskCtor(GraphAsTask);
 
 declare module "../task-graph/Workflow" {
   interface Workflow {

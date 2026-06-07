@@ -6,6 +6,7 @@
 
 import { FsFolderTabularStorage } from "@workglow/storage";
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -23,10 +24,8 @@ export const FS_FOLDER_TASK_OUTPUT_REPOSITORY = createServiceToken<FsFolderTaskO
 export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
   constructor(folderPath: string) {
     super({
-      tabularRepository: new FsFolderTabularStorage(
-        folderPath,
-        TaskOutputSchema,
-        TaskOutputPrimaryKeyNames
+      storage: tabularTaskOutputStorage(
+        new FsFolderTabularStorage(folderPath, TaskOutputSchema, TaskOutputPrimaryKeyNames)
       ),
     });
   }

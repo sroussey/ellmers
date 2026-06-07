@@ -6,6 +6,7 @@
 
 import { SqliteTabularStorage } from "@workglow/sqlite/storage";
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -23,12 +24,10 @@ export const SQLITE_TASK_OUTPUT_REPOSITORY = createServiceToken<SqliteTaskOutput
 export class SqliteTaskOutputRepository extends TaskOutputTabularRepository {
   constructor(dbOrPath: string, table: string = "task_outputs") {
     super({
-      tabularRepository: new SqliteTabularStorage(
-        dbOrPath,
-        table,
-        TaskOutputSchema,
-        TaskOutputPrimaryKeyNames,
-        ["createdAt"]
+      storage: tabularTaskOutputStorage(
+        new SqliteTabularStorage(dbOrPath, table, TaskOutputSchema, TaskOutputPrimaryKeyNames, [
+          "createdAt",
+        ])
       ),
     });
   }

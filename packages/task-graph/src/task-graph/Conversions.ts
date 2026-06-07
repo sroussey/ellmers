@@ -6,7 +6,7 @@
 
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
-import { GraphAsTask } from "../task/GraphAsTask";
+import type { GraphAsTask as GraphAsTaskType } from "../task/GraphAsTask";
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
 import type { DataPorts } from "../task/TaskTypes";
@@ -36,7 +36,23 @@ export type Taskish<A extends DataPorts = DataPorts, B extends DataPorts = DataP
 // imports this module — deferring construction avoids init-order issues)
 // ============================================================================
 
-type GraphAsTaskConstructor = typeof GraphAsTask;
+type GraphAsTaskConstructor = typeof GraphAsTaskType;
+
+let _graphAsTaskCtor: GraphAsTaskConstructor | undefined;
+
+/** Called from {@link GraphAsTask} once its module has finished evaluating. */
+export function registerGraphAsTaskCtor(ctor: GraphAsTaskConstructor): void {
+  _graphAsTaskCtor = ctor;
+}
+
+function graphAsTaskClass(): GraphAsTaskConstructor {
+  if (!_graphAsTaskCtor) {
+    throw new Error(
+      "GraphAsTask is not registered yet. Ensure @workglow/task-graph has finished loading."
+    );
+  }
+  return _graphAsTaskCtor;
+}
 
 let _OwnGraphTask: GraphAsTaskConstructor;
 let _OwnWorkflowTask: GraphAsTaskConstructor;
@@ -45,6 +61,7 @@ let _ConvWorkflowTask: GraphAsTaskConstructor;
 
 function getWrapperClasses() {
   if (!_OwnGraphTask) {
+    const GraphAsTask = graphAsTaskClass();
     class ListeningGraphAsTask extends GraphAsTask<any, any> {
       constructor(config: any) {
         super(config);

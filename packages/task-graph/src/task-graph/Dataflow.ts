@@ -10,7 +10,7 @@ import { areSemanticallyCompatible } from "@workglow/util/schema";
 import type { StreamEvent } from "../task/StreamTypes";
 import { Task } from "../task/Task";
 import { TaskError } from "../task/TaskError";
-import { DataflowJson } from "../task/TaskJSON";
+import type { DataflowJson } from "../task/TaskJSON";
 import { TaskIdType, TaskOutput, TaskStatus } from "../task/TaskTypes";
 import {
   DataflowEventListener,

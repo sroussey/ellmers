@@ -13,13 +13,14 @@ export * from "./task-graph/GraphEntitlementUtils";
 export * from "./task-graph/GraphFormatScanner";
 export * from "./task-graph/GraphSchemaUtils";
 export * from "./task-graph/ITaskGraph";
-export * from "./task-graph/TaskGraph";
-export * from "./task-graph/TaskGraphEvents";
-export * from "./task-graph/EdgeMaterializer";
 export * from "./task-graph/RunContext";
 export * from "./task-graph/RunScheduler";
 export * from "./task-graph/StreamPump";
+export * from "./task-graph/TaskGraph";
+export * from "./task-graph/TaskGraphEvents";
 export * from "./task-graph/TaskGraphRunner";
+
+export * from "./task-graph/EdgeMaterializer";
 
 export * from "./task-graph/Conversions";
 export * from "./task-graph/GraphToWorkflowCode";
@@ -33,24 +34,29 @@ export * from "./task-graph/WorkflowFactories";
 export * from "./task-graph/WorkflowPipe";
 export * from "./task-graph/WorkflowRunContext";
 
-export * from "./task-graph/TransformRegistry";
-export * from "./task-graph/TransformTypes";
-export * from "./task-graph/transforms";
 export * from "./task-graph/autoConnect";
+export * from "./task-graph/TransformRegistry";
+export * from "./task-graph/transforms";
+export * from "./task-graph/TransformTypes";
 
 export * from "./cache";
 export * from "./task/CacheCoordinator";
 export * from "./task/StreamProcessor";
 export * from "./task/TaskRunContext";
+
 export * from "./task";
 
+export * from "./storage/ITaskOutputStorage";
+export * from "./storage/TabularTaskOutputStorage";
 export * from "./storage/TaskGraphRepository";
 export * from "./storage/TaskGraphTabularRepository";
 export * from "./storage/TaskOutputRepository";
+export * from "./storage/TaskOutputStorageSchema";
 export * from "./storage/TaskOutputTabularRepository";
+
 export {
-  registerPortCodec,
-  getPortCodec,
   _resetPortCodecsForTests,
+  getPortCodec,
+  registerPortCodec,
 } from "./storage/PortCodecRegistry";
 export type { PortCodec } from "./storage/PortCodecRegistry";

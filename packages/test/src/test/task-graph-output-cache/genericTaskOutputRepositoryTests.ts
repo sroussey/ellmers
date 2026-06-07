@@ -29,9 +29,9 @@ export function runGenericTaskOutputRepositoryTests(
   });
 
   describe("Basics", () => {
-    it("should initialize the tabularRepository", () => {
+    it("should initialize the output storage", () => {
       if (repository instanceof TaskOutputTabularRepository) {
-        expect(repository.tabularRepository).toBeDefined();
+        expect(repository.storage).toBeDefined();
       }
     });
 

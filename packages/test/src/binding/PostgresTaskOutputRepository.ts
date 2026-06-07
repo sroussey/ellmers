@@ -6,6 +6,7 @@
 
 import { PostgresTabularStorage } from "@workglow/postgres/storage";
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -24,12 +25,10 @@ export const POSTGRES_TASK_OUTPUT_REPOSITORY = createServiceToken<PostgresTaskOu
 export class PostgresTaskOutputRepository extends TaskOutputTabularRepository {
   constructor(db: Pool, table: string = "task_outputs") {
     super({
-      tabularRepository: new PostgresTabularStorage(
-        db,
-        table,
-        TaskOutputSchema,
-        TaskOutputPrimaryKeyNames,
-        ["createdAt"]
+      storage: tabularTaskOutputStorage(
+        new PostgresTabularStorage(db, table, TaskOutputSchema, TaskOutputPrimaryKeyNames, [
+          "createdAt",
+        ])
       ),
     });
   }

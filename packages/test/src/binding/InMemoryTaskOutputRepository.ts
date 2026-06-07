@@ -6,6 +6,7 @@
 
 import { InMemoryTabularStorage } from "@workglow/storage";
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -23,9 +24,9 @@ export const MEMORY_TASK_OUTPUT_REPOSITORY = createServiceToken<InMemoryTaskOutp
 export class InMemoryTaskOutputRepository extends TaskOutputTabularRepository {
   constructor() {
     super({
-      tabularRepository: new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, [
-        "createdAt",
-      ]),
+      storage: tabularTaskOutputStorage(
+        new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, ["createdAt"])
+      ),
     });
   }
 

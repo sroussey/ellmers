@@ -13,16 +13,10 @@ export * from "./EntitlementPolicy";
 export * from "./EntitlementProfile";
 export * from "./EntitlementProfiles";
 export * from "./EntitlementResolver";
-export * from "./FallbackTask";
-export * from "./FallbackTaskRunner";
-export * from "./GraphAsTask";
-export * from "./GraphAsTaskRunner";
 export * from "./InputCompactor";
 export * from "./InputResolver";
 export * from "./ITask";
 export * from "./iterationSchema";
-export * from "./IteratorTask";
-export * from "./IteratorTaskRunner";
 export * from "./JobQueueFactory";
 export * from "./MapTask";
 export * from "./ReduceTask";
@@ -35,6 +29,14 @@ export * from "./TaskJSON";
 export * from "./TaskQueueRegistry";
 export * from "./TaskRegistry";
 export * from "./TaskTypes";
+
+export * from "./GraphAsTask";
+export * from "./GraphAsTaskRunner";
+
+export * from "./FallbackTask";
+export * from "./FallbackTaskRunner";
+export * from "./IteratorTask";
+export * from "./IteratorTaskRunner";
 export * from "./WhileTask";
 export * from "./WhileTaskRunner";
 

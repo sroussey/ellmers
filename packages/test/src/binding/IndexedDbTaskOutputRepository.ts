@@ -6,6 +6,7 @@
 
 import { IndexedDbTabularStorage } from "@workglow/indexeddb/storage";
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -23,11 +24,10 @@ export const IDB_TASK_OUTPUT_REPOSITORY = createServiceToken<IndexedDbTaskOutput
 export class IndexedDbTaskOutputRepository extends TaskOutputTabularRepository {
   constructor(table: string = "task_outputs") {
     super({
-      tabularRepository: new IndexedDbTabularStorage(
-        table,
-        TaskOutputSchema,
-        TaskOutputPrimaryKeyNames,
-        ["createdAt"]
+      storage: tabularTaskOutputStorage(
+        new IndexedDbTabularStorage(table, TaskOutputSchema, TaskOutputPrimaryKeyNames, [
+          "createdAt",
+        ])
       ),
     });
   }
