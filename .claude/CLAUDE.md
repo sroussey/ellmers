@@ -32,6 +32,10 @@ Bun workspaces + Turborepo. All packages live in `packages/`. Build order is man
 
 Cross-repo design specs and implementation plans live in the PRD repository (`/workspaces/workglow/prd/docs/superpowers/specs/` and `.../plans/`). Write new superpowers-style specs and plans there and commit in that repo.
 
+### No plan or spec references in code
+
+Do not add source comments that point at a design spec, implementation plan, PRD, or superpowers document (e.g. "per plan …", "implements spec …", "see Task N in …") or from security scan (no C-1 or HIGH-2 etc). Plans and specs live in the PRD repository and change independently; code comments should explain non-obvious behavior in the code itself, not defer to external planning artifacts.
+
 ### Dependency graph
 
 ```
