@@ -6,7 +6,6 @@
 
 import type { DataPortSchema } from "@workglow/util/schema";
 import type { CachePolicy } from "../cache/CachePolicy";
-import type { GraphAsTask as GraphAsTaskType } from "../task/GraphAsTask";
 import type { IExecuteContext, ITask } from "../task/ITask";
 import { Task } from "../task/Task";
 import type { DataPorts } from "../task/TaskTypes";
@@ -31,73 +30,38 @@ export type Taskish<A extends DataPorts = DataPorts, B extends DataPorts = DataP
   | IWorkflow<A, B>;
 
 // ============================================================================
-// Wrapper classes (lazily initialized so GraphAsTask is not needed until
-// ensureTask wraps a graph/workflow; GraphAsTask imports TaskGraph, which
-// imports this module — deferring construction avoids init-order issues)
+// GraphAsTask wrapper factory (deferred seam)
+//
+// `ensureTask` wraps a TaskGraph/Workflow in a GraphAsTask subclass, but
+// GraphAsTask's runner depends — via TaskRunner, which imports `ensureTask` —
+// back on this module: an inherent cycle. GraphAsTask.ts owns the wrapper
+// subclasses (so they extend GraphAsTask directly, no casts) and registers
+// this factory once it has finished evaluating; `ensureTask` calls it lazily.
 // ============================================================================
 
-type GraphAsTaskConstructor = typeof GraphAsTaskType;
+export type GraphWrapperParams = {
+  subGraph: TaskGraph;
+  isOwned: boolean;
+  isWorkflow: boolean;
+  config: any;
+};
 
-let _graphAsTaskCtor: GraphAsTaskConstructor | undefined;
+export type GraphWrapperFactory = (params: GraphWrapperParams) => ITask<any, any, any>;
+
+let _graphWrapperFactory: GraphWrapperFactory | undefined;
 
 /** Called from {@link GraphAsTask} once its module has finished evaluating. */
-export function registerGraphAsTaskCtor(ctor: GraphAsTaskConstructor): void {
-  _graphAsTaskCtor = ctor;
+export function registerGraphWrapperFactory(factory: GraphWrapperFactory): void {
+  _graphWrapperFactory = factory;
 }
 
-function graphAsTaskClass(): GraphAsTaskConstructor {
-  if (!_graphAsTaskCtor) {
+function graphWrapperFactory(): GraphWrapperFactory {
+  if (!_graphWrapperFactory) {
     throw new Error(
       "GraphAsTask is not registered yet. Ensure @workglow/task-graph has finished loading."
     );
   }
-  return _graphAsTaskCtor;
-}
-
-let _OwnGraphTask: GraphAsTaskConstructor;
-let _OwnWorkflowTask: GraphAsTaskConstructor;
-let _GraphTask: GraphAsTaskConstructor;
-let _ConvWorkflowTask: GraphAsTaskConstructor;
-
-function getWrapperClasses() {
-  if (!_OwnGraphTask) {
-    const GraphAsTask = graphAsTaskClass();
-    class ListeningGraphAsTask extends GraphAsTask<any, any> {
-      constructor(config: any) {
-        super(config);
-        this.subGraph.on("start", () => {
-          this.emit("start");
-        });
-        this.subGraph.on("complete", () => {
-          this.emit("complete");
-        });
-        this.subGraph.on("error", (e) => {
-          this.emit("error", e);
-        });
-      }
-    }
-
-    class OwnGraphTask extends ListeningGraphAsTask {
-      public static override readonly type = "Own[Graph]";
-    }
-
-    class OwnWorkflowTask extends ListeningGraphAsTask {
-      public static override readonly type = "Own[Workflow]";
-    }
-
-    class GraphTask extends GraphAsTask {
-      public static override readonly type = "Graph";
-    }
-
-    class ConvWorkflowTask extends GraphAsTask {
-      public static override readonly type = "Workflow";
-    }
-
-    _OwnGraphTask = OwnGraphTask as unknown as GraphAsTaskConstructor;
-    _OwnWorkflowTask = OwnWorkflowTask as unknown as GraphAsTaskConstructor;
-    _GraphTask = GraphTask as unknown as GraphAsTaskConstructor;
-    _ConvWorkflowTask = ConvWorkflowTask as unknown as GraphAsTaskConstructor;
-  }
+  return _graphWrapperFactory;
 }
 
 // ============================================================================
@@ -168,22 +132,22 @@ export function ensureTask<I extends DataPorts, O extends DataPorts>(
     return arg;
   }
   if (arg instanceof TaskGraph) {
-    getWrapperClasses();
     const { isOwned, ...cleanConfig } = config;
-    if (isOwned) {
-      return new _OwnGraphTask({ ...cleanConfig, subGraph: arg });
-    } else {
-      return new _GraphTask({ ...cleanConfig, subGraph: arg });
-    }
+    return graphWrapperFactory()({
+      subGraph: arg,
+      isOwned: Boolean(isOwned),
+      isWorkflow: false,
+      config: cleanConfig,
+    });
   }
   if (isWorkflowLike(arg)) {
-    getWrapperClasses();
     const { isOwned, ...cleanConfig } = config;
-    if (isOwned) {
-      return new _OwnWorkflowTask({ ...cleanConfig, subGraph: arg.graph });
-    } else {
-      return new _ConvWorkflowTask({ ...cleanConfig, subGraph: arg.graph });
-    }
+    return graphWrapperFactory()({
+      subGraph: arg.graph,
+      isOwned: Boolean(isOwned),
+      isWorkflow: true,
+      config: cleanConfig,
+    });
   }
   return convertPipeFunctionToTask(arg as PipeFunction<I, O>, config);
 }

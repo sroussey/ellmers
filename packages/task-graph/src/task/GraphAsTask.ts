@@ -8,7 +8,7 @@ import { getLogger } from "@workglow/util";
 import { CycleError } from "@workglow/util/graph";
 import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
-import { registerGraphAsTaskCtor } from "../task-graph/Conversions";
+import { registerGraphWrapperFactory } from "../task-graph/Conversions";
 import { computeGraphEntitlements } from "../task-graph/GraphEntitlementUtils";
 import { computeGraphInputSchema, computeGraphOutputSchema } from "../task-graph/GraphSchemaUtils";
 import { TaskGraph } from "../task-graph/TaskGraph";
@@ -479,7 +479,53 @@ export class GraphAsTask<
   }
 }
 
-registerGraphAsTaskCtor(GraphAsTask);
+// ----------------------------------------------------------------------------
+// Wrappers used by ensureTask() to adapt a TaskGraph/Workflow into a task.
+// Defined here (not in Conversions) so they extend GraphAsTask directly with no
+// init-order casts; registered with Conversions' deferred factory seam.
+// ----------------------------------------------------------------------------
+
+class ListeningGraphAsTask extends GraphAsTask<any, any> {
+  constructor(config: any) {
+    super(config);
+    this.subGraph.on("start", () => {
+      this.emit("start");
+    });
+    this.subGraph.on("complete", () => {
+      this.emit("complete");
+    });
+    this.subGraph.on("error", (e) => {
+      this.emit("error", e);
+    });
+  }
+}
+
+class OwnGraphTask extends ListeningGraphAsTask {
+  public static override readonly type = "Own[Graph]";
+}
+
+class OwnWorkflowTask extends ListeningGraphAsTask {
+  public static override readonly type = "Own[Workflow]";
+}
+
+class GraphTask extends GraphAsTask {
+  public static override readonly type = "Graph";
+}
+
+class ConvWorkflowTask extends GraphAsTask {
+  public static override readonly type = "Workflow";
+}
+
+registerGraphWrapperFactory(({ subGraph, isOwned, isWorkflow, config }) => {
+  if (isWorkflow) {
+    return isOwned
+      ? new OwnWorkflowTask({ ...config, subGraph })
+      : new ConvWorkflowTask({ ...config, subGraph });
+  }
+  return isOwned
+    ? new OwnGraphTask({ ...config, subGraph })
+    : new GraphTask({ ...config, subGraph });
+});
 
 declare module "../task-graph/Workflow" {
   interface Workflow {
