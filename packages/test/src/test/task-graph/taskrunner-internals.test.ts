@@ -239,7 +239,7 @@ describe("CacheCoordinator", () => {
     task.subscribe("stream_chunk", (event: any) => events.push(`chunk:${event.type}`));
     task.subscribe("stream_end", () => events.push("end"));
 
-    const result = await cc.lookup({ q: "hello" }, cache, /* isStreamable */ true, ctx);
+    const result = await cc.lookup({ q: "hello" }, cache, { kind: "deterministic" }, true, ctx);
 
     expect(result).toEqual({ result: "cached!" });
     expect(events).toEqual(["start", "chunk:finish", "end"]);
@@ -251,7 +251,7 @@ describe("CacheCoordinator", () => {
     const cc = new CacheCoordinator<CacheableInput, CacheableOutput>(task);
 
     // Should not throw, should not record anything (cache=undefined)
-    await cc.save({ q: "x" }, { result: "y" }, undefined);
+    await cc.save({ q: "x" }, { result: "y" }, undefined, { kind: "deterministic" });
 
     // With a cache but a non-cacheable task - verify by using a separate non-cacheable task class
     TaskRegistry.registerTask(NonCacheableStreamingTask);
@@ -259,7 +259,7 @@ describe("CacheCoordinator", () => {
     const cc2 = new CacheCoordinator<CacheableInput, CacheableOutput>(nonCacheableTask);
     const cache = new FakeCacheRepo() as any;
 
-    await cc2.save({ q: "x" }, { result: "y" }, cache);
+    await cc2.save({ q: "x" }, { result: "y" }, cache, { kind: "deterministic" });
 
     const cached = await cache.getOutput("TestNonCacheableStreaming", { q: "x" });
     expect(cached).toBeUndefined();

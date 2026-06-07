@@ -245,7 +245,7 @@ interface CacheRegistry {
 
 `TaskGraphRunner` resolves the registry from the per-run `ServiceRegistry` and dispatches each task's read/write to the slot named by its policy. Both slots are independently optional. A missing slot is a silent no-op: the task runs uncached, no error.
 
-For the `private` slot, the runner constructs a per-run `RunPrivateCacheRepo` wrapper that prefixes every key with `__run:${runId}::`. Two runs with different `runId`s never see each other's rows; the same `runId` (a restart) does.
+For the `private` slot, the runner constructs a per-run `RunPrivateCacheRepo` wrapper that prefixes every key with `__run:${runId}::${taskId}`. Two runs with different `runId`s never see each other's rows; the same `runId` (a restart) does. Two task nodes of the same class in one graph never share private entries because each keys by its instance id, not its type.
 
 ### Run identity (`runId`)
 
@@ -275,9 +275,9 @@ key = sha256(taskType + getCacheVersion() + fingerprint(inputs))
 
 ### Lifecycle of cache rows
 
-| Tier            | Written        | Read                                  | Deleted                                                                                                                                |
-| --------------- | -------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `deterministic` | On task success | On task start                         | Never automatically. App owns invalidation (typically via `version` bumps).                                                            |
+| Tier            | Written         | Read                                       | Deleted                                                                                                                                                                             |
+| --------------- | --------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deterministic` | On task success | On task start                              | Never automatically. App owns invalidation (typically via `version` bumps).                                                                                                         |
 | `private`       | On task success | On task start, filtered to current `runId` | **(a)** `privateRepo.clearRun()` on `succeeded` (the wrapper already knows its `runId`). **(b)** TTL sweep via `CacheJanitor.sweepStaleRunPrivate(olderThanMs)` for abandoned runs. |
 
 Failed tasks are never cached — only `Ok` results reach `saveOutput`. `saveOutput` is upsert by primary key (last writer wins) — the underlying `TaskOutputTabularRepository` calls `put()` on its tabular storage, so a same-key write replaces the existing row.

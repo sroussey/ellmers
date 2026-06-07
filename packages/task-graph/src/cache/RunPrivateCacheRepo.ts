@@ -15,9 +15,10 @@ export interface RunPrivateCacheRepoOptions {
 /**
  * Wraps a TaskOutputRepository so that all entries are namespaced by `runId`.
  *
- * Namespacing happens at the `taskType` axis: rows are stored as
- * `__run:${runId}::${taskType}` in the backing store. The input fingerprint is
- * unchanged, so deterministic-style keying still works.
+ * Namespacing happens at the repository's `taskType` axis: {@link CacheCoordinator}
+ * passes each task's instance `id` for private-policy entries, so rows are stored
+ * as `__run:${runId}::${taskId}` in the backing store. The input fingerprint is
+ * unchanged for resume lookups within the same node.
  *
  * - Two wrappers with the same `runId` (e.g., a restart after a crash) see each
  *   other's writes via the backing store — that's the restart-survival contract.
@@ -33,21 +34,24 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     this.runId = runId;
   }
 
-  private ns(taskType: string): string {
-    return `__run:${this.runId}::${taskType}`;
+  private ns(cacheIdentity: string): string {
+    return `__run:${this.runId}::${cacheIdentity}`;
   }
 
   public async saveOutput(
-    taskType: string,
+    cacheIdentity: string,
     inputs: TaskInput,
     output: TaskOutput,
     createdAt?: Date
   ): Promise<void> {
-    await this.backing.saveOutput(this.ns(taskType), inputs, output, createdAt);
+    await this.backing.saveOutput(this.ns(cacheIdentity), inputs, output, createdAt);
   }
 
-  public async getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined> {
-    return this.backing.getOutput(this.ns(taskType), inputs);
+  public async getOutput(
+    cacheIdentity: string,
+    inputs: TaskInput
+  ): Promise<TaskOutput | undefined> {
+    return this.backing.getOutput(this.ns(cacheIdentity), inputs);
   }
 
   /**

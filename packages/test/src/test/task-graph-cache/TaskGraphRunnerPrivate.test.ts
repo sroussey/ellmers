@@ -72,6 +72,9 @@ describe("TaskGraphRunner with run-private cache", () => {
     (FlakyTask as any).runs = [];
     const backing = await freshRepo();
     const runId = "shared-run";
+    const taskId = "flaky-node-resume";
+
+    const task = new FlakyTask({ id: taskId, defaults: { q: "hello" } } as any);
 
     // Simulate the state left by a previous partial/failed run: write FlakyTask's
     // output directly into the private-namespaced backing store, exactly as the
@@ -79,23 +82,34 @@ describe("TaskGraphRunner with run-private cache", () => {
     // The cache key includes `__cv` (cache version = "1" for FlakyTask which
     // inherits Task.version = 1 and declares no override).
     const wrappedForSeeding = new RunPrivateCacheRepo({ backing, runId });
-    await wrappedForSeeding.saveOutput(
-      FlakyTask.type,
-      { q: "hello", __cv: "1" },
-      { r: "done:hello" }
-    );
+    await wrappedForSeeding.saveOutput(taskId, { q: "hello", __cv: "1" }, { r: "done:hello" });
 
     const services = freshServices(backing);
 
     // Now run graph2 with the same runId — it should hit the pre-seeded cache entry
     // and NOT invoke FlakyTask.execute() again.
     const graph2 = new TaskGraph();
-    graph2.addTask(new FlakyTask({ defaults: { q: "hello" } } as any));
+    graph2.addTask(task);
 
     await graph2.run({}, { runId, registry: services });
 
     // FlakyTask should have been skipped (cache hit) — runs array stays empty.
     expect((FlakyTask as any).runs.length).toBe(0);
+  });
+
+  it("two private-policy tasks of the same type with identical inputs do not share cache entries", async () => {
+    (FlakyTask as any).runs = [];
+    const backing = await freshRepo();
+    const services = freshServices(backing);
+    const runId = "same-type-run";
+
+    const graph = new TaskGraph();
+    graph.addTask(new FlakyTask({ id: "flaky-a", defaults: { q: "hello" } } as any));
+    graph.addTask(new FlakyTask({ id: "flaky-b", defaults: { q: "hello" } } as any));
+
+    await graph.run({}, { runId, registry: services });
+
+    expect((FlakyTask as any).runs.length).toBe(2);
   });
 
   it("two runs with different runIds do not share private entries", async () => {

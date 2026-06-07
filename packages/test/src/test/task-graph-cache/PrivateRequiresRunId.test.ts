@@ -168,7 +168,10 @@ describe("private cache policy requires a runId", () => {
 
     // Run with no runId in config — bypass should engage because private slot
     // IS already a RunPrivateCacheRepo, so no downgrade + no warning.
-    const task = new PrivatePolicyTask({ defaults: { q: "bypass-test" } } as any);
+    const task = new PrivatePolicyTask({
+      id: "private-task-node-1",
+      defaults: { q: "bypass-test" },
+    } as any);
     await task.run({}, { registry: services });
 
     // No warning should have been emitted.
@@ -177,8 +180,8 @@ describe("private cache policy requires a runId", () => {
     );
     expect(matchingWarnings.length).toBe(0);
 
-    // The cache entry SHOULD be written under the __run:<runId>:: prefix in the raw backing store.
-    const prefixedType = `__run:${runId}::${PrivatePolicyTask.type}`;
+    // Private cache keys by task instance id, namespaced under __run:<runId>::
+    const prefixedType = `__run:${runId}::${task.id}`;
     const stored = await rawBacking.getOutput(prefixedType, { q: "bypass-test", __cv: "1" });
     expect(stored).toEqual({ r: "done:bypass-test" });
   });

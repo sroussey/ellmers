@@ -52,6 +52,20 @@ describe("CacheCoordinator policy routing", () => {
     expect(await priv.size()).toBe(1);
   });
 
+  it("kind: private writes to private slot keyed by task id, not task type", async () => {
+    const priv = await freshRepo();
+    const reg = new DefaultCacheRegistry({ private: priv });
+    const task = new T({ id: "node-abc" } as any);
+    const c = new CacheCoordinator(task);
+
+    const policy: CachePolicy = { kind: "private" };
+    const k = await c.buildKeyForPolicy({ q: 1 } as any, reg, policy);
+    await c.saveByPolicy(k, { r: 1 } as any, reg, policy);
+
+    expect(await priv.getOutput("node-abc", k)).toEqual({ r: 1 });
+    expect(await priv.getOutput(T.type, k)).toBeUndefined();
+  });
+
   it("kind: none is a no-op", async () => {
     const det = await freshRepo();
     const priv = await freshRepo();

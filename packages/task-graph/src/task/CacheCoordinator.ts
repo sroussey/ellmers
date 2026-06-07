@@ -61,15 +61,25 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
    *
    * Returns the deserialized output if found, undefined otherwise.
    */
+  /**
+   * Cache identity for the `taskType` axis of {@link TaskOutputRepository}.
+   * Deterministic entries key by task class; private (run-resume) entries key by
+   * task instance id so two nodes of the same type in one graph do not collide.
+   */
+  private cacheIdentityKey(policy: CachePolicy): string {
+    return isPolicyPrivate(policy) ? String(this.task.id) : this.task.type;
+  }
+
   async lookup(
     keyInputs: Input,
     outputCache: TaskOutputRepository | undefined,
+    policy: CachePolicy,
     isStreamable: boolean,
     ctx: TaskRunContext
   ): Promise<Output | undefined> {
     if (!outputCache || !this.task.cacheable) return undefined;
 
-    const cached = await outputCache.getOutput(this.task.type, keyInputs);
+    const cached = await outputCache.getOutput(this.cacheIdentityKey(policy), keyInputs);
     if (cached === undefined) return undefined;
 
     const outputSchema = (this.task.constructor as typeof Task).outputSchema();
@@ -99,7 +109,8 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   async save(
     keyInputs: Input,
     output: Output,
-    outputCache: TaskOutputRepository | undefined
+    outputCache: TaskOutputRepository | undefined,
+    policy: CachePolicy
   ): Promise<void> {
     if (!outputCache || !this.task.cacheable || output === undefined) return;
     const outputSchema = (this.task.constructor as typeof Task).outputSchema();
@@ -107,7 +118,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       output as Record<string, unknown>,
       outputSchema as unknown as SchemaProperties
     );
-    await outputCache.saveOutput(this.task.type, keyInputs, wireOutputs as Output);
+    await outputCache.saveOutput(this.cacheIdentityKey(policy), keyInputs, wireOutputs as Output);
   }
 
   // ========================================================================
@@ -143,7 +154,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     isStreamable: boolean,
     ctx: TaskRunContext
   ): Promise<Output | undefined> {
-    return this.lookup(keyInputs, this.repoFor(registry, policy), isStreamable, ctx);
+    return this.lookup(keyInputs, this.repoFor(registry, policy), policy, isStreamable, ctx);
   }
 
   public async saveByPolicy(
@@ -152,7 +163,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     registry: CacheRegistry | undefined,
     policy: CachePolicy
   ): Promise<void> {
-    return this.save(keyInputs, output, this.repoFor(registry, policy));
+    return this.save(keyInputs, output, this.repoFor(registry, policy), policy);
   }
 
   // ========================================================================

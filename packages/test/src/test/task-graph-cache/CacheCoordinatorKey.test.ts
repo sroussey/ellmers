@@ -29,12 +29,16 @@ describe("CacheCoordinator key with version", () => {
 
     const input = { q: "hello" };
     const key1 = await coordV1.buildKey(input as any, repo);
-    await coordV1.save(key1, { r: "v1-result" } as any, repo);
+    await coordV1.save(key1, { r: "v1-result" } as any, repo, { kind: "deterministic" });
 
-    expect(await coordV1.lookup(key1, repo, false, {} as any)).toEqual({ r: "v1-result" });
+    expect(await coordV1.lookup(key1, repo, { kind: "deterministic" }, false, {} as any)).toEqual({
+      r: "v1-result",
+    });
 
     const key2 = await coordV2.buildKey(input as any, repo);
-    expect(await coordV2.lookup(key2, repo, false, {} as any)).toBeUndefined();
+    expect(
+      await coordV2.lookup(key2, repo, { kind: "deterministic" }, false, {} as any)
+    ).toBeUndefined();
   });
 
   it("identical version + inputs still hit cache", async () => {
@@ -47,7 +51,9 @@ describe("CacheCoordinator key with version", () => {
     const c = new CacheCoordinator(new Stable());
 
     const key = await c.buildKey({ q: "x" } as any, repo);
-    await c.save(key, { r: "hit" } as any, repo);
-    expect(await c.lookup(key, repo, false, {} as any)).toEqual({ r: "hit" });
+    await c.save(key, { r: "hit" } as any, repo, { kind: "deterministic" });
+    expect(await c.lookup(key, repo, { kind: "deterministic" }, false, {} as any)).toEqual({
+      r: "hit",
+    });
   });
 });

@@ -14,8 +14,8 @@ export interface CacheJanitorOptions {
  * Periodic cleanup helper for run-private cache entries left behind by runs
  * that crashed and were never restarted.
  *
- * Run-private rows are namespaced by `RunPrivateCacheRepo` with the taskType
- * prefix `__run:`. This janitor sweeps those rows when they are older than
+ * Run-private rows are namespaced by `RunPrivateCacheRepo` with the
+ * `__run:${runId}::${taskId}` prefix. This janitor sweeps those rows when they are older than
  * `olderThanMs`. Entries lacking the prefix (deterministic cache, shared tier)
  * are not touched.
  *
