@@ -15,6 +15,7 @@ TaskOutputRepository is a repository for task caching. If a task has the same in
 ```typescript
 // Example usage
 import {
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -25,12 +26,14 @@ import { Sqlite } from "@workglow/storage/sqlite";
 await Sqlite.init();
 
 const outputRepo = new TaskOutputTabularRepository({
-  tabularRepository: new SqliteTabularStorage(
-    ":memory:",
-    "task_outputs",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames,
-    ["createdAt"]
+  storage: tabularTaskOutputStorage(
+    new SqliteTabularStorage(
+      ":memory:",
+      "task_outputs",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames,
+      ["createdAt"]
+    )
   ),
 });
 await outputRepo.saveOutput("MyTaskType", { param: "value" }, { result: "data" });
