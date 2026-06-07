@@ -1,5 +1,11 @@
 # @workglow/web
 
+## 0.3.13
+
+### Refactors
+
+- unify task output storage implementation
+
 ## 0.3.12
 
 ### Chores

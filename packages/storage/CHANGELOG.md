@@ -1,5 +1,15 @@
 # @workglow/storage
 
+## 0.3.13
+
+### Features
+
+- add isDurable method to in-memory storage classes
+
+### Refactors
+
+- optimize task output repository implementations
+
 ## 0.3.12
 
 ### Bug Fixes

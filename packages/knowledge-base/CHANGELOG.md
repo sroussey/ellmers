@@ -1,5 +1,7 @@
 # @workglow/knowledge-base
 
+## 0.3.13
+
 ## 0.3.12
 
 ### Bug Fixes

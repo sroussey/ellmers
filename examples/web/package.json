@@ -1,6 +1,6 @@
 {
   "name": "@workglow/web",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "type": "module",
   "description": "Web interface example for Workglow, showcasing a React-based UI for building and visualizing AI task pipelines.",
   "scripts": {

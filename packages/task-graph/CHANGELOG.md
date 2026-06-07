@@ -1,5 +1,15 @@
 # @workglow/task-graph
 
+## 0.3.13
+
+### Refactors
+
+- optimize task output repository implementations
+- update task graph wrapper registration and fix circular issues
+- streamline TaskOutputTabularRepository and enhance task graph wrappers
+- unify task output storage implementation
+- update cache keying for private slots to use taskId
+
 ## 0.3.12
 
 ### Chores
