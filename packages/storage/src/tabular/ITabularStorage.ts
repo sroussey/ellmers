@@ -465,6 +465,14 @@ export interface ITabularStorage<
    */
   setupDatabase(): Promise<void>;
 
+  /**
+   * Whether rows written to this storage survive a process restart. Optional:
+   * backends that omit it are assumed durable. In-memory backends return
+   * `false` so callers (e.g. the run-private cache durability check) can warn
+   * when restart-survival won't actually hold.
+   */
+  isDurable?(): boolean;
+
   destroy(): void;
   [Symbol.dispose](): void;
   [Symbol.asyncDispose](): Promise<void>;

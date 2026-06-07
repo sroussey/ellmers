@@ -229,6 +229,11 @@ export class SharedInMemoryTabularStorage<
     }
   }
 
+  /** Shared in-memory rows do not survive a process restart. */
+  public isDurable(): boolean {
+    return false;
+  }
+
   public override getMigrationApplier(): ITabularMigrationApplier | null {
     return new InMemoryTabularMigrationApplier(
       this as unknown as AnyTabularStorage,
