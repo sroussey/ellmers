@@ -11,11 +11,6 @@ import {
   TaskOutputSchema,
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
-import { createServiceToken } from "@workglow/util";
-
-export const MEMORY_TASK_OUTPUT_REPOSITORY = createServiceToken<InMemoryTaskOutputRepository>(
-  "taskgraph.taskOutputRepository.inMemory"
-);
 
 /**
  * In-memory implementation of a task output repository.
@@ -28,9 +23,5 @@ export class InMemoryTaskOutputRepository extends TaskOutputTabularRepository {
         new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, ["createdAt"])
       ),
     });
-  }
-
-  public override isDurable(): boolean {
-    return false;
   }
 }

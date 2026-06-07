@@ -11,11 +11,6 @@ import {
   TaskOutputSchema,
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
-import { createServiceToken } from "@workglow/util";
-
-export const SQLITE_TASK_OUTPUT_REPOSITORY = createServiceToken<SqliteTaskOutputRepository>(
-  "taskgraph.taskOutputRepository.sqlite"
-);
 
 /**
  * SQLite implementation of a task output repository.

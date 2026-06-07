@@ -223,7 +223,9 @@ export class SharedInMemoryTabularStorage<
   public override async setupDatabase(): Promise<void> {
     if (this.isInitialized) return;
     this.isInitialized = true;
-    await this.syncFromOtherTabs();
+    // Fire-and-forget: posts a SYNC_REQUEST and drains responses on a timeout
+    // (see syncFromOtherTabs); there is nothing to await.
+    this.syncFromOtherTabs();
     if (this.tabularMigrations && this.tabularMigrations.length > 0) {
       await this.applyTabularMigrations();
     }

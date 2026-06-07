@@ -11,11 +11,6 @@ import {
   TaskOutputSchema,
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
-import { createServiceToken } from "@workglow/util";
-
-export const FS_FOLDER_TASK_OUTPUT_REPOSITORY = createServiceToken<FsFolderTaskOutputRepository>(
-  "taskgraph.taskOutputRepository.fsFolder"
-);
 
 /**
  * File system folder implementation of a task output repository.

@@ -11,12 +11,7 @@ import {
   TaskOutputSchema,
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
-import { createServiceToken } from "@workglow/util";
 import type { Pool } from "pg";
-
-export const POSTGRES_TASK_OUTPUT_REPOSITORY = createServiceToken<PostgresTaskOutputRepository>(
-  "taskgraph.taskOutputRepository.postgres"
-);
 
 /**
  * PostgreSQL implementation of a task output repository.

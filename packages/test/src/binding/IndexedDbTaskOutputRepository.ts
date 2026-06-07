@@ -11,11 +11,6 @@ import {
   TaskOutputSchema,
   TaskOutputTabularRepository,
 } from "@workglow/task-graph";
-import { createServiceToken } from "@workglow/util";
-
-export const IDB_TASK_OUTPUT_REPOSITORY = createServiceToken<IndexedDbTaskOutputRepository>(
-  "taskgraph.taskOutputRepository.indexedDb"
-);
 
 /**
  * IndexedDB implementation of a task output repository.

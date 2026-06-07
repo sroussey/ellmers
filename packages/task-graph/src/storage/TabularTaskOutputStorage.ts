@@ -60,8 +60,7 @@ export class TabularTaskOutputStorage implements ITaskOutputStorage {
   }
 
   isDurable(): boolean {
-    const backing = this.tabular as unknown as { isDurable?: () => boolean };
-    return backing.isDurable?.() ?? true;
+    return this.tabular.isDurable?.() ?? true;
   }
 }
 
