@@ -5,7 +5,7 @@
  */
 
 /**
- * Contract test for Decision S-07b: every HTTP provider must honor
+ * Contract test: every HTTP provider must honor
  * provider_config.base_url so a future proxy target can repoint them at
  * /api/ai/<provider> without changing provider code.
  *
@@ -32,7 +32,7 @@ import { describe, expect, it } from "vitest";
 
 const LOCAL = "http://127.0.0.1:9/api/ai";
 
-describe("HTTP provider base_url repointing seam (S-07b)", () => {
+describe("HTTP provider base_url repointing seam", () => {
   it("Anthropic client honors provider_config.base_url", async () => {
     const client = await getAnthropicClient({
       provider: "ANTHROPIC",

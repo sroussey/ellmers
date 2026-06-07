@@ -67,7 +67,7 @@ async function freshRepo(): Promise<InMemoryTaskOutputRepository> {
 describe("TaskGraphRunner with run-private cache", () => {
   it("restart with the same runId reuses run-private entries left by a failed run", async () => {
     // Restart-survival scenario: a FAILED (or aborted) run leaves private cache
-    // entries in place (Task 10 only clears on SUCCESS). A subsequent run with the
+    // entries in place (private cache clears only on SUCCESS). A subsequent run with the
     // same runId should reuse those entries rather than re-executing the task.
     (FlakyTask as any).runs = [];
     const backing = await freshRepo();

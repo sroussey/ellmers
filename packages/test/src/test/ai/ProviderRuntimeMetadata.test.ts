@@ -34,36 +34,34 @@ describe("WebBrowserProvider.isAvailable", () => {
   });
 });
 
-// NOTE (S-07a): The spec table calls for Anthropic/OpenAI to have
-// supportsBrowser=false. The actual declared values are true (the
-// createCloudProviderClass mixin defaults supportsBrowser to true when the
-// metadata literal omits it). Tests below assert ACTUAL values; see
-// DONE_WITH_CONCERNS note in task report for reconciliation details.
+// Anthropic/OpenAI omit supportsBrowser in their metadata literals; the
+// createCloudProviderClass mixin defaults supportsBrowser to true. Tests
+// below assert actual declared values.
 describe("provider runtime-placement metadata", () => {
-  it("declares the spec placement table", () => {
+  it("declares runtime placement metadata", () => {
     const cases = [
-      // WebBrowserProvider: browser-only, on-device — matches spec exactly
+      // WebBrowserProvider: browser-only, on-device
       {
         provider: new WebBrowserProvider(),
         supportsBrowser: true,
         supportsServer: false,
         isLocal: true,
       },
-      // OllamaQueuedProvider: browser+server, local — matches spec exactly
+      // OllamaQueuedProvider: browser+server, local
       {
         provider: new OllamaQueuedProvider(),
         supportsBrowser: true,
         supportsServer: true,
         isLocal: true,
       },
-      // AnthropicQueuedProvider: spec says supportsBrowser=false but actual=true (mixin default)
+      // AnthropicQueuedProvider: mixin default makes supportsBrowser=true
       {
         provider: new AnthropicQueuedProvider(),
         supportsBrowser: true,
         supportsServer: true,
         isLocal: false,
       },
-      // OpenAiQueuedProvider: spec says supportsBrowser=false but actual=true (mixin default)
+      // OpenAiQueuedProvider: mixin default makes supportsBrowser=true
       {
         provider: new OpenAiQueuedProvider(),
         supportsBrowser: true,
@@ -86,7 +84,7 @@ describe("provider runtime-placement metadata", () => {
   });
 });
 
-describe("credential threading (S-07c)", () => {
+describe("credential threading", () => {
   // Renderer-only providers run on-device and must never be handed cloud
   // secrets. Their declared metadata is the structural guarantee: a provider
   // that cannot run server-side is local and therefore needs no API key.

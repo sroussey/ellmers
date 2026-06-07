@@ -29,7 +29,7 @@ interface BackendUnderTest {
 }
 
 /**
- * H2: with the v4 UNIQUE partial index in place, concurrent `create()` calls
+ * With the v4 UNIQUE partial index in place, concurrent `create()` calls
  * carrying the same fingerprint MUST land on exactly one PENDING row and
  * resolve every other caller to the winner's id. Without UNIQUE the index is
  * advisory and the TOCTOU window between `findActiveByFingerprint` and

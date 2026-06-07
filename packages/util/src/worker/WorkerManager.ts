@@ -272,7 +272,7 @@ export class WorkerManager {
           } else if (type === "error") {
             cleanup();
             getLogger().debug(`Worker ${workerName} function ${functionName} error.`, { data });
-            // H8: defense-in-depth — a third-party worker that didn't go
+            // Defense-in-depth — a third-party worker that didn't go
             // through our scrubbing postError may still ship absolute paths
             // in `data.stack`. Re-scrub with the manager process's cwd
             // before handing the rehydrated Error to the caller.

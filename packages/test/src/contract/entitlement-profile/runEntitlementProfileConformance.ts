@@ -38,8 +38,7 @@ export function runEntitlementProfileConformance(opts: EntitlementProfileConform
       if (handle) await handle.dispose();
     });
 
-    // Assertion blocks are wired up in Phase 3 tasks. They are imported and
-    // invoked here as each one is added.
+    // Assertion blocks are imported and invoked here as they are added.
     surfaceCoverageBlock(opts, getHandle);
     hierarchyHonoringBlock(opts, getHandle);
     resourceScopingBlock(opts, getHandle);

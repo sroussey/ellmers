@@ -25,7 +25,7 @@ function body(v: string): JobStorageFormat<In, Out> {
 const sqsMock = mockClient(SQSClient);
 beforeEach(() => sqsMock.reset());
 
-describe("SqsMessageQueue.receive — H1 per-message parse safety", () => {
+describe("SqsMessageQueue.receive — per-message parse safety", () => {
   let warnSpy: ReturnType<typeof vi.fn>;
   let prevLogger: any;
   beforeEach(() => {

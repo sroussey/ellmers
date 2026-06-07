@@ -204,7 +204,7 @@ export class WorkerServerBase {
       return; // Already responded to this request
     }
     this.completedRequests.add(id);
-    // H8: scrub absolute paths from any stack we ship to the parent and
+    // Scrub absolute paths from any stack we ship to the parent and
     // omit the stack entirely in production unless the operator opts in
     // via WORKGLOW_INCLUDE_STACKS=1. Without this, build-server / container
     // / customer-deployment roots leaked through every UI that rendered

@@ -337,7 +337,7 @@ export function runGenericJobQueueTests(
     });
 
     it("should clear all jobs in the queue", async () => {
-      // H2: a UNIQUE partial index on (queue, fingerprint) WHERE status IN
+      // A UNIQUE partial index on (queue, fingerprint) WHERE status IN
       // ('PENDING','PROCESSING') now dedupes identical-input sends. Use two
       // distinct inputs (and hence distinct auto-fingerprints) so the test
       // exercises deleteAll on multiple rows.
@@ -1231,9 +1231,9 @@ export function runGenericJobQueueTests(
     });
   });
 
-  describe("atomic disableJob (H5)", () => {
+  describe("atomic disableJob", () => {
     it("disable() writes DISABLED in a single storage write — never observes FAILED", async () => {
-      // The H5 contract: disableJob writes status=DISABLED in one storage
+      // disableJob writes status=DISABLED in one storage
       // operation. The legacy two-write path (claim.fail() then
       // saveStatus(DISABLED)) briefly persisted FAILED, so any subscriber
       // observing during the window saw a transient FAILED → DISABLED.
@@ -1407,7 +1407,7 @@ export function runGenericJobQueueTests(
     });
   });
 
-  describe("Abort/Retry/Lease invariants (H1 + H4)", () => {
+  describe("Abort/Retry/Lease invariants", () => {
     it("abort → retry: reclaimed PENDING row has abort_requested_at cleared", async () => {
       // Send a job, abort it while PENDING (sets abort_requested_at + FAILED
       // in the storage layer immediately). Then re-submit with the same id

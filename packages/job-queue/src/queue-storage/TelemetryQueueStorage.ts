@@ -61,7 +61,7 @@ export class TelemetryQueueStorage<Input, Output> implements IQueueStorage<Input
     );
   }
   // Derive `fields` directly from IQueueStorage so future additions to
-  // finalize (e.g. visible_at for H4 markEnqueueDeferred) don't require
+  // finalize (e.g. visible_at for markEnqueueDeferred) don't require
   // re-listing every field here — callers using the concrete wrapper type
   // would otherwise get excess-property errors any time the interface grew.
   finalize(

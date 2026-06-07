@@ -15,9 +15,8 @@ export interface ITransformStep {
 /**
  * A ranked bridge candidate returned by the suggestion engine.
  *
- * Phase 1 scaffolding: the runner/registry do not consume this type; it is
- * exported for Phase 2 builder work that suggests transform chains to bridge
- * mismatched source/target schemas.
+ * The runner/registry do not consume this type; it is exported for builder UI
+ * that suggests transform chains to bridge mismatched source/target schemas.
  */
 export interface IBridgeCandidate {
   readonly chain: ReadonlyArray<ITransformStep>;
@@ -31,8 +30,8 @@ export interface IBridgeCandidate {
  * A transform definition registered with TransformRegistry.
  * All functions must be pure, deterministic, side-effect free.
  *
- * Phase 1 applies transforms only to materialised values (full snapshot or
- * finish payload); per-event streaming transforms are out of scope.
+ * Transforms apply only to materialised values (full snapshot or finish payload);
+ * per-event streaming transforms are out of scope.
  */
 export interface ITransformDef<P = unknown> {
   readonly id: string;

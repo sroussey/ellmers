@@ -676,7 +676,7 @@ describe("WebBrowser_StructuredGeneration behavior", () => {
 });
 
 // --------------------------------------------------------------------------
-// StructuredGeneration final-JSON validation (H4)
+// StructuredGeneration final-JSON validation
 // --------------------------------------------------------------------------
 
 describe("WebBrowser_StructuredGeneration validation", () => {
@@ -762,7 +762,7 @@ describe("WebBrowser_StructuredGeneration validation", () => {
 });
 
 // --------------------------------------------------------------------------
-// WebBrowser_Chat session cache (HIGH-1)
+// WebBrowser_Chat session cache
 // --------------------------------------------------------------------------
 
 /**
@@ -1109,7 +1109,7 @@ describe("WebBrowser_ToolCalling session lifecycle", () => {
 });
 
 // --------------------------------------------------------------------------
-// ToolCalling argument validation (H3)
+// ToolCalling argument validation
 // --------------------------------------------------------------------------
 
 describe("WebBrowser_ToolCalling argument validation", () => {
@@ -1229,7 +1229,7 @@ describe("WebBrowser_ToolCalling argument validation", () => {
 });
 
 // --------------------------------------------------------------------------
-// ToolCalling prototype-pollution sanitization (HIGH-2)
+// ToolCalling prototype-pollution sanitization
 // --------------------------------------------------------------------------
 
 describe("WebBrowser_ToolCalling sanitizes captured args", () => {
@@ -1341,7 +1341,7 @@ describe("WebBrowser_ToolCalling sanitizes captured args", () => {
 });
 
 // --------------------------------------------------------------------------
-// snapshotStreamToTextDeltas reset semantics (HIGH-3)
+// snapshotStreamToTextDeltas reset semantics
 // --------------------------------------------------------------------------
 
 /** Collect events emitted by an emit-callback helper into an array. */

@@ -25,11 +25,11 @@ function body(v: string): JobStorageFormat<TestInput, TestOutput> {
 }
 
 /**
- * H4: a transient producer-side throw must NOT corrupt the JobStore by
+ * A transient producer-side throw must NOT corrupt the JobStore by
  * marking every row FAILED. Rows stay PENDING with error_code=ENQUEUE_FAILED
  * and a future visible_at; attempts is untouched.
  */
-describe("CloudflareMessageQueue.sendBatch — H4 transient failure", () => {
+describe("CloudflareMessageQueue.sendBatch — transient failure", () => {
   it("queue.sendBatch throw: re-throws but all rows stay PENDING with deferred visible_at", async () => {
     const core = new InMemoryQueueStorage<TestInput, TestOutput>("q");
     const jobStore = new InMemoryJobStore(core);

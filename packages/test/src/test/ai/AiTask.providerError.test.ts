@@ -9,7 +9,7 @@ import { AiProviderRegistry, ModelDownloadTask, setAiProviderRegistry } from "@w
 import { describe, expect, it } from "vitest";
 
 /**
- * Verifies the H1 fix in AiTask.execute: classifies the two failure paths so
+ * Verifies AiTask.execute classifies the two failure paths so
  * callers can distinguish "provider rejected after partial stream" from
  * "provider resolved but no `finish` event was ever emitted".
  *

@@ -64,14 +64,14 @@ describe("SqsMessageQueue.send", () => {
     expect(sqsMock.commandCalls(SendMessageCommand)).toHaveLength(1);
   });
 
-  it("on publish failure (H4): keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
+  it("on publish failure: keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
     const { mq, jobStore } = buildMq();
     sqsMock.on(SendMessageCommand).rejects(new Error("network down"));
 
     const t0 = Date.now();
     await expect(mq.send(body("x"))).rejects.toThrow("network down");
 
-    // No row in FAILED — H4 makes producer-side throws transient.
+    // No row in FAILED — producer-side throws stay transient.
     const failed = await jobStore.peek(JobStatus.FAILED);
     expect(failed).toHaveLength(0);
 
@@ -103,7 +103,7 @@ describe("SqsMessageQueue.send", () => {
     expect(calls[2]!.args[0].input.Entries).toHaveLength(3);
   });
 
-  it("H3: sendBatch rejects when opts.fingerprint is set", async () => {
+  it("sendBatch rejects when opts.fingerprint is set", async () => {
     const { mq } = buildMq();
     const bodies = Array.from({ length: 10 }, (_, i) => body(`b-${i}`));
     await expect(mq.sendBatch(bodies, { fingerprint: "X" })).rejects.toBeInstanceOf(RangeError);

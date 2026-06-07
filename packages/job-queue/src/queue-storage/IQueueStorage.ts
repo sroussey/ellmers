@@ -253,7 +253,7 @@ export interface IQueueStorage<Input, Output> {
       progress_details?: Record<string, any> | null;
       /**
        * Shift the PENDING `visible_at` forward to defer redelivery. Used by
-       * the H4 transient-enqueue path (markEnqueueDeferred) so a producer-side
+       * the transient-enqueue path (markEnqueueDeferred) so a producer-side
        * failure does not lose the job — set visible_at + error_code, leave
        * status/attempts alone.
        */

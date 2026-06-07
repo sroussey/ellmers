@@ -73,7 +73,7 @@ describe("CloudflareMessageQueue.send", () => {
     expect(q.send).toHaveBeenCalledOnce();
   });
 
-  it("on publish failure (H4): keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
+  it("on publish failure: keeps row PENDING with ENQUEUE_FAILED + future visible_at, rethrows", async () => {
     const jobStore = await newStore();
     const q = {
       send: vi.fn().mockRejectedValue(new Error("cf down")),
@@ -89,7 +89,7 @@ describe("CloudflareMessageQueue.send", () => {
     const t0 = Date.now();
     await expect(mq.send(body("x"))).rejects.toThrow("cf down");
 
-    // No row in FAILED — H4 makes producer-side throws transient.
+    // No row in FAILED — producer-side throws stay transient.
     const failed = await jobStore.peek(JobStatus.FAILED);
     expect(failed).toHaveLength(0);
 
@@ -128,7 +128,7 @@ describe("CloudflareMessageQueue.send", () => {
     );
   });
 
-  it("H3: sendBatch rejects when opts.fingerprint is set", async () => {
+  it("sendBatch rejects when opts.fingerprint is set", async () => {
     const jobStore = await newStore();
     const q = fakeQueue();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({

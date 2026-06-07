@@ -1191,7 +1191,6 @@ describe("Workflow", () => {
 
 // ============================================================================
 // Refactor regression net — gap coverage for the Workflow decomposition.
-// Pairs with: builder/docs/superpowers/specs/2026-05-02-decompose-workflow-design.md
 // ============================================================================
 
 type StreamRelayInput = { prompt: string };
@@ -1232,7 +1231,7 @@ class StreamRelayTask extends Task<StreamRelayInput, StreamRelayOutput> {
 }
 
 describe("Workflow — refactor regression net", () => {
-  describe("onError handler wiring (spec #2)", () => {
+  describe("onError handler wiring", () => {
     it("onError adds a handler task wired to the error port", () => {
       const w = new Workflow();
       w.addTask(NumberTask, { input: 1 });
@@ -1243,7 +1242,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("loop-builder lifecycle (spec #3)", () => {
+  describe("loop-builder lifecycle", () => {
     it("addLoopTask returns a child workflow that adds the iterator to the parent graph", () => {
       const w = new Workflow();
       const inner = w.addLoopTask(MapTask, {});
@@ -1271,7 +1270,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("conditional smoke (spec #4)", () => {
+  describe("conditional smoke", () => {
     it("if/then/else/endIf adds a ConditionalTask plus two branch tasks with both branches wired", () => {
       const w = new Workflow();
       w.addTask(NumberTask, { input: 1 });
@@ -1290,7 +1289,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("run & abort event ordering (spec #5)", () => {
+  describe("run & abort event ordering", () => {
     it("run() emits start then complete in order", async () => {
       const w = new Workflow();
       w.addTask(NumberTask, { input: 1 });
@@ -1314,7 +1313,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("event lifecycle on graph swap (spec #6)", () => {
+  describe("event lifecycle on graph swap", () => {
     it("setting workflow.graph emits reset; subsequent addTask emits changed", () => {
       const w = new Workflow();
       const events: string[] = [];
@@ -1338,7 +1337,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("entitlement bridge propagation (spec #8)", () => {
+  describe("entitlement bridge propagation", () => {
     it("entitlementChange propagates from graph mutations through to workflow.events", () => {
       const w = new Workflow();
       const fires: TaskEntitlements[] = [];
@@ -1353,7 +1352,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("streaming relay (spec #7)", () => {
+  describe("streaming relay", () => {
     it("graph stream_start/stream_chunk/stream_end propagate to workflow.events during run", async () => {
       const w = new Workflow();
       w.addTask(StreamRelayTask, { prompt: "hi" });
@@ -1377,7 +1376,7 @@ describe("Workflow — refactor regression net", () => {
       // Pre-refactor `unsubStreaming` was a local in run(); post-refactor the
       // bridge.beginRun() RETURNS the unsub and run() holds it locally too.
       // This test verifies that nothing on the bridge keeps a stale unsub
-      // between runs (the I-1 fix from PR review).
+      // between runs (no stale subscription leak).
       const w = new Workflow();
       w.addTask(StreamRelayTask, { prompt: "first" });
       const chunksRun1: StreamEvent[] = [];
@@ -1400,7 +1399,7 @@ describe("Workflow — refactor regression net", () => {
     });
   });
 
-  describe("external-consumer invariants (spec #11)", () => {
+  describe("external-consumer invariants", () => {
     it("Workflow remains a class with a mutable prototype", () => {
       // The augmentation pattern used by builder JoinTask/SplitTask depends on
       // Workflow.prototype being mutable. The existing file already exercises

@@ -161,7 +161,7 @@ describe("runWithIterable consumer abort propagation", () => {
   });
 
   it("hands the strategy a stable wrapper context (WeakMap-keyed identity is consistent)", async () => {
-    // Verifies the H2 fix: replacing the Proxy with a shallow clone gives the
+    // Replacing the Proxy with a shallow clone gives the
     // strategy a single stable object reference, so a WeakMap keyed on the
     // `localContext` it sees observes the same identity for repeated reads.
     const seenContexts: unknown[] = [];

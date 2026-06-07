@@ -150,9 +150,9 @@ describe("GoogleGeminiQueuedProvider.inferCapabilities", () => {
 });
 
 describe("Gemini fallback-list coverage", () => {
-  // Phase 5b template lesson: every model the provider lists in the fallback
-  // search results MUST get more than the baseline meta-ops from the heuristic.
-  // A regex gap that misses a shipping model causes silent miscapability.
+  // Every model the provider lists in the fallback search results MUST get more
+  // than the baseline meta-ops from the heuristic. A regex gap that misses a
+  // shipping model causes silent miscapability.
   const provider = new GoogleGeminiQueuedProvider(GEMINI_RUN_FNS);
 
   for (const entry of GEMINI_FALLBACK_MODELS) {

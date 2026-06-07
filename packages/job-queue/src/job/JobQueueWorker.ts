@@ -780,7 +780,7 @@ export class JobQueueWorker<
         // Route through disableJob so the row transitions to DISABLED
         // (not FAILED). Without this branch, attempting to disable a job
         // mid-flight clobbered the DISABLED status with FAILED and the
-        // H5 atomic-disable code path was unreachable.
+        // atomic-disable code path was unreachable.
         await this.disableJob(job);
         span?.setStatus(SpanStatusCode.UNSET);
       } else {

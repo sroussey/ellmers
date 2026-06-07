@@ -353,7 +353,7 @@ class WrappedJobStore<Input, Output> implements IJobStore<Input, Output> {
     ids: readonly MessageId[],
     opts: { readonly visible_at: Date; readonly errorCode: string }
   ): Promise<{ failed: readonly { id: MessageId; err: unknown }[] }> {
-    // H4: default impl — fan out the per-id writes in parallel rather than
+    // Default impl — fan out the per-id writes in parallel rather than
     // forcing callers into a serial for/await loop. allSettled so a single
     // failed id doesn't tank the rest of the batch; structured failure list
     // surfaces to the caller's AggregateError handling. SQL backends can

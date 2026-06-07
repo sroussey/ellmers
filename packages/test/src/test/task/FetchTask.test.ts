@@ -788,7 +788,7 @@ describe("FetchUrlTask", () => {
   });
 
   // -------------------------------------------------------------------------
-  // H2 regression: confirm @workglow/tasks registers its FETCH_*
+  // Regression: confirm @workglow/tasks registers its FETCH_*
   // reconstructor on import so JobQueueClient round-trips persisted codes
   // back to the correct retryable/permanent JobError subclass.
   // -------------------------------------------------------------------------

@@ -1135,7 +1135,7 @@ export class Task<
 }
 
 /**
- * Test helper: clear the H7 dedup Set so each test case can re-trigger the
+ * Test helper: clear the dedup Set so each test case can re-trigger the
  * one-time legacy-`cacheable` deprecation warning. Lives in production code
  * (not a __tests__ file) so it's reachable from outside the package's test
  * harness; the leading double-underscore signals "do not rely on this in

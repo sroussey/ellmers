@@ -8,7 +8,7 @@ import { RerankerTask } from "@workglow/ai";
 import { describe, expect, it } from "vitest";
 
 /**
- * Verifies the H1 fix for #484 in `RerankerTask.simpleRerank`: every
+ * Verifies #484 fix in `RerankerTask.simpleRerank`: every
  * query token is escaped before being fed to `new RegExp(token, "gi")`,
  * so user input containing regex metacharacters does not crash the task.
  *
