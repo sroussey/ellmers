@@ -8,10 +8,7 @@ import { makeFingerprint } from "@workglow/util";
 import { compress, decompress } from "@workglow/util/compress";
 import { TaskInput, TaskOutput } from "../task/TaskTypes";
 import type { ITaskOutputStorage } from "./ITaskOutputStorage";
-import {
-  tabularTaskOutputStorage,
-  type TaskOutputTabularBacking,
-} from "./TabularTaskOutputStorage";
+import type { TaskOutputTabularBacking } from "./TabularTaskOutputStorage";
 import { TaskOutputRepository } from "./TaskOutputRepository";
 
 export { TaskOutputPrimaryKeyNames, TaskOutputSchema } from "./TaskOutputStorageSchema";
@@ -19,12 +16,6 @@ export type { TaskOutputPrimaryKey } from "./TaskOutputStorageSchema";
 
 export type TaskOutputRepositoryOptions = {
   storage: ITaskOutputStorage;
-  outputCompression?: boolean;
-};
-
-/** @deprecated Use {@link TaskOutputRepositoryOptions.storage} with {@link tabularTaskOutputStorage}. */
-export type LegacyTaskOutputRepositoryOptions = {
-  tabularRepository: TaskOutputTabularBacking;
   outputCompression?: boolean;
 };
 
@@ -37,21 +28,10 @@ export type TaskOutputRepositoryStorage = TaskOutputTabularBacking;
 export class TaskOutputTabularRepository extends TaskOutputRepository {
   readonly storage: ITaskOutputStorage;
 
-  constructor(options: TaskOutputRepositoryOptions | LegacyTaskOutputRepositoryOptions) {
-    const storage =
-      "storage" in options
-        ? options.storage
-        : tabularTaskOutputStorage(
-            (options as LegacyTaskOutputRepositoryOptions).tabularRepository
-          );
-    super({ outputCompression: options.outputCompression });
+  constructor({ storage, outputCompression }: TaskOutputRepositoryOptions) {
+    super({ outputCompression });
     this.storage = storage;
-    this.outputCompression = options.outputCompression ?? true;
-  }
-
-  /** @deprecated Use {@link storage}. */
-  get tabularRepository(): ITaskOutputStorage {
-    return this.storage;
+    this.outputCompression = outputCompression ?? true;
   }
 
   public isDurable(): boolean {

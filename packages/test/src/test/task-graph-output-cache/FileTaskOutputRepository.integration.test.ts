@@ -23,8 +23,8 @@ describe("FsFolderTaskOutputRepository", () => {
     repository = new FsFolderTaskOutputRepository(".cache/test/file-task-output");
   });
 
-  it("should initialize the tabularRepository", () => {
-    expect(repository.tabularRepository).toBeDefined();
+  it("should initialize the output storage", () => {
+    expect(repository.storage).toBeDefined();
   });
 
   it("should store and retrieve task outputs", async () => {
