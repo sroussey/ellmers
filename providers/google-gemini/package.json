@@ -8,6 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/google-gemini"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Google Gemini provider for @workglow/ai.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

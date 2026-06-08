@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "examples/cli"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Command-line interface example for Workglow, demonstrating how to build and run AI task pipelines from the terminal.",
   "scripts": {
     "dev": "concurrently -c 'auto' -n 'cli:' 'bun:dev-*'",

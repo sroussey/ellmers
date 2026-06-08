@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/sqlite"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "SQLite backends for @workglow/storage and @workglow/job-queue (includes sqlite-vector).",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

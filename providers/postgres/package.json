@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/postgres"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Postgres backends for @workglow/storage and @workglow/job-queue.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

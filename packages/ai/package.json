@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/ai"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Core AI functionality for Workglow, including task execution, model management, and AI pipeline orchestration.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

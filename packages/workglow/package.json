@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/workglow"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Workglow meta-package: re-exports all @workglow/* packages for convenient single-import usage.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

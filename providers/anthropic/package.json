@@ -8,6 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/anthropic"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Anthropic Claude provider for @workglow/ai.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

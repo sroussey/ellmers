@@ -8,6 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/javascript"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Sandboxed JavaScript task with vendored interpreter.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

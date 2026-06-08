@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/browser-control"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Browser-control tasks for Workglow (CDP base + IBrowserContext abstraction). Backends ship as separate provider packages: @workglow/playwright, @workglow/electron, @workglow/bun-webview.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

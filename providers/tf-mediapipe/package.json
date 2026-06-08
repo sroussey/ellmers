@@ -8,6 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/tf-mediapipe"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "TensorFlow MediaPipe provider for @workglow/ai (browser only).",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

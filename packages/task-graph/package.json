@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/task-graph"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Task graph management for Workglow, providing DAG construction, execution planning, and workflow orchestration.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

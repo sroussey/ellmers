@@ -8,6 +8,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "providers/llamacpp-server"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "OpenAI-compatible HTTP client for an external or embedded llama-server",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

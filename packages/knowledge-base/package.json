@@ -7,6 +7,9 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/knowledge-base"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Dataset package for Workglow.",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",

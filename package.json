@@ -6,6 +6,9 @@
     "type": "git",
     "url": "https://github.com/workglow-dev/libs.git"
   },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
+  },
   "description": "Workglow is a tool for building and running DAG pipelines.",
   "workspaces": [
     "./packages/*",
