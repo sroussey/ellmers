@@ -60,6 +60,14 @@ export class SharedInMemoryTabularStorage<
   private isInitialized = false;
   private syncInProgress = false;
   private pendingMessages: BroadcastMessage[] = [];
+  /**
+   * Resolves when the current `syncFromOtherTabs()` settles, either because a
+   * peer tab sent a `SYNC_RESPONSE` (drained, then resolved) or because the
+   * sync timeout fired. `setupDatabase({ awaitTabSync: true })` awaits this so
+   * callers that immediately read after setup do not race the replay.
+   */
+  private syncSettled: Promise<void> | null = null;
+  private syncSettledResolver: (() => void) | null = null;
 
   constructor(
     channelName: string = "tabular_store",
@@ -151,6 +159,7 @@ export class SharedInMemoryTabularStorage<
         }
         this.syncInProgress = false;
         await this.drainPendingMessages();
+        this.resolveSyncSettled();
         break;
 
       case "PUT":
@@ -196,16 +205,31 @@ export class SharedInMemoryTabularStorage<
     if (!this.channel) return;
 
     this.syncInProgress = true;
+    this.syncSettled = new Promise<void>((resolve) => {
+      this.syncSettledResolver = resolve;
+    });
     this.channel.postMessage({ type: "SYNC_REQUEST" } as BroadcastMessage);
 
     setTimeout(() => {
       if (this.syncInProgress) {
         this.syncInProgress = false;
-        void this.drainPendingMessages().catch((error) => {
-          console.error("Failed to drain pending messages after sync timeout", error);
-        });
+        void this.drainPendingMessages()
+          .catch((error) => {
+            console.error("Failed to drain pending messages after sync timeout", error);
+          })
+          .finally(() => {
+            this.resolveSyncSettled();
+          });
       }
     }, SYNC_TIMEOUT);
+  }
+
+  private resolveSyncSettled(): void {
+    const resolver = this.syncSettledResolver;
+    if (resolver) {
+      this.syncSettledResolver = null;
+      resolver();
+    }
   }
 
   private async copyDataFromArray(entities: Entity[]): Promise<void> {
@@ -220,12 +244,23 @@ export class SharedInMemoryTabularStorage<
     }
   }
 
-  public override async setupDatabase(): Promise<void> {
+  /**
+   * Initialize the cross-tab sync barrier and apply any pending migrations.
+   *
+   * Defaults to `awaitTabSync: true` so that callers that immediately read or
+   * write after `setupDatabase()` resolves see other tabs' replayed rows; the
+   * fire-and-forget shape regressed in 64591e3 and caused first-call races.
+   * Pass `awaitTabSync: false` only for latency-sensitive startup paths that
+   * explicitly tolerate a stale initial view.
+   */
+  public override async setupDatabase(options: { awaitTabSync?: boolean } = {}): Promise<void> {
     if (this.isInitialized) return;
     this.isInitialized = true;
-    // Fire-and-forget: posts a SYNC_REQUEST and drains responses on a timeout
-    // (see syncFromOtherTabs); there is nothing to await.
+    const awaitTabSync = options.awaitTabSync ?? true;
     this.syncFromOtherTabs();
+    if (awaitTabSync && this.syncSettled) {
+      await this.syncSettled;
+    }
     if (this.tabularMigrations && this.tabularMigrations.length > 0) {
       await this.applyTabularMigrations();
     }
