@@ -75,5 +75,8 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/workglow-dev/libs/issues"
   }
 }
