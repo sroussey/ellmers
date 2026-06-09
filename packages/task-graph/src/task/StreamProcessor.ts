@@ -10,7 +10,7 @@ import type { Taskish } from "../task-graph/Conversions";
 import type { ITask } from "./ITask";
 import type { StreamEvent, StreamMode } from "./StreamTypes";
 import {
-  getBinaryPortFormat,
+  assertBinaryFormat,
   getOutputStreamMode,
   getStreamingPorts,
   materializeBinary,
@@ -18,6 +18,7 @@ import {
 import { TaskAbortedError, TaskError } from "./TaskError";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
+import { TaskStatus } from "./TaskTypes";
 
 /**
  * Consumer for a port's binary-delta stream. The processor exposes chunks as
@@ -29,7 +30,6 @@ import type { TaskInput, TaskOutput } from "./TaskTypes";
  * once it knows the cache key.
  */
 export type BinaryRefSink = (chunks: AsyncIterable<Uint8Array>) => Promise<CacheRef>;
-import { TaskStatus } from "./TaskTypes";
 
 /**
  * Per-call run-state inputs shared by StreamProcessor.run. Bundles facade
@@ -99,9 +99,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     const accumulatedObjects = ctx.shouldAccumulate
       ? new Map<string, Record<string, unknown> | unknown[]>()
       : undefined;
-    const accumulatedBinary = ctx.shouldAccumulate
-      ? new Map<string, Uint8Array[]>()
-      : undefined;
+    const accumulatedBinary = ctx.shouldAccumulate ? new Map<string, Uint8Array[]>() : undefined;
     // Per-port routers: lazily created on the first binary-delta whose port has
     // a sink in `deps.binaryRefSinks`. Routes chunks to the sink instead of
     // accumulating in memory; at finish, awaits the sink's returned CacheRef
@@ -135,210 +133,210 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     });
 
     try {
-    for await (const event of stream) {
-      // For snapshot events, update runOutputData BEFORE emitting stream_chunk
-      // so listeners see the latest snapshot when they handle the event.
-      if (event.type === "snapshot") {
-        this.task.runOutputData = event.data as Output;
-      }
+      for await (const event of stream) {
+        // For snapshot events, update runOutputData BEFORE emitting stream_chunk
+        // so listeners see the latest snapshot when they handle the event.
+        if (event.type === "snapshot") {
+          this.task.runOutputData = event.data as Output;
+        }
 
-      switch (event.type) {
-        case "phase": {
-          // Phase events are metadata: emit for observability, translate to a
-          // progress event with optional progress + message, do NOT mutate
-          // accumulators or runOutputData, do NOT flip status to STREAMING.
-          this.task.emit("stream_chunk", event as StreamEvent);
-          await deps.onProgress(event.progress, event.message);
-          break;
-        }
-        case "text-delta": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
+        switch (event.type) {
+          case "phase": {
+            // Phase events are metadata: emit for observability, translate to a
+            // progress event with optional progress + message, do NOT mutate
+            // accumulators or runOutputData, do NOT flip status to STREAMING.
+            this.task.emit("stream_chunk", event as StreamEvent);
+            await deps.onProgress(event.progress, event.message);
+            break;
           }
-          if (accumulated) {
-            accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
-          }
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "object-delta": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          if (accumulatedObjects) {
-            const existing = accumulatedObjects.get(event.port);
-            if (Array.isArray(event.objectDelta)) {
-              // Array delta: upsert items by `id` into accumulated array
-              const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
-              for (const item of event.objectDelta) {
-                const itemObj = item as Record<string, unknown>;
-                if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
-                  const idx = arr.findIndex(
-                    (e) => (e as Record<string, unknown>).id === itemObj.id
-                  );
-                  if (idx >= 0) arr[idx] = item;
-                  else arr.push(item);
-                } else {
-                  arr.push(item);
-                }
-              }
-              accumulatedObjects.set(event.port, arr);
-            } else {
-              // Non-array (e.g. structured generation): replace semantics
-              accumulatedObjects.set(event.port, event.objectDelta);
+          case "text-delta": {
+            if (!streamingStarted) {
+              streamingStarted = true;
+              this.task.status = TaskStatus.STREAMING;
+              this.task.emit("status", this.task.status);
             }
-          }
-          // Update runOutputData with accumulated state so listeners see growing state
-          this.task.runOutputData = {
-            ...this.task.runOutputData,
-            [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
-          } as Output;
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "binary-delta": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          // Tee: when both a router AND an accumulator exist
-          // for this port (graph context where the cache can stream but a
-          // downstream edge needs the materialized value), push to BOTH —
-          // router writes to the cache for the small ref-bearing Output,
-          // accumulator drives the enriched finish event so edge consumers
-          // still receive a Blob/ArrayBuffer.
-          const router = ensureRouter(event.port);
-          if (router) router.push(event.binaryDelta);
-          if (accumulatedBinary) {
-            const arr = accumulatedBinary.get(event.port) ?? [];
-            arr.push(event.binaryDelta);
-            accumulatedBinary.set(event.port, arr);
-          }
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "snapshot": {
-          if (!streamingStarted) {
-            streamingStarted = true;
-            this.task.status = TaskStatus.STREAMING;
-            this.task.emit("status", this.task.status);
-          }
-          this.task.emit("stream_chunk", event as StreamEvent);
-          break;
-        }
-        case "finish": {
-          const hasEnrichment =
-            accumulated !== undefined ||
-            accumulatedObjects !== undefined ||
-            accumulatedBinary !== undefined ||
-            routers.size > 0;
-          if (hasEnrichment) {
-            // Emit an enriched finish event: merge accumulated deltas into
-            // the finish payload so downstream dataflows get complete port data
-            // without needing to re-accumulate themselves.
-            const explicitPayload = (event.data || {}) as Record<string, unknown>;
-            const merged: Record<string, unknown> = { ...explicitPayload };
             if (accumulated) {
-              for (const [port, text] of accumulated) {
-                if (text.length > 0) merged[port] = text;
-              }
+              accumulated.set(event.port, (accumulated.get(event.port) ?? "") + event.textDelta);
+            }
+            this.task.emit("stream_chunk", event as StreamEvent);
+            break;
+          }
+          case "object-delta": {
+            if (!streamingStarted) {
+              streamingStarted = true;
+              this.task.status = TaskStatus.STREAMING;
+              this.task.emit("status", this.task.status);
             }
             if (accumulatedObjects) {
-              for (const [port, obj] of accumulatedObjects) {
-                merged[port] = obj;
+              const existing = accumulatedObjects.get(event.port);
+              if (Array.isArray(event.objectDelta)) {
+                // Array delta: upsert items by `id` into accumulated array
+                const arr: unknown[] = Array.isArray(existing) ? [...existing] : [];
+                for (const item of event.objectDelta) {
+                  const itemObj = item as Record<string, unknown>;
+                  if (itemObj && typeof itemObj === "object" && "id" in itemObj) {
+                    const idx = arr.findIndex(
+                      (e) => (e as Record<string, unknown>).id === itemObj.id
+                    );
+                    if (idx >= 0) arr[idx] = item;
+                    else arr.push(item);
+                  } else {
+                    arr.push(item);
+                  }
+                }
+                accumulatedObjects.set(event.port, arr);
+              } else {
+                // Non-array (e.g. structured generation): replace semantics
+                accumulatedObjects.set(event.port, event.objectDelta);
               }
             }
-            if (accumulatedBinary) {
-              const outSchema = this.task.outputSchema();
-              for (const [port, chunks] of accumulatedBinary) {
-                // Explicit binary finish payload wins. (Unlike text/object
-                // deltas above, which overwrite event.data, binary yields to
-                // an explicit payload — it's a whole artifact, not a partial.)
-                if (port in explicitPayload) continue;
-                const format = getBinaryPortFormat(outSchema, port);
-                merged[port] = materializeBinary(chunks, format);
-              }
-            }
-            // Close routers and collect refs. Explicit binary finish payload
-            // still wins for the OUTPUT slot (artifact precedence); the
-            // router's CacheRef is discarded in that case but the cache
-            // write already happened.
-            for (const router of routers.values()) router.end();
-            const refs = new Map<string, CacheRef>();
-            for (const [port, router] of routers) {
-              if (port in explicitPayload) {
-                // Drain the promise so the sink doesn't leak; ignore the ref.
-                router.ref().catch(() => {});
-                continue;
-              }
-              refs.set(port, await router.ref());
-            }
-            // For replace-mode streams, finish carries data: {} by convention.
-            // Fall back to the last snapshot (runOutputData) so the final output
-            // is not silently cleared when the finish payload is empty —
-            // overlaying router refs on top so cache-written bytes are not
-            // orphaned (the ref still lands in the OUTPUT slot).
-            if (streamMode === "replace" && Object.keys(merged).length === 0) {
-              const lastSnapshot = this.task.runOutputData;
-              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
-                const snapshotWithRefs: Record<string, unknown> = { ...lastSnapshot };
-                for (const [port, ref] of refs) snapshotWithRefs[port] = ref;
-                finalOutput = snapshotWithRefs as Output;
-                this.task.emit("stream_chunk", {
-                  type: "finish",
-                  data: lastSnapshot,
-                } as StreamEvent);
-                break;
-              }
-            }
-            // The emitted finish event always carries the materialized payload
-            // (from accumulators) so edge consumers see Blob/ArrayBuffer.
-            // finalOutput diverges only when a router produced a ref for a
-            // port that wasn't already pinned by an explicit payload — that
-            // ref takes the slot in the return value so the queue/cache row
-            // stays small (the tee path).
-            this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
-            if (refs.size === 0) {
-              finalOutput = merged as unknown as Output;
-            } else {
-              const finalMerged: Record<string, unknown> = { ...merged };
-              for (const [port, ref] of refs) finalMerged[port] = ref;
-              finalOutput = finalMerged as unknown as Output;
-            }
-          } else {
-            // No accumulation. For replace-mode streams the provider's finish
-            // event carries `data: {}` by convention — the snapshots already
-            // delivered the value, so the finish payload is intentionally
-            // empty. Fall back to `runOutputData` (set on every snapshot above)
-            // so we don't clobber the last snapshot with an empty object. This
-            // mirrors the same fallback in the accumulation branch.
-            const finishData = (event.data ?? {}) as Record<string, unknown>;
-            if (streamMode === "replace" && Object.keys(finishData).length === 0) {
-              const lastSnapshot = this.task.runOutputData;
-              if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
-                finalOutput = lastSnapshot as Output;
-                this.task.emit("stream_chunk", {
-                  type: "finish",
-                  data: lastSnapshot,
-                } as StreamEvent);
-                break;
-              }
-            }
-            finalOutput = event.data as Output;
+            // Update runOutputData with accumulated state so listeners see growing state
+            this.task.runOutputData = {
+              ...this.task.runOutputData,
+              [event.port]: accumulatedObjects?.get(event.port) ?? event.objectDelta,
+            } as Output;
             this.task.emit("stream_chunk", event as StreamEvent);
+            break;
           }
-          break;
-        }
-        case "error": {
-          throw event.error;
+          case "binary-delta": {
+            if (!streamingStarted) {
+              streamingStarted = true;
+              this.task.status = TaskStatus.STREAMING;
+              this.task.emit("status", this.task.status);
+            }
+            // Tee: when both a router AND an accumulator exist
+            // for this port (graph context where the cache can stream but a
+            // downstream edge needs the materialized value), push to BOTH —
+            // router writes to the cache for the small ref-bearing Output,
+            // accumulator drives the enriched finish event so edge consumers
+            // still receive a Blob/ArrayBuffer.
+            const router = ensureRouter(event.port);
+            if (router) router.push(event.binaryDelta);
+            if (accumulatedBinary) {
+              const arr = accumulatedBinary.get(event.port) ?? [];
+              arr.push(event.binaryDelta);
+              accumulatedBinary.set(event.port, arr);
+            }
+            this.task.emit("stream_chunk", event as StreamEvent);
+            break;
+          }
+          case "snapshot": {
+            if (!streamingStarted) {
+              streamingStarted = true;
+              this.task.status = TaskStatus.STREAMING;
+              this.task.emit("status", this.task.status);
+            }
+            this.task.emit("stream_chunk", event as StreamEvent);
+            break;
+          }
+          case "finish": {
+            const hasEnrichment =
+              accumulated !== undefined ||
+              accumulatedObjects !== undefined ||
+              accumulatedBinary !== undefined ||
+              routers.size > 0;
+            if (hasEnrichment) {
+              // Emit an enriched finish event: merge accumulated deltas into
+              // the finish payload so downstream dataflows get complete port data
+              // without needing to re-accumulate themselves.
+              const explicitPayload = (event.data || {}) as Record<string, unknown>;
+              const merged: Record<string, unknown> = { ...explicitPayload };
+              if (accumulated) {
+                for (const [port, text] of accumulated) {
+                  if (text.length > 0) merged[port] = text;
+                }
+              }
+              if (accumulatedObjects) {
+                for (const [port, obj] of accumulatedObjects) {
+                  merged[port] = obj;
+                }
+              }
+              if (accumulatedBinary) {
+                const outSchema = this.task.outputSchema();
+                for (const [port, chunks] of accumulatedBinary) {
+                  // Explicit binary finish payload wins. (Unlike text/object
+                  // deltas above, which overwrite event.data, binary yields to
+                  // an explicit payload — it's a whole artifact, not a partial.)
+                  if (port in explicitPayload) continue;
+                  const format = assertBinaryFormat(outSchema, port);
+                  merged[port] = materializeBinary(chunks, format);
+                }
+              }
+              // Close routers and collect refs. Explicit binary finish payload
+              // still wins for the OUTPUT slot (artifact precedence); the
+              // router's CacheRef is discarded in that case but the cache
+              // write already happened.
+              for (const router of routers.values()) router.end();
+              const refs = new Map<string, CacheRef>();
+              for (const [port, router] of routers) {
+                if (port in explicitPayload) {
+                  // Drain the promise so the sink doesn't leak; ignore the ref.
+                  router.ref().catch(() => {});
+                  continue;
+                }
+                refs.set(port, await router.ref());
+              }
+              // For replace-mode streams, finish carries data: {} by convention.
+              // Fall back to the last snapshot (runOutputData) so the final output
+              // is not silently cleared when the finish payload is empty —
+              // overlaying router refs on top so cache-written bytes are not
+              // orphaned (the ref still lands in the OUTPUT slot).
+              if (streamMode === "replace" && Object.keys(merged).length === 0) {
+                const lastSnapshot = this.task.runOutputData;
+                if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
+                  const snapshotWithRefs: Record<string, unknown> = { ...lastSnapshot };
+                  for (const [port, ref] of refs) snapshotWithRefs[port] = ref;
+                  finalOutput = snapshotWithRefs as Output;
+                  this.task.emit("stream_chunk", {
+                    type: "finish",
+                    data: lastSnapshot,
+                  } as StreamEvent);
+                  break;
+                }
+              }
+              // The emitted finish event always carries the materialized payload
+              // (from accumulators) so edge consumers see Blob/ArrayBuffer.
+              // finalOutput diverges only when a router produced a ref for a
+              // port that wasn't already pinned by an explicit payload — that
+              // ref takes the slot in the return value so the queue/cache row
+              // stays small (the tee path).
+              this.task.emit("stream_chunk", { type: "finish", data: merged } as StreamEvent);
+              if (refs.size === 0) {
+                finalOutput = merged as unknown as Output;
+              } else {
+                const finalMerged: Record<string, unknown> = { ...merged };
+                for (const [port, ref] of refs) finalMerged[port] = ref;
+                finalOutput = finalMerged as unknown as Output;
+              }
+            } else {
+              // No accumulation. For replace-mode streams the provider's finish
+              // event carries `data: {}` by convention — the snapshots already
+              // delivered the value, so the finish payload is intentionally
+              // empty. Fall back to `runOutputData` (set on every snapshot above)
+              // so we don't clobber the last snapshot with an empty object. This
+              // mirrors the same fallback in the accumulation branch.
+              const finishData = (event.data ?? {}) as Record<string, unknown>;
+              if (streamMode === "replace" && Object.keys(finishData).length === 0) {
+                const lastSnapshot = this.task.runOutputData;
+                if (lastSnapshot && Object.keys(lastSnapshot).length > 0) {
+                  finalOutput = lastSnapshot as Output;
+                  this.task.emit("stream_chunk", {
+                    type: "finish",
+                    data: lastSnapshot,
+                  } as StreamEvent);
+                  break;
+                }
+              }
+              finalOutput = event.data as Output;
+              this.task.emit("stream_chunk", event as StreamEvent);
+            }
+            break;
+          }
+          case "error": {
+            throw event.error;
+          }
         }
       }
-    }
     } catch (err) {
       // Surface the error to any in-flight router sinks so they reject
       // (rather than waiting forever on the producer). The original error is
@@ -445,4 +443,3 @@ class BinaryStreamRouter {
     }
   }
 }
-

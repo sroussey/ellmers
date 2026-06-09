@@ -30,10 +30,58 @@ class TaskB extends Task {
   }
 }
 
+// Binary-stream port format checks happen at registration time so a typo
+// surfaces near the task definition rather than during a streaming run.
+
+class BinaryPortTypoTask extends Task {
+  static override readonly type = "TaskRegistryTest_BinaryFormatTypo";
+  static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "Blob", "x-stream": "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+}
+
+class BinaryPortValidBlobTask extends Task {
+  static override readonly type = "TaskRegistryTest_BinaryValidBlob";
+  static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "blob", "x-stream": "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+}
+
+class BinaryPortValidBinaryTask extends Task {
+  static override readonly type = "TaskRegistryTest_BinaryValidBinary";
+  static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+  static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "binary", "x-stream": "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+}
+
 describe("TaskRegistry", () => {
   afterEach(() => {
     // Clean up any registrations made during the test
     TaskRegistry.unregisterTask(TaskA.type);
+    TaskRegistry.unregisterTask(BinaryPortTypoTask.type);
+    TaskRegistry.unregisterTask(BinaryPortValidBlobTask.type);
+    TaskRegistry.unregisterTask(BinaryPortValidBinaryTask.type);
   });
 
   it("registers a task constructor", () => {
@@ -66,5 +114,23 @@ describe("TaskRegistry", () => {
 
   it("unregisterTask returns false when the type was not registered", () => {
     expect(TaskRegistry.unregisterTask("NonExistentType")).toBe(false);
+  });
+
+  it("throws at registration when a binary port uses a typo format like 'Blob'", () => {
+    expect(() => TaskRegistry.registerTask(BinaryPortTypoTask)).toThrow(
+      /invalid binary stream port/
+    );
+    // And the task is NOT in the registry afterwards.
+    expect(TaskRegistry.all.get(BinaryPortTypoTask.type)).toBeUndefined();
+  });
+
+  it("accepts a binary port with format 'blob'", () => {
+    expect(() => TaskRegistry.registerTask(BinaryPortValidBlobTask)).not.toThrow();
+    expect(TaskRegistry.all.get(BinaryPortValidBlobTask.type)).toBe(BinaryPortValidBlobTask);
+  });
+
+  it("accepts a binary port with format 'binary'", () => {
+    expect(() => TaskRegistry.registerTask(BinaryPortValidBinaryTask)).not.toThrow();
+    expect(TaskRegistry.all.get(BinaryPortValidBinaryTask.type)).toBe(BinaryPortValidBinaryTask);
   });
 });

@@ -3,17 +3,18 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { describe, expect, it } from "vitest";
 import type { StreamBinaryDelta, StreamEvent, StreamMode } from "@workglow/task-graph";
 import {
+  assertBinaryFormat,
+  edgeNeedsAccumulation,
+  getBinaryPortId,
+  getOutputStreamMode,
   getPortStreamMode,
   getStreamingPorts,
-  getOutputStreamMode,
-  getBinaryPortId,
-  edgeNeedsAccumulation,
   materializeBinary,
 } from "@workglow/task-graph";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { describe, expect, it } from "vitest";
 
 const binarySchema = {
   type: "object",
@@ -28,6 +29,30 @@ const mixedSchema = {
   properties: {
     text: { type: "string", "x-stream": "append" },
     bytes: { type: "object", format: "binary", "x-stream": "binary" },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+const unannotatedBinarySchema = {
+  type: "object",
+  properties: {
+    bytes: { type: "object", "x-stream": "binary" },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+const typoFormatSchema = {
+  type: "object",
+  properties: {
+    bytes: { type: "object", format: "Blob", "x-stream": "binary" },
+  },
+  additionalProperties: false,
+} as const satisfies DataPortSchema;
+
+const unknownFormatSchema = {
+  type: "object",
+  properties: {
+    bytes: { type: "object", format: "wat", "x-stream": "binary" },
   },
   additionalProperties: false,
 } as const satisfies DataPortSchema;
@@ -95,6 +120,30 @@ describe("binary-aware port helpers", () => {
   });
 });
 
+describe("assertBinaryFormat", () => {
+  it("returns 'blob' when format is 'blob'", () => {
+    expect(assertBinaryFormat(binarySchema, "bytes")).toBe("blob");
+  });
+
+  it("returns 'binary' when format is 'binary'", () => {
+    expect(assertBinaryFormat(mixedSchema, "bytes")).toBe("binary");
+  });
+
+  it("returns 'blob' for undefined / absent format (canonical default)", () => {
+    expect(assertBinaryFormat(unannotatedBinarySchema, "bytes")).toBe("blob");
+  });
+
+  it("throws on a casing typo such as 'Blob'", () => {
+    expect(() => assertBinaryFormat(typoFormatSchema, "bytes")).toThrow(
+      /Allowed: "blob" \| "binary"/
+    );
+  });
+
+  it("throws on an unknown format value", () => {
+    expect(() => assertBinaryFormat(unknownFormatSchema, "bytes")).toThrow(/wat/);
+  });
+});
+
 describe("materializeBinary", () => {
   const chunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4, 5])];
 
@@ -111,16 +160,8 @@ describe("materializeBinary", () => {
     expect(Array.from(new Uint8Array(buf))).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("defaults to Blob when format is undefined", () => {
-    expect(materializeBinary(chunks, undefined)).toBeInstanceOf(Blob);
-  });
-
   it("handles an empty chunk list", () => {
     expect(materializeBinary([], "binary")).toBeInstanceOf(ArrayBuffer);
     expect((materializeBinary([], "binary") as ArrayBuffer).byteLength).toBe(0);
-  });
-
-  it("treats an unknown format as binary (ArrayBuffer)", () => {
-    expect(materializeBinary(chunks, "wat")).toBeInstanceOf(ArrayBuffer);
   });
 });
