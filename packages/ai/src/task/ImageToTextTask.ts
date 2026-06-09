@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -52,13 +53,15 @@ export const ImageToTextOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageToTextTaskInput = WithImageValuePorts<
-  FromSchema<typeof ImageToTextInputSchema>,
+export type ImageToTextTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type ImageToTextTaskOutput = FromSchema<typeof ImageToTextOutputSchema>;
+    maxTokens?: number | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type ImageToTextTaskOutput = { text: string | string[] };
 export type ImageToTextTaskConfig = TaskConfig<ImageToTextTaskInput>;
 
 export class ImageToTextTask extends AiVisionTask<

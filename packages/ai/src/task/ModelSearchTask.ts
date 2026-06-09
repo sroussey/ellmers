@@ -7,7 +7,7 @@
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelRecord } from "../model/ModelSchema";
@@ -103,7 +103,11 @@ const ModelSearchOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ModelSearchTaskInput = FromSchema<typeof ModelSearchInputSchema>;
+export type ModelSearchTaskInput = {
+  credential_key?: string | undefined;
+  query?: string | undefined;
+  provider: string;
+};
 export type ModelSearchTaskOutput = { results: ModelSearchResultItem[] };
 export type ModelSearchTaskConfig = TaskConfig<ModelSearchTaskInput>;
 

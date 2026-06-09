@@ -8,9 +8,10 @@ import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 
 import type { Capability } from "../../capability/Capabilities";
+import type { ModelConfig } from "../../model/ModelSchema";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
 import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import { TypeModel } from "../base/AiTaskSchemas";
@@ -51,7 +52,18 @@ export const ImageEditInputSchema = {
 
 export const ImageEditOutputSchema: DataPortSchema = AiImageOutputSchema;
 
-type ImageEditSchemaInput = FromSchema<typeof ImageEditInputSchema>;
+type ImageEditSchemaInput = {
+  additionalImages?: (string | { [x: string]: unknown })[] | undefined;
+  mask?: string | { [x: string]: unknown } | undefined;
+  aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | undefined;
+  quality?: "low" | "medium" | "high" | undefined;
+  seed?: number | undefined;
+  negativePrompt?: string | undefined;
+  providerOptions?: { [x: string]: unknown } | undefined;
+  model: string | ModelConfig;
+  prompt: string;
+  image: string | { [x: string]: unknown };
+};
 
 export type ImageEditTaskInput = WithImageValuePorts<
   ImageEditSchemaInput,

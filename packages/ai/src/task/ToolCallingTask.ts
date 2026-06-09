@@ -8,7 +8,7 @@ import { CreateWorkflow, getTaskConstructors, Workflow } from "@workglow/task-gr
 
 import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
 import { makeFingerprint, ServiceRegistry } from "@workglow/util";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
 import type { ModelConfig } from "../model/ModelSchema";
@@ -246,15 +246,38 @@ export const ToolCallingOutputSchema = {
  * schema prevents `FromSchema` from producing a useful type).
  */
 export type ToolCallingTaskInput = Omit<
-  FromSchema<typeof ToolCallingInputSchema>,
-  "tools" | "messages"
+  {
+    systemPrompt?: string | undefined;
+    messages?: ChatMessage[] | undefined;
+    toolChoice?: string | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+    model: string | ModelConfig;
+    prompt: string | (string | { [x: string]: unknown; type: "text" | "image" | "audio" })[];
+    tools: (
+      | string
+      | {
+          [x: string]: unknown;
+          outputSchema?: { [x: string]: unknown } | undefined;
+          configSchema?: { [x: string]: unknown } | undefined;
+          config?: { [x: string]: unknown } | undefined;
+          description: string;
+          name: string;
+          inputSchema: { [x: string]: unknown };
+        }
+    )[];
+  },
+  "messages" | "tools"
 > & {
   readonly tools: ToolDefinition[];
   readonly messages?: ReadonlyArray<ChatMessage>;
   readonly sessionId?: string;
 };
 
-export type ToolCallingTaskOutput = FromSchema<typeof ToolCallingOutputSchema>;
+export type ToolCallingTaskOutput = {
+  text: string;
+  toolCalls: { id: string; name: string; input: { [x: string]: unknown } }[];
+};
 export type ToolCallingTaskConfig = TaskConfig<ToolCallingTaskInput>;
 
 export class ToolCallingTask extends StreamingAiTask<

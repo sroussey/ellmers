@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -72,12 +73,14 @@ export const TextNamedEntityRecognitionOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextNamedEntityRecognitionTaskInput = FromSchema<
-  typeof TextNamedEntityRecognitionInputSchema
->;
-export type TextNamedEntityRecognitionTaskOutput = FromSchema<
-  typeof TextNamedEntityRecognitionOutputSchema
->;
+export type TextNamedEntityRecognitionTaskInput = {
+  blockList?: string[] | undefined;
+  model: string | ModelConfig;
+  text: string;
+};
+export type TextNamedEntityRecognitionTaskOutput = {
+  entities: { score: number; entity: string; word: string }[];
+};
 export type TextNamedEntityRecognitionTaskConfig = TaskConfig<TextNamedEntityRecognitionTaskInput>;
 
 export class TextNamedEntityRecognitionTask extends AiTask<

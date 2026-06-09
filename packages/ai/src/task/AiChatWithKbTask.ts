@@ -10,7 +10,7 @@ import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-g
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
@@ -242,7 +242,50 @@ export const AiChatWithKbOutputSchema = {
 } as const satisfies DataPortSchema;
 
 export type AiChatWithKbTaskInput = Omit<
-  FromSchema<typeof AiChatWithKbInputSchema>,
+  {
+    systemPrompt?: string | undefined;
+    messages?: ChatMessage[] | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+    maxIterations?: number | undefined;
+    responseFormat?: "text" | "markdown" | undefined;
+    embeddingModel?: unknown;
+    topKPerKb?: number | undefined;
+    minScore?: number | undefined;
+    maxReferences?: number | undefined;
+    noMatchReply?: string | undefined;
+    noMatchReferences?:
+      | {
+          [x: string]: unknown;
+          url?: string | undefined;
+          title: string;
+          score: number;
+          kbId: string;
+          kbLabel: string;
+          snippet: string;
+          index: number;
+        }[]
+      | undefined;
+    model: string | ModelConfig;
+    prompt:
+      | string
+      | (
+          | { type: "text"; text: string }
+          | { type: "image"; mimeType: string; data: string }
+          | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+          | {
+              is_error?: boolean | undefined;
+              type: "tool_result";
+              content: (
+                | { type: "text"; text: string }
+                | { type: "image"; mimeType: string; data: string }
+                | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+              )[];
+              tool_use_id: string;
+            }
+        )[];
+    knowledgeBaseIds: string[];
+  },
   "messages" | "noMatchReferences"
 > & {
   readonly messages?: ReadonlyArray<ChatMessage>;
@@ -250,11 +293,23 @@ export type AiChatWithKbTaskInput = Omit<
 };
 
 export type AiChatWithKbTaskOutput = Omit<
-  FromSchema<typeof AiChatWithKbOutputSchema>,
+  {
+    text: string;
+    messages: ChatMessage[];
+    references: {
+      [x: string]: unknown;
+      url?: string | undefined;
+      title: string;
+      score: number;
+      kbId: string;
+      kbLabel: string;
+      snippet: string;
+      index: number;
+    }[];
+    iterations: number;
+  },
   "references"
-> & {
-  readonly references: readonly ChatChunkReference[];
-};
+> & { readonly references: readonly ChatChunkReference[] };
 
 export class AiChatWithKbTask extends StreamingAiTask<
   AiChatWithKbTaskInput,

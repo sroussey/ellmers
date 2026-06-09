@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -75,8 +76,13 @@ export const TextClassificationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextClassificationTaskInput = FromSchema<typeof TextClassificationInputSchema>;
-export type TextClassificationTaskOutput = FromSchema<typeof TextClassificationOutputSchema>;
+export type TextClassificationTaskInput = {
+  maxCategories?: number | undefined;
+  candidateLabels?: string[] | undefined;
+  model: string | ModelConfig;
+  text: string;
+};
+export type TextClassificationTaskOutput = { categories: { score: number; label: string }[] };
 export type TextClassificationTaskConfig = TaskConfig<TextClassificationTaskInput>;
 
 /**

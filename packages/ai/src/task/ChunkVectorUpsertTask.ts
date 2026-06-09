@@ -8,13 +8,7 @@ import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import {
-  DataPortSchema,
-  FromSchema,
-  TypedArray,
-  TypedArraySchema,
-  TypedArraySchemaOptions,
-} from "@workglow/util/schema";
+import { DataPortSchema, TypedArray, TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import { TypeSingleOrArray } from "./base/AiTaskSchemas";
 
@@ -66,8 +60,26 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type VectorStoreUpsertTaskInput = FromSchema<typeof inputSchema, TypedArraySchemaOptions>;
-export type VectorStoreUpsertTaskOutput = FromSchema<typeof outputSchema>;
+export type VectorStoreUpsertTaskInput = {
+  doc_title?: string | undefined;
+  chunks: {
+    [x: string]: unknown;
+    leafNodeId?: string | undefined;
+    summary?: string | undefined;
+    entities?: { type: string; text: string; score: number }[] | undefined;
+    parentSummaries?: string[] | undefined;
+    sectionTitles?: string[] | undefined;
+    doc_title?: string | undefined;
+    text: string;
+    doc_id: string;
+    chunkId: string;
+    nodePath: string[];
+    depth: number;
+  }[];
+  vector: TypedArray | TypedArray[];
+  knowledgeBase: unknown;
+};
+export type VectorStoreUpsertTaskOutput = { doc_id: string; count: number; chunk_ids: string[] };
 export type ChunkVectorUpsertTaskConfig = TaskConfig<VectorStoreUpsertTaskInput>;
 
 /**

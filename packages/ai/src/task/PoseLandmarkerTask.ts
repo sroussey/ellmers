@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel, TypePoseLandmark } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -134,13 +135,59 @@ export const PoseLandmarkerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type PoseLandmarkerTaskInput = WithImageValuePorts<
-  FromSchema<typeof PoseLandmarkerInputSchema>,
+export type PoseLandmarkerTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type PoseLandmarkerTaskOutput = FromSchema<typeof PoseLandmarkerOutputSchema>;
+    minTrackingConfidence?: number | undefined;
+    numPoses?: number | undefined;
+    minPoseDetectionConfidence?: number | undefined;
+    minPosePresenceConfidence?: number | undefined;
+    outputSegmentationMasks?: boolean | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type PoseLandmarkerTaskOutput = {
+  poses:
+    | {
+        segmentationMask?:
+          | { data: { [x: string]: unknown }; width: number; height: number }
+          | undefined;
+        landmarks: {
+          visibility?: number | undefined;
+          presence?: number | undefined;
+          x: number;
+          y: number;
+          z: number;
+        }[];
+        worldLandmarks: {
+          visibility?: number | undefined;
+          presence?: number | undefined;
+          x: number;
+          y: number;
+          z: number;
+        }[];
+      }[]
+    | {
+        segmentationMask?:
+          | { data: { [x: string]: unknown }; width: number; height: number }
+          | undefined;
+        landmarks: {
+          visibility?: number | undefined;
+          presence?: number | undefined;
+          x: number;
+          y: number;
+          z: number;
+        }[];
+        worldLandmarks: {
+          visibility?: number | undefined;
+          presence?: number | undefined;
+          x: number;
+          y: number;
+          z: number;
+        }[];
+      }[][];
+};
 export type PoseLandmarkerTaskConfig = TaskConfig<PoseLandmarkerTaskInput>;
 
 /**

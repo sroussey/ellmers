@@ -8,7 +8,7 @@ import type { KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -36,8 +36,8 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type KbReindexTaskInput = FromSchema<typeof inputSchema>;
-export type KbReindexTaskOutput = FromSchema<typeof outputSchema>;
+export type KbReindexTaskInput = { knowledgeBase: unknown };
+export type KbReindexTaskOutput = { count: number };
 export type KbReindexTaskConfig = TaskConfig<KbReindexTaskInput>;
 
 /**

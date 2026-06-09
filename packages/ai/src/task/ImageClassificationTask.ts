@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeCategory, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -60,13 +61,18 @@ export const ImageClassificationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageClassificationTaskInput = WithImageValuePorts<
-  FromSchema<typeof ImageClassificationInputSchema>,
+export type ImageClassificationTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type ImageClassificationTaskOutput = FromSchema<typeof ImageClassificationOutputSchema>;
+    categories?: string[] | undefined;
+    maxCategories?: number | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type ImageClassificationTaskOutput = {
+  categories: { score: number; label: string }[] | { score: number; label: string }[][];
+};
 export type ImageClassificationTaskConfig = TaskConfig<ImageClassificationTaskInput>;
 
 /**

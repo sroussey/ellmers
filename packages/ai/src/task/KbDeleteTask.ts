@@ -8,7 +8,7 @@ import type { KnowledgeBase } from "@workglow/knowledge-base";
 import { TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -41,8 +41,8 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type KbDeleteTaskInput = FromSchema<typeof inputSchema>;
-export type KbDeleteTaskOutput = FromSchema<typeof outputSchema>;
+export type KbDeleteTaskInput = { doc_id: string; knowledgeBase: unknown };
+export type KbDeleteTaskOutput = { doc_id: string };
 export type KbDeleteTaskConfig = TaskConfig<KbDeleteTaskInput>;
 
 /**

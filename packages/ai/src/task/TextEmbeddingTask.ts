@@ -13,6 +13,7 @@ import {
   TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel, TypeSingleOrArray } from "./base/AiTaskSchemas";
 
@@ -46,10 +47,7 @@ export const TextEmbeddingOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextEmbeddingTaskInput = FromSchema<
-  typeof TextEmbeddingInputSchema,
-  TypedArraySchemaOptions
->;
+export type TextEmbeddingTaskInput = { model: string | ModelConfig; text: string | string[] };
 export type TextEmbeddingTaskOutput = FromSchema<
   typeof TextEmbeddingOutputSchema,
   TypedArraySchemaOptions

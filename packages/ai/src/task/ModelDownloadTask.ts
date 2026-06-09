@@ -6,7 +6,7 @@
 
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
@@ -32,8 +32,8 @@ const ModelDownloadOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ModelDownloadTaskRunInput = FromSchema<typeof ModelDownloadInputSchema>;
-export type ModelDownloadTaskRunOutput = FromSchema<typeof ModelDownloadOutputSchema>;
+export type ModelDownloadTaskRunInput = { model: string | ModelConfig };
+export type ModelDownloadTaskRunOutput = { model: string | ModelConfig };
 export type ModelDownloadTaskConfig = TaskConfig<ModelDownloadTaskRunInput>;
 
 /**

@@ -7,7 +7,7 @@
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -99,8 +99,21 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type RerankerTaskInput = FromSchema<typeof inputSchema>;
-export type RerankerTaskOutput = FromSchema<typeof outputSchema>;
+export type RerankerTaskInput = {
+  metadata?: { [x: string]: unknown }[] | undefined;
+  scores?: number[] | undefined;
+  topK?: number | undefined;
+  method?: "reciprocal-rank-fusion" | "simple" | undefined;
+  chunks: string[];
+  query: string;
+};
+export type RerankerTaskOutput = {
+  metadata?: { [x: string]: unknown }[] | undefined;
+  chunks: string[];
+  count: number;
+  scores: number[];
+  originalIndices: number[];
+};
 export type RerankerTaskConfig = TaskConfig<RerankerTaskInput>;
 
 interface RankedItem {
