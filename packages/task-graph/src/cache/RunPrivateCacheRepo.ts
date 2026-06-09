@@ -7,6 +7,7 @@
 import { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { TaskInput, TaskOutput } from "../task/TaskTypes";
 import type { CacheRef } from "./CacheRef";
+import { isCacheRef, makeCacheRef } from "./CacheRef";
 
 export interface RunPrivateCacheRepoOptions {
   backing: TaskOutputRepository;
@@ -111,7 +112,7 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
    * via the wrapped `taskType`). Resolvers calling `getOutputByRef` on this
    * wrapper forward to the backing, which decodes its own `$ref`.
    */
-  public override saveOutputStream(
+  public override async saveOutputStream(
     taskType: string,
     inputs: TaskInput,
     chunks: AsyncIterable<Uint8Array>,
@@ -119,14 +120,16 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
   ): Promise<CacheRef> {
     const fn = this.backing.saveOutputStream;
     if (typeof fn !== "function") {
-      return Promise.reject(
-        new Error(
-          `RunPrivateCacheRepo: backing repository does not implement saveOutputStream. ` +
-            `Call supportsStreaming() before saveOutputStream.`
-        )
+      throw new Error(
+        `RunPrivateCacheRepo: backing repository does not implement saveOutputStream. ` +
+          `Call supportsStreaming() before saveOutputStream.`
       );
     }
-    return fn.call(this.backing, this.ns(taskType), inputs, chunks, metadata);
+    // Re-wrap the backing's CacheRef so legacy backings that pre-date the
+    // `kind` brand still produce a discriminator-bearing ref through this
+    // wrapper. Branded refs pass through unchanged.
+    const raw = await fn.call(this.backing, this.ns(taskType), inputs, chunks, metadata);
+    return isCacheRef(raw) ? raw : makeCacheRef(raw);
   }
 
   /**

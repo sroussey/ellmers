@@ -4,30 +4,42 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
+import type { CacheRef, IRunConfig } from "@workglow/task-graph";
 import {
+  CACHE_REF_KIND,
   isCacheRef,
+  makeCacheRef,
   REFERENCE_THRESHOLD_BYTES_DEFAULT,
   resolveReferenceThreshold,
 } from "@workglow/task-graph";
-import type { CacheRef, IRunConfig } from "@workglow/task-graph";
+import { describe, expect, it } from "vitest";
 
 describe("isCacheRef", () => {
-  it("accepts a minimal ref carrying only $ref", () => {
-    const ref: CacheRef = { $ref: "cache://k1" };
+  it("accepts a minimal branded ref carrying only $ref", () => {
+    const ref: CacheRef = makeCacheRef({ $ref: "cache://k1" });
     expect(isCacheRef(ref)).toBe(true);
   });
 
-  it("accepts a ref carrying size and mime hints", () => {
-    const ref: CacheRef = { $ref: "cache://k2", size: 1024, mime: "audio/wav" };
+  it("accepts a branded ref carrying size and mime hints", () => {
+    const ref: CacheRef = makeCacheRef({ $ref: "cache://k2", size: 1024, mime: "audio/wav" });
     expect(isCacheRef(ref)).toBe(true);
   });
 
   it("rejects values without a string $ref", () => {
-    expect(isCacheRef({})).toBe(false);
-    expect(isCacheRef({ ref: "cache://k" })).toBe(false);
-    expect(isCacheRef({ $ref: 42 })).toBe(false);
-    expect(isCacheRef({ $ref: null })).toBe(false);
+    expect(isCacheRef({ kind: CACHE_REF_KIND })).toBe(false);
+    expect(isCacheRef({ kind: CACHE_REF_KIND, ref: "cache://k" })).toBe(false);
+    expect(isCacheRef({ kind: CACHE_REF_KIND, $ref: 42 })).toBe(false);
+    expect(isCacheRef({ kind: CACHE_REF_KIND, $ref: null })).toBe(false);
+  });
+
+  it("rejects values that lack the kind brand even when $ref is a string", () => {
+    expect(isCacheRef({ $ref: "cache://k" })).toBe(false);
+    expect(isCacheRef({ $ref: "cache://k", size: 10 })).toBe(false);
+  });
+
+  it("rejects values whose kind is not the literal brand", () => {
+    expect(isCacheRef({ kind: "other", $ref: "cache://k" })).toBe(false);
+    expect(isCacheRef({ kind: 1, $ref: "cache://k" })).toBe(false);
   });
 
   it("rejects primitives and null", () => {
@@ -38,16 +50,47 @@ describe("isCacheRef", () => {
     expect(isCacheRef(true)).toBe(false);
   });
 
-  it("accepts a ref where $ref is the empty string (still string-typed)", () => {
-    expect(isCacheRef({ $ref: "" })).toBe(true);
+  it("accepts a branded ref where $ref is the empty string (still string-typed)", () => {
+    expect(isCacheRef(makeCacheRef({ $ref: "" }))).toBe(true);
   });
 
-  it("does not confuse JSON-Schema $ref strings with cache refs by shape", () => {
-    // JSON Schema $ref also uses { $ref: string }. Shape is identical at this
-    // layer; discrimination by call site / port-context is the contract, not
-    // shape inspection. This test documents the limitation.
-    const jsonSchemaRef = { $ref: "#/definitions/Foo" };
-    expect(isCacheRef(jsonSchemaRef)).toBe(true);
+  it("does NOT confuse JSON-Schema $ref strings with cache refs", () => {
+    // Before the kind brand, a shape-only check would have matched any
+    // {$ref: string} — including JSON-Schema $refs in metadata or attacker
+    // payloads pointing at other-run cache keys. With the brand, a JSON-Schema
+    // ref no longer passes isCacheRef and the cache resolver will not walk it.
+    const jsonSchemaRef = { $ref: "#/$defs/Foo" };
+    expect(isCacheRef(jsonSchemaRef)).toBe(false);
+  });
+});
+
+describe("makeCacheRef", () => {
+  it("brands the constructed object with CACHE_REF_KIND", () => {
+    const ref = makeCacheRef({ $ref: "cache://x" });
+    expect(ref.kind).toBe(CACHE_REF_KIND);
+  });
+
+  it("omits size and mime when not supplied", () => {
+    const ref = makeCacheRef({ $ref: "cache://x" });
+    expect("size" in ref).toBe(false);
+    expect("mime" in ref).toBe(false);
+  });
+
+  it("preserves size and mime when supplied", () => {
+    const ref = makeCacheRef({ $ref: "cache://x", size: 99, mime: "image/png" });
+    expect(ref.size).toBe(99);
+    expect(ref.mime).toBe("image/png");
+  });
+
+  it("survives JSON round-trip and still passes isCacheRef", () => {
+    const original = makeCacheRef({ $ref: "cache://round-trip", size: 7, mime: "text/plain" });
+    const wire = JSON.stringify(original);
+    const received = JSON.parse(wire);
+    expect(isCacheRef(received)).toBe(true);
+    expect(received.kind).toBe(CACHE_REF_KIND);
+    expect(received.$ref).toBe("cache://round-trip");
+    expect(received.size).toBe(7);
+    expect(received.mime).toBe("text/plain");
   });
 });
 

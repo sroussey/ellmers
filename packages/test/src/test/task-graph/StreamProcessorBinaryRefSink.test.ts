@@ -5,7 +5,13 @@
  */
 
 import type { BinaryRefSink, CacheRef, StreamEvent } from "@workglow/task-graph";
-import { IExecuteContext, isCacheRef, Task, TaskRegistry } from "@workglow/task-graph";
+import {
+  IExecuteContext,
+  isCacheRef,
+  makeCacheRef,
+  Task,
+  TaskRegistry,
+} from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -103,7 +109,7 @@ function makeSink(): {
       rejectCollected(err);
       throw err;
     }
-    const ref = { $ref, size: bytes.length, mime: "application/octet-stream" };
+    const ref = makeCacheRef({ $ref, size: bytes.length, mime: "application/octet-stream" });
     resolveCollected({ ref, bytes });
     return ref;
   };

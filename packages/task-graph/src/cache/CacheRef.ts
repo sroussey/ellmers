@@ -5,6 +5,14 @@
  */
 
 /**
+ * Brand value for {@link CacheRef}. A literal string (not a Symbol) so the brand
+ * survives JSON serialization across queue rows / IPC boundaries — a Symbol-based
+ * brand would be erased by `JSON.stringify` and the resulting object would no
+ * longer be identifiable as a cache reference on the receiving side.
+ */
+export const CACHE_REF_KIND = "task-graph/CacheRef" as const;
+
+/**
  * A reference to bytes that live in the configured cache backing rather than
  * inline in a task `Output`. Emitted by `TaskRunner` for binary output ports
  * whose committed size meets the `IRunConfig.referenceThresholdBytes` and
@@ -14,24 +22,53 @@
  * it back into bytes. `size` and `mime` are best-effort hints populated when
  * known at finish time; absent values do not imply unknown failure.
  *
+ * The `kind` brand discriminates a cache ref from other `{$ref: string}`
+ * shapes (e.g. JSON-Schema references) so the resolver never walks an
+ * untrusted `$ref` string into the cache. The brand is a literal so it survives
+ * JSON round-trip across queue boundaries.
+ *
  * Resolution is best-effort: the cache backing's TTL is the lifetime contract,
  * and `resolveOutputRef` returns `undefined` when the underlying entry has
  * been evicted.
  */
-export type CacheRef = {
+export interface ICacheRef {
+  readonly kind: typeof CACHE_REF_KIND;
   readonly $ref: string;
   readonly size?: number;
   readonly mime?: string;
-};
+}
+
+export type CacheRef = ICacheRef;
 
 /**
- * Narrow an unknown value to {@link CacheRef}. The discriminator is a `$ref`
- * property of type `string`; other fields are optional and not inspected.
+ * Narrow an unknown value to {@link CacheRef}. Discriminates on the literal
+ * {@link CACHE_REF_KIND} brand AND a string `$ref`; shape-only `{$ref: string}`
+ * objects (JSON-Schema refs, user metadata) do NOT match.
  */
 export function isCacheRef(value: unknown): value is CacheRef {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { readonly $ref?: unknown };
-  return typeof candidate.$ref === "string";
+  const candidate = value as { readonly kind?: unknown; readonly $ref?: unknown };
+  return candidate.kind === CACHE_REF_KIND && typeof candidate.$ref === "string";
+}
+
+/**
+ * Construct a branded {@link CacheRef}. Cache backings MUST use this helper (or
+ * spread `{kind: CACHE_REF_KIND, ...}` themselves) so the resulting ref carries
+ * the brand. Helpers in {@link CacheCoordinator} / {@link RunPrivateCacheRepo}
+ * defensively re-wrap legacy backings whose `saveOutputStream` predates the
+ * brand and returns an unbranded `{$ref}` shape.
+ */
+export function makeCacheRef(raw: {
+  readonly $ref: string;
+  readonly size?: number;
+  readonly mime?: string;
+}): CacheRef {
+  return {
+    kind: CACHE_REF_KIND,
+    $ref: raw.$ref,
+    ...(raw.size !== undefined && { size: raw.size }),
+    ...(raw.mime !== undefined && { mime: raw.mime }),
+  };
 }
 
 /**
