@@ -11,6 +11,7 @@ import type { ITask } from "./ITask";
 import type { StreamEvent, StreamMode } from "./StreamTypes";
 import {
   assertBinaryFormat,
+  DEFAULT_BINARY_HIGH_WATER_BYTES,
   getOutputStreamMode,
   getStreamingPorts,
   materializeBinary,
@@ -60,6 +61,14 @@ export interface StreamProcessorDeps {
    * Ports without a sink follow the normal accumulation path.
    */
   readonly binaryRefSinks?: ReadonlyMap<string, BinaryRefSink>;
+  /**
+   * High-water mark (bytes) for the per-port binary stream router buffer. When
+   * the buffered (un-consumed) byte total reaches or exceeds this value,
+   * `BinaryStreamRouter.push()` returns a Promise that resolves only after the
+   * consumer drains the buffer back below the mark. Defaults to
+   * {@link DEFAULT_BINARY_HIGH_WATER_BYTES} when omitted.
+   */
+  readonly binaryHighWaterBytes?: number;
 }
 
 /**
@@ -105,6 +114,10 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
     // accumulating in memory; at finish, awaits the sink's returned CacheRef
     // and writes it into the output at the port slot.
     const sinks = deps.binaryRefSinks;
+    const highWaterMark =
+      deps.binaryHighWaterBytes !== undefined && deps.binaryHighWaterBytes > 0
+        ? deps.binaryHighWaterBytes
+        : DEFAULT_BINARY_HIGH_WATER_BYTES;
     const routers = new Map<string, BinaryStreamRouter>();
     const ensureRouter = (port: string): BinaryStreamRouter | undefined => {
       if (!sinks) return undefined;
@@ -112,7 +125,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       if (!sink) return undefined;
       let r = routers.get(port);
       if (!r) {
-        r = new BinaryStreamRouter(sink);
+        r = new BinaryStreamRouter(sink, highWaterMark);
         routers.set(port, r);
       }
       return r;
@@ -123,6 +136,22 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
 
     this.task.emit("stream_start");
 
+    // Cooperative backpressure hook for executeStream() implementations that
+    // emit through a side channel (not StreamProcessor's awaited `push`). When
+    // any port has a router (we'd be applying byte-bounded backpressure on the
+    // direct `binary-delta` path anyway), `await ctx.binaryBackpressure()`
+    // waits until ALL active routers are at-or-below their high-water mark.
+    // Without a router this is a cheap no-op.
+    const binaryBackpressure = async (): Promise<void> => {
+      if (routers.size === 0) return;
+      const waits: Promise<void>[] = [];
+      for (const r of routers.values()) {
+        if (r._bufferedBytes >= r._highWaterMarkBytes) waits.push(r._awaitDrain());
+      }
+      if (waits.length === 0) return;
+      await Promise.all(waits);
+    };
+
     const stream = this.task.executeStream!(input, {
       signal: ctx.abortController.signal,
       updateProgress: deps.onProgress,
@@ -130,6 +159,7 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
       registry: deps.registry,
       resourceScope: deps.resourceScope,
       inputStreams: deps.inputStreams,
+      binaryBackpressure,
     });
 
     try {
@@ -210,8 +240,12 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
             // router writes to the cache for the small ref-bearing Output,
             // accumulator drives the enriched finish event so edge consumers
             // still receive a Blob/ArrayBuffer.
+            // `await router.push(...)` here is where byte-bounded backpressure
+            // takes effect: the producer (executeStream) parks until the sink
+            // drains the router buffer back under the high-water mark, or
+            // until the router is closed (abort/error path).
             const router = ensureRouter(event.port);
-            if (router) router.push(event.binaryDelta);
+            if (router) await router.push(event.binaryDelta);
             if (accumulatedBinary) {
               const arr = accumulatedBinary.get(event.port) ?? [];
               arr.push(event.binaryDelta);
@@ -377,23 +411,27 @@ export class StreamProcessor<Input extends TaskInput, Output extends TaskOutput>
  * resolves). `fail(err)` causes the iterable to throw on the next read
  * (refPromise rejects). `end()` and `fail()` are idempotent.
  *
- * Backpressure: there is none — the producer (`executeStream`) writes into
- * `buffer` synchronously; if the sink consumes more slowly than the producer
- * emits chunks, the buffer grows unbounded. This is acceptable for cache
- * backings whose write throughput meets or exceeds the upstream source
- * (the common case: cache is a local SSD/memory FS; source is bounded by
- * network or compute). For genuinely slow backings (remote object stores,
- * throttled FS), wrap the sink in a chunked-uploader that applies its own
- * pacing — there is no signal we can send back into `binary-delta`.
+ * Backpressure: byte-bounded. `push()` returns a Promise; the producer is
+ * resolved immediately while the buffered (un-consumed) byte total stays
+ * below `highWaterMarkBytes`, and parks until the consumer drains the
+ * buffer back under the mark once the threshold is reached. `end()` and
+ * `fail()` BOTH release any parked producer so an abort mid-park does not
+ * leak the `push()` promise.
  */
-class BinaryStreamRouter {
+export class BinaryStreamRouter {
   private readonly buffer: Uint8Array[] = [];
+  private bufferedBytes = 0;
   private finished = false;
   private failure: Error | undefined;
-  private notify: (() => void) | undefined;
+  /** Resolver for the consumer side (iterable awaiting next chunk). */
+  private chunkNotify: (() => void) | undefined;
+  /** Resolver for the producer side parked waiting for drain. */
+  private drainNotify: (() => void) | undefined;
   private readonly refPromise: Promise<CacheRef>;
+  private readonly highWaterMarkBytes: number;
 
-  constructor(sink: BinaryRefSink) {
+  constructor(sink: BinaryRefSink, highWaterMarkBytes: number) {
+    this.highWaterMarkBytes = Math.max(1, highWaterMarkBytes);
     this.refPromise = sink(this.iterable());
     // Observe rejection so an unawaited refPromise (e.g. after fail() in an
     // error path) doesn't surface as an unhandled rejection. Subsequent
@@ -401,44 +439,110 @@ class BinaryStreamRouter {
     this.refPromise.catch(() => {});
   }
 
-  push(chunk: Uint8Array): void {
-    if (this.finished) return;
+  /**
+   * Buffer one chunk and return a Promise the caller must await. The promise
+   * resolves immediately when buffered bytes remain under the high-water
+   * mark, and otherwise parks until the consumer drains the buffer (or until
+   * `end()` / `fail()` releases all parked callers).
+   */
+  push(chunk: Uint8Array): Promise<void> {
+    if (this.finished) return Promise.resolve();
     this.buffer.push(chunk);
-    this.wake();
+    this.bufferedBytes += chunk.byteLength;
+    this.wakeChunk();
+    if (this.bufferedBytes < this.highWaterMarkBytes) return Promise.resolve();
+    return new Promise<void>((res) => {
+      // Chain resolvers so a long park doesn't lose earlier waiters.
+      const prev = this.drainNotify;
+      this.drainNotify = prev
+        ? () => {
+            prev();
+            res();
+          }
+        : res;
+    });
   }
 
   end(): void {
     if (this.finished) return;
     this.finished = true;
-    this.wake();
+    this.wakeChunk();
+    // Release any producer parked at the high-water mark — abort mid-stream
+    // would otherwise orphan the parked Promise.
+    this.wakeDrain();
   }
 
   fail(err: Error): void {
     if (this.finished) return;
     this.failure = err;
     this.finished = true;
-    this.wake();
+    this.wakeChunk();
+    this.wakeDrain();
   }
 
   ref(): Promise<CacheRef> {
     return this.refPromise;
   }
 
-  private wake(): void {
-    const n = this.notify;
-    this.notify = undefined;
+  /** @internal Test hook: current buffered byte count (consumer-unread). */
+  public get _bufferedBytes(): number {
+    return this.bufferedBytes;
+  }
+
+  /** @internal Test hook: high-water mark in effect. */
+  public get _highWaterMarkBytes(): number {
+    return this.highWaterMarkBytes;
+  }
+
+  /**
+   * @internal Used by {@link IExecuteContext.binaryBackpressure} so a task
+   * emitting via a side channel can park until the consumer drains. Resolves
+   * immediately when the buffer is already under the mark or the router has
+   * been closed.
+   */
+  public _awaitDrain(): Promise<void> {
+    if (this.finished) return Promise.resolve();
+    if (this.bufferedBytes < this.highWaterMarkBytes) return Promise.resolve();
+    return new Promise<void>((res) => {
+      const prev = this.drainNotify;
+      this.drainNotify = prev
+        ? () => {
+            prev();
+            res();
+          }
+        : res;
+    });
+  }
+
+  private wakeChunk(): void {
+    const n = this.chunkNotify;
+    this.chunkNotify = undefined;
+    n?.();
+  }
+
+  private wakeDrain(): void {
+    const n = this.drainNotify;
+    this.drainNotify = undefined;
     n?.();
   }
 
   private async *iterable(): AsyncIterable<Uint8Array> {
     while (true) {
       while (this.buffer.length > 0) {
-        yield this.buffer.shift()!;
+        const chunk = this.buffer.shift()!;
+        this.bufferedBytes -= chunk.byteLength;
+        // Wake any parked producer once we drop back below the mark. We
+        // resolve as soon as we cross the threshold rather than waiting for
+        // the buffer to drain fully — that keeps the producer pipelined.
+        if (this.drainNotify && this.bufferedBytes < this.highWaterMarkBytes) {
+          this.wakeDrain();
+        }
+        yield chunk;
       }
       if (this.failure) throw this.failure;
       if (this.finished) return;
       await new Promise<void>((res) => {
-        this.notify = res;
+        this.chunkNotify = res;
       });
     }
   }
