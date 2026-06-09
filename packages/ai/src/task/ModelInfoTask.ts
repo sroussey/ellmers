@@ -7,7 +7,7 @@
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
 
 import type { CachePolicy, IExecuteContext, IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import { accumulatingEmit } from "../capability/accumulatingEmit";
 import type { Capability } from "../capability/Capabilities";
 import { ModelConfig } from "../model/ModelSchema";
@@ -77,8 +77,24 @@ const ModelInfoOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ModelInfoTaskInput = FromSchema<typeof ModelInfoInputSchema>;
-export type ModelInfoTaskOutput = FromSchema<typeof ModelInfoOutputSchema>;
+export type ModelInfoTaskInput = {
+  detail?: "cached_status" | "files" | "files_with_metadata" | "dimensions" | undefined;
+  model: string | ModelConfig;
+};
+export type ModelInfoTaskOutput = {
+  native_dimensions?: number | undefined;
+  mrl?: boolean | undefined;
+  is_downloading?: boolean | undefined;
+  quantizations?: string[] | undefined;
+  model: string | ModelConfig;
+  is_local: boolean;
+  is_remote: boolean;
+  supports_browser: boolean;
+  supports_node: boolean;
+  is_cached: boolean;
+  is_loaded: boolean;
+  file_sizes: unknown;
+};
 export type ModelInfoTaskConfig = TaskConfig<ModelInfoTaskInput>;
 
 /**

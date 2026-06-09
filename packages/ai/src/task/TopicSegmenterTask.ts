@@ -7,7 +7,7 @@
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 export const SegmentationMethod = {
@@ -88,8 +88,17 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TopicSegmenterTaskInput = FromSchema<typeof inputSchema>;
-export type TopicSegmenterTaskOutput = FromSchema<typeof outputSchema>;
+export type TopicSegmenterTaskInput = {
+  method?: "hybrid" | "heuristic" | "embedding-similarity" | undefined;
+  minSegmentSize?: number | undefined;
+  maxSegmentSize?: number | undefined;
+  similarityThreshold?: number | undefined;
+  text: string;
+};
+export type TopicSegmenterTaskOutput = {
+  count: number;
+  segments: { text: string; startOffset: number; endOffset: number }[];
+};
 export type TopicSegmenterTaskConfig = TaskConfig<TopicSegmenterTaskInput>;
 
 /**

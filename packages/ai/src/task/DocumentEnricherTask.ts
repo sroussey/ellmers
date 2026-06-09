@@ -9,7 +9,7 @@ import { DocumentRootNode, getChildren, hasChildren } from "@workglow/knowledge-
 import type { DocumentNode, Entity, NodeEnrichment } from "@workglow/knowledge-base";
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 import { ModelConfig } from "../model/ModelSchema";
 import { TextNamedEntityRecognitionTask } from "./TextNamedEntityRecognitionTask";
@@ -88,10 +88,24 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type DocumentEnricherTaskInput = Omit<FromSchema<typeof inputSchema>, "documentTree"> & {
-  documentTree: DocumentRootNode;
+export type DocumentEnricherTaskInput = Omit<
+  {
+    doc_id?: string | undefined;
+    documentTree?: { [x: string]: unknown } | undefined;
+    generateSummaries?: boolean | undefined;
+    extractEntities?: boolean | undefined;
+    summaryModel?: string | ModelConfig | undefined;
+    summaryThreshold?: number | undefined;
+    nerModel?: string | ModelConfig | undefined;
+  },
+  "documentTree"
+> & { documentTree: DocumentRootNode };
+export type DocumentEnricherTaskOutput = {
+  doc_id: string;
+  documentTree: unknown;
+  summaryCount: number;
+  entityCount: number;
 };
-export type DocumentEnricherTaskOutput = FromSchema<typeof outputSchema>;
 export type DocumentEnricherTaskConfig = TaskConfig<DocumentEnricherTaskInput>;
 
 /**

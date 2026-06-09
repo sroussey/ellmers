@@ -7,7 +7,7 @@
 import { DocumentNode, KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -54,10 +54,11 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type KbToDocumentsTaskInput = FromSchema<typeof inputSchema>;
-export type KbToDocumentsTaskOutput = Omit<FromSchema<typeof outputSchema>, "documentTree"> & {
-  documentTree: DocumentNode[];
-};
+export type KbToDocumentsTaskInput = { onlyStale?: boolean | undefined; knowledgeBase: unknown };
+export type KbToDocumentsTaskOutput = Omit<
+  { title: string[]; doc_id: string[]; documentTree: { [x: string]: unknown }[] },
+  "documentTree"
+> & { documentTree: DocumentNode[] };
 export type KbToDocumentsTaskConfig = TaskConfig<KbToDocumentsTaskInput>;
 
 /**

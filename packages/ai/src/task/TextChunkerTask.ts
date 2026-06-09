@@ -9,7 +9,7 @@ import { ChunkRecordArraySchema } from "@workglow/knowledge-base";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 export const ChunkingStrategy = {
@@ -86,8 +86,32 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextChunkerTaskInput = FromSchema<typeof inputSchema>;
-export type TextChunkerTaskOutput = FromSchema<typeof outputSchema>;
+export type TextChunkerTaskInput = {
+  doc_id?: string | undefined;
+  strategy?: "fixed" | "sentence" | "paragraph" | "semantic" | undefined;
+  chunkSize?: number | undefined;
+  chunkOverlap?: number | undefined;
+  text: string;
+};
+export type TextChunkerTaskOutput = {
+  doc_id?: string | undefined;
+  text: string[];
+  chunks: {
+    [x: string]: unknown;
+    leafNodeId?: string | undefined;
+    summary?: string | undefined;
+    entities?: { type: string; text: string; score: number }[] | undefined;
+    parentSummaries?: string[] | undefined;
+    sectionTitles?: string[] | undefined;
+    doc_title?: string | undefined;
+    text: string;
+    doc_id: string;
+    chunkId: string;
+    nodePath: string[];
+    depth: number;
+  }[];
+  count: number;
+};
 export type TextChunkerTaskConfig = TaskConfig<TextChunkerTaskInput>;
 
 interface RawChunk {

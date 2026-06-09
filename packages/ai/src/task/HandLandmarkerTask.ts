@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -129,13 +130,30 @@ export const HandLandmarkerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type HandLandmarkerTaskInput = WithImageValuePorts<
-  FromSchema<typeof HandLandmarkerInputSchema>,
+export type HandLandmarkerTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type HandLandmarkerTaskOutput = FromSchema<typeof HandLandmarkerOutputSchema>;
+    minTrackingConfidence?: number | undefined;
+    numHands?: number | undefined;
+    minHandDetectionConfidence?: number | undefined;
+    minHandPresenceConfidence?: number | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type HandLandmarkerTaskOutput = {
+  hands:
+    | {
+        landmarks: { x: number; y: number; z: number }[];
+        handedness: { score: number; label: string }[];
+        worldLandmarks: { x: number; y: number; z: number }[];
+      }[]
+    | {
+        landmarks: { x: number; y: number; z: number }[];
+        handedness: { score: number; label: string }[];
+        worldLandmarks: { x: number; y: number; z: number }[];
+      }[][];
+};
 export type HandLandmarkerTaskConfig = TaskConfig<HandLandmarkerTaskInput>;
 
 /**

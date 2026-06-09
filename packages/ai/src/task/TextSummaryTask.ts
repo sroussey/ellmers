@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 
@@ -41,8 +42,8 @@ export const TextSummaryOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextSummaryTaskInput = FromSchema<typeof TextSummaryInputSchema>;
-export type TextSummaryTaskOutput = FromSchema<typeof TextSummaryOutputSchema>;
+export type TextSummaryTaskInput = { model: string | ModelConfig; text: string };
+export type TextSummaryTaskOutput = { text: string };
 export type TextSummaryTaskConfig = TaskConfig<TextSummaryTaskInput>;
 
 export class TextSummaryTask extends StreamingAiTask<

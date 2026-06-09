@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -83,12 +84,15 @@ export const ImageSegmentationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ImageSegmentationTaskInput = WithImageValuePorts<
-  FromSchema<typeof ImageSegmentationInputSchema>,
+export type ImageSegmentationTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
+    threshold?: number | undefined;
+    maskThreshold?: number | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
 export type ImageSegmentationTaskOutput = {
   masks: { label: string; score: number; mask: ImageValue }[];
 };

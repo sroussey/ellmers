@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -65,8 +66,12 @@ export const TextLanguageDetectionOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextLanguageDetectionTaskInput = FromSchema<typeof TextLanguageDetectionInputSchema>;
-export type TextLanguageDetectionTaskOutput = FromSchema<typeof TextLanguageDetectionOutputSchema>;
+export type TextLanguageDetectionTaskInput = {
+  maxLanguages?: number | undefined;
+  model: string | ModelConfig;
+  text: string;
+};
+export type TextLanguageDetectionTaskOutput = { languages: { score: number; language: string }[] };
 export type TextLanguageDetectionTaskConfig = TaskConfig<TextLanguageDetectionTaskInput>;
 
 export class TextLanguageDetectionTask extends AiTask<

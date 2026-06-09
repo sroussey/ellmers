@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeLandmark, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -149,13 +150,32 @@ export const FaceLandmarkerOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type FaceLandmarkerTaskInput = WithImageValuePorts<
-  FromSchema<typeof FaceLandmarkerInputSchema>,
+export type FaceLandmarkerTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type FaceLandmarkerTaskOutput = FromSchema<typeof FaceLandmarkerOutputSchema>;
+    numFaces?: number | undefined;
+    minFaceDetectionConfidence?: number | undefined;
+    minFacePresenceConfidence?: number | undefined;
+    minTrackingConfidence?: number | undefined;
+    outputFaceBlendshapes?: boolean | undefined;
+    outputFacialTransformationMatrixes?: boolean | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type FaceLandmarkerTaskOutput = {
+  faces:
+    | {
+        blendshapes?: { score: number; label: string }[] | undefined;
+        transformationMatrix?: number[] | undefined;
+        landmarks: { x: number; y: number; z: number }[];
+      }[]
+    | {
+        blendshapes?: { score: number; label: string }[] | undefined;
+        transformationMatrix?: number[] | undefined;
+        landmarks: { x: number; y: number; z: number }[];
+      }[][];
+};
 export type FaceLandmarkerTaskConfig = TaskConfig<FaceLandmarkerTaskInput>;
 
 /**

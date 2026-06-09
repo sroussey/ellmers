@@ -6,9 +6,10 @@
 
 import type { IExecuteContext, IRunConfig, StreamEvent, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, TaskConfigurationError, TaskError, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema, SchemaNode } from "@workglow/util/schema";
+import type { DataPortSchema, SchemaNode } from "@workglow/util/schema";
 import { compileSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 
@@ -76,8 +77,15 @@ export const StructuredGenerationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type StructuredGenerationTaskInput = FromSchema<typeof StructuredGenerationInputSchema>;
-export type StructuredGenerationTaskOutput = FromSchema<typeof StructuredGenerationOutputSchema>;
+export type StructuredGenerationTaskInput = {
+  maxTokens?: number | undefined;
+  temperature?: number | undefined;
+  maxRetries?: number | undefined;
+  model: string | ModelConfig;
+  prompt: string;
+  outputSchema: { [x: string]: unknown };
+};
+export type StructuredGenerationTaskOutput = { object: { [x: string]: unknown } };
 export type StructuredGenerationTaskConfig = TaskConfig<StructuredGenerationTaskInput>;
 
 /**

@@ -8,7 +8,7 @@ import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-g
 import { TaskConfigSchema } from "@workglow/task-graph";
 import type { IHumanRequest } from "@workglow/util";
 import { resolveHumanConnector } from "@workglow/util";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { AiEmit } from "../capability/AiEmit";
 import type { Capability } from "../capability/Capabilities";
 import type { AiJobInput } from "../job/AiJob";
@@ -150,11 +150,37 @@ export const AiChatOutputSchema = {
 // Runtime types
 // ========================================================================
 
-export type AiChatTaskInput = Omit<FromSchema<typeof AiChatInputSchema>, "messages"> & {
-  readonly messages?: ReadonlyArray<ChatMessage>;
-};
+export type AiChatTaskInput = Omit<
+  {
+    systemPrompt?: string | undefined;
+    messages?: ChatMessage[] | undefined;
+    maxTokens?: number | undefined;
+    temperature?: number | undefined;
+    maxIterations?: number | undefined;
+    responseFormat?: "text" | "markdown" | undefined;
+    model: string | ModelConfig;
+    prompt:
+      | string
+      | (
+          | { type: "text"; text: string }
+          | { type: "image"; mimeType: string; data: string }
+          | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+          | {
+              is_error?: boolean | undefined;
+              type: "tool_result";
+              content: (
+                | { type: "text"; text: string }
+                | { type: "image"; mimeType: string; data: string }
+                | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+              )[];
+              tool_use_id: string;
+            }
+        )[];
+  },
+  "messages"
+> & { readonly messages?: ReadonlyArray<ChatMessage> };
 
-export type AiChatTaskOutput = FromSchema<typeof AiChatOutputSchema>;
+export type AiChatTaskOutput = { text: string; messages: ChatMessage[]; iterations: number };
 
 /** Provider-facing input: same structural type as AiChatTaskInput, named separately for intent. */
 export type AiChatProviderInput = AiChatTaskInput;

@@ -13,7 +13,7 @@ import {
 } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -71,8 +71,21 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type DocumentUpsertTaskInput = FromSchema<typeof inputSchema>;
-export type DocumentUpsertTaskOutput = FromSchema<typeof outputSchema>;
+export type DocumentUpsertTaskInput = {
+  title?: string | undefined;
+  metadata?:
+    | {
+        [x: string]: unknown;
+        title?: string | undefined;
+        sourceUri?: string | undefined;
+        createdAt?: string | undefined;
+      }
+    | undefined;
+  doc_id: string;
+  documentTree: unknown;
+  knowledgeBase: unknown;
+};
+export type DocumentUpsertTaskOutput = { doc_id: string };
 export type DocumentUpsertTaskConfig = TaskConfig<DocumentUpsertTaskInput>;
 
 /**
