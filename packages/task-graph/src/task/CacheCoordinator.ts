@@ -16,7 +16,7 @@ import type { ITask } from "./ITask";
 import type { BinaryRefSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
 import {
-  getBinaryPortFormat,
+  assertBinaryFormat,
   getBinaryPortId,
   getStreamingPorts,
   REFUSAL_OUTPUT_KEY,
@@ -329,7 +329,7 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
         if (size === undefined || size >= referenceThresholdBytes) return undefined;
         const blob = await cache.getOutputByRef!(value);
         if (blob === undefined) return undefined;
-        const format = getBinaryPortFormat(outputSchema, port);
+        const format = assertBinaryFormat(outputSchema, port);
         const inlined = format === "binary" ? await blob.arrayBuffer() : blob;
         return { port, inlined };
       })

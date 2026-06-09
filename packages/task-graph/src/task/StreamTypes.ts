@@ -398,9 +398,19 @@ export function getBinaryPortId(schema: DataPortSchema): string | undefined {
 }
 
 /**
+ * Canonical vocabulary for the `format` annotation on a binary streaming output
+ * port. `"blob"` materializes chunks into a `Blob` (the default); `"binary"`
+ * materializes them into an `ArrayBuffer`. Any other value is rejected at
+ * registration time (see {@link assertBinaryFormat}) so a typo like `"Blob"`
+ * cannot silently fall through to the ArrayBuffer branch.
+ */
+export type BinaryFormat = "blob" | "binary";
+
+/**
  * Reads the `format` annotation of a single output port from the task's output
- * schema. Used to decide whether accumulated binary chunks materialize into a
- * `Blob` (`format: "blob"` or absent) or an `ArrayBuffer` (`format: "binary"`).
+ * schema. Returns the raw string (or `undefined`) — callers needing the
+ * canonical {@link BinaryFormat} vocabulary should go through
+ * {@link assertBinaryFormat}, which rejects unknown values.
  */
 export function getBinaryPortFormat(schema: DataPortSchema, port: string): string | undefined {
   if (typeof schema === "boolean") return undefined;
@@ -410,26 +420,42 @@ export function getBinaryPortFormat(schema: DataPortSchema, port: string): strin
 }
 
 /**
+ * Resolves the `format` annotation on a binary streaming port to a canonical
+ * {@link BinaryFormat}. `undefined` and `"blob"` both resolve to `"blob"`;
+ * `"binary"` resolves to `"binary"`. Anything else throws — a casing typo such
+ * as `"Blob"` or a leftover legacy value would otherwise be silently coerced
+ * to one branch and produce the wrong runtime type, so this is checked at
+ * task-registration time and again on the streaming hot paths.
+ */
+export function assertBinaryFormat(schema: DataPortSchema, port: string): BinaryFormat {
+  const f = getBinaryPortFormat(schema, port);
+  if (f === undefined || f === "blob") return "blob";
+  if (f === "binary") return "binary";
+  throw new Error(
+    `Port "${port}" has x-stream:"binary" but format:"${f}". Allowed: "blob" | "binary".`
+  );
+}
+
+/**
  * Materializes ordered binary chunks into the value type declared by the
- * output port's schema `format`:
- *  - `"binary"`  → `ArrayBuffer`
- *  - `"blob"` (or absent) → `Blob` (the default)
+ * output port's canonical {@link BinaryFormat}:
+ *  - `"blob"`   → `Blob` (the default)
+ *  - `"binary"` → `ArrayBuffer`
  *
  * Chunks are concatenated in arrival order. Callers MUST pass chunks in the
- * order they were emitted.
+ * order they were emitted, and MUST resolve `format` through
+ * {@link assertBinaryFormat} so unknown values are rejected at registration
+ * rather than reinterpreted here.
  *
  * @param chunks - Ordered binary chunks to concatenate
- * @param format - The output port's schema `format` (e.g. `"binary"` or `"blob"`)
+ * @param format - Canonical binary format selector
  * @returns The materialized `Blob` or `ArrayBuffer`
  */
 export function materializeBinary(
   chunks: readonly Uint8Array[],
-  format: string | undefined
+  format: BinaryFormat
 ): Blob | ArrayBuffer {
-  if (format === "blob" || format === undefined) {
-    return new Blob(chunks as unknown as BlobPart[]);
-  }
-  // format === "binary" (and any other non-blob value) → ArrayBuffer
+  if (format === "blob") return new Blob(chunks as unknown as BlobPart[]);
   let total = 0;
   for (const c of chunks) total += c.byteLength;
   const merged = new Uint8Array(total);
