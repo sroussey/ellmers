@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -40,8 +41,8 @@ export const CountTokensOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type CountTokensTaskInput = FromSchema<typeof CountTokensInputSchema>;
-export type CountTokensTaskOutput = FromSchema<typeof CountTokensOutputSchema>;
+export type CountTokensTaskInput = { model: string | ModelConfig; text: string };
+export type CountTokensTaskOutput = { count: number };
 export type CountTokensTaskConfig = TaskConfig<CountTokensTaskInput>;
 
 /**

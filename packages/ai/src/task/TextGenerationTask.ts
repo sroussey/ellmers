@@ -6,8 +6,9 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
 
@@ -83,8 +84,16 @@ export const TextGenerationOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextGenerationTaskInput = FromSchema<typeof TextGenerationInputSchema>;
-export type TextGenerationTaskOutput = FromSchema<typeof TextGenerationOutputSchema>;
+export type TextGenerationTaskInput = {
+  maxTokens?: number | undefined;
+  temperature?: number | undefined;
+  topP?: number | undefined;
+  frequencyPenalty?: number | undefined;
+  presencePenalty?: number | undefined;
+  model: string | ModelConfig;
+  prompt: string;
+};
+export type TextGenerationTaskOutput = { text: string };
 export type TextGenerationTaskConfig = TaskConfig<TextGenerationTaskInput>;
 
 export class TextGenerationTask extends StreamingAiTask<
