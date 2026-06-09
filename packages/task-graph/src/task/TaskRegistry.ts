@@ -14,6 +14,7 @@ import {
 } from "@workglow/util";
 import { validateSchema } from "@workglow/util/schema";
 import type { ITaskConstructor } from "./ITask";
+import { assertBinaryFormat, getStreamingPorts } from "./StreamTypes";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTaskConstructor = ITaskConstructor<any, any, any>;
@@ -41,12 +42,32 @@ function registerTask(baseClass: AnyTaskConstructor): void {
       `Task type "${baseClass.type}" is already registered. Unregister it first to replace.`
     );
   }
+
+  // Validate every binary streaming output port's `format` against the
+  // canonical {@link BinaryFormat} vocabulary BEFORE adding to the registry.
+  // A typo like `format: "Blob"` would otherwise silently coerce to the
+  // ArrayBuffer branch in `materializeBinary`, producing the wrong runtime
+  // type for every consumer of that port. Fail at registration so the
+  // misconfiguration surfaces near the task definition site.
+  const outputSchema = baseClass.outputSchema();
+  for (const { port, mode } of getStreamingPorts(outputSchema)) {
+    if (mode !== "binary") continue;
+    try {
+      assertBinaryFormat(outputSchema, port);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Cannot register task "${baseClass.type}": invalid binary stream port. ${message}`
+      );
+    }
+  }
+
   taskConstructors.set(baseClass.type, baseClass);
 
   // Validate schemas at registration time (soft — warn only, don't throw)
   const schemas = [
     { name: "inputSchema", schema: baseClass.inputSchema() },
-    { name: "outputSchema", schema: baseClass.outputSchema() },
+    { name: "outputSchema", schema: outputSchema },
   ] as const;
 
   for (const { name, schema } of schemas) {

@@ -131,8 +131,37 @@ class BigBlobStreamTask extends Task<Record<string, never>, BinOut> {
   }
 }
 
+type ArrayBufOut = { bytes: ArrayBuffer };
+
+class BigArrayBufferStreamTask extends Task<Record<string, never>, ArrayBufOut> {
+  public static override type = "Spec2QueueRowTest_BigArrayBufferStream";
+  public static override category = "Test";
+  public static override cacheable = true;
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "binary", "x-stream": "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  async *executeStream(
+    _input: Record<string, never>,
+    _ctx: IExecuteContext
+  ): AsyncIterable<StreamEvent<ArrayBufOut>> {
+    for (let i = 0; i < CHUNKS; i++) {
+      const chunk = new Uint8Array(CHUNK).fill(i & 0xff);
+      yield { type: "binary-delta", port: "bytes", binaryDelta: chunk };
+      if (i % 4 === 3) await sleep(0);
+    }
+    yield { type: "finish", data: {} as ArrayBufOut };
+  }
+}
+
 beforeAll(() => {
   TaskRegistry.registerTask(BigBlobStreamTask as any);
+  TaskRegistry.registerTask(BigArrayBufferStreamTask as any);
 });
 
 let services: ServiceRegistry;
@@ -226,6 +255,33 @@ describe("Spec 2 — saved-row size & cross-process rehydration", () => {
 
     expect(resolved.bytes).toBeInstanceOf(Blob);
     expect((resolved.bytes as Blob).size).toBe(CHUNKS * CHUNK);
+  });
+
+  it("rehydration below threshold inlines a Blob for format:'blob' (canonical BinaryFormat)", async () => {
+    const task = new BigBlobStreamTask();
+    // Threshold above the full payload → rehydrate inline.
+    const output = await task.run(
+      {},
+      {
+        registry: services,
+        referenceThresholdBytes: CHUNKS * CHUNK + 1,
+      }
+    );
+    expect(output.bytes).toBeInstanceOf(Blob);
+    expect((output.bytes as Blob).size).toBe(CHUNKS * CHUNK);
+  });
+
+  it("rehydration below threshold inlines an ArrayBuffer for format:'binary' (canonical BinaryFormat)", async () => {
+    const task = new BigArrayBufferStreamTask();
+    const output = await task.run(
+      {},
+      {
+        registry: services,
+        referenceThresholdBytes: CHUNKS * CHUNK + 1,
+      }
+    );
+    expect(output.bytes).toBeInstanceOf(ArrayBuffer);
+    expect((output.bytes as ArrayBuffer).byteLength).toBe(CHUNKS * CHUNK);
   });
 
   it("dangling refs (cache cleared between save and read) resolve to undefined — best-effort contract", async () => {
