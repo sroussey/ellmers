@@ -300,6 +300,18 @@ export function getBinaryPortId(schema: DataPortSchema): string | undefined {
 export type BinaryFormat = "blob" | "binary";
 
 /**
+ * Default high-water mark for the binary-stream router's producer buffer, in
+ * bytes. When the buffered (un-consumed) byte total reaches this threshold the
+ * producer awaits a drain signal from the consumer before pushing further
+ * chunks; below the threshold the producer is allowed to run free. 8 MiB lets
+ * even fast producers race ahead by a few chunks without stalling, while
+ * bounding worst-case memory growth when the sink (cache, disk, network)
+ * cannot keep up. Callers can override per-run via
+ * `IRunConfig.binaryHighWaterBytes`.
+ */
+export const DEFAULT_BINARY_HIGH_WATER_BYTES = 8 * 1024 * 1024;
+
+/**
  * Reads the `format` annotation of a single output port from the task's output
  * schema. Returns the raw string (or `undefined`) — callers needing the
  * canonical {@link BinaryFormat} vocabulary should go through
