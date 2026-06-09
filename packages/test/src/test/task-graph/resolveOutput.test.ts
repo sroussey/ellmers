@@ -4,15 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { resolveOutput } from "@workglow/task-graph";
 import type { CacheRef, CacheRefResolver } from "@workglow/task-graph";
+import { makeCacheRef, resolveOutput } from "@workglow/task-graph";
+import { describe, expect, it, vi } from "vitest";
 
-const ref = (key: string, size?: number, mime?: string): CacheRef => ({
-  $ref: key,
-  ...(size !== undefined ? { size } : {}),
-  ...(mime !== undefined ? { mime } : {}),
-});
+const ref = (key: string, size?: number, mime?: string): CacheRef =>
+  makeCacheRef({ $ref: key, size, mime });
 
 const fakeResolver =
   (table: Record<string, Blob | undefined>): CacheRefResolver =>
@@ -24,6 +21,19 @@ describe("resolveOutput", () => {
     const resolver = vi.fn(fakeResolver({}));
     const input = { a: 1, b: "two", c: true, d: null };
     expect(await resolveOutput(input, resolver)).toEqual(input);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("does not walk JSON-Schema-shaped {$ref: string} objects (no brand)", async () => {
+    // Brand discrimination matters here: a JSON-Schema $ref embedded in
+    // metadata must NOT be passed to the cache resolver, since the cache
+    // backing would treat the JSON-Schema pointer as a cache key. Identity is
+    // preserved because the tree has no branded refs to resolve.
+    const resolver = vi.fn<CacheRefResolver>();
+    const input = { schema: { $ref: "#/$defs/Foo" }, name: "ok" };
+    const out = await resolveOutput(input, resolver);
+    expect(out).toBe(input);
+    expect(out.schema).toBe(input.schema);
     expect(resolver).not.toHaveBeenCalled();
   });
 

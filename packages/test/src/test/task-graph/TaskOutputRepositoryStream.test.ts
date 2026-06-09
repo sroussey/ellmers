@@ -3,9 +3,9 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import { describe, expect, it } from "vitest";
-import { RunPrivateCacheRepo, TaskOutputRepository } from "@workglow/task-graph";
 import type { CacheRef, TaskInput, TaskOutput } from "@workglow/task-graph";
+import { makeCacheRef, RunPrivateCacheRepo, TaskOutputRepository } from "@workglow/task-graph";
+import { describe, expect, it } from "vitest";
 
 class StreamingMemoryRepo extends TaskOutputRepository {
   public readonly streamed = new Map<string, Uint8Array>();
@@ -47,7 +47,7 @@ class StreamingMemoryRepo extends TaskOutputRepository {
     const key = taskType + JSON.stringify(inputs);
     this.streamed.set(key, merged);
     this.streamedMetadata.set(key, metadata);
-    return { $ref: `inmem://${key}`, size: total };
+    return makeCacheRef({ $ref: `inmem://${key}`, size: total });
   }
   override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
     const key = ref.$ref.replace(/^inmem:\/\//, "");
@@ -144,12 +144,7 @@ describe("TaskOutputRepository.saveOutputStream", () => {
 
   it("saveOutputStream returns a CacheRef the same backing can resolve to bytes", async () => {
     const repo = new StreamingMemoryRepo({});
-    const ref = await repo.saveOutputStream(
-      "T",
-      { k: 1 },
-      gen(new Uint8Array([7, 8, 9])),
-      {}
-    );
+    const ref = await repo.saveOutputStream("T", { k: 1 }, gen(new Uint8Array([7, 8, 9])), {});
     expect(typeof ref.$ref).toBe("string");
     expect(ref.size).toBe(3);
     const hydrated = await repo.getOutputByRef(ref);

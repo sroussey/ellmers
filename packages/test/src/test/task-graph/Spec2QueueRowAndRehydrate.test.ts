@@ -4,18 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { CacheRef, StreamEvent } from "@workglow/task-graph";
+import type {
+  CacheRef,
+  JobHandleLike,
+  StreamEvent,
+  TaskInput,
+  TaskOutput,
+} from "@workglow/task-graph";
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
   IExecuteContext,
   isCacheRef,
+  makeCacheRef,
   resolveJobOutput,
   Task,
   TaskOutputRepository,
   TaskRegistry,
 } from "@workglow/task-graph";
-import type { JobHandleLike, TaskInput, TaskOutput } from "@workglow/task-graph";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -68,7 +74,7 @@ class StreamingMemoryRepo extends TaskOutputRepository {
     }
     const key = `inmem://${taskType}::${JSON.stringify(inputs)}`;
     this.streamed.set(key, merged);
-    return { $ref: key, size, mime: "application/octet-stream" };
+    return makeCacheRef({ $ref: key, size, mime: "application/octet-stream" });
   }
   override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
     const bytes = this.streamed.get(ref.$ref);

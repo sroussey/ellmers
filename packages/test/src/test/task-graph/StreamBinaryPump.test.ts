@@ -38,11 +38,11 @@
  */
 
 import type { CacheRef, ITask, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
-import type { DataPortSchema } from "@workglow/util/schema";
 import {
   Dataflow,
   getBinaryPortId,
   IExecuteContext,
+  makeCacheRef,
   StreamPump,
   Task,
   TaskGraph,
@@ -51,6 +51,7 @@ import {
   TaskStatus,
 } from "@workglow/task-graph";
 import { setLogger, sleep } from "@workglow/util";
+import type { DataPortSchema } from "@workglow/util/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
 
@@ -212,7 +213,7 @@ class StreamingMemoryRepo extends TaskOutputRepository {
       size += c.byteLength;
       for (const b of c) this.streamedBytes.push(b);
     }
-    return { $ref: `inmem://${taskType}::${JSON.stringify(inputs)}`, size };
+    return makeCacheRef({ $ref: `inmem://${taskType}::${JSON.stringify(inputs)}`, size });
   }
 }
 
