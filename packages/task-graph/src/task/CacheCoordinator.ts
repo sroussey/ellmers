@@ -8,15 +8,20 @@ import { getLogger, getPortCodec } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
 import type { CacheRef } from "../cache/CacheRef";
-import { isCacheRef } from "../cache/CacheRef";
+import { isCacheRef, makeCacheRef } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
-import type { BinaryRefSink } from "./StreamProcessor";
-import { getBinaryPortFormat, getBinaryPortId, getStreamingPorts } from "./StreamTypes";
 import type { ITask } from "./ITask";
+import type { BinaryRefSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import { REFUSAL_OUTPUT_KEY, USAGE_OUTPUT_KEY } from "./StreamTypes";
+import {
+  getBinaryPortFormat,
+  getBinaryPortId,
+  getStreamingPorts,
+  REFUSAL_OUTPUT_KEY,
+  USAGE_OUTPUT_KEY,
+} from "./StreamTypes";
 import { Task } from "./Task";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
@@ -268,8 +273,13 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     const port = getBinaryPortId(outputSchema);
     if (port === undefined) return undefined;
     const taskType = this.task.type;
-    const sink: BinaryRefSink = (chunks) =>
-      cache.saveOutputStream!(taskType, keyInputs, chunks, {});
+    // Re-wrap the backing's CacheRef so legacy `saveOutputStream` implementations
+    // that pre-date the `kind` brand still produce a discriminator-bearing ref.
+    // Branded refs pass through unchanged (preserving size/mime hints).
+    const sink: BinaryRefSink = async (chunks) => {
+      const raw = await cache.saveOutputStream!(taskType, keyInputs, chunks, {});
+      return isCacheRef(raw) ? raw : makeCacheRef(raw);
+    };
     return new Map([[port, sink]]);
   }
 

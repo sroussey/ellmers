@@ -4,21 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, expect, it } from "vitest";
-import { resolveJobOutput } from "@workglow/task-graph";
 import type { CacheRef, CacheRefResolver, JobHandleLike } from "@workglow/task-graph";
+import { makeCacheRef, resolveJobOutput } from "@workglow/task-graph";
+import { describe, expect, it, vi } from "vitest";
 
 const handleOf = <T>(value: T): JobHandleLike<T> => ({
   waitFor: async () => value,
 });
 
-const ref = (key: string, size = 0): CacheRef => ({ $ref: key, size });
+const ref = (key: string, size = 0): CacheRef => makeCacheRef({ $ref: key, size });
 
 describe("resolveJobOutput", () => {
   it("awaits the job and hydrates a top-level ref through a function resolver", async () => {
     const blob = new Blob([new Uint8Array([1, 2, 3])]);
-    const resolver: CacheRefResolver = async (r) =>
-      r.$ref === "cache://A" ? blob : undefined;
+    const resolver: CacheRefResolver = async (r) => (r.$ref === "cache://A" ? blob : undefined);
     const handle = handleOf({ bytes: ref("cache://A", 3) as unknown as Blob });
     const out = await resolveJobOutput(handle, resolver);
     expect(out.bytes).toBe(blob);
@@ -65,6 +64,20 @@ describe("resolveJobOutput", () => {
       },
     };
     await expect(resolveJobOutput(handle, async () => undefined)).rejects.toThrow("job failed");
+  });
+
+  it("never invokes getOutputByRef for attacker-supplied {$ref} shapes without the brand", async () => {
+    // Cross-tenant attack vector: a task output contains a metadata field whose
+    // shape collides with the legacy CacheRef discriminator
+    // (`{$ref: "cache://OTHER_RUN/secret"}`). With the literal `kind` brand,
+    // the resolver MUST NOT pass the unbranded value to `getOutputByRef`, so
+    // bytes from another run/tenant can't be read by shape collision alone.
+    const getOutputByRef = vi.fn(async (_r: CacheRef) => new Blob([new Uint8Array([1, 2, 3])]));
+    const backing = { getOutputByRef };
+    const handle = handleOf({ note: { $ref: "cache://OTHER_RUN/secret" } });
+    const out = await resolveJobOutput(handle, backing);
+    expect(out.note).toEqual({ $ref: "cache://OTHER_RUN/secret" });
+    expect(getOutputByRef).not.toHaveBeenCalled();
   });
 
   it("forwards ResolveOutputOptions to the underlying walker", async () => {
