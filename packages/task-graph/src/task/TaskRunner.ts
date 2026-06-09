@@ -284,6 +284,8 @@ export class TaskRunner<
               )
             : undefined;
 
+          const binaryHighWaterBytes =
+            config.binaryHighWaterBytes ?? this.task.runConfig.binaryHighWaterBytes;
           outputs = isStreamable
             ? await this.streamProcessor.run(inputs, ctx, {
                 registry: this.registry,
@@ -293,6 +295,7 @@ export class TaskRunner<
                 own: this.own,
                 disown: this.disown,
                 binaryRefSinks,
+                binaryHighWaterBytes,
               })
             : await this.executeTask(inputs, ctx);
 

@@ -9,7 +9,12 @@ import { getLogger } from "@workglow/util";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
-import { edgeNeedsAccumulation, getOutputStreamMode, getStreamingPorts } from "../task/StreamTypes";
+import {
+  DEFAULT_BINARY_HIGH_WATER_BYTES,
+  edgeNeedsAccumulation,
+  getOutputStreamMode,
+  getStreamingPorts,
+} from "../task/StreamTypes";
 import type { TaskInput } from "../task/TaskTypes";
 import { TaskStatus } from "../task/TaskTypes";
 import { Dataflow, DATAFLOW_ALL_PORTS } from "./Dataflow";
@@ -371,15 +376,31 @@ export class StreamPump {
     task: ITask,
     binaryPortId: string | undefined,
     sink: (chunks: AsyncIterable<Uint8Array>) => Promise<unknown>,
-    signal?: AbortSignal
-  ): { promise: Promise<void>; detach: () => void } {
+    signal?: AbortSignal,
+    options?: { readonly highWaterMarkBytes?: number }
+  ): {
+    promise: Promise<void>;
+    detach: () => void;
+    backpressure: () => Promise<void>;
+  } {
     const queue: Uint8Array[] = [];
+    let bufferedBytes = 0;
+    const highWaterMarkBytes = Math.max(
+      1,
+      options?.highWaterMarkBytes ?? DEFAULT_BINARY_HIGH_WATER_BYTES
+    );
     let done = false;
-    let notify: (() => void) | undefined;
+    let chunkNotify: (() => void) | undefined;
+    let drainNotify: (() => void) | undefined;
 
-    const wake = () => {
-      const n = notify;
-      notify = undefined;
+    const wakeChunk = () => {
+      const n = chunkNotify;
+      chunkNotify = undefined;
+      n?.();
+    };
+    const wakeDrain = () => {
+      const n = drainNotify;
+      drainNotify = undefined;
       n?.();
     };
 
@@ -387,13 +408,17 @@ export class StreamPump {
       if (event.type === "binary-delta") {
         if (binaryPortId === undefined || event.port === binaryPortId) {
           queue.push(event.binaryDelta);
-          wake();
+          bufferedBytes += event.binaryDelta.byteLength;
+          wakeChunk();
         }
       }
     };
     const onEnd = () => {
       done = true;
-      wake();
+      wakeChunk();
+      // Release any cooperative-backpressure awaiter that was parked at
+      // high-water; without this an abort-while-parked would leak.
+      wakeDrain();
     };
     // Abort/error termination: StreamProcessor never emits `stream_end` on these
     // paths, so without this the iterable would await forever. Terminate the
@@ -401,7 +426,8 @@ export class StreamPump {
     // promise settles — the source's own abort/error already surfaces to the run.
     const onTerminate = () => {
       done = true;
-      wake();
+      wakeChunk();
+      wakeDrain();
     };
 
     task.on("stream_chunk", onChunk);
@@ -424,21 +450,48 @@ export class StreamPump {
     async function* chunkIterable(): AsyncIterable<Uint8Array> {
       while (true) {
         while (queue.length > 0) {
-          yield queue.shift()!;
+          const chunk = queue.shift()!;
+          bufferedBytes -= chunk.byteLength;
+          if (drainNotify && bufferedBytes < highWaterMarkBytes) wakeDrain();
+          yield chunk;
         }
         if (done) return;
         await new Promise<void>((resolve) => {
-          notify = resolve;
+          chunkNotify = resolve;
         });
       }
     }
+
+    /**
+     * Cooperative backpressure hook. Resolves immediately while buffered
+     * bytes stay under the high-water mark; otherwise parks until the
+     * consumer drains the queue, or the stream is closed.
+     *
+     * The EventEmitter delivery path cannot apply mandatory backpressure
+     * (the listener fires synchronously), so this is opt-in: a task can
+     * `await ctx.binaryBackpressure()` between large yields. Tasks that
+     * never call it pay nothing.
+     */
+    const backpressure = (): Promise<void> => {
+      if (done) return Promise.resolve();
+      if (bufferedBytes < highWaterMarkBytes) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const prev = drainNotify;
+        drainNotify = prev
+          ? () => {
+              prev();
+              resolve();
+            }
+          : resolve;
+      });
+    };
 
     // Discard the sink's return value (helper signals completion only; callers
     // wanting a CacheRef should hold the sink-returning promise themselves).
     const promise = sink(chunkIterable())
       .finally(detach)
       .then(() => undefined);
-    return { promise, detach };
+    return { promise, detach, backpressure };
   }
 
   /**

@@ -97,6 +97,16 @@ export interface IExecuteContext {
    * did not provide it.
    */
   resourceScope?: ResourceScope;
+  /**
+   * Optional cooperative backpressure hook for streaming tasks that emit very
+   * large binary outputs by direct event emission (rather than through the
+   * StreamProcessor's `await router.push(...)` path). Tasks may `await` this
+   * between yields/emits to give downstream sinks a chance to drain.
+   *
+   * Defaults to a no-op when the runtime does not install a real backpressure
+   * source — tasks can call it unconditionally without paying a cost.
+   */
+  binaryBackpressure?: () => Promise<void>;
 }
 
 export type IExecutePreviewContext = Pick<IExecuteContext, "own">;
@@ -153,6 +163,18 @@ export interface IRunConfig {
    * regardless of this setting.
    */
   referenceThresholdBytes?: number;
+
+  /**
+   * High-water mark (bytes) for the streaming runtime's per-port binary
+   * router buffer. When the buffered (un-consumed) byte total reaches or
+   * exceeds this threshold, the producer (`executeStream`) is parked between
+   * `binary-delta` yields until the cache sink drains the buffer back below
+   * the mark. Bounds peak memory for fast-producer / slow-sink scenarios.
+   *
+   * Defaults to {@link DEFAULT_BINARY_HIGH_WATER_BYTES} (8 MiB) when omitted
+   * or set to a non-positive value.
+   */
+  binaryHighWaterBytes?: number;
 
   /**
    * Optional callback invoked whenever a task's progress changes during execution.
