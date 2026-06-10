@@ -150,6 +150,11 @@ export const AiChatOutputSchema = {
 // Runtime types
 // ========================================================================
 
+// The `prompt` field is intentionally written as the printed `FromSchema`
+// resolution of `ContentBlockSchema` (PR #555 perf work). The nightly drift
+// guard in `__tests__/types.test-d.ts` asserts equality with `FromSchema`
+// so a schema edit (e.g. an added `audio` variant) trips a test instead of
+// silently passing invalid runtime values across the type boundary.
 export type AiChatTaskInput = Omit<
   {
     systemPrompt?: string | undefined;
@@ -159,7 +164,23 @@ export type AiChatTaskInput = Omit<
     maxIterations?: number | undefined;
     responseFormat?: "text" | "markdown" | undefined;
     model: string | ModelConfig;
-    prompt: string | readonly ContentBlock[];
+    prompt:
+      | string
+      | (
+          | { type: "text"; text: string }
+          | { type: "image"; mimeType: string; data: string }
+          | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+          | {
+              is_error?: boolean | undefined;
+              type: "tool_result";
+              content: (
+                | { type: "text"; text: string }
+                | { type: "image"; mimeType: string; data: string }
+                | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
+              )[];
+              tool_use_id: string;
+            }
+        )[];
   },
   "messages"
 > & { readonly messages?: ReadonlyArray<ChatMessage> };

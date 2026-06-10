@@ -15,7 +15,7 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
-import type { ChatMessage, ContentBlock } from "./ChatMessage";
+import type { ChatMessage } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
 import type { ToolDefinition } from "./ToolCallingUtils";
 
@@ -233,6 +233,11 @@ export const ToolCallingOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+// The `prompt` field is intentionally written as the printed `FromSchema`
+// resolution of the schema's array-item `oneOf` (PR #555 perf work). The
+// nightly drift guard in `__tests__/types.test-d.ts` asserts equality with
+// `FromSchema` so a schema edit (e.g. an added item variant) trips a test
+// instead of silently passing invalid runtime values across the type boundary.
 /**
  * Runtime input type for ToolCallingTask.
  *
@@ -253,7 +258,7 @@ export type ToolCallingTaskInput = Omit<
     maxTokens?: number | undefined;
     temperature?: number | undefined;
     model: string | ModelConfig;
-    prompt: string | readonly (string | ContentBlock)[];
+    prompt: string | (string | { [x: string]: unknown; type: "text" | "image" | "audio" })[];
     tools: (
       | string
       | {
