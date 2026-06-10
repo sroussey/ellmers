@@ -282,6 +282,22 @@ key = sha256(taskType + getCacheVersion() + fingerprint(inputs))
 
 Failed tasks are never cached — only `Ok` results reach `saveOutput`. `saveOutput` is upsert by primary key (last writer wins) — the underlying `TaskOutputTabularRepository` calls `put()` on its tabular storage, so a same-key write replaces the existing row.
 
+### Binary cache stream-out (refs on the read path)
+
+Binary output ports whose bytes were piped into a stream-capable cache carry a branded `CacheRef` in the cached row. On a **cache hit**, the runner mirrors the fresh-run event contract, driven by two graph-computed consumer hints (`IRunConfig.hasStreamingConsumers` / `hasMaterializingConsumers`):
+
+- **Stream-capable consumer** (`x-stream: "binary"` on both ends of an edge): the cached bytes replay as chunked `binary-delta` events, pull-paced from the repository's streaming reader (`getOutputStreamByRef`), so memory stays bounded by the read chunk size. The finish event keeps the ref at the port.
+- **Materializing consumer** (target port cannot consume the stream): the ref hydrates into the **enriched finish event** as a `Blob`/`ArrayBuffer` (per the port's `format`), exactly what a fresh run's accumulator would have delivered. The *returned* output still carries the small ref.
+- **No consumers**: no reads are performed; the synthetic finish carries the ref unchanged (callers resolve via `resolveOutput` / `resolveJobOutputStream`).
+
+**Self-healing dangling refs**: when a ref needed for replay or hydration no longer resolves (blob evicted, cache cleared), the hit converts into a **miss** — the task re-executes and rewrites both the row and the bytes. No events are emitted before all refs are validated.
+
+**Input-side hydration**: any branded ref that reaches a task's resolved inputs is hydrated against the run's `CacheRegistry` (private first, then deterministic) before validation and cache-key computation, so ref-bearing inputs fingerprint identically to materialized ones. Binary-streaming input ports with a live input stream are skipped — those consumers take bytes from the stream. An unresolvable input ref fails the task with an error naming the port.
+
+**Queue consumers**: `JobHandle.outputStream(port?)` (present only when the `JobQueueClient` was configured with an `outputStreamResolver`, typically `makeJobOutputStreamResolver(repo)`) awaits completion and streams the binary result out of the cache without materializing it.
+
+`FsFolderTaskOutputRepository` (node/bun) is the production streaming backing: JSON rows via `FsFolderTabularStorage`, bytes as sidecar files under `<folder>/blobs/` written incrementally and published by atomic rename — `<sanitized-taskType>_<input-fingerprint>.bin`, so a re-run overwrites rather than leaks. Two instances over one folder interoperate (the cross-process read story).
+
 ### Durable execution model
 
 A run is an atomic unit on a single worker. When the worker crashes:
