@@ -5,8 +5,9 @@
  */
 
 import type { CacheRef } from "./CacheRef";
-import type { CacheRefResolver, ResolveOutputOptions } from "./resolveRef";
-import { resolveOutput } from "./resolveRef";
+import { isCacheRef } from "./CacheRef";
+import type { CacheRefResolver, RefStreamBacking, ResolveOutputOptions } from "./resolveRef";
+import { byteIterableFromBlob, resolveOutput, streamRefViaBacking } from "./resolveRef";
 
 /**
  * Structural type matching `@workglow/job-queue`'s `JobHandle`. Declared
@@ -52,4 +53,92 @@ function asResolver(backing: RefBacking): CacheRefResolver | undefined {
   const get = backing.getOutputByRef;
   if (typeof get !== "function") return undefined;
   return (ref) => get.call(backing, ref);
+}
+
+function collectCacheRefs(value: unknown, out: CacheRef[]): void {
+  if (isCacheRef(value)) {
+    out.push(value);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  if (value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return;
+  if (Array.isArray(value)) {
+    for (const v of value) collectCacheRefs(v, out);
+    return;
+  }
+  if (value instanceof Map) {
+    for (const v of value.values()) collectCacheRefs(v, out);
+    return;
+  }
+  if (value instanceof Set) {
+    for (const v of value) collectCacheRefs(v, out);
+    return;
+  }
+  const source = value as Record<string, unknown>;
+  for (const k of Object.keys(source)) collectCacheRefs(source[k], out);
+}
+
+async function outputValueToStream(
+  output: unknown,
+  backing: RefStreamBacking,
+  port?: string
+): Promise<AsyncIterable<Uint8Array> | undefined> {
+  let candidate: unknown;
+  if (port !== undefined) {
+    candidate = (output as Record<string, unknown> | undefined)?.[port];
+  } else {
+    const refs: CacheRef[] = [];
+    collectCacheRefs(output, refs);
+    if (refs.length > 1) {
+      throw new Error(
+        `resolveJobOutputStream: output contains ${refs.length} cache refs; pass an explicit port.`
+      );
+    }
+    candidate = refs[0];
+  }
+  if (candidate === undefined) return undefined;
+  if (isCacheRef(candidate)) return streamRefViaBacking(candidate, backing);
+  if (candidate instanceof Blob) return byteIterableFromBlob(candidate);
+  if (candidate instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(candidate);
+    return (async function* () {
+      yield bytes;
+    })();
+  }
+  if (candidate instanceof Uint8Array) {
+    const bytes = candidate;
+    return (async function* () {
+      yield bytes;
+    })();
+  }
+  return undefined;
+}
+
+/**
+ * Await a job's completion and stream its binary result back out of the
+ * output cache without materializing it. `port` selects the output port;
+ * when omitted, the single branded {@link CacheRef} reachable in the output
+ * is used (two or more refs without a port is an error; zero resolves
+ * `undefined`). Inline `Blob` / `ArrayBuffer` / `Uint8Array` values at a
+ * named port are adapted to a stream so callers don't branch on whether the
+ * reference threshold kept the value inline.
+ */
+export async function resolveJobOutputStream<Output>(
+  handle: JobHandleLike<Output>,
+  backing: RefStreamBacking,
+  port?: string
+): Promise<AsyncIterable<Uint8Array> | undefined> {
+  return outputValueToStream(await handle.waitFor(), backing, port);
+}
+
+/**
+ * Factory closing over a cache backing, producing the resolver shape
+ * `@workglow/job-queue` accepts as `JobQueueClientOptions.outputStreamResolver`
+ * (job-queue cannot import this package — the dependency edge points the
+ * other way — so the resolver is injected as a structural function).
+ */
+export function makeJobOutputStreamResolver(
+  backing: RefStreamBacking
+): (output: unknown, port?: string) => Promise<AsyncIterable<Uint8Array> | undefined> {
+  return (output, port) => outputValueToStream(output, backing, port);
 }
