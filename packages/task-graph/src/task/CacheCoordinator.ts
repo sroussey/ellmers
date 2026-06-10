@@ -11,17 +11,35 @@ import type { CacheRef } from "../cache/CacheRef";
 import { isCacheRef, makeCacheRef } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
+import { streamRefViaBacking } from "../cache/resolveRef";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { BinaryRefSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import { assertBinaryFormat, getBinaryPortId, getStreamingPorts } from "./StreamTypes";
+import {
+  assertBinaryFormat,
+  getBinaryPortId,
+  getStreamingPorts,
+  materializeBinary,
+} from "./StreamTypes";
 import { Task } from "./Task";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
+import { TaskStatus } from "./TaskTypes";
 
 interface SchemaProperties {
   properties?: Record<string, { format?: string }>;
+}
+
+/**
+ * Graph-computed consumer hints driving cache-hit behavior for binary
+ * {@link CacheRef} output ports: hydrate bytes into the enriched finish event
+ * for materializing consumers, replay chunked `binary-delta` events for
+ * stream-capable consumers, or (neither flag set) leave refs untouched.
+ */
+export interface CacheReplayContext {
+  readonly hasMaterializingConsumers: boolean;
+  readonly hasStreamingConsumers: boolean;
 }
 
 /**
@@ -90,7 +108,8 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     outputCache: TaskOutputRepository | undefined,
     policy: CachePolicy,
     isStreamable: boolean,
-    ctx: TaskRunContext
+    ctx: TaskRunContext,
+    replay?: CacheReplayContext
   ): Promise<Output | undefined> {
     if (!outputCache || !this.task.cacheable) return undefined;
 
@@ -109,15 +128,100 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
 
     if (isStreamable) {
-      this.task.runOutputData = outputs;
-      this.task.emit("stream_start");
-      this.task.emit("stream_chunk", { type: "finish", data: outputs } as StreamEvent);
-      this.task.emit("stream_end", outputs);
+      const replayed = await this.replayBinaryRefs(
+        outputs,
+        outputCache,
+        outputSchema as DataPortSchema,
+        replay
+      );
+      // A dangling ref converts the hit into a miss: the caller re-executes
+      // and the rewrite self-heals the cache entry.
+      if (replayed === "miss") return undefined;
+      if (replayed === "none") {
+        this.task.runOutputData = outputs;
+        this.task.emit("stream_start");
+        this.task.emit("stream_chunk", { type: "finish", data: outputs } as StreamEvent);
+        this.task.emit("stream_end", outputs);
+      }
     } else {
       this.task.runOutputData = outputs;
     }
 
     return outputs;
+  }
+
+  /**
+   * Cache-hit stream-out for binary {@link CacheRef} output ports.
+   *
+   * Mirrors the fresh-run event contract: the emitted finish event carries
+   * materialized `Blob`/`ArrayBuffer` values for consumers that need them,
+   * while the returned output keeps the small ref at the port slot. When a
+   * stream-capable consumer exists, the cached bytes are re-emitted as
+   * chunked `binary-delta` events first (pull-paced from the repository's
+   * streaming reader, so memory stays bounded by the read chunk size).
+   *
+   * Returns:
+   *  - `"none"`    — nothing to replay (no refs at binary ports, or no
+   *                  consumer hint set); caller emits the default synthetic
+   *                  finish.
+   *  - `"handled"` — events were emitted here; caller must not re-emit.
+   *  - `"miss"`    — a ref no longer resolves; caller treats the lookup as a
+   *                  cache miss.
+   */
+  private async replayBinaryRefs(
+    outputs: Output,
+    outputCache: TaskOutputRepository,
+    outputSchema: DataPortSchema,
+    replay: CacheReplayContext | undefined
+  ): Promise<"none" | "handled" | "miss"> {
+    const needBytes = replay?.hasMaterializingConsumers === true;
+    const replayDeltas = replay?.hasStreamingConsumers === true;
+    if (!needBytes && !replayDeltas) return "none";
+    if (outputs === null || typeof outputs !== "object") return "none";
+
+    const source = outputs as Record<string, unknown>;
+    const refPorts = getStreamingPorts(outputSchema)
+      .filter((p) => p.mode === "binary")
+      .map((p) => p.port)
+      .filter((port) => isCacheRef(source[port]));
+    if (refPorts.length === 0) return "none";
+
+    // Resolve every ref before emitting any event so a dangling ref becomes a
+    // clean miss with zero observable side effects.
+    const streams = new Map<string, AsyncIterable<Uint8Array>>();
+    for (const port of refPorts) {
+      const stream = await streamRefViaBacking(source[port] as CacheRef, outputCache);
+      if (stream === undefined) return "miss";
+      streams.set(port, stream);
+    }
+
+    this.task.runOutputData = outputs;
+    this.task.emit("stream_start");
+    // Flipping to STREAMING before the first data event is what makes the
+    // graph runner attach edge streams (same contract as StreamProcessor).
+    this.task.status = TaskStatus.STREAMING;
+    this.task.emit("status", this.task.status);
+
+    const finishData: Record<string, unknown> = { ...source };
+    for (const [port, stream] of streams) {
+      const chunks: Uint8Array[] | undefined = needBytes ? [] : undefined;
+      for await (const chunk of stream) {
+        chunks?.push(chunk);
+        if (replayDeltas) {
+          this.task.emit("stream_chunk", {
+            type: "binary-delta",
+            port,
+            binaryDelta: chunk,
+          } as StreamEvent);
+        }
+      }
+      if (chunks !== undefined) {
+        finishData[port] = materializeBinary(chunks, assertBinaryFormat(outputSchema, port));
+      }
+    }
+    this.task.emit("stream_chunk", { type: "finish", data: finishData } as StreamEvent);
+    this.task.emit("stream_end", finishData);
+    return "handled";
   }
 
   /**
@@ -191,9 +295,17 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     registry: CacheRegistry | undefined,
     policy: CachePolicy,
     isStreamable: boolean,
-    ctx: TaskRunContext
+    ctx: TaskRunContext,
+    replay?: CacheReplayContext
   ): Promise<Output | undefined> {
-    return this.lookup(keyInputs, this.repoFor(registry, policy), policy, isStreamable, ctx);
+    return this.lookup(
+      keyInputs,
+      this.repoFor(registry, policy),
+      policy,
+      isStreamable,
+      ctx,
+      replay
+    );
   }
 
   public async saveByPolicy(
