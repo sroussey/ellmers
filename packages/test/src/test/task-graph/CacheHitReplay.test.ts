@@ -8,6 +8,7 @@ import {
   CACHE_REGISTRY,
   Dataflow,
   DefaultCacheRegistry,
+  FsFolderTaskOutputRepository,
   IExecuteContext,
   isCacheRef,
   Task,
@@ -17,6 +18,9 @@ import {
 } from "@workglow/task-graph";
 import { Container, ServiceRegistry, sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
@@ -232,5 +236,27 @@ describe("cache-hit replay of binary CacheRefs", () => {
     const producerResult = results.find((r) => r.id === "producer");
     expect(isCacheRef((producerResult!.data as Record<string, unknown>).bytes)).toBe(true);
     expect(graph.getTask("producer")!.status).toBe(TaskStatus.COMPLETED);
+  });
+
+  it("replays end-to-end through FsFolderTaskOutputRepository", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-replay-"));
+    const fsRepo = new FsFolderTaskOutputRepository(folder);
+    const fsServices = new ServiceRegistry(new Container());
+    fsServices.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({ deterministic: fsRepo })
+    );
+
+    const first = buildStreamingGraph();
+    await new TaskGraphRunner(first.graph).runGraph({}, { registry: fsServices });
+    expect(producerExecutions).toBe(1);
+    expect(first.consumer.collected).toEqual([1, 2, 3, 4, 5]);
+
+    const second = buildStreamingGraph();
+    await new TaskGraphRunner(second.graph).runGraph({}, { registry: fsServices });
+
+    expect(producerExecutions).toBe(1); // cache hit from disk
+    expect(second.consumer.deltaCount).toBeGreaterThanOrEqual(1);
+    expect(second.consumer.collected).toEqual([1, 2, 3, 4, 5]);
   });
 });
