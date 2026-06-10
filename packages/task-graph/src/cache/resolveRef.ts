@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { isCacheRef } from "./CacheRef";
 import type { CacheRef } from "./CacheRef";
+import { isCacheRef } from "./CacheRef";
 
 /**
  * Resolves a single {@link CacheRef} to bytes (or `undefined` on cache miss).
@@ -21,9 +21,53 @@ export type CacheRefResolver = (ref: CacheRef) => Promise<Blob | undefined>;
  * if the backing has no streaming retrieval for this ref or the entry is
  * absent.
  */
-export type CacheRefStreamResolver = (
-  ref: CacheRef
-) => AsyncIterable<Uint8Array> | undefined;
+export type CacheRefStreamResolver = (ref: CacheRef) => AsyncIterable<Uint8Array> | undefined;
+
+/**
+ * Object shape carrying the optional by-ref readers a cache backing exposes
+ * (the read surface of `TaskOutputRepository`). Both members are optional so
+ * any repository — streaming or not — satisfies the shape; helpers degrade
+ * per capability.
+ */
+export interface RefStreamBacking {
+  readonly getOutputByRef?: (ref: CacheRef) => Promise<Blob | undefined>;
+  readonly getOutputStreamByRef?: (ref: CacheRef) => AsyncIterable<Uint8Array> | undefined;
+}
+
+/** Adapt a `Blob` to the `AsyncIterable<Uint8Array>` chunk shape. */
+export async function* byteIterableFromBlob(blob: Blob): AsyncIterable<Uint8Array> {
+  const reader = blob.stream().getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Stream a {@link CacheRef}'s bytes out of a backing. Prefers the backing's
+ * streaming reader; falls back to materializing via `getOutputByRef` and
+ * re-chunking through `blob.stream()`. Resolves `undefined` when the entry is
+ * absent (dangling ref) or the backing exposes no readers.
+ */
+export async function streamRefViaBacking(
+  ref: CacheRef,
+  backing: RefStreamBacking
+): Promise<AsyncIterable<Uint8Array> | undefined> {
+  if (typeof backing.getOutputStreamByRef === "function") {
+    const stream = backing.getOutputStreamByRef(ref);
+    if (stream !== undefined) return stream;
+  }
+  if (typeof backing.getOutputByRef === "function") {
+    const blob = await backing.getOutputByRef(ref);
+    if (blob !== undefined) return byteIterableFromBlob(blob);
+  }
+  return undefined;
+}
 
 /** Options accepted by {@link resolveOutput}. */
 export type ResolveOutputOptions = {

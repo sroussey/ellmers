@@ -153,6 +153,11 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     return this.backing.supportsStreaming();
   }
 
+  /** Mirrors the backing repository's streaming-read capability. */
+  public override supportsStreamingReads(): boolean {
+    return this.backing.supportsStreamingReads();
+  }
+
   /**
    * Override of `TaskOutputRepository.clear()` that only deletes entries
    * namespaced under THIS wrapper's `runId`. Entries from other runs are not

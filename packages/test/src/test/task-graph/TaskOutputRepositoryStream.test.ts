@@ -3,88 +3,9 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { CacheRef, TaskInput, TaskOutput } from "@workglow/task-graph";
-import { makeCacheRef, RunPrivateCacheRepo, TaskOutputRepository } from "@workglow/task-graph";
+import { RunPrivateCacheRepo } from "@workglow/task-graph";
 import { describe, expect, it } from "vitest";
-
-class StreamingMemoryRepo extends TaskOutputRepository {
-  public readonly streamed = new Map<string, Uint8Array>();
-  public readonly streamedMetadata = new Map<string, Record<string, unknown>>();
-  private store = new Map<string, TaskOutput>();
-  override async saveOutput(t: string, i: TaskInput, o: TaskOutput): Promise<void> {
-    this.store.set(t + JSON.stringify(i), o);
-  }
-  override async getOutput(t: string, i: TaskInput): Promise<TaskOutput | undefined> {
-    return this.store.get(t + JSON.stringify(i));
-  }
-  override async clear(): Promise<void> {
-    this.store.clear();
-    this.streamed.clear();
-  }
-  override async size(): Promise<number> {
-    return this.store.size;
-  }
-  override async clearOlderThan(): Promise<void> {}
-  override isDurable(): boolean {
-    return false;
-  }
-  override async saveOutputStream(
-    taskType: string,
-    inputs: TaskInput,
-    chunks: AsyncIterable<Uint8Array>,
-    metadata: Record<string, unknown>
-  ): Promise<CacheRef> {
-    const parts: Uint8Array[] = [];
-    for await (const c of chunks) parts.push(c);
-    let total = 0;
-    for (const p of parts) total += p.byteLength;
-    const merged = new Uint8Array(total);
-    let off = 0;
-    for (const p of parts) {
-      merged.set(p, off);
-      off += p.byteLength;
-    }
-    const key = taskType + JSON.stringify(inputs);
-    this.streamed.set(key, merged);
-    this.streamedMetadata.set(key, metadata);
-    return makeCacheRef({ $ref: `inmem://${key}`, size: total });
-  }
-  override async getOutputByRef(ref: CacheRef): Promise<Blob | undefined> {
-    const key = ref.$ref.replace(/^inmem:\/\//, "");
-    const bytes = this.streamed.get(key);
-    return bytes === undefined ? undefined : new Blob([bytes as unknown as BlobPart]);
-  }
-  override getOutputStreamByRef(ref: CacheRef): AsyncIterable<Uint8Array> | undefined {
-    const key = ref.$ref.replace(/^inmem:\/\//, "");
-    const bytes = this.streamed.get(key);
-    if (bytes === undefined) return undefined;
-    return (async function* () {
-      yield bytes;
-    })();
-  }
-}
-
-// A minimal repo that simply does NOT define `saveOutputStream`, so it has no
-// streaming capability (no double-cast shadowing).
-class NonStreamingMemoryRepo extends TaskOutputRepository {
-  private store = new Map<string, TaskOutput>();
-  override async saveOutput(t: string, i: TaskInput, o: TaskOutput): Promise<void> {
-    this.store.set(t + JSON.stringify(i), o);
-  }
-  override async getOutput(t: string, i: TaskInput): Promise<TaskOutput | undefined> {
-    return this.store.get(t + JSON.stringify(i));
-  }
-  override async clear(): Promise<void> {
-    this.store.clear();
-  }
-  override async size(): Promise<number> {
-    return this.store.size;
-  }
-  override async clearOlderThan(): Promise<void> {}
-  override isDurable(): boolean {
-    return false;
-  }
-}
+import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;

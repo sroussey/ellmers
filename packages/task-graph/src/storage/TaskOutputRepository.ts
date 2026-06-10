@@ -125,6 +125,11 @@ export abstract class TaskOutputRepository {
     return typeof this.saveOutputStream === "function";
   }
 
+  /** True when this repository implements `getOutputStreamByRef`. */
+  supportsStreamingReads(): boolean {
+    return typeof this.getOutputStreamByRef === "function";
+  }
+
   abstract getOutput(taskType: string, inputs: TaskInput): Promise<TaskOutput | undefined>;
 
   abstract clear(): Promise<void>;
