@@ -3,13 +3,18 @@
  * Copyright 2026 Steven Roussey <sroussey@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { CacheRef } from "@workglow/task-graph";
+import type { CacheRef, TaskOutputRepository } from "@workglow/task-graph";
 import {
   byteIterableFromBlob,
+  FsFolderTaskOutputRepository,
   makeCacheRef,
   RunPrivateCacheRepo,
   streamRefViaBacking,
 } from "@workglow/task-graph";
+import { existsSync } from "node:fs";
+import { mkdtemp, readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NonStreamingMemoryRepo, StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
@@ -81,5 +86,119 @@ describe("streamRefViaBacking", () => {
   it("returns undefined when the backing has no readers at all", async () => {
     const ref = makeCacheRef({ $ref: "inmem://nope" });
     expect(await streamRefViaBacking(ref, {})).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// Stream-out contract suite — run against every streaming-capable repository
+// ============================================================================
+
+interface ContractSetup {
+  readonly repo: TaskOutputRepository;
+  /** A second instance over the same persistent backing (FS-only). */
+  readonly sibling?: () => TaskOutputRepository;
+}
+
+function runCacheStreamOutContractTests(name: string, setup: () => Promise<ContractSetup>): void {
+  describe(`stream-out contract: ${name}`, () => {
+    it("round-trips a multi-chunk write through getOutputStreamByRef", async () => {
+      const { repo } = await setup();
+      const ref = await repo.saveOutputStream!(
+        "T",
+        { k: 1 },
+        gen(new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])),
+        {}
+      );
+      expect(repo.supportsStreamingReads()).toBe(true);
+      expect(ref.size).toBe(6);
+      const stream = repo.getOutputStreamByRef!(ref);
+      expect(stream).toBeDefined();
+      expect(await collect(stream!)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    it("round-trips through the materializing reader too", async () => {
+      const { repo } = await setup();
+      const ref = await repo.saveOutputStream!("T", { k: 2 }, gen(new Uint8Array([7, 8])), {});
+      const blob = await repo.getOutputByRef!(ref);
+      expect(blob).toBeInstanceOf(Blob);
+      expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([7, 8]);
+    });
+
+    it("re-writing the same (taskType, inputs) overwrites the previous bytes", async () => {
+      const { repo } = await setup();
+      await repo.saveOutputStream!("T", { k: 3 }, gen(new Uint8Array([1, 2, 3])), {});
+      const ref = await repo.saveOutputStream!("T", { k: 3 }, gen(new Uint8Array([9])), {});
+      expect(await collect(repo.getOutputStreamByRef!(ref)!)).toEqual([9]);
+    });
+
+    it("returns undefined from both readers for an unknown ref", async () => {
+      const { repo } = await setup();
+      const ref = makeCacheRef({ $ref: "fsfolder://blobs/never-written.bin" });
+      expect(await repo.getOutputByRef!(ref)).toBeUndefined();
+      expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
+    });
+
+    it("clear() makes previously written refs dangle", async () => {
+      const { repo } = await setup();
+      const ref = await repo.saveOutputStream!("T", { k: 4 }, gen(new Uint8Array([1])), {});
+      await repo.clear();
+      expect(await repo.getOutputByRef!(ref)).toBeUndefined();
+      expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
+    });
+
+    it("a sibling instance over the same backing resolves the ref (cross-process)", async () => {
+      const { repo, sibling } = await setup();
+      if (!sibling) return; // in-memory backings have no cross-instance story
+      const ref = await repo.saveOutputStream!("T", { k: 5 }, gen(new Uint8Array([4, 2])), {});
+      const other = sibling();
+      expect(await collect(other.getOutputStreamByRef!(ref)!)).toEqual([4, 2]);
+      const blob = await other.getOutputByRef!(ref);
+      expect(Array.from(new Uint8Array(await blob!.arrayBuffer()))).toEqual([4, 2]);
+    });
+  });
+}
+
+runCacheStreamOutContractTests("StreamingMemoryRepo", async () => ({
+  repo: new StreamingMemoryRepo({}),
+}));
+
+runCacheStreamOutContractTests("FsFolderTaskOutputRepository", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+  return {
+    repo: new FsFolderTaskOutputRepository(folder),
+    sibling: () => new FsFolderTaskOutputRepository(folder),
+  };
+});
+
+describe("FsFolderTaskOutputRepository specifics", () => {
+  it("publishes atomically: no .tmp file remains and the blob is named by the ref", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    const ref = await repo.saveOutputStream!("My Task/v2", { k: 1 }, gen(new Uint8Array([1])), {
+      mime: "application/octet-stream",
+    });
+    expect(ref.mime).toBe("application/octet-stream");
+    const files = await readdir(join(folder, "blobs"));
+    expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+    expect(files).toHaveLength(1);
+    expect(ref.$ref).toBe(`fsfolder://blobs/${files[0]}`);
+    expect(existsSync(join(folder, "blobs", files[0]))).toBe(true);
+  });
+
+  it("rejects path-traversal shaped refs", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    const evil = makeCacheRef({ $ref: "fsfolder://blobs/../../etc/passwd.bin" });
+    expect(await repo.getOutputByRef!(evil)).toBeUndefined();
+    expect(repo.getOutputStreamByRef!(evil)).toBeUndefined();
+  });
+
+  it("clearOlderThan prunes blob files alongside rows", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    const ref = await repo.saveOutputStream!("T", { k: 1 }, gen(new Uint8Array([1])), {});
+    // Negative age puts the cutoff in the future: everything is "older".
+    await repo.clearOlderThan(-60_000);
+    expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
   });
 });
