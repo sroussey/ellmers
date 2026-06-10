@@ -159,23 +159,7 @@ export type AiChatTaskInput = Omit<
     maxIterations?: number | undefined;
     responseFormat?: "text" | "markdown" | undefined;
     model: string | ModelConfig;
-    prompt:
-      | string
-      | (
-          | { type: "text"; text: string }
-          | { type: "image"; mimeType: string; data: string }
-          | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
-          | {
-              is_error?: boolean | undefined;
-              type: "tool_result";
-              content: (
-                | { type: "text"; text: string }
-                | { type: "image"; mimeType: string; data: string }
-                | { type: "tool_use"; id: string; name: string; input: { [x: string]: unknown } }
-              )[];
-              tool_use_id: string;
-            }
-        )[];
+    prompt: string | readonly ContentBlock[];
   },
   "messages"
 > & { readonly messages?: ReadonlyArray<ChatMessage> };

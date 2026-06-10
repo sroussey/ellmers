@@ -757,6 +757,7 @@ Both slots are optional. A missing slot is a silent no-op — the task still run
 import {
   CACHE_REGISTRY,
   DefaultCacheRegistry,
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -767,22 +768,26 @@ import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 await Sqlite.init();
 
 const deterministic = new TaskOutputTabularRepository({
-  tabularRepository: new SqliteTabularStorage(
-    "./cache.sqlite",
-    "task_outputs_deterministic",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames,
-    ["createdAt"]
+  storage: tabularTaskOutputStorage(
+    new SqliteTabularStorage(
+      "./cache.sqlite",
+      "task_outputs_deterministic",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames,
+      ["createdAt"]
+    )
   ),
 });
 
 const privateBacking = new TaskOutputTabularRepository({
-  tabularRepository: new SqliteTabularStorage(
-    "./cache.sqlite",
-    "task_outputs_private",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames,
-    ["createdAt"]
+  storage: tabularTaskOutputStorage(
+    new SqliteTabularStorage(
+      "./cache.sqlite",
+      "task_outputs_private",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames,
+      ["createdAt"]
+    )
   ),
 });
 
@@ -866,6 +871,7 @@ import {
   Workflow,
   CACHE_REGISTRY,
   DefaultCacheRegistry,
+  tabularTaskOutputStorage,
   TaskOutputPrimaryKeyNames,
   TaskOutputSchema,
   TaskOutputTabularRepository,
@@ -912,9 +918,9 @@ class ExpensiveTask extends Task<{ n: number }, { result: number }> {
 // Build a CacheRegistry with a deterministic slot. (Private slot omitted here —
 // ExpensiveTask is deterministic, so it never needs the private tier.)
 const deterministic = new TaskOutputTabularRepository({
-  tabularRepository: new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, [
-    "createdAt",
-  ]),
+  storage: tabularTaskOutputStorage(
+    new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, ["createdAt"])
+  ),
 });
 
 const registry = new ServiceRegistry();
@@ -977,6 +983,7 @@ Wire `TaskOutputTabularRepository` / `TaskGraphTabularRepository` from `@workglo
 
 ```typescript
 import {
+  tabularTaskOutputStorage,
   TaskGraphPrimaryKeyNames,
   TaskGraphSchema,
   TaskGraphTabularRepository,
@@ -993,9 +1000,9 @@ import { Sqlite, SqliteTabularStorage } from "@workglow/sqlite/storage";
 
 // In-memory (e.g. tests)
 const memoryOutput = new TaskOutputTabularRepository({
-  tabularRepository: new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, [
-    "createdAt",
-  ]),
+  storage: tabularTaskOutputStorage(
+    new InMemoryTabularStorage(TaskOutputSchema, TaskOutputPrimaryKeyNames, ["createdAt"])
+  ),
 });
 const memoryGraph = new TaskGraphTabularRepository({
   tabularRepository: new InMemoryTabularStorage(TaskGraphSchema, TaskGraphPrimaryKeyNames),
@@ -1003,10 +1010,12 @@ const memoryGraph = new TaskGraphTabularRepository({
 
 // File system
 const fsOutput = new TaskOutputTabularRepository({
-  tabularRepository: new FsFolderTabularStorage(
-    "./task-output-cache",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames
+  storage: tabularTaskOutputStorage(
+    new FsFolderTabularStorage(
+      "./task-output-cache",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames
+    )
   ),
 });
 const fsGraph = new TaskGraphTabularRepository({
@@ -1020,12 +1029,14 @@ const fsGraph = new TaskGraphTabularRepository({
 // SQLite (await Sqlite.init() once before using a path or new Sqlite.Database)
 await Sqlite.init();
 const sqliteOutput = new TaskOutputTabularRepository({
-  tabularRepository: new SqliteTabularStorage(
-    ":memory:",
-    "task_outputs",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames,
-    ["createdAt"]
+  storage: tabularTaskOutputStorage(
+    new SqliteTabularStorage(
+      ":memory:",
+      "task_outputs",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames,
+      ["createdAt"]
+    )
   ),
 });
 const sqliteGraph = new TaskGraphTabularRepository({
@@ -1039,11 +1050,13 @@ const sqliteGraph = new TaskGraphTabularRepository({
 
 // IndexedDB (browser) — the `@workglow/web` example under `examples/web` includes small helpers
 const idbOutput = new TaskOutputTabularRepository({
-  tabularRepository: new IndexedDbTabularStorage(
-    "task_outputs",
-    TaskOutputSchema,
-    TaskOutputPrimaryKeyNames,
-    ["createdAt"]
+  storage: tabularTaskOutputStorage(
+    new IndexedDbTabularStorage(
+      "task_outputs",
+      TaskOutputSchema,
+      TaskOutputPrimaryKeyNames,
+      ["createdAt"]
+    )
   ),
 });
 const idbGraph = new TaskGraphTabularRepository({
