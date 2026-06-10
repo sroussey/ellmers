@@ -12,7 +12,7 @@ import {
   ServiceRegistry,
   SpanStatusCode,
 } from "@workglow/util";
-import { resolveReferenceThreshold } from "../cache/CacheRef";
+import { isCacheRef, resolveReferenceThreshold } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { CACHE_REGISTRY, DefaultCacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
@@ -25,7 +25,12 @@ import type { IRunConfig, ITask } from "./ITask";
 import { ITaskRunner } from "./ITaskRunner";
 import { StreamProcessor } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import { getOutputStreamMode, isTaskStreamable } from "./StreamTypes";
+import {
+  getBinaryPortFormat,
+  getOutputStreamMode,
+  getPortStreamMode,
+  isTaskStreamable,
+} from "./StreamTypes";
 import { Task } from "./Task";
 import {
   TaskAbortedError,
@@ -198,7 +203,8 @@ export class TaskRunner<
 
         await this.resolveSchemas();
 
-        const inputs: Input = this.task.runInputData as Input;
+        const inputs: Input = await this.hydrateInputRefs(this.task.runInputData as Input);
+        this.task.runInputData = inputs;
         const isValid = await this.task.validateInput(inputs);
         if (!isValid) {
           throw new TaskInvalidInputError("Invalid input data");
@@ -369,6 +375,56 @@ export class TaskRunner<
       }
       this.ownsResourceScope = false;
     }
+  }
+
+  /**
+   * Hydrate branded {@link CacheRef} values in resolved inputs to inline
+   * bytes before `execute()` runs, resolving against the run's cache registry
+   * (private repo first, then deterministic). Materialization type follows the
+   * input port's `format` annotation (`"binary"` → `ArrayBuffer`, anything
+   * else → `Blob`).
+   *
+   * Binary-streaming input ports with a live input stream are skipped: those
+   * consumers take bytes from the stream and the ref at the port remains the
+   * durable pointer — hydrating it would re-materialize what the stream
+   * already delivers.
+   *
+   * Hydration runs before cache-key computation so a ref-bearing input
+   * fingerprints identically to the materialized input a fresh upstream run
+   * would have produced.
+   *
+   * A ref that no longer resolves throws: by this point the bytes were
+   * expected to exist, and letting `undefined` flow into `execute()` produces
+   * far less debuggable failures than a named-port error.
+   */
+  private async hydrateInputRefs(inputs: Input): Promise<Input> {
+    if (inputs === null || typeof inputs !== "object") return inputs;
+    const repos = [this.cacheRegistry?.private, this.cacheRegistry?.deterministic].filter(
+      (r): r is TaskOutputRepository => r !== undefined && typeof r.getOutputByRef === "function"
+    );
+    if (repos.length === 0) return inputs;
+
+    const schema = this.task.inputSchema();
+    const source = inputs as Record<string, unknown>;
+    let out: Record<string, unknown> | undefined;
+    for (const [port, value] of Object.entries(source)) {
+      if (!isCacheRef(value)) continue;
+      if (getPortStreamMode(schema, port) === "binary" && this.inputStreams?.has(port)) continue;
+      let blob: Blob | undefined;
+      for (const repo of repos) {
+        blob = await repo.getOutputByRef!(value);
+        if (blob !== undefined) break;
+      }
+      if (blob === undefined) {
+        throw new TaskFailedError(
+          `Task "${this.task.type}" input port "${port}" holds a cache ref that no configured ` +
+            `cache backing can resolve (entry evicted?).`
+        );
+      }
+      out ??= { ...source };
+      out[port] = getBinaryPortFormat(schema, port) === "binary" ? await blob.arrayBuffer() : blob;
+    }
+    return (out ?? source) as Input;
   }
 
   public async runPreview(overrides: Partial<Input> = {}): Promise<Output> {
