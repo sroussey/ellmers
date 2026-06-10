@@ -120,6 +120,15 @@ export interface IRunConfig {
   shouldAccumulate?: boolean;
 
   /**
+   * Graph-computed hint: `true` when at least one downstream dataflow edge
+   * consumes this task's binary output port as a stream (`x-stream: "binary"`
+   * on both ends). On a cache hit the runner replays cached bytes as
+   * `binary-delta` events only when a stream-capable consumer exists.
+   * `undefined` (standalone runs) means "no known stream consumers".
+   */
+  hasStreamingConsumers?: boolean;
+
+  /**
    * Threshold (in bytes) at which a binary output port's value is replaced by
    * a {@link CacheRef} in `Output` instead of being inlined. Below this size,
    * the runner inlines the bytes; at or above, it emits a reference and the
