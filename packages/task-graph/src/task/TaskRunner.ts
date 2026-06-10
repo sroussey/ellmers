@@ -263,7 +263,11 @@ export class TaskRunner<
           this.cacheRegistry,
           policy,
           isStreamable,
-          ctx
+          ctx,
+          {
+            hasMaterializingConsumers: config.hasMaterializingConsumers === true,
+            hasStreamingConsumers: config.hasStreamingConsumers === true,
+          }
         );
 
         if (outputs === undefined) {

@@ -158,6 +158,16 @@ export interface IRunConfig {
   hasStreamingConsumers?: boolean;
 
   /**
+   * Graph-computed hint: `true` when at least one downstream dataflow edge
+   * needs this task's output materialized (the target port cannot consume the
+   * stream mode directly). On a cache hit the runner hydrates binary
+   * {@link CacheRef} values into the enriched finish event so those consumers
+   * receive `Blob`/`ArrayBuffer` just like on a fresh run. `undefined`
+   * (standalone runs) means "no known materializing consumers".
+   */
+  hasMaterializingConsumers?: boolean;
+
+  /**
    * Threshold (in bytes) at which a binary output port's value is replaced by
    * a {@link CacheRef} in `Output` instead of being inlined. Below this size,
    * the runner inlines the bytes; at or above, it emits a reference and the

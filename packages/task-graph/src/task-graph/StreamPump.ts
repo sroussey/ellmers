@@ -213,6 +213,7 @@ export class StreamPump {
         outputCache: options.legacyCacheExplicitlyDisabled ? false : options.outputCache,
         shouldAccumulate,
         hasStreamingConsumers: StreamPump.anyConsumerAcceptsBinaryStream(this.graph, task),
+        hasMaterializingConsumers: StreamPump.anyConsumerNeedsMaterialized(this.graph, task),
         updateProgress: options.updateProgress,
         registry: options.registry,
         resourceScope: options.resourceScope,
