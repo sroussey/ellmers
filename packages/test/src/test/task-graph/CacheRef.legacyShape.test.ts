@@ -217,7 +217,7 @@ describe("CacheCoordinator.lookup — legacy unbranded {$ref} upgrade at binary 
 
     // Slot is now a properly branded CacheRef.
     expect(isCacheRef((output as Record<string, unknown>).bytes)).toBe(true);
-    const ref = (output as { bytes: CacheRef }).bytes;
+    const ref = (output as unknown as { bytes: CacheRef }).bytes;
     expect(ref.$ref).toBe("inmem://legacy/A");
     expect(ref.size).toBe(1024);
   });
