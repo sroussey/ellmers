@@ -95,6 +95,14 @@ export class RunPrivateCacheRepo extends TaskOutputRepository {
     await this.backing.saveOutput(this.ns(cacheIdentity), inputs, output, createdAt);
   }
 
+  /**
+   * Legacy unbranded `{$ref}` shapes are NOT re-wrapped here; that is the
+   * responsibility of {@link CacheCoordinator}, which has the output schema
+   * in scope and can restrict re-wrap to declared binary streaming ports.
+   * Re-wrapping at this layer would have to walk arbitrary nested fields and
+   * would re-introduce the shape-only collision risk that the brand exists
+   * to close.
+   */
   public async getOutput(
     cacheIdentity: string,
     inputs: TaskInput

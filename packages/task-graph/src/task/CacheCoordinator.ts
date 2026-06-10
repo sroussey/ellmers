@@ -8,7 +8,7 @@ import { getPortCodec } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { type CachePolicy, isPolicyCached, isPolicyPrivate } from "../cache/CachePolicy";
 import type { CacheRef } from "../cache/CacheRef";
-import { isCacheRef, makeCacheRef } from "../cache/CacheRef";
+import { isCacheRef, isLegacyUnbrandedCacheRefShape, makeCacheRef } from "../cache/CacheRef";
 import type { CacheRegistry } from "../cache/CacheRegistry";
 import { RunPrivateCacheRepo } from "../cache/RunPrivateCacheRepo";
 import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
@@ -105,6 +105,26 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
       cached as Record<string, unknown>,
       outputSchema as unknown as SchemaProperties
     )) as Output;
+
+    // Upgrade legacy unbranded `{$ref}` rows in place at every declared binary
+    // streaming port. Pre-brand cache writes landed without the literal `kind`
+    // discriminator, so subsequent `isCacheRef` probes would treat them as
+    // ordinary objects and skip rehydration / threshold logic. Scope is the
+    // same set of schema-declared binary ports `hydrateRefsBelowThreshold`
+    // uses, so non-binary fields that legitimately carry a `{$ref: string}`
+    // shape (JSON-Schema refs, user metadata) are NEVER auto-promoted.
+    if (outputs !== null && typeof outputs === "object") {
+      const binaryPorts = getStreamingPorts(outputSchema).filter((p) => p.mode === "binary");
+      if (binaryPorts.length > 0) {
+        const slots = outputs as Record<string, unknown>;
+        for (const { port } of binaryPorts) {
+          const value = slots[port];
+          if (isLegacyUnbrandedCacheRefShape(value)) {
+            slots[port] = makeCacheRef(value);
+          }
+        }
+      }
+    }
 
     ctx.telemetrySpan?.addEvent("workglow.task.cache_hit");
 
@@ -286,10 +306,20 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     const rehydrations = await Promise.all(
       binaryPorts.map(async (port) => {
         const value = source[port];
-        if (!isCacheRef(value)) return undefined;
-        const size = value.size;
+        // Accept both branded refs and the pre-brand on-disk shape. The
+        // streaming finish-event path can flow into this method without
+        // going through `lookup`, so re-wrap inline here as defence in
+        // depth — restricted to declared binary streaming ports for the
+        // same scoping reasons as the lookup-path upgrade.
+        const ref: CacheRef | undefined = isCacheRef(value)
+          ? value
+          : isLegacyUnbrandedCacheRefShape(value)
+            ? makeCacheRef(value)
+            : undefined;
+        if (ref === undefined) return undefined;
+        const size = ref.size;
         if (size === undefined || size >= referenceThresholdBytes) return undefined;
-        const blob = await cache.getOutputByRef!(value);
+        const blob = await cache.getOutputByRef!(ref);
         if (blob === undefined) return undefined;
         const format = assertBinaryFormat(outputSchema, port);
         const inlined = format === "binary" ? await blob.arrayBuffer() : blob;

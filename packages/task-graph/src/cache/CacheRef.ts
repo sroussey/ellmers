@@ -52,6 +52,35 @@ export function isCacheRef(value: unknown): value is CacheRef {
 }
 
 /**
+ * Matches the pre-brand on-disk shape `{ $ref: string, size?, mime? }` without
+ * the `kind` discriminator. Used ONLY at declared binary streaming port slots
+ * by {@link CacheCoordinator} to upgrade legacy cache rows in place. Never
+ * call this on arbitrary nested fields — that would defeat the brand check
+ * and re-introduce the shape-only collision risk that the brand exists to
+ * close.
+ *
+ * An already-branded {@link CacheRef} is rejected (returns `false`) so callers
+ * can use this as a strict "needs upgrade" predicate without first filtering
+ * out the branded case.
+ */
+export function isLegacyUnbrandedCacheRefShape(
+  value: unknown
+): value is { $ref: string; size?: number; mime?: string } {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as {
+    readonly kind?: unknown;
+    readonly $ref?: unknown;
+    readonly size?: unknown;
+    readonly mime?: unknown;
+  };
+  if (candidate.kind === CACHE_REF_KIND) return false;
+  if (typeof candidate.$ref !== "string") return false;
+  if (candidate.size !== undefined && typeof candidate.size !== "number") return false;
+  if (candidate.mime !== undefined && typeof candidate.mime !== "string") return false;
+  return true;
+}
+
+/**
  * Construct a branded {@link CacheRef}. Cache backings MUST use this helper (or
  * spread `{kind: CACHE_REF_KIND, ...}` themselves) so the resulting ref carries
  * the brand. Helpers in {@link CacheCoordinator} / {@link RunPrivateCacheRepo}
