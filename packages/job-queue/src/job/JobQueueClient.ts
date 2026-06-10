@@ -46,7 +46,29 @@ export interface JobHandle<Output> {
    * backends; callers branch on `typeof handle.onStream === "function"`.
    */
   onStream?(callback: JobStreamListener): () => void;
+  /**
+   * OPTIONAL — present only when the client was configured with an
+   * `outputStreamResolver` (an output cache backing reachable from this
+   * process). Awaits the job's completion, then streams the binary result
+   * back out of the output cache without materializing it. `port` selects the
+   * output port; omit it when the output holds exactly one cache ref.
+   * Resolves `undefined` when there is nothing binary to stream (or the
+   * cache entry was evicted).
+   */
+  outputStream?(port?: string): Promise<AsyncIterable<Uint8Array> | undefined>;
 }
+
+/**
+ * Resolves a completed job's output value to a byte stream. Injected via
+ * {@link JobQueueClientOptions.outputStreamResolver} because the cache layer
+ * that understands output refs lives above this package in the dependency
+ * graph (`@workglow/task-graph` exports `makeJobOutputStreamResolver` to
+ * build one from a cache backing).
+ */
+export type JobOutputStreamResolver = (
+  output: unknown,
+  port?: string
+) => Promise<AsyncIterable<Uint8Array> | undefined>;
 
 /**
  * Options for creating a JobQueueClient
@@ -55,6 +77,13 @@ export interface JobQueueClientOptions<Input, Output> {
   readonly messageQueue: IMessageQueue<JobStorageFormat<Input, Output>>;
   readonly jobStore: IJobStore<Input, Output>;
   readonly queueName: string;
+  /**
+   * OPTIONAL — enables `JobHandle.outputStream` on handles from this client.
+   * Deployments whose output cache backing is reachable from this process
+   * inject a resolver (see `makeJobOutputStreamResolver` in
+   * `@workglow/task-graph`); without it, handles omit the method.
+   */
+  readonly outputStreamResolver?: JobOutputStreamResolver;
 }
 
 /**
@@ -69,6 +98,7 @@ export class JobQueueClient<Input, Output> {
   protected readonly events = new EventEmitter<JobQueueEventListeners<Input, Output>>();
   protected server: JobQueueServer<Input, Output> | null = null;
   protected storageUnsubscribe: (() => void) | null = null;
+  protected readonly outputStreamResolver: JobOutputStreamResolver | undefined;
 
   /**
    * Map of job IDs to their pending promise resolvers
@@ -107,6 +137,7 @@ export class JobQueueClient<Input, Output> {
     this.queueName = options.queueName;
     this.messageQueue = options.messageQueue;
     this.jobStore = options.jobStore;
+    this.outputStreamResolver = options.outputStreamResolver;
   }
 
   /**
@@ -637,6 +668,12 @@ export class JobQueueClient<Input, Output> {
     // callers branch on `typeof handle.onStream === "function"`.
     if (this.server) {
       handle.onStream = (callback: JobStreamListener) => this.onJobStream(id, callback);
+    }
+    // Streaming result reads require a cache backing reachable from this
+    // process; the injected resolver is the capability signal.
+    const resolver = this.outputStreamResolver;
+    if (resolver) {
+      handle.outputStream = async (port?: string) => resolver(await this.waitFor(id), port);
     }
     return handle;
   }
