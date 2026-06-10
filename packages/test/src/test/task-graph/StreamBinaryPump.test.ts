@@ -361,6 +361,90 @@ describe("StreamBinaryPump.canStreamBinaryToCache — decision", () => {
 });
 
 // ============================================================================
+// Stream-out decision: anyConsumerAcceptsBinaryStream
+// ============================================================================
+
+/** Streaming consumer: its `bytes` input port accepts the binary stream mode. */
+class BinaryStreamConsumer extends Task<SinkInput, SinkOutput> {
+  public static override type = "StreamBinaryPump_StreamConsumer";
+  public static override category = "Test";
+  public static override cacheable = false;
+
+  public static override inputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "blob", "x-stream": "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { length: { type: "number" }, isBlob: { type: "boolean" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(input: SinkInput): Promise<SinkOutput> {
+    const size = input.bytes instanceof Blob ? input.bytes.size : (input.bytes?.byteLength ?? -1);
+    return { length: size, isBlob: input.bytes instanceof Blob };
+  }
+}
+
+describe("StreamPump.anyConsumerAcceptsBinaryStream", () => {
+  it("returns true when an out-edge targets a binary-streaming input port", () => {
+    const graph = new TaskGraph();
+    const source = new CacheableBinaryStreamSource({ id: "source" });
+    const consumer = new BinaryStreamConsumer({ id: "consumer" });
+    graph.addTasks([source, consumer]);
+    graph.addDataflow(new Dataflow("source", "bytes", "consumer", "bytes"));
+
+    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(true);
+  });
+
+  it("returns false with no consumers", () => {
+    const graph = new TaskGraph();
+    const source = new CacheableBinaryStreamSource({ id: "source" });
+    graph.addTask(source);
+
+    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+  });
+
+  it("returns false when the only consumer needs a materialized value", () => {
+    const graph = new TaskGraph();
+    const source = new CacheableBinaryStreamSource({ id: "source" });
+    const sink = new BinarySinkTask({ id: "sink" });
+    graph.addTasks([source, sink]);
+    graph.addDataflow(new Dataflow("source", "bytes", "sink", "bytes"));
+
+    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+  });
+
+  it("returns false for * fan-out edges (consumers receive materialized values)", () => {
+    const graph = new TaskGraph();
+    const source = new CacheableBinaryStreamSource({ id: "source" });
+    const consumer = new BinaryStreamConsumer({ id: "consumer" });
+    graph.addTasks([source, consumer]);
+    graph.addDataflow(new Dataflow("source", "*", "consumer", "*"));
+
+    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(false);
+  });
+
+  it("returns true with mixed consumers (one streams, one materializes)", () => {
+    const graph = new TaskGraph();
+    const source = new CacheableBinaryStreamSource({ id: "source" });
+    const consumer = new BinaryStreamConsumer({ id: "consumer" });
+    const sink = new BinarySinkTask({ id: "sink" });
+    graph.addTasks([source, consumer, sink]);
+    graph.addDataflow(new Dataflow("source", "bytes", "consumer", "bytes"));
+    graph.addDataflow(new Dataflow("source", "bytes", "sink", "bytes"));
+
+    expect(StreamPump.anyConsumerAcceptsBinaryStream(graph, source)).toBe(true);
+  });
+});
+
+// ============================================================================
 // C2: cache-streaming decision — observed on a real run via the source's finish.
 //
 // These run a real graph and assert the bytes ARE materialized (present) when the

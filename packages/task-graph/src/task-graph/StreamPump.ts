@@ -13,6 +13,7 @@ import {
   DEFAULT_BINARY_HIGH_WATER_BYTES,
   edgeNeedsAccumulation,
   getOutputStreamMode,
+  getPortStreamMode,
   getStreamingPorts,
 } from "../task/StreamTypes";
 import type { TaskInput } from "../task/TaskTypes";
@@ -211,6 +212,7 @@ export class StreamPump {
         // otherwise pass the legacy repo (or undefined to use CACHE_REGISTRY).
         outputCache: options.legacyCacheExplicitlyDisabled ? false : options.outputCache,
         shouldAccumulate,
+        hasStreamingConsumers: StreamPump.anyConsumerAcceptsBinaryStream(this.graph, task),
         updateProgress: options.updateProgress,
         registry: options.registry,
         resourceScope: options.resourceScope,
@@ -351,6 +353,25 @@ export class StreamPump {
         targetTask.inputSchema(),
         df.targetTaskPortId
       );
+    });
+  }
+
+  /**
+   * Returns `true` when any outgoing dataflow edge targets an input port that
+   * consumes the source port's binary stream mode directly (`x-stream:
+   * "binary"` on both ends). Used to decide whether a cache hit should replay
+   * cached bytes as `binary-delta` events: with no stream-capable consumer
+   * the replay would be wasted reads. `*` fan-out edges don't count — their
+   * consumers receive materialized values, not streams.
+   */
+  static anyConsumerAcceptsBinaryStream(graph: TaskGraph, task: ITask): boolean {
+    const outSchema = task.outputSchema();
+    return graph.getTargetDataflows(task.id).some((df) => {
+      if (df.sourceTaskPortId === DATAFLOW_ALL_PORTS) return false;
+      if (getPortStreamMode(outSchema, df.sourceTaskPortId) !== "binary") return false;
+      const targetTask = graph.getTask(df.targetTaskId);
+      if (!targetTask) return false;
+      return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === "binary";
     });
   }
 
