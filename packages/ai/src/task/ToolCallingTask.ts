@@ -15,7 +15,7 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { getAiProviderRegistry } from "../provider/AiProviderRegistry";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { StreamingAiTask } from "./base/StreamingAiTask";
-import type { ChatMessage } from "./ChatMessage";
+import type { ChatMessage, ContentBlock } from "./ChatMessage";
 import { ChatMessageSchema } from "./ChatMessage";
 import type { ToolDefinition } from "./ToolCallingUtils";
 
@@ -253,7 +253,7 @@ export type ToolCallingTaskInput = Omit<
     maxTokens?: number | undefined;
     temperature?: number | undefined;
     model: string | ModelConfig;
-    prompt: string | (string | { [x: string]: unknown; type: "text" | "image" | "audio" })[];
+    prompt: string | readonly (string | ContentBlock)[];
     tools: (
       | string
       | {
