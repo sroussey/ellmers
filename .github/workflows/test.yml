@@ -263,6 +263,13 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-rag-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-rag-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -293,12 +300,21 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-hft-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-hft-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           name: build-output
           path: .
       - name: Run HuggingFace Transformers provider tests via vitest
+        env:
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:ai-provider-hft
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
@@ -321,12 +337,21 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face / GGUF model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-nodellama-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-nodellama-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           name: build-output
           path: .
       - name: Run LlamaCpp provider tests via vitest
+        env:
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:ai-provider-nodellama
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json
