@@ -49,6 +49,14 @@ function hasRunConfig(i: unknown): i is { runConfig: Partial<IRunConfig> } {
 }
 
 /**
+ * Default {@link IExecuteContext.binaryBackpressure} used by non-streaming
+ * execute paths. Module-private and shared across calls so tasks can
+ * `await ctx.binaryBackpressure()` unconditionally without per-call
+ * allocation; only {@link StreamProcessor} installs a router-aware version.
+ */
+const NOOP_BACKPRESSURE = (): Promise<void> => Promise.resolve();
+
+/**
  * Responsible for running tasks
  * Manages the execution lifecycle of individual tasks
  */
@@ -590,6 +598,7 @@ export class TaskRunner<
       registry: this.registry,
       resourceScope: this.resourceScope,
       runId: this.runId,
+      binaryBackpressure: NOOP_BACKPRESSURE,
     });
     return result;
   }

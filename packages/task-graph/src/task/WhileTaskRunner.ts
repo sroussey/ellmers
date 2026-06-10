@@ -10,6 +10,13 @@ import type { TaskInput, TaskOutput } from "./TaskTypes";
 import type { WhileTask, WhileTaskConfig } from "./WhileTask";
 
 /**
+ * Default {@link IExecuteContext.binaryBackpressure} used by the WhileTask
+ * runner. Shared across calls so tasks can call it unconditionally without
+ * paying a per-call allocation cost.
+ */
+const WHILE_NOOP_BACKPRESSURE = (): Promise<void> => Promise.resolve();
+
+/**
  * Runner for WhileTask that delegates to the task's execute() method
  * instead of directly running the subgraph once (which is what
  * GraphAsTaskRunner does by default).
@@ -37,6 +44,7 @@ export class WhileTaskRunner<
       updateProgress: this.handleProgress.bind(this),
       own: this.own,
       registry: this.registry,
+      binaryBackpressure: WHILE_NOOP_BACKPRESSURE,
     });
 
     return result;
