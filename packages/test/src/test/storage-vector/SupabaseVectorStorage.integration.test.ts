@@ -87,4 +87,31 @@ describe("kb_chunks pgvector migration", () => {
     );
     expect(res.rows.length).toBe(1);
   });
+
+  it("ranks by cosine in kb_chunks_3072 (halfvec-cast ORDER BY path)", async () => {
+    const mk = (a: number[]) => `[${a.join(",")}]`;
+    const base = Array(3072).fill(0);
+    const near = [...base];
+    near[0] = 1;
+    const far = [...base];
+    far[1] = 1;
+    const q = [...base];
+    q[0] = 1;
+    for (const [id, vec] of [
+      ["near", near],
+      ["far", far],
+    ] as const) {
+      await db.query(
+        `INSERT INTO kb_chunks_3072 (chunk_id, doc_id, kb_id, tenant_id, project_id, vector, metadata)
+         VALUES ($1,'d','kb','rank3072','p',$2::vector,'{}'::jsonb)`,
+        [id, mk(vec)]
+      );
+    }
+    const res = await db.query<{ chunk_id: string; score: number }>(
+      `SELECT * FROM match_kb_chunks_3072($1::vector, 10, 0, 'rank3072', 'p', 'kb', '{}'::jsonb)`,
+      [mk(q)]
+    );
+    expect(res.rows[0].chunk_id).toBe("near");
+    expect(Number(res.rows[0].score)).toBeGreaterThan(Number(res.rows[1].score));
+  });
 });

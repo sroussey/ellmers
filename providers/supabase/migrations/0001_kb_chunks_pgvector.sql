@@ -246,7 +246,9 @@ as $$
     and c.kb_id = p_kb_id
     and c.metadata @> p_filter
     and (score_threshold is null or (1 - (c.vector <=> query_embedding)) >= score_threshold)
-  order by c.vector <=> query_embedding
+  -- Sort via the halfvec cast so the halfvec HNSW index is usable (the vector
+  -- type's HNSW caps at 2000 dims); the score column stays full-precision.
+  order by c.vector::halfvec(3072) <=> query_embedding::halfvec(3072)
   limit match_count
 $$;
 
