@@ -264,6 +264,9 @@ export class TaskRunner<
           this.cacheRegistry,
           policy
         );
+        const referenceThresholdBytes = resolveReferenceThreshold(
+          config.referenceThresholdBytes ?? this.task.runConfig.referenceThresholdBytes
+        );
         let outputs = await this.cacheCoordinator.lookupByPolicy(
           keyInputs,
           this.cacheRegistry,
@@ -282,9 +285,6 @@ export class TaskRunner<
           // (memory-bounded write to cache); the runtime threshold controls
           // whether the resulting CacheRef SURVIVES in Output or gets
           // rehydrated to an inline Blob/ArrayBuffer below.
-          const referenceThresholdBytes = resolveReferenceThreshold(
-            config.referenceThresholdBytes ?? this.task.runConfig.referenceThresholdBytes
-          );
           const binaryRefSinks = isStreamable
             ? this.cacheCoordinator.getBinaryRefSinksByPolicy(
                 keyInputs,
@@ -309,6 +309,18 @@ export class TaskRunner<
               })
             : await this.executeTask(inputs, ctx);
 
+          // Save the wire form FIRST: a CacheRef at a binary port is a small
+          // JSON-safe envelope, while an inline Blob/ArrayBuffer would be
+          // destroyed by JSON-row backings (JSON.stringify(Blob) === "{}").
+          // The row therefore always carries the ref; hydration below applies
+          // only to the value returned to the caller.
+          await this.cacheCoordinator.saveByPolicy(
+            keyInputs,
+            outputs as Output,
+            this.cacheRegistry,
+            policy
+          );
+
           // Rehydrate refs whose committed size is below the configured
           // threshold so callers see inline bytes for small outputs (threshold
           // default = 64 KiB). Refs at/above threshold survive. threshold = 0
@@ -322,15 +334,19 @@ export class TaskRunner<
               referenceThresholdBytes
             );
           }
-
-          await this.cacheCoordinator.saveByPolicy(
-            keyInputs,
+        } else {
+          // Cache hit: rows store refs (wire form), so apply the same
+          // below-threshold hydration a fresh run applies before returning —
+          // small outputs come back as inline Blob/ArrayBuffer either way.
+          outputs = await this.cacheCoordinator.hydrateRefsBelowThreshold(
             outputs as Output,
             this.cacheRegistry,
-            policy
+            policy,
+            this.task.outputSchema(),
+            referenceThresholdBytes
           );
-          this.task.runOutputData = outputs ?? ({} as Output);
         }
+        this.task.runOutputData = outputs ?? ({} as Output);
 
         await this.handleComplete(ctx);
 
