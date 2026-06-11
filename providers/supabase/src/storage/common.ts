@@ -8,3 +8,4 @@
 
 export * from "./SupabaseKvStorage";
 export * from "./SupabaseTabularStorage";
+export * from "./SupabaseVectorStorage";
