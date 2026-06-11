@@ -147,7 +147,11 @@ export class McpResourceReadTask extends Task<
     const serverConfig = getMcpServerConfig(this.config as Record<string, unknown>);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     try {
       const result = await client.readResource({
         uri: String(this.config.resource_uri ?? ""),

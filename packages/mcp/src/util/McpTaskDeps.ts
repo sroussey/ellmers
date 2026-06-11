@@ -10,6 +10,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { ServiceRegistry } from "@workglow/util";
 import { createServiceToken, globalServiceRegistry } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import type { McpAuthConfig } from "./McpAuthTypes";
@@ -31,9 +32,16 @@ export interface McpServerConfig {
 
 export interface McpTaskDeps {
   readonly mcpClientFactory: {
+    /**
+     * `registry` carries the run-scoped service registry (from the task's
+     * execute context) so credential-store keys in the server config resolve
+     * against the run's per-(tenant, project) store, not the process-global
+     * one — which is empty in hosts that isolate runs.
+     */
     readonly create: (
       config: McpServerConfig,
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      registry?: ServiceRegistry
     ) => Promise<{ client: Client; transport: Transport }>;
   };
   readonly mcpServerConfigSchema: {

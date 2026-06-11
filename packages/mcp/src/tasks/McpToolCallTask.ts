@@ -276,7 +276,11 @@ export class McpToolCallTask extends Task<
     await this.discoverSchemas(context.signal, serverConfig);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     try {
       const result = await client.callTool({
         name: String(this.config.tool_name ?? ""),

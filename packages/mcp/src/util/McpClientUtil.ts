@@ -12,6 +12,7 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { ServiceRegistry } from "@workglow/util";
 import { getGlobalCredentialStore, getLogger } from "@workglow/util";
 import { createAuthProvider, resolveAuthSecrets } from "./McpAuthProvider";
 import type { McpAuthConfig } from "./McpAuthTypes";
@@ -76,31 +77,52 @@ export const mcpServerConfigSchema = {
 
 export type McpTransportType = (typeof mcpTransportTypes)[number];
 
-export async function createMcpClient(
+/**
+ * Resolves a server config's auth into the pieces a transport needs.
+ *
+ * `registry` scopes credential-key resolution: graph runs register their
+ * per-(tenant, project) store on the run's child registry, so MCP auth must
+ * read through it — the process-global store is empty (or another scope's)
+ * in hosts that isolate runs. When omitted, falls back to the global store.
+ */
+export async function resolveMcpClientAuth(
   config: McpServerConfig,
-  signal?: AbortSignal
-): Promise<{ client: Client; transport: Transport }> {
-  let transport: Transport;
-
+  registry?: ServiceRegistry
+): Promise<{
+  auth: McpAuthConfig | undefined;
+  authProvider: McpServerConfig["authProvider"];
+  headers: Record<string, string>;
+}> {
   // Resolve auth config: prefer structured `auth` object, fall back to flat props
   let auth: McpAuthConfig | undefined = config.auth ?? buildAuthConfig({ ...config });
 
   // Resolve credential store keys to actual secret values
   if (auth && auth.type !== "none") {
-    auth = await resolveAuthSecrets(auth, getGlobalCredentialStore());
+    auth = await resolveAuthSecrets(auth, getGlobalCredentialStore(registry));
   }
 
   // Build auth provider for OAuth flows (external provider takes precedence)
   const authProvider =
     config.authProvider ??
     (auth && auth.type !== "none" && auth.type !== "bearer"
-      ? createAuthProvider(auth, config.server_url ?? "", getGlobalCredentialStore())
+      ? createAuthProvider(auth, config.server_url ?? "", getGlobalCredentialStore(registry))
       : undefined);
 
   // Build request headers (SDK sets MCP-Protocol-Version automatically)
   const headers: Record<string, string> = {
     ...(auth?.type === "bearer" ? { Authorization: `Bearer ${auth.token}` } : {}),
   };
+  return { auth, authProvider, headers };
+}
+
+export async function createMcpClient(
+  config: McpServerConfig,
+  signal?: AbortSignal,
+  registry?: ServiceRegistry
+): Promise<{ client: Client; transport: Transport }> {
+  let transport: Transport;
+
+  const { auth, authProvider, headers } = await resolveMcpClientAuth(config, registry);
   const requestInit = { headers };
 
   switch (config.transport) {
