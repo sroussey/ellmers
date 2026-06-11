@@ -16,12 +16,7 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "./ITask";
 import type { BinaryRefSink } from "./StreamProcessor";
 import type { StreamEvent } from "./StreamTypes";
-import {
-  assertBinaryFormat,
-  getBinaryPortId,
-  getStreamingPorts,
-  materializeBinary,
-} from "./StreamTypes";
+import { assertBinaryFormat, getStreamingPorts, materializeBinary } from "./StreamTypes";
 import { Task } from "./Task";
 import type { TaskRunContext } from "./TaskRunContext";
 import type { TaskInput, TaskOutput } from "./TaskTypes";
@@ -344,8 +339,14 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
     if (!this.task.cacheable) return undefined;
     const cache = this.repoFor(registry, policy);
     if (!cache || !cache.supportsStreaming()) return undefined;
-    const port = getBinaryPortId(outputSchema);
-    if (port === undefined) return undefined;
+    // The sink keys bytes by (taskType, inputs) with no port axis, so two
+    // binary ports would overwrite each other in the backing. Enforce the
+    // single-binary-port restriction here as well as in the accumulation
+    // decision (StreamPump.canStreamBinaryToCache) — multi-port tasks fall
+    // back to pure accumulation.
+    const binaryPorts = getStreamingPorts(outputSchema).filter((p) => p.mode === "binary");
+    if (binaryPorts.length !== 1) return undefined;
+    const port = binaryPorts[0].port;
     const taskType = this.task.type;
     // Re-wrap the backing's CacheRef so legacy `saveOutputStream` implementations
     // that pre-date the `kind` brand still produce a discriminator-bearing ref.
