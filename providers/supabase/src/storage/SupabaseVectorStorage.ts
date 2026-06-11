@@ -64,6 +64,15 @@ export class SupabaseVectorStorage<
   private readonly vectorCtor: TypedArrayConstructor;
   private readonly vectorPropertyName: keyof Entity;
   private readonly metadataPropertyName: keyof Entity | undefined;
+  // Captured constructor args so withScope can build a real, independent
+  // instance rather than a prototype clone that would alias base mutable
+  // state (realtime channel, event listeners).
+  private readonly initSchema: Schema;
+  private readonly initPrimaryKeyNames: PrimaryKeyNames;
+  private readonly initIndexes: readonly (
+    | keyof NoInfer<Entity>
+    | readonly (keyof NoInfer<Entity>)[]
+  )[];
   private scope: VectorScope | undefined;
 
   /**
@@ -89,6 +98,9 @@ export class SupabaseVectorStorage<
     this.tableName = table;
     this.vectorDimensions = dimensions;
     this.vectorCtor = vectorCtor;
+    this.initSchema = schema;
+    this.initPrimaryKeyNames = primaryKeyNames;
+    this.initIndexes = indexes;
 
     const vectorProp = getVectorProperty(schema);
     if (!vectorProp) {
@@ -103,13 +115,31 @@ export class SupabaseVectorStorage<
   }
 
   /**
-   * Returns a shallow clone of this store bound to the given scope. The clone
-   * shares the underlying client and configuration; only the resolved scope
-   * differs, so multiple scoped views can coexist over one connection.
+   * Returns an independent store instance bound to the given scope. A fresh
+   * instance (not a prototype clone) is constructed so scoped views do not
+   * alias the base storage's mutable state (realtime channel, event listeners)
+   * while still sharing the same underlying client connection.
    */
   public withScope(scope: VectorScope): this {
-    const clone = Object.create(this) as this;
-    (clone as unknown as { scope: VectorScope }).scope = scope;
+    const Ctor = this.constructor as new (
+      client: SupabaseClient,
+      table: string,
+      schema: Schema,
+      primaryKeyNames: PrimaryKeyNames,
+      indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[],
+      dimensions: number,
+      vectorCtor: TypedArrayConstructor
+    ) => this;
+    const clone = new Ctor(
+      this.client,
+      this.tableName,
+      this.initSchema,
+      this.initPrimaryKeyNames,
+      this.initIndexes,
+      this.vectorDimensions,
+      this.vectorCtor
+    );
+    clone.scope = scope;
     return clone;
   }
 
@@ -153,16 +183,27 @@ export class SupabaseVectorStorage<
   }
 
   public override async put(entity: InsertType): Promise<Entity> {
-    await super.put(this.prepareForWrite(entity));
-    // Return the original entity (with its TypedArray vector) rather than the
-    // hydrated row, since the persisted vector is a pgvector text column.
-    return entity as unknown as Entity;
+    const saved = await super.put(this.prepareForWrite(entity));
+    return this.restampVector(saved, entity);
   }
 
   public override async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
-    await super.putBulk(entities.map((e) => this.prepareForWrite(e)));
-    return entities as unknown as Entity[];
+    const saved = await super.putBulk(entities.map((e) => this.prepareForWrite(e)));
+    return saved.map((row, i) => this.restampVector(row, entities[i]));
+  }
+
+  /**
+   * Returns the hydrated DB row (preserving any server-generated columns) with
+   * the vector column restored to the caller's TypedArray — the persisted form
+   * is pgvector text, but callers expect the original typed vector back.
+   */
+  private restampVector(saved: Entity, input: InsertType): Entity {
+    const out = { ...(saved as Record<string, unknown>) };
+    out[this.vectorPropertyName as string] = (input as Record<string, unknown>)[
+      this.vectorPropertyName as string
+    ];
+    return out as Entity;
   }
 
   public async similaritySearch(

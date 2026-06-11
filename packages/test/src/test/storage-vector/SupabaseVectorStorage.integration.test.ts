@@ -148,7 +148,7 @@ function mk768(set: Record<number, number>): Float32Array {
 }
 
 describe("SupabaseVectorStorage", () => {
-  it("binds dimensions and table name at construction (Task 3)", () => {
+  it("binds dimensions and table name at construction", () => {
     const store = new SupabaseVectorStorage(
       createClient("http://localhost", "test-key"),
       "kb_chunks_768",
@@ -161,7 +161,7 @@ describe("SupabaseVectorStorage", () => {
     expect(store.tableName).toBe("kb_chunks_768");
   });
 
-  it("throws when used without a scope (Task 6)", async () => {
+  it("throws when used without a scope", async () => {
     const store = new SupabaseVectorStorage(
       createClient("http://localhost", "test-key"),
       "kb_chunks_768",
@@ -175,7 +175,7 @@ describe("SupabaseVectorStorage", () => {
     );
   });
 
-  describe("put + similaritySearch against PGlite-backed mock (Tasks 4 & 5)", () => {
+  describe("put + similaritySearch against PGlite-backed mock", () => {
     let client: IClosableSupabaseClient;
 
     beforeAll(async () => {
@@ -231,7 +231,7 @@ describe("SupabaseVectorStorage", () => {
       expect((results[0] as { vector: Float32Array }).vector[0]).toBeCloseTo(1, 5);
     });
 
-    it("stamps the resolved scope onto written rows (Task 4)", async () => {
+    it("stamps the resolved scope onto written rows", async () => {
       const store = scopedStore();
       const results = await store.similaritySearch(mk768({ 0: 1 }), { topK: 10 });
       for (const row of results) {
@@ -241,14 +241,14 @@ describe("SupabaseVectorStorage", () => {
       }
     });
 
-    it("rejects unsafe metadata filter keys (Task 5)", async () => {
+    it("rejects unsafe metadata filter keys", async () => {
       const store = scopedStore();
       await expect(
         store.similaritySearch(mk768({ 0: 1 }), { filter: { "bad-key": "x" } as never })
       ).rejects.toBeInstanceOf(StorageValidationError);
     });
 
-    it("isolates rows by scope (Task 6)", async () => {
+    it("isolates rows by scope", async () => {
       const other = new SupabaseVectorStorage(
         client as unknown as ReturnType<typeof createClient>,
         "kb_chunks_768",

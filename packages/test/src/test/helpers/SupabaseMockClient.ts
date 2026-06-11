@@ -270,7 +270,10 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
       const values = params ? Object.values(params) : [];
       const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
       try {
-        const result = await pglite.query(`SELECT * FROM ${functionName}(${placeholders})`, values);
+        const result = await pglite.query(
+          `SELECT * FROM "${functionName.replace(/"/g, '""')}"(${placeholders})`,
+          values
+        );
         return { data: result.rows, error: null };
       } catch (e: any) {
         return { data: null, error: { message: e?.message ?? String(e) } };
