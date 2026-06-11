@@ -204,9 +204,10 @@ describe("Spec 2 — saved-row size & cross-process rehydration", () => {
     expect(isCacheRef(output.bytes)).toBe(true);
   });
 
-  it("contrast: a non-streaming cache embeds the full Blob in the saved row (the old bloat path)", async () => {
+  it("contrast: a non-streaming cache embeds the full payload in the saved row (the bloat path)", async () => {
     // Same task, but the cache cannot stream — the runner falls through to
-    // accumulation and the saved row contains the serialized payload.
+    // accumulation and the saved row contains the serialized payload as a
+    // JSON-safe BinaryPortWire envelope (the binary port codec), not a ref.
     const nonStreamRepo = new NonStreamingMemoryRepo({});
     const altServices = new ServiceRegistry(new Container());
     altServices.registerInstance(
@@ -222,10 +223,11 @@ describe("Spec 2 — saved-row size & cross-process rehydration", () => {
       Record<string, unknown>
     >;
     expect(isCacheRef(savedOutput.bytes)).toBe(false);
-    expect(savedOutput.bytes).toBeInstanceOf(Blob);
-    // The Blob itself isn't JSON-encoded inline by default, but the
-    // observable point is: this row carries the artifact, not a reference.
-    expect((savedOutput.bytes as Blob).size).toBe(CHUNKS * CHUNK);
+    // The observable point: this row carries the (encoded) artifact itself,
+    // not a reference — the full payload still bloats the row.
+    const wire = savedOutput.bytes as Record<string, unknown>;
+    expect(wire.__binaryPortWire).toBe(1);
+    expect(wire.size).toBe(CHUNKS * CHUNK);
   });
 
   it("cross-process simulation: serialize the small row, deserialize elsewhere, resolveJobOutput against shared cache", async () => {

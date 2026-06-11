@@ -9,6 +9,7 @@ import {
   DefaultCacheRegistry,
   FsFolderTaskOutputRepository,
   IExecuteContext,
+  isCacheRef,
   StreamPump,
   Task,
   TaskGraph,
@@ -20,6 +21,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { InMemoryTaskOutputRepository } from "../../binding/InMemoryTaskOutputRepository";
 import { StreamingMemoryRepo } from "../../binding/StreamingMemoryRepo";
 
 async function blobBytes(value: unknown): Promise<number[]> {
@@ -135,5 +137,112 @@ describe("binary cache integrity", () => {
     expect(StreamPump.canStreamBinaryToCache(graph, source, new StreamingMemoryRepo({}))).toBe(
       false
     );
+  });
+});
+
+type InlineOut = { bytes: Blob | ArrayBuffer };
+
+let inlineBlobExecutions = 0;
+
+/** Non-streaming binary producer: plain execute() returning an inline Blob. */
+class InlineBlobTask extends Task<Record<string, never>, InlineOut> {
+  public static override type = "BinaryCacheIntegrity_InlineBlob";
+  public static override category = "Test";
+  public static override cacheable = true;
+
+  public static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "blob" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(): Promise<InlineOut> {
+    inlineBlobExecutions++;
+    return {
+      bytes: new Blob([new Uint8Array([1, 2, 3, 4])], { type: "application/octet-stream" }),
+    };
+  }
+}
+
+let inlineBufferExecutions = 0;
+
+/** Non-streaming binary producer returning an inline ArrayBuffer. */
+class InlineBufferTask extends Task<Record<string, never>, InlineOut> {
+  public static override type = "BinaryCacheIntegrity_InlineBuffer";
+  public static override category = "Test";
+  public static override cacheable = true;
+
+  public static override inputSchema(): DataPortSchema {
+    return { type: "object", properties: {}, additionalProperties: false } as const;
+  }
+
+  public static override outputSchema(): DataPortSchema {
+    return {
+      type: "object",
+      properties: { bytes: { type: "object", format: "binary" } },
+      additionalProperties: false,
+    } as const satisfies DataPortSchema;
+  }
+
+  override async execute(): Promise<InlineOut> {
+    inlineBufferExecutions++;
+    return { bytes: new Uint8Array([5, 6, 7]).buffer };
+  }
+}
+
+describe("inline binary cache serialization (BinaryPortCodec)", () => {
+  it("Blob round-trips through a non-streaming JSON-row backing", async () => {
+    inlineBlobExecutions = 0;
+    const repo = new InMemoryTaskOutputRepository();
+    const services = new ServiceRegistry(new Container());
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic: repo }));
+
+    const out1 = await new InlineBlobTask().run({}, { registry: services });
+    expect(await blobBytes(out1.bytes)).toEqual([1, 2, 3, 4]);
+    expect(inlineBlobExecutions).toBe(1);
+
+    const out2 = await new InlineBlobTask().run({}, { registry: services });
+    expect(inlineBlobExecutions).toBe(1); // cache hit
+    expect(await blobBytes(out2.bytes)).toEqual([1, 2, 3, 4]);
+    expect((out2.bytes as Blob).type).toBe("application/octet-stream");
+  });
+
+  it("ArrayBuffer round-trips through a non-streaming JSON-row backing", async () => {
+    inlineBufferExecutions = 0;
+    const repo = new InMemoryTaskOutputRepository();
+    const services = new ServiceRegistry(new Container());
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic: repo }));
+
+    const out1 = await new InlineBufferTask().run({}, { registry: services });
+    expect(out1.bytes).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Uint8Array(out1.bytes as ArrayBuffer))).toEqual([5, 6, 7]);
+
+    const out2 = await new InlineBufferTask().run({}, { registry: services });
+    expect(inlineBufferExecutions).toBe(1); // cache hit
+    expect(out2.bytes).toBeInstanceOf(ArrayBuffer);
+    expect(Array.from(new Uint8Array(out2.bytes as ArrayBuffer))).toEqual([5, 6, 7]);
+  });
+
+  it("streaming backings still store a CacheRef row, not a BinaryPortWire", async () => {
+    const repo = new StreamingMemoryRepo({});
+    const services = new ServiceRegistry(new Container());
+    services.registerInstance(CACHE_REGISTRY, new DefaultCacheRegistry({ deterministic: repo }));
+
+    await new SmallBlobStreamTask().run({}, { registry: services, referenceThresholdBytes: 0 });
+
+    const rows = Array.from(
+      (repo as unknown as { store: Map<string, Record<string, unknown>> }).store.values()
+    );
+    // StreamingMemoryRepo stores rows verbatim; the binary port slot must be
+    // the branded ref envelope — the codec passes refs through untouched.
+    expect(rows).toHaveLength(1);
+    expect(isCacheRef(rows[0].bytes)).toBe(true);
+    expect((rows[0].bytes as Record<string, unknown>).__binaryPortWire).toBeUndefined();
   });
 });
