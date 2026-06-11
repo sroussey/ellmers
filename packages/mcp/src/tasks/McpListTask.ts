@@ -284,7 +284,11 @@ export class McpListTask extends Task<McpListTaskInput, McpListTaskOutput, TaskC
     const serverConfig = getMcpServerConfig(input as Record<string, unknown>);
 
     const { mcpClientFactory } = getMcpTaskDeps();
-    const { client } = await mcpClientFactory.create(serverConfig, context.signal);
+    const { client } = await mcpClientFactory.create(
+      serverConfig,
+      context.signal,
+      context.registry
+    );
     const listType = input.list_type;
     try {
       switch (listType) {
