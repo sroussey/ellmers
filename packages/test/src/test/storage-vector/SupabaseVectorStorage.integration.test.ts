@@ -51,4 +51,20 @@ describe("kb_chunks pgvector migration", () => {
     expect(res.rows[0].chunk_id).toBe("near");
     expect(Number(res.rows[0].score)).toBeGreaterThan(Number(res.rows[1].score));
   });
+
+  it("returns rows when score_threshold is NULL (no silent empty result)", async () => {
+    const mk = (a: number[]) => `[${a.join(",")}]`;
+    const v = Array(768).fill(0);
+    v[0] = 1;
+    await db.query(
+      `INSERT INTO kb_chunks_768 (chunk_id, doc_id, kb_id, tenant_id, project_id, vector, metadata)
+       VALUES ('n1','d','kb','t2','p',$1::vector,'{}'::jsonb)`,
+      [mk(v)]
+    );
+    const res = await db.query(
+      `SELECT * FROM match_kb_chunks_768($1::vector, 10, NULL, 't2', 'p', 'kb', '{}'::jsonb)`,
+      [mk(v)]
+    );
+    expect(res.rows.length).toBe(1);
+  });
 });

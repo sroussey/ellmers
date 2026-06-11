@@ -42,7 +42,7 @@ as $$
     and c.project_id = p_project_id
     and c.kb_id = p_kb_id
     and c.metadata @> p_filter
-    and (1 - (c.vector <=> query_embedding)) >= score_threshold
+    and (score_threshold is null or (1 - (c.vector <=> query_embedding)) >= score_threshold)
   order by c.vector <=> query_embedding
   limit match_count
 $$;
