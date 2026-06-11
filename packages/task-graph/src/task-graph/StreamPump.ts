@@ -10,7 +10,6 @@ import type { TaskOutputRepository } from "../storage/TaskOutputRepository";
 import type { ITask } from "../task/ITask";
 import type { StreamEvent, StreamMode } from "../task/StreamTypes";
 import {
-  DEFAULT_BINARY_HIGH_WATER_BYTES,
   edgeNeedsAccumulation,
   getOutputStreamMode,
   getPortStreamMode,
@@ -308,8 +307,7 @@ export class StreamPump {
    *    accepts the raw binary stream, or there are no consumers).
    *
    * Exposed as a static (taking the graph explicitly) so the decision is
-   * unit-testable in isolation from a live run — mirroring
-   * {@link StreamPump.pipeBinaryToCache}.
+   * unit-testable in isolation from a live run.
    */
   static canStreamBinaryToCache(
     graph: TaskGraph,
@@ -374,146 +372,6 @@ export class StreamPump {
       if (!targetTask) return false;
       return getPortStreamMode(targetTask.inputSchema(), df.targetTaskPortId) === "binary";
     });
-  }
-
-  /**
-   * Drives a stream-capable cache sink from a streaming task's `binary-delta`
-   * events. Returns an `{ promise, detach }` pair: `promise` resolves once the
-   * cache's `saveOutputStream` has consumed every chunk (after the task emits
-   * `stream_end`); `detach` removes the listeners. The chunk iterable is fed by
-   * the task's `stream_chunk` events and closed on `stream_end`.
-   *
-   * Abort/error contract: `StreamProcessor` emits `stream_end` only on success
-   * (it throws on abort/error before emitting it). To avoid a hang + listener
-   * leak when the source task aborts or errors mid-stream, the iterable is also
-   * terminated by the task's `abort`/`error` events and by an optional
-   * `AbortSignal`. On any of those the
-   * iterable ends gracefully so the sink can finalize the bytes seen so far —
-   * the returned promise ALWAYS settles and `detach` ALWAYS runs.
-   *
-   * Exposed as a static so the assembly (binary-delta events → AsyncIterable →
-   * `saveOutputStream`) is unit-testable in isolation from a graph run.
-   */
-  static pipeBinaryToCache(
-    task: ITask,
-    binaryPortId: string | undefined,
-    sink: (chunks: AsyncIterable<Uint8Array>) => Promise<unknown>,
-    signal?: AbortSignal,
-    options?: { readonly highWaterMarkBytes?: number }
-  ): {
-    promise: Promise<void>;
-    detach: () => void;
-    backpressure: () => Promise<void>;
-  } {
-    const queue: Uint8Array[] = [];
-    let bufferedBytes = 0;
-    const highWaterMarkBytes = Math.max(
-      1,
-      options?.highWaterMarkBytes ?? DEFAULT_BINARY_HIGH_WATER_BYTES
-    );
-    let done = false;
-    let chunkNotify: (() => void) | undefined;
-    let drainNotify: (() => void) | undefined;
-
-    const wakeChunk = () => {
-      const n = chunkNotify;
-      chunkNotify = undefined;
-      n?.();
-    };
-    const wakeDrain = () => {
-      const n = drainNotify;
-      drainNotify = undefined;
-      n?.();
-    };
-
-    const onChunk = (event: StreamEvent) => {
-      if (event.type === "binary-delta") {
-        if (binaryPortId === undefined || event.port === binaryPortId) {
-          queue.push(event.binaryDelta);
-          bufferedBytes += event.binaryDelta.byteLength;
-          wakeChunk();
-        }
-      }
-    };
-    const onEnd = () => {
-      done = true;
-      wakeChunk();
-      // Release any cooperative-backpressure awaiter that was parked at
-      // high-water; without this an abort-while-parked would leak.
-      wakeDrain();
-    };
-    // Abort/error termination: StreamProcessor never emits `stream_end` on these
-    // paths, so without this the iterable would await forever. Terminate the
-    // iterable (don't throw) so the sink finalizes the bytes seen so far and the
-    // promise settles — the source's own abort/error already surfaces to the run.
-    const onTerminate = () => {
-      done = true;
-      wakeChunk();
-      wakeDrain();
-    };
-
-    task.on("stream_chunk", onChunk);
-    task.on("stream_end", onEnd);
-    task.on("abort", onTerminate);
-    task.on("error", onTerminate);
-    if (signal) {
-      if (signal.aborted) onTerminate();
-      else signal.addEventListener("abort", onTerminate);
-    }
-
-    const detach = () => {
-      task.off("stream_chunk", onChunk);
-      task.off("stream_end", onEnd);
-      task.off("abort", onTerminate);
-      task.off("error", onTerminate);
-      signal?.removeEventListener("abort", onTerminate);
-    };
-
-    async function* chunkIterable(): AsyncIterable<Uint8Array> {
-      while (true) {
-        while (queue.length > 0) {
-          const chunk = queue.shift()!;
-          bufferedBytes -= chunk.byteLength;
-          if (drainNotify && bufferedBytes < highWaterMarkBytes) wakeDrain();
-          yield chunk;
-        }
-        if (done) return;
-        await new Promise<void>((resolve) => {
-          chunkNotify = resolve;
-        });
-      }
-    }
-
-    /**
-     * Cooperative backpressure hook. Resolves immediately while buffered
-     * bytes stay under the high-water mark; otherwise parks until the
-     * consumer drains the queue, or the stream is closed.
-     *
-     * The EventEmitter delivery path cannot apply mandatory backpressure
-     * (the listener fires synchronously), so this is opt-in: a task can
-     * `await ctx.binaryBackpressure()` between large yields. Tasks that
-     * never call it pay nothing.
-     */
-    const backpressure = (): Promise<void> => {
-      if (done) return Promise.resolve();
-      if (bufferedBytes < highWaterMarkBytes) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        const prev = drainNotify;
-        drainNotify = prev
-          ? () => {
-              prev();
-              resolve();
-            }
-          : resolve;
-      });
-    };
-
-    // Discard the sink's return value (helper signals completion only; callers
-    // wanting a CacheRef should hold the sink-returning promise themselves).
-    const promise = sink(chunkIterable())
-      .finally(detach)
-      .then(() => undefined);
-    return { promise, detach, backpressure };
   }
 
   /**
