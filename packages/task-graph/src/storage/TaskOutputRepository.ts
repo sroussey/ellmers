@@ -96,6 +96,10 @@ export abstract class TaskOutputRepository {
    * Implementations that provide `saveOutputStream` MUST also provide
    * `getOutputByRef` (and ideally `getOutputStreamByRef`); a ref written by
    * one without a paired reader is unresolvable.
+   *
+   * Implementations SHOULD populate `size` on the returned ref: refs without
+   * a known size are conservatively kept as refs, silently bypassing
+   * below-threshold inlining for callers that expect small outputs inline.
    */
   saveOutputStream?(
     taskType: string,
@@ -117,6 +121,11 @@ export abstract class TaskOutputRepository {
    * OPTIONAL streaming reader counterpart of {@link saveOutputStream}. Returns
    * an async iterable of bytes for the referenced entry, or `undefined` when
    * the entry is absent or this backing does not support streaming retrieval.
+   *
+   * Implementations MUST yield bounded-size chunks (e.g. filesystem read
+   * chunks): cache-hit replay paces consumers per chunk, so yielding the
+   * whole payload as one chunk defeats the memory bound this reader exists
+   * to provide.
    */
   getOutputStreamByRef?(ref: CacheRef): AsyncIterable<Uint8Array> | undefined;
 
