@@ -11,36 +11,20 @@
  * MATERIALIZE across the edge — `edgeNeedsAccumulation(binary → non-stream)` is
  * `true`, so the pump accumulates and the sink receives a finished `Blob`.
  *
- * C2 (cache-streaming decision + assembly):
- *  - The DECISION (`StreamPump.canStreamBinaryToCache`) is asserted directly, in
- *    isolation from a live run: `true` for a streaming-capable cache + binary-only
- *    leaf with no value-needing consumer; `false` for a buffered cache, for a
- *    downstream edge that needs the materialized value, and (defensively) for a
- *    cache that cannot report `supportsStreaming()`.
- *  - The byte-stream assembly (`binary-delta` events → `AsyncIterable<Uint8Array>`
- *    → `saveOutputStream`) is unit-tested in isolation via
- *    `StreamPump.pipeBinaryToCache`, which asserts the cache RECEIVES the bytes.
+ * C2 (cache-streaming decision): `StreamPump.canStreamBinaryToCache` is asserted
+ * directly, in isolation from a live run: `true` for a streaming-capable cache +
+ * binary-only leaf with no value-needing consumer; `false` for a buffered cache,
+ * for a downstream edge that needs the materialized value, and (defensively) for
+ * a cache that cannot report `supportsStreaming()`.
  *
- * NOTE (reduced scope): the live cache pipe through `TaskRunner` (suppressing the
- * buffered save and driving `saveOutputStream` with the real normalized cache
- * key) is deferred to Spec 2 — `TaskRunner.run()` owns `keyInputs`/policy slot
- * resolution and StreamPump calls it as a black box. See the NOTE in
- * `StreamPump.runStreamingTask`.
- *
- * IMPORTANT: in the current reduced scope nothing drives `saveOutputStream` during
- * a REAL graph run, so a streaming-cache run currently emits a finish with the
- * binary port absent AND the cache never receives the bytes. That absence is NOT
- * the desired outcome — it is a known-incomplete path. The goal we assert here is
- * "decision = don't accumulate"; live delivery (the cache actually getting the
- * bytes on a real run) is completed in Spec 2. We deliberately do NOT assert that
- * a binary-less finish from a real streaming-cache run is "correct", because that
- * would bless silent data loss.
+ * The live byte delivery to `saveOutputStream` during a real run is owned by
+ * `StreamProcessor`'s `BinaryStreamRouter` and covered by
+ * `StreamProcessorBinaryRefSink.test.ts` / `TaskRunnerRefPath.test.ts`.
  */
 
-import type { CacheRef, ITask, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
+import type { CacheRef, StreamEvent, TaskInput, TaskOutput } from "@workglow/task-graph";
 import {
   Dataflow,
-  getBinaryPortId,
   IExecuteContext,
   makeCacheRef,
   StreamPump,
@@ -237,42 +221,6 @@ function blobFromFinish(event: StreamEvent | undefined): Blob | ArrayBuffer | un
 
 async function* gen(...chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   for (const c of chunks) yield c;
-}
-
-/**
- * Resolves to the awaited promise, or rejects with a sentinel if `ms` elapses
- * first. Used so a regression (the promise never settling) fails fast instead
- * of hanging the whole suite.
- */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_resolve, reject) =>
-      setTimeout(() => reject(new Error(`timeout: ${label} did not settle within ${ms}ms`)), ms)
-    ),
-  ]);
-}
-
-/** Minimal `ITask`-shaped event source for the `pipeBinaryToCache` assembly test. */
-class FakeEmitter {
-  private listeners = new Map<string, Set<(...args: any[]) => void>>();
-  on(name: string, fn: (...args: any[]) => void): void {
-    let s = this.listeners.get(name);
-    if (!s) this.listeners.set(name, (s = new Set()));
-    s.add(fn);
-  }
-  off(name: string, fn: (...args: any[]) => void): void {
-    this.listeners.get(name)?.delete(fn);
-  }
-  emit(name: string, ...args: any[]): void {
-    for (const fn of this.listeners.get(name) ?? []) fn(...args);
-  }
-  /** Total live listeners across all event names — used to assert detachment. */
-  listenerCount(): number {
-    let n = 0;
-    for (const s of this.listeners.values()) n += s.size;
-    return n;
-  }
 }
 
 // ============================================================================
@@ -507,176 +455,6 @@ describe("StreamBinaryPump — C2 accumulation materializes bytes on a real run"
 
     // Cache path: the streaming sink fired too (tee).
     expect(cache.saveOutputStreamCalls).toBeGreaterThanOrEqual(1);
-  });
-});
-
-// ============================================================================
-// C2: byte-stream assembly (binary-delta events → AsyncIterable → sink)
-// ============================================================================
-
-describe("StreamBinaryPump.pipeBinaryToCache — assembly", () => {
-  it("feeds binary-delta chunks to the sink and resolves on stream_end", async () => {
-    const emitter = new FakeEmitter();
-    const repo = new StreamingMemoryRepo();
-
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      (chunks) => repo.saveOutputStream("T", { k: 1 }, chunks, {})
-    );
-
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "bytes",
-      binaryDelta: new Uint8Array([1, 2]),
-    });
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "bytes",
-      binaryDelta: new Uint8Array([3]),
-    });
-    emitter.emit("stream_end", {});
-
-    await promise;
-
-    expect(repo.saveOutputStreamCalls).toBe(1);
-    expect(repo.saveOutputCalls).toBe(0);
-    expect(repo.streamedBytes).toEqual([1, 2, 3]);
-  });
-
-  it("filters chunks to the requested binary port", async () => {
-    const emitter = new FakeEmitter();
-    const seen: number[] = [];
-
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      async (chunks) => {
-        for await (const c of chunks) for (const b of c) seen.push(b);
-      }
-    );
-
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "other",
-      binaryDelta: new Uint8Array([9]),
-    });
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "bytes",
-      binaryDelta: new Uint8Array([5, 6]),
-    });
-    emitter.emit("stream_end", {});
-
-    await promise;
-    expect(seen).toEqual([5, 6]);
-  });
-
-  it("uses getBinaryPortId to resolve the source's binary port", () => {
-    expect(getBinaryPortId(CacheableBinaryStreamSource.outputSchema())).toBe("bytes");
-  });
-
-  // --------------------------------------------------------------------------
-  // Failure path: source aborts/errors WITHOUT emitting stream_end.
-  //
-  // StreamProcessor emits `stream_end` ONLY on success — on abort/error it
-  // throws before emitting it. Against the OLD helper (which terminated the
-  // iterable only on `stream_end`) the iterable would await forever, the sink
-  // would never resolve, the returned promise would never settle, and `detach`
-  // (wired via `.finally`) would never run → permanent listener leak + hang.
-  // These tests force settlement under a timeout guard so a regression fails
-  // fast rather than hanging the suite, and assert all listeners are detached.
-  // --------------------------------------------------------------------------
-
-  it("settles and detaches when the source ABORTS without stream_end", async () => {
-    const emitter = new FakeEmitter();
-    const seen: number[] = [];
-
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      async (chunks) => {
-        for await (const c of chunks) for (const b of c) seen.push(b);
-      }
-    );
-
-    // A chunk or two, then abort — NO stream_end.
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "bytes",
-      binaryDelta: new Uint8Array([1, 2]),
-    });
-    emitter.emit("abort", new Error("aborted"));
-
-    // Against the OLD code this never settles → withTimeout rejects → test fails.
-    await withTimeout(promise, 500, "pipeBinaryToCache(abort)");
-
-    // The bytes seen before the abort were finalized, and listeners are gone.
-    expect(seen).toEqual([1, 2]);
-    expect(emitter.listenerCount()).toBe(0);
-  });
-
-  it("settles and detaches when the source ERRORS without stream_end", async () => {
-    const emitter = new FakeEmitter();
-
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      async (chunks) => {
-        // Consume whatever arrives; the helper must close the iterable on error.
-        for await (const _c of chunks) {
-          /* drain */
-        }
-      }
-    );
-
-    emitter.emit("error", new Error("boom"));
-
-    await withTimeout(promise, 500, "pipeBinaryToCache(error)");
-    expect(emitter.listenerCount()).toBe(0);
-  });
-
-  it("settles and detaches when an AbortSignal fires without stream_end", async () => {
-    const emitter = new FakeEmitter();
-    const controller = new AbortController();
-
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      async (chunks) => {
-        for await (const _c of chunks) {
-          /* drain */
-        }
-      },
-      controller.signal
-    );
-
-    emitter.emit("stream_chunk", {
-      type: "binary-delta",
-      port: "bytes",
-      binaryDelta: new Uint8Array([7]),
-    });
-    controller.abort();
-
-    await withTimeout(promise, 500, "pipeBinaryToCache(signal)");
-    expect(emitter.listenerCount()).toBe(0);
-  });
-
-  it("settles when the AbortSignal is ALREADY aborted at call time", async () => {
-    const emitter = new FakeEmitter();
-    const { promise } = StreamPump.pipeBinaryToCache(
-      emitter as unknown as ITask,
-      "bytes",
-      async (chunks) => {
-        for await (const _c of chunks) {
-          /* drain */
-        }
-      },
-      AbortSignal.abort()
-    );
-
-    await withTimeout(promise, 500, "pipeBinaryToCache(pre-aborted)");
-    expect(emitter.listenerCount()).toBe(0);
   });
 });
 
