@@ -68,6 +68,7 @@ describe("JobHandle.outputStream (capability-gated streaming result reads)", () 
   let queueParts: ReturnType<typeof wrapQueueStorage<SInput, SOutput>>;
 
   beforeEach(async () => {
+    await repo.clear();
     queueName = `test-outputstream-${uuid4()}`;
     storage = new InMemoryQueueStorage(queueName);
     await storage.migrate();
