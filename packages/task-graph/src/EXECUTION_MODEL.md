@@ -290,6 +290,10 @@ Binary output ports whose bytes were piped into a stream-capable cache carry a b
 - **Materializing consumer** (target port cannot consume the stream): the ref hydrates into the **enriched finish event** as a `Blob`/`ArrayBuffer` (per the port's `format`), exactly what a fresh run's accumulator would have delivered. The *returned* output still carries the small ref.
 - **No consumers**: no reads are performed; the synthetic finish carries the ref unchanged (callers resolve via `resolveOutput` / `resolveJobOutputStream`).
 
+**Rows store the wire form**: the cached row always carries the `CacheRef`, never inline bytes — JSON-row backings would destroy an inline `Blob`/`ArrayBuffer` (`JSON.stringify(Blob)` is `{}`). Below-threshold hydration to inline bytes applies to the value **returned to the caller**, identically on fresh runs and cache hits.
+
+**Single binary port**: the cache sink keys bytes by `(taskType, inputs)` with no port axis, so cache-streaming supports exactly one binary output port. Tasks with multiple binary ports take the accumulation path (enforced in both `StreamPump.canStreamBinaryToCache` and `CacheCoordinator.getBinaryRefSinksByPolicy`); their inline outputs are only safely cacheable by non-JSON-row backings until per-port refs land.
+
 **Self-healing dangling refs**: when a ref needed for replay or hydration no longer resolves (blob evicted, cache cleared), the hit converts into a **miss** — the task re-executes and rewrites both the row and the bytes. No events are emitted before all refs are validated.
 
 **Input-side hydration**: any branded ref that reaches a task's resolved inputs is hydrated against the run's `CacheRegistry` (private first, then deterministic) before validation and cache-key computation, so ref-bearing inputs fingerprint identically to materialized ones. Binary-streaming input ports with a live input stream are skipped — those consumers take bytes from the stream. An unresolvable input ref fails the task with an error naming the port.

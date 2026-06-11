@@ -305,9 +305,12 @@ export class StreamPump {
 
     const outSchema = task.outputSchema();
     const streamingPorts = getStreamingPorts(outSchema);
-    const binaryOnly =
-      streamingPorts.length > 0 && streamingPorts.every((p) => p.mode === "binary");
-    if (!binaryOnly) return false;
+    // Exactly ONE binary port: the cache sink contract keys bytes by
+    // (taskType, inputs) with no port axis, so only a single port can pipe to
+    // the cache. With accumulation skipped, any additional binary port would
+    // have neither a sink nor an accumulator and its chunks would be silently
+    // dropped — multi-port tasks must take the accumulation path instead.
+    if (streamingPorts.length !== 1 || streamingPorts[0].mode !== "binary") return false;
 
     return !StreamPump.anyConsumerNeedsMaterialized(graph, task);
   }
