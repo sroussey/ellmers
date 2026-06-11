@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeBoundingBox, TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -81,13 +82,28 @@ export const ObjectDetectionOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ObjectDetectionTaskInput = WithImageValuePorts<
-  FromSchema<typeof ObjectDetectionInputSchema>,
+export type ObjectDetectionTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type ObjectDetectionTaskOutput = FromSchema<typeof ObjectDetectionOutputSchema>;
+    threshold?: number | undefined;
+    labels?: string[] | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type ObjectDetectionTaskOutput = {
+  detections:
+    | {
+        score: number;
+        box: { x: number; y: number; width: number; height: number };
+        label: string;
+      }[]
+    | {
+        score: number;
+        box: { x: number; y: number; width: number; height: number };
+        label: string;
+      }[][];
+};
 export type ObjectDetectionTaskConfig = TaskConfig<ObjectDetectionTaskInput>;
 
 /**

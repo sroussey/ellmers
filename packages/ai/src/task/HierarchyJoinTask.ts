@@ -9,7 +9,7 @@ import { ChunkRecordArraySchema, TypeKnowledgeBase } from "@workglow/knowledge-b
 import type { ChunkRecord, KnowledgeBase } from "@workglow/knowledge-base";
 import type { CachePolicy, IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -89,8 +89,48 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type HierarchyJoinTaskInput = FromSchema<typeof inputSchema>;
-export type HierarchyJoinTaskOutput = FromSchema<typeof outputSchema>;
+export type HierarchyJoinTaskInput = {
+  chunks?: string[] | undefined;
+  scores?: number[] | undefined;
+  chunk_ids?: string[] | undefined;
+  includeParentSummaries?: boolean | undefined;
+  includeEntities?: boolean | undefined;
+  metadata: {
+    [x: string]: unknown;
+    leafNodeId?: string | undefined;
+    summary?: string | undefined;
+    entities?: { type: string; text: string; score: number }[] | undefined;
+    parentSummaries?: string[] | undefined;
+    sectionTitles?: string[] | undefined;
+    doc_title?: string | undefined;
+    text: string;
+    doc_id: string;
+    chunkId: string;
+    nodePath: string[];
+    depth: number;
+  }[];
+  knowledgeBase: unknown;
+};
+export type HierarchyJoinTaskOutput = {
+  chunks?: string[] | undefined;
+  scores?: number[] | undefined;
+  chunk_ids?: string[] | undefined;
+  metadata: {
+    [x: string]: unknown;
+    leafNodeId?: string | undefined;
+    summary?: string | undefined;
+    entities?: { type: string; text: string; score: number }[] | undefined;
+    parentSummaries?: string[] | undefined;
+    sectionTitles?: string[] | undefined;
+    doc_title?: string | undefined;
+    text: string;
+    doc_id: string;
+    chunkId: string;
+    nodePath: string[];
+    depth: number;
+  }[];
+  count: number;
+};
 export type HierarchyJoinTaskConfig = TaskConfig<HierarchyJoinTaskInput>;
 
 /**

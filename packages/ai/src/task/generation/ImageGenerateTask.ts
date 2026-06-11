@@ -6,9 +6,10 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 
 import type { Capability } from "../../capability/Capabilities";
+import type { ModelConfig } from "../../model/ModelSchema";
 import type { AiImageOutput } from "../base/AiImageOutputTask";
 import { AiImageOutputTask } from "../base/AiImageOutputTask";
 import { TypeModel } from "../base/AiTaskSchemas";
@@ -33,7 +34,15 @@ export const ImageGenerateInputSchema = {
 
 export const ImageGenerateOutputSchema: DataPortSchema = AiImageOutputSchema;
 
-export type ImageGenerateTaskInput = FromSchema<typeof ImageGenerateInputSchema>;
+export type ImageGenerateTaskInput = {
+  aspectRatio?: "1:1" | "16:9" | "9:16" | "4:3" | "3:4" | undefined;
+  quality?: "low" | "medium" | "high" | undefined;
+  seed?: number | undefined;
+  negativePrompt?: string | undefined;
+  providerOptions?: { [x: string]: unknown } | undefined;
+  model: string | ModelConfig;
+  prompt: string;
+};
 export type ImageGenerateTaskOutput = AiImageOutput;
 export type ImageGenerateTaskConfig = TaskConfig<ImageGenerateTaskInput>;
 

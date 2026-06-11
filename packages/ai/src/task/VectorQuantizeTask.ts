@@ -8,12 +8,10 @@ import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Task, Workflow } from "@workglow/task-graph";
 import {
   DataPortSchema,
-  FromSchema,
   normalizeNumberArray,
   TensorType,
   TypedArray,
   TypedArraySchema,
-  TypedArraySchemaOptions,
 } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
@@ -92,8 +90,16 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type VectorQuantizeTaskInput = FromSchema<typeof inputSchema, TypedArraySchemaOptions>;
-export type VectorQuantizeTaskOutput = FromSchema<typeof outputSchema, TypedArraySchemaOptions>;
+export type VectorQuantizeTaskInput = {
+  normalize?: boolean | undefined;
+  vector: TypedArray | TypedArray[];
+  targetType: "float16" | "float32" | "float64" | "int8" | "uint8" | "int16" | "uint16";
+};
+export type VectorQuantizeTaskOutput = {
+  vector: TypedArray | TypedArray[];
+  targetType: "float16" | "float32" | "float64" | "int8" | "uint8" | "int16" | "uint16";
+  originalType: "float16" | "float32" | "float64" | "int8" | "uint8" | "int16" | "uint16";
+};
 export type VectorQuantizeTaskConfig = TaskConfig<VectorQuantizeTaskInput>;
 
 /**

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DataPortSchemaObject, FromSchema } from "@workglow/util/worker";
+import { DataPortSchemaObject } from "@workglow/util/worker";
 
 /**
  * A model configuration suitable for task/job inputs.
@@ -65,6 +65,33 @@ export const ModelRecordSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchemaObject;
 
-export type ModelConfig = FromSchema<typeof ModelConfigSchema>;
-export type ModelRecord = FromSchema<typeof ModelRecordSchema>;
+export type ModelConfig = {
+  [x: string]: unknown;
+  title?: string | undefined;
+  description?: string | undefined;
+  model_id?: string | undefined;
+  capabilities?: string[] | undefined;
+  metadata?: { [x: string]: unknown } | undefined;
+  provider: string;
+  provider_config: {
+    [x: string]: unknown;
+    credential_key?: string | undefined;
+    native_dimensions?: number | undefined;
+    mrl?: boolean | undefined;
+  };
+};
+export type ModelRecord = {
+  title: string;
+  description: string;
+  model_id: string;
+  capabilities: string[];
+  provider: string;
+  provider_config: {
+    [x: string]: unknown;
+    credential_key?: string | undefined;
+    native_dimensions?: number | undefined;
+    mrl?: boolean | undefined;
+  };
+  metadata: { [x: string]: unknown };
+};
 export const ModelPrimaryKeyNames = ["model_id"] as const;

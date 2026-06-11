@@ -17,8 +17,9 @@ import type { ChunkRecord, DocumentNode, SectionNode, TokenBudget } from "@workg
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { CountTokensTask } from "./CountTokensTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -105,10 +106,37 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type HierarchicalChunkerTaskInput = Omit<FromSchema<typeof inputSchema>, "documentTree"> & {
-  documentTree: DocumentRootNode;
+export type HierarchicalChunkerTaskInput = Omit<
+  {
+    model?: string | ModelConfig | undefined;
+    maxTokens?: number | undefined;
+    overlap?: number | undefined;
+    reservedTokens?: number | undefined;
+    strategy?: "flat" | "hierarchical" | "sentence" | undefined;
+    doc_id: string;
+    documentTree: { [x: string]: unknown };
+  },
+  "documentTree"
+> & { documentTree: DocumentRootNode };
+export type HierarchicalChunkerTaskOutput = {
+  text: string[];
+  doc_id: string;
+  chunks: {
+    [x: string]: unknown;
+    leafNodeId?: string | undefined;
+    summary?: string | undefined;
+    entities?: { type: string; text: string; score: number }[] | undefined;
+    parentSummaries?: string[] | undefined;
+    sectionTitles?: string[] | undefined;
+    doc_title?: string | undefined;
+    text: string;
+    doc_id: string;
+    chunkId: string;
+    nodePath: string[];
+    depth: number;
+  }[];
+  count: number;
 };
-export type HierarchicalChunkerTaskOutput = FromSchema<typeof outputSchema>;
 export type HierarchicalChunkerTaskConfig = TaskConfig<HierarchicalChunkerTaskInput>;
 
 /**

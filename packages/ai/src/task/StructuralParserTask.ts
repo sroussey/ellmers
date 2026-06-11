@@ -8,7 +8,7 @@ import { DocumentRootNode, StructuralParser } from "@workglow/knowledge-base";
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 import { uuid4 } from "@workglow/util";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -70,10 +70,17 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type StructuralParserTaskInput = FromSchema<typeof inputSchema>;
-export type StructuralParserTaskOutput = Omit<FromSchema<typeof outputSchema>, "documentTree"> & {
-  documentTree: DocumentRootNode;
+export type StructuralParserTaskInput = {
+  format?: "text" | "markdown" | "auto" | undefined;
+  doc_id?: string | undefined;
+  sourceUri?: string | undefined;
+  title: string;
+  text: string;
 };
+export type StructuralParserTaskOutput = Omit<
+  { doc_id: string; documentTree: { [x: string]: unknown }; nodeCount: number },
+  "documentTree"
+> & { documentTree: DocumentRootNode };
 export type StructuralParserTaskConfig = TaskConfig<StructuralParserTaskInput>;
 
 /**

@@ -7,7 +7,7 @@
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 export const QueryExpansionMethod = {
@@ -74,8 +74,17 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type QueryExpanderTaskInput = FromSchema<typeof inputSchema>;
-export type QueryExpanderTaskOutput = FromSchema<typeof outputSchema>;
+export type QueryExpanderTaskInput = {
+  method?: "multi-query" | "synonyms" | undefined;
+  numVariations?: number | undefined;
+  query: string;
+};
+export type QueryExpanderTaskOutput = {
+  count: number;
+  query: string[];
+  method: string;
+  originalQuery: string;
+};
 export type QueryExpanderTaskConfig = TaskConfig<QueryExpanderTaskInput>;
 
 /**

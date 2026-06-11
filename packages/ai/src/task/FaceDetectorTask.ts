@@ -6,10 +6,11 @@
 
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { ImageValue, WithImageValuePorts } from "@workglow/util/media";
+import type { ImageValue } from "@workglow/util/media";
 import { ImageValueSchema } from "@workglow/util/media";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { AiVisionTask } from "./base/AiVisionTask";
 
@@ -139,13 +140,28 @@ export const FaceDetectorOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type FaceDetectorTaskInput = WithImageValuePorts<
-  FromSchema<typeof FaceDetectorInputSchema>,
+export type FaceDetectorTaskInput = Omit<
   {
-    image: ImageValue;
-  }
->;
-export type FaceDetectorTaskOutput = FromSchema<typeof FaceDetectorOutputSchema>;
+    minDetectionConfidence?: number | undefined;
+    minSuppressionThreshold?: number | undefined;
+    model: string | ModelConfig;
+    image: string | { [x: string]: unknown };
+  },
+  "image"
+> & { image: ImageValue };
+export type FaceDetectorTaskOutput = {
+  faces:
+    | {
+        score: number;
+        box: { x: number; y: number; width: number; height: number };
+        keypoints: { label?: string | undefined; x: number; y: number }[];
+      }[]
+    | {
+        score: number;
+        box: { x: number; y: number; width: number; height: number };
+        keypoints: { label?: string | undefined; x: number; y: number }[];
+      }[][];
+};
 export type FaceDetectorTaskConfig = TaskConfig<FaceDetectorTaskInput>;
 
 /**

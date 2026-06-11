@@ -13,8 +13,9 @@ import {
   Task,
   Workflow,
 } from "@workglow/task-graph";
-import { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { CountTokensTask } from "./CountTokensTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -126,8 +127,23 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ContextBuilderTaskInput = FromSchema<typeof inputSchema>;
-export type ContextBuilderTaskOutput = FromSchema<typeof outputSchema>;
+export type ContextBuilderTaskInput = {
+  maxLength?: number | undefined;
+  format?: "simple" | "markdown" | "numbered" | "xml" | "json" | undefined;
+  model?: string | ModelConfig | undefined;
+  metadata?: { [x: string]: unknown }[] | undefined;
+  maxTokens?: number | undefined;
+  scores?: number[] | undefined;
+  includeMetadata?: boolean | undefined;
+  separator?: string | undefined;
+  chunks: string[];
+};
+export type ContextBuilderTaskOutput = {
+  context: string;
+  chunksUsed: number;
+  totalLength: number;
+  totalTokens: number;
+};
 export type ContextBuilderTaskConfig = TaskConfig<ContextBuilderTaskInput>;
 
 /**

@@ -8,15 +8,9 @@ import type { ChunkRecord, ChunkSearchResult } from "@workglow/knowledge-base";
 import { KnowledgeBase, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import {
-  DataPortSchema,
-  FromSchema,
-  isTypedArray,
-  TypedArray,
-  TypedArraySchema,
-  TypedArraySchemaOptions,
-} from "@workglow/util/schema";
+import { DataPortSchema, isTypedArray, TypedArray, TypedArraySchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { TextEmbeddingTask } from "./TextEmbeddingTask";
 
@@ -180,8 +174,39 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type ChunkRetrievalTaskInput = FromSchema<typeof inputSchema, TypedArraySchemaOptions>;
-export type ChunkRetrievalTaskOutput = FromSchema<typeof outputSchema, TypedArraySchemaOptions>;
+export type ChunkRetrievalTaskInput =
+  | {
+      filter?: { [x: string]: unknown } | undefined;
+      topK?: number | undefined;
+      method?: "similarity" | "hybrid" | undefined;
+      scoreThreshold?: number | undefined;
+      vectorWeight?: number | undefined;
+      returnVectors?: boolean | undefined;
+      model: string | ModelConfig;
+      query: string;
+      knowledgeBase: unknown;
+    }
+  | {
+      model?: string | ModelConfig | undefined;
+      filter?: { [x: string]: unknown } | undefined;
+      topK?: number | undefined;
+      method?: "similarity" | "hybrid" | undefined;
+      scoreThreshold?: number | undefined;
+      vectorWeight?: number | undefined;
+      returnVectors?: boolean | undefined;
+      query: TypedArray;
+      knowledgeBase: unknown;
+    };
+export type ChunkRetrievalTaskOutput = {
+  vectors?: TypedArray[] | undefined;
+  metadata: { [x: string]: unknown }[];
+  chunks: string[];
+  count: number;
+  query: string | TypedArray;
+  scores: number[];
+  chunk_ids: string[];
+  scoreType: "cosine" | "bm25" | "rrf" | "rerank";
+};
 export type ChunkRetrievalTaskConfig = TaskConfig<ChunkRetrievalTaskInput>;
 
 /**

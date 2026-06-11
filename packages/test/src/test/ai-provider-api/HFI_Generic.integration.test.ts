@@ -38,7 +38,10 @@ runAiProviderConformance({
         description: "Llama 3.1 8B Instruct via HuggingFace Inference API",
         capabilities: ["text.generation", "text.rewriter", "text.summary", "tool-use"],
         provider: HF_INFERENCE as typeof HF_INFERENCE,
-        provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct" },
+        // Pin a router provider that supports tool calling for this model. The
+        // default "auto" policy can route to backends (novita, nscale) that
+        // reject `tools`/`tool_choice` for Llama-3.1-8B-Instruct.
+        provider_config: { model_name: "meta-llama/Llama-3.1-8B-Instruct", provider: "scaleway" },
         metadata: {},
       });
       await getGlobalModelRepository().addModel({

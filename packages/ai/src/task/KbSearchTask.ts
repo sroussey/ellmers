@@ -8,7 +8,7 @@ import type { ChunkSearchResult, KnowledgeBase } from "@workglow/knowledge-base"
 import { chunkText, TypeKnowledgeBase } from "@workglow/knowledge-base";
 import type { IRunConfig, TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, IExecuteContext, Task, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
 
 const inputSchema = {
@@ -87,7 +87,13 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type KbSearchTaskInput = FromSchema<typeof inputSchema>;
+export type KbSearchTaskInput = {
+  filter?: { [x: string]: unknown } | undefined;
+  topK?: number | undefined;
+  scoreThreshold?: number | undefined;
+  query: string;
+  knowledgeBase: unknown;
+};
 export type KbSearchTaskOutput = {
   readonly results: ChunkSearchResult[];
   readonly chunks: string[];

@@ -18,6 +18,23 @@ env:
   TURBO_TELEMETRY_DISABLED: "1"
 
 jobs:
+  typecheck-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun i
+      # Fails the PR if any package's type-instantiation count grows past its
+      # committed budget (scripts/typecheck-budget.json). Re-baseline intentional
+      # growth with: bun run typecheck:budget --update
+      - name: Typecheck budget guard
+        run: bun run typecheck:budget
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -246,6 +263,13 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-rag-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-rag-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -276,12 +300,21 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-hft-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-hft-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           name: build-output
           path: .
       - name: Run HuggingFace Transformers provider tests via vitest
+        env:
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:ai-provider-hft
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-ai-provider-hft-coverage.json
@@ -304,12 +337,21 @@ jobs:
         with:
           bun-version: latest
       - run: bun i
+      - name: Cache Hugging Face / GGUF model downloads
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: hf-models-nodellama-${{ runner.os }}-${{ hashFiles('packages/test/src/samples/**') }}
+          restore-keys: |
+            hf-models-nodellama-${{ runner.os }}-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           name: build-output
           path: .
       - name: Run LlamaCpp provider tests via vitest
+        env:
+          WORKGLOW_SECRETS_PASSPHRASE: ${{ secrets.WORKGLOW_SECRETS_PASSPHRASE }}
         run: bun run test:vitest:ai-provider-nodellama
       - name: Copy Vitest coverage fragment
         run: cp coverage/coverage-final.json vitest-ai-provider-nodellama-coverage.json

@@ -6,8 +6,9 @@
 
 import type { TaskConfig } from "@workglow/task-graph";
 import { CreateWorkflow, Workflow } from "@workglow/task-graph";
-import type { DataPortSchema, FromSchema } from "@workglow/util/schema";
+import type { DataPortSchema } from "@workglow/util/schema";
 import type { Capability } from "../capability/Capabilities";
+import type { ModelConfig } from "../model/ModelSchema";
 import { AiTask } from "./base/AiTask";
 import { TypeModel } from "./base/AiTaskSchemas";
 
@@ -60,8 +61,13 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
-export type TextRerankerTaskInput = FromSchema<typeof inputSchema>;
-export type TextRerankerTaskOutput = FromSchema<typeof outputSchema>;
+export type TextRerankerTaskInput = {
+  topK?: number | undefined;
+  model: string | ModelConfig;
+  query: string;
+  documents: string[];
+};
+export type TextRerankerTaskOutput = { scores: number[]; indices: number[] };
 export type TextRerankerTaskConfig = TaskConfig<TextRerankerTaskInput>;
 
 /**
