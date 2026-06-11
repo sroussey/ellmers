@@ -5,6 +5,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { setLogger } from "@workglow/util";
 
@@ -167,7 +168,7 @@ function translatePostgrestFilter(filter: string): string {
  * This provides a real PostgreSQL database for testing without needing a Supabase instance.
  */
 export function createSupabaseMockClient(): IClosableSupabaseClient {
-  const pglite = new PGlite();
+  const pglite = new PGlite({ extensions: { vector } });
   const logger = getTestingLogger();
   setLogger(logger);
 
@@ -222,6 +223,26 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
           // Return rows for queries with RETURNING clause, otherwise null
           return { data: result.rows.length > 0 ? result.rows : null, error: null };
         } catch (error: any) {
+          // `pglite.query` runs a single prepared statement. Migration files
+          // (and other setup SQL) bundle many statements; route those through
+          // `pglite.exec`, which supports multi-statement scripts.
+          if (error.message?.includes("cannot insert multiple commands")) {
+            try {
+              const results = await pglite.exec(params.query);
+              const last = results[results.length - 1];
+              return { data: last && last.rows.length > 0 ? last.rows : null, error: null };
+            } catch (execError: any) {
+              if (
+                execError.message?.includes("already exists") ||
+                execError.code === "42P07" ||
+                execError.code === "42710" ||
+                execError.code === "42P06"
+              ) {
+                return { data: null, error: null };
+              }
+              return { data: null, error: execError };
+            }
+          }
           // Ignore "already exists" errors for tables, types, and indexes
           if (
             error.message?.includes("already exists") ||
@@ -242,29 +263,17 @@ export function createSupabaseMockClient(): IClosableSupabaseClient {
         }
       }
 
-      // Handle calling arbitrary PostgreSQL functions
+      // Handle calling arbitrary PostgreSQL functions positionally. PostgREST
+      // resolves named arguments, but the mock maps the params object's values
+      // to `$1, $2, ...` in insertion order — so callers MUST pass rpc params
+      // in the SQL function's parameter order.
+      const values = params ? Object.values(params) : [];
+      const placeholders = values.map((_, i) => `$${i + 1}`).join(", ");
       try {
-        // Build the function call with parameters
-        const paramNames = params ? Object.keys(params) : [];
-        const paramValues = params ? Object.values(params) : [];
-
-        // Create parameterized placeholders
-        const placeholders = paramNames.map((_, i) => `$${i + 1}`).join(", ");
-
-        // Build the SELECT query to call the function
-        const query =
-          paramNames.length > 0
-            ? `SELECT * FROM ${functionName}(${placeholders})`
-            : `SELECT * FROM ${functionName}()`;
-
-        const result = await pglite.query(query, paramValues);
+        const result = await pglite.query(`SELECT * FROM ${functionName}(${placeholders})`, values);
         return { data: result.rows, error: null };
-      } catch (error: any) {
-        // If function doesn't exist, return appropriate error
-        if (error.message?.includes("does not exist")) {
-          return { data: null, error: { message: error.message, code: "42883" } };
-        }
-        return { data: null, error };
+      } catch (e: any) {
+        return { data: null, error: { message: e?.message ?? String(e) } };
       }
     },
 
