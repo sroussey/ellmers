@@ -67,4 +67,24 @@ describe("kb_chunks pgvector migration", () => {
     );
     expect(res.rows.length).toBe(1);
   });
+
+  const DIMS = [384, 768, 1024, 1536, 3072] as const;
+  it.each(DIMS)("creates kb_chunks_%i with a working match RPC", async (dim) => {
+    const mk = (a: number[]) => `[${a.join(",")}]`;
+    const base = Array(dim).fill(0);
+    const near = [...base];
+    near[0] = 1;
+    const q = [...base];
+    q[0] = 1;
+    await db.query(
+      `INSERT INTO kb_chunks_${dim} (chunk_id, doc_id, kb_id, tenant_id, project_id, vector, metadata)
+       VALUES ('a','d','kb','dim${dim}','p',$1::vector,'{}'::jsonb)`,
+      [mk(near)]
+    );
+    const res = await db.query(
+      `SELECT * FROM match_kb_chunks_${dim}($1::vector, 5, 0, 'dim${dim}', 'p', 'kb', '{}'::jsonb)`,
+      [mk(q)]
+    );
+    expect(res.rows.length).toBe(1);
+  });
 });
