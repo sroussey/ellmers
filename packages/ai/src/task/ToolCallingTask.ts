@@ -233,6 +233,10 @@ export const ToolCallingOutputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+// `prompt` is manually inlined as the `FromSchema` resolution of the schema's
+// array-item `oneOf` for type-instantiation-budget reasons. The nightly drift
+// guard in `__tests__/types.test-d.ts` asserts equality so a schema edit trips
+// a test instead of silently drifting the runtime type.
 /**
  * Runtime input type for ToolCallingTask.
  *

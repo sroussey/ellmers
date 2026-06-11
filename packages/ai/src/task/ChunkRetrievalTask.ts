@@ -14,7 +14,7 @@ import type { ModelConfig } from "../model/ModelSchema";
 import { TypeModel } from "./base/AiTaskSchemas";
 import { TextEmbeddingTask } from "./TextEmbeddingTask";
 
-const inputSchema = {
+export const ChunkRetrievalInputSchema = {
   type: "object",
   properties: {
     knowledgeBase: TypeKnowledgeBase({
@@ -174,6 +174,12 @@ const outputSchema = {
   additionalProperties: false,
 } as const satisfies DataPortSchema;
 
+/**
+ * Intentionally tighter than `FromSchema`'s resolution: encodes the schema's
+ * `if/then/else` (when `query: string`, `model` is required) which
+ * `json-schema-to-ts` ignores. The nightly drift type-test pins this
+ * divergence by asserting one-way assignability rather than equality.
+ */
 export type ChunkRetrievalTaskInput =
   | {
       filter?: { [x: string]: unknown } | undefined;
@@ -228,7 +234,7 @@ export class ChunkRetrievalTask extends Task<
   public static override cacheable = true;
 
   public static override inputSchema(): DataPortSchema {
-    return inputSchema as DataPortSchema;
+    return ChunkRetrievalInputSchema as DataPortSchema;
   }
 
   public static override outputSchema(): DataPortSchema {
