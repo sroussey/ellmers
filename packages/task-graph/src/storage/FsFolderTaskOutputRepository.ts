@@ -66,19 +66,29 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     metadata: Record<string, unknown>
   ): Promise<CacheRef> {
     await mkdir(this.blobsDir, { recursive: true });
-    const name = `${sanitize(taskType)}_${await makeFingerprint(inputs)}.bin`;
+    // The fingerprint covers the raw taskType too: `sanitize` is lossy, so two
+    // distinct task types can share a sanitized prefix — the hash keeps their
+    // blobs distinct while the prefix keeps names greppable and prefix-deletable.
+    const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
+    const name = `${sanitize(taskType)}_${fingerprint}.bin`;
     const tmpPath = join(this.blobsDir, `${name}.tmp`);
     const handle = await open(tmpPath, "w");
     let size = 0;
     try {
-      for await (const chunk of chunks) {
-        await handle.write(chunk);
-        size += chunk.byteLength;
+      try {
+        for await (const chunk of chunks) {
+          await handle.write(chunk);
+          size += chunk.byteLength;
+        }
+      } finally {
+        await handle.close();
       }
-    } finally {
-      await handle.close();
+      await rename(tmpPath, join(this.blobsDir, name));
+    } catch (err) {
+      // A failed write or rename must not leave a stray .tmp behind.
+      await rm(tmpPath, { force: true });
+      throw err;
     }
-    await rename(tmpPath, join(this.blobsDir, name));
     this.emit("output_saved", taskType);
     const mime = typeof metadata.mime === "string" ? metadata.mime : undefined;
     return makeCacheRef({ $ref: `fsfolder://blobs/${name}`, size, mime });
@@ -126,6 +136,33 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       }
     }
     this.emit("output_pruned");
+    await this.deleteBlobsByPrefix("", cutoff);
+  }
+
+  /**
+   * Row deletions scoped by `taskType` prefix (run-private cleanup via
+   * `RunPrivateCacheRepo.clearRun()` and `CacheJanitor`) must cascade to the
+   * blob sidecar files, or every streamed run-private payload leaks on disk
+   * after its rows are pruned. Blob names start with the sanitized taskType,
+   * and `sanitize` preserves prefix relationships, so a sanitized-prefix match
+   * selects exactly the rows' blobs (a cross-prefix collision would require
+   * two raw prefixes with identical sanitized forms — run namespaces embed a
+   * UUID, so this does not occur in practice).
+   */
+  override async deleteByTaskTypePrefix(prefix: string): Promise<void> {
+    await super.deleteByTaskTypePrefix(prefix);
+    await this.deleteBlobsByPrefix(sanitize(prefix));
+  }
+
+  override async clearOlderThanWithTaskTypePrefix(
+    prefix: string,
+    olderThanInMs: number
+  ): Promise<void> {
+    await super.clearOlderThanWithTaskTypePrefix(prefix, olderThanInMs);
+    await this.deleteBlobsByPrefix(sanitize(prefix), Date.now() - olderThanInMs);
+  }
+
+  private async deleteBlobsByPrefix(namePrefix: string, olderThanMtimeMs?: number): Promise<void> {
     let names: string[];
     try {
       names = await readdir(this.blobsDir);
@@ -133,9 +170,13 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
       return;
     }
     for (const name of names) {
+      if (!name.startsWith(namePrefix)) continue;
       const path = join(this.blobsDir, name);
       try {
-        if ((await stat(path)).mtimeMs < cutoff) await rm(path, { force: true });
+        if (olderThanMtimeMs !== undefined && (await stat(path)).mtimeMs >= olderThanMtimeMs) {
+          continue;
+        }
+        await rm(path, { force: true });
       } catch {
         // Raced with a concurrent write or delete; the next sweep catches it.
       }

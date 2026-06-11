@@ -201,4 +201,48 @@ describe("FsFolderTaskOutputRepository specifics", () => {
     await repo.clearOlderThan(-60_000);
     expect(repo.getOutputStreamByRef!(ref)).toBeUndefined();
   });
+
+  it("deleteByTaskTypePrefix cascades to blob files (run-private cleanup)", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    const runRef = await repo.saveOutputStream!(
+      "__run:abc::T",
+      { k: 1 },
+      gen(new Uint8Array([1])),
+      {}
+    );
+    const keepRef = await repo.saveOutputStream!("Other", { k: 1 }, gen(new Uint8Array([2])), {});
+    await repo.deleteByTaskTypePrefix("__run:abc::");
+    expect(repo.getOutputStreamByRef!(runRef)).toBeUndefined();
+    expect(repo.getOutputStreamByRef!(keepRef)).toBeDefined();
+  });
+
+  it("clearOlderThanWithTaskTypePrefix cascades to blob files by prefix and age", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    const staleRef = await repo.saveOutputStream!(
+      "__run:x::T",
+      { k: 1 },
+      gen(new Uint8Array([1])),
+      {}
+    );
+    const keepRef = await repo.saveOutputStream!("Other", { k: 1 }, gen(new Uint8Array([2])), {});
+    await repo.clearOlderThanWithTaskTypePrefix("__run:", -60_000);
+    expect(repo.getOutputStreamByRef!(staleRef)).toBeUndefined();
+    expect(repo.getOutputStreamByRef!(keepRef)).toBeDefined();
+  });
+
+  it("task types with colliding sanitized names get distinct blobs", async () => {
+    const folder = await mkdtemp(join(tmpdir(), "wg-cache-streamout-"));
+    const repo = new FsFolderTaskOutputRepository(folder);
+    // Both sanitize to "My-Task"; same inputs — only the fingerprinted raw
+    // taskType keeps the blob files apart.
+    const refA = await repo.saveOutputStream!("My@Task", { k: 1 }, gen(new Uint8Array([1])), {});
+    const refB = await repo.saveOutputStream!("My/Task", { k: 1 }, gen(new Uint8Array([2])), {});
+    expect(refA.$ref).not.toBe(refB.$ref);
+    const a = new Uint8Array(await (await repo.getOutputByRef!(refA))!.arrayBuffer());
+    const b = new Uint8Array(await (await repo.getOutputByRef!(refB))!.arrayBuffer());
+    expect(Array.from(a)).toEqual([1]);
+    expect(Array.from(b)).toEqual([2]);
+  });
 });
