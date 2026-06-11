@@ -36,6 +36,11 @@ export interface RunPrivateCacheRepoOptions {
  * and signals the fallback via {@link noteFallbackKey}; this wrapper warns once
  * per process to tell the operator that the cache is best-effort intra-process
  * only until task ids are pinned.
+ *
+ * Capability probing on this wrapper MUST use `typeof repo.method ===
+ * "function"` or optional-call (`repo.method?.()`): optional methods the
+ * backing lacks are shadowed to `undefined` on the instance, so an unguarded
+ * call is a `TypeError` even though the prototype declares the method.
  */
 export class RunPrivateCacheRepo extends TaskOutputRepository {
   private static fallbackWarned = false;

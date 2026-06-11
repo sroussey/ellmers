@@ -122,6 +122,11 @@ async function outputValueToStream(
  * `undefined`). Inline `Blob` / `ArrayBuffer` / `Uint8Array` values at a
  * named port are adapted to a stream so callers don't branch on whether the
  * reference threshold kept the value inline.
+ *
+ * Portless discovery walks the ENTIRE output, including fields whose content
+ * the job may have copied from untrusted input — a crafted branded ref shape
+ * embedded there would be resolved against the backing. Pass an explicit
+ * `port` whenever the producer of the output is not fully trusted.
  */
 export async function resolveJobOutputStream<Output>(
   handle: JobHandleLike<Output>,
