@@ -1,5 +1,18 @@
 # @workglow/ai
 
+## 0.3.14
+
+### Features
+
+- add typecheck budget guard to catch type-instantiation regressions (#555)
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### ai
+
+- export ChunkRetrievalInputSchema + nightly schema-vs-type drift guard (#565)
+
 ## 0.3.13
 
 ## 0.3.12

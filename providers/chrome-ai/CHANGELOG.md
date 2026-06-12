@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@types/dom-chromium-ai`: ^0.0.17
+
 ## 0.3.13
 
 ## 0.3.12

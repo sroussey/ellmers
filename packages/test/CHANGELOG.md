@@ -1,5 +1,41 @@
 # @workglow/test
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+#### supabase
+
+- add Supabase vector storage with pgvector support (#578)
+
+### Bug Fixes
+
+#### mcp
+
+- thread run-scoped registry through discoverSchemas (#577)
+- resolve auth credentials through the run-scoped registry
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
+### Tests
+
+- pin HF router provider for tool-calling conformance tests (#564)
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@aws-sdk/client-sqs`: ^3.1068.0
+- `@cloudflare/workers-types`: ^4.20260612.1
+- `@types/dom-chromium-ai`: ^0.0.17
+- `miniflare`: ^4.20260611.0
+
 ## 0.3.13
 
 ### Refactors

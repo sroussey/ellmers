@@ -1,5 +1,20 @@
 # @workglow/web
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@tailwindcss/vite`: ^4.3.1
+- `tailwindcss`: ^4.3.1
+
 ## 0.3.13
 
 ### Refactors

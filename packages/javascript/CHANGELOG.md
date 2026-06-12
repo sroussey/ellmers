@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+- tsgo issue
+
 ## 0.3.13
 
 ## 0.3.12

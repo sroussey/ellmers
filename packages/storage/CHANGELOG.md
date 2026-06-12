@@ -1,5 +1,17 @@
 # @workglow/storage
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
 ## 0.3.13
 
 ### Features

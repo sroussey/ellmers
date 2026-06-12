@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Chores
+
+- update deps
+
+### Updated Dependencies
+
+- `@cloudflare/workers-types`: ^4.20260612.1
+
 ## 0.3.13
 
 ## 0.3.12

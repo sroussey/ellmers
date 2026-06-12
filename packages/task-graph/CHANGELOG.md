@@ -1,5 +1,23 @@
 # @workglow/task-graph
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### task-graph,storage
+
+- cache restart-resume + SharedInMemory sync barrier (#552)
+
+### Documentation
+
+#### task-graph
+
+- fix TaskOutputTabularRepository README examples for new constructor signature
+
 ## 0.3.13
 
 ### Refactors

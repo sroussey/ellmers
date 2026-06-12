@@ -1,5 +1,11 @@
 # @workglow/knowledge-base
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
 ## 0.3.13
 
 ## 0.3.12

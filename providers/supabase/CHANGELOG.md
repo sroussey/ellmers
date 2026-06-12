@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+#### supabase
+
+- add Supabase vector storage with pgvector support (#578)
+
 ## 0.3.13
 
 ## 0.3.12

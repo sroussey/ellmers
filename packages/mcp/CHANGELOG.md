@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.14
+
+### Features
+
+- add bugs URL to package.json files across all packages and providers
+
+### Bug Fixes
+
+#### mcp
+
+- thread run-scoped registry through discoverSchemas (#577)
+- resolve auth credentials through the run-scoped registry
+
 ## 0.3.13
 
 ## 0.3.12
