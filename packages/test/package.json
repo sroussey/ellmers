@@ -29,6 +29,7 @@
     "@aws-sdk/client-sqs": "^3.1068.0",
     "@cloudflare/workers-types": "^4.20260612.1",
     "@electric-sql/pglite": "catalog:",
+    "@electric-sql/pglite-pgvector": "catalog:",
     "@modelcontextprotocol/sdk": "catalog:",
     "@sqliteai/sqlite-vector": "catalog:",
     "@supabase/supabase-js": "catalog:",
