@@ -167,4 +167,29 @@ describe("resolveOutput", () => {
     // attempting to rewrite the back-edge).
     expect(out.parent).toBe(a);
   });
+
+  it("treats Error as an opaque leaf (own non-enumerable data preserved)", async () => {
+    const resolver = vi.fn<CacheRefResolver>();
+    const err = new Error("boom");
+    const input = { failure: err };
+    const out = await resolveOutput(input, resolver);
+    // Identity preserved (no refs to resolve).
+    expect(out).toBe(input);
+    expect(out.failure).toBe(err);
+    expect(out.failure.message).toBe("boom");
+    expect(out.failure instanceof Error).toBe(true);
+    expect(resolver).not.toHaveBeenCalled();
+  });
+
+  it("treats URL as an opaque leaf (prototype accessors keep working)", async () => {
+    const resolver = vi.fn<CacheRefResolver>();
+    const url = new URL("https://example.com/path?q=1");
+    const input = { target: url };
+    const out = await resolveOutput(input, resolver);
+    expect(out).toBe(input);
+    expect(out.target).toBe(url);
+    expect(out.target.href).toBe("https://example.com/path?q=1");
+    expect(out.target instanceof URL).toBe(true);
+    expect(resolver).not.toHaveBeenCalled();
+  });
 });
