@@ -55,27 +55,33 @@ function asResolver(backing: RefBacking): CacheRefResolver | undefined {
   return (ref) => get.call(backing, ref);
 }
 
-function collectCacheRefs(value: unknown, out: CacheRef[]): void {
+function collectCacheRefs(
+  value: unknown,
+  out: CacheRef[],
+  visited: WeakSet<object> = new WeakSet()
+): void {
   if (isCacheRef(value)) {
     out.push(value);
     return;
   }
   if (value === null || typeof value !== "object") return;
   if (value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return;
+  if (visited.has(value as object)) return;
+  visited.add(value as object);
   if (Array.isArray(value)) {
-    for (const v of value) collectCacheRefs(v, out);
+    for (const v of value) collectCacheRefs(v, out, visited);
     return;
   }
   if (value instanceof Map) {
-    for (const v of value.values()) collectCacheRefs(v, out);
+    for (const v of value.values()) collectCacheRefs(v, out, visited);
     return;
   }
   if (value instanceof Set) {
-    for (const v of value) collectCacheRefs(v, out);
+    for (const v of value) collectCacheRefs(v, out, visited);
     return;
   }
   const source = value as Record<string, unknown>;
-  for (const k of Object.keys(source)) collectCacheRefs(source[k], out);
+  for (const k of Object.keys(source)) collectCacheRefs(source[k], out, visited);
 }
 
 async function outputValueToStream(
