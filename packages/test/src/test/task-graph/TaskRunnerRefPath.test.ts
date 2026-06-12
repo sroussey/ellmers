@@ -203,3 +203,34 @@ describe("TaskRunner — Phase D.4 threshold-based size decision", () => {
     expect(output.bytes).toBeInstanceOf(Blob);
   });
 });
+
+describe("TaskRunner — orphan blob cleanup on row-save failure", () => {
+  it("deletes the streamed blob when saveOutput throws so the ref does not leak", async () => {
+    class FailingRepo extends StreamingMemoryRepo {
+      public deletedRefs: CacheRef[] = [];
+      override async saveOutput(): Promise<void> {
+        throw new Error("row write failed");
+      }
+      override async deleteOutputByRef(ref: CacheRef): Promise<void> {
+        this.deletedRefs.push(ref);
+        this.streamed.delete(ref.$ref);
+      }
+    }
+    const failing = new FailingRepo({});
+    const failingServices = new ServiceRegistry(new Container());
+    failingServices.registerInstance(
+      CACHE_REGISTRY,
+      new DefaultCacheRegistry({ deterministic: failing })
+    );
+    const task = new BlobStreamTask();
+    await expect(
+      task.run({}, { registry: failingServices, referenceThresholdBytes: 0 })
+    ).rejects.toThrow("row write failed");
+
+    // Sink wrote the blob, but the row commit failed — the runner should
+    // have asked the repo to delete the orphan blob before re-throwing.
+    expect(failing.saveOutputStreamCalls).toBe(1);
+    expect(failing.deletedRefs.length).toBe(1);
+    expect(failing.streamed.size).toBe(0);
+  });
+});

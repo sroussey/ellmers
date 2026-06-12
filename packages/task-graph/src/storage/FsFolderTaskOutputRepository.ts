@@ -133,11 +133,26 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     })();
   }
 
+  override async deleteOutputByRef(ref: CacheRef): Promise<void> {
+    const path = this.blobPath(ref);
+    if (path === undefined) return;
+    await rm(path, { force: true });
+  }
+
   override async clear(): Promise<void> {
     await super.clear();
     await rm(this.blobsDir, { recursive: true, force: true });
   }
 
+  /**
+   * Prune rows and blobs older than `olderThanInMs`. Operators SHOULD schedule
+   * this (e.g. via {@link CacheJanitor}) on a recurring cadence: it is also
+   * the sweep that reclaims orphan blobs left by process crashes between a
+   * successful stream-write and the row commit (the runner cleans up best-
+   * effort via {@link TaskOutputRepository.deleteOutputByRef} on synchronous
+   * save failure, but a hard kill races that path). Without periodic
+   * `clearOlderThan`, stranded blobs accumulate without bound.
+   */
   override async clearOlderThan(olderThanInMs: number): Promise<void> {
     const cutoff = Date.now() - olderThanInMs;
     // FsFolderTabularStorage does not implement deleteSearch (the base
