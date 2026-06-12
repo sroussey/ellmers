@@ -314,12 +314,28 @@ export class TaskRunner<
           // destroyed by JSON-row backings (JSON.stringify(Blob) === "{}").
           // The row therefore always carries the ref; hydration below applies
           // only to the value returned to the caller.
-          await this.cacheCoordinator.saveByPolicy(
-            keyInputs,
-            outputs as Output,
-            this.cacheRegistry,
-            policy
-          );
+          try {
+            await this.cacheCoordinator.saveByPolicy(
+              keyInputs,
+              outputs as Output,
+              this.cacheRegistry,
+              policy
+            );
+          } catch (saveErr) {
+            // The stream sink already wrote the blob and minted a CacheRef
+            // before we got here; the row write failure leaves that blob
+            // unreferenced. Best-effort delete it so the cache directory
+            // does not accumulate orphans on every save failure.
+            if (binaryRefSinks !== undefined && outputs !== undefined) {
+              await this.cacheCoordinator.cleanupOrphanBlobsForBinaryPorts(
+                outputs as Output,
+                this.cacheRegistry,
+                policy,
+                this.task.outputSchema()
+              );
+            }
+            throw saveErr;
+          }
 
           // Rehydrate refs whose committed size is below the configured
           // threshold so callers see inline bytes for small outputs (threshold

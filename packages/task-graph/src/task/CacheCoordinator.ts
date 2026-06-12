@@ -351,6 +351,41 @@ export class CacheCoordinator<Input extends TaskInput, Output extends TaskOutput
   }
 
   /**
+   * Best-effort cleanup of orphan blobs after a row commit fails. When
+   * `saveByPolicy` rejects after the stream sink already wrote bytes and
+   * minted a {@link CacheRef}, the blob has no row pointing at it and is
+   * effectively leaked until the next janitor sweep. Walk the output's binary
+   * ports, locate any {@link CacheRef} values, and ask the backing to delete
+   * them. Per-ref deletion failures are swallowed and logged — they should
+   * not mask the original save error the caller is about to re-throw.
+   */
+  public async cleanupOrphanBlobsForBinaryPorts(
+    output: Output,
+    registry: CacheRegistry | undefined,
+    policy: CachePolicy,
+    outputSchema: DataPortSchema
+  ): Promise<void> {
+    if (output === null || typeof output !== "object") return;
+    const cache = this.repoFor(registry, policy);
+    if (!cache || typeof cache.deleteOutputByRef !== "function") return;
+    const source = output as Record<string, unknown>;
+    const binaryPorts = getStreamingPorts(outputSchema)
+      .filter((p) => p.mode === "binary")
+      .map((p) => p.port);
+    await Promise.all(
+      binaryPorts.map(async (port) => {
+        const value = source[port];
+        if (!isCacheRef(value)) return;
+        try {
+          await cache.deleteOutputByRef!(value);
+        } catch {
+          // Best-effort: the periodic janitor sweep will reclaim what we miss.
+        }
+      })
+    );
+  }
+
+  /**
    * Build the per-port `BinaryRefSink` map the runner passes to
    * `StreamProcessor.run()` so binary streams pipe straight to the cache and
    * `Output` carries a {@link CacheRef} at the port slot.
