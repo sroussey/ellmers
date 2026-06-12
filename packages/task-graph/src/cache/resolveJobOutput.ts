@@ -66,6 +66,10 @@ function collectCacheRefs(
   }
   if (value === null || typeof value !== "object") return;
   if (value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return;
+  // Error / URL keep their data on the prototype; mirror the leaf set in
+  // `resolveRef.ts` so both walkers stop at the same boundary.
+  if (value instanceof Error) return;
+  if (typeof URL !== "undefined" && value instanceof URL) return;
   if (visited.has(value as object)) return;
   visited.add(value as object);
   if (Array.isArray(value)) {

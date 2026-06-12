@@ -94,9 +94,10 @@ export type ResolveOutputOptions = {
  * on `===` / `WeakMap` keys not being silently invalidated by an auto-resolve.
  *
  * Plain objects and arrays are walked structurally; objects with a non-Object
- * prototype (class instances such as `Error`, `URL`) are also walked, and the
- * returned clone preserves their prototype. `Blob`, `ArrayBuffer`, typed
- * arrays, `Date`, `RegExp`, and `Promise` are treated as opaque leaves.
+ * prototype (custom classes) are walked too, and the returned clone preserves
+ * their prototype. `Blob`, `ArrayBuffer`, typed arrays, `Date`, `RegExp`,
+ * `Promise`, `Error`, and `URL` are treated as opaque leaves (the latter two
+ * because their data lives on the prototype and `Object.keys()` would drop it).
  * `Map`/`Set` are walked through so that refs nested inside them can resolve.
  *
  * On cache miss the resolver returns `undefined`; the corresponding slot in
@@ -230,6 +231,12 @@ function isLeaf(value: unknown): boolean {
   if (value instanceof Date) return true;
   if (value instanceof RegExp) return true;
   if (value instanceof Promise) return true;
+  // Error and URL keep their data on the prototype (Error.message / Error.stack
+  // are own non-enumerable; URL exposes everything via accessors), so the
+  // generic Object.keys()-based clone would silently drop their content.
+  // Treat them as opaque leaves: identity is preserved, accessors keep working.
+  if (value instanceof Error) return true;
+  if (typeof URL !== "undefined" && value instanceof URL) return true;
   return false;
 }
 
