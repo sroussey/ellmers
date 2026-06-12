@@ -52,6 +52,14 @@ function sanitize(s: string): string {
  * Two instances pointed at the same folder interoperate: a `CacheRef` written
  * by one resolves through the other (the cross-process contract for queue
  * consumers). Node/Bun only — exported via the package's server entries.
+ *
+ * Multi-tenant warning: blob names in the deterministic cache path are derived
+ * from `(sanitize(taskType), fingerprint(inputs))` with no tenant axis, so two
+ * tenants running the same task with identical inputs share a blob — an
+ * existence side-channel for sensitive inputs. This repository assumes a
+ * SINGLE-TENANT deployment. For multi-tenant use, wrap with a per-tenant
+ * folder/prefix at the layer above, or scope writes through
+ * {@link RunPrivateCacheRepo} so each run namespaces its own blobs.
  */
 export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
   private readonly blobsDir: string;
@@ -75,6 +83,9 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     // The fingerprint covers the raw taskType too: `sanitize` is lossy, so two
     // distinct task types can share a sanitized prefix — the hash keeps their
     // blobs distinct while the prefix keeps names greppable and prefix-deletable.
+    // Note (multi-tenant): there is no tenant axis here. Identical inputs from
+    // two tenants resolve to the same name and share a blob. See the class
+    // JSDoc for the deployment assumption and the documented wrappers.
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
     const name = `${sanitize(taskType)}_${fingerprint}.bin`;
     const tmpPath = join(this.blobsDir, `${name}.tmp`);
