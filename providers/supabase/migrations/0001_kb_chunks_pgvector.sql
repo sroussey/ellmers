@@ -51,7 +51,8 @@ alter table kb_chunks_768 enable row level security;
 -- Defense-in-depth: the service role bypasses RLS; this policy gates any
 -- non-service connection that might reach the table directly.
 create policy kb_chunks_768_tenant_isolation on kb_chunks_768
-  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub')
+  with check (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
 
 create table if not exists kb_chunks_384 (
   chunk_id   text not null,
@@ -101,7 +102,8 @@ $$;
 
 alter table kb_chunks_384 enable row level security;
 create policy kb_chunks_384_tenant_isolation on kb_chunks_384
-  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub')
+  with check (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
 
 create table if not exists kb_chunks_1024 (
   chunk_id   text not null,
@@ -151,7 +153,8 @@ $$;
 
 alter table kb_chunks_1024 enable row level security;
 create policy kb_chunks_1024_tenant_isolation on kb_chunks_1024
-  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub')
+  with check (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
 
 create table if not exists kb_chunks_1536 (
   chunk_id   text not null,
@@ -201,7 +204,8 @@ $$;
 
 alter table kb_chunks_1536 enable row level security;
 create policy kb_chunks_1536_tenant_isolation on kb_chunks_1536
-  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub')
+  with check (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
 
 create table if not exists kb_chunks_3072 (
   chunk_id   text not null,
@@ -254,4 +258,5 @@ $$;
 
 alter table kb_chunks_3072 enable row level security;
 create policy kb_chunks_3072_tenant_isolation on kb_chunks_3072
-  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
+  using (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub')
+  with check (tenant_id = current_setting('request.jwt.claims', true)::jsonb->>'sub');
