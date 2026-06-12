@@ -39,19 +39,40 @@ import { SupabaseTabularStorage } from "./SupabaseTabularStorage";
  */
 const SAFE_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
-/** Scope a vector store is bound to before reads/writes are permitted. */
-export interface VectorScope {
-  readonly tenant_id: string;
-  readonly project_id: string;
-  readonly kb_id: string;
-}
+/**
+ * A generic equality scope a vector store can be bound to: a map of column
+ * name to value. When set, every read and write is constrained to these
+ * columns (writes stamp them, reads filter on them, and the `match_<table>`
+ * RPC receives them as `p_scope`). The column names carry no meaning here —
+ * the caller picks them (e.g. an application might bind a tenant/project key).
+ */
+export type VectorScope = Record<string, string>;
 
 /**
  * Supabase-backed vector repository. Extends {@link SupabaseTabularStorage}
  * for row storage and delegates similarity search to a server-side
- * `match_<table>` RPC (pgvector). Every read and write is bound to a tenant /
- * project / knowledge-base scope set via {@link withScope}; scope columns are
- * stamped onto writes from the resolved scope rather than from client input.
+ * `match_<table>` RPC (pgvector).
+ *
+ * The RPC contract is generic; the consumer owns the table and the function
+ * via a migration. The expected signature is:
+ *
+ * ```sql
+ * match_<table>(
+ *   query_embedding vector,   -- the search vector
+ *   match_count     int,      -- LIMIT
+ *   score_threshold float,    -- optional minimum score (NULL = no minimum)
+ *   p_scope         jsonb,    -- equality scope (the bound {@link VectorScope})
+ *   p_filter        jsonb     -- metadata containment filter
+ * ) returns setof <table-row + score float>
+ * ```
+ *
+ * The function decides how to apply `p_scope` (which scope columns exist is the
+ * consumer's concern) and must order by vector distance and return a `score`.
+ *
+ * Binding a {@link VectorScope} via {@link withScope} is optional. When bound,
+ * scope columns are stamped onto writes from the resolved scope rather than
+ * from client input, and every read/delete is narrowed to the scope. When
+ * unbound, the store behaves as a plain table-wide vector store.
  *
  * @template Schema - The schema definition for the entity
  * @template PrimaryKeyNames - Array of property names that form the primary key
@@ -150,26 +171,18 @@ export class SupabaseVectorStorage<
       this.vectorDimensions,
       this.vectorCtor
     );
-    clone.scope = scope;
+    clone.scope = { ...scope };
     return clone;
   }
 
-  private getScopeFilter(): VectorScope {
-    if (!this.scope) {
-      throw new StorageValidationError("SupabaseVectorStorage used without scope");
-    }
-    return this.scope;
-  }
-
   /**
-   * Serialize the vector TypedArray to pgvector text (`[a,b,c]`) and stamp the
-   * resolved scope columns. The base tabular upsert forwards values to the
-   * driver unchanged, and PGlite/pgvector accept the text form for a `vector`
-   * column — a raw TypedArray would be rejected. Scope columns always come from
-   * the resolved scope, never from client-supplied input.
+   * Serialize the vector TypedArray to pgvector text (`[a,b,c]`) and, when a
+   * scope is bound, stamp the scope columns. The base tabular upsert forwards
+   * values to the driver unchanged, and PGlite/pgvector accept the text form
+   * for a `vector` column — a raw TypedArray would be rejected. Scope columns
+   * always come from the resolved scope, never from client-supplied input.
    */
   private prepareForWrite(entity: InsertType): InsertType {
-    const scope = this.getScopeFilter();
     const record = { ...(entity as Record<string, unknown>) };
 
     record[this.vectorPropertyName as string] = this.toPgVectorText(
@@ -181,9 +194,9 @@ export class SupabaseVectorStorage<
         record[metaCol] = {};
       }
     }
-    record.tenant_id = scope.tenant_id;
-    record.project_id = scope.project_id;
-    record.kb_id = scope.kb_id;
+    if (this.scope) {
+      Object.assign(record, this.scope);
+    }
 
     return record as InsertType;
   }
@@ -222,7 +235,6 @@ export class SupabaseVectorStorage<
     options: VectorSearchOptions<Metadata> = {}
   ): Promise<Array<Entity & { score: number }>> {
     const { topK = 10, filter = {} as Partial<Metadata>, scoreThreshold = 0 } = options;
-    const scope = this.getScopeFilter();
 
     for (const key of Object.keys(filter)) {
       if (!SAFE_IDENTIFIER_RE.test(key)) {
@@ -239,9 +251,7 @@ export class SupabaseVectorStorage<
       query_embedding: `[${Array.from(query).join(",")}]`,
       match_count: topK,
       score_threshold: scoreThreshold,
-      p_tenant_id: scope.tenant_id,
-      p_project_id: scope.project_id,
-      p_kb_id: scope.kb_id,
+      p_scope: this.scope ?? {},
       p_filter: filter,
     });
 
@@ -274,55 +284,52 @@ export class SupabaseVectorStorage<
   }
 
   // ---- Scope-enforcing overrides -------------------------------------------
-  // The inherited tabular methods operate table-wide. For a scoped vector store
-  // every access must stay within the bound (tenant, project, kb) scope, so the
-  // scope columns are narrowed onto each inherited read/delete here. Database
-  // RLS only constrains the tenant; cross-project / cross-kb isolation is
-  // enforced in this layer, so dropping these overrides would let a single kb's
-  // `getAll`/`clearChunks` read or delete every kb the tenant owns at this
-  // dimension. Scope values always win over caller-supplied criteria.
+  // The inherited tabular methods operate table-wide. When a scope is bound,
+  // every access must stay within it, so the scope columns are narrowed onto
+  // each inherited read/delete here (scope values win over caller criteria).
+  // Without this a single scope's `getAll`/`deleteAll` would read or delete
+  // every row the connection can see. With no scope bound, each method falls
+  // through to the plain table-wide base behavior.
 
-  private scopeRecord<T extends Record<string, unknown>>(base: T): T {
-    const scope = this.getScopeFilter();
-    return {
-      ...base,
-      tenant_id: scope.tenant_id,
-      project_id: scope.project_id,
-      kb_id: scope.kb_id,
-    };
+  private mergeScope<T extends Record<string, unknown>>(base: T): T {
+    return this.scope ? { ...base, ...this.scope } : base;
   }
 
-  private scopeOnlyCriteria(): SearchCriteria<Entity> {
-    return this.scopeRecord({}) as SearchCriteria<Entity>;
+  private scopeCriteria(): SearchCriteria<Entity> {
+    return (this.scope ?? {}) as SearchCriteria<Entity>;
   }
 
   public override async get(
     key: SimplifyPrimaryKey<Entity, PrimaryKeyNames>
   ): Promise<Entity | undefined> {
-    return super.get(this.scopeRecord(key as Record<string, unknown>) as typeof key);
+    return super.get(this.mergeScope(key as Record<string, unknown>) as typeof key);
   }
 
   public override async delete(
     value: SimplifyPrimaryKey<Entity, PrimaryKeyNames> | Entity
   ): Promise<void> {
-    return super.delete(this.scopeRecord(value as Record<string, unknown>) as typeof value);
+    return super.delete(this.mergeScope(value as Record<string, unknown>) as typeof value);
   }
 
   public override async getAll(options?: QueryOptions<Entity>): Promise<Entity[] | undefined> {
-    return super.query(this.scopeOnlyCriteria(), options);
+    if (!this.scope) return super.getAll(options);
+    return super.query(this.scopeCriteria(), options);
   }
 
   public override async deleteAll(): Promise<void> {
-    await super.deleteSearch(this.scopeOnlyCriteria() as DeleteSearchCriteria<Entity>);
+    if (!this.scope) return super.deleteAll();
+    await super.deleteSearch(this.scopeCriteria() as DeleteSearchCriteria<Entity>);
   }
 
   public override async size(): Promise<number> {
-    return super.count(this.scopeOnlyCriteria());
+    if (!this.scope) return super.size();
+    return super.count(this.scopeCriteria());
   }
 
   public override async count(criteria?: SearchCriteria<Entity>): Promise<number> {
+    if (!this.scope) return super.count(criteria);
     return super.count(
-      this.scopeRecord((criteria ?? {}) as Record<string, unknown>) as SearchCriteria<Entity>
+      this.mergeScope((criteria ?? {}) as Record<string, unknown>) as SearchCriteria<Entity>
     );
   }
 
@@ -331,14 +338,14 @@ export class SupabaseVectorStorage<
     options?: QueryOptions<Entity>
   ): Promise<Entity[] | undefined> {
     return super.query(
-      this.scopeRecord(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
+      this.mergeScope(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
       options
     );
   }
 
   public override async deleteSearch(criteria: DeleteSearchCriteria<Entity>): Promise<void> {
     await super.deleteSearch(
-      this.scopeRecord(criteria as Record<string, unknown>) as DeleteSearchCriteria<Entity>
+      this.mergeScope(criteria as Record<string, unknown>) as DeleteSearchCriteria<Entity>
     );
   }
 
@@ -346,11 +353,13 @@ export class SupabaseVectorStorage<
     offset: number,
     limit: number
   ): Promise<Entity[] | undefined> {
-    return super.query(this.scopeOnlyCriteria(), { offset, limit });
+    if (!this.scope) return super.getOffsetPage(offset, limit);
+    return super.query(this.scopeCriteria(), { offset, limit });
   }
 
   public override async getPage(request: PageRequest<Entity> = {}): Promise<Page<Entity>> {
-    return super.queryPage(this.scopeOnlyCriteria(), request);
+    if (!this.scope) return super.getPage(request);
+    return super.queryPage(this.scopeCriteria(), request);
   }
 
   public override async queryPage(
@@ -358,7 +367,7 @@ export class SupabaseVectorStorage<
     request: PageRequest<Entity> = {}
   ): Promise<Page<Entity>> {
     return super.queryPage(
-      this.scopeRecord(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
+      this.mergeScope(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
       request
     );
   }
@@ -368,7 +377,7 @@ export class SupabaseVectorStorage<
     options: CoveringIndexQueryOptions<Entity, K>
   ): Promise<Pick<Entity, K>[]> {
     return super.queryIndex(
-      this.scopeRecord(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
+      this.mergeScope(criteria as Record<string, unknown>) as SearchCriteria<Entity>,
       options
     );
   }
