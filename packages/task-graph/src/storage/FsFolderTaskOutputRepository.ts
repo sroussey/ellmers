@@ -39,6 +39,12 @@ function sanitize(s: string): string {
  * `saveOutputStream` live as sidecar files under `<folder>/blobs/`, written
  * incrementally (never materialized) to a `.tmp` file and atomically renamed
  * on completion — a crash mid-write never publishes a readable partial blob.
+ * The temp handle is `sync()`'d before rename so a power loss between the
+ * rename and the OS flushing dirty data cannot leave the published blob name
+ * pointing at zero bytes. We intentionally do NOT fsync the containing
+ * directory: the rename is durable enough for cache semantics (a crash that
+ * loses the rename simply forces a recompute), and the directory fsync would
+ * add a syscall to every write for negligible benefit.
  *
  * The blob name derives from `(taskType, fingerprint(inputs))`, so re-running
  * the same task overwrites its previous blob instead of leaking files.
@@ -80,6 +86,13 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
           await handle.write(chunk);
           size += chunk.byteLength;
         }
+        // Flush the file's data to the underlying storage before we publish
+        // it under the final name. Without this, a power loss between the
+        // rename and the OS flushing dirty pages can leave the published
+        // blob name pointing at zero bytes (FS-dependent). Data-level
+        // durability is what the cache contract needs; we deliberately skip
+        // the directory fsync (its cost outweighs the benefit for a cache).
+        await handle.sync();
       } finally {
         await handle.close();
       }
