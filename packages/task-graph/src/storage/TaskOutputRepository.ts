@@ -129,6 +129,16 @@ export abstract class TaskOutputRepository {
    */
   getOutputStreamByRef?(ref: CacheRef): AsyncIterable<Uint8Array> | undefined;
 
+  /**
+   * OPTIONAL cleanup hook for orphan blobs. Called by the runner when a
+   * stream-write succeeded (producing a {@link CacheRef}) but the row write
+   * that points at it failed — without this, the blob would persist on disk
+   * with no row referencing it, and the row-driven cleanup paths would never
+   * find it. Implementations SHOULD be best-effort and idempotent (no error
+   * on missing entry). Returns when the deletion attempt has settled.
+   */
+  deleteOutputByRef?(ref: CacheRef): Promise<void>;
+
   /** True when this repository implements `saveOutputStream`. */
   supportsStreaming(): boolean {
     return typeof this.saveOutputStream === "function";
