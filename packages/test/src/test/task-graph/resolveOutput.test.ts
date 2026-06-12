@@ -143,4 +143,28 @@ describe("resolveOutput", () => {
     await resolveOutput(refs as unknown as Blob[], resolver);
     expect(observedMax).toBe(6);
   });
+
+  it("returns without overflow on a self-referential input (no refs)", async () => {
+    const resolver = vi.fn<CacheRefResolver>();
+    const a: any = { name: "loop" };
+    a.self = a;
+    const out: any = await resolveOutput(a, resolver);
+    expect(resolver).not.toHaveBeenCalled();
+    // No refs reachable, so identity is preserved (including the cycle).
+    expect(out).toBe(a);
+    expect(out.self).toBe(out);
+  });
+
+  it("resolves refs reachable through a cycle without overflow", async () => {
+    const blob = new Blob([new Uint8Array([7])]);
+    const a: any = { payload: ref("cache://r1") as unknown as Blob };
+    // Cycle pointing back to the root.
+    a.parent = a;
+    const out: any = await resolveOutput(a, fakeResolver({ "cache://r1": blob }));
+    expect(out.payload).toBe(blob);
+    // The cycle is preserved: `parent` resolves to the ORIGINAL input (the
+    // walker short-circuits a revisited object by reference rather than
+    // attempting to rewrite the back-edge).
+    expect(out.parent).toBe(a);
+  });
 });
