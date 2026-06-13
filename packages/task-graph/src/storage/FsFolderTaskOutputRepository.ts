@@ -6,6 +6,7 @@
 
 import { FsFolderTabularStorage } from "@workglow/storage";
 import { makeFingerprint } from "@workglow/util";
+import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -49,8 +50,15 @@ function sanitize(s: string): string {
  * that reject opening a directory for fsync (`EPERM` / `EINVAL` / `ENOTSUP`
  * / `EISDIR`) fall through silently.
  *
- * The blob name derives from `(taskType, fingerprint(inputs))`, so re-running
- * the same task overwrites its previous blob instead of leaking files.
+ * Each `saveOutputStream` call mints a unique blob filename of the form
+ * `<sanitized-taskType>_<fingerprint>_<uuid>.bin`. Two concurrent writers
+ * computing the same `(taskType, inputs)` therefore land at distinct paths,
+ * so a failed-row-commit cleanup on one writer cannot remove the published
+ * blob the other writer's row still points at. The published `$ref` continues
+ * to carry the sanitized taskType prefix so prefix-scoped pruning
+ * (`deleteByTaskTypePrefix` / `clearOlderThanWithTaskTypePrefix`) keeps
+ * cascading correctly; stale blobs from crashes between rename and row
+ * commit are reclaimed by `clearOlderThan` / the {@link CacheJanitor}.
  *
  * Two instances pointed at the same folder interoperate: a `CacheRef` written
  * by one resolves through the other (the cross-process contract for queue
@@ -86,11 +94,16 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
     // The fingerprint covers the raw taskType too: `sanitize` is lossy, so two
     // distinct task types can share a sanitized prefix — the hash keeps their
     // blobs distinct while the prefix keeps names greppable and prefix-deletable.
+    // The per-write UUID suffix makes every blob path unique so two
+    // concurrent writers with the same `(taskType, inputs)` can't race on the
+    // same file (a row-commit failure on one writer must not delete the blob
+    // the other writer's row points at). Legacy un-suffixed names written by
+    // older versions of this repo still resolve through {@link REF_PATTERN}.
     // Note (multi-tenant): there is no tenant axis here. Identical inputs from
-    // two tenants resolve to the same name and share a blob. See the class
-    // JSDoc for the deployment assumption and the documented wrappers.
+    // two tenants resolve to the same prefix and share an existence side-
+    // channel. See the class JSDoc for the deployment assumption.
     const fingerprint = await makeFingerprint({ __taskType: taskType, inputs });
-    const name = `${sanitize(taskType)}_${fingerprint}.bin`;
+    const name = `${sanitize(taskType)}_${fingerprint}_${randomUUID()}.bin`;
     const tmpPath = join(this.blobsDir, `${name}.tmp`);
     const handle = await open(tmpPath, "w");
     let size = 0;
