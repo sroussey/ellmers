@@ -65,11 +65,6 @@ function collectCacheRefs(
     return;
   }
   if (value === null || typeof value !== "object") return;
-  if (value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return;
-  // Error / URL keep their data on the prototype; mirror the leaf set in
-  // `resolveRef.ts` so both walkers stop at the same boundary.
-  if (value instanceof Error) return;
-  if (typeof URL !== "undefined" && value instanceof URL) return;
   if (visited.has(value as object)) return;
   visited.add(value as object);
   if (Array.isArray(value)) {
@@ -84,6 +79,13 @@ function collectCacheRefs(
     for (const v of value) collectCacheRefs(v, out, visited);
     return;
   }
+  // Opaque-by-default: only plain objects (Object.prototype / null prototype)
+  // are walked structurally. Every class instance — Blob, ArrayBuffer, typed
+  // arrays, Error, URL, Headers, Request, Response, FormData,
+  // URLSearchParams, ReadableStream, user classes — is opaque (matches the
+  // `resolveRef.ts` walker so both stop at the same boundary).
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== null && proto !== Object.prototype) return;
   const source = value as Record<string, unknown>;
   for (const k of Object.keys(source)) collectCacheRefs(source[k], out, visited);
 }
