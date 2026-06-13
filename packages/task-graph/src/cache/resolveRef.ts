@@ -93,12 +93,15 @@ export type ResolveOutputOptions = {
  * optional filter): the same object reference comes back, so callers can rely
  * on `===` / `WeakMap` keys not being silently invalidated by an auto-resolve.
  *
- * Plain objects and arrays are walked structurally; objects with a non-Object
- * prototype (custom classes) are walked too, and the returned clone preserves
- * their prototype. `Blob`, `ArrayBuffer`, typed arrays, `Date`, `RegExp`,
- * `Promise`, `Error`, and `URL` are treated as opaque leaves (the latter two
- * because their data lives on the prototype and `Object.keys()` would drop it).
- * `Map`/`Set` are walked through so that refs nested inside them can resolve.
+ * Walker policy is opaque-by-default: only plain objects (prototype
+ * `Object.prototype` or `null`), `Array`, `Map`, and `Set` are walked
+ * structurally. Every class instance — `Blob`, `ArrayBuffer`, typed arrays,
+ * `Date`, `RegExp`, `Promise`, `Error`, `URL`, `Headers`, `Request`,
+ * `Response`, `FormData`, `URLSearchParams`, `ReadableStream`, and any
+ * user-defined class — is treated as an opaque leaf and returned by reference.
+ * Walking such instances through `Object.keys()` would silently drop data that
+ * lives on the prototype (accessors) or in private slots, so the safe default
+ * is to leave them untouched.
  *
  * On cache miss the resolver returns `undefined`; the corresponding slot in
  * the returned output is `undefined`. This is the documented best-effort
@@ -206,11 +209,10 @@ async function walk(
   }
   if (typeof value === "object") {
     const source = value as Record<string, unknown>;
-    // Preserve prototype so class instances (Error, URL, custom classes)
-    // survive the walk without losing methods/instanceof identity.
-    const proto = Object.getPrototypeOf(source);
-    const out: Record<string, unknown> =
-      proto === null || proto === Object.prototype ? {} : Object.create(proto);
+    // Only plain objects (Object.prototype / null prototype) reach this
+    // branch; class instances are screened out by isLeaf above and returned
+    // by reference unchanged.
+    const out: Record<string, unknown> = {};
     // Iterate in source order so the returned object's enumeration order
     // matches the input even though resolutions race.
     const keys = Object.keys(source);
@@ -223,21 +225,21 @@ async function walk(
   return value;
 }
 
+/**
+ * Opaque-by-default policy. Only plain objects (prototype `Object.prototype`
+ * or `null`), `Array`, `Map`, and `Set` are structurally walked. Every other
+ * object — including `Blob`, `ArrayBuffer`, typed arrays, `Date`, `RegExp`,
+ * `Promise`, `Error`, `URL`, `Headers`, `Request`, `Response`, `FormData`,
+ * `URLSearchParams`, `ReadableStream`, and user-defined classes — is opaque:
+ * generic `Object.keys()` cloning would drop prototype-resident data
+ * (accessors) and private slots.
+ */
 function isLeaf(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return true;
-  if (value instanceof Blob) return true;
-  if (value instanceof ArrayBuffer) return true;
-  if (ArrayBuffer.isView(value)) return true;
-  if (value instanceof Date) return true;
-  if (value instanceof RegExp) return true;
-  if (value instanceof Promise) return true;
-  // Error and URL keep their data on the prototype (Error.message / Error.stack
-  // are own non-enumerable; URL exposes everything via accessors), so the
-  // generic Object.keys()-based clone would silently drop their content.
-  // Treat them as opaque leaves: identity is preserved, accessors keep working.
-  if (value instanceof Error) return true;
-  if (typeof URL !== "undefined" && value instanceof URL) return true;
-  return false;
+  if (Array.isArray(value)) return false;
+  if (value instanceof Map || value instanceof Set) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto !== null && proto !== Object.prototype;
 }
 
 type Limiter = { run<T>(fn: () => Promise<T>): Promise<T> };
