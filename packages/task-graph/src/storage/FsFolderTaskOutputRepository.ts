@@ -41,10 +41,13 @@ function sanitize(s: string): string {
  * on completion — a crash mid-write never publishes a readable partial blob.
  * The temp handle is `sync()`'d before rename so a power loss between the
  * rename and the OS flushing dirty data cannot leave the published blob name
- * pointing at zero bytes. We intentionally do NOT fsync the containing
- * directory: the rename is durable enough for cache semantics (a crash that
- * loses the rename simply forces a recompute), and the directory fsync would
- * add a syscall to every write for negligible benefit.
+ * pointing at zero bytes. The containing directory is then `sync()`'d as
+ * well so the rename itself is durable: on ext4 `data=ordered` and similar
+ * filesystems, a crash between the rename returning and the directory
+ * metadata being flushed can otherwise leave the published name pointing at
+ * stale (zero-byte) content. The dir fsync runs best-effort — platforms
+ * that reject opening a directory for fsync (`EPERM` / `EINVAL` / `ENOTSUP`
+ * / `EISDIR`) fall through silently.
  *
  * The blob name derives from `(taskType, fingerprint(inputs))`, so re-running
  * the same task overwrites its previous blob instead of leaking files.
@@ -100,14 +103,32 @@ export class FsFolderTaskOutputRepository extends TaskOutputTabularRepository {
         // Flush the file's data to the underlying storage before we publish
         // it under the final name. Without this, a power loss between the
         // rename and the OS flushing dirty pages can leave the published
-        // blob name pointing at zero bytes (FS-dependent). Data-level
-        // durability is what the cache contract needs; we deliberately skip
-        // the directory fsync (its cost outweighs the benefit for a cache).
+        // blob name pointing at zero bytes (FS-dependent).
         await handle.sync();
       } finally {
         await handle.close();
       }
       await rename(tmpPath, join(this.blobsDir, name));
+      // Flush the directory entry itself: on ext4 `data=ordered` and similar
+      // filesystems the rename is not durable until the parent directory's
+      // metadata is flushed, so a crash between the rename and that flush
+      // can leave the published name visible but pointing at stale (zero-
+      // byte) data. Best-effort: platforms that reject directory fsync fall
+      // through silently — recomputing on next read is the documented
+      // fallback.
+      try {
+        const dir = await open(this.blobsDir, "r");
+        try {
+          await dir.sync();
+        } finally {
+          await dir.close();
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "EPERM" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") {
+          throw err;
+        }
+      }
     } catch (err) {
       // A failed write or rename must not leave a stray .tmp behind.
       await rm(tmpPath, { force: true });
