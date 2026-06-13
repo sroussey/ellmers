@@ -10,7 +10,7 @@ import {
   CredentialStoreOAuthProvider,
   resolveAuthSecrets,
 } from "@workglow/mcp/util";
-import { InMemoryCredentialStore } from "@workglow/util";
+import { InMemoryCredentialStore, MissingCredentialError } from "@workglow/util";
 import { describe, expect, it } from "vitest";
 
 const SERVER_URL = "https://mcp.example.com/api";
@@ -154,11 +154,50 @@ describe("resolveAuthSecrets", () => {
     expect(resolved).toEqual({ type: "bearer", token: "actual-secret-value" });
   });
 
-  it("keeps literal value when not found in store", async () => {
+  it("throws MissingCredentialError when an explicit store is passed and the key is absent", async () => {
+    const store = new InMemoryCredentialStore();
+    const calls: string[] = [];
+    const recorderGet = store.get.bind(store);
+    store.get = async (k: string) => {
+      calls.push(k);
+      return recorderGet(k);
+    };
+
+    const config: McpAuthConfig = { type: "bearer", token: "sk-missing-key" };
+    await expect(resolveAuthSecrets(config, store)).rejects.toBeInstanceOf(MissingCredentialError);
+
+    // The literal credential-key name must not be returned anywhere as a bearer:
+    // the call site recorded only the lookup; the literal key never flowed back
+    // into a resolved config.
+    expect(calls).toContain("sk-missing-key");
+  });
+
+  it("falls back to literal value when no store argument is provided (legacy)", async () => {
+    const config: McpAuthConfig = { type: "bearer", token: "sk-literal-key" };
+    const resolved = await resolveAuthSecrets(config);
+    expect(resolved).toEqual({ type: "bearer", token: "sk-literal-key" });
+  });
+
+  it("falls back to literal value when explicit strict:false is opted into", async () => {
     const store = new InMemoryCredentialStore();
     const config: McpAuthConfig = { type: "bearer", token: "sk-literal-key" };
-    const resolved = await resolveAuthSecrets(config, store);
+    const resolved = await resolveAuthSecrets(config, store, { strict: false });
     expect(resolved).toEqual({ type: "bearer", token: "sk-literal-key" });
+  });
+
+  it("MissingCredentialError message does not leak the resolved value (key only)", async () => {
+    const store = new InMemoryCredentialStore();
+    const config: McpAuthConfig = { type: "bearer", token: "AUTH_KEY_NAME" };
+    try {
+      await resolveAuthSecrets(config, store);
+      throw new Error("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(MissingCredentialError);
+      const err = e as MissingCredentialError;
+      expect(err.key).toBe("AUTH_KEY_NAME");
+      expect(err.message).toContain("AUTH_KEY_NAME");
+      expect(err.message).not.toMatch(/Bearer/i);
+    }
   });
 
   it("resolves client_secret for client_credentials", async () => {

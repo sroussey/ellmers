@@ -8,6 +8,7 @@ import { resolveMcpClientAuth } from "@workglow/mcp/util";
 import {
   globalServiceRegistry,
   InMemoryCredentialStore,
+  MissingCredentialError,
   ServiceRegistry,
   setGlobalCredentialStore,
 } from "@workglow/util";
@@ -37,20 +38,20 @@ describe("resolveMcpClientAuth credential scoping", () => {
     expect(headers.Authorization).toBe("Bearer sekret-value");
   });
 
-  it("keeps the literal token when the scoped store has no such key", async () => {
+  it("fails closed (no literal-token bearer leak) when the scoped store has no such key", async () => {
     const registry = scopedRegistry();
     setGlobalCredentialStore(new InMemoryCredentialStore(), registry);
 
-    const { headers } = await resolveMcpClientAuth(
-      {
-        transport: "streamable-http",
-        server_url: "https://mcp.example.com",
-        auth: { type: "bearer", token: "literal-token" },
-      },
-      registry
-    );
-
-    expect(headers.Authorization).toBe("Bearer literal-token");
+    await expect(
+      resolveMcpClientAuth(
+        {
+          transport: "streamable-http",
+          server_url: "https://mcp.example.com",
+          auth: { type: "bearer", token: "literal-token" },
+        },
+        registry
+      )
+    ).rejects.toBeInstanceOf(MissingCredentialError);
   });
 
   it("does not leak credentials across scoped registries", async () => {
