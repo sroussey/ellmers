@@ -183,7 +183,7 @@ Secret values in auth configurations can reference the global `ICredentialStore`
 const resolved = await resolveAuthSecrets(authConfig, credentialStore);
 ```
 
-If a key is not found in the credential store, the original value is kept (it may be a literal secret rather than a store key).
+When an explicit credential store is passed, resolution is **strict by default** and a missing key throws `MissingCredentialError` — this prevents the literal key name from silently flowing through as a bearer token. The legacy literal-passthrough behaviour is preserved for the no-argument form (which falls back to the global store) and can be re-enabled per call via the `{ strict: false }` option.
 
 ### Auth Provider Factory
 
