@@ -138,7 +138,43 @@ export class SupabaseVectorStorage<
     return record as InsertType;
   }
 
+  /**
+   * Validate vector shape before handing it to pgvector. Length must match the
+   * dimension this store was constructed with; every entry must be a finite
+   * number (no `NaN` / `±Infinity` / non-numeric). The driver rejects malformed
+   * pgvector text only after a round-trip with an opaque error — fail fast here
+   * with a clear `StorageValidationError` instead.
+   */
+  private assertVectorShape(arr: unknown, context: "write" | "query"): void {
+    if (arr === null || arr === undefined) {
+      throw new StorageValidationError(
+        `Vector value missing on ${context}: expected an array-like of ${this.vectorDimensions} finite numbers, got ${arr === null ? "null" : "undefined"}.`
+      );
+    }
+    const lengthValue = (arr as { length?: unknown }).length;
+    if (typeof lengthValue !== "number") {
+      throw new StorageValidationError(
+        `Vector value invalid on ${context}: expected an array-like with a numeric length, got ${typeof arr}.`
+      );
+    }
+    if (lengthValue !== this.vectorDimensions) {
+      throw new StorageValidationError(
+        `Vector dimension mismatch on ${context}: expected ${this.vectorDimensions}, got ${lengthValue}.`
+      );
+    }
+    const view = arr as ArrayLike<number>;
+    for (let i = 0; i < lengthValue; i++) {
+      const v = view[i];
+      if (typeof v !== "number" || !Number.isFinite(v)) {
+        throw new StorageValidationError(
+          `Vector value invalid on ${context}: entry at index ${i} is not a finite number (got ${String(v)}).`
+        );
+      }
+    }
+  }
+
   protected toPgVectorText(value: unknown): string {
+    this.assertVectorShape(value, "write");
     const arr = value as ArrayLike<number>;
     return `[${Array.from(arr).join(",")}]`;
   }
@@ -201,6 +237,8 @@ export class SupabaseVectorStorage<
         );
       }
     }
+
+    this.assertVectorShape(query, "query");
 
     const { data, error } = await this.client.rpc(
       `match_${this.tableName}`,
