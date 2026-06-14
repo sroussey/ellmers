@@ -105,6 +105,9 @@ export function runGenericTaskOutputRepositoryTests(
       await repository.clearOlderThan(twoDaysInMs);
 
       expect(await repository.size()).toBe(2);
+      // clearOlderThan emits output_pruned on every sweep (the event is a
+      // "a prune ran" signal, not "rows were removed"), so it fires even when
+      // nothing qualifies for deletion.
       expect(clearListener).toHaveBeenCalled();
     });
   });

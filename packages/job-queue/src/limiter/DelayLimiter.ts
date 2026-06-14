@@ -10,8 +10,9 @@ export class DelayLimiter implements ILimiter {
   /** In-memory state — not shared across processes. */
   public readonly scope: LimiterScope = "process";
   private nextAvailableTime: Date = new Date();
-  /** Time of the most recent successful tryAcquire, used to undo on release. */
-  private lastAcquireBaseline: number = 0;
+  /** The value tryAcquire last advanced nextAvailableTime to, so release can
+   *  tell whether a later acquire/setNextAvailableTime superseded it. */
+  private lastAdvancedTo: number = 0;
   constructor(private delayInMilliseconds: number = 50) {}
 
   /**
@@ -25,16 +26,16 @@ export class DelayLimiter implements ILimiter {
       return null;
     }
     const previous = this.nextAvailableTime.getTime();
-    this.lastAcquireBaseline = previous;
     this.nextAvailableTime = new Date(now + this.delayInMilliseconds);
+    this.lastAdvancedTo = this.nextAvailableTime.getTime();
     return previous;
   }
 
   async release(token: unknown): Promise<void> {
     if (typeof token !== "number") return;
-    // Only roll back if no later acquire/setNextAvailableTime moved the
-    // window forward — otherwise we'd undo someone else's reservation.
-    if (this.nextAvailableTime.getTime() === this.lastAcquireBaseline + this.delayInMilliseconds) {
+    // Only roll back if our advance is still the current window — otherwise a
+    // later acquire/setNextAvailableTime moved it forward and we'd undo theirs.
+    if (this.nextAvailableTime.getTime() === this.lastAdvancedTo) {
       this.nextAvailableTime = new Date(token);
     }
   }

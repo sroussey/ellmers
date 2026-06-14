@@ -1230,7 +1230,7 @@ export class PostgresTabularStorage<
     const db = this.db;
     const { key } = this.separateKeyValueFromCombined(value as Entity);
     const whereClauses = (this.primaryKeyColumns() as string[])
-      .map((key, i) => `${key} = $${i + 1}`)
+      .map((col, i) => `${PostgresDialect.quoteId(col)} = $${i + 1}`)
       .join(" AND ");
 
     const params = this.getPrimaryKeyAsOrderedArray(key);

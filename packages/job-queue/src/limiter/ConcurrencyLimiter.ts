@@ -51,7 +51,13 @@ export class ConcurrencyLimiter implements ILimiter {
   }
 
   async getNextAvailableTime(): Promise<Date> {
-    return this.currentRunningJobs > this.maxConcurrentJobs ? new Date() : new Date(Date.now() - 1);
+    // A free slot exists only when running < max. At or above max the next
+    // slot frees on an (unscheduled) job completion, so the soonest we can
+    // promise is "now". Either way, never report earlier than a pending
+    // rate-delay window set via setNextAvailableTime.
+    const earliest =
+      this.currentRunningJobs >= this.maxConcurrentJobs ? Date.now() : Date.now() - 1;
+    return new Date(Math.max(earliest, this.nextAllowedStartTime.getTime()));
   }
 
   async setNextAvailableTime(date: Date): Promise<void> {

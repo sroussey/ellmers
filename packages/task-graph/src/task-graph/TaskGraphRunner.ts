@@ -299,19 +299,26 @@ export class TaskGraphRunner {
       for await (const task of this.previewScheduler.tasks()) {
         const isRootTask = this.graph.getSourceDataflows(task.id).length === 0;
 
+        // COMPLETED tasks have locked outputs and must not be re-previewed:
+        // re-running preview could clobber the real result and overwrite the
+        // data already pushed onto downstream edges. Forward the existing
+        // output so dependents observe it, record it if this is a leaf, then
+        // skip the preview for this task.
+        if (task.status === TaskStatus.COMPLETED) {
+          await this.edgeMaterializer.pushOutputFromNodeToEdges(task, task.runOutputData);
+          if (this.graph.getTargetDataflows(task.id).length === 0) {
+            results.push({
+              id: task.id,
+              type: (task.constructor as any).runtype || (task.constructor as any).type,
+              data: task.runOutputData as Output,
+            });
+          }
+          continue;
+        }
+
         if (task.status === TaskStatus.PENDING) {
           task.resetInputData();
           this.edgeMaterializer.copyInputFromEdgesToNode(task);
-          // TODO: cacheable here??
-          // if (task.cacheable) {
-          //   const results = await this.outputCache?.getOutput(
-          //     (task.constructor as any).type,
-          //     task.runInputData
-          //   );
-          //   if (results) {
-          //     task.runOutputData = results;
-          //   }
-          // }
         }
 
         // For root tasks (no incoming dataflows), apply the input parameter
