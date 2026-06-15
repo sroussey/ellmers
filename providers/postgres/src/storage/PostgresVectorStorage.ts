@@ -19,6 +19,7 @@ import {
   getVectorProperty,
   PostgresDialect,
   StorageValidationError,
+  validateVectorEntities,
 } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
@@ -183,22 +184,20 @@ export class PostgresVectorStorage<
    * driver rejects it with an opaque round-trip error.
    */
   public override async put(entity: InsertType): Promise<Entity> {
-    assertVectorShape(
-      (entity as Record<string, unknown>)[this.vectorPropertyName as string],
-      this.vectorDimensions,
-      "write"
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
     );
     return super.put(entity);
   }
 
   public override async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    for (const entity of entities) {
-      assertVectorShape(
-        (entity as Record<string, unknown>)[this.vectorPropertyName as string],
-        this.vectorDimensions,
-        "write"
-      );
-    }
+    validateVectorEntities(
+      entities as ReadonlyArray<Record<string, unknown>>,
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
     return super.putBulk(entities);
   }
 

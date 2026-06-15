@@ -50,3 +50,25 @@ export function assertVectorShape(
     }
   }
 }
+
+/**
+ * Validate the vector column of every entity in a batch before any write hits
+ * the backend. Throws the same {@link StorageValidationError} as
+ * {@link assertVectorShape}; batches are rejected as a whole — the helper
+ * returns on the first malformed entry so no partial write can leak through.
+ */
+export function validateVectorEntities(
+  entities: ReadonlyArray<Record<string, unknown>>,
+  vectorPropertyName: string,
+  dimensions: number
+): void {
+  for (const entity of entities) {
+    const v = entity[vectorPropertyName];
+    if (v === undefined || v === null) {
+      throw new StorageValidationError(
+        `Vector value missing on write: expected an array-like of ${dimensions} finite numbers, got ${v === null ? "null" : "undefined"}.`
+      );
+    }
+    assertVectorShape(v, dimensions, "write");
+  }
+}
