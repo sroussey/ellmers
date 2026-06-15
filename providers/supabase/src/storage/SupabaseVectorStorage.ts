@@ -12,6 +12,7 @@ import {
   getMetadataProperty,
   getVectorProperty,
   StorageValidationError,
+  validateVectorEntities,
 } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
@@ -146,12 +147,22 @@ export class SupabaseVectorStorage<
   }
 
   public override async put(entity: InsertType): Promise<Entity> {
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
     const saved = await super.put(this.prepareForWrite(entity));
     return this.restampVector(saved, entity);
   }
 
   public override async putBulk(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
+    validateVectorEntities(
+      entities as ReadonlyArray<Record<string, unknown>>,
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
     const saved = await super.putBulk(entities.map((e) => this.prepareForWrite(e)));
     return saved.map((row, i) => this.restampVector(row, entities[i]));
   }

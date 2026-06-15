@@ -16,6 +16,7 @@ import {
   getMetadataProperty,
   getVectorProperty,
   matchesFilter,
+  validateVectorEntities,
 } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
@@ -108,22 +109,20 @@ export class SqliteVectorStorage<
    * the store silently persists garbage that no `similaritySearch` can recover.
    */
   override async put(entity: InsertType): Promise<Entity> {
-    assertVectorShape(
-      (entity as Record<string, unknown>)[this.vectorPropertyName as string],
-      this.vectorDimensions,
-      "write"
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
     );
     return super.put(entity);
   }
 
   override async putBulk(entities: InsertType[]): Promise<Entity[]> {
-    for (const entity of entities) {
-      assertVectorShape(
-        (entity as Record<string, unknown>)[this.vectorPropertyName as string],
-        this.vectorDimensions,
-        "write"
-      );
-    }
+    validateVectorEntities(
+      entities as ReadonlyArray<Record<string, unknown>>,
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
     return super.putBulk(entities);
   }
 

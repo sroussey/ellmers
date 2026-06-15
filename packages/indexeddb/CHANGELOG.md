@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+#### storage,indexeddb
+
+- validate vector shape on `IndexedDbVectorStorage` `put` / `putBulk` /
+  `similaritySearch` (paired with the matching `InMemoryVectorStorage` fix in
+  `@workglow/storage`). Validation runs synchronously before any IDB
+  transaction opens, so a malformed `putBulk` rejects the whole batch with no
+  partial write reaching the object store.
+
 ## 0.3.14
 
 ### Features

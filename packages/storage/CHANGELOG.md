@@ -1,5 +1,17 @@
 # @workglow/storage
 
+## Unreleased
+
+### Bug Fixes
+
+#### storage,indexeddb
+
+- validate vector shape on `InMemoryVectorStorage` and `IndexedDbVectorStorage`
+  `put` / `putBulk` / `similaritySearch` — closes a silent-corruption gap left
+  by the original `assertVectorShape` rollout that only covered Postgres,
+  SQLite, and Supabase. Lifts a `validateVectorEntities` batch helper to
+  `@workglow/storage` and refactors the cloud-backed overrides to use it.
+
 ## 0.3.14
 
 ### Features
