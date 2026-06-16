@@ -8,6 +8,7 @@
     "url": "https://github.com/workglow-dev/libs.git",
     "directory": "packages/job-queue"
   },
+  "homepage": "https://github.com/workglow-dev/libs/tree/main/packages/job-queue",
   "bugs": {
     "url": "https://github.com/workglow-dev/libs/issues"
   },
