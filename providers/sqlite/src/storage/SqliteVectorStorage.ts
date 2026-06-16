@@ -6,7 +6,7 @@
 
 import { Sqlite } from "@workglow/sqlite/storage";
 import type { IVectorStorage, VectorSearchOptions } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -16,18 +16,6 @@ import type {
 } from "@workglow/util/schema";
 import { cosineSimilarity } from "@workglow/util/schema";
 import { SqliteTabularStorage } from "./SqliteTabularStorage";
-
-/**
- * Check if metadata matches filter
- */
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
-}
 
 /**
  * SQLite vector repository implementation using tabular storage underneath.

@@ -11,7 +11,7 @@ import type {
   VectorIndexOptions,
   VectorSearchOptions,
 } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -54,18 +54,6 @@ function getVectorTypeOption(vectorCtor: TypedArrayConstructor): string {
     Int16Array: "FLOAT16",
   };
   return typeMap[vectorCtor.name] || "FLOAT32";
-}
-
-/**
- * Check if metadata matches filter
- */
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**

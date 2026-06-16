@@ -14,16 +14,7 @@ import type {
 import { cosineSimilarity } from "@workglow/util/schema";
 import { InMemoryTabularStorage } from "../tabular/InMemoryTabularStorage";
 import type { IVectorStorage, VectorSearchOptions } from "./IVectorStorage";
-import { getMetadataProperty, getVectorProperty } from "./IVectorStorage";
-
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
-}
+import { getMetadataProperty, getVectorProperty, matchesFilter } from "./IVectorStorage";
 
 /** In-memory {@link IVectorStorage} on top of {@link InMemoryTabularStorage}. */
 export class InMemoryVectorStorage<

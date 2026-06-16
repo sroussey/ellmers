@@ -10,7 +10,7 @@ import type {
   IVectorStorage,
   VectorSearchOptions,
 } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow/storage";
 import { createServiceToken } from "@workglow/util";
 import type {
   DataPortSchemaObject,
@@ -26,15 +26,6 @@ import { IndexedDbTabularStorage } from "./IndexedDbTabularStorage";
 export const IDB_VECTOR_REPOSITORY = createServiceToken<AnyVectorStorage>(
   "storage.vectorRepository.indexedDb"
 );
-
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
-}
 
 /**
  * IndexedDB vector storage implementation.

@@ -168,3 +168,17 @@ export function getMetadataProperty<Schema extends DataPortSchemaObject>(
   }
   return undefined;
 }
+
+/**
+ * Returns true when `metadata` matches every key/value in `filter` via strict
+ * equality. Shared by the in-memory linear-scan paths of every vector backend
+ * (the native pgvector/sqlite-vector paths push filtering down to the engine).
+ */
+export function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
+  for (const [key, value] of Object.entries(filter)) {
+    if (metadata[key as keyof Metadata] !== value) {
+      return false;
+    }
+  }
+  return true;
+}
