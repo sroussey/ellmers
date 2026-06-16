@@ -28,6 +28,7 @@ import {
   SqlTabularMigrationApplier,
   TabularChangePayload,
   TabularSubscribeOptions,
+  TYPED_ARRAY_CTORS,
   ValueOptionType,
   type VectorIndexOptions,
 } from "@workglow/storage";
@@ -43,15 +44,6 @@ import {
 export const POSTGRES_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.postgres"
 );
-
-const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
-  Float32Array,
-  Float64Array,
-  Int8Array,
-  Uint8Array,
-  Int16Array,
-  Uint16Array,
-};
 
 /**
  * Validates a vector-index numeric tuning value: undefined is allowed
@@ -408,30 +400,6 @@ export class PostgresTabularStorage<
       }
     }
     return super.sqlToJsValue(column, value);
-  }
-
-  /**
-   * Determines if a field should be treated as unsigned based on schema properties
-   * @param typeDef - The schema type definition
-   * @returns true if the field should be treated as unsigned
-   */
-  protected shouldBeUnsigned(typeDef: JsonSchema): boolean {
-    // Extract the non-null type using the base class helper
-    const actualType = this.getNonNullType(typeDef);
-    if (typeof actualType === "boolean") {
-      return false;
-    }
-
-    // Check if it's a number type with minimum >= 0
-    if (
-      (actualType.type === "number" || actualType.type === "integer") &&
-      typeof actualType.minimum === "number" &&
-      actualType.minimum >= 0
-    ) {
-      return true;
-    }
-
-    return false;
   }
 
   /**

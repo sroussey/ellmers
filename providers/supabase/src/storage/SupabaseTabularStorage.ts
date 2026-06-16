@@ -311,30 +311,6 @@ export class SupabaseTabularStorage<
   }
 
   /**
-   * Determines if a field should be treated as unsigned based on schema properties
-   * @param typeDef - The schema type definition
-   * @returns true if the field should be treated as unsigned
-   */
-  protected shouldBeUnsigned(typeDef: JsonSchema): boolean {
-    // Extract the non-null type using the base class helper
-    const actualType = this.getNonNullType(typeDef);
-    if (typeof actualType === "boolean") {
-      return false;
-    }
-
-    // Check if it's a number type with minimum >= 0
-    if (
-      (actualType.type === "number" || actualType.type === "integer") &&
-      typeof actualType.minimum === "number" &&
-      actualType.minimum >= 0
-    ) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
    * Stores or updates a row in the database.
    * Uses UPSERT (INSERT ... ON CONFLICT DO UPDATE) for atomic operations.
    *
