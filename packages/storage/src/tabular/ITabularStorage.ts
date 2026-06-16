@@ -25,6 +25,13 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
    */
   delete: (key: Partial<Entity>) => void;
   clearall: () => void;
+  /**
+   * Emitted when an atomic batch op (e.g. vector `putBulk`) detects a mid-batch
+   * failure and restores prior state. Subscribers should treat any uncommitted
+   * `put` events from the failed batch as superseded and reconcile against the
+   * post-rollback state.
+   */
+  rollback: (reason: { readonly op: string; readonly error: unknown }) => void;
 };
 
 export type TabularEventName = keyof TabularEventListeners<any, any>;

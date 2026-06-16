@@ -107,9 +107,14 @@ export class IndexedDbVectorStorage<
 
   /**
    * Validate every entry up front so a single malformed vector aborts the
-   * whole batch before any row is written. The base putBulk dispatches to
-   * `put` per record (which re-validates harmlessly) but does not provide
-   * batch atomicity itself, so validation MUST happen here first.
+   * whole batch before any row is written, then route through a single IDB
+   * `readwrite` transaction for atomicity. The inherited tabular `putBulk`
+   * opens one transaction per row via `Promise.all`, so a duplicate-key or
+   * quota error on the second or later record can leave earlier rows
+   * committed — breaking the all-or-nothing guarantee vector ingestion (RAG
+   * chunk upserts) depends on. The single-transaction path defers `put` event
+   * emission to `tx.oncomplete`, which means subscribers see a successful
+   * batch as a burst rather than interleaved with the per-record IDB requests.
    */
   override async putBulk(records: InsertType[]): Promise<Entity[]> {
     validateVectorEntities(
@@ -117,7 +122,7 @@ export class IndexedDbVectorStorage<
       this.vectorPropertyName as string,
       this.vectorDimensions
     );
-    return super.putBulk(records);
+    return this.putBulkInTransaction(records);
   }
 
   async similaritySearch(
