@@ -4,27 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  ImageEditTaskInput,
-  ImageEditTaskOutput,
-  ModelConfig,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ImageEditTaskInput, ImageEditTaskOutput } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
-import { dataUriToImageValue, imageValueToPngBytes } from "@workglow/ai/provider-utils";
+import {
+  dataUriToImageValue,
+  imageValueToPngBytes,
+  modelIdForError,
+} from "@workglow/ai/provider-utils";
 import { getApiKey, getModelName, loadGeminiSDK } from "./Gemini_Client";
 import type { GeminiModelConfig } from "./Gemini_ModelSchema";
-
-function modelIdOf(model: ModelConfig | undefined): string {
-  return (
-    model?.model_id ??
-    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
-    "gemini"
-  );
-}
 
 /** Decode a base64 inline image part into an ImageValue. */
 async function decodeInlineImage(mimeType: string, data: string): Promise<ImageValue> {
@@ -70,8 +61,8 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
   GeminiModelConfig
 > = async (input, model, signal, emit) => {
   const logger = getLogger();
-  const timer = `gemini:ImageEdit:${modelIdOf(model)}`;
-  logger.time(timer, { model: modelIdOf(model) });
+  const timer = `gemini:ImageEdit:${modelIdForError(model, "gemini")}`;
+  logger.time(timer, { model: modelIdForError(model, "gemini") });
   try {
     const GoogleGenerativeAI = await loadGeminiSDK();
     const genAI = new GoogleGenerativeAI(getApiKey(model));
@@ -107,7 +98,10 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
         response.promptFeedback?.blockReason
       ) {
         const reason = response.promptFeedback?.blockReason ?? "SAFETY";
-        throw new ImageGenerationContentPolicyError(modelIdOf(model), `Blocked: ${reason}`);
+        throw new ImageGenerationContentPolicyError(
+          modelIdForError(model, "gemini"),
+          `Blocked: ${reason}`
+        );
       }
 
       const candidateParts = response.candidates[0]?.content?.parts ?? [];
@@ -117,7 +111,7 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
 
       if (!imagePart) {
         throw new ImageGenerationProviderError(
-          modelIdOf(model),
+          modelIdForError(model, "gemini"),
           "No image part in response (Gemini did not return an inline image)"
         );
       }
@@ -137,11 +131,13 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
       }
       const msg = err instanceof Error ? err.message : "unknown error";
       if (/safety|policy|moderation|blocked|SAFETY|PROHIBITED/i.test(msg)) {
-        throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
+        throw new ImageGenerationContentPolicyError(modelIdForError(model, "gemini"), msg);
       }
-      throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+      throw new ImageGenerationProviderError(modelIdForError(model, "gemini"), msg, {
+        cause: err as Error,
+      });
     }
   } finally {
-    logger.timeEnd(timer, { model: modelIdOf(model) });
+    logger.timeEnd(timer, { model: modelIdForError(model, "gemini") });
   }
 };

@@ -4,28 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  AiProviderRunFn,
-  ImageEditTaskInput,
-  ImageEditTaskOutput,
-  ModelConfig,
-} from "@workglow/ai";
+import type { AiProviderRunFn, ImageEditTaskInput, ImageEditTaskOutput } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import type { ImageValue } from "@workglow/util/media";
 import { getLogger } from "@workglow/util/worker";
 
-import { blobToImageValue, imageValueToPngBytes } from "@workglow/ai/provider-utils";
+import {
+  blobToImageValue,
+  imageValueToPngBytes,
+  modelIdForError,
+} from "@workglow/ai/provider-utils";
 import { resolveHfImageDims } from "./HFI_AspectRatio";
 import { getClient, getModelName } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
-
-function modelIdOf(model: ModelConfig | undefined): string {
-  return (
-    model?.model_id ??
-    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
-    "huggingface"
-  );
-}
 
 /**
  * Convert an inbound `ImageValue` (or a legacy data URI string) to a PNG Blob.
@@ -95,8 +86,10 @@ export const HFI_ImageEdit_Stream: AiProviderRunFn<
       throw err;
     const msg = err instanceof Error ? err.message : "unknown error";
     if (/NSFW|safety|policy/i.test(msg))
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+      throw new ImageGenerationContentPolicyError(modelIdForError(model, "huggingface"), msg);
+    throw new ImageGenerationProviderError(modelIdForError(model, "huggingface"), msg, {
+      cause: err as Error,
+    });
   }
 
   if (signal.aborted) return;

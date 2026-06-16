@@ -8,23 +8,14 @@ import type {
   AiProviderRunFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
-  ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import { getLogger } from "@workglow/util/worker";
 
-import { blobToImageValue } from "@workglow/ai/provider-utils";
+import { blobToImageValue, modelIdForError } from "@workglow/ai/provider-utils";
 import { resolveHfImageDims } from "./HFI_AspectRatio";
 import { getClient, getModelName } from "./HFI_Client";
 import type { HfInferenceModelConfig } from "./HFI_ModelSchema";
-
-function modelIdOf(model: ModelConfig | undefined): string {
-  return (
-    model?.model_id ??
-    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
-    "huggingface"
-  );
-}
 
 /**
  * One-shot run fn. HF Inference does not support partial image streaming,
@@ -70,8 +61,10 @@ export const HFI_ImageGenerate_Stream: AiProviderRunFn<
       throw err;
     const msg = err instanceof Error ? err.message : "unknown error";
     if (/NSFW|safety|policy/i.test(msg))
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+      throw new ImageGenerationContentPolicyError(modelIdForError(model, "huggingface"), msg);
+    throw new ImageGenerationProviderError(modelIdForError(model, "huggingface"), msg, {
+      cause: err as Error,
+    });
   }
 
   if (signal.aborted) return;
