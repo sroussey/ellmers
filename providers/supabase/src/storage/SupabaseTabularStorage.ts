@@ -16,6 +16,7 @@ import {
   DeleteSearchCriteria,
   InsertEntity,
   isSearchCondition,
+  mapPostgresType,
   Page,
   PageRequest,
   pickCoveringIndex,
@@ -210,115 +211,9 @@ export class SupabaseTabularStorage<
    * @returns The corresponding PostgreSQL data type
    */
   protected override mapTypeToSQL(typeDef: JsonSchema): string {
-    // Extract the actual non-null type using base helper
-    const actualType = this.getNonNullType(typeDef);
-    if (typeof actualType === "boolean") {
-      return "TEXT /* boolean schema */";
-    }
-
-    // Handle BLOB type
-    if (actualType.contentEncoding === "blob") return "BYTEA";
-
-    switch (actualType.type) {
-      case "string":
-        // Handle special string formats
-        if (actualType.format === "date-time") return "TIMESTAMP";
-        if (actualType.format === "date") return "DATE";
-        if (actualType.format === "email") return "VARCHAR(255)";
-        if (actualType.format === "uri") return "VARCHAR(2048)";
-        if (actualType.format === "uuid") return "UUID";
-
-        // Use a VARCHAR with maxLength if specified
-        if (typeof actualType.maxLength === "number") {
-          return `VARCHAR(${actualType.maxLength})`;
-        }
-
-        // Default to TEXT for strings without constraints
-        return "TEXT";
-
-      case "number":
-      case "integer":
-        // Handle integer vs floating point
-        if (actualType.multipleOf === 1 || actualType.type === "integer") {
-          // Use PostgreSQL's numeric range types based on min/max values
-          if (typeof actualType.minimum === "number") {
-            if (actualType.minimum >= 0) {
-              // For unsigned integers
-              if (typeof actualType.maximum === "number") {
-                if (actualType.maximum <= 32767) return "SMALLINT";
-                if (actualType.maximum <= 2147483647) return "INTEGER";
-              }
-              return "BIGINT";
-            }
-          }
-
-          // Default integer type
-          return "INTEGER";
-        }
-
-        // For floating point numbers with precision requirements
-        if (actualType.format === "float") return "REAL";
-        if (actualType.format === "double") return "DOUBLE PRECISION";
-
-        // Use NUMERIC with precision/scale if specified
-        if (typeof actualType.multipleOf === "number") {
-          const decimalPlaces = String(actualType.multipleOf).split(".")[1]?.length || 0;
-          if (decimalPlaces > 0) {
-            return `NUMERIC(38, ${decimalPlaces})`;
-          }
-        }
-
-        return "NUMERIC";
-
-      case "boolean":
-        return "BOOLEAN";
-
-      case "array":
-        // Handle array types (if items type is specified)
-        if (
-          actualType.items &&
-          typeof actualType.items === "object" &&
-          !Array.isArray(actualType.items)
-        ) {
-          const itemType = this.mapTypeToSQL(actualType.items as JsonSchema);
-
-          // Only use native PostgreSQL arrays for simple scalar types
-          // List of types that work well as native PostgreSQL arrays
-          const supportedArrayElementTypes = [
-            "TEXT",
-            "VARCHAR",
-            "CHAR",
-            "INTEGER",
-            "SMALLINT",
-            "BIGINT",
-            "REAL",
-            "DOUBLE PRECISION",
-            "NUMERIC",
-            "BOOLEAN",
-            "UUID",
-            "DATE",
-            "TIMESTAMP",
-          ];
-
-          // Check if the item type is in our supported list (either exact match or starts with for VARCHAR types)
-          const isSupported = supportedArrayElementTypes.some(
-            (type) => itemType === type || (itemType.startsWith(type + "(") && type !== "VARCHAR") // Handle things like VARCHAR(255)
-          );
-
-          if (isSupported) {
-            return `${itemType}[]`;
-          } else {
-            return "JSONB /* complex array */";
-          }
-        }
-        return "JSONB /* generic array */";
-
-      case "object":
-        return "JSONB /* object */";
-
-      default:
-        return "TEXT /* unknown type */";
-    }
+    // Supabase goes through PostgREST and has no pgvector column path here, so
+    // no vectorTypeFor hook — otherwise identical to the shared Postgres mapping.
+    return mapPostgresType(typeDef, { getNonNullType: (t) => this.getNonNullType(t) });
   }
 
   /**
