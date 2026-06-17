@@ -298,17 +298,6 @@ export class SupabaseRateLimiterStorage implements IRateLimiterStorage {
     if (delError) throw delError;
   }
 
-  public async recordExecution(queueName: string): Promise<void> {
-    const prefixInsertValues = this.getPrefixInsertValues();
-
-    const { error } = await this.client.from(this.executionTableName).insert({
-      ...prefixInsertValues,
-      queue_name: queueName,
-    });
-
-    if (error) throw error;
-  }
-
   public async getExecutionCount(queueName: string, windowStartTime: string): Promise<number> {
     let query = this.client
       .from(this.executionTableName)

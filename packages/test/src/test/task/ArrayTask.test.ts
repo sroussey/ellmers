@@ -678,69 +678,6 @@ describe("ArrayTask", () => {
     expect(childEvents.complete).toBe(2); // One for each child task
   });
 
-  // test("handles errors correctly", async () => {
-  //   // Create a task with inputs that will cause an error
-  //   const task = new TestErrorMultiInputTask(
-  //     {
-  //       input: [1, 2, 3], // The value 2 will cause an error
-  //     },
-  //     {
-  //       id: "error-test-task",
-  //     }
-  //   );
-
-  //   // Create event tracking variables
-  //   const events: Record<string, number> = {
-  //     start: 0,
-  //     progress: 0,
-  //     error: 0,
-  //     complete: 0,
-  //   };
-
-  //   // Set up event listeners
-  //   task.on("start", () => {
-  //     events.start++;
-  //   });
-
-  //   task.on("progress", () => {
-  //     events.progress++;
-  //   });
-
-  //   task.on("error", (error: TaskError) => {
-  //     events.error++;
-  //     expect(error).toBeDefined();
-  //     expect(error.message).toContain("Test error");
-  //   });
-
-  //   task.on("complete", () => {
-  //     events.complete++;
-  //   });
-
-  //   // Manually trigger a progress event
-  //   task.handleStart();
-  //   task.handleProgress(0.5);
-
-  //   // Run the task and catch the error
-  //   try {
-  //     await task.run();
-  //   } catch (error) {
-  //     // Expected error
-  //     expect(error).toBeDefined();
-  //   }
-
-  //   // Verify events were emitted
-  //   expect(events.start).toBeGreaterThanOrEqual(1);
-  //   expect(events.progress).toBeGreaterThanOrEqual(1);
-  //   expect(events.error).toBeGreaterThanOrEqual(1);
-
-  //   // The complete event should not be emitted when there's an error
-  //   expect(events.complete).toBe(0);
-
-  //   // Verify the task status is ERROR
-  //   expect(task.status).toBe(TaskStatus.FAILED);
-  //   expect(task.error).toBeDefined();
-  // });
-
   test("Task runPreview calls executePreview in single task mode (no children)", async () => {
     // Create a Task with non-array input - this puts it in single task mode (no subtasks)
     const task = new JobQueuePreviewTask({ defaults: { value: 5 } });

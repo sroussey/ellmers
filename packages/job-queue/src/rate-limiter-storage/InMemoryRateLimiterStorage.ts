@@ -142,18 +142,6 @@ export class InMemoryRateLimiterStorage implements IRateLimiterStorage {
     });
   }
 
-  public async recordExecution(queueName: string): Promise<void> {
-    await sleep(0);
-    const key = this.makeKey(queueName);
-    const executions = this.executions.get(key) ?? [];
-    executions.push({
-      id: uuid4(),
-      queueName,
-      executedAt: new Date(),
-    });
-    this.executions.set(key, executions);
-  }
-
   public async getExecutionCount(queueName: string, windowStartTime: string): Promise<number> {
     await sleep(0);
     const key = this.makeKey(queueName);

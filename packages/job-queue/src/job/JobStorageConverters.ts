@@ -57,37 +57,3 @@ export function storageToClass<Input, Output>(
     lease_expires_at: details.lease_expires_at ?? null,
   });
 }
-
-/**
- * Convert Job class to storage format
- */
-export function classToStorage<Input, Output>(
-  job: Job<Input, Output>,
-  queueName: string
-): JobStorageFormat<Input, Output> {
-  const now = new Date().toISOString();
-  return {
-    id: job.id,
-    job_run_id: job.jobRunId,
-    queue: job.queueName || queueName,
-    fingerprint: job.fingerprint,
-    input: job.input,
-    status: job.status,
-    output: job.output ?? null,
-    error: job.error === null ? null : String(job.error),
-    error_code: job.errorCode || null,
-    attempts: job.attempts ?? 0,
-    max_attempts: job.maxAttempts ?? 10,
-    visible_at: dateToISOString(job.visibleAt) ?? now,
-    created_at: dateToISOString(job.createdAt) ?? now,
-    deadline_at: dateToISOString(job.deadlineAt),
-    last_attempted_at: dateToISOString(job.lastAttemptedAt),
-    completed_at: dateToISOString(job.completedAt),
-    progress: job.progress ?? 0,
-    progress_message: job.progressMessage ?? "",
-    progress_details: job.progressDetails ?? null,
-    lease_owner: job.leaseOwner ?? null,
-    abort_requested_at: job.abort_requested_at ?? null,
-    lease_expires_at: job.lease_expires_at ?? null,
-  };
-}
