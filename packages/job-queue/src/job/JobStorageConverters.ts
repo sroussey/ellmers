@@ -18,14 +18,6 @@ function toDate(date: string | null | undefined): Date | null {
 }
 
 /**
- * Convert a Date object to an ISO string, or null if invalid
- */
-function dateToISOString(date: Date | null | undefined): string | null {
-  if (!date) return null;
-  return isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-/**
  * Convert storage format to Job class
  */
 export function storageToClass<Input, Output>(
