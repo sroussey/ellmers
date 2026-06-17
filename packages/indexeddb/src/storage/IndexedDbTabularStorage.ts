@@ -17,6 +17,7 @@ import {
   KeyGenerationStrategy,
   pickCoveringIndex,
   QueryOptions,
+  safeEmit,
   SearchCriteria,
   SearchOperator,
   SimplifyPrimaryKey,
@@ -455,7 +456,7 @@ export class IndexedDbTabularStorage<
         }
 
         tx.oncomplete = () => {
-          for (const r of results) this.events.emit("put", r);
+          for (const r of results) safeEmit(this.events, "put", r);
           this.hybridManager?.notifyLocalChange();
           resolve(results);
         };
@@ -472,7 +473,7 @@ export class IndexedDbTabularStorage<
       // the version). Drop the stale handle so `getDb()` re-opens, then
       // retry exactly once.
       if (err instanceof DOMException && err.name === "InvalidStateError") {
-        this.events.emit("rollback", { op: "putBulkInTransaction", error: err });
+        safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err });
         try {
           this.db?.close();
         } catch {
@@ -481,7 +482,7 @@ export class IndexedDbTabularStorage<
         this.db = undefined;
         return await run();
       }
-      this.events.emit("rollback", { op: "putBulkInTransaction", error: err });
+      safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err });
       throw err;
     }
   }

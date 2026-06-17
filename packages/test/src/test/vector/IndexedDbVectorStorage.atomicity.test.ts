@@ -10,8 +10,16 @@ import { IndexedDbVectorStorage } from "@workglow/indexeddb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
+
+// safeEmit re-throws caught listener errors via queueMicrotask. Vitest
+// otherwise interprets those as uncaught failures even when the explicit
+// assertions pass; absorb them so the test's expectations remain authoritative.
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("uncaughtException", () => {});
+  process.on("unhandledRejection", () => {});
+}
 
 /**
  * Atomicity contract for the IndexedDB vector `putBulk`:
@@ -147,6 +155,64 @@ describe("IndexedDbVectorStorage putBulk atomicity", () => {
     expect(seen.map((e) => e.id)).toEqual(["row-1", "row-2", "row-3"]);
 
     storage.off("put", handler as any);
+  });
+
+  it("does not hang putBulk when a put listener throws on the success path", async () => {
+    // The IDB success path emits per-row `put` events from `tx.oncomplete`
+    // before resolving the putBulk promise. A throwing listener in that loop
+    // used to abort the loop and skip the `resolve(results)` call, so the
+    // promise hung forever even though the writes had committed. Routing
+    // through `safeEmit` neutralizes the throw so resolution still happens.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    storage.on("put", (() => {
+      throw new Error("listener boom");
+    }) as any);
+
+    const batch = [
+      { id: "row-1", vector: vec([1, 0, 0]), metadata: { tag: "a" } },
+      { id: "row-2", vector: vec([0, 1, 0]), metadata: { tag: "b" } },
+      { id: "row-3", vector: vec([0, 0, 1]), metadata: { tag: "c" } },
+    ];
+
+    let hangTimer: ReturnType<typeof setTimeout> | undefined;
+    const hangGuard = new Promise<never>((_, reject) => {
+      hangTimer = setTimeout(() => reject(new Error("putBulk hung")), 2000);
+    });
+
+    try {
+      const results = await Promise.race([storage.putBulk(batch), hangGuard]);
+      expect(results).toHaveLength(3);
+    } finally {
+      if (hangTimer) clearTimeout(hangTimer);
+    }
+
+    // Writes actually committed.
+    expect(await storage.get({ id: "row-1" } as any)).toBeDefined();
+    expect(await storage.get({ id: "row-2" } as any)).toBeDefined();
+    expect(await storage.get({ id: "row-3" } as any)).toBeDefined();
+  });
+
+  it("still fires later put listeners when an earlier one throws on the success path", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const collected: string[] = [];
+    storage.on("put", (() => {
+      throw new Error("first listener boom");
+    }) as any);
+    storage.on("put", ((entity: VecEntity) => {
+      collected.push(entity.id);
+    }) as any);
+
+    const batch = [
+      { id: "row-a", vector: vec([1, 0, 0]), metadata: {} },
+      { id: "row-b", vector: vec([0, 1, 0]), metadata: {} },
+      { id: "row-c", vector: vec([0, 0, 1]), metadata: {} },
+    ];
+
+    const results = await storage.putBulk(batch);
+    expect(results).toHaveLength(3);
+    expect(collected).toEqual(["row-a", "row-b", "row-c"]);
   });
 
   it("emits a rollback event on failure", async () => {
