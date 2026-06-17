@@ -113,10 +113,12 @@ export const OpenAI_ImageEdit_Stream: AiProviderRunFn<
 
   try {
     const payload = await buildEditPayload(input, model);
-    const stream = (await (client.images.edit as Function)(
-      { ...payload, stream: true, partial_images: 3 },
-      { signal }
-    )) as AsyncIterable<{ b64_json?: string }>;
+    const stream = await (
+      client.images.edit as unknown as (
+        body: Record<string, unknown>,
+        options: { signal: AbortSignal }
+      ) => Promise<AsyncIterable<{ b64_json?: string }>>
+    )({ ...payload, stream: true, partial_images: 3 }, { signal });
 
     for await (const event of stream) {
       if (signal.aborted) return;

@@ -56,7 +56,12 @@ export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
   // DALL-E 2 and DALL-E 3 do not support streaming — fall back to non-streaming.
   if (modelName.startsWith("dall-e")) {
     try {
-      const resp = await (client.images.generate as Function)(
+      const resp = await (
+        client.images.generate as unknown as (
+          body: Record<string, unknown>,
+          options: { signal: AbortSignal }
+        ) => Promise<{ data?: Array<{ b64_json?: string }> }>
+      )(
         {
           model: modelName,
           prompt: input.prompt,
