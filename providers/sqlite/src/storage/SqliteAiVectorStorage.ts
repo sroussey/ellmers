@@ -15,6 +15,7 @@ import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow
 import type {
   DataPortSchemaObject,
   FromSchema,
+  JsonSchema,
   TypedArray,
   TypedArrayConstructor,
   TypedArraySchemaOptions,
@@ -273,7 +274,7 @@ export class SqliteAiVectorStorage<
   /**
    * Override mapTypeToSQL to use BLOB for vector columns instead of TEXT
    */
-  protected override mapTypeToSQL(typeDef: any): string {
+  protected override mapTypeToSQL(typeDef: JsonSchema): string {
     if (typeof typeDef !== "boolean" && typeDef.type === "array") {
       const format = typeDef.format as string | undefined;
       if (format === "TypedArray" || format?.startsWith("TypedArray:")) {
@@ -332,7 +333,7 @@ export class SqliteAiVectorStorage<
         if (clientProvidedKeys === "if-missing" && clientValue != null) {
           allColumns.push(col);
           placeholders.push("?");
-          params.push((this as any).jsToSqlValue(col, clientValue));
+          params.push(this.jsToSqlValue(col, clientValue as Entity[keyof Entity]));
         }
         continue;
       }

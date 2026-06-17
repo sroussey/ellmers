@@ -16,6 +16,7 @@ import {
   StorageValidationError,
   getMetadataProperty,
   getVectorProperty,
+  matchesFilter,
 } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
@@ -302,7 +303,7 @@ export class PostgresVectorStorage<
         ? (row[this.metadataPropertyName] as Metadata)
         : ({} as Metadata);
 
-      if (filter && !this.matchesFilter(metadata, filter)) {
+      if (filter && !matchesFilter(metadata, filter)) {
         continue;
       }
 
@@ -317,23 +318,5 @@ export class PostgresVectorStorage<
     const topResults = results.slice(0, topK);
 
     return topResults;
-  }
-
-  private getPrimaryKeyWhereClause(): string {
-    const conditions = this.primaryKeyNames.map((key, idx) => `${String(key)} = $${idx + 1}`);
-    return conditions.join(" AND ");
-  }
-
-  private getPrimaryKeyValues(row: any): any[] {
-    return this.primaryKeyNames.map((key) => row[key]);
-  }
-
-  private matchesFilter(metadata: Metadata, filter: Partial<Metadata>): boolean {
-    for (const [key, value] of Object.entries(filter)) {
-      if (metadata[key as keyof Metadata] !== value) {
-        return false;
-      }
-    }
-    return true;
   }
 }
