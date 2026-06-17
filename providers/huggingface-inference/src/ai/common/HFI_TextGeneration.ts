@@ -37,14 +37,20 @@ export const HFI_TextGeneration_Stream: AiProviderRunFn<
   // history routed to HFI was silently dropped.
   const unified = input as UnifiedTextGenerationInput;
   const hasMessages = Array.isArray(unified.messages) && unified.messages.length > 0;
-  const messages = hasMessages
+  // HF's chat endpoint is OpenAI-compatible at runtime, but the SDK types a
+  // content part's `type` as a narrow enum, so the OpenAI-shaped messages need
+  // a cast to the client's expected parameter type. Null content (e.g. an
+  // assistant tool-call turn) is coerced to an empty string.
+  const messages = (hasMessages
     ? toOpenAIMessages({
         messages: unified.messages,
         systemPrompt: unified.systemPrompt,
         prompt: "",
         tools: [],
-      } as never)
-    : [{ role: "user", content: input.prompt }];
+      } as never).map((m) => ({ ...m, content: m.content ?? "" }))
+    : [{ role: "user", content: input.prompt }]) as unknown as Parameters<
+    typeof client.chatCompletionStream
+  >[0]["messages"];
 
   const stream = client.chatCompletionStream(
     {
