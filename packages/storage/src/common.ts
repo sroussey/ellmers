@@ -48,6 +48,8 @@ export * from "./kv/TelemetryKvStorage";
 export * from "./util/HybridSubscriptionManager";
 export * from "./util/PollingSubscriptionManager";
 
+export { safeEmit } from "./events/safeEmit";
+
 export * from "./sql";
 export * from "./migrations";
 

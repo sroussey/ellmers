@@ -9,6 +9,15 @@ import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// safeEmit re-throws caught listener errors via queueMicrotask so observability
+// (unhandledException / unhandledrejection) is preserved. In the test process
+// these rethrows would otherwise be treated as uncaught failures; absorb them
+// so the explicit assertions remain the test signal.
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("uncaughtException", () => {});
+  process.on("unhandledRejection", () => {});
+}
+
 /**
  * Atomicity contract for the in-memory vector `putBulk`:
  *
@@ -138,6 +147,55 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
     const results = await store.putBulk(batch);
     expect(results).toHaveLength(3);
     expect(await store.size()).toBe(3);
+  });
+
+  it("does not mask the original batch error when a rollback listener throws", async () => {
+    // A misbehaving rollback subscriber must not derail the throw of the
+    // original batch error — that error is the signal callers rely on to
+    // know writes were rolled back. `EventEmitter.emit` rethrows listener
+    // errors synchronously, so the emit site is routed through `safeEmit`.
+    const store = newStore();
+
+    // Suppress the warning the safeEmit path logs for the thrown listener.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    store.on("rollback" as any, () => {
+      throw new Error("listener boom");
+    });
+
+    vi.spyOn(InMemoryTabularStorage.prototype as any, "put").mockImplementation((async () => {
+      throw new Error("original-error");
+    }) as any);
+
+    await expect(
+      store.putBulk([{ id: "row-a", vector: vec([1, 0, 0]), metadata: {} }])
+    ).rejects.toThrow("original-error");
+  });
+
+  it("still fires later rollback listeners when an earlier one throws", async () => {
+    const store = newStore();
+
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const seenByLater: Array<{ op: string; error: unknown }> = [];
+    store.on("rollback" as any, () => {
+      throw new Error("first listener boom");
+    });
+    store.on("rollback" as any, (reason: any) => {
+      seenByLater.push(reason);
+    });
+
+    vi.spyOn(InMemoryTabularStorage.prototype as any, "put").mockImplementation((async () => {
+      throw new Error("original-error");
+    }) as any);
+
+    await expect(
+      store.putBulk([{ id: "row-a", vector: vec([1, 0, 0]), metadata: {} }])
+    ).rejects.toThrow("original-error");
+
+    expect(seenByLater).toHaveLength(1);
+    expect(seenByLater[0].op).toBe("putBulk");
+    expect((seenByLater[0].error as Error).message).toBe("original-error");
   });
 
   it("putBulk does not advance the autoincrement counter on failure", async () => {
