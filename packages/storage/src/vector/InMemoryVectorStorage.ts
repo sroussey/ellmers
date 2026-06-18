@@ -61,10 +61,33 @@ export class InMemoryVectorStorage<
   }
 
   /**
+   * Per-instance promise-chain mutex. Serializes `put` and `putBulk` so a
+   * concurrent single-row `put` cannot slip rows into the live Map while a
+   * `putBulk` is mid-flight — otherwise the snapshot/restore on failure would
+   * wipe the interleaved row along with the failed batch.
+   */
+  private mutexChain: Promise<void> = Promise.resolve();
+  private async mutex<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.mutexChain;
+    let release!: () => void;
+    this.mutexChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /**
    * Fail-fast vector validation. We mirror the cloud backends here so an
    * in-memory test fixture catches the same shape mismatches a Postgres /
    * SQLite store would reject — otherwise tests pass and the deployment
-   * silently breaks on garbage rows.
+   * silently breaks on garbage rows. Routed through the same mutex as
+   * `putBulk` so concurrent writes serialize and a `put` cannot land in the
+   * Map mid-batch only to be wiped by a rollback snapshot.
    */
   override async put(value: InsertType): Promise<Entity> {
     assertVectorShape(
@@ -72,7 +95,7 @@ export class InMemoryVectorStorage<
       this.vectorDimensions,
       "write"
     );
-    return super.put(value);
+    return this.mutex(() => super.put(value));
   }
 
   /**
@@ -94,18 +117,20 @@ export class InMemoryVectorStorage<
       this.vectorDimensions
     );
     if (values.length === 0) return [];
-    const snapshot = this.snapshotMutableState();
-    const results: Entity[] = [];
-    try {
-      for (const value of values) {
-        results.push(await this.put(value));
+    return this.mutex(async () => {
+      const snapshot = this.snapshotMutableState();
+      const results: Entity[] = [];
+      try {
+        for (const value of values) {
+          results.push(await super.put(value));
+        }
+        return results;
+      } catch (error) {
+        this.restoreMutableState(snapshot);
+        safeEmit(this.events, "rollback", { op: "putBulk", error });
+        throw error;
       }
-      return results;
-    } catch (error) {
-      this.restoreMutableState(snapshot);
-      safeEmit(this.events, "rollback", { op: "putBulk", error });
-      throw error;
-    }
+    });
   }
 
   async similaritySearch(
