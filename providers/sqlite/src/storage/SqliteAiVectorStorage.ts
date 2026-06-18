@@ -11,7 +11,13 @@ import type {
   VectorIndexOptions,
   VectorSearchOptions,
 } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow/storage";
+import {
+  assertVectorShape,
+  getMetadataProperty,
+  getVectorProperty,
+  matchesFilter,
+  validateVectorEntities,
+} from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
@@ -291,6 +297,11 @@ export class SqliteAiVectorStorage<
    * Falls back to base class put() if the extension is not available.
    */
   public override async put(entity: any): Promise<Entity> {
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
     if (!this.extensionLoaded) {
       return super.put(entity);
     }
@@ -396,11 +407,28 @@ export class SqliteAiVectorStorage<
   }
 
   /**
+   * Validate every entry up front so a single malformed vector rejects the
+   * whole batch before any row is encoded for sqlite-vector.
+   */
+  public override async putBulk(entities: any[]): Promise<Entity[]> {
+    validateVectorEntities(
+      entities as ReadonlyArray<Record<string, unknown>>,
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
+    return super.putBulk(entities);
+  }
+
+  /**
    * Perform similarity search using sqlite-vector's vector_full_scan.
    * Uses native COSINE distance computation in SQLite rather than in-memory JS.
    * Falls back to in-memory search if the extension is unavailable.
    */
   async similaritySearch(query: TypedArray, options: VectorSearchOptions<Metadata> = {}) {
+    // Validate before the extension/fallback split so a wrong-dimension or
+    // non-finite query fails fast instead of silently returning a meaningless
+    // score from the in-memory fallback path.
+    assertVectorShape(query, this.vectorDimensions, "query");
     if (!this.extensionLoaded) {
       return this.searchFallback(query, options);
     }

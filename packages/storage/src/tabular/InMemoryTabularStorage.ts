@@ -133,6 +133,37 @@ export class InMemoryTabularStorage<
     return await Promise.all(values.map(async (value) => this.put(value)));
   }
 
+  /**
+   * Capture the mutable state required to roll back a batch op: the row
+   * entries (a clone of the live `Map`) and the autoincrement counter. The
+   * result is opaque to callers; pair with {@link restoreMutableState}.
+   */
+  protected snapshotMutableState(): {
+    readonly entries: ReadonlyArray<readonly [string, Entity]>;
+    readonly counter: number;
+  } {
+    return {
+      entries: Array.from(this.values.entries()),
+      counter: this.autoIncrementCounter,
+    };
+  }
+
+  /**
+   * Restore the row Map and autoincrement counter from a prior
+   * {@link snapshotMutableState} result. Used by atomic batch overrides
+   * (vector `putBulk`) to undo partial writes when a mid-batch error fires.
+   */
+  protected restoreMutableState(snapshot: {
+    readonly entries: ReadonlyArray<readonly [string, Entity]>;
+    readonly counter: number;
+  }): void {
+    this.values.clear();
+    for (const [id, entity] of snapshot.entries) {
+      this.values.set(id, entity);
+    }
+    this.autoIncrementCounter = snapshot.counter;
+  }
+
   async get(key: PrimaryKey): Promise<Entity | undefined> {
     const id = await makeFingerprint(key);
     const out = this.values.get(id);

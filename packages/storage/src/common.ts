@@ -48,11 +48,14 @@ export * from "./kv/TelemetryKvStorage";
 export * from "./util/HybridSubscriptionManager";
 export * from "./util/PollingSubscriptionManager";
 
+export { safeEmit } from "./events/safeEmit";
+
 export * from "./sql";
 export * from "./migrations";
 
 export * from "./vector/InMemoryVectorStorage";
 export * from "./vector/IVectorStorage";
+export * from "./vector/assertVectorShape";
 export * from "./vector/TelemetryVectorStorage";
 
 export * from "./text/index";

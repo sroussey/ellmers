@@ -1,5 +1,35 @@
 # @workglow/storage
 
+## Unreleased
+
+### Bug Fixes
+
+#### storage,indexeddb
+
+- validate vector shape on `InMemoryVectorStorage` and `IndexedDbVectorStorage`
+  `put` / `putBulk` / `similaritySearch` — closes a silent-corruption gap left
+  by the original `assertVectorShape` rollout that only covered Postgres,
+  SQLite, and Supabase. Lifts a `validateVectorEntities` batch helper to
+  `@workglow/storage` and refactors the cloud-backed overrides to use it.
+
+#### storage
+
+- `InMemoryVectorStorage.putBulk` is now genuinely atomic. The inherited
+  tabular `putBulk` runs writes via `Promise.all`, so a non-shape failure
+  mid-batch (PK collision, listener throw, custom subclass invariant)
+  could leave rows 0..N-1 committed. The vector override snapshots the
+  underlying `Map` and the autoincrement counter, writes serially, and
+  restores the snapshot on throw so the batch is either fully visible or
+  fully absent. A `rollback` event fires on the storage emitter when the
+  restore path runs, so subscribers can reconcile any per-row `put`
+  events emitted before the failure.
+- `InMemoryTabularStorage` now exposes `protected snapshotMutableState()`
+  / `restoreMutableState()` so subclasses (vector overlays, telemetry
+  wrappers) can implement atomic batch ops without reaching into private
+  state.
+- `TabularEventListeners` adds a `rollback` event carrying `{ op, error }`.
+  Existing event subscribers are unaffected.
+
 ## 0.3.14
 
 ### Features
