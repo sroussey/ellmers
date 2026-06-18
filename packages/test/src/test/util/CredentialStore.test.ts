@@ -9,8 +9,13 @@ import {
   ChainedCredentialStore,
   EnvCredentialStore,
   InMemoryCredentialStore,
+  MissingCredentialError,
+  ServiceRegistry,
   getGlobalCredentialStore,
+  getInputResolvers,
+  registerCredentialDefaults,
   resolveCredential,
+  setCredentialResolverStrict,
   setGlobalCredentialStore,
   setLogger,
 } from "@workglow/util";
@@ -271,6 +276,85 @@ describe("CredentialStore", () => {
       registry.registerInstance(CREDENTIAL_STORE, localStore);
 
       expect(await resolveCredential("key", registry)).toBe("local-value");
+    });
+  });
+
+  describe("credential input resolver (strict default)", () => {
+    let originalStore: any;
+
+    beforeEach(() => {
+      originalStore = getGlobalCredentialStore();
+      // Force strict on each test so other suites flipping it cannot leak in.
+      setCredentialResolverStrict(true);
+    });
+
+    afterEach(() => {
+      setGlobalCredentialStore(originalStore);
+      setCredentialResolverStrict(true);
+    });
+
+    /** Helper: resolve a credential via the registered "credential" resolver. */
+    async function resolveViaInputResolver(
+      key: string,
+      registry: ServiceRegistry = new ServiceRegistry()
+    ): Promise<unknown> {
+      // Ensure the resolver is registered on the scoped registry.
+      registerCredentialDefaults(registry);
+      const resolvers = getInputResolvers(registry);
+      const resolver = resolvers.get("credential");
+      if (!resolver) throw new Error("credential resolver missing");
+      return resolver(key, "credential", registry);
+    }
+
+    it("credential input resolver throws MissingCredentialError when store has no value (default strict)", async () => {
+      const registry = new ServiceRegistry();
+      const store = new InMemoryCredentialStore();
+      registry.registerInstance(CREDENTIAL_STORE, store);
+
+      await expect(
+        resolveViaInputResolver("missing-credential-key", registry)
+      ).rejects.toBeInstanceOf(MissingCredentialError);
+    });
+
+    it("credential input resolver returns real value on hit", async () => {
+      const registry = new ServiceRegistry();
+      const store = new InMemoryCredentialStore();
+      await store.put("present-key", "sk-real-value");
+      registry.registerInstance(CREDENTIAL_STORE, store);
+
+      const resolved = await resolveViaInputResolver("present-key", registry);
+      expect(resolved).toBe("sk-real-value");
+    });
+
+    it("credential input resolver returns literal id after setCredentialResolverStrict(false)", async () => {
+      const registry = new ServiceRegistry();
+      const store = new InMemoryCredentialStore();
+      registry.registerInstance(CREDENTIAL_STORE, store);
+
+      setCredentialResolverStrict(false);
+      try {
+        const resolved = await resolveViaInputResolver("legacy-fallback-key", registry);
+        expect(resolved).toBe("legacy-fallback-key");
+      } finally {
+        setCredentialResolverStrict(true);
+      }
+    });
+
+    it("MissingCredentialError.key equals lookup key; message contains no Bearer/value", async () => {
+      const registry = new ServiceRegistry();
+      const store = new InMemoryCredentialStore();
+      registry.registerInstance(CREDENTIAL_STORE, store);
+
+      try {
+        await resolveViaInputResolver("AUTH_KEY_NAME", registry);
+        throw new Error("expected throw");
+      } catch (e) {
+        expect(e).toBeInstanceOf(MissingCredentialError);
+        const err = e as MissingCredentialError;
+        expect(err.key).toBe("AUTH_KEY_NAME");
+        expect(err.message).toContain("AUTH_KEY_NAME");
+        expect(err.message).not.toMatch(/Bearer/i);
+      }
     });
   });
 });

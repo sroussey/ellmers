@@ -11,6 +11,26 @@ import { globalServiceRegistry } from "../di/ServiceRegistry";
 import type { ICredentialStore } from "./ICredentialStore";
 import { CREDENTIAL_STORE } from "./ICredentialStore";
 import { InMemoryCredentialStore } from "./InMemoryCredentialStore";
+import { MissingCredentialError } from "./MissingCredentialError";
+
+/**
+ * When `true` (the default), the `"credential"` input resolver throws
+ * {@link MissingCredentialError} on a store miss instead of falling back to
+ * the literal lookup id. This prevents the literal key name from being
+ * forwarded to providers (e.g. as a Bearer token) when its credential was
+ * never registered. Callers that need the legacy literal-id fallback can opt
+ * in via {@link setCredentialResolverStrict}; flip with care.
+ */
+let credentialResolverStrict = true;
+
+/**
+ * Toggles whether the `"credential"` input resolver throws on a store miss.
+ * `true` (default) is fail-closed; `false` restores the legacy
+ * `resolved ?? id` fallback. Intended for tests and legacy embedders.
+ */
+export function setCredentialResolverStrict(value: boolean): void {
+  credentialResolverStrict = value;
+}
 
 /**
  * Gets the credential store from the given registry (defaults to global).
@@ -75,7 +95,10 @@ export function registerCredentialDefaults(
   registerInputResolver(
     "credential",
     async (id, _format, registry) => {
-      return (await resolveCredential(id, registry)) ?? id;
+      const resolved = await resolveCredential(id, registry);
+      if (resolved !== undefined) return resolved;
+      if (credentialResolverStrict) throw new MissingCredentialError(id);
+      return id;
     },
     registry
   );
