@@ -16,7 +16,7 @@
     "watch-bun": "bun build --watch --no-clear-screen --target=bun --sourcemap=external --packages=external --outdir ./dist/ ./src/bun.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'browser,node,bun,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun' 'bun run build-browser' 'bun run build-node' 'bun run build-bun'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist/ ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist/ ./src/node.ts",
