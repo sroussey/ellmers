@@ -18,6 +18,7 @@ import {
   BrowserSnapshotTask,
   registerBrowserDeps,
 } from "@workglow/browser-control/task";
+import { DisposeStrategy, ResourceScope } from "@workglow/util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
@@ -103,7 +104,25 @@ export function runGenericBrowserTaskTests(
     });
   }
 
+  /** Keeps browser sessions alive across sequential standalone task.run() calls. */
+  let sessionScope: ResourceScope | undefined;
+
+  function initSessionScope(): void {
+    sessionScope = new ResourceScope({ strategy: DisposeStrategy.never() });
+  }
+
+  function runOpts(): { resourceScope: ResourceScope } {
+    if (sessionScope === undefined) {
+      initSessionScope();
+    }
+    return { resourceScope: sessionScope! };
+  }
+
   scopedAfterEach(async () => {
+    if (sessionScope !== undefined) {
+      await sessionScope[Symbol.asyncDispose]();
+      sessionScope = undefined;
+    }
     await BrowserSessionRegistry.disconnectAll();
   });
 
@@ -118,11 +137,14 @@ export function runGenericBrowserTaskTests(
   // -----------------------------------------------------------------------
 
   describe("BrowserSessionTask", () => {
-    scopedBeforeEach(() => setup());
+    scopedBeforeEach(() => {
+      setup();
+      initSessionScope();
+    });
 
     test("creates a session and returns sessionId", async () => {
       const task = new BrowserSessionTask({ headless: true });
-      const result = await task.run({});
+      const result = await task.run({}, runOpts());
       expect(typeof result.sessionId).toBe("string");
       expect(result.sessionId.length).toBeGreaterThan(0);
       const ctx = BrowserSessionRegistry.get(result.sessionId);
@@ -131,9 +153,9 @@ export function runGenericBrowserTaskTests(
 
     test("BrowserCloseTask closes the session", async () => {
       const task = new BrowserSessionTask({ headless: true });
-      const { sessionId } = await task.run({});
+      const { sessionId } = await task.run({}, runOpts());
       const closeTask = new BrowserCloseTask();
-      await closeTask.run({ sessionId });
+      await closeTask.run({ sessionId }, runOpts());
       expect(() => BrowserSessionRegistry.get(sessionId)).toThrow();
     });
   });
@@ -147,14 +169,15 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
     });
 
     test("navigates to a URL and returns title and url", async () => {
       const task = new BrowserNavigateTask({ waitUntil: "load" });
-      const result = await task.run({ sessionId, url: TEST_PAGE_URL });
+      const result = await task.run({ sessionId, url: TEST_PAGE_URL }, runOpts());
       expect(result.sessionId).toBe(sessionId);
       expect(typeof result.title).toBe("string");
       expect(typeof result.url).toBe("string");
@@ -166,14 +189,15 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
     });
 
     test("calls goBack and returns sessionId and url", async () => {
       const task = new BrowserBackTask();
-      const result = await task.run({ sessionId });
+      const result = await task.run({ sessionId }, runOpts());
       expect(result.sessionId).toBe(sessionId);
       expect(typeof result.url).toBe("string");
     });
@@ -184,14 +208,15 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
     });
 
     test("calls goForward and returns sessionId and url", async () => {
       const task = new BrowserForwardTask();
-      const result = await task.run({ sessionId });
+      const result = await task.run({ sessionId }, runOpts());
       expect(result.sessionId).toBe(sessionId);
       expect(typeof result.url).toBe("string");
     });
@@ -202,14 +227,15 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
     });
 
     test("calls reload and returns sessionId", async () => {
       const task = new BrowserReloadTask();
-      const result = await task.run({ sessionId });
+      const result = await task.run({ sessionId }, runOpts());
       expect(result.sessionId).toBe(sessionId);
     });
   });
@@ -223,11 +249,12 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
       const navTask = new BrowserNavigateTask({ waitUntil: "load" });
-      await navTask.run({ sessionId, url: TEST_PAGE_URL });
+      await navTask.run({ sessionId, url: TEST_PAGE_URL }, runOpts());
     });
 
     test("snapshot returns a tree with root and yaml", async () => {
@@ -293,7 +320,7 @@ export function runGenericBrowserTaskTests(
 
     test("BrowserSnapshotTask returns tree via task interface", async () => {
       const task = new BrowserSnapshotTask();
-      const result = await task.run({ sessionId });
+      const result = await task.run({ sessionId }, runOpts());
       expect(result.sessionId).toBe(sessionId);
       expect(result.tree).toBeDefined();
       expect(result.tree.root).toBeDefined();
@@ -314,12 +341,13 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
       // Navigate to test page so real backends have elements to interact with
       const navTask = new BrowserNavigateTask({ waitUntil: "load" });
-      await navTask.run({ sessionId, url: TEST_PAGE_URL });
+      await navTask.run({ sessionId, url: TEST_PAGE_URL }, runOpts());
     });
 
     test("clicks by ref", async () => {
@@ -328,19 +356,19 @@ export function runGenericBrowserTaskTests(
       expect(ref).toBeTruthy();
 
       const task = new BrowserClickTask();
-      const result = await task.run({ sessionId, ref: ref! });
+      const result = await task.run({ sessionId, ref: ref! }, runOpts());
       expect(result.sessionId).toBe(sessionId);
     });
 
     test("clicks by role and name", async () => {
       const task = new BrowserClickTask();
-      const result = await task.run({ sessionId, role: "button", name: "Sign in" });
+      const result = await task.run({ sessionId, role: "button", name: "Sign in" }, runOpts());
       expect(result.sessionId).toBe(sessionId);
     });
 
     test("throws when neither ref nor role+name is provided", async () => {
       const task = new BrowserClickTask();
-      await expect(task.run({ sessionId })).rejects.toThrow(
+      await expect(task.run({ sessionId }, runOpts())).rejects.toThrow(
         "BrowserClickTask: either ref or role+name must be provided"
       );
     });
@@ -355,12 +383,13 @@ export function runGenericBrowserTaskTests(
 
     scopedBeforeEach(async () => {
       setup();
+      initSessionScope();
       const sessionTask = new BrowserSessionTask({ headless: true });
-      const result = await sessionTask.run({});
+      const result = await sessionTask.run({}, runOpts());
       sessionId = result.sessionId;
       // Navigate to test page so real backends have elements to interact with
       const navTask = new BrowserNavigateTask({ waitUntil: "load" });
-      await navTask.run({ sessionId, url: TEST_PAGE_URL });
+      await navTask.run({ sessionId, url: TEST_PAGE_URL }, runOpts());
     });
 
     test("fills by ref", async () => {
@@ -369,27 +398,33 @@ export function runGenericBrowserTaskTests(
       expect(ref).toBeTruthy();
 
       const task = new BrowserFillTask();
-      const result = await task.run({
-        sessionId,
-        ref: ref!,
-        value: "test@example.com",
-      });
+      const result = await task.run(
+        {
+          sessionId,
+          ref: ref!,
+          value: "test@example.com",
+        },
+        runOpts()
+      );
       expect(result.sessionId).toBe(sessionId);
     });
 
     test("fills by label", async () => {
       const task = new BrowserFillTask();
-      const result = await task.run({
-        sessionId,
-        label: "Email address",
-        value: "test@example.com",
-      });
+      const result = await task.run(
+        {
+          sessionId,
+          label: "Email address",
+          value: "test@example.com",
+        },
+        runOpts()
+      );
       expect(result.sessionId).toBe(sessionId);
     });
 
     test("throws when neither ref nor label is provided", async () => {
       const task = new BrowserFillTask();
-      await expect(task.run({ sessionId, value: "test" })).rejects.toThrow(
+      await expect(task.run({ sessionId, value: "test" }, runOpts())).rejects.toThrow(
         "BrowserFillTask: either ref or label must be provided"
       );
     });
