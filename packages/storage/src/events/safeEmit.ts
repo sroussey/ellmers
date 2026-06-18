@@ -14,9 +14,10 @@ import { getLogger } from "@workglow/util";
  * synchronously (or as an `AggregateError`). Storage write paths use
  * that signal to trigger rollback, so they must not be derailed by a
  * misbehaving subscriber. Listener errors are surfaced via
- * `getLogger().warn` and re-thrown on a microtask so
- * `unhandledrejection` / `process.on("unhandledRejection")` can still
- * observe them; the synchronous caller keeps running.
+ * `getLogger().warn` and forwarded to the unhandled-rejection channel
+ * (`unhandledrejection` in browsers / `process.on("unhandledRejection")`
+ * in Node) so observability tooling still sees the bug; the synchronous
+ * caller keeps running.
  */
 export function safeEmit<
   Events extends Record<string, (...args: any) => any>,
@@ -29,8 +30,6 @@ export function safeEmit<
       event: String(event),
       error: e,
     });
-    queueMicrotask(() => {
-      throw e;
-    });
+    void Promise.reject(e);
   }
 }
