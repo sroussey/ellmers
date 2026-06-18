@@ -241,26 +241,6 @@ export class PostgresRateLimiterStorage implements IRateLimiterStorage {
     );
   }
 
-  public async recordExecution(queueName: string): Promise<void> {
-    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
-    const prefixColumnsInsert =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const prefixParamValues = this.getPrefixParamValues();
-    const prefixParamPlaceholders =
-      prefixColumnNames.length > 0
-        ? prefixColumnNames.map((_, i) => `$${i + 1}`).join(", ") + ", "
-        : "";
-    const queueParamNum = prefixColumnNames.length + 1;
-
-    await this.db.query(
-      `
-      INSERT INTO ${this.executionTableName} (${prefixColumnsInsert}queue_name)
-      VALUES (${prefixParamPlaceholders}$${queueParamNum})
-    `,
-      [...prefixParamValues, queueName]
-    );
-  }
-
   public async getExecutionCount(queueName: string, windowStartTime: string): Promise<number> {
     const { conditions: prefixConditions, params: prefixParams } = this.buildPrefixWhereClause(3);
 

@@ -168,21 +168,6 @@ export class SqliteRateLimiterStorage implements IRateLimiterStorage {
       .run(token as number, queueName, ...prefixParams);
   }
 
-  public async recordExecution(queueName: string): Promise<void> {
-    const prefixColumnNames = getPrefixColumnNames(this.prefixes);
-    const prefixColumnsInsert =
-      prefixColumnNames.length > 0 ? prefixColumnNames.join(", ") + ", " : "";
-    const prefixPlaceholders =
-      prefixColumnNames.length > 0 ? prefixColumnNames.map(() => "?").join(", ") + ", " : "";
-    const prefixParamValues = this.getPrefixParamValues();
-
-    const stmt = this.db.prepare(`
-      INSERT INTO ${this.executionTableName} (${prefixColumnsInsert}queue_name)
-      VALUES (${prefixPlaceholders}?)
-    `);
-    stmt.run(...prefixParamValues, queueName);
-  }
-
   public async getExecutionCount(queueName: string, windowStartTime: string): Promise<number> {
     const prefixConditions = this.buildPrefixWhereClause();
     const prefixParams = this.getPrefixParamValues();

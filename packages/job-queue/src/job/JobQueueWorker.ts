@@ -31,7 +31,7 @@ import {
   RetryableJobError,
 } from "./JobError";
 import { withJobErrorDiagnostics } from "./JobErrorDiagnostics";
-import { classToStorage, storageToClass } from "./JobStorageConverters";
+import { storageToClass } from "./JobStorageConverters";
 
 /**
  * Upper bound on {@link JobQueueWorker.getLimiterWakeDelay}. Prevents a
@@ -1123,12 +1123,5 @@ export class JobQueueWorker<
    */
   protected storageToClass(details: JobStorageFormat<Input, Output>): Job<Input, Output> {
     return storageToClass(details, this.jobClass);
-  }
-
-  /**
-   * Convert Job class to storage format
-   */
-  protected classToStorage(job: Job<Input, Output>): JobStorageFormat<Input, Output> {
-    return classToStorage(job, this.queueName);
   }
 }

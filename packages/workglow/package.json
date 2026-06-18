@@ -71,6 +71,22 @@
       "types": "./dist/google-gemini-runtime.d.ts",
       "import": "./dist/google-gemini-runtime.js"
     },
+    "./hf-inference": {
+      "browser": {
+        "types": "./dist/hf-inference.d.ts",
+        "import": "./dist/hf-inference.browser.js"
+      },
+      "bun": {
+        "types": "./dist/hf-inference.d.ts",
+        "import": "./dist/hf-inference.bun.js"
+      },
+      "types": "./dist/hf-inference.d.ts",
+      "import": "./dist/hf-inference.js"
+    },
+    "./hf-inference/runtime": {
+      "types": "./dist/hf-inference-runtime.d.ts",
+      "import": "./dist/hf-inference-runtime.js"
+    },
     "./hf-transformers": {
       "browser": {
         "types": "./dist/hf-transformers.d.ts",

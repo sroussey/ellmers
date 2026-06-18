@@ -160,6 +160,23 @@ export abstract class BaseSqlTabularStorage<
     return typeDef;
   }
 
+  /**
+   * Determines if a numeric field should be treated as unsigned, i.e. it is a
+   * `number`/`integer` schema with a `minimum` of zero or greater. Shared by
+   * the Postgres-shaped backends when selecting integer range types.
+   */
+  protected shouldBeUnsigned(typeDef: JsonSchema): boolean {
+    const actualType = this.getNonNullType(typeDef);
+    if (typeof actualType === "boolean") {
+      return false;
+    }
+    return (
+      (actualType.type === "number" || actualType.type === "integer") &&
+      typeof actualType.minimum === "number" &&
+      actualType.minimum >= 0
+    );
+  }
+
   /** Returns value fields ordered to match the schema declaration. */
   protected getValueAsOrderedArray(value: Value): ValueOptionType[] {
     const orderedParams: ValueOptionType[] = [];

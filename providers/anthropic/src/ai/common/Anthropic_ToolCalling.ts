@@ -111,8 +111,13 @@ export const Anthropic_ToolCalling_Stream: AiProviderRunFn<
     model: modelName,
     messages,
     max_tokens: getMaxTokens(input, model),
-    temperature: input.temperature,
   };
+
+  // Only forward temperature when explicitly set — sending `undefined` would
+  // serialize a null/undefined field the Anthropic API may reject.
+  if (input.temperature !== undefined) {
+    params.temperature = input.temperature;
+  }
 
   if (input.systemPrompt) {
     params.system = input.systemPrompt;

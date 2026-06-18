@@ -7,5 +7,7 @@
 // organize-imports-ignore
 
 export * from "./Dialect";
+export * from "./mapPostgresType";
 export * from "./PredicateBuilder";
 export * from "./PrefixDdl";
+export * from "./typedArrayCtors";

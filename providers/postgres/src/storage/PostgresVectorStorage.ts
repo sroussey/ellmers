@@ -16,6 +16,7 @@ import {
   StorageValidationError,
   getMetadataProperty,
   getVectorProperty,
+  matchesFilter,
 } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
@@ -189,9 +190,12 @@ export class PostgresVectorStorage<
       const distOp = this.distanceOperator;
       const scoreExpr = this.buildScoreExpr(vectorCol, "$1");
 
+      // Cast the vector to text in the main query so we can parse it off each
+      // row directly — avoids an N+1 per-result round-trip to re-fetch vectors.
       let sql = `
         SELECT
           *,
+          ${vectorCol}::text as "_vector_text",
           ${scoreExpr} as score
         FROM "${this.table}"
       `;
@@ -239,20 +243,19 @@ export class PostgresVectorStorage<
 
       const result = await this.db.query(sql, params);
 
-      // Fetch vectors separately for each result
       const results: Array<Entity & { score: number }> = [];
       for (const row of result.rows) {
-        const vectorResult = await this.db.query(
-          `SELECT ${vectorCol}::text FROM "${this.table}" WHERE ${this.getPrimaryKeyWhereClause()}`,
-          this.getPrimaryKeyValues(row)
-        );
-        const vectorStr = vectorResult.rows[0]?.[vectorColRaw] || "[]";
-        const vectorArray = JSON.parse(vectorStr);
+        // `_vector_text` is the text-cast vector from the SELECT above; drop it
+        // from the spread and parse it into the typed vector property.
+        const { _vector_text, ...rest } = row as Record<string, unknown> & {
+          _vector_text?: string;
+        };
+        const vectorArray = JSON.parse((_vector_text as string) || "[]");
 
         results.push({
-          ...row,
+          ...rest,
           [this.vectorPropertyName]: new this.vectorCtor(vectorArray),
-          score: parseFloat(row.score),
+          score: parseFloat((rest as { score: unknown }).score as string),
         } as Entity & { score: number });
       }
 
@@ -300,7 +303,7 @@ export class PostgresVectorStorage<
         ? (row[this.metadataPropertyName] as Metadata)
         : ({} as Metadata);
 
-      if (filter && !this.matchesFilter(metadata, filter)) {
+      if (filter && !matchesFilter(metadata, filter)) {
         continue;
       }
 
@@ -315,23 +318,5 @@ export class PostgresVectorStorage<
     const topResults = results.slice(0, topK);
 
     return topResults;
-  }
-
-  private getPrimaryKeyWhereClause(): string {
-    const conditions = this.primaryKeyNames.map((key, idx) => `${String(key)} = $${idx + 1}`);
-    return conditions.join(" AND ");
-  }
-
-  private getPrimaryKeyValues(row: any): any[] {
-    return this.primaryKeyNames.map((key) => row[key]);
-  }
-
-  private matchesFilter(metadata: Metadata, filter: Partial<Metadata>): boolean {
-    for (const [key, value] of Object.entries(filter)) {
-      if (metadata[key as keyof Metadata] !== value) {
-        return false;
-      }
-    }
-    return true;
   }
 }

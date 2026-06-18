@@ -128,15 +128,6 @@ export function unregisterKnowledgeBase(id: string): Promise<void> {
   });
 }
 
-export async function deregisterKnowledgeBase(id: string): Promise<void> {
-  // Repo-first so a failure can't leave stale in-memory state behind.
-  const repo = getGlobalKnowledgeBaseRepository();
-  await repo.removeKnowledgeBase(id);
-
-  const kbs = getGlobalKnowledgeBases();
-  kbs.delete(id);
-}
-
 export function getKnowledgeBase(id: string): KnowledgeBase | undefined {
   return getGlobalKnowledgeBases().get(id);
 }

@@ -28,6 +28,7 @@ import {
   SqlTabularMigrationApplier,
   TabularChangePayload,
   TabularSubscribeOptions,
+  TYPED_ARRAY_CTORS,
   ValueOptionType,
 } from "@workglow/storage";
 import { createServiceToken, uuid4 } from "@workglow/util";
@@ -41,15 +42,6 @@ import {
 export const SQLITE_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.sqlite"
 );
-
-const TYPED_ARRAY_CTORS: Record<string, new (data: number[]) => ArrayBufferView> = {
-  Float32Array,
-  Float64Array,
-  Int8Array,
-  Uint8Array,
-  Int16Array,
-  Uint16Array,
-};
 
 /**
  * A SQLite-based key-value repository implementation.

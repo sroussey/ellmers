@@ -28,6 +28,21 @@ import {
   imageValueFromBuffer,
   probeImageDimensions,
 } from "@workglow/util/media";
+import type { ModelConfig } from "../model/ModelSchema";
+
+/**
+ * Resolve a human-readable model identifier for image error messages:
+ * `model_id`, then `provider_config.model_name`, then the provider's
+ * `fallback` label. Shared by every image generate/edit run-fn so the
+ * resolution order stays consistent across providers.
+ */
+export function modelIdForError(model: ModelConfig | undefined, fallback: string): string {
+  return (
+    model?.model_id ??
+    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
+    fallback
+  );
+}
 
 // Prefer the browser path when `createImageBitmap` is available — handles
 // browser-like runtimes that polyfill `Buffer` (e.g. some test harnesses).

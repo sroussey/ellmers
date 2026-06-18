@@ -8,12 +8,11 @@ import type {
   AiProviderRunFn,
   ImageGenerateTaskInput,
   ImageGenerateTaskOutput,
-  ModelConfig,
 } from "@workglow/ai";
 import { ImageGenerationContentPolicyError, ImageGenerationProviderError } from "@workglow/ai";
 import type { ImageValue } from "@workglow/util/media";
 
-import { dataUriToImageValue } from "@workglow/ai/provider-utils";
+import { dataUriToImageValue, modelIdForError } from "@workglow/ai/provider-utils";
 import { getClient, getModelName } from "./OpenAI_Client";
 import type { OpenAiModelConfig } from "./OpenAI_ModelSchema";
 
@@ -38,14 +37,6 @@ async function decodeB64Png(b64: string): Promise<ImageValue> {
   return dataUriToImageValue(`data:image/png;base64,${b64}`);
 }
 
-function modelIdOf(model: ModelConfig | undefined): string {
-  return (
-    model?.model_id ??
-    (model?.provider_config as { model_name?: string } | undefined)?.model_name ??
-    "openai"
-  );
-}
-
 /**
  * Streaming run-fn for `["image.generation"]`. GPT-image models support
  * native streaming via `stream: true` + `partial_images: 3` and emit a
@@ -65,7 +56,12 @@ export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
   // DALL-E 2 and DALL-E 3 do not support streaming — fall back to non-streaming.
   if (modelName.startsWith("dall-e")) {
     try {
-      const resp = await (client.images.generate as Function)(
+      const resp = await (
+        client.images.generate as unknown as (
+          body: Record<string, unknown>,
+          options: { signal: AbortSignal }
+        ) => Promise<{ data?: Array<{ b64_json?: string }> }>
+      )(
         {
           model: modelName,
           prompt: input.prompt,
@@ -79,7 +75,10 @@ export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
       );
       const b64 = resp.data?.[0]?.b64_json;
       if (!b64) {
-        throw new ImageGenerationProviderError(modelIdOf(model), "Empty response (no b64_json)");
+        throw new ImageGenerationProviderError(
+          modelIdForError(model, "openai"),
+          "Empty response (no b64_json)"
+        );
       }
       const image = await decodeB64Png(b64);
       emit({ type: "snapshot", data: { image } } as Parameters<typeof emit>[0]);
@@ -94,9 +93,11 @@ export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
       }
       const msg = err instanceof Error ? err.message : "unknown error";
       if (/safety|policy|moderation/i.test(msg)) {
-        throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
+        throw new ImageGenerationContentPolicyError(modelIdForError(model, "openai"), msg);
       }
-      throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+      throw new ImageGenerationProviderError(modelIdForError(model, "openai"), msg, {
+        cause: err as Error,
+      });
     }
   }
 
@@ -133,8 +134,10 @@ export const OpenAI_ImageGenerate_Stream: AiProviderRunFn<
     }
     const msg = err instanceof Error ? err.message : "unknown error";
     if (/safety|policy|moderation/i.test(msg)) {
-      throw new ImageGenerationContentPolicyError(modelIdOf(model), msg);
+      throw new ImageGenerationContentPolicyError(modelIdForError(model, "openai"), msg);
     }
-    throw new ImageGenerationProviderError(modelIdOf(model), msg, { cause: err as Error });
+    throw new ImageGenerationProviderError(modelIdForError(model, "openai"), msg, {
+      cause: err as Error,
+    });
   }
 };

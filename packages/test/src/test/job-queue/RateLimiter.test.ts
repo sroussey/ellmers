@@ -27,10 +27,6 @@ function createMockStorage(): MockRateLimiterStorage {
     migrate: vi.fn(async () => {}),
     getMigrations: vi.fn(() => [] as ReadonlyArray<unknown>),
     getExecutionCount: vi.fn(async () => executionCount),
-    recordExecution: vi.fn(async () => {
-      executionCount++;
-      liveIds.push(String(nextId++));
-    }),
     tryReserveExecution: vi.fn(async (_q: string, max: number) => {
       const next = nextAvailableTime ? new Date(nextAvailableTime).getTime() : 0;
       if (executionCount >= max || next > Date.now()) return null;

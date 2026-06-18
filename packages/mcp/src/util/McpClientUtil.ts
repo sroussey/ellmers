@@ -165,7 +165,14 @@ export async function createMcpClient(
     );
   }
 
-  await client.connect(transport);
+  try {
+    await client.connect(transport);
+  } catch (err) {
+    // connect() failed — the transport (and any spawned stdio child process)
+    // is still open. Tear it down before propagating so we don't leak it.
+    await transport.close().catch(() => {});
+    throw err;
+  }
   return { client, transport };
 }
 

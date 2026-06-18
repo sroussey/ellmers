@@ -11,10 +11,11 @@ import type {
   VectorIndexOptions,
   VectorSearchOptions,
 } from "@workglow/storage";
-import { getMetadataProperty, getVectorProperty } from "@workglow/storage";
+import { getMetadataProperty, getVectorProperty, matchesFilter } from "@workglow/storage";
 import type {
   DataPortSchemaObject,
   FromSchema,
+  JsonSchema,
   TypedArray,
   TypedArrayConstructor,
   TypedArraySchemaOptions,
@@ -54,18 +55,6 @@ function getVectorTypeOption(vectorCtor: TypedArrayConstructor): string {
     Int16Array: "FLOAT16",
   };
   return typeMap[vectorCtor.name] || "FLOAT32";
-}
-
-/**
- * Check if metadata matches filter
- */
-function matchesFilter<Metadata>(metadata: Metadata, filter: Partial<Metadata>): boolean {
-  for (const [key, value] of Object.entries(filter)) {
-    if (metadata[key as keyof Metadata] !== value) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**
@@ -285,7 +274,7 @@ export class SqliteAiVectorStorage<
   /**
    * Override mapTypeToSQL to use BLOB for vector columns instead of TEXT
    */
-  protected override mapTypeToSQL(typeDef: any): string {
+  protected override mapTypeToSQL(typeDef: JsonSchema): string {
     if (typeof typeDef !== "boolean" && typeDef.type === "array") {
       const format = typeDef.format as string | undefined;
       if (format === "TypedArray" || format?.startsWith("TypedArray:")) {
@@ -344,7 +333,7 @@ export class SqliteAiVectorStorage<
         if (clientProvidedKeys === "if-missing" && clientValue != null) {
           allColumns.push(col);
           placeholders.push("?");
-          params.push((this as any).jsToSqlValue(col, clientValue));
+          params.push(this.jsToSqlValue(col, clientValue as Entity[keyof Entity]));
         }
         continue;
       }

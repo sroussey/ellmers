@@ -68,7 +68,7 @@ export const Cactus_ToolCalling: AiProviderRunFn<
   CactusModelConfig
 > = async (input, model, signal, emit) => {
   if (!model) throw new Error("Model config is required for ToolCallingTask.");
-  if (signal.aborted) throw signal.reason ?? new Error("The operation was aborted");
+  if (signal?.aborted) throw signal.reason ?? new Error("The operation was aborted");
 
   const engine = await getOrLoadEngine(model);
   const query = promptText(input);

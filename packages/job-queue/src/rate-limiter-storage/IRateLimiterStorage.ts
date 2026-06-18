@@ -110,12 +110,6 @@ export interface IRateLimiterStorage {
   releaseExecution(queueName: string, token: unknown): Promise<void>;
 
   /**
-   * Records a job execution for rate limiting tracking.
-   * @param queueName - The name of the queue
-   */
-  recordExecution(queueName: string): Promise<void>;
-
-  /**
    * Gets the count of executions within a time window.
    * @param queueName - The name of the queue
    * @param windowStartTime - The start of the time window (ISO string)

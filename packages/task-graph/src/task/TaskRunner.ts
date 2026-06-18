@@ -121,7 +121,7 @@ export class TaskRunner<
   /**
    * Tracks task types that have already received the "private policy without
    * runId" downgrade warning, so the warning fires only once per task type
-   * across the process lifetime. Mirrors {@link Task.__cacheableDeprecationWarned}.
+   * across the process lifetime.
    */
   private static __privateWithoutRunIdWarned = new Set<string>();
 
