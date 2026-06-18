@@ -63,12 +63,6 @@ export function validateVectorEntities(
   dimensions: number
 ): void {
   for (const entity of entities) {
-    const v = entity[vectorPropertyName];
-    if (v === undefined || v === null) {
-      throw new StorageValidationError(
-        `Vector value missing on write: expected an array-like of ${dimensions} finite numbers, got ${v === null ? "null" : "undefined"}.`
-      );
-    }
-    assertVectorShape(v, dimensions, "write");
+    assertVectorShape(entity[vectorPropertyName], dimensions, "write");
   }
 }
