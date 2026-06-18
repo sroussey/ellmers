@@ -259,4 +259,73 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
     const next = await autoStore.put({ vector: vec([1, 1, 0]), metadata: {} } as any);
     expect(next.id).toBe(2);
   });
+
+  it("putBulk rollback does not wipe concurrent put committed mid-batch", async () => {
+    // Without the per-instance mutex serializing put/putBulk, a single-row
+    // `put` issued while `putBulk` is mid-flight can land in the Map between
+    // the snapshot and the rollback. The snapshot+restore would then wipe
+    // the row the concurrent put just committed — a successful put would
+    // appear to disappear. The mutex routes both calls through the same
+    // promise chain so the concurrent put runs either fully before the
+    // snapshot or fully after the restore.
+    const store = newStore();
+
+    // Gate row 2 inside the batch via a deferred promise so a concurrent
+    // single-row put can fire while putBulk is parked.
+    let releaseRow2!: () => void;
+    const row2Gate = new Promise<void>((resolve) => {
+      releaseRow2 = resolve;
+    });
+
+    const originalPut = InMemoryTabularStorage.prototype.put;
+    let call = 0;
+    vi.spyOn(InMemoryTabularStorage.prototype as any, "put").mockImplementation(async function (
+      this: InMemoryVectorStorage<any, any, any, any>,
+      v: any
+    ) {
+      call += 1;
+      if (call === 2) {
+        await row2Gate;
+      }
+      if (call === 4) {
+        throw new Error("synthetic row-4 failure");
+      }
+      return await (originalPut as any).call(this, v);
+    } as any);
+
+    const batch = [
+      { id: "row-a", vector: vec([1, 0, 0]), metadata: {} },
+      { id: "row-b", vector: vec([0, 1, 0]), metadata: {} },
+      { id: "row-c", vector: vec([0, 0, 1]), metadata: {} },
+      { id: "row-d", vector: vec([1, 1, 0]), metadata: {} },
+    ];
+
+    // Kick off the batch — it parks at row 2.
+    const bulkPromise = store.putBulk(batch);
+
+    // While putBulk is parked, fire a concurrent put with id 99. The mutex
+    // must queue it behind the bulk operation rather than letting it land
+    // mid-batch where the rollback would erase it.
+    const concurrentPut = store.put({ id: "row-99", vector: vec([0, 0, 1]), metadata: {} });
+
+    // Release row 2 so the bulk advances to row 4 and throws.
+    releaseRow2();
+
+    await expect(bulkPromise).rejects.toThrow("synthetic row-4 failure");
+
+    // The concurrent put queued behind the bulk must still resolve after
+    // the rollback, with the row landing in storage.
+    await concurrentPut;
+    const survivor = await store.get({ id: "row-99" });
+    expect(survivor).toBeDefined();
+
+    // None of the batch rows should remain.
+    expect(await store.get({ id: "row-a" })).toBeUndefined();
+    expect(await store.get({ id: "row-b" })).toBeUndefined();
+    expect(await store.get({ id: "row-c" })).toBeUndefined();
+    expect(await store.get({ id: "row-d" })).toBeUndefined();
+
+    // Exactly one row in storage: the concurrent put's row.
+    expect(await store.size()).toBe(1);
+  });
 });
