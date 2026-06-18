@@ -57,10 +57,7 @@ function makeStubClient(): StubClient {
   return { rpcCalls, fromCalls, client };
 }
 
-function newStore(client: SupabaseClient): SupabaseVectorStorage<
-  typeof VecSchema,
-  typeof VecPK
-> {
+function newStore(client: SupabaseClient): SupabaseVectorStorage<typeof VecSchema, typeof VecPK> {
   return new SupabaseVectorStorage(client, "vec_items", VecSchema, VecPK, [], DIM);
 }
 
@@ -73,9 +70,9 @@ describe("SupabaseVectorStorage validation", () => {
       await expect(
         store.put({ id: "x", vector: short, metadata: {} } as never)
       ).rejects.toBeInstanceOf(StorageValidationError);
-      await expect(
-        store.put({ id: "x", vector: short, metadata: {} } as never)
-      ).rejects.toThrow(/Vector dimension mismatch on write: expected 4, got 3/);
+      await expect(store.put({ id: "x", vector: short, metadata: {} } as never)).rejects.toThrow(
+        /Vector dimension mismatch on write: expected 4, got 3/
+      );
       expect(stub.fromCalls).toEqual([]);
     });
 
@@ -83,9 +80,9 @@ describe("SupabaseVectorStorage validation", () => {
       const stub = makeStubClient();
       const store = newStore(stub.client);
       const long = new Float32Array([1, 2, 3, 4, 5]);
-      await expect(
-        store.put({ id: "x", vector: long, metadata: {} } as never)
-      ).rejects.toThrow(/expected 4, got 5/);
+      await expect(store.put({ id: "x", vector: long, metadata: {} } as never)).rejects.toThrow(
+        /expected 4, got 5/
+      );
       expect(stub.fromCalls).toEqual([]);
     });
 
@@ -96,9 +93,9 @@ describe("SupabaseVectorStorage validation", () => {
       await expect(
         store.put({ id: "x", vector: bad, metadata: {} } as never)
       ).rejects.toBeInstanceOf(StorageValidationError);
-      await expect(
-        store.put({ id: "x", vector: bad, metadata: {} } as never)
-      ).rejects.toThrow(/index 1 is not a finite number/);
+      await expect(store.put({ id: "x", vector: bad, metadata: {} } as never)).rejects.toThrow(
+        /index 1 is not a finite number/
+      );
       expect(stub.fromCalls).toEqual([]);
     });
 

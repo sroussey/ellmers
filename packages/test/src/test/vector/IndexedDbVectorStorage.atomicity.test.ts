@@ -10,16 +10,8 @@ import { IndexedDbVectorStorage } from "@workglow/indexeddb/storage";
 import { setLogger, uuid4 } from "@workglow/util";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestingLogger } from "../../binding/TestingLogger";
-
-// safeEmit re-throws caught listener errors via queueMicrotask. Vitest
-// otherwise interprets those as uncaught failures even when the explicit
-// assertions pass; absorb them so the test's expectations remain authoritative.
-if (typeof process !== "undefined" && typeof process.on === "function") {
-  process.on("uncaughtException", () => {});
-  process.on("unhandledRejection", () => {});
-}
 
 /**
  * Atomicity contract for the IndexedDB vector `putBulk`:
@@ -66,6 +58,27 @@ describe("IndexedDbVectorStorage putBulk atomicity", () => {
   >;
 
   setLogger(getTestingLogger());
+
+  // The throwing-listener tests below intentionally raise inside the IDB
+  // tx.oncomplete loop; safeEmit forwards those throws to the
+  // unhandledRejection channel so observability tooling sees them, but the
+  // synchronous resolve(results) path is preserved. Vitest treats stray
+  // rejections as worker failures, so absorb only the two literal messages
+  // these tests emit and rethrow anything else.
+  const swallow = (e: unknown): void => {
+    if (e instanceof Error && /listener boom|first listener boom/.test(e.message)) return;
+    throw e;
+  };
+  beforeAll(() => {
+    if (typeof process !== "undefined" && typeof process.on === "function") {
+      process.on("unhandledRejection", swallow);
+    }
+  });
+  afterAll(() => {
+    if (typeof process !== "undefined" && typeof process.off === "function") {
+      process.off("unhandledRejection", swallow);
+    }
+  });
 
   beforeEach(async () => {
     const uniqueDbName = `${dbBase}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
