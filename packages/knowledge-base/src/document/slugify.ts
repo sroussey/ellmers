@@ -38,7 +38,7 @@
 export function slugifyHeading(text: string): string {
   return text
     .trim()
-    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/[^\w-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 }

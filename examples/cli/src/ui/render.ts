@@ -24,7 +24,7 @@ export type { SearchPage, SearchSelectItem } from "./SearchSelectApp";
 function wrapWithCliTheme(node: React.ReactElement): React.ReactElement {
   return React.createElement(CliThemeProvider, {
     value: getCliTheme(),
-    children: node,
+    slot: node,
   });
 }
 

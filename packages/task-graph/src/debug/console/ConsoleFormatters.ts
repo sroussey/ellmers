@@ -63,7 +63,6 @@ export function isDarkMode(): boolean {
 
 class WorkflowConsoleFormatter extends ConsoleFormatter {
   header(workflow: Workflow | TaskGraph, config?: Config): JsonMLElementDef | null {
-    // @ts-ignore
     if (workflow instanceof Workflow || workflow instanceof TaskGraph) {
       const graph: TaskGraph = workflow instanceof TaskGraph ? workflow : workflow.graph;
       const error = workflow instanceof Workflow ? workflow.error : "";
@@ -141,7 +140,7 @@ class WorkflowConsoleFormatter extends ConsoleFormatter {
       timing.createTextChild(formatDuration(durationMs));
     }
 
-    // @ts-ignore
+    // @ts-expect-error internal DAG handle is not on public types
     const dag = obj._dag ?? obj.graph._dag;
 
     if (dag && dag.getNodes().length > 0) body.createObjectTag(dag);
@@ -439,7 +438,7 @@ class TaskConsoleFormatter extends ConsoleFormatter {
       }
     }
 
-    // @ts-ignore
+    // @ts-expect-error internal DAG handle is not on public types
     const dag = task.subGraph?._dag;
 
     if (dag && dag.getNodes().length > 0) body.createObjectTag(dag);

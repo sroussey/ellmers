@@ -41,9 +41,7 @@ import { WebBrowser_ToolCalling } from "./WebBrowser_ToolCalling";
  * text generation.
  */
 export const WebBrowser_TextGeneration_Unified: AiProviderRunFn<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   WebBrowserModelConfig
 > = async (input, model, signal, emit, outputSchema, sessionId) => {
@@ -56,9 +54,7 @@ export const WebBrowser_TextGeneration_Unified: AiProviderRunFn<
 };
 
 export const WEB_BROWSER_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   WebBrowserModelConfig
 >[] = [

@@ -383,7 +383,6 @@ export class SqliteAiVectorStorage<
     }
 
     const stmt = db.prepare(sql);
-    // @ts-ignore - SQLite typing for variadic bindings
     const updatedEntity = stmt.get(...params) as Entity;
 
     // Convert all columns according to schema

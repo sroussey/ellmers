@@ -29,18 +29,8 @@ export class LlamaCppQueuedProvider extends QueuedAiProvider<LlamaCppModelConfig
   readonly supportsServer = true;
 
   constructor(
-    promiseRunFns?: readonly AiProviderRunFnRegistration<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      LlamaCppModelConfig
-    >[],
-    previewTasks?: Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>
-    >
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, LlamaCppModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>>
   ) {
     super(promiseRunFns, previewTasks);
   }

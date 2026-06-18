@@ -161,7 +161,7 @@ export function SchemaPromptApp({
       pendingTextRef.current = "";
     }
     // Intentionally only focusedIndex: avoid resetting pending input when `fields` gets a new array reference.
-  }, [focusedIndex]);
+  }, [focusedIndex, fields]);
 
   const saveRawValue = useCallback((key: string, raw: string) => {
     rawValuesRef.current[key] = raw;

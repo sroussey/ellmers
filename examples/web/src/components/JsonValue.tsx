@@ -35,7 +35,7 @@ export const JsonValue: React.FC<JsonValueProps> = ({ value }) => {
     if (typeof value === "string") {
       return (
         <span className="json-string">
-          "{value.length > 100 ? `${value.substring(0, 100)}...` : value}"
+          &quot;{value.length > 100 ? `${value.substring(0, 100)}...` : value}&quot;
         </span>
       );
     }

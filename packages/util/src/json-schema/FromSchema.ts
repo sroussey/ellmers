@@ -70,7 +70,7 @@ export type IncludeProps<
   };
 } & (Schema extends { readonly required: readonly (infer R extends string)[] }
     ? { readonly required: readonly Extract<R, Keys[number]>[] }
-    : {});
+    : object);
 
 /**
  * ExcludeProps - Returns a new schema without the specified properties
@@ -105,4 +105,4 @@ export type ExcludeProps<
   };
 } & (Schema extends { readonly required: readonly (infer R extends string)[] }
     ? { readonly required: readonly Exclude<R, Keys[number]>[] }
-    : {});
+    : object);

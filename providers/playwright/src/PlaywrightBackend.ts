@@ -25,13 +25,12 @@ import type {
 
 // Playwright is loaded lazily as an optional dependency.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLocator = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyPage = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowserContext = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowser = any;
 
 let playwrightModule: typeof import("playwright");
@@ -62,7 +61,7 @@ interface ParsedAriaLine {
 
 function parseAriaLine(line: string): ParsedAriaLine | null {
   // 2 spaces per indent level after the "- "
-  const match = line.match(/^(\s*)-\s+(.*)$/);
+  const match = line.match(/^(\s*)- ([^\n]+)$/);
   if (!match) return null;
 
   const indent = match[1].length;

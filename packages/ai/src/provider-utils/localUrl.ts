@@ -56,7 +56,7 @@ export function parseIpv6(host: string): Uint8Array | null {
     const tail = lower.slice(lastColon + 1);
     const parts = tail.split(".");
     if (parts.length !== 4) return null;
-    const oct = parts.map((p) => (/^(0|[1-9][0-9]{0,2})$/.test(p) ? Number(p) : NaN));
+    const oct = parts.map((p) => (/^(?:0|[1-9]\d{0,2})$/.test(p) ? Number(p) : NaN));
     if (oct.some((n) => !(n >= 0 && n <= 255))) return null;
     ipv4Tail = oct;
     head = lower.slice(0, lastColon);
@@ -117,7 +117,7 @@ export function isLocalIpv4(host: string): boolean {
   for (const p of parts) {
     // Reject leading zeros (octal-looking forms) — accept only "0" or
     // 1-3 digits not starting with 0.
-    if (!/^(0|[1-9][0-9]{0,2})$/.test(p)) return false;
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(p)) return false;
     const n = Number(p);
     if (!(n >= 0 && n <= 255)) return false;
     oct.push(n);
@@ -216,7 +216,7 @@ function isLoopbackIpv4(host: string): boolean {
   for (const p of parts) {
     // Reject leading zeros (octal-looking forms) — accept only "0" or
     // 1-3 digits not starting with 0.
-    if (!/^(0|[1-9][0-9]{0,2})$/.test(p)) return false;
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(p)) return false;
     const n = Number(p);
     if (!(n >= 0 && n <= 255)) return false;
   }
@@ -309,7 +309,7 @@ export function isLoopbackHostname(host: string): boolean {
  * {@link isLocalHostname}'s strict-literal grammar.
  */
 export function extractRawHost(rawUrl: string): string | null {
-  const m = rawUrl.match(/^[A-Za-z][A-Za-z0-9+.\-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/);
+  const m = rawUrl.match(/^[A-Z][A-Z0-9+.\-]*:\/\/(?:[^/?#@]*@)?(\[[^\]]+\]|[^:/?#]+)/i);
   if (m === null) return null;
   let host = m[1] ?? "";
   if (host.startsWith("[") && host.endsWith("]")) {

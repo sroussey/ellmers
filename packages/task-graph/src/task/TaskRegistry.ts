@@ -15,7 +15,6 @@ import {
 import { validateSchema } from "@workglow/util/schema";
 import type { ITaskConstructor } from "./ITask";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTaskConstructor = ITaskConstructor<any, any, any>;
 
 /**
@@ -146,7 +145,7 @@ function resolveTaskFromRegistry(
   const constructors = getTaskConstructors(registry);
   const ctor = constructors.get(id);
   if (!ctor) return undefined;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const ctorAny = ctor as any;
   const configSchema =
     typeof ctorAny.configSchema === "function" ? ctorAny.configSchema() : undefined;

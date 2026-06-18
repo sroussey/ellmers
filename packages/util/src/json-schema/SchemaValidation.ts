@@ -34,7 +34,7 @@ const VALID_RESULT: SchemaValidationResult = Object.freeze({
  * Format: /\w+(:\w+)?/ where first part is the "name" and optional second part narrows the type.
  * Reused from SchemaUtils.ts areFormatStringsCompatible().
  */
-export const FORMAT_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*(?::[a-zA-Z0-9][a-zA-Z0-9_-]*)*$/;
+export const FORMAT_PATTERN = /^[a-z][\w-]*(?::[a-z0-9][\w-]*)*$/i;
 
 const VALID_JSON_SCHEMA_TYPES = new Set([
   "string",

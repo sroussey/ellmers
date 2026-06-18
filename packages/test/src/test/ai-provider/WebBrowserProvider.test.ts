@@ -56,7 +56,7 @@ function model(model_id: string, capabilities: readonly string[] = []): ModelRec
  * Used to drive `WebBrowserProvider` past the conservative-pre-probe state
  * so we can assert the post-probe inference shape.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeAcceptingProbeFactory(): any {
   const destroy = vi.fn();
   return {
@@ -505,7 +505,7 @@ describe("WebBrowser_ChatHistory helpers", () => {
  * `toolUseOk: false` to reject when `tools` is passed. Records the total
  * number of `create()` invocations so we can assert coalescing behavior.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeProbeFactory(opts: { jsonModeOk: boolean; toolUseOk: boolean }): any {
   let destroys = 0;
   const create = vi.fn(async (options?: Record<string, unknown>) => {
@@ -610,7 +610,7 @@ function installLanguageModelGlobal(impl: unknown): () => void {
  * model's "response" in one snapshot — sufficient for our parse pipeline
  * because Chrome's stream surface emits progressive snapshots.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeFakeLanguageModel(text: string | (() => string)): any {
   let destroyed = 0;
   const factory = {
@@ -771,7 +771,7 @@ describe("WebBrowser_StructuredGeneration validation", () => {
  * The factory records each call's options so we can inspect what was
  * passed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeFakeChatModel(repliesPerTurn: readonly string[]): any {
   let turn = 0;
   const sessions: Array<{
@@ -1024,7 +1024,7 @@ describe("WebBrowser_Chat session cache", () => {
  * `callsBy[toolName]` supplies args for each capture; if omitted defaults
  * to `{}`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function makeFakeToolCallingModel(callsBy: Record<string, unknown> = {}): any {
   const factory = {
     availability: vi.fn().mockResolvedValue("available"),

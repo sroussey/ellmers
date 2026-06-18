@@ -55,7 +55,7 @@ function extractRgbFromString(s: string): TerminalRgb | undefined {
     const b = normalizeHexComponent(m[3]);
     return { r, g, b };
   }
-  const hex = s.match(/#([0-9a-fA-F]{6})\b/);
+  const hex = s.match(/#([0-9a-f]{6})\b/i);
   if (hex) {
     return {
       r: parseInt(hex[1].slice(0, 2), 16),
@@ -75,6 +75,7 @@ function normalizeHexComponent(hex: string): number {
 
 function responseComplete(buf: Buffer): boolean {
   const s = buf.toString("utf8");
+  // eslint-disable-next-line no-control-regex
   return s.includes("\x07") || /\x1b\\/.test(s);
 }
 

@@ -42,9 +42,7 @@ import { Anthropic_ToolCalling_Stream } from "./Anthropic_ToolCalling";
  * Note: Anthropic does NOT support embeddings, image generation, or image editing.
  */
 export const ANTHROPIC_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   AnthropicModelConfig
 >[] = [
@@ -60,7 +58,6 @@ export const ANTHROPIC_RUN_FNS: readonly AiProviderRunFnRegistration<
 
 export const ANTHROPIC_PREVIEW_TASKS: Record<
   string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, AnthropicModelConfig>
 > = {
   CountTokensTask: Anthropic_CountTokens_Preview,

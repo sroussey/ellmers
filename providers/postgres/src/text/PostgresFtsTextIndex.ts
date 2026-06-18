@@ -125,7 +125,7 @@ export class PostgresFtsTextIndex implements ITextIndex {
    * anything else before splicing into DDL.
    */
   private get quotedTable(): string {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(this.table)) {
+    if (!/^[A-Z_]\w*$/i.test(this.table)) {
       throw new Error(
         `PostgresFtsTextIndex: refusing to use unsafe table name ${JSON.stringify(this.table)}; ` +
           `expected /^[A-Za-z_][A-Za-z0-9_]*$/.`

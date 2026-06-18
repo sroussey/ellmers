@@ -206,7 +206,7 @@ describe("WorkflowBuilder", () => {
   it("setError populates the .error getter; resetState clears it", () => {
     const w = new Workflow();
     // Reach the concrete builder (not the narrowed handle) for full API access.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const builder = (w as any)._builder as WorkflowBuilder;
 
     builder.setError("boom");
@@ -218,7 +218,7 @@ describe("WorkflowBuilder", () => {
 
   it("addTaskInstance adds the task to the facade's graph and emits 'changed'", () => {
     const w = new Workflow();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const builder = (w as any)._builder as WorkflowBuilder;
 
     let changedCount = 0;

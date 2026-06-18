@@ -19,7 +19,7 @@ const RUN = process.env.RUN_CFQ_TESTS === "1";
 describe.skipIf(!RUN)("CloudflareMessageQueue + Miniflare", () => {
   it("round-trips a job through queue() handler", async () => {
     // Dynamic import so Miniflare isn't required for the default test run.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const { Miniflare } = (await import("miniflare")) as any;
     const mf = new Miniflare({
       modules: true,

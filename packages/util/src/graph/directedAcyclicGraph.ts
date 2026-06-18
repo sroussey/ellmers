@@ -35,9 +35,9 @@ export class DirectedAcyclicGraph<
       throw new CycleError("Can't convert that graph to a DAG because it contains a cycle");
     }
     const toRet = new DirectedAcyclicGraph<Node, Edge, NodeId, EdgeId>(
-      // @ts-expect-error
+      // @ts-expect-error - graph.nodeIdentity is a function
       graph.nodeIdentity,
-      // @ts-expect-error
+      // @ts-expect-error - graph.edgeIdentity is a function
       graph.edgeIdentity
     );
 

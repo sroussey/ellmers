@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { IExecuteContext, Task, TaskGraph, Workflow } from "@workglow/task-graph";
+import {
+  IExecuteContext,
+  Task,
+  TaskGraph,
+  TaskInput,
+  TaskOutput,
+  Workflow,
+} from "@workglow/task-graph";
 import { ResourceScope } from "@workglow/util";
 import { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
@@ -96,7 +103,7 @@ describe("ResourceScope browser pattern", () => {
     const disconnected: string[] = [];
 
     // Simulates BrowserSessionTask registering a disposer
-    class MockBrowserSessionTask extends Task<{}, { sessionId: string }> {
+    class MockBrowserSessionTask extends Task<TaskInput, { sessionId: string }> {
       static override readonly type = "MockBrowserSessionTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -107,7 +114,10 @@ describe("ResourceScope browser pattern", () => {
           properties: { sessionId: { type: "string" } },
         } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, context: IExecuteContext): Promise<{ sessionId: string }> {
+      override async execute(
+        _input: TaskInput,
+        context: IExecuteContext
+      ): Promise<{ sessionId: string }> {
         const sessionId = "sess-123";
         context.resourceScope?.register(`browser:${sessionId}`, async () => {
           disconnected.push(sessionId);
@@ -172,7 +182,7 @@ describe("TaskGraphRunner.runGraph auto-ownership", () => {
   it("auto-creates and disposes a ResourceScope when none is passed", async () => {
     const disposed: string[] = [];
 
-    class GraphAutoDisposeTask extends Task<{}, { name: string }> {
+    class GraphAutoDisposeTask extends Task<TaskInput, { name: string }> {
       static override readonly type = "GraphAutoDisposeTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -183,7 +193,7 @@ describe("TaskGraphRunner.runGraph auto-ownership", () => {
           properties: { name: { type: "string" } },
         } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{ name: string }> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<{ name: string }> {
         ctx.resourceScope?.register("auto:graph", async () => {
           disposed.push("graph");
         });
@@ -202,7 +212,7 @@ describe("TaskGraphRunner.runGraph auto-ownership", () => {
   it("does not dispose a caller-passed ResourceScope", async () => {
     const disposed: string[] = [];
 
-    class CallerOwnsGraphTask extends Task<{}, {}> {
+    class CallerOwnsGraphTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "CallerOwnsGraphTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -210,7 +220,7 @@ describe("TaskGraphRunner.runGraph auto-ownership", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("caller:graph", async () => {
           disposed.push("graph");
         });
@@ -235,7 +245,7 @@ describe("TaskGraphRunner terminal-event ordering", () => {
   it("emits 'error' event before auto-disposal fires", async () => {
     const events: string[] = [];
 
-    class FailingResourceTask extends Task<{}, {}> {
+    class FailingResourceTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "FailingResourceTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -243,7 +253,7 @@ describe("TaskGraphRunner terminal-event ordering", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("order:failing", async () => {
           events.push("disposed");
         });
@@ -265,7 +275,7 @@ describe("TaskRunner.run auto-ownership", () => {
   it("auto-creates and disposes a ResourceScope when none is passed", async () => {
     const disposed: string[] = [];
 
-    class AutoDisposeTask extends Task<{}, { ok: boolean }> {
+    class AutoDisposeTask extends Task<TaskInput, { ok: boolean }> {
       static override readonly type = "AutoDisposeTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -276,7 +286,7 @@ describe("TaskRunner.run auto-ownership", () => {
           properties: { ok: { type: "boolean" } },
         } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{ ok: boolean }> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<{ ok: boolean }> {
         ctx.resourceScope?.register("auto:bare", async () => {
           disposed.push("bare");
         });
@@ -295,7 +305,7 @@ describe("TaskRunner.run auto-ownership", () => {
   it("does not dispose a caller-passed ResourceScope", async () => {
     const disposed: string[] = [];
 
-    class CallerOwnsTask extends Task<{}, {}> {
+    class CallerOwnsTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "CallerOwnsTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -303,7 +313,7 @@ describe("TaskRunner.run auto-ownership", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("caller:bare", async () => {
           disposed.push("bare");
         });
@@ -328,7 +338,7 @@ describe("ResourceScope `await using` integration", () => {
   it("runner does not dispose; block-scoped `await using` does", async () => {
     const disposed: string[] = [];
 
-    class UsingScopeTask extends Task<{}, {}> {
+    class UsingScopeTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "UsingScopeTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -336,7 +346,7 @@ describe("ResourceScope `await using` integration", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("using:t1", async () => {
           disposed.push("t1");
         });
@@ -368,7 +378,7 @@ describe("ResourceScope auto-ownership failure paths", () => {
       registered = r;
     });
 
-    class HangingResourceTask extends Task<{}, {}> {
+    class HangingResourceTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "HangingResourceTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -376,7 +386,7 @@ describe("ResourceScope auto-ownership failure paths", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("abort:t1", async () => {
           events.push("disposed");
         });
@@ -410,7 +420,7 @@ describe("ResourceScope auto-ownership failure paths", () => {
   });
 
   it("resets this.resourceScope even when handleStart rejects (maxTasks)", async () => {
-    class TrivialTask extends Task<{}, {}> {
+    class TrivialTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "TrivialTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -418,7 +428,7 @@ describe("ResourceScope auto-ownership failure paths", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(): Promise<{}> {
+      override async execute(): Promise<TaskOutput> {
         return {};
       }
     }
@@ -440,7 +450,7 @@ describe("runPreview does not auto-create a ResourceScope", () => {
   it("runGraphPreview leaves resourceScope undefined and does not call disposers", async () => {
     const previewSawScope: boolean[] = [];
 
-    class PreviewResourceTask extends Task<{}, {}> {
+    class PreviewResourceTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "PreviewResourceTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -448,14 +458,14 @@ describe("runPreview does not auto-create a ResourceScope", () => {
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("preview:t1", async () => {});
         return {};
       }
       // Note: IExecutePreviewContext = Pick<IExecuteContext, "own"> — no resourceScope.
       // The point of this test is that runPreview() does not throw and does not
       // attempt to auto-create or thread a scope.
-      override async executePreview(): Promise<{}> {
+      override async executePreview(): Promise<TaskOutput> {
         // Can't observe ctx.resourceScope because IExecutePreviewContext excludes it.
         // Record that executePreview ran at all (scope tracking is done externally).
         previewSawScope.push(false); // always false: preview context has no resourceScope
@@ -572,7 +582,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
   it("auto-owned scope is not stamped into owned tasks' runConfig", async () => {
     const disposed: string[] = [];
 
-    class ChildResourceTask extends Task<{}, {}> {
+    class ChildResourceTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "ChildResourceTaskOwn";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -580,7 +590,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("child:resource", async () => {
           disposed.push("child");
         });
@@ -590,7 +600,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
 
     let ownedChild: ChildResourceTask | undefined;
 
-    class ParentTask extends Task<{}, {}> {
+    class ParentTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "ParentOwnTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -598,7 +608,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         // Just adopt — don't run it. We want to inspect the stamped runConfig.
         ownedChild = ctx.own(new ChildResourceTask({ id: "child" }));
         return {};
@@ -624,7 +634,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
     const disposed: string[] = [];
     const callerScope = new ResourceScope();
 
-    class ChildSharedTask extends Task<{}, {}> {
+    class ChildSharedTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "ChildSharedTaskOwn";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -632,7 +642,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ctx.resourceScope?.register("shared:resource", async () => {
           disposed.push("shared");
         });
@@ -642,7 +652,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
 
     let ownedChild: ChildSharedTask | undefined;
 
-    class ParentSharedTask extends Task<{}, {}> {
+    class ParentSharedTask extends Task<TaskInput, TaskOutput> {
       static override readonly type = "ParentSharedOwnTask";
       static override inputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
@@ -650,7 +660,7 @@ describe("ResourceScope auto-ownership does not leak through context.own()", () 
       static override outputSchema(): DataPortSchema {
         return { type: "object", properties: {} } as const satisfies DataPortSchema;
       }
-      override async execute(_input: {}, ctx: IExecuteContext): Promise<{}> {
+      override async execute(_input: TaskInput, ctx: IExecuteContext): Promise<TaskOutput> {
         ownedChild = ctx.own(new ChildSharedTask({ id: "child" }));
         // Run the owned child synchronously inside the parent run. The child
         // pulls `resourceScope` from its (just-stamped) runConfig — so its

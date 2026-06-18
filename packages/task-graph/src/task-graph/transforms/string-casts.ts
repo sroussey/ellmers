@@ -8,7 +8,7 @@ import type { ITransformDef } from "../TransformTypes";
 
 const stringSchema: DataPortSchema = { type: "string" } as DataPortSchema;
 
-export const uppercaseTransform: ITransformDef<{}> = {
+export const uppercaseTransform: ITransformDef = {
   id: "uppercase",
   title: "Uppercase",
   category: "String",
@@ -17,7 +17,7 @@ export const uppercaseTransform: ITransformDef<{}> = {
   apply: (v) => String(v ?? "").toUpperCase(),
 };
 
-export const lowercaseTransform: ITransformDef<{}> = {
+export const lowercaseTransform: ITransformDef = {
   id: "lowercase",
   title: "Lowercase",
   category: "String",

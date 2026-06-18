@@ -19,7 +19,7 @@ export const INDEXED_DB_RATE_LIMITER_STORAGE = createServiceToken<IRateLimiterSt
   "ratelimiter.storage.indexedDb"
 );
 
-export interface IndexedDbRateLimiterStorageOptions extends RateLimiterStorageOptions {}
+export type IndexedDbRateLimiterStorageOptions = RateLimiterStorageOptions;
 
 interface ExecutionRecord {
   readonly id?: string;

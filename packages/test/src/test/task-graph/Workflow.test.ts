@@ -939,7 +939,7 @@ describe("Workflow", () => {
 
   describe("static methods", () => {
     it("should create a workflow using static methods", () => {
-      // @ts-ignore
+      // @ts-expect-error static Workflow.pipe accepts task instances
       const workflow = Workflow.pipe(new TestSimpleTask(), new TestSimpleTask());
       expect(workflow).toBeInstanceOf(Workflow);
     });
@@ -1407,14 +1407,14 @@ describe("Workflow — refactor regression net", () => {
       // assert the contract explicitly so a future change that breaks the
       // pattern (e.g. converting Workflow to a type alias) trips this test.
       const helper = CreateWorkflow(NumberTask);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       (Workflow.prototype as any).PrototypeAugmentTest = helper;
       const w = new Workflow();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       (w as any).PrototypeAugmentTest({ input: 1 });
       expect(w.graph.getTasks()).toHaveLength(1);
       expect(w.graph.getTasks()[0].type).toBe("NumberTask");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       delete (Workflow.prototype as any).PrototypeAugmentTest;
     });
 

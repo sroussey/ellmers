@@ -20,7 +20,7 @@ export function OutputRepositoryStatus({
   const clear = useCallback(() => {
     repository.clear();
     setSize(0);
-  }, []);
+  }, [repository]);
   useEffect(() => {
     async function listen() {
       setSize(await repository.size());
@@ -35,7 +35,7 @@ export function OutputRepositoryStatus({
       repository.off("output_saved", listen);
       repository.off("output_cleared", listen);
     };
-  }, []);
+  }, [repository]);
 
   return (
     <div>

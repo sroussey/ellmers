@@ -74,11 +74,10 @@ export function probeWebBrowserCapabilities(
       // "missing" as "no capabilities".
       try {
         // The ambient `LanguageModel` global may be undefined outside Chrome.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         const lm = (
           typeof (globalThis as any).LanguageModel !== "undefined"
-            ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (globalThis as any).LanguageModel
+            ? (globalThis as any).LanguageModel
             : undefined
         ) as WebBrowserProbeFactory | undefined;
         resolvedFactory = getApi("LanguageModel", lm);

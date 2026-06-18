@@ -131,7 +131,7 @@ export function buildFetchUrlError(errorCode: string, message: string): JobError
   if (reconstructed) {
     return reconstructed;
   }
-  // eslint-disable-next-line no-console
+
   console.warn(
     `buildFetchUrlError: unknown FETCH_* error code "${errorCode}" — falling back to PermanentJobError`
   );

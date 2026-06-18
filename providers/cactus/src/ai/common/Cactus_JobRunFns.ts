@@ -29,13 +29,7 @@ export {
   removeCachedAssets,
 } from "./Cactus_Runtime";
 
-export const CACTUS_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  CactusModelConfig
->[] = [
+export const CACTUS_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, CactusModelConfig>[] = [
   { serves: CACTUS_TOOL_USE, runFn: Cactus_ToolCalling },
   { serves: CACTUS_MODEL_DOWNLOAD, runFn: Cactus_Download },
   { serves: CACTUS_MODEL_DOWNLOAD_REMOVE, runFn: Cactus_DownloadRemove },

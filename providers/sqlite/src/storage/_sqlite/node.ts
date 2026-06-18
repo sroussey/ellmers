@@ -94,6 +94,7 @@ export const Sqlite = {
 } as const;
 
 /** Merged with {@link Sqlite} so `Sqlite.Database` works in type positions (not only as a value). */
+// eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Sqlite {
   export type Database = NodeSqliteDatabase;
 }

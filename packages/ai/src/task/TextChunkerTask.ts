@@ -221,7 +221,7 @@ export class TextChunkerTask extends Task<
 
   /** Sentence-based chunking that respects sentence boundaries */
   private chunkBySentence(text: string, chunkSize: number, chunkOverlap: number): RawChunk[] {
-    const sentenceRegex = /[.!?]+[\s\n]+/g;
+    const sentenceRegex = /[.!?]+\s+/g;
     const sentences: string[] = [];
     const sentenceStarts: number[] = [];
     let lastIndex = 0;

@@ -210,7 +210,7 @@ export abstract class BaseTabularStorage<
       if (typeof column !== "string") {
         throw new Error("Column names must be strings");
       }
-      if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(column)) {
+      if (!/^[a-z]\w*$/i.test(column)) {
         throw new Error(
           "Column names must start with a letter and contain only letters, digits, and underscores"
         );

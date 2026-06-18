@@ -766,7 +766,7 @@ export class IndexedDbTabularStorage<
 
           for (const record of recordsToDelete) {
             const primaryKey = this.primaryKeyColumns().reduce((key, col) => {
-              // @ts-ignore - We know these properties exist on the record
+              // @ts-expect-error - We know these properties exist on the record
               key[col] = record[col];
               return key;
             }, {} as PrimaryKey);

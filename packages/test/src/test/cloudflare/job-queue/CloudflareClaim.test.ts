@@ -51,7 +51,6 @@ describe("CloudflareClaim", () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,
@@ -68,7 +67,6 @@ describe("CloudflareClaim", () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,
@@ -84,7 +82,6 @@ describe("CloudflareClaim", () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,
@@ -108,7 +105,6 @@ describe("CloudflareClaim", () => {
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const markSpy = vi.spyOn(jobStore, "markDisabled");
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,
@@ -132,7 +128,6 @@ describe("CloudflareClaim", () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,
@@ -146,7 +141,6 @@ describe("CloudflareClaim", () => {
     const { jobStore, id, record } = await setup();
     const message = fakeMessage({ id: String(id), attempts: 0 });
     const claim = new CloudflareClaim<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       message: message as any,
       jobStore,
       record,

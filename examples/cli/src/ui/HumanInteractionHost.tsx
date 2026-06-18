@@ -262,6 +262,8 @@ export function HumanInteractionHost({ children }: HumanInteractionHostProps): R
   };
 
   useLayoutEffect(() => {
+    const pending = pendingRef.current;
+
     setCliHumanInteractionEnqueue((request, signal) => {
       return new Promise((resolve, reject) => {
         if (signal.aborted) {
@@ -303,11 +305,11 @@ export function HumanInteractionHost({ children }: HumanInteractionHostProps): R
 
     return () => {
       setCliHumanInteractionEnqueue(undefined);
-      for (const [, p] of pendingRef.current) {
+      for (const [, p] of pending) {
         p.detachAbort();
         p.reject(new Error("CLI human UI unmounted"));
       }
-      pendingRef.current.clear();
+      pending.clear();
     };
   }, []);
 

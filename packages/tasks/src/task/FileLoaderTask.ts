@@ -265,11 +265,13 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     const lineIndent = line.length - line.trimStart().length;
     if (lineIndent < indent) return index;
 
-    const match = line.match(/^(\s*)([^:#]+?)\s*:\s*(.*)?$/);
-    if (!match) return index + 1;
+    const content = line.trimStart();
+    const colonIndex = content.indexOf(":");
+    if (colonIndex === -1) return index + 1;
 
-    const key = match[2].trim();
-    const rawValue = (match[3] ?? "").trim();
+    const key = content.slice(0, colonIndex).trim();
+    if (!key || key.includes("#")) return index + 1;
+    const rawValue = content.slice(colonIndex + 1).trim();
 
     if (rawValue === "" || rawValue === "|" || rawValue === ">") {
       const nextIndex = index + 1;
@@ -332,7 +334,7 @@ export class FileLoaderTask extends Task<FileLoaderTaskInput, FileLoaderTaskOutp
     if (raw === "true" || raw === "True" || raw === "TRUE") return true;
     if (raw === "false" || raw === "False" || raw === "FALSE") return false;
     if (raw === "null" || raw === "~") return null;
-    if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
+    if (/^-?\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
     if (raw.startsWith("[") && raw.endsWith("]")) {
       return raw
         .slice(1, -1)

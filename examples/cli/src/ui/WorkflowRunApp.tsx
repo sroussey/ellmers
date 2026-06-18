@@ -61,7 +61,7 @@ export function WorkflowRunApp({
       stopPoll();
       unsub();
     };
-  }, []);
+  }, [graph, onComplete, onError, runExecutor, input, config]);
 
   const order = new Map(graph.getTasks().map((t, i) => [String(t.id), i]));
   const orderedTasks = sortCliTaskLinesForDisplay(Array.from(taskInfos.values()), order);

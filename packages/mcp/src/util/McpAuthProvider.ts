@@ -8,9 +8,9 @@
 
 import {
   ClientCredentialsProvider,
+  createPrivateKeyJwtAuth,
   PrivateKeyJwtProvider,
   StaticPrivateKeyJwtProvider,
-  createPrivateKeyJwtAuth,
 } from "@modelcontextprotocol/sdk/client/auth-extensions.js";
 import type {
   AddClientAuthentication,

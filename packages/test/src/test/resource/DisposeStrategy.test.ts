@@ -34,7 +34,6 @@ describe("DisposeStrategy.runCompletion (default)", () => {
   it("Symbol.asyncDispose disposes all", async () => {
     const d = vi.fn(async () => {});
     {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       await using scope = new ResourceScope();
       scope.register("a", d);
     }
@@ -93,7 +92,6 @@ describe("DisposeStrategy.never", () => {
   it("Symbol.asyncDispose disposes everything (safety net)", async () => {
     const d = vi.fn(async () => {});
     {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       await using scope = new ResourceScope({ strategy: DisposeStrategy.never() });
       scope.register("a", d);
     }
@@ -174,7 +172,6 @@ describe("DisposeStrategy.inactivity", () => {
   it("Symbol.asyncDispose clears timers and disposes remaining", async () => {
     const d = vi.fn(async () => {});
     {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       await using scope = new ResourceScope({
         strategy: DisposeStrategy.inactivity(1000),
       });

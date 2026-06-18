@@ -49,13 +49,7 @@ export const Ollama_ToolCalling_Stream = createOllamaToolCallingStream(
 export const Ollama_ModelInfo_Stream = createOllamaModelInfoStream(getClient);
 export const Ollama_ModelSearch_Stream = createOllamaModelSearchStream(getClient);
 
-export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  OllamaModelConfig
->[] = [
+export const OLLAMA_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, OllamaModelConfig>[] = [
   { serves: OLLAMA_TEXT_GENERATION, runFn: Ollama_TextGeneration_Stream },
   { serves: OLLAMA_TOOL_USE, runFn: Ollama_ToolCalling_Stream },
   { serves: OLLAMA_TEXT_REWRITER, runFn: Ollama_TextRewriter_Stream },

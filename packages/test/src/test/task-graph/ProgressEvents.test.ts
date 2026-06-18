@@ -5,14 +5,14 @@
  */
 
 import type { CachePolicy, IExecuteContext, StreamEvent } from "@workglow/task-graph";
-import { Task, TaskAbortedError, TaskStatus } from "@workglow/task-graph";
+import { Task, TaskAbortedError, TaskInput, TaskStatus } from "@workglow/task-graph";
 import { sleep } from "@workglow/util";
 import type { DataPortSchema } from "@workglow/util/schema";
 import { describe, expect, it } from "vitest";
 
 type Out = { text: string };
 
-class CompletingTask extends Task<{}, Out> {
+class CompletingTask extends Task<TaskInput, Out> {
   public static override type = "ProgressEvents_Completing";
   public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
@@ -34,7 +34,7 @@ class CompletingTask extends Task<{}, Out> {
   }
 }
 
-class FailingTask extends Task<{}, Out> {
+class FailingTask extends Task<TaskInput, Out> {
   public static override type = "ProgressEvents_Failing";
   public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
@@ -56,7 +56,7 @@ class FailingTask extends Task<{}, Out> {
   }
 }
 
-class HangingTask extends Task<{}, Out> {
+class HangingTask extends Task<TaskInput, Out> {
   public static override type = "ProgressEvents_Hanging";
   public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
@@ -73,7 +73,7 @@ class HangingTask extends Task<{}, Out> {
       additionalProperties: false,
     } as const satisfies DataPortSchema;
   }
-  override async execute(_input: {}, context: IExecuteContext): Promise<Out> {
+  override async execute(_input: TaskInput, context: IExecuteContext): Promise<Out> {
     await new Promise((resolve, reject) => {
       context.signal.addEventListener("abort", () => reject(new TaskAbortedError()), {
         once: true,
@@ -129,7 +129,7 @@ describe("Progress events: terminal-100 tick", () => {
   });
 });
 
-class PhaseStreamTask extends Task<{}, { text: string }> {
+class PhaseStreamTask extends Task<TaskInput, { text: string }> {
   public static override type = "ProgressEvents_PhaseStream";
   public static override cachePolicy: CachePolicy = { kind: "none" };
   public static override inputSchema(): DataPortSchema {
@@ -206,7 +206,7 @@ describe("Progress events: streaming", () => {
   });
 
   it("phase events do not flip status to STREAMING", async () => {
-    class PhaseOnlyTask extends Task<{}, { text: string }> {
+    class PhaseOnlyTask extends Task<TaskInput, { text: string }> {
       public static override type = "ProgressEvents_PhaseOnly";
       public static override cachePolicy: CachePolicy = { kind: "none" };
       public static override inputSchema(): DataPortSchema {

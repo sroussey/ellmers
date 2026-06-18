@@ -165,8 +165,7 @@ export class PostgresTabularStorage<
     const createdIndexes = new Set<string>();
     for (const columns of this.indexes) {
       if (columns.length <= pkColumns.length) {
-        // @ts-ignore
-        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
+        const isPkPrefix = columns.every((col, idx) => col === (pkColumns[idx] as string));
         if (isPkPrefix) continue;
       }
       const indexName = `${this.table}_${columns.join("_")}`;
@@ -857,8 +856,7 @@ export class PostgresTabularStorage<
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
   private createTxView(txDb: { query: Pool["query"] }, deferredPutEvents: Entity[]): this {
-    const target = this;
-    return new Proxy(target, {
+    return new Proxy(this, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
           return () => {

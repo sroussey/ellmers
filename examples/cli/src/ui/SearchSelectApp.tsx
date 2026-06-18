@@ -46,7 +46,7 @@ export function SearchSelectApp<T extends SearchSelectItem>({
   const maxVisibleItems = Math.max(3, Math.floor((terminalRows - CHROME_ROWS) / 2));
   const [items, setItems] = useState<T[]>([]);
   const [highlightIndex, setHighlightIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => Boolean(initialQuery));
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [hasSearched, setHasSearched] = useState(false);
@@ -58,7 +58,11 @@ export function SearchSelectApp<T extends SearchSelectItem>({
   const isLoadingMoreRef = useRef(false);
 
   const doSearch = useCallback(
-    async (query: string, cursor: string | undefined) => {
+    async (
+      query: string,
+      cursor: string | undefined,
+      options?: { readonly omitInitialLoadingState?: boolean }
+    ) => {
       if (!query) {
         setItems([]);
         setHasSearched(false);
@@ -68,7 +72,9 @@ export function SearchSelectApp<T extends SearchSelectItem>({
 
       const isFirstPage = cursor === undefined;
       if (isFirstPage) {
-        setIsLoading(true);
+        if (!options?.omitInitialLoadingState) {
+          setIsLoading(true);
+        }
       } else {
         isLoadingMoreRef.current = true;
         setIsLoadingMore(true);
@@ -106,13 +112,23 @@ export function SearchSelectApp<T extends SearchSelectItem>({
   );
 
   useEffect(() => {
-    if (initialQuery) {
-      doSearch(initialQuery, undefined);
+    if (!initialQuery) {
+      return () => {
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      };
     }
+
+    const timer = setTimeout(() => {
+      void doSearch(initialQuery, undefined, { omitInitialLoadingState: true });
+    }, 0);
+
     return () => {
+      clearTimeout(timer);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Mount-only: pre-filled query triggers one initial search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleQueryChange = useCallback(
     (value: string) => {

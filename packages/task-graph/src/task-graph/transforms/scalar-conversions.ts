@@ -9,7 +9,7 @@ import type { ITransformDef } from "../TransformTypes";
 const stringSchema: DataPortSchema = { type: "string" } as DataPortSchema;
 const booleanSchema: DataPortSchema = { type: "boolean" } as DataPortSchema;
 
-export const numberToStringTransform: ITransformDef<{}> = {
+export const numberToStringTransform: ITransformDef = {
   id: "numberToString",
   title: "Number → String",
   category: "Conversion",
@@ -26,7 +26,7 @@ export const numberToStringTransform: ITransformDef<{}> = {
   },
 };
 
-export const toBooleanTransform: ITransformDef<{}> = {
+export const toBooleanTransform: ITransformDef = {
   id: "toBoolean",
   title: "To Boolean",
   category: "Conversion",
@@ -40,7 +40,7 @@ export const toBooleanTransform: ITransformDef<{}> = {
   },
 };
 
-export const stringifyTransform: ITransformDef<{}> = {
+export const stringifyTransform: ITransformDef = {
   id: "stringify",
   title: "JSON.stringify",
   category: "Conversion",
@@ -53,7 +53,7 @@ export const stringifyTransform: ITransformDef<{}> = {
   },
 };
 
-export const parseJsonTransform: ITransformDef<{}> = {
+export const parseJsonTransform: ITransformDef = {
   id: "parseJson",
   title: "Parse JSON",
   category: "Conversion",

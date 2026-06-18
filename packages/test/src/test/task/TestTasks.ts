@@ -2276,8 +2276,8 @@ declare module "@workglow/task-graph" {
     testSimple(input?: Partial<{ input: string }>, config?: Partial<TaskConfig>): this;
     testOutput(input?: Partial<{ input: string }>, config?: Partial<TaskConfig>): this;
     testInput(input?: Partial<{ customInput: string }>, config?: Partial<TaskConfig>): this;
-    failing(input?: Partial<{}>, config?: Partial<TaskConfig>): this;
-    longRunning(input?: Partial<{}>, config?: Partial<TaskConfig>): this;
+    failing(input?: Partial<TaskInput>, config?: Partial<TaskConfig>): this;
+    longRunning(input?: Partial<TaskInput>, config?: Partial<TaskConfig>): this;
     string(input?: Partial<{ input: string }>, config?: Partial<TaskConfig>): this;
     numberToString(input?: Partial<{ input: number }>, config?: Partial<TaskConfig>): this;
     number(input?: Partial<{ input: number }>, config?: Partial<TaskConfig>): this;

@@ -46,12 +46,7 @@ describe("handleQueueBatch", () => {
     const messages = ids.map((id) => fakeMessage({ id: String(id), attempts: 0 }));
 
     const worker = { processClaims: vi.fn().mockResolvedValue(undefined) };
-    await handleQueueBatch(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { messages } as any,
-      worker,
-      jobStore
-    );
+    await handleQueueBatch({ messages } as any, worker, jobStore);
     expect(worker.processClaims).toHaveBeenCalledOnce();
     const claims = worker.processClaims.mock.calls[0][0];
     expect(claims).toHaveLength(2);
@@ -69,12 +64,7 @@ describe("handleQueueBatch", () => {
     ];
 
     const worker = { processClaims: vi.fn().mockResolvedValue(undefined) };
-    await handleQueueBatch(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { messages } as any,
-      worker,
-      jobStore
-    );
+    await handleQueueBatch({ messages } as any, worker, jobStore);
 
     expect(messages[1].ack).toHaveBeenCalledOnce();
     expect(messages[0].ack).not.toHaveBeenCalled();

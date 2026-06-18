@@ -131,7 +131,7 @@
     "sharp"
   ],
   "lint-staged": {
-    "{packages,providers,examples}/*/src/**/*.{js,ts,tsx}": [
+    "{packages,providers,examples}/*/src/**/*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ],
