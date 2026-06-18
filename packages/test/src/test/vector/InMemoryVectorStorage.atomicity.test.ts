@@ -7,16 +7,7 @@
 import { InMemoryTabularStorage, InMemoryVectorStorage } from "@workglow/storage";
 import type { DataPortSchemaObject } from "@workglow/util/schema";
 import { TypedArraySchema } from "@workglow/util/schema";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-// safeEmit re-throws caught listener errors via queueMicrotask so observability
-// (unhandledException / unhandledrejection) is preserved. In the test process
-// these rethrows would otherwise be treated as uncaught failures; absorb them
-// so the explicit assertions remain the test signal.
-if (typeof process !== "undefined" && typeof process.on === "function") {
-  process.on("uncaughtException", () => {});
-  process.on("unhandledRejection", () => {});
-}
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Atomicity contract for the in-memory vector `putBulk`:
@@ -62,6 +53,25 @@ function vec(values: number[]): Float32Array {
 }
 
 describe("InMemoryVectorStorage putBulk atomicity", () => {
+  // Two listener-throw tests below route through safeEmit, which forwards the
+  // caught throw to the unhandledRejection channel for observability. Vitest
+  // treats stray rejections as worker failures, so absorb only the two
+  // literal messages these tests emit and rethrow anything else.
+  const swallow = (e: unknown): void => {
+    if (e instanceof Error && /listener boom|first listener boom/.test(e.message)) return;
+    throw e;
+  };
+  beforeAll(() => {
+    if (typeof process !== "undefined" && typeof process.on === "function") {
+      process.on("unhandledRejection", swallow);
+    }
+  });
+  afterAll(() => {
+    if (typeof process !== "undefined" && typeof process.off === "function") {
+      process.off("unhandledRejection", swallow);
+    }
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
