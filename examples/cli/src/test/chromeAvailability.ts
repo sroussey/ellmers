@@ -40,7 +40,6 @@ interface ChromeAvailabilityDeps {
 }
 
 function defaultWhich(command: string): string | null | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bun = (globalThis as any).Bun as { which?: ChromeLookup } | undefined;
   return bun?.which?.(command);
 }

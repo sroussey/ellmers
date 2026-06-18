@@ -77,11 +77,11 @@ if (env.NODE_ENV === "production" || env.CACTUS_REQUIRE_REAL_HASHES === "1") {
   // Production-equivalent path: must throw.
   assertNoPlaceholders(synthetic);
   // Unreachable if the guard works as advertised.
-  // eslint-disable-next-line no-console
+
   console.error("[runner] guard FAILED to reject placeholder catalog");
   process.exit(2);
 }
 // Dev path: explicitly skip the assertion; just succeed.
-// eslint-disable-next-line no-console
+
 console.log("[runner] dev mode: placeholders are tolerated");
 process.exit(0);

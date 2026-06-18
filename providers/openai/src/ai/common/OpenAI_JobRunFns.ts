@@ -42,13 +42,7 @@ import { OpenAI_ToolCalling_Stream } from "./OpenAI_ToolCalling";
  * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
  * for {@link ToolCallingTask}.
  */
-export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  OpenAiModelConfig
->[] = [
+export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, OpenAiModelConfig>[] = [
   { serves: OPENAI_TEXT_GENERATION, runFn: OpenAI_TextGeneration_Stream },
   { serves: OPENAI_TOOL_USE, runFn: OpenAI_ToolCalling_Stream },
   { serves: OPENAI_JSON_MODE, runFn: OpenAI_StructuredGeneration_Stream },
@@ -64,7 +58,6 @@ export const OPENAI_RUN_FNS: readonly AiProviderRunFnRegistration<
 
 export const OPENAI_PREVIEW_TASKS: Record<
   string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, OpenAiModelConfig>
 > = {
   CountTokensTask: OpenAI_CountTokens_Preview,

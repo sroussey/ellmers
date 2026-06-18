@@ -8,13 +8,11 @@ import { OLLAMA_DEFAULT_BASE_URL } from "./Ollama_Constants";
 import type { OllamaModelConfig } from "./Ollama_ModelSchema";
 import { getOllamaModelName } from "./Ollama_ModelUtil";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _OllamaClass: (new (config: { host: string }) => any) | undefined;
 
 export async function loadOllamaSDK(): Promise<(new (config: { host: string }) => any) & {}> {
   if (_OllamaClass) return _OllamaClass;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _OllamaClass = (
       (await import(/* @vite-ignore */ "ollama")) as {
         Ollama: new (config: { host: string }) => any;

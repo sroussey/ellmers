@@ -44,7 +44,7 @@ import { PostgresTabularStorage } from "./PostgresTabularStorage";
  * Regex for validating metadata filter keys to prevent SQL injection.
  * Only allows alphanumeric characters and underscores, starting with a letter or underscore.
  */
-const SAFE_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const SAFE_IDENTIFIER_RE = /^[a-z_]\w*$/i;
 
 export class PostgresVectorStorage<
   Schema extends DataPortSchemaObject,

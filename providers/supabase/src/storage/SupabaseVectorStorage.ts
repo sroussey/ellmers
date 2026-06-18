@@ -26,7 +26,7 @@ import { SupabaseTabularStorage } from "./SupabaseTabularStorage";
  * Only allows alphanumeric characters and underscores, starting with a letter
  * or underscore. Mirrors {@link PostgresVectorStorage}.
  */
-const SAFE_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const SAFE_IDENTIFIER_RE = /^[a-z_]\w*$/i;
 
 /**
  * Supabase-backed vector repository. Extends {@link SupabaseTabularStorage}

@@ -26,18 +26,8 @@ export class CactusQueuedProvider extends QueuedAiProvider<CactusModelConfig> {
   readonly supportsServer = true;
 
   constructor(
-    promiseRunFns?: readonly AiProviderRunFnRegistration<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      any,
-      CactusModelConfig
-    >[],
-    previewTasks?: Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      AiProviderPreviewRunFn<any, any, CactusModelConfig>
-    >
+    promiseRunFns?: readonly AiProviderRunFnRegistration<any, any, CactusModelConfig>[],
+    previewTasks?: Record<string, AiProviderPreviewRunFn<any, any, CactusModelConfig>>
   ) {
     super(promiseRunFns, previewTasks);
   }

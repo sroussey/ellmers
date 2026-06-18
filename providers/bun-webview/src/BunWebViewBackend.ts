@@ -22,7 +22,7 @@ import { sleep } from "@workglow/util";
 
 // Bun.WebView is accessed via globalThis at runtime
 /** @type {InstanceType<typeof Bun.WebView>} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyWebView = any;
 
 /**
@@ -66,7 +66,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
   }
 
   async connect(options: BrowserConnectOptions = {}): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const BunWebView = (globalThis as any).Bun?.WebView;
     if (!BunWebView) {
       throw new Error(
@@ -77,7 +76,6 @@ export class BunWebViewBackend extends CDPBrowserBackend implements IBrowserCont
 
     const { headless = true, chromePath = this.defaultChromePath } = options;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webViewOptions: Record<string, any> = {
       headless,
       url: "about:blank",

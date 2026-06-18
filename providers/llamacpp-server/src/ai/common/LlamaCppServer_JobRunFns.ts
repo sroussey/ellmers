@@ -32,13 +32,7 @@ import { createLlamaCppServerToolCallingStream } from "./LlamaCppServer_ToolCall
  */
 export function buildLlamaCppServerRunFns(
   opts: ILlamaCppServerProviderOptions
-): readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  LlamaCppServerModelConfig
->[] {
+): readonly AiProviderRunFnRegistration<any, any, LlamaCppServerModelConfig>[] {
   return [
     {
       serves: LLAMACPP_SERVER_TEXT_GENERATION,

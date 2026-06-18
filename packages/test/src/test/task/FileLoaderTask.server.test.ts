@@ -96,7 +96,7 @@ describe("FileLoaderTask (server - local files)", () => {
     const task = new FileLoaderTask({ defaults: { url: `file://${filePath}`, format: "json" } });
 
     await expect(task.run()).rejects.toThrow(
-      /Failed to parse JSON|JSON Parse error|Expected property name or '}' in JSON/
+      /Failed to parse JSON|JSON Parse error|Expected property name or '\}' in JSON/
     );
   });
 

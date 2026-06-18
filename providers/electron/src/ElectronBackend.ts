@@ -22,23 +22,21 @@ import { sleep } from "@workglow/util";
 
 // Electron types are accessed via lazy import (optional dependency).
 /** @type {import("electron").BrowserWindow} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowserWindow = any;
 
 /** @type {import("electron").WebContents} */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyWebContents = any;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let electronModule: Record<string, any> | null = null;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getElectron(): Promise<Record<string, any>> {
   if (!electronModule) {
     // Dynamic import keeps electron as a true optional dependency.
     // The `Function` cast avoids a static "cannot find module" TS error
     // when electron types are not installed in the current environment.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+
     electronModule = (await new Function("m", "return import(m)")("electron")) as Record<
       string,
       any

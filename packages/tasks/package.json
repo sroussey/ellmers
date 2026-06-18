@@ -21,7 +21,7 @@
     "watch-electron": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/electron.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'browser,node,bun,electron,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-electron' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,electron' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-electron'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,electron' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-electron'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",

@@ -12,7 +12,7 @@ export function isMissingRelationError(error: { code?: string; message?: string 
   // "X does not exist" errors (column, function, type, role) are not misread
   // as a missing table and don't spuriously trigger DDL bootstrap.
   if (msg.includes("could not find the table")) return true;
-  return /\b(relation|table)\b[^\n]*does not exist/i.test(msg);
+  return /\b(?:relation|table)\b.+does not exist/i.test(msg);
 }
 
 /** `exec_sql` RPC is not installed (production Supabase without admin RPC). */

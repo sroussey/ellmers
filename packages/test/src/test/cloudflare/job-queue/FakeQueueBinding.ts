@@ -42,7 +42,6 @@ export class FakeQueueBinding {
         });
       }
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as Queue<CloudMessageBody>;
 
   /** Pull up to `max` unacked messages as a `MessageBatch` for `handleQueueBatch`. */
@@ -67,7 +66,6 @@ export class FakeQueueBinding {
       queue: "fake",
       ackAll: () => slice.forEach((m) => m.ack()),
       retryAll: () => slice.forEach((m) => m.retry()),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as unknown as MessageBatch<CloudMessageBody>;
   }
 

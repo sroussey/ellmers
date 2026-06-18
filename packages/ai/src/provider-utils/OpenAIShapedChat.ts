@@ -30,7 +30,7 @@ export interface OpenAIShapedTool {
   readonly function: {
     readonly name: string;
     readonly description: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     readonly parameters: any;
   };
 }
@@ -47,7 +47,7 @@ export function buildOpenAITools(tools: readonly ToolDefinition[]): OpenAIShaped
     function: {
       name: t.name,
       description: buildToolDescription(t),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       parameters: t.inputSchema as any,
     },
   }));
@@ -91,10 +91,7 @@ function parseToolArgs(raw: string): Record<string, unknown> {
  * Some providers (HFI) don't always return an `id` per tool call; we
  * auto-generate `call_<index>` in that case.
  */
-export function parseOpenAIToolCallMessage(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  toolCallsRaw: readonly any[] | undefined
-): ToolCalls {
+export function parseOpenAIToolCallMessage(toolCallsRaw: readonly any[] | undefined): ToolCalls {
   const result: ToolCalls = [];
   if (!toolCallsRaw) return result;
   let idx = 0;
@@ -140,7 +137,6 @@ interface ToolCallAccumulatorEntry {
  * `tool_calls` (no `content` deltas).
  */
 export async function accumulateOpenAIStream(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stream: AsyncIterable<any>,
   emit: (event: StreamEvent<ToolCallingTaskOutput>) => void
 ): Promise<void> {

@@ -113,7 +113,7 @@ const _warnedFiles = new Set<string>();
 function warnPlaceholderOnce(filename: string): void {
   if (_warnedFiles.has(filename)) return;
   _warnedFiles.add(filename);
-  // eslint-disable-next-line no-console
+
   console.warn(
     `[@workglow/cactus] SHA-256 catalog entry for "${filename}" is a placeholder; ` +
       `integrity verification is DISABLED. This must be populated before release.`

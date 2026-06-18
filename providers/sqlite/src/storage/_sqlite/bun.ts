@@ -115,6 +115,7 @@ export const Sqlite = {
   Database: BunSqliteDatabase,
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Sqlite {
   export type Database = BunSqliteDatabase;
 }

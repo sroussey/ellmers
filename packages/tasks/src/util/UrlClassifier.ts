@@ -105,7 +105,7 @@ export function tryNormalizeIPv4(host: string): string | undefined {
   if (host.length === 0) return undefined;
 
   // Fast path: already canonical dotted-quad
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
     const octets = host.split(".").map((s) => parseInt(s, 10));
     if (octets.every((n) => n >= 0 && n <= 255)) {
       return octets.join(".");
@@ -120,7 +120,7 @@ export function tryNormalizeIPv4(host: string): string | undefined {
   for (const p of parts) {
     if (p.length === 0) return undefined;
     let n: number;
-    if (/^0[xX][0-9a-fA-F]+$/.test(p)) {
+    if (/^0x[0-9a-f]+$/i.test(p)) {
       n = parseInt(p.slice(2), 16);
     } else if (/^0[0-7]+$/.test(p)) {
       n = parseInt(p, 8);

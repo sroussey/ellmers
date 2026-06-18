@@ -6,7 +6,7 @@
 
 import { Dataflow, TaskStatus } from "@workglow/task-graph";
 import { BaseEdge, Edge, EdgeLabelRenderer, EdgeProps, getBezierPath } from "@xyflow/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DataDialog } from "../components/DataDialog";
 import { getStatusColorBg } from "./util";
 
@@ -77,21 +77,11 @@ export function DataflowEdge({
   style = {},
   markerEnd,
 }: EdgeProps<Edge<DataflowEdgeData, string>>) {
-  const [status, setStatus] = useState<TaskStatus>(data?.dataflow?.status || TaskStatus.PENDING);
+  const status = data?.dataflow?.status ?? TaskStatus.PENDING;
   const [animatedDashOffset, setAnimatedDashOffset] = useState(0);
-  type EdgePathParams = [string, { strokePath: string }];
-  const [edgePathParams, setEdgePathParams] = useState<EdgePathParams | null>(null);
   const [showDataDialog, setShowDataDialog] = useState(false);
 
-  useEffect(() => {
-    // Update status from data
-    if (data?.dataflow?.status) {
-      setStatus(data.dataflow.status);
-    }
-  }, [data]);
-
-  useEffect(() => {
-    // Calculate path once
+  const edgePathParams = useMemo((): [string, { strokePath: string }] => {
     const [edgePath] = getBezierPath({
       sourceX: sourceX - 10,
       sourceY,
@@ -100,8 +90,7 @@ export function DataflowEdge({
       targetY,
       targetPosition,
     });
-
-    setEdgePathParams([edgePath, { strokePath: edgePath }]);
+    return [edgePath, { strokePath: edgePath }];
   }, [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition]);
 
   useEffect(() => {
@@ -114,10 +103,6 @@ export function DataflowEdge({
       return () => clearInterval(interval);
     }
   }, [status]);
-
-  if (!edgePathParams) {
-    return null;
-  }
 
   const [edgePath] = edgePathParams;
 
@@ -176,7 +161,8 @@ export function DataflowEdge({
               pointerEvents: "none",
             }}
           >
-            <span
+            <button
+              type="button"
               onClick={() => setShowDataDialog(true)}
               className={`ml-2 text-xs px-1.5 rounded-full mr-2 border border-blue-800 ${getStatusColorBg(
                 status
@@ -184,7 +170,7 @@ export function DataflowEdge({
               style={{ pointerEvents: "all", cursor: "pointer" }}
             >
               ⧉
-            </span>
+            </button>
           </foreignObject>
           <EdgeLabelRenderer>
             {showDataDialog && (

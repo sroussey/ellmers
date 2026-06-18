@@ -50,7 +50,7 @@ export type KvEventParameters<Event extends KvEventName, Key, Value, Combined> =
  */
 export interface IKvStorage<
   Key extends string | number = string,
-  Value extends any = any,
+  Value = any,
   Combined = { key: Key; value: Value },
 > {
   put(key: Key, value: Value): Promise<void>;

@@ -25,13 +25,12 @@ import type {
 
 // Playwright is loaded lazily as an optional dependency.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLocator = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyPage = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowserContext = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type AnyBrowser = any;
 
 let playwrightModule: typeof import("playwright");
@@ -62,7 +61,7 @@ interface ParsedAriaLine {
 
 function parseAriaLine(line: string): ParsedAriaLine | null {
   // 2 spaces per indent level after the "- "
-  const match = line.match(/^(\s*)-\s+(.*)$/);
+  const match = line.match(/^(\s*)- ([^\n]+)$/);
   if (!match) return null;
 
   const indent = match[1].length;
@@ -108,6 +107,24 @@ interface MutableAccessibilityNode {
   selected?: boolean;
   value?: string | number;
   children?: MutableAccessibilityNode[];
+}
+
+function wrapAsDocumentRoot(
+  existing: MutableAccessibilityNode,
+  refCounter: { count: number },
+  refMap: Map<string, Descriptor>
+): MutableAccessibilityNode {
+  if (existing.role === "document" && existing.children) {
+    return existing;
+  }
+  const docRef = `e${++refCounter.count}`;
+  refMap.set(docRef, { kind: "css", selector: "body" });
+  return {
+    ref: docRef,
+    role: "document",
+    name: "",
+    children: [existing],
+  };
 }
 
 function parseAriaYaml(
@@ -169,7 +186,15 @@ function parseAriaYaml(
     }
 
     if (stack.length === 0) {
-      root = node;
+      if (!root) {
+        root = node;
+      } else {
+        // Playwright may emit multiple top-level siblings (e.g. several buttons
+        // with no shared parent line). Keep them under a synthetic document root
+        // instead of overwriting the prior root.
+        root = wrapAsDocumentRoot(root, refCounter, refMap);
+        root.children!.push(node);
+      }
     } else {
       const parent = stack[stack.length - 1].node;
       if (!parent.children) parent.children = [];
@@ -362,7 +387,7 @@ export class PlaywrightBackend implements IBrowserContext {
     switch (descriptor.kind) {
       case "role":
         return descriptor.name
-          ? page.getByRole(descriptor.role, { name: descriptor.name })
+          ? page.getByRole(descriptor.role, { name: descriptor.name, exact: true })
           : page.getByRole(descriptor.role);
       case "text":
         return page.getByText(descriptor.text);
@@ -453,7 +478,7 @@ export class PlaywrightBackend implements IBrowserContext {
 
   async clickByRole(role: AriaRole, name: string, options: ClickOptions = {}): Promise<void> {
     const { modifiers, button, clickCount, timeout } = options;
-    await this.page.getByRole(role, { name }).click({
+    await this.page.getByRole(role, { name, exact: true }).click({
       ...(modifiers !== undefined ? { modifiers } : {}),
       ...(button !== undefined ? { button } : {}),
       ...(clickCount !== undefined ? { clickCount } : {}),

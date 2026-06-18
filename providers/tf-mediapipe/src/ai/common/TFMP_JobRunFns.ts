@@ -51,13 +51,7 @@ export { loadTfmpTasksTextSDK, loadTfmpTasksVisionSDK } from "./TFMP_Client";
  * {@link ModelDownloadTask} (`["model.download"]`) reports real download progress
  * via `phase` events emitted directly from {@link getModelTask}.
  */
-export const TFMP_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  TFMPModelConfig
->[] = [
+export const TFMP_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, TFMPModelConfig>[] = [
   { serves: TFMP_TEXT_EMBEDDING, runFn: TFMP_TextEmbedding },
   { serves: TFMP_TEXT_CLASSIFICATION, runFn: TFMP_TextClassification },
   { serves: TFMP_TEXT_LANGUAGE_DETECTION, runFn: TFMP_TextLanguageDetection },

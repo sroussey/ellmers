@@ -21,7 +21,7 @@ export const FS_FOLDER_KV_REPOSITORY = createServiceToken<IKvStorage<string, any
  */
 export class FsFolderKvStorage<
   Key extends string = string,
-  Value extends any = any,
+  Value = any,
   Combined = { key: Key; value: Value },
 > extends KvStorage<Key, Value, Combined> {
   constructor(

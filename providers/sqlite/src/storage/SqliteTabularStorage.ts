@@ -190,8 +190,7 @@ export class SqliteTabularStorage<
     for (const searchSpec of this.indexes) {
       const columns = Array.isArray(searchSpec) ? searchSpec : [searchSpec];
       if (columns.length <= pkColumns.length) {
-        // @ts-ignore
-        const isPkPrefix = columns.every((col, idx) => col === pkColumns[idx]);
+        const isPkPrefix = columns.every((col, idx) => col === (pkColumns[idx] as string));
         if (isPkPrefix) continue;
       }
       const indexName = `${this.table}_${columns.join("_")}`;
@@ -631,7 +630,6 @@ export class SqliteTabularStorage<
       );
     }
 
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
     const updatedEntity = stmt.get(...params) as Entity;
 
     // Convert all columns according to schema
@@ -741,8 +739,7 @@ export class SqliteTabularStorage<
    *     `BEGIN`. Use SAVEPOINT directly for nested rollback boundaries.
    */
   private createTxView(deferredPutEvents: Entity[]): this {
-    const target = this;
-    return new Proxy(target, {
+    return new Proxy(this, {
       get(t, prop, receiver) {
         if (prop === "withTransaction") {
           return () => {
@@ -848,8 +845,7 @@ export class SqliteTabularStorage<
     `;
     const stmt = db.prepare(sql);
     const params = this.getPrimaryKeyAsOrderedArray(key);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
-    const value: Entity | null = stmt.get(...(params as ValueOptionType[]));
+    const value: Entity | null = stmt.get(...(params as ValueOptionType[])) as Entity | null;
     if (value) {
       const row = value as Record<string, unknown>;
       for (const k in this.schema.properties) {
@@ -915,8 +911,7 @@ export class SqliteTabularStorage<
 
     const sql = `SELECT * FROM \`${this.table}\` WHERE ${lhs} IN (${valuesClause})`;
     const stmt = db.prepare<ValueOptionType[], Entity>(sql);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
-    const rows: Entity[] = stmt.all(...(params as ValueOptionType[]));
+    const rows: Entity[] = stmt.all(...(params as ValueOptionType[])) as Entity[];
 
     for (const row of rows) {
       const record = row as Record<string, unknown>;
@@ -943,7 +938,6 @@ export class SqliteTabularStorage<
       .join(" AND ");
     const params = this.getPrimaryKeyAsOrderedArray(key);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClauses}`);
-    // @ts-ignore - SQLite typing for variadic bindings is overly strict for our union
     stmt.run(...(params as ValueOptionType[]));
     this.events.emit("delete", key as Partial<Entity>);
   }
@@ -982,8 +976,7 @@ export class SqliteTabularStorage<
     }
 
     const stmt = db.prepare(sql);
-    // @ts-ignore
-    const value = params.length > 0 ? stmt.all(...params) : stmt.all();
+    const value = params.length > 0 ? stmt.all(...params) : (stmt.all() as Entity[]);
     if (!value.length) return undefined;
     // Convert all columns according to schema for each row
     for (const row of value) {
@@ -1137,7 +1130,6 @@ export class SqliteTabularStorage<
       },
       executeSelect: async (sql: string, params: ValueOptionType[]): Promise<Entity[]> => {
         const stmt = this.db.prepare(sql);
-        // @ts-ignore - generic spread on prepared statement
         const rows = stmt.all(...params) as Entity[];
         for (const row of rows) {
           const record = row as Record<string, unknown>;
@@ -1186,7 +1178,6 @@ export class SqliteTabularStorage<
     const db = this.db;
     const { whereClause, params } = this.buildDeleteSearchWhere(criteria);
     const stmt = db.prepare(`DELETE FROM \`${this.table}\` WHERE ${whereClause}`);
-    // @ts-ignore
     stmt.run(...params);
     this.events.emit("delete", this.deleteIdentity(criteria));
   }
@@ -1235,7 +1226,6 @@ export class SqliteTabularStorage<
     }
 
     const stmt = db.prepare(sql);
-    // @ts-ignore
     const result = stmt.all(...params) as Entity[];
 
     if (result.length > 0) {
@@ -1313,7 +1303,6 @@ export class SqliteTabularStorage<
     }
 
     const stmt = this.db.prepare(sql);
-    // @ts-ignore — Bun's sqlite stmt.all accepts spread params
     const rows = stmt.all(...params) as Record<string, unknown>[];
     for (const row of rows) {
       for (const k of Object.keys(row)) {

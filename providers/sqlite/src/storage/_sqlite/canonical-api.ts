@@ -13,6 +13,7 @@
  * **Generic order:** `prepare<BindParameters, Result>(sql)` — bindings first,
  * row/result second (better-sqlite3 order), not `bun:sqlite`’s reversed order.
  */
+// eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace SqliteApi {
   export interface RunResult {
     readonly changes: number;

@@ -64,7 +64,7 @@ export function taskPrototypeHasOwnExecute(task: ITask): boolean {
 
 export type GraphSingleTaskResult<T> = {
   id: unknown;
-  type: String;
+  type: string;
   data: T;
 };
 export type GraphResultArray<T> = Array<GraphSingleTaskResult<T>>;

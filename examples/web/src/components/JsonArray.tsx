@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { JsonTree } from "./JsonTree";
 
 type JsonArrayProps = {
@@ -16,14 +16,16 @@ type JsonArrayProps = {
  * Component for displaying JSON arrays with collapsible sections
  */
 export const JsonArray: React.FC<JsonArrayProps> = ({ data, expandLevel = 1 }) => {
-  const [isExpanded, setIsExpanded] = useState(expandLevel > 0);
-
-  useEffect(() => {
-    setIsExpanded(expandLevel > 0);
-  }, [expandLevel]);
+  const [manualExpanded, setManualExpanded] = useState<boolean | undefined>(undefined);
+  const [lastExpandLevel, setLastExpandLevel] = useState(expandLevel);
+  if (lastExpandLevel !== expandLevel) {
+    setLastExpandLevel(expandLevel);
+    setManualExpanded(undefined);
+  }
+  const isExpanded = manualExpanded ?? expandLevel > 0;
 
   const toggleExpand = () => {
-    setIsExpanded(!isExpanded);
+    setManualExpanded(!isExpanded);
   };
 
   if (!Array.isArray(data)) {
@@ -34,7 +36,7 @@ export const JsonArray: React.FC<JsonArrayProps> = ({ data, expandLevel = 1 }) =
 
   return (
     <div className="json-array">
-      <div className="json-toggle" onClick={toggleExpand}>
+      <button type="button" className="json-toggle" onClick={toggleExpand}>
         <span className={`json-toggle-icon ${isExpanded ? "expanded" : "collapsed"}`}>▼</span>
         <span className="json-preview">
           {"["}
@@ -43,7 +45,7 @@ export const JsonArray: React.FC<JsonArrayProps> = ({ data, expandLevel = 1 }) =
             ` ${arrayLength} ${arrayLength === 1 ? "item" : "items"} `}
           {"]"}
         </span>
-      </div>
+      </button>
 
       {isExpanded && (
         <div className="json-array-content">

@@ -61,7 +61,7 @@ export class StructuralParser {
     for (const line of lines) {
       const lineLength = line.length + 1; // +1 for newline.
 
-      const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
+      const headerMatch = line.match(/^(#{1,6}) ([^\n]+)$/);
       if (headerMatch) {
         await flushTextBuffer();
 

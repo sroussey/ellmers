@@ -8,7 +8,7 @@ import type { AiProviderRegisterOptions } from "@workglow/ai";
 import { registerProviderInline } from "@workglow/ai/provider-utils";
 import { MlxProvider } from "./MlxProvider";
 
-export interface IRegisterMlxOptions extends AiProviderRegisterOptions {}
+export type IRegisterMlxOptions = AiProviderRegisterOptions;
 
 export async function registerMlx(options: IRegisterMlxOptions): Promise<void> {
   await registerProviderInline(new MlxProvider(), "Mlx", options);

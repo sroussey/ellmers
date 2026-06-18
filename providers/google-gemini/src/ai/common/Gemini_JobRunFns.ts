@@ -43,13 +43,7 @@ import { Gemini_ToolCalling_Stream } from "./Gemini_ToolCalling";
  * {@link AiChatTask} while the `["text.generation", "tool-use"]` entry wins
  * for {@link ToolCallingTask}.
  */
-export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  GeminiModelConfig
->[] = [
+export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<any, any, GeminiModelConfig>[] = [
   { serves: GEMINI_TEXT_GENERATION, runFn: Gemini_TextGeneration_Stream },
   { serves: GEMINI_TOOL_USE, runFn: Gemini_ToolCalling_Stream },
   { serves: GEMINI_JSON_MODE, runFn: Gemini_StructuredGeneration_Stream },
@@ -65,7 +59,6 @@ export const GEMINI_RUN_FNS: readonly AiProviderRunFnRegistration<
 
 export const GEMINI_PREVIEW_TASKS: Record<
   string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, GeminiModelConfig>
 > = {
   CountTokensTask: Gemini_CountTokens_Preview,

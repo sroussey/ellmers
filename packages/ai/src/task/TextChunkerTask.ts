@@ -120,6 +120,50 @@ interface RawChunk {
   endChar: number;
 }
 
+function isSentencePunctuation(char: string): boolean {
+  return char === "." || char === "!" || char === "?";
+}
+
+function isWhitespaceChar(char: string): boolean {
+  return char.length === 1 && char.trim() === "";
+}
+
+/** Linear-time split on `/[.!?]+\s+/`-style boundaries (avoids ReDoS-prone regex). */
+function splitSentences(text: string): { sentences: string[]; starts: number[] } {
+  const sentences: string[] = [];
+  const starts: number[] = [];
+  let lastIndex = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    if (isSentencePunctuation(text[i]!)) {
+      let punctEnd = i;
+      while (punctEnd < text.length && isSentencePunctuation(text[punctEnd]!)) {
+        punctEnd++;
+      }
+      let spaceEnd = punctEnd;
+      while (spaceEnd < text.length && isWhitespaceChar(text[spaceEnd]!)) {
+        spaceEnd++;
+      }
+      if (spaceEnd > punctEnd) {
+        sentences.push(text.substring(lastIndex, spaceEnd));
+        starts.push(lastIndex);
+        lastIndex = spaceEnd;
+        i = spaceEnd;
+        continue;
+      }
+    }
+    i++;
+  }
+
+  if (lastIndex < text.length) {
+    sentences.push(text.substring(lastIndex));
+    starts.push(lastIndex);
+  }
+
+  return { sentences, starts };
+}
+
 /**
  * Task for chunking plain text into smaller segments with configurable strategies.
  * Emits `ChunkRecord[]` so the output is interchangeable with HierarchicalChunkerTask
@@ -221,21 +265,7 @@ export class TextChunkerTask extends Task<
 
   /** Sentence-based chunking that respects sentence boundaries */
   private chunkBySentence(text: string, chunkSize: number, chunkOverlap: number): RawChunk[] {
-    const sentenceRegex = /[.!?]+[\s\n]+/g;
-    const sentences: string[] = [];
-    const sentenceStarts: number[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = sentenceRegex.exec(text)) !== null) {
-      sentences.push(text.substring(lastIndex, match.index + match[0].length));
-      sentenceStarts.push(lastIndex);
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-      sentences.push(text.substring(lastIndex));
-      sentenceStarts.push(lastIndex);
-    }
+    const { sentences, starts: sentenceStarts } = splitSentences(text);
 
     const chunks: RawChunk[] = [];
     let currentChunk = "";

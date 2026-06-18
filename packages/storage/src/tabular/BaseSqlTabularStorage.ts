@@ -284,7 +284,7 @@ export abstract class BaseSqlTabularStorage<
    * DDL, and rejects schemas where PK and value keys collide.
    */
   protected validateTableAndSchema(): void {
-    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(this.table)) {
+    if (!/^[a-z]\w*$/i.test(this.table)) {
       throw new Error(
         "Table name must start with a letter and contain only letters, digits, and underscores, got: " +
           this.table
@@ -293,7 +293,7 @@ export abstract class BaseSqlTabularStorage<
 
     const validateSchemaKeys = (schema: DataPortSchemaObject) => {
       for (const key in schema.properties) {
-        if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(key)) {
+        if (!/^[a-z]\w*$/i.test(key)) {
           throw new Error(
             "Schema keys must start with a letter and contain only letters, digits, and underscores, got: " +
               key

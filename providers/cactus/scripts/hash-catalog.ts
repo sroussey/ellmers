@@ -52,7 +52,7 @@ async function collectReports(): Promise<AssetReport[]> {
   for (const entry of CACTUS_CATALOG) {
     for (const spec of assetSpecsOf(entry)) {
       const url = cactusAssetUrl(entry, spec.filename);
-      // eslint-disable-next-line no-console
+       
       console.error(`fetching ${entry.model_id}/${spec.filename} from ${url}`);
       const { sha256, size } = await hashAsset(url);
       reports.push({ model_id: entry.model_id, filename: spec.filename, url, sha256, size });
@@ -94,7 +94,7 @@ function rewriteCatalogFile(catalogPath: string, reports: readonly AssetReport[]
       replaced += 1;
       next = updated;
     } else {
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `[hash-catalog] no placeholder block matched for ${r.model_id}/${r.filename}; skipping`
       );
@@ -114,20 +114,20 @@ async function main(): Promise<void> {
   const write = process.argv.includes("--write");
   const reports = await collectReports();
 
-  // eslint-disable-next-line no-console
+   
   console.log(JSON.stringify({ assets: reports }, null, 2));
 
   if (write) {
     const here = dirname(fileURLToPath(import.meta.url));
     const catalogPath = resolve(here, "../src/ai/common/Cactus_ModelCatalog.ts");
     const replaced = rewriteCatalogFile(catalogPath, reports);
-    // eslint-disable-next-line no-console
+     
     console.error(`[hash-catalog] rewrote ${replaced} of ${reports.length} asset blocks`);
   }
 }
 
 main().catch((err: unknown) => {
-  // eslint-disable-next-line no-console
+   
   console.error("[hash-catalog] failed:", err);
   process.exit(1);
 });

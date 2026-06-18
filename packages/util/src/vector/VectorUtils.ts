@@ -10,7 +10,7 @@ import type { TypedArray } from "./TypedArray";
  * Calculates the magnitude (L2 norm) of a vector
  */
 export function magnitude(arr: TypedArray | number[]): number {
-  // @ts-ignore - Vector reduce works but TS doesn't recognize it
+  // @ts-expect-error - Vector reduce works but TS doesn't recognize it
   return Math.sqrt(arr.reduce((acc, val) => acc + val * val, 0));
 }
 
@@ -21,7 +21,7 @@ export function inner(arr1: TypedArray, arr2: TypedArray): number {
   if (arr1.length !== arr2.length) {
     throw new Error("Vectors must have the same length to compute inner product.");
   }
-  // @ts-ignore - Vector reduce works but TS doesn't recognize it
+  // @ts-expect-error - Vector reduce works but TS doesn't recognize it
   return arr1.reduce((acc, val, i) => acc + val * arr2[i], 0);
 }
 

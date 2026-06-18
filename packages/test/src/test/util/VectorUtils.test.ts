@@ -304,7 +304,7 @@ describe("VectorUtils", () => {
     test("should preserve type for other integer arrays", () => {
       // Test Int32Array which is not explicitly handled
       const vector = new Int32Array([3, 4]);
-      // @ts-ignore - Int32Array is not explicitly handled by normalize
+      // @ts-expect-error - Int32Array is not explicitly handled by normalize
       const result = normalize(vector);
       // Should fall through to Float32Array for unhandled types
       expect(result).toBeInstanceOf(Float32Array);

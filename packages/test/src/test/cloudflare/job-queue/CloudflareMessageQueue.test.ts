@@ -42,7 +42,6 @@ describe("CloudflareMessageQueue.send", () => {
     const jobStore = await newStore();
     const q = fakeQueue();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: q as any,
       queueName: "q",
       jobStore,
@@ -61,7 +60,6 @@ describe("CloudflareMessageQueue.send", () => {
     const jobStore = await newStore();
     const q = fakeQueue();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: q as any,
       queueName: "q",
       jobStore,
@@ -80,7 +78,6 @@ describe("CloudflareMessageQueue.send", () => {
       sendBatch: vi.fn(),
     };
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: q as any,
       queueName: "q",
       jobStore,
@@ -105,7 +102,6 @@ describe("CloudflareMessageQueue.send", () => {
     const jobStore = await newStore();
     const q = fakeQueue();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: q as any,
       queueName: "q",
       jobStore,
@@ -118,7 +114,6 @@ describe("CloudflareMessageQueue.send", () => {
   it("receive() throws referencing handleQueueBatch", async () => {
     const jobStore = await newStore();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: fakeQueue() as any,
       queueName: "q",
       jobStore,
@@ -132,7 +127,6 @@ describe("CloudflareMessageQueue.send", () => {
     const jobStore = await newStore();
     const q = fakeQueue();
     const mq = new CloudflareMessageQueue<TestInput, TestOutput>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       queue: q as any,
       queueName: "q",
       jobStore,

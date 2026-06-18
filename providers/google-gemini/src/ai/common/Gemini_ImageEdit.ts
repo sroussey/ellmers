@@ -130,7 +130,7 @@ export const Gemini_ImageEdit_Stream: AiProviderRunFn<
         throw err;
       }
       const msg = err instanceof Error ? err.message : "unknown error";
-      if (/safety|policy|moderation|blocked|SAFETY|PROHIBITED/i.test(msg)) {
+      if (/safety|policy|moderation|blocked|prohibited/i.test(msg)) {
         throw new ImageGenerationContentPolicyError(modelIdForError(model, "gemini"), msg);
       }
       throw new ImageGenerationProviderError(modelIdForError(model, "gemini"), msg, {

@@ -39,13 +39,12 @@ export function vectorColumnFormatBlock(opts: TabularStorageContractOpts): void 
       "round-trip preserves Float32Array type and values",
       async () => {
         const original = new Float32Array([0.1, 0.2, 0.3]);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         await storage.put({ id: "v1", embedding: original as any });
 
         const retrieved = await storage.get({ id: "v1" });
         expect(retrieved).toBeDefined();
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const embedding = (retrieved as any)?.embedding;
         expect(embedding).toBeInstanceOf(Float32Array);
         expect(embedding[0]).toBeCloseTo(0.1, 5);

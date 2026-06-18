@@ -45,18 +45,18 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
   const [streamingText, setStreamingText] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const streamingTextRef = useRef<string>("");
-
-  useEffect(() => {
-    const task = data.task;
-
+  const task = data.task;
+  const [trackedTask, setTrackedTask] = useState(task);
+  if (trackedTask !== task) {
+    setTrackedTask(task);
     setStatus(task.status);
     setProgress(calculateConsolidatedProgress(task));
     setProgressMessage(undefined);
-    if (task.hasChildren()) {
-      setSubTasks(task.subGraph.getTasks());
-    }
+    setSubTasks(task.hasChildren() ? task.subGraph.getTasks() : []);
     setIsExpandable(task.hasChildren());
+  }
 
+  useEffect(() => {
     const unsubscribes: (() => void)[] = [];
 
     // Helper to update consolidated progress
@@ -142,7 +142,7 @@ export function TaskNode(props: NodeProps<Node<TaskNodeData, string>>) {
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [data.task, data.task.subGraph]);
+  }, [task, task.subGraph]);
 
   return (
     <>
@@ -222,10 +222,14 @@ function SubTask({ subTask }: { subTask: ITask }) {
     []
   );
 
-  useEffect(() => {
-    setProgress(subTask.progress || 0);
+  const [prevSubTask, setPrevSubTask] = useState(subTask);
+  if (prevSubTask !== subTask) {
+    setPrevSubTask(subTask);
+    setProgress(subTask.progress ?? 0);
     setStatus(subTask.status);
+  }
 
+  useEffect(() => {
     const unsubscribes: (() => void)[] = [];
 
     unsubscribes.push(
@@ -281,7 +285,7 @@ function SubTask({ subTask }: { subTask: ITask }) {
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
-  }, [subTask.progress, subTask.status]);
+  }, [subTask]);
 
   // Calculate overall progress from all files or use single progress
   const overallProgress =

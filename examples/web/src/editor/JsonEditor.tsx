@@ -8,7 +8,7 @@ import { json } from "@codemirror/lang-json";
 import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import CodeMirror from "@uiw/react-codemirror";
 import { JsonTask } from "@workglow/tasks";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 
 import "./JsonEditor.css";
 
@@ -23,6 +23,16 @@ interface PopupProps {
   stop: () => void;
 }
 
+function isValidTaskJson(jsonString: string): boolean {
+  try {
+    JSON.parse(jsonString);
+    new JsonTask({ title: "Test JSON", defaults: { json: jsonString } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const JsonEditor: React.FC<PopupProps> = ({
   json,
   onJsonChange,
@@ -32,31 +42,25 @@ export const JsonEditor: React.FC<PopupProps> = ({
   aborting,
 }) => {
   const [code, setCode] = useState<string>(json);
-  const [isValidJSON, setIsValidJSON] = useState<boolean>(true);
+  const [isValidJSON, setIsValidJSON] = useState<boolean>(() => isValidTaskJson(json));
+  const [lastExternalJson, setLastExternalJson] = useState(json);
+  if (json !== lastExternalJson) {
+    setLastExternalJson(json);
+    setCode(json);
+    setIsValidJSON(isValidTaskJson(json));
+  }
 
-  // Function to validate JSON
-  const validateJSON = (jsonString: string) => {
-    try {
-      // this will throw an error if the JSON is invalid
-      JSON.parse(jsonString);
-      // this will throw an error if the JSON is not a valid task graph
-      new JsonTask({ title: "Test JSON", defaults: { json: jsonString } });
-
-      setIsValidJSON(true);
+  const handleCodeChange = useCallback(
+    (jsonString: string) => {
       setCode(jsonString);
-      onJsonChange(jsonString);
-    } catch (error) {
-      setIsValidJSON(false);
-    }
-  };
-
-  useEffect(() => {
-    validateJSON(code);
-  }, [code]);
-
-  useEffect(() => {
-    validateJSON(json);
-  }, [json]);
+      const valid = isValidTaskJson(jsonString);
+      setIsValidJSON(valid);
+      if (valid) {
+        onJsonChange(jsonString);
+      }
+    },
+    [onJsonChange]
+  );
 
   return (
     <div className="flex h-full w-full p-6 bg-[#333] text-[#ddd] flex-col">
@@ -64,7 +68,7 @@ export const JsonEditor: React.FC<PopupProps> = ({
       <div className="flex-1 border-1 border-[#3d3d3d] rounded-md mt-2 mb-2 bg-[#222] text-xs">
         <CodeMirror
           value={code}
-          onChange={setCode}
+          onChange={handleCodeChange}
           theme={vscodeDark}
           extensions={extensions}
           style={{ height: "100%" }}

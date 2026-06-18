@@ -197,7 +197,7 @@ export function createPolicyProfile(
       } catch (err) {
         // L2 fix: isolate listener failures so one bad listener doesn't
         // prevent later listeners from receiving the event.
-        // eslint-disable-next-line no-console
+
         console.error(`[EntitlementProfile:${name}] listener threw:`, err);
       }
     }
@@ -208,7 +208,6 @@ export function createPolicyProfile(
     // Surface evaluation errors via console.error rather than letting them
     // become unhandled promise rejections that may crash the host.
     emitFlipFor(e).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error(`[EntitlementProfile:${name}] error evaluating signal:`, err);
     });
   }

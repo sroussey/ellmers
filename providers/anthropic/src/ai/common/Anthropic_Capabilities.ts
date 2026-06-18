@@ -58,7 +58,7 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
   }
 
   // Claude 4-series (claude-sonnet-4*, claude-opus-4*, claude-haiku-4*) — full caps with vision.
-  if (/^claude-(sonnet|opus|haiku)-4/i.test(id)) {
+  if (/^claude-(?:sonnet|opus|haiku)-4/i.test(id)) {
     return [
       "text.generation",
       "text.rewriter",
@@ -73,7 +73,7 @@ export function inferAnthropicCapabilities(model: CapabilityHints): readonly Cap
   }
 
   // Claude 3 Haiku, Claude 3 Opus, Claude 3 Sonnet — full caps, all have vision-input.
-  if (/^claude-3[.-](haiku|opus|sonnet)/i.test(id)) {
+  if (/^claude-3[.-](?:haiku|opus|sonnet)/i.test(id)) {
     return [
       "text.generation",
       "text.rewriter",

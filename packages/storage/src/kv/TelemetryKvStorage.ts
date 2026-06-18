@@ -14,7 +14,7 @@ import type { IKvStorage, KvEventListener, KvEventName, KvEventParameters } from
  */
 export class TelemetryKvStorage<
   Key extends string | number = string,
-  Value extends any = any,
+  Value = any,
   Combined = { key: Key; value: Value },
 > implements IKvStorage<Key, Value, Combined> {
   constructor(

@@ -40,8 +40,8 @@ export interface CactusModelCacheInfo {
 // in URL/path-shaped strings.
 // ============================================================================
 
-const MODEL_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const FILENAME_RE = /^[A-Za-z0-9_.-]+$/;
+const MODEL_ID_RE = /^[\w-]{1,64}$/;
+const FILENAME_RE = /^[\w.-]+$/;
 // Match the Node variant's limit so an asset that validates here also
 // validates there. The Node atomic-write path writes to `${filename}.tmp`
 // before renaming, so the source filename must leave room for that suffix

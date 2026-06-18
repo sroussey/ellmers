@@ -27,7 +27,7 @@
     "watch-compress-node": "bun build --watch --no-clear-screen --target=node --sourcemap=external --packages=external --outdir ./dist ./src/compress-node.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "bun run build-js && bun run build-types",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media,compress' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-schema' 'bun run build-graph' 'bun run build-media' 'bun run build-compress'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,worker,schema,graph,media,compress' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-schema' 'bun run build-graph' 'bun run build-media' 'bun run build-compress'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",

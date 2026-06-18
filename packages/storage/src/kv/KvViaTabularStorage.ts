@@ -13,7 +13,7 @@ const PRIMITIVE_SCHEMA_TYPES = new Set(["number", "boolean", "string", "blob"]);
 
 export abstract class KvViaTabularStorage<
   Key extends string = string,
-  Value extends any = any,
+  Value = any,
   Combined = { key: Key; value: Value },
 > extends KvStorage<Key, Value, Combined> {
   public abstract tabularRepository: BaseTabularStorage<

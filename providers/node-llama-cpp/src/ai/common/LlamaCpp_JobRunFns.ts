@@ -58,13 +58,14 @@ function defaultAbortError(): Error {
 }
 
 /** Unified `["text.generation"]` run-fn — chat vs prompt discrimination. */
-const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  LlamaCppModelConfig
-> = async (input, model, signal, emit, outputSchema, sessionId) => {
+const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<any, any, LlamaCppModelConfig> = async (
+  input,
+  model,
+  signal,
+  emit,
+  outputSchema,
+  sessionId
+) => {
   if (signal.aborted) {
     throw signal.reason ?? defaultAbortError();
   }
@@ -78,9 +79,7 @@ const LlamaCpp_TextGeneration_Unified: AiProviderRunFn<
 };
 
 export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   LlamaCppModelConfig
 >[] = [
@@ -99,7 +98,6 @@ export const LLAMACPP_RUN_FNS: readonly AiProviderRunFnRegistration<
 
 export const LLAMACPP_PREVIEW_TASKS: Record<
   string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AiProviderPreviewRunFn<any, any, LlamaCppModelConfig>
 > = {
   CountTokensTask: LlamaCpp_CountTokens_Preview,

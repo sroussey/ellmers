@@ -22,7 +22,7 @@
     "watch-provider-utils": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --outdir ./dist ./src/provider-utils.ts",
     "watch-types": "tsc --watch --preserveWatchOutput",
     "build-package": "concurrently -c 'auto' -n 'browser,node,bun,worker,provider-utils,types' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-provider-utils' 'bun run build-types'",
-    "build-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,provider-utils' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-provider-utils'",
+    "build-js": "concurrently -m 12 --timings -c 'auto' -n 'browser,node,bun,worker,provider-utils' 'bun run build-browser' 'bun run build-node' 'bun run build-bun' 'bun run build-worker' 'bun run build-provider-utils'",
     "build-clean": "rm -fr dist/* tsconfig.tsbuildinfo",
     "build-browser": "bun build --target=browser --sourcemap=external --packages=external --outdir ./dist ./src/browser.ts",
     "build-node": "bun build --target=node --sourcemap=external --packages=external --outdir ./dist ./src/node.ts",
