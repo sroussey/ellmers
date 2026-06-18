@@ -6,6 +6,7 @@
   },
   "type": "module",
   "description": "Web interface example for Workglow, showcasing a React-based UI for building and visualizing AI task pipelines.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "dev": "concurrently --kill-others -c 'auto' -n app,types 'bunx --bun vite --port 3800' 'tsc -w --noEmit --preserveWatchOutput'",
     "build-example": "concurrently -c 'auto' -n 'code,types' 'bun run build-code' 'bun run build-types'",

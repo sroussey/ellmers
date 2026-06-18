@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Supabase backends for @workglow/storage and @workglow/job-queue.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-nb,jq-br,jq-nb' 'bun run watch-storage-browser' 'bun run watch-storage-node-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node-bun'",

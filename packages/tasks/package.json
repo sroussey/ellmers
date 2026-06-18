@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Pre-built task implementations for Workglow, including common AI operations and utility functions.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,electron' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-electron'",

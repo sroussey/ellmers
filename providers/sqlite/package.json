@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "SQLite backends for @workglow/storage and @workglow/job-queue (includes sqlite-vector).",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'storage-br,storage-n,storage-bu,jq-br,jq-n,jq-bu' 'bun run watch-storage-browser' 'bun run watch-storage-node' 'bun run watch-storage-bun' 'bun run watch-jq-browser' 'bun run watch-jq-node' 'bun run watch-jq-bun'",

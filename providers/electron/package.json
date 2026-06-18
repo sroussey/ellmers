@@ -12,6 +12,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Electron native-webContents browser backend for @workglow/browser-control.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-code": "bun build --watch --no-clear-screen --sourcemap=external --packages=external --root ./src --outdir ./dist ./src/index.ts",

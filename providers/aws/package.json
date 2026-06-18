@@ -12,6 +12,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "AWS backends for @workglow/job-queue (SQS).",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-jq-browser": "bun build --watch --no-clear-screen --target=browser --sourcemap=external --packages=external --outdir ./dist/job-queue ./src/job-queue/browser.ts",

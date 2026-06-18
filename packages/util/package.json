@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Utility functions and shared types for Workglow, providing common functionality across all packages.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "concurrently -c 'auto' -n 'browser,node,bun,worker,schema,graph,media-b,media-n,compress-b,compress-n' 'bun run watch-browser' 'bun run watch-node' 'bun run watch-bun' 'bun run watch-worker' 'bun run watch-schema' 'bun run watch-graph' 'bun run watch-media-browser' 'bun run watch-media-node' 'bun run watch-compress-browser' 'bun run watch-compress-node'",

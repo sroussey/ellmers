@@ -11,6 +11,7 @@
     "url": "https://github.com/workglow-dev/libs/issues"
   },
   "description": "Browser-control tasks for Workglow (CDP base + IBrowserContext abstraction). Backends ship as separate provider packages: @workglow/playwright, @workglow/electron, @workglow/bun-webview.",
+  "homepage": "https://workglow.dev",
   "scripts": {
     "watch": "concurrently -c 'auto' 'bun:watch-*'",
     "watch-js": "bun run watch-task",
