@@ -37,7 +37,7 @@ function buildPageHtml(): string {
       escapeForHtmlAttr(name) +
       `</button>`
   ).join("");
-  const head = "<head><title>IBrowserContext Conformance</title></head>";
+  const head = '<head><meta charset="utf-8"><title>IBrowserContext Conformance</title></head>';
   const body =
     `<body>` +
     `<div id="sentinel" data-clicked=""></div>` +
