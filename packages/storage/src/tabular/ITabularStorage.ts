@@ -30,8 +30,19 @@ export type TabularEventListeners<PrimaryKey, Entity> = {
    * failure and restores prior state. Subscribers should treat any uncommitted
    * `put` events from the failed batch as superseded and reconcile against the
    * post-rollback state.
+   *
+   * `ids` carries the primary keys of rows that were observably committed (via
+   * a per-row `put` event or backend-level write) before the failure, in the
+   * order they were written. Subscribers can use the list to surgically
+   * invalidate caches without re-reading the whole table. The list is empty
+   * when no row reached the backend / emitted a `put` event before the throw
+   * (e.g. an IndexedDB transaction that aborted before any `tx.oncomplete`).
    */
-  rollback: (reason: { readonly op: string; readonly error: unknown }) => void;
+  rollback: (reason: {
+    readonly op: string;
+    readonly error: unknown;
+    readonly ids: readonly PrimaryKey[];
+  }) => void;
 };
 
 export type TabularEventName = keyof TabularEventListeners<any, any>;

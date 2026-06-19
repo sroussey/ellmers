@@ -491,7 +491,10 @@ export class IndexedDbTabularStorage<
       // the version). Drop the stale handle so `getDb()` re-opens, then
       // retry exactly once.
       if (err instanceof DOMException && err.name === "InvalidStateError") {
-        safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err });
+        // Per-row `put` events fire inside `tx.oncomplete`, which never runs
+        // on a rollback path, so by definition no committed row was visible to
+        // subscribers. Emit `ids: []` to make that explicit.
+        safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err, ids: [] });
         try {
           this.db?.close();
         } catch {
@@ -500,7 +503,7 @@ export class IndexedDbTabularStorage<
         this.db = undefined;
         return await run();
       }
-      safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err });
+      safeEmit(this.events, "rollback", { op: "putBulkInTransaction", error: err, ids: [] });
       throw err;
     }
   }

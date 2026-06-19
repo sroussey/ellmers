@@ -229,7 +229,7 @@ describe("IndexedDbVectorStorage putBulk atomicity", () => {
   });
 
   it("emits a rollback event on failure", async () => {
-    const rollbacks: Array<{ op: string; error: unknown }> = [];
+    const rollbacks: Array<{ op: string; error: unknown; ids: readonly unknown[] }> = [];
     storage.on("rollback" as any, (reason: any) => rollbacks.push(reason));
 
     // Abort the very first request to force the rollback path.
@@ -256,5 +256,9 @@ describe("IndexedDbVectorStorage putBulk atomicity", () => {
 
     expect(rollbacks.length).toBeGreaterThanOrEqual(1);
     expect(rollbacks[0].op).toBe("putBulkInTransaction");
+    // The IDB success path emits per-row `put` events from `tx.oncomplete`,
+    // which never runs on a rollback path, so no row was visible to
+    // subscribers; the payload reports an empty `ids` list.
+    expect(rollbacks[0].ids).toEqual([]);
   });
 });
