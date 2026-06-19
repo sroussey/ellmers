@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.15
+
+### Features
+
+#### storage
+
+- add uniqueIndexes for DB-level UNIQUE constraints + dedup overlapping regular indexes (#593)
+
+### Bug Fixes
+
+- eslint fixes
+
+#### storage,indexeddb,postgres,sqlite
+
+- cumulative vector-storage validation + atomicity hardening (#580/#581/#583/#584/#587) (#589)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

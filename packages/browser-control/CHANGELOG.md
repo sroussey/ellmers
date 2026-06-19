@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.15
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

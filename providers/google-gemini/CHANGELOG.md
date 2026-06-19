@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

@@ -1,5 +1,15 @@
 # @workglow/web
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

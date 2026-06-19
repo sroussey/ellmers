@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+#### test
+
+- playwright
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

@@ -1,5 +1,27 @@
 # @workglow/util
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+#### mcp,supabase
+
+- credential-leak fail-closed + vector dim validation (2 HIGH from code review) (#579)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

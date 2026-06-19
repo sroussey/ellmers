@@ -1,5 +1,19 @@
 # @workglow/tasks
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
 ## 0.3.14
 
 ### Features

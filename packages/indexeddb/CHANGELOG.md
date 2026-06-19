@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.15
+
+### Bug Fixes
+
+- eslint fixes
+
+#### storage
+
+- include rolled-back ids in rollback event payload (#591)
+
+#### storage,indexeddb,postgres,sqlite
+
+- cumulative vector-storage validation + atomicity hardening (#580/#581/#583/#584/#587) (#589)
+
+### Refactors
+
+- extract shared Postgres type mapping and vector storage logic (#586)
+
+### Build
+
+- make timings easier to spot trouble
+
+### Chores
+
+- add homepage
+
 ## Unreleased
 
 ### Bug Fixes
