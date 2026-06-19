@@ -100,9 +100,19 @@ export class PostgresTabularStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
+    super(
+      table,
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      table,
+      uniqueIndexes
+    );
     this.db = db;
   }
 
@@ -185,6 +195,24 @@ export class PostgresTabularStorage<
         );
         createdIndexes.add(columnKey);
       }
+    }
+    await this.createDeclaredUniqueIndexes();
+  }
+
+  /**
+   * Emit `CREATE UNIQUE INDEX IF NOT EXISTS` for each declared unique tuple.
+   * Idempotent so migration replays and setup-after-migration re-runs are
+   * safe. Index name: `${table}_uniq_${cols.join("_")}` — distinct from the
+   * non-unique `${table}_${cols.join("_")}` pattern above so a tuple can carry
+   * both a search index and a UNIQUE constraint without name collision.
+   */
+  private async createDeclaredUniqueIndexes(): Promise<void> {
+    for (const columns of this.uniqueIndexes) {
+      const indexName = `${this.table}_uniq_${columns.map(String).join("_")}`;
+      const columnList = columns.map((col) => `"${String(col)}"`).join(", ");
+      await this.db.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "${indexName}" ON "${this.table}" (${columnList})`
+      );
     }
   }
 
