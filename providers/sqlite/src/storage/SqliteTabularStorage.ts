@@ -85,9 +85,19 @@ export class SqliteTabularStorage<
     primaryKeyNames: PrimaryKeyNames,
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
-    tabularMigrations?: ReadonlyArray<ITabularMigration>
+    tabularMigrations?: ReadonlyArray<ITabularMigration>,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(table, schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, table);
+    super(
+      table,
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      table,
+      uniqueIndexes
+    );
     if (typeof dbOrPath === "string") {
       this.db = new Sqlite.Database(dbOrPath);
     } else {
@@ -210,6 +220,24 @@ export class SqliteTabularStorage<
         );
         createdIndexes.add(columnKey);
       }
+    }
+    this.createUniqueIndexes();
+  }
+
+  /**
+   * Emit `CREATE UNIQUE INDEX IF NOT EXISTS` for each declared unique tuple.
+   * Idempotent so re-runs (migration replays, ScopedTabularStorage probes) are
+   * safe. Naming: `${table}_uniq_${cols.join("_")}` — distinct from the
+   * non-unique `${table}_${cols.join("_")}` pattern above so a tuple can carry
+   * both a search index and a UNIQUE constraint without name collision.
+   */
+  private createUniqueIndexes(): void {
+    for (const columns of this.uniqueIndexes) {
+      const indexName = `${this.table}_uniq_${columns.map(String).join("_")}`;
+      const columnList = columns.map((col) => `\`${String(col)}\``).join(", ");
+      this.db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS \`${indexName}\` ON \`${this.table}\` (${columnList})`
+      );
     }
   }
 
@@ -540,11 +568,42 @@ export class SqliteTabularStorage<
     const columnList = columnsToInsert.map((c) => `\`${c}\``).join(", ");
     const placeholders = columnsToInsert.map(() => "?").join(", ");
 
-    const sql = `
-      INSERT OR REPLACE INTO \`${this.table}\` (${columnList})
-      VALUES (${placeholders})
-      RETURNING *
-    `;
+    // INSERT OR REPLACE silently *deletes* rows that conflict on any UNIQUE
+    // index (including the ones we now emit from `uniqueIndexes`), so a
+    // collision quietly mutates the table instead of throwing. When unique
+    // indexes are declared, switch to PK-scoped UPSERT via
+    // `ON CONFLICT(<pk>) DO UPDATE`, which preserves the upsert semantics
+    // callers rely on for re-saving the same row but lets SQLite raise a
+    // `SQLITE_CONSTRAINT_UNIQUE` for any non-PK uniqueness violation.
+    let sql: string;
+    if (this.uniqueIndexes.length > 0) {
+      const pkColumns = this.primaryKeyColumns() as string[];
+      const pkList = pkColumns.map((c) => `\`${c}\``).join(", ");
+      const updateAssignments = columnsToInsert
+        .filter((c) => !pkColumns.includes(c))
+        .map((c) => `\`${c}\` = excluded.\`${c}\``)
+        .join(", ");
+      // No non-PK columns to update → DO NOTHING + RETURNING * still echoes
+      // the original row on a PK collision, which is what the contract returns
+      // ("the row that's there"). With non-PK columns, the standard upsert
+      // applies and RETURNING * yields the post-update row.
+      const conflictClause =
+        updateAssignments.length > 0
+          ? `ON CONFLICT(${pkList}) DO UPDATE SET ${updateAssignments}`
+          : `ON CONFLICT(${pkList}) DO NOTHING`;
+      sql = `
+        INSERT INTO \`${this.table}\` (${columnList})
+        VALUES (${placeholders})
+        ${conflictClause}
+        RETURNING *
+      `;
+    } else {
+      sql = `
+        INSERT OR REPLACE INTO \`${this.table}\` (${columnList})
+        VALUES (${placeholders})
+        RETURNING *
+      `;
+    }
     const stmt = db.prepare(sql);
 
     const params = paramsToInsert;

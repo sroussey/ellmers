@@ -52,7 +52,8 @@ export abstract class BaseSqlTabularStorage<
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
     tabularMigrations?: ReadonlyArray<import("../migrations").ITabularMigration>,
-    migrationName?: string
+    migrationName?: string,
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
     super(
       schema,
@@ -60,7 +61,8 @@ export abstract class BaseSqlTabularStorage<
       indexes,
       clientProvidedKeys,
       tabularMigrations,
-      migrationName ?? table
+      migrationName ?? table,
+      uniqueIndexes
     );
     this.validateTableAndSchema();
   }

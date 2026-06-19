@@ -27,6 +27,7 @@ import {
   TabularChangePayload,
   TabularSubscribeOptions,
 } from "./ITabularStorage";
+import { StorageError } from "./StorageError";
 
 export const MEMORY_TABULAR_REPOSITORY = createServiceToken<AnyTabularStorage>(
   "storage.tabularRepository.inMemory"
@@ -56,9 +57,18 @@ export class InMemoryTabularStorage<
     indexes: readonly (keyof NoInfer<Entity> | readonly (keyof NoInfer<Entity>)[])[] = [],
     clientProvidedKeys: ClientProvidedKeysOption = "if-missing",
     tabularMigrations?: ReadonlyArray<ITabularMigration>,
-    migrationName: string = "inmemory"
+    migrationName: string = "inmemory",
+    uniqueIndexes: readonly (readonly (keyof NoInfer<Entity>)[])[] = []
   ) {
-    super(schema, primaryKeyNames, indexes, clientProvidedKeys, tabularMigrations, migrationName);
+    super(
+      schema,
+      primaryKeyNames,
+      indexes,
+      clientProvidedKeys,
+      tabularMigrations,
+      migrationName,
+      uniqueIndexes
+    );
   }
 
   override async setupDatabase(): Promise<void> {
@@ -122,6 +132,15 @@ export class InMemoryTabularStorage<
 
     const { key } = this.separateKeyValueFromCombined(entityToStore);
     const id = await makeFingerprint(key);
+
+    // Enforce DB-equivalent UNIQUE constraints at the in-memory tier so test
+    // fixtures fail the same way Postgres/SQLite would. Skip the scan when no
+    // uniqueIndexes are declared — the cost is proportional to row count, and
+    // most stores never need it.
+    if (this.uniqueIndexes.length > 0) {
+      this.assertUniqueIndexes(entityToStore, id);
+    }
+
     this._lastPutWasInsert = !this.values.has(id);
     this.values.set(id, entityToStore);
 
@@ -131,6 +150,37 @@ export class InMemoryTabularStorage<
 
   async putBulk(values: InsertType[]): Promise<Entity[]> {
     return await Promise.all(values.map(async (value) => this.put(value)));
+  }
+
+  /**
+   * Scan the row Map and reject `entityToStore` if any *other* row (different
+   * fingerprint id) already shares the same value tuple for any declared
+   * unique-index tuple. Matches the DB-level `CREATE UNIQUE INDEX` semantics
+   * the SQLite/Postgres backends emit so contract tests can exercise the
+   * constraint without standing up a real DB.
+   */
+  private assertUniqueIndexes(entityToStore: Entity, incomingId: string): void {
+    const incomingRecord = entityToStore as Record<string, unknown>;
+    for (const tuple of this.uniqueIndexes) {
+      const incomingValues = tuple.map((col) => incomingRecord[col as string]);
+      // SQL UNIQUE treats NULL as distinct (one NULL never collides with
+      // another) — match that semantics so a partially-populated tuple with a
+      // null field never trips the constraint.
+      if (incomingValues.some((v) => v === undefined || v === null)) continue;
+      for (const [existingId, existing] of this.values) {
+        if (existingId === incomingId) continue;
+        const existingRecord = existing as Record<string, unknown>;
+        const matches = tuple.every(
+          (col, i) => existingRecord[col as string] === incomingValues[i]
+        );
+        if (matches) {
+          throw new StorageError(
+            `UNIQUE constraint failed: (${tuple.map(String).join(", ")}) ` +
+              `= (${incomingValues.map(String).join(", ")})`
+          );
+        }
+      }
+    }
   }
 
   /**
