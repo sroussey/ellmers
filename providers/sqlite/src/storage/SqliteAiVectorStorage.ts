@@ -291,22 +291,14 @@ export class SqliteAiVectorStorage<
   }
 
   /**
-   * Override put to use sqlite-vector encoding for vector data.
-   * Builds a custom INSERT OR REPLACE that wraps the vector column
-   * with vector_as_fXX() to encode as a native vector BLOB.
-   * Falls back to base class put() if the extension is not available.
+   * Build the INSERT OR REPLACE SQL + bound params for a single entity, wrapping
+   * the vector column with `vector_as_${suffix}(?)` so sqlite-vector encodes it
+   * as a native vector BLOB rather than a JSON string. Shared by `put` and
+   * `putBulk` so both paths go through the same encoding — without this, bulk
+   * vectors used to fall through `super.putBulk` and land as raw JSON, which
+   * `vector_full_scan` cannot decode.
    */
-  public override async put(entity: any): Promise<Entity> {
-    validateVectorEntities(
-      [entity as Record<string, unknown>],
-      this.vectorPropertyName as string,
-      this.vectorDimensions
-    );
-    if (!this.extensionLoaded) {
-      return super.put(entity);
-    }
-
-    const db = this.database;
+  private buildVectorInsertSql(entity: any): { sql: string; params: any[] } {
     const vectorCol = String(this.vectorPropertyName);
 
     // Handle auto-generated keys (UUID generation)
@@ -393,14 +385,41 @@ export class SqliteAiVectorStorage<
       }
     }
 
-    const stmt = db.prepare(sql);
-    const updatedEntity = stmt.get(...params) as Entity;
+    return { sql, params };
+  }
 
-    // Convert all columns according to schema
+  /**
+   * Decode all columns of a row returned from the vector INSERT's RETURNING
+   * clause via `sqlToJsValue`, so the vector column comes back as a TypedArray
+   * (not a raw Buffer) and any other JSON-encoded columns deserialize.
+   */
+  private decodeReturnedEntity(updatedEntity: Entity): Entity {
     const updatedRecord = updatedEntity as Record<string, unknown>;
     for (const k in this.schema.properties) {
       updatedRecord[k] = this.sqlToJsValue(k, updatedRecord[k] as any);
     }
+    return updatedEntity;
+  }
+
+  /**
+   * Override put to use sqlite-vector encoding for vector data.
+   * Builds a custom INSERT OR REPLACE that wraps the vector column
+   * with vector_as_fXX() to encode as a native vector BLOB.
+   * Falls back to base class put() if the extension is not available.
+   */
+  public override async put(entity: any): Promise<Entity> {
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
+    if (!this.extensionLoaded) {
+      return super.put(entity);
+    }
+
+    const { sql, params } = this.buildVectorInsertSql(entity);
+    const stmt = this.database.prepare(sql);
+    const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
 
     this.events.emit("put", updatedEntity);
     return updatedEntity;
@@ -408,7 +427,15 @@ export class SqliteAiVectorStorage<
 
   /**
    * Validate every entry up front so a single malformed vector rejects the
-   * whole batch before any row is encoded for sqlite-vector.
+   * whole batch before any row is encoded for sqlite-vector, then route the
+   * batch through the same `vector_as_${suffix}(?)`-wrapped INSERT as `put`
+   * inside a SQLite transaction. Without this, the inherited bulk path binds
+   * vectors as plain JSON strings, so `vector_full_scan` cannot decode them
+   * and similarity search silently falls back to the in-memory cosine path.
+   *
+   * `put` events are deferred until after the transaction commits (mirrors
+   * {@link SqliteTabularStorage._putBulkInternal}) so listeners never observe
+   * rows that are about to roll back.
    */
   public override async putBulk(entities: any[]): Promise<Entity[]> {
     validateVectorEntities(
@@ -416,7 +443,24 @@ export class SqliteAiVectorStorage<
       this.vectorPropertyName as string,
       this.vectorDimensions
     );
-    return super.putBulk(entities);
+    if (entities.length === 0) return [];
+    if (!this.extensionLoaded) {
+      return super.putBulk(entities);
+    }
+
+    const updatedEntities: Entity[] = [];
+    const transaction = this.database.transaction((items: any[]) => {
+      for (const item of items) {
+        const { sql, params } = this.buildVectorInsertSql(item);
+        const stmt = this.database.prepare(sql);
+        const row = stmt.get(...params) as Entity;
+        updatedEntities.push(this.decodeReturnedEntity(row));
+      }
+    });
+    transaction(entities);
+
+    for (const entity of updatedEntities) this.events.emit("put", entity);
+    return updatedEntities;
   }
 
   /**

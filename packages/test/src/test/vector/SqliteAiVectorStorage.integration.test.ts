@@ -171,6 +171,120 @@ describe.skipIf(!sqliteVectorAvailable)("SqliteAiVectorStorage", async () => {
     });
   });
 
+  describe("putBulk vector encoding", () => {
+    // Regression: previously, putBulk fell through to the base-class path which
+    // binds vectors as JSON strings (no vector_as_${suffix} wrap), so
+    // vector_full_scan could not decode them and similaritySearch silently
+    // fell back to in-memory cosine. These tests pin the
+    // vector_as_${suffix}(?)-wrapped INSERT and the round-trip via getAll().
+
+    it("putBulk + similaritySearch returns inserted vectors at distance 0", async () => {
+      await storage.putBulk([
+        {
+          chunk_id: "bulk1",
+          doc_id: "docB1",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: { tag: "bulk" },
+        },
+        {
+          chunk_id: "bulk2",
+          doc_id: "docB2",
+          vector: new Float32Array([0.0, 1.0, 0.0]),
+          metadata: { tag: "bulk" },
+        },
+      ]);
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 2,
+      });
+
+      // The exact match must rank first with score ~1.0; if vectors had landed
+      // as JSON BLOBs, vector_full_scan would have failed and we'd silently
+      // fall back to the in-memory cosine path (which would happen to give the
+      // right ordering — so we pin the score to ensure the native path ran).
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].chunk_id).toBe("bulk1");
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+    });
+
+    it("putBulk persists vectors as Float32Array via getAll", async () => {
+      // Direct encoding check — vectors must come back as TypedArrays with
+      // their original values, not as raw JSON strings or Buffers.
+      await storage.putBulk([
+        {
+          chunk_id: "enc1",
+          doc_id: "docE1",
+          vector: new Float32Array([0.5, 0.5, 0.5]),
+          metadata: {},
+        },
+        {
+          chunk_id: "enc2",
+          doc_id: "docE2",
+          vector: new Float32Array([0.1, 0.2, 0.3]),
+          metadata: {},
+        },
+      ]);
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const byId = new Map(all!.map((r) => [r.chunk_id, r]));
+
+      const r1 = byId.get("enc1")!;
+      expect(r1).toBeDefined();
+      expect(r1.vector).toBeInstanceOf(Float32Array);
+      expect(r1.vector.length).toBe(3);
+      expect(r1.vector[0]).toBeCloseTo(0.5, 5);
+      expect(r1.vector[1]).toBeCloseTo(0.5, 5);
+      expect(r1.vector[2]).toBeCloseTo(0.5, 5);
+
+      const r2 = byId.get("enc2")!;
+      expect(r2).toBeDefined();
+      expect(r2.vector).toBeInstanceOf(Float32Array);
+      expect(r2.vector[0]).toBeCloseTo(0.1, 5);
+      expect(r2.vector[1]).toBeCloseTo(0.2, 5);
+      expect(r2.vector[2]).toBeCloseTo(0.3, 5);
+    });
+
+    it("mixed put + putBulk yields identical similaritySearch ordering", async () => {
+      // A row written through `put` and another through `putBulk` must encode
+      // their vectors identically — otherwise the bulk-encoded row would be
+      // unsearchable while the single-row write would rank correctly.
+      await storage.put({
+        chunk_id: "single",
+        doc_id: "docS",
+        vector: new Float32Array([1.0, 0.0, 0.0]),
+        metadata: { source: "put" },
+      });
+      await storage.putBulk([
+        {
+          chunk_id: "bulk-a",
+          doc_id: "docBA",
+          vector: new Float32Array([0.9, 0.1, 0.0]),
+          metadata: { source: "bulk" },
+        },
+        {
+          chunk_id: "bulk-b",
+          doc_id: "docBB",
+          vector: new Float32Array([0.0, 0.0, 1.0]),
+          metadata: { source: "bulk" },
+        },
+      ]);
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 3,
+      });
+
+      expect(results.length).toBe(3);
+      // Exact match first (from `put`), near-match second (from `putBulk`),
+      // orthogonal vector last.
+      expect(results[0].chunk_id).toBe("single");
+      expect(results[1].chunk_id).toBe("bulk-a");
+      expect(results[2].chunk_id).toBe("bulk-b");
+      expect(results[0].score).toBeGreaterThan(results[1].score);
+      expect(results[1].score).toBeGreaterThan(results[2].score);
+    });
+  });
+
   describe("similaritySearch", () => {
     beforeEach(async () => {
       await populateStorage();
