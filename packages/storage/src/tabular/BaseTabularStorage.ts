@@ -252,10 +252,9 @@ export abstract class BaseTabularStorage<
       }
     }
 
-    // Unique indexes: NOT prefix-filtered against `indexes` — a tuple that
-    // duplicates a regular index still needs the UNIQUE constraint at the DB
-    // level (the regular index only accelerates lookups; it does not reject
-    // duplicates). Validate column names against the schema the same way.
+    // Validate unique index column names against the schema the same way
+    // `indexes` are validated. NULL semantics and DDL emission live in the
+    // concrete backends.
     this.uniqueIndexes = uniqueIndexes.map((spec) => [...spec]) as Array<Array<keyof Entity>>;
     for (const uniqueIndex of this.uniqueIndexes) {
       if (uniqueIndex.length === 0) {
@@ -272,6 +271,17 @@ export abstract class BaseTabularStorage<
         }
       }
     }
+
+    // Drop any regular index whose column tuple exactly matches a declared
+    // unique index — a UNIQUE index is also a B-tree on the same columns in
+    // the same order, so the non-unique copy is pure waste (duplicate disk +
+    // duplicate write on every row). Prefix relationships are intentionally
+    // NOT collapsed here: the existing single-column carve-out in
+    // `filterCompoundKeys` reflects that a dedicated narrow index can still be
+    // a deliberate optimization vs a wider unique tuple's leftmost-prefix
+    // scan.
+    const uniqueTupleKeys = new Set(this.uniqueIndexes.map((tuple) => tuple.map(String).join(" ")));
+    this.indexes = this.indexes.filter((tuple) => !uniqueTupleKeys.has(tuple.map(String).join(" ")));
 
     // Detect and validate auto-generated keys (at most one PK column; any PK position is allowed).
     // Composite keys often put a scope column first (e.g. kb_id) and auto-generate a second id.

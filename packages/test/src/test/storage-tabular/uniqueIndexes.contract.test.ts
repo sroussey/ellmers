@@ -249,3 +249,84 @@ runContract({
     return storage as unknown as InstanceType<typeof InMemoryTabularStorage>;
   },
 });
+
+// Tuple-overlap dedup happens in BaseTabularStorage so a single InMemory
+// subclass that exposes `this.indexes` is enough to pin the behavior across
+// every concrete backend.
+describe("BaseTabularStorage — indexes / uniqueIndexes overlap dedup", () => {
+  class IndexProbe extends InMemoryTabularStorage<typeof PersonSchema, typeof PersonPK> {
+    getEffectiveIndexes(): ReadonlyArray<ReadonlyArray<string>> {
+      return (this as unknown as { indexes: ReadonlyArray<ReadonlyArray<string>> }).indexes;
+    }
+  }
+
+  it("drops a regular index whose tuple exactly matches a unique index", () => {
+    const probe = new IndexProbe(
+      PersonSchema,
+      PersonPK,
+      [["email"]],
+      "if-missing",
+      undefined,
+      "inmemory",
+      [["email"]]
+    );
+    expect(probe.getEffectiveIndexes()).toEqual([]);
+  });
+
+  it("drops a compound regular index that exactly matches a compound unique index", () => {
+    const probe = new IndexProbe(
+      PersonSchema,
+      PersonPK,
+      [["org_id", "name"]],
+      "if-missing",
+      undefined,
+      "inmemory",
+      [["org_id", "name"]]
+    );
+    expect(probe.getEffectiveIndexes()).toEqual([]);
+  });
+
+  it("keeps a regular index whose columns differ in order from the unique tuple", () => {
+    // Index ordering matters for B-tree leftmost-prefix scans, so (name, org_id)
+    // is genuinely different from (org_id, name) and should NOT be deduped.
+    const probe = new IndexProbe(
+      PersonSchema,
+      PersonPK,
+      [["name", "org_id"]],
+      "if-missing",
+      undefined,
+      "inmemory",
+      [["org_id", "name"]]
+    );
+    expect(probe.getEffectiveIndexes()).toEqual([["name", "org_id"]]);
+  });
+
+  it("keeps a single-column regular index that is a prefix (but not a match) of a unique tuple", () => {
+    // The existing single-column carve-out in filterCompoundKeys preserves
+    // dedicated narrow indexes; the unique (org_id, name) leftmost-prefix
+    // scan walks wider rows than a dedicated (org_id) index.
+    const probe = new IndexProbe(
+      PersonSchema,
+      PersonPK,
+      [["org_id"]],
+      "if-missing",
+      undefined,
+      "inmemory",
+      [["org_id", "name"]]
+    );
+    expect(probe.getEffectiveIndexes()).toEqual([["org_id"]]);
+  });
+
+  it("preserves an unrelated regular index when a different unique tuple is declared", () => {
+    const probe = new IndexProbe(
+      PersonSchema,
+      PersonPK,
+      [["name"]],
+      "if-missing",
+      undefined,
+      "inmemory",
+      [["email"]]
+    );
+    expect(probe.getEffectiveIndexes()).toEqual([["name"]]);
+  });
+});
