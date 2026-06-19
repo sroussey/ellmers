@@ -97,6 +97,12 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
         return await (originalPut as any).call(this, v);
       } as any);
 
+    // Track the rollback event so we can verify `ids` carries the row that
+    // committed before the throw — without the list, subscribers would have
+    // to re-read the whole table to know what changed.
+    const rollbackEvents: Array<{ op: string; error: unknown; ids: readonly any[] }> = [];
+    store.on("rollback" as any, (reason: any) => rollbackEvents.push(reason));
+
     const batch = [
       { id: "row-a", vector: vec([1, 0, 0]), metadata: {} },
       { id: "row-b", vector: vec([0, 1, 0]), metadata: {} },
@@ -124,6 +130,35 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
 
     // The spy fired twice — once for the row that committed, once for the throw.
     expect(call).toBe(2);
+
+    // Rollback event names exactly the row that committed before the throw
+    // (row-a), not row-b (which threw) or row-c (which never ran).
+    expect(rollbackEvents).toHaveLength(1);
+    expect(rollbackEvents[0].ids).toHaveLength(1);
+    expect((rollbackEvents[0].ids[0] as { id: string }).id).toBe("row-a");
+  });
+
+  it("rollback event reports ids: [] when the first row throws", async () => {
+    const store = newStore();
+
+    vi.spyOn(InMemoryTabularStorage.prototype as any, "put").mockImplementation((async () => {
+      throw new Error("first-row-boom");
+    }) as any);
+
+    const rollbackEvents: Array<{ op: string; error: unknown; ids: readonly any[] }> = [];
+    store.on("rollback" as any, (reason: any) => rollbackEvents.push(reason));
+
+    await expect(
+      store.putBulk([
+        { id: "row-a", vector: vec([1, 0, 0]), metadata: {} },
+        { id: "row-b", vector: vec([0, 1, 0]), metadata: {} },
+      ])
+    ).rejects.toThrow("first-row-boom");
+
+    expect(rollbackEvents).toHaveLength(1);
+    // No row reached the Map before the throw, so `ids` is empty (the
+    // payload signals "nothing committed to invalidate").
+    expect(rollbackEvents[0].ids).toEqual([]);
   });
 
   it("emits a rollback event on the storage emitter when a batch fails", async () => {
@@ -250,6 +285,9 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
         return await (originalPut as any).call(this, v);
       } as any);
 
+    const rollbackEvents: Array<{ op: string; error: unknown; ids: readonly any[] }> = [];
+    autoStore.on("rollback" as any, (reason: any) => rollbackEvents.push(reason));
+
     await expect(
       autoStore.putBulk([
         { vector: vec([1, 0, 0]), metadata: {} } as any,
@@ -268,6 +306,15 @@ describe("InMemoryVectorStorage putBulk atomicity", () => {
     // past 1 during the failed batch's first write.
     const next = await autoStore.put({ vector: vec([1, 1, 0]), metadata: {} } as any);
     expect(next.id).toBe(2);
+
+    // The rollback event reports the auto-assigned id that the first call
+    // produced before the second one threw. The id must be the concrete
+    // value the counter assigned (2), not undefined — that's the whole
+    // point of extracting the PK from the *committed* entity rather than
+    // the user input that came in without an id.
+    expect(rollbackEvents).toHaveLength(1);
+    expect(rollbackEvents[0].ids).toHaveLength(1);
+    expect((rollbackEvents[0].ids[0] as { id: number }).id).toBe(2);
   });
 
   it("putBulk rollback does not wipe concurrent put committed mid-batch", async () => {
