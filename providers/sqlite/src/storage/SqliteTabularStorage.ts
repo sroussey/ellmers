@@ -725,7 +725,7 @@ export class SqliteTabularStorage<
     return this.mutex(() => this._putInternal(entity));
   }
 
-  private async _putInternal(entity: InsertType): Promise<Entity> {
+  protected async _putInternal(entity: InsertType): Promise<Entity> {
     return this.executePutSync(entity);
   }
 
@@ -745,7 +745,7 @@ export class SqliteTabularStorage<
     return this.mutex(() => this._putBulkInternal(entities));
   }
 
-  private async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
+  protected async _putBulkInternal(entities: InsertType[]): Promise<Entity[]> {
     if (entities.length === 0) return [];
 
     const updatedEntities: Entity[] = [];
@@ -822,6 +822,12 @@ export class SqliteTabularStorage<
           return (entity: Entity) => deferredPutEvents.push(entity);
         }
         if (typeof prop === "string") {
+          // Bracket access walks the prototype chain, so a subclass override
+          // of `_${prop}Internal` (e.g. SqliteAiVectorStorage's
+          // vector-encoding `_putInternal` / `_putBulkInternal`) wins over
+          // the parent's implementation. `apply(receiver, ...)` then runs it
+          // bound to the proxy so nested `tx.foo()` calls keep routing
+          // through the proxy as well.
           const internal = (t as unknown as Record<string, unknown>)[`_${prop}Internal`];
           if (typeof internal === "function") {
             return (...args: unknown[]) =>
