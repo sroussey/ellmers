@@ -375,4 +375,174 @@ describe.skipIf(!sqliteVectorAvailable)("SqliteAiVectorStorage", async () => {
       expect(results.length).toBe(0);
     });
   });
+
+  describe("withTransaction", () => {
+    // Regression: previously the createTxView proxy routed `tx.put`/`tx.putBulk`
+    // to the parent's `_putInternal`/`_putBulkInternal` (the subclass had no
+    // matching internals), so vectors written through `tx` landed as raw JSON
+    // BLOBs that vector_full_scan could not decode — similaritySearch silently
+    // fell back to the in-memory cosine path. The same path also deadlocked
+    // when callers reached for the original storage's putBulk from inside
+    // `withTransaction` (mutex held + nested BEGIN).
+
+    it("tx.put encodes vectors so similaritySearch hits the native path", async () => {
+      const vec = new Float32Array([1.0, 0.0, 0.0]);
+      await storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "tx-single",
+          doc_id: "docTX",
+          vector: vec,
+          metadata: { source: "tx.put" },
+        });
+      });
+
+      const results = await storage.similaritySearch(vec, { topK: 1 });
+      expect(results.length).toBe(1);
+      expect(results[0].chunk_id).toBe("tx-single");
+      // Score ~1.0 proves vector_full_scan decoded the row; if the vector had
+      // landed as a JSON blob the native path would have errored and the
+      // in-memory fallback would have run on an empty getAll() (since the row
+      // would have been unreadable as a Float32Array).
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const row = all!.find((r) => r.chunk_id === "tx-single")!;
+      expect(row.vector).toBeInstanceOf(Float32Array);
+      expect(row.vector.length).toBe(3);
+      expect(row.vector[0]).toBeCloseTo(1.0, 5);
+    });
+
+    it("tx.putBulk encodes vectors so similaritySearch hits the native path", async () => {
+      await storage.withTransaction(async (tx) => {
+        await tx.putBulk([
+          {
+            chunk_id: "tx-bulk1",
+            doc_id: "docTB1",
+            vector: new Float32Array([1.0, 0.0, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+          {
+            chunk_id: "tx-bulk2",
+            doc_id: "docTB2",
+            vector: new Float32Array([0.0, 1.0, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+          {
+            chunk_id: "tx-bulk3",
+            doc_id: "docTB3",
+            vector: new Float32Array([0.9, 0.1, 0.0]),
+            metadata: { tag: "tx-bulk" },
+          },
+        ]);
+      });
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      expect(all!.length).toBe(3);
+      for (const row of all!) {
+        expect(row.vector).toBeInstanceOf(Float32Array);
+        expect(row.vector.length).toBe(3);
+      }
+
+      const results = await storage.similaritySearch(new Float32Array([1.0, 0.0, 0.0]), {
+        topK: 3,
+      });
+      expect(results.length).toBe(3);
+      expect(results[0].chunk_id).toBe("tx-bulk1");
+      expect(results[0].score).toBeGreaterThanOrEqual(0.999);
+    });
+
+    it("does not deadlock external putBulk queued behind a running withTransaction", async () => {
+      // Public `storage.putBulk` (called from *outside* the callback, while
+      // withTransaction is mid-flight) must queue on the mutex and run after
+      // COMMIT/ROLLBACK — not slip into the open transaction and not hang.
+      // Calling it from *inside* the callback would deadlock the mutex on
+      // itself; that's documented user error. The Promise.race guards against
+      // a regression where the external call hangs even from outside.
+
+      let releaseInner: () => void = () => {};
+      const innerCanFinish = new Promise<void>((resolve) => {
+        releaseInner = resolve;
+      });
+
+      const txPromise = storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "tx-rb",
+          doc_id: "docRB",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: {},
+        });
+        await innerCanFinish;
+        throw new Error("rollback");
+      });
+
+      // Yield so the queued external putBulk lands on the mutex chain.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const externalBulk = storage.putBulk([
+        {
+          chunk_id: "external-bulk",
+          doc_id: "docEB",
+          vector: new Float32Array([0.0, 1.0, 0.0]),
+          metadata: {},
+        },
+      ]);
+
+      releaseInner();
+      await expect(txPromise).rejects.toThrow("rollback");
+
+      const deadlockGuard = new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("deadlock-timeout")), 2000)
+      );
+
+      await Promise.race([externalBulk, deadlockGuard]);
+
+      // tx-rb rolled back, external-bulk committed independently.
+      expect(await storage.get({ chunk_id: "tx-rb" } as any)).toBeUndefined();
+      const ext = await storage.get({ chunk_id: "external-bulk" } as any);
+      expect(ext).toBeDefined();
+      expect(ext!.vector).toBeInstanceOf(Float32Array);
+    });
+
+    it("preserves insertion order across mixed tx.put + tx.putBulk", async () => {
+      await storage.withTransaction(async (tx) => {
+        await tx.put({
+          chunk_id: "mixed-1",
+          doc_id: "docM1",
+          vector: new Float32Array([1.0, 0.0, 0.0]),
+          metadata: { order: 1 },
+        });
+        await tx.putBulk([
+          {
+            chunk_id: "mixed-2",
+            doc_id: "docM2",
+            vector: new Float32Array([0.0, 1.0, 0.0]),
+            metadata: { order: 2 },
+          },
+          {
+            chunk_id: "mixed-3",
+            doc_id: "docM3",
+            vector: new Float32Array([0.0, 0.0, 1.0]),
+            metadata: { order: 3 },
+          },
+        ]);
+        await tx.put({
+          chunk_id: "mixed-4",
+          doc_id: "docM4",
+          vector: new Float32Array([0.5, 0.5, 0.0]),
+          metadata: { order: 4 },
+        });
+      });
+
+      const all = await storage.getAll();
+      expect(all).toBeDefined();
+      const ordered = all!
+        .filter((r) => r.chunk_id.startsWith("mixed-"))
+        .sort((a, b) => Number(a.metadata.order) - Number(b.metadata.order))
+        .map((r) => r.chunk_id);
+      expect(ordered).toEqual(["mixed-1", "mixed-2", "mixed-3", "mixed-4"]);
+    });
+  });
 });

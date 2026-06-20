@@ -402,33 +402,27 @@ export class SqliteAiVectorStorage<
   }
 
   /**
-   * Override put to use sqlite-vector encoding for vector data.
-   * Builds a custom INSERT OR REPLACE that wraps the vector column
-   * with vector_as_fXX() to encode as a native vector BLOB.
-   * Falls back to base class put() if the extension is not available.
+   * Encode and execute the vector-wrapped INSERT for a single entity, then
+   * decode the RETURNING row back into an Entity. Optionally emits the `put`
+   * event so bulk callers can defer events until after their own transaction
+   * commits.
+   */
+  private executeVectorPutSync(entity: any, emitEvent: boolean = true): Entity {
+    const { sql, params } = this.buildVectorInsertSql(entity);
+    const stmt = this.database.prepare(sql);
+    const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
+    if (emitEvent) this.emitPut(updatedEntity);
+    return updatedEntity;
+  }
+
+  /**
+   * Override put to use sqlite-vector encoding for vector data. Builds a
+   * custom INSERT OR REPLACE that wraps the vector column with
+   * `vector_as_fXX()` to encode as a native vector BLOB. Falls back to the
+   * base put() if the extension is not available.
    */
   public override async put(entity: any): Promise<Entity> {
-    validateVectorEntities(
-      [entity as Record<string, unknown>],
-      this.vectorPropertyName as string,
-      this.vectorDimensions
-    );
-    if (!this.extensionLoaded) {
-      return super.put(entity);
-    }
-
-    // Serialize through the base per-instance mutex so this custom INSERT does
-    // not run on the shared connection while a `withTransaction` BEGIN is open
-    // (which would silently splice the row into the outer transaction). Emit
-    // through `emitPut` so a nested transaction can defer the event until COMMIT.
-    return this.mutex(async () => {
-      const { sql, params } = this.buildVectorInsertSql(entity);
-      const stmt = this.database.prepare(sql);
-      const updatedEntity = this.decodeReturnedEntity(stmt.get(...params) as Entity);
-
-      this.emitPut(updatedEntity);
-      return updatedEntity;
-    });
+    return this.mutex(() => this._putInternal(entity));
   }
 
   /**
@@ -439,11 +433,48 @@ export class SqliteAiVectorStorage<
    * vectors as plain JSON strings, so `vector_full_scan` cannot decode them
    * and similarity search silently falls back to the in-memory cosine path.
    *
-   * `put` events are deferred until after the transaction commits (mirrors
-   * {@link SqliteTabularStorage._putBulkInternal}) so listeners never observe
-   * rows that are about to roll back.
+   * `put` events are deferred until after the (inner or outer) transaction
+   * commits so listeners never observe rows that are about to roll back.
    */
   public override async putBulk(entities: any[]): Promise<Entity[]> {
+    return this.mutex(() => this._putBulkInternal(entities));
+  }
+
+  /**
+   * Internal `put` that the {@link SqliteTabularStorage.createTxView} proxy
+   * dispatches to when callers reach the vector storage through a `tx`
+   * handle. Skipping the public `put` is what keeps `tx.put(vector)` going
+   * through the vector-encoding INSERT instead of falling through to the
+   * parent's `_putInternal` (which binds vectors as JSON BLOBs that
+   * `vector_full_scan` cannot decode).
+   */
+  protected override async _putInternal(entity: any): Promise<Entity> {
+    validateVectorEntities(
+      [entity as Record<string, unknown>],
+      this.vectorPropertyName as string,
+      this.vectorDimensions
+    );
+    if (!this.extensionLoaded) {
+      return super._putInternal(entity);
+    }
+    return this.executeVectorPutSync(entity);
+  }
+
+  /**
+   * Internal `putBulk` that the proxy dispatches to from `tx.putBulk(...)`.
+   * When already inside an outer `withTransaction` BEGIN we cannot open a
+   * second `db.transaction(...)` here — that would be a nested transaction
+   * (better-sqlite3 turns it into a SAVEPOINT, but we still want all
+   * row-level rollback to fall under the outer BEGIN). In that case we
+   * iterate the rows directly; otherwise we wrap them in a SQLite
+   * transaction to collapse N fsyncs into one COMMIT.
+   *
+   * `put` events are appended to a local buffer and emitted only after the
+   * inner transaction commits (or, when nested in `withTransaction`, after
+   * the buffer is handed to `emitPut`, which the proxy routes into the
+   * outer transaction's deferred-event queue).
+   */
+  protected override async _putBulkInternal(entities: any[]): Promise<Entity[]> {
     validateVectorEntities(
       entities as ReadonlyArray<Record<string, unknown>>,
       this.vectorPropertyName as string,
@@ -451,30 +482,33 @@ export class SqliteAiVectorStorage<
     );
     if (entities.length === 0) return [];
     if (!this.extensionLoaded) {
-      return super.putBulk(entities);
+      return super._putBulkInternal(entities);
     }
 
-    // Serialize through the base per-instance mutex. Without this, a concurrent
-    // `withTransaction` (which holds the mutex and an open BEGIN on the shared
-    // connection) would collide with this method's own `db.transaction(...)`,
-    // which issues a nested BEGIN and throws "cannot start a transaction within
-    // a transaction". Emit through `emitPut` so events defer to COMMIT when
-    // nested inside an outer transaction.
-    return this.mutex(async () => {
-      const updatedEntities: Entity[] = [];
+    const updatedEntities: Entity[] = [];
+    // better-sqlite3 / bun:sqlite expose `inTransaction` as a runtime getter
+    // on the underlying handle; the canonical API doesn't surface it. When it's
+    // present and true (e.g. an outer `withTransaction` BEGIN is open and the
+    // proxy routed `tx.putBulk` here), iterate rows directly so we don't open a
+    // nested SQLite transaction. Browser-WASM has no such flag and never wraps
+    // mutating calls in `withTransaction` via the Proxy, so falling through to
+    // the inner `db.transaction(...)` is safe there.
+    const dbWithFlag = this.database as unknown as { readonly inTransaction?: boolean };
+    if (dbWithFlag.inTransaction) {
+      for (const item of entities) {
+        updatedEntities.push(this.executeVectorPutSync(item, false));
+      }
+    } else {
       const transaction = this.database.transaction((items: any[]) => {
         for (const item of items) {
-          const { sql, params } = this.buildVectorInsertSql(item);
-          const stmt = this.database.prepare(sql);
-          const row = stmt.get(...params) as Entity;
-          updatedEntities.push(this.decodeReturnedEntity(row));
+          updatedEntities.push(this.executeVectorPutSync(item, false));
         }
       });
       transaction(entities);
+    }
 
-      for (const entity of updatedEntities) this.emitPut(entity);
-      return updatedEntities;
-    });
+    for (const entity of updatedEntities) this.emitPut(entity);
+    return updatedEntities;
   }
 
   /**
